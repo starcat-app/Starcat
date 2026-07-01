@@ -18,6 +18,7 @@ import Network
 final class CompanionLocalServer {
     private let configuration: CompanionConfiguration
     private let contextProvider: CompanionContextProvider
+    private let noteWriter: CompanionNoteWriter?
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
     private static let jsonEncoder: JSONEncoder = {
@@ -25,13 +26,20 @@ final class CompanionLocalServer {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         return encoder
     }()
+    private static let jsonDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
 
     init(
         configuration: CompanionConfiguration,
-        contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil }
+        contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil },
+        noteWriter: CompanionNoteWriter? = nil
     ) {
         self.configuration = configuration
         self.contextProvider = contextProvider
+        self.noteWriter = noteWriter
     }
 
     func start() {
@@ -139,6 +147,8 @@ final class CompanionLocalServer {
             )
         case ("GET", "/local/v1/repo-context"):
             return await repoContextResponse(request: request, origin: origin)
+        case ("PATCH", "/local/v1/notes"):
+            return await saveNoteResponse(request: request, origin: origin)
         default:
             return response(status: 404, body: ["error": "not_found"], origin: origin)
         }
@@ -153,6 +163,35 @@ final class CompanionLocalServer {
             return response(status: 200, body: context, origin: origin)
         } catch CompanionContextError.invalidRepoPath {
             return response(status: 400, body: ["error": "invalid_repo"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+    }
+
+    private func saveNoteResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let noteWriter else {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+        let payload: CompanionNoteSaveRequest
+        do {
+            payload = try Self.jsonDecoder.decode(CompanionNoteSaveRequest.self, from: request.body)
+        } catch {
+            return response(status: 400, body: ["error": "bad_json"], origin: origin)
+        }
+
+        do {
+            let note = try await noteWriter.save(owner: payload.owner, repo: payload.repo, content: payload.content)
+            return response(
+                status: 200,
+                body: CompanionNoteSaveResponse(schemaVersion: 1, status: "ok", note: note),
+                origin: origin
+            )
+        } catch CompanionNoteWriteError.contentTooLarge {
+            return response(status: 400, body: ["error": "content_too_large"], origin: origin)
+        } catch CompanionNoteWriteError.repoNotFound {
+            return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
+        } catch CompanionNoteWriteError.repoNotStarred {
+            return response(status: 403, body: ["error": "repo_not_starred"], origin: origin)
         } catch {
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }

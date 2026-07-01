@@ -45,7 +45,15 @@ enum CompanionServiceBootstrapper {
             wikiContextService: dependencies.wikiContextService,
             recommendationContextService: dependencies.recommendationContextService
         )
-        let nextServer = CompanionLocalServer(configuration: configuration, contextProvider: provider)
+        let noteWriter = CompanionNoteWriter(
+            repoRepository: dependencies.repoRepository,
+            noteRepository: dependencies.repoNoteRepository
+        )
+        let nextServer = CompanionLocalServer(
+            configuration: configuration,
+            contextProvider: provider,
+            noteWriter: noteWriter
+        )
         server?.stop()
         server = nextServer
         nextServer.start()

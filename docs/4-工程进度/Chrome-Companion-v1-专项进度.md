@@ -64,12 +64,18 @@
 
 ## 5. PR-3: notes 写入与打开动作
 
-- [ ] `PATCH /local/v1/notes`: 保存私人笔记。
-- [ ] 保存规则: repo 必须存在且 `isStarred == true`。
-- [ ] 保存规则: 最大 20000 字符。
-- [ ] 保存规则: 保留原有 `repo_notes.status`。
+- [x] `PATCH /local/v1/notes`: 保存私人笔记。— 2026-07-01
+  > 实现: 本机服务新增 notes PATCH route, 解码 owner/repo/content 后委托 CompanionNoteWriter 保存并返回最新 note DTO。
+- [x] 保存规则: repo 必须存在且 `isStarred == true`。— 2026-07-01
+  > 实现: CompanionNoteWriter 先通过 RepoRepository 查本地 repo, 未命中返回 404, 已取消 star 返回 403。
+- [x] 保存规则: 最大 20000 字符。— 2026-07-01
+  > 实现: CompanionNoteWriter 在写库前校验 content.count, 超限返回 content_too_large。
+- [x] 保存规则: 保留原有 `repo_notes.status`。— 2026-07-01
+  > 实现: 保存仍走 RepoNoteRepository.updateContent, 只改 content 与 edited_at, 不覆盖 status。
 - [ ] `POST /local/v1/actions/open`: `open-repo` / `codeflow` / `codebase`。
-- [ ] 单测: note save / 未 star 拒绝 / action route。
+- [ ] 单测: action route。
+- [x] 单测: note save / 未 star 拒绝。— 2026-07-01
+  > 实现: 新增 CompanionNoteWriterTests 与 LocalServer PATCH notes 覆盖, 验证保存、未 star 拒绝、缺失 repo 与超长内容拒绝。
 
 ## 6. PR-4: Chrome Extension
 

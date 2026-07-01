@@ -69,6 +69,18 @@ struct CompanionNoteDTO: Codable, Equatable {
     let editedAt: String?
 }
 
+struct CompanionNoteSaveRequest: Codable, Equatable {
+    let owner: String
+    let repo: String
+    let content: String
+}
+
+struct CompanionNoteSaveResponse: Codable, Equatable {
+    let schemaVersion: Int
+    let status: String
+    let note: CompanionNoteDTO
+}
+
 struct CompanionHealthDTO: Codable, Equatable {
     let score: Double
     let grade: String

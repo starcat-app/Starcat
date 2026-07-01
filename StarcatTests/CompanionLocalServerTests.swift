@@ -21,6 +21,16 @@ struct CompanionLocalServerTests {
         )
     }
 
+    private func makeServer(noteWriter: CompanionNoteWriter) throws -> CompanionLocalServer {
+        let keychain = InMemoryKeychain()
+        try keychain.storeCompanionToken("test-token")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        return CompanionLocalServer(
+            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            noteWriter: noteWriter
+        )
+    }
+
     @Test("GET /local/v1/ping 带 token 返回 200")
     func pingReturnsOK() async throws {
         let server = try makeServer()
@@ -128,6 +138,58 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("missing_repo"))
     }
 
+    @Test("PATCH /local/v1/notes 保存私人笔记")
+    func patchNotesSavesPrivateNote() async throws {
+        let writer = CompanionNoteWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            updateContent: { repoID, content in
+                #expect(repoID == 44_838_949)
+                #expect(content == "hello")
+            },
+            lookupNote: { repoID in
+                RepoNote(
+                    repoId: repoID,
+                    content: "hello",
+                    status: RepoStatus.using.rawValue,
+                    isAIGenerated: false,
+                    editedAt: "2026-07-01T10:00:00Z"
+                )
+            }
+        )
+        let server = try makeServer(noteWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /local/v1/notes HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","content":"hello"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"status\":\"ok\""))
+        #expect(bodyString(response).contains("\"content\":\"hello\""))
+    }
+
+    @Test("PATCH /local/v1/notes 未 star repo 返回 403")
+    func patchNotesRejectsUnstarredRepo() async throws {
+        let writer = CompanionNoteWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            updateContent: { _, _ in },
+            lookupNote: { _ in nil }
+        )
+        let server = try makeServer(noteWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /local/v1/notes HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","content":"hello"}
+        """))
+
+        #expect(statusCode(response) == 403)
+        #expect(bodyString(response).contains("repo_not_starred"))
+    }
+
     private func request(_ raw: String) -> Data {
         Data(raw.utf8)
     }
@@ -156,5 +218,34 @@ struct CompanionLocalServerTests {
         guard let raw = String(data: data, encoding: .utf8),
               let headerEnd = raw.range(of: "\r\n\r\n") else { return "" }
         return String(raw[headerEnd.upperBound...])
+    }
+
+    nonisolated private static func makeRepo(isStarred: Bool) -> Repo {
+        Repo(
+            id: 44_838_949,
+            owner: "apple",
+            name: "swift",
+            fullName: "apple/swift",
+            description: nil,
+            language: "Swift",
+            starsCount: 1,
+            forksCount: 1,
+            watchersCount: 1,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/apple/swift",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: isStarred,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
     }
 }
