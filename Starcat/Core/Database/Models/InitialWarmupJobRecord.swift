@@ -5,7 +5,7 @@
 //  首次数据预热作业状态，对应 `initial_warmup_jobs` 表。
 //
 //  模块级说明：
-//  - 本表按 GitHub user_id 记录 README 预拉 + Repo Health 首次计算的可恢复状态；
+//  - 本表按 GitHub user_id 记录 README 预拉 + OpenSSF + Repo Health 首次计算的可恢复状态；
 //  - 不保存 repo 队列，避免缓存清理、同步新增、取消 star 后队列失真；
 //  - 所有时间字段使用 ISO8601 字符串，和现有 SQLite 模型保持一致。
 //
@@ -17,6 +17,7 @@ import GRDB
 enum InitialWarmupPhase: String, Codable, Sendable {
     case waiting
     case readme
+    case openSSF
     case health
     case paused
     case completed

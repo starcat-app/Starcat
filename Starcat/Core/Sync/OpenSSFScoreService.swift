@@ -15,12 +15,18 @@ import Foundation
 actor OpenSSFScoreService {
     private let api: OpenSSFScoreAPI
     private let repository: any OpenSSFScoreRepositoryProtocol
+    private let healthRefreshHandler: (@Sendable (Repo) async -> Void)?
     private let rateLimiter = OpenSSFScoreRateLimiter(maxRequestsPerSecond: 5)
     private var inFlight: [Int64: Task<OpenSSFScoreRecord, Error>] = [:]
 
-    init(api: OpenSSFScoreAPI, repository: any OpenSSFScoreRepositoryProtocol) {
+    init(
+        api: OpenSSFScoreAPI,
+        repository: any OpenSSFScoreRepositoryProtocol,
+        healthRefreshHandler: (@Sendable (Repo) async -> Void)? = nil
+    ) {
         self.api = api
         self.repository = repository
+        self.healthRefreshHandler = healthRefreshHandler
     }
 
     func cachedRecord(for repoId: Int64) async throws -> OpenSSFScoreRecord? {
@@ -86,6 +92,13 @@ actor OpenSSFScoreService {
                 object: nil,
                 userInfo: ["repoId": record.repoId]
             )
+            if record.fetchStatus == .success, let healthRefreshHandler {
+                // OpenSSF 是 Health 安全维度的输入。成功写入后异步重算 Health，
+                // 让卡片 badge / Health 排序继续走已有 repoHealthSnapshotDidChange 链路。
+                Task {
+                    await healthRefreshHandler(repo)
+                }
+            }
             return record
         }
 
@@ -95,7 +108,10 @@ actor OpenSSFScoreService {
     }
 
     @discardableResult
-    func refreshStaleStarredRepos(limit: Int = 100) async -> Int {
+    func refreshStaleStarredRepos(
+        limit: Int = 100,
+        progress: (@Sendable (_ processed: Int, _ total: Int) async -> Void)? = nil
+    ) async -> Int {
         let candidates: [Repo]
         do {
             candidates = try await repository.staleStarredRepos(now: Date(), limit: limit)
@@ -104,7 +120,9 @@ actor OpenSSFScoreService {
             return 0
         }
 
+        await progress?(0, candidates.count)
         var refreshed = 0
+        var processed = 0
         await withTaskGroup(of: Bool.self) { group in
             var iterator = candidates.makeIterator()
 
@@ -126,11 +144,17 @@ actor OpenSSFScoreService {
                 enqueueNext()
             }
             while let ok = await group.next() {
+                processed += 1
                 if ok { refreshed += 1 }
+                await progress?(processed, candidates.count)
                 enqueueNext()
             }
         }
         return refreshed
+    }
+
+    func coverageSummary() async throws -> OpenSSFScoreCoverageSummary {
+        try await repository.coverageSummary()
     }
 }
 

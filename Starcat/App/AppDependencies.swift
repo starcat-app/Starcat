@@ -771,17 +771,12 @@ final class AppDependencies {
             fetcher: recommendAPI
         )
 
-        // OpenSSF Scorecard：公开 API + 本地缓存 + 非阻塞 UI store。
-        // 注意：这里不启动网络请求；HomeView 登录态门控负责启动后台 poller，
-        // Health 相关入口只读本地库，避免把 OpenSSF 的缺失/慢响应带到前台动画里。
+        // OpenSSF Scorecard：公开 API + 本地缓存。服务对象稍后创建，因为 OpenSSF
+        // 成功写入后需要通知 Repo Health 重算，装配顺序必须先拿到 Health service。
         let openSSFAPI = OpenSSFScoreAPI()
         self.openSSFScoreAPI = openSSFAPI
         let openSSFRepo = GRDBOpenSSFScoreRepository(database: db)
         self.openSSFScoreRepository = openSSFRepo
-        let openSSFService = OpenSSFScoreService(api: openSSFAPI, repository: openSSFRepo)
-        self.openSSFScoreService = openSSFService
-        self.openSSFScoreStore = OpenSSFScoreStore(service: openSSFService)
-        self.openSSFScorePoller = OpenSSFScorePoller(service: openSSFService)
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()
@@ -823,10 +818,26 @@ final class AppDependencies {
         self.repoHealthService = healthService
         self.repoHealthStore = RepoHealthStore(service: healthService)
         self.repoHealthPoller = RepoHealthPoller(service: healthService)
+
+        let openSSFService = OpenSSFScoreService(
+            api: openSSFAPI,
+            repository: openSSFRepo,
+            healthRefreshHandler: { repo in
+                do {
+                    _ = try await healthService.refresh(repo: repo)
+                } catch {
+                    AppLog.general.warning("OpenSSF-triggered Health refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        )
+        self.openSSFScoreService = openSSFService
+        self.openSSFScoreStore = OpenSSFScoreStore(service: openSSFService)
+        self.openSSFScorePoller = OpenSSFScorePoller(service: openSSFService)
         self.initialWarmupCoordinator = InitialRepoWarmupCoordinator(
             jobRepository: initialWarmupJobRepo,
             readmePrefetchRepository: readmePrefetchRepo,
             readmePrefetchService: readmePrefetchService,
+            openSSFScoreService: openSSFService,
             repoHealthService: healthService
         )
 

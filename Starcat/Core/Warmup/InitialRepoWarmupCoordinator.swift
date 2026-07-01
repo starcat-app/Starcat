@@ -5,7 +5,7 @@
 //  新用户首次数据预热协调器。
 //
 //  模块级说明：
-//  - 等 starred 全量同步完成后，再启动 README 预拉与 Repo Health 首次计算；
+//  - 等 starred 全量同步完成后，再启动 README 预拉、OpenSSF 与 Repo Health 首次计算；
 //  - 作业状态持久化到 `initial_warmup_jobs`，应用关闭、崩溃、限流后可恢复；
 //  - 不保存 repo 队列，每批从 SQLite 重新查询候选，确保清理缓存或同步新增后状态真实；
 //  - 周期性 poller 仍保留为兜底，本 coordinator 只负责首次 warmup。
@@ -17,15 +17,18 @@ import Observation
 @MainActor
 @Observable
 final class InitialRepoWarmupCoordinator {
-    nonisolated static let defaultInitialDelay: TimeInterval = 5 * 60
+    nonisolated static let defaultInitialDelay: TimeInterval = 30 * 60
     nonisolated static let defaultReadmeBatchDelay: TimeInterval = 5
+    nonisolated static let defaultOpenSSFBatchDelay: TimeInterval = 5
     nonisolated static let defaultFallbackRetryDelay: TimeInterval = 15 * 60
+    nonisolated static let defaultOpenSSFBatchLimit = 100
     nonisolated static let defaultHealthBatchLimit = 100
     nonisolated static let defaultHealthDelayBetweenRepos: TimeInterval = 1
 
     private let jobRepository: InitialWarmupJobRepository
     private let readmePrefetchRepository: ReadmePrefetchRepository
     private let readmePrefetchService: ReadmePrefetchService
+    private let openSSFScoreService: OpenSSFScoreService
     private let repoHealthService: RepoHealthService
 
     private var activeTask: Task<Void, Never>?
@@ -33,22 +36,26 @@ final class InitialRepoWarmupCoordinator {
 
     private(set) var job: InitialWarmupJobRecord?
     private(set) var isRunning = false
+    private(set) var openSSFCovered = 0
+    private(set) var openSSFTotal = 0
 
     init(
         jobRepository: InitialWarmupJobRepository,
         readmePrefetchRepository: ReadmePrefetchRepository,
         readmePrefetchService: ReadmePrefetchService,
+        openSSFScoreService: OpenSSFScoreService,
         repoHealthService: RepoHealthService
     ) {
         self.jobRepository = jobRepository
         self.readmePrefetchRepository = readmePrefetchRepository
         self.readmePrefetchService = readmePrefetchService
+        self.openSSFScoreService = openSSFScoreService
         self.repoHealthService = repoHealthService
     }
 
     var isActive: Bool {
         guard let job else { return isRunning }
-        return isRunning || job.phase == .waiting || job.phase == .readme || job.phase == .health || job.phase == .paused
+        return isRunning || job.phase == .waiting || job.phase == .readme || job.phase == .openSSF || job.phase == .health || job.phase == .paused
     }
 
     var isCompleted: Bool {
@@ -64,9 +71,18 @@ final class InitialRepoWarmupCoordinator {
 
         do {
             var record = try await loadOrCreateJob(userID: userID)
-            guard record.phase != .completed else {
-                job = record
-                return
+            if record.phase == .completed {
+                await refreshOpenSSFCoverage()
+                guard openSSFTotal > 0, openSSFCovered < openSSFTotal else {
+                    job = record
+                    return
+                }
+                // 早期版本的首次预热只覆盖 README/Health。这里不改表结构，
+                // 只把未补齐 OpenSSF 的 completed 作业重新推进到 OpenSSF 阶段。
+                record.phase = .openSSF
+                record.completedAt = nil
+                record.updatedAt = Self.string(from: Date())
+                try await save(record)
             }
 
             if record.phase == .disabled {
@@ -160,7 +176,21 @@ final class InitialRepoWarmupCoordinator {
         isRunning = true
         defer { isRunning = false }
 
+        let phase = job?.phase
+        if phase == .health {
+            await runHealthPhase(userID: userID)
+            return
+        }
+        if phase == .openSSF || job?.lastErrorKind == "openSSFRetry" {
+            await runOpenSSFPhase(userID: userID)
+            guard !Task.isCancelled, job?.phase != .paused, job?.phase != .disabled else { return }
+            await runHealthPhase(userID: userID)
+            return
+        }
+
         await runReadmePhase(userID: userID)
+        guard !Task.isCancelled, job?.phase != .paused, job?.phase != .disabled else { return }
+        await runOpenSSFPhase(userID: userID)
         guard !Task.isCancelled, job?.phase != .paused, job?.phase != .disabled else { return }
         await runHealthPhase(userID: userID)
     }
@@ -250,11 +280,50 @@ final class InitialRepoWarmupCoordinator {
         }
     }
 
+    private func runOpenSSFPhase(userID: Int64) async {
+        do {
+            var record = try await loadOrCreateJob(userID: userID)
+            record.phase = .openSSF
+            record.nextRetryAt = nil
+            record.lastErrorKind = nil
+            record.updatedAt = Self.string(from: Date())
+            try await save(record)
+            await refreshOpenSSFCoverage()
+        } catch {
+            AppLog.general.warning("Initial warmup OpenSSF phase init failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        while !Task.isCancelled {
+            guard let current = job, current.phase == .openSSF else { return }
+            if openSSFTotal == 0 || openSSFCovered >= openSSFTotal {
+                await finishOpenSSFPhase(userID: userID)
+                return
+            }
+
+            let refreshed = await openSSFScoreService.refreshStaleStarredRepos(
+                limit: Self.defaultOpenSSFBatchLimit
+            )
+            await refreshOpenSSFCoverage()
+
+            if refreshed == 0 {
+                if openSSFCovered >= openSSFTotal {
+                    await finishOpenSSFPhase(userID: userID)
+                } else {
+                    await pause(userID: userID, until: Date().addingTimeInterval(Self.defaultFallbackRetryDelay), reason: "openSSFRetry")
+                }
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: UInt64(Self.defaultOpenSSFBatchDelay * 1_000_000_000))
+        }
+    }
+
     private func finishReadmePhase(userID: Int64) async {
         do {
             var record = try await loadOrCreateJob(userID: userID)
             record = try await applyingReadmeCoverage(to: record)
-            record.phase = .health
+            record.phase = .openSSF
             record.updatedAt = Self.string(from: Date())
             try await save(record)
         } catch {
@@ -262,10 +331,22 @@ final class InitialRepoWarmupCoordinator {
         }
     }
 
+    private func finishOpenSSFPhase(userID: Int64) async {
+        do {
+            var record = try await loadOrCreateJob(userID: userID)
+            record.phase = .health
+            record.updatedAt = Self.string(from: Date())
+            try await save(record)
+        } catch {
+            AppLog.general.warning("Initial warmup OpenSSF phase finish failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func complete(userID: Int64) async {
         do {
             var record = try await loadOrCreateJob(userID: userID)
             record = try await applyingReadmeCoverage(to: record)
+            await refreshOpenSSFCoverage()
             record = try await applyingHealthCoverage(to: record)
             record.phase = .completed
             record.completedAt = Self.string(from: Date())
@@ -339,6 +420,18 @@ final class InitialRepoWarmupCoordinator {
             try await save(record)
         } catch {
             AppLog.general.warning("Initial warmup Health coverage refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func refreshOpenSSFCoverage() async {
+        do {
+            let summary = try await openSSFScoreService.coverageSummary()
+            openSSFCovered = summary.fetchedTotal
+            openSSFTotal = summary.starredTotal
+        } catch {
+            AppLog.general.warning("Initial warmup OpenSSF coverage refresh failed: \(error.localizedDescription, privacy: .public)")
+            openSSFCovered = 0
+            openSSFTotal = 0
         }
     }
 

@@ -1263,7 +1263,7 @@ struct RepoListView: View {
             .task {
                 await observeOpenSSFScoreChanges()
             }
-            // Stars 同步和 Health 后台预热都会先写 SQLite；列表行同步读 Store 内存缓存。
+            // Stars 同步、OpenSSF 和 Health 后台预热都会先写 SQLite；列表行同步读 Store 内存缓存。
             // 因此这些后台边沿完成后要强制重读当前 rows，否则卡片会停在旧内存状态。
             .task(id: syncManager.state) {
                 guard case .completed = syncManager.state else { return }
@@ -1275,7 +1275,7 @@ struct RepoListView: View {
             }
             .task(id: dependencies.initialWarmupCoordinator.job?.updatedAt) {
                 guard let phase = dependencies.initialWarmupCoordinator.job?.phase,
-                      phase == .health || phase == .completed else { return }
+                      phase == .openSSF || phase == .health || phase == .completed else { return }
                 await reloadVisibleBadgeCaches(forceReload: true)
             }
             // 仅外部导航（SearchCenter / 命令面板）滚到目标行；列表行点击不写

@@ -36086,13 +36086,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Initial warmup · README %d/%d · Health %d/%d"
+            "value" : "Initial warmup · README %d/%d · OpenSSF %d/%d · Health %d/%d"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "首次数据预热 · README %d/%d · Health %d/%d"
+            "value" : "首次数据预热 · README %d/%d · OpenSSF %d/%d · Health %d/%d"
           }
         }
       }
@@ -36654,6 +36654,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "README 预拉：%@"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.openSSFLastFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSF: refreshed %d repos %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSF：上次刷新 %d 个，%@"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.openSSFProgressFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSF: refreshing %d / %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSF：刷新中 %d / %d"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.openSSFWaiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSF is waiting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSF 等待中"
           }
         }
       }

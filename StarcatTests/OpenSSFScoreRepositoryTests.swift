@@ -95,6 +95,39 @@ struct OpenSSFScoreRepositoryTests {
         #expect(records[3] == nil)
     }
 
+    @Test("coverageSummary: 统计已 star 且已有 OpenSSF 尝试记录的 repo")
+    func coverageSummaryCountsStarredRowsWithAnyFetchStatus() async throws {
+        let (repository, db) = try makeRepository()
+        try await seedRepo(db, id: 1, fullName: "a/success")
+        try await seedRepo(db, id: 2, fullName: "a/not-indexed")
+        try await seedRepo(db, id: 3, fullName: "a/missing")
+        try await seedRepo(db, id: 4, fullName: "a/unstarred", isStarred: false)
+
+        try await repository.upsert(.success(
+            repoId: 1,
+            payload: OpenSSFScorePayload(date: nil, score: 9.0, checks: []),
+            rawData: Data(#"{"score":9.0}"#.utf8),
+            fetchedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        ))
+        try await repository.upsert(.failure(
+            repoId: 2,
+            status: .notIndexed,
+            message: nil,
+            fetchedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        ))
+        try await repository.upsert(.failure(
+            repoId: 4,
+            status: .networkError,
+            message: "timeout",
+            fetchedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        ))
+
+        let summary = try await repository.coverageSummary()
+
+        #expect(summary.starredTotal == 3)
+        #expect(summary.fetchedTotal == 2)
+    }
+
     @Test("staleStarredRepos: 只返回 starred 且已过 TTL 或无缓存的 repo")
     func staleStarredReposRespectsTTLAndStarredFlag() async throws {
         let (repository, db) = try makeRepository()

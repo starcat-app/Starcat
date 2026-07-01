@@ -9,8 +9,10 @@
 //
 
 import Foundation
+import Observation
 
 @MainActor
+@Observable
 final class OpenSSFScorePoller {
     nonisolated static let defaultInterval: TimeInterval = 24 * 60 * 60
     nonisolated static let defaultTolerance: TimeInterval = 60 * 60
@@ -19,8 +21,11 @@ final class OpenSSFScorePoller {
     private var scheduler: NSBackgroundActivityScheduler?
 
     private(set) var isRunning = false
+    private(set) var isRefreshing = false
     private(set) var lastRunAt: Date?
     private(set) var lastRefreshCount: Int = 0
+    private(set) var refreshProcessed: Int = 0
+    private(set) var refreshTotal: Int = 0
 
     init(service: OpenSSFScoreService) {
         self.service = service
@@ -67,7 +72,25 @@ final class OpenSSFScorePoller {
     }
 
     private func performRefresh() async {
-        let count = await service.refreshStaleStarredRepos(limit: 100)
+        guard !isRefreshing else {
+            AppLog.general.info("OpenSSFScorePoller skipped because previous refresh is still running")
+            return
+        }
+
+        isRefreshing = true
+        refreshProcessed = 0
+        refreshTotal = 0
+        defer { isRefreshing = false }
+
+        let count = await service.refreshStaleStarredRepos(
+            limit: 100,
+            progress: { [weak self] processed, total in
+                await MainActor.run {
+                    self?.refreshProcessed = processed
+                    self?.refreshTotal = total
+                }
+            }
+        )
         lastRunAt = Date()
         lastRefreshCount = count
     }

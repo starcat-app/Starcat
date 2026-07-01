@@ -17,6 +17,16 @@ protocol OpenSSFScoreRepositoryProtocol: Sendable {
     func records(for repoIds: [Int64]) async throws -> [Int64: OpenSSFScoreRecord]
     func upsert(_ record: OpenSSFScoreRecord) async throws
     func staleStarredRepos(now: Date, limit: Int) async throws -> [Repo]
+    func coverageSummary() async throws -> OpenSSFScoreCoverageSummary
+}
+
+/// OpenSSF 首次补齐覆盖率。
+///
+/// `fetchedTotal` 统计所有已有 `open_ssf_scores` 行，包括 success / notIndexed / failure。
+/// 失败态也写入 fetched_at 并进入 TTL 冷却，所以这里把它视为“已尝试”，后续由 24h poller 兜底重试。
+struct OpenSSFScoreCoverageSummary: Equatable, Sendable {
+    let fetchedTotal: Int
+    let starredTotal: Int
 }
 
 struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
@@ -75,11 +85,30 @@ struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
             )
         }
     }
+
+    func coverageSummary() async throws -> OpenSSFScoreCoverageSummary {
+        try await database.writer.read { db in
+            let starredTotal = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM repos WHERE is_starred = 1"
+            ) ?? 0
+            let fetchedTotal = try Int.fetchOne(
+                db,
+                sql: """
+                SELECT COUNT(*)
+                FROM repos r
+                INNER JOIN open_ssf_scores s ON s.repo_id = r.id
+                WHERE r.is_starred = 1
+                """
+            ) ?? 0
+            return OpenSSFScoreCoverageSummary(fetchedTotal: fetchedTotal, starredTotal: starredTotal)
+        }
+    }
 }
 
 enum OpenSSFScoreRefreshPolicy {
-    static let successTTL: TimeInterval = 7 * 24 * 60 * 60
-    static let notIndexedTTL: TimeInterval = 30 * 24 * 60 * 60
+    static let successTTL: TimeInterval = 30 * 24 * 60 * 60
+    static let notIndexedTTL: TimeInterval = 7 * 24 * 60 * 60
     static let failureTTL: TimeInterval = 24 * 60 * 60
 
     static func shouldRefresh(_ record: OpenSSFScoreRecord?, now: Date = Date(), force: Bool = false) -> Bool {

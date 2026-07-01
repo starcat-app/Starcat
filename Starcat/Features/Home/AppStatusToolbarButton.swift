@@ -63,6 +63,7 @@ struct AppStatusToolbarButton: View {
                 readmePrefetchEnabled: settings.readmePrefetchEnabled,
                 readmePrefetchDraining: dependencies.readmePrefetchPoller.isDraining,
                 initialWarmupCoordinator: dependencies.initialWarmupCoordinator,
+                openSSFScorePoller: dependencies.openSSFScorePoller,
                 repoHealthPoller: dependencies.repoHealthPoller,
                 batchService: dependencies.batchAIQueueService,
                 mcpState: dependencies.mcpService.state,
@@ -113,15 +114,21 @@ struct AppStatusToolbarButton: View {
         let warmup = dependencies.initialWarmupCoordinator
         let warmupRemaining: Int
         if warmup.isActive, let job = warmup.job {
-            warmupRemaining = max(0, job.readmeTotal - job.readmeCovered) + max(0, job.healthTotal - job.healthCovered)
+            warmupRemaining = max(0, job.readmeTotal - job.readmeCovered)
+                + max(0, warmup.openSSFTotal - warmup.openSSFCovered)
+                + max(0, job.healthTotal - job.healthCovered)
         } else {
             warmupRemaining = warmup.isRunning ? 1 : 0
         }
+        let openSSF = dependencies.openSSFScorePoller
+        let openSSFRemaining = openSSF.isRefreshing
+            ? max(1, openSSF.refreshTotal - openSSF.refreshProcessed)
+            : 0
         let health = dependencies.repoHealthPoller
         let healthRemaining = health.isRefreshing
             ? max(1, health.refreshTotal - health.refreshProcessed)
             : 0
-        return batchRemaining + readmeRemaining + warmupRemaining + healthRemaining
+        return batchRemaining + readmeRemaining + warmupRemaining + openSSFRemaining + healthRemaining
     }
 
     private var hasIssue: Bool {
@@ -189,6 +196,7 @@ private struct AppStatusPanel: View {
     let readmePrefetchEnabled: Bool
     let readmePrefetchDraining: Bool
     let initialWarmupCoordinator: InitialRepoWarmupCoordinator
+    let openSSFScorePoller: OpenSSFScorePoller
     let repoHealthPoller: RepoHealthPoller
     let batchService: BatchAIQueueService
     let mcpState: StarcatMCPService.State
@@ -408,7 +416,7 @@ private struct AppStatusPanel: View {
 
     private var taskIcon: String {
         if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || batchService.failedCount > 0 { return "exclamationmark.triangle.fill" }
-        if initialWarmupCoordinator.isRunning || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || batchService.isRunning {
+        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || batchService.isRunning {
             return "clock.arrow.circlepath"
         }
         if batchService.isPaused { return "pause.circle.fill" }
@@ -417,7 +425,7 @@ private struct AppStatusPanel: View {
 
     private var taskTint: Color {
         if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || readmePrefetchService.failures > 0 || batchService.failedCount > 0 { return .orange }
-        if initialWarmupCoordinator.isRunning || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
+        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
             return .accentColor
         }
         if initialWarmupCoordinator.isCompleted || isReadmePrefetchAllFetched { return .green }
@@ -431,6 +439,9 @@ private struct AppStatusPanel: View {
         }
         if shouldShowReadmePrefetchInTasks {
             lines.append(String(format: String.l10n("toolbar.status.tasks.readmeFormat"), readmePrefetchSubtitle))
+        }
+        if shouldShowOpenSSFInTasks {
+            lines.append(openSSFSubtitle)
         }
         if shouldShowRepoHealthInTasks {
             lines.append(repoHealthSubtitle)
@@ -452,7 +463,7 @@ private struct AppStatusPanel: View {
     @ViewBuilder
     private var taskAccessory: some View {
         HStack(spacing: 6) {
-            if initialWarmupCoordinator.isRunning || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining {
+            if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining {
                 ProgressView()
                     .controlSize(.small)
             }
@@ -472,6 +483,28 @@ private struct AppStatusPanel: View {
 
     private var shouldShowRepoHealthInTasks: Bool {
         repoHealthPoller.isRefreshing || repoHealthPoller.lastRunAt != nil
+    }
+
+    private var shouldShowOpenSSFInTasks: Bool {
+        (openSSFScorePoller.isRefreshing || openSSFScorePoller.lastRunAt != nil) && !initialWarmupCoordinator.isActive
+    }
+
+    private var openSSFSubtitle: String {
+        if openSSFScorePoller.isRefreshing {
+            return String(
+                format: String.l10n("toolbar.status.tasks.openSSFProgressFormat"),
+                openSSFScorePoller.refreshProcessed,
+                openSSFScorePoller.refreshTotal
+            )
+        }
+        if let lastRunAt = openSSFScorePoller.lastRunAt {
+            return String(
+                format: String.l10n("toolbar.status.tasks.openSSFLastFormat"),
+                openSSFScorePoller.lastRefreshCount,
+                relativePastDate(lastRunAt)
+            )
+        }
+        return String.l10n("toolbar.status.tasks.openSSFWaiting")
     }
 
     private var repoHealthSubtitle: String {
@@ -511,14 +544,18 @@ private struct AppStatusPanel: View {
                 format: String.l10n("toolbar.status.initialWarmup.progressFormat"),
                 job.readmeCovered,
                 job.readmeTotal,
+                initialWarmupCoordinator.openSSFCovered,
+                initialWarmupCoordinator.openSSFTotal,
                 job.healthCovered,
                 job.healthTotal
             )
-        case .health:
+        case .openSSF, .health:
             return String(
                 format: String.l10n("toolbar.status.initialWarmup.progressFormat"),
                 job.readmeCovered,
                 job.readmeTotal,
+                initialWarmupCoordinator.openSSFCovered,
+                initialWarmupCoordinator.openSSFTotal,
                 job.healthCovered,
                 job.healthTotal
             )
