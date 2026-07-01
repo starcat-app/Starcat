@@ -594,9 +594,7 @@ struct RepoHealthSheet: View {
     }
 
     private func healthTint(_ score: Double) -> Color {
-        if score >= 80 { return .green }
-        if score >= 60 { return .yellow }
-        return .red
+        RepoHealthTint.color(score: score)
     }
 
     private func formattedDate(_ date: Date) -> String {
