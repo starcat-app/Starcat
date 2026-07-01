@@ -343,7 +343,7 @@ struct StarcatApp: App {
 				Divider()
 
                     Toggle(
-                        "Activate Pro (Debug)",
+                        "Activate Pro",
                         isOn: Binding(
                             get: { DebugFlags.debugProOverride },
                             set: { DebugFlags.setDebugProOverride($0) }
