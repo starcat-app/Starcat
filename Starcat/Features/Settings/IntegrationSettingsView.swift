@@ -221,10 +221,36 @@ struct IntegrationSettingsTab: View {
                 }
             }
 
+            HStack(spacing: 8) {
+                Spacer()
+                browserPluginRepositoryLink(
+                    titleKey: "settings.integration.browserPlugin.chromeRepository",
+                    destination: BrowserPluginRepositoryLinks.chrome
+                )
+                browserPluginRepositoryLink(
+                    titleKey: "settings.integration.browserPlugin.safariRepository",
+                    destination: BrowserPluginRepositoryLinks.safari
+                )
+            }
+
             Text("settings.integration.browserPlugin.description")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private enum BrowserPluginRepositoryLinks {
+        // 两个插件源码独立开源，设置页跳公开仓库；不指向本机 supports 目录。
+        static let chrome = URL(string: "https://github.com/dong4j/starcat-chrome-plugin")!
+        static let safari = URL(string: "https://github.com/dong4j/starcat-safari-plugin")!
+    }
+
+    private func browserPluginRepositoryLink(titleKey: LocalizedStringKey, destination: URL) -> some View {
+        Link(destination: destination) {
+            Label(titleKey, systemImage: "arrow.up.right.square")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
     }
 
     private var maskedPluginToken: String {

@@ -24913,6 +24913,23 @@
         }
       }
     },
+    "settings.integration.browserPlugin.chromeRepository" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chrome Plugin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chrome 插件"
+          }
+        }
+      }
+    },
     "settings.integration.browserPlugin.copyToken" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25011,6 +25028,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重置 Token"
+          }
+        }
+      }
+    },
+    "settings.integration.browserPlugin.safariRepository" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari Plugin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari 插件"
           }
         }
       }
