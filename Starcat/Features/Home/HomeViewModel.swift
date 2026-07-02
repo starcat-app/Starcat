@@ -1180,6 +1180,42 @@ final class HomeViewModel {
         }
     }
 
+    private func currentSemanticIndexScopeForSearch() -> SemanticIndexScope {
+        if case .smartCollection(let kind) = selection, kind == .library {
+            return .knowledge
+        }
+        if selection == .smartCollectionsHome {
+            return .all
+        }
+        return .starred
+    }
+
+    private func fetchSearchCandidates(scope: SemanticIndexScope) async throws -> [Repo] {
+        switch scope {
+        case .starred:
+            return try await repository.fetchAllStarred()
+        case .knowledge:
+            return try await repository.fetchKnowledgeRepos()
+        case .all:
+            let starred = try await repository.fetchAllStarred()
+            let knowledge = try await repository.fetchKnowledgeRepos()
+            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+        }
+    }
+
+    private func searchFTS(query: String, scope: SemanticIndexScope) async throws -> [Repo] {
+        switch scope {
+        case .starred:
+            return try await repository.searchFTS(query: query)
+        case .knowledge:
+            return try await repository.searchKnowledgeFTS(query: query)
+        case .all:
+            let starred = try await repository.searchFTS(query: query)
+            let knowledge = try await repository.searchKnowledgeFTS(query: query)
+            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+        }
+    }
+
     // MARK: - HOM-179：标签墙多选 actions
 
     /// 切换某个 tag 在多选集合中的勾选状态。
@@ -1349,11 +1385,12 @@ final class HomeViewModel {
                             guard let semanticSearchService = self.semanticSearchService else {
                                 throw SemanticSearchError.missingAPIKey
                             }
+                            let searchScope = self.currentSemanticIndexScopeForSearch()
                             // 2026-06-14 dong4j：先 FTS 拿命中 ID 集合，再调语义搜索（思路 1，C 加权）。
                             // FTS5 是本地 SQLite 查询，毫秒级零成本；ftsHitIDs 仅作排序加权信号
                             // 不做硬过滤，保住"语义同义但字面没匹"的纯向量召回能力。
-                            let candidates = try await self.repository.fetchAllStarred()
-                            let ftsHits = try await self.repository.searchFTS(query: self.searchQuery)
+                            let candidates = try await self.fetchSearchCandidates(scope: searchScope)
+                            let ftsHits = try await self.searchFTS(query: self.searchQuery, scope: searchScope)
                             let ftsHitIDs = Set(ftsHits.map(\.id))
                             let hits = try await semanticSearchService.search(
                                 query: self.searchQuery,
@@ -1365,7 +1402,8 @@ final class HomeViewModel {
                                 semanticHitMap: Dictionary(uniqueKeysWithValues: hits.map { ($0.repo.id, $0) })
                             )
                         } else {
-                            return (repos: try await self.repository.searchFTS(query: self.searchQuery), semanticHitMap: [:])
+                            let searchScope = self.currentSemanticIndexScopeForSearch()
+                            return (repos: try await self.searchFTS(query: self.searchQuery, scope: searchScope), semanticHitMap: [:])
                         }
                     } else {
                         var repos: [Repo]

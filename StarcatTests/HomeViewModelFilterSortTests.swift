@@ -336,6 +336,33 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [1])
     }
 
+    @Test("PR-5: 知识库集合内搜索使用 knowledge FTS 范围")
+    func librarySearchUsesKnowledgeFTSScope() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(
+            db,
+            id: 1,
+            fullName: "o/starred-only",
+            stars: 0,
+            starredAt: "2026-05-03T00:00:00Z"
+        )
+        try await insertRepo(
+            db,
+            id: 2,
+            fullName: "o/knowledge-target",
+            stars: 0,
+            starredAt: "2026-05-02T00:00:00Z",
+            isStarred: false
+        )
+        try await noteRepo.updateLibraryState(repoId: 2, state: .inLibrary)
+
+        vm.selectSidebar(.smartCollection(.library))
+        vm.submitSearch("knowledge")
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(vm.items.map(\.id) == [2])
+    }
+
     @Test("D3: 按 .unread 过滤包含 implicit unread(无 note)与 explicit unread")
     func statusFilterUnreadIncludesImplicit() async throws {
         let (vm, db, noteRepo) = try makeSUT()
