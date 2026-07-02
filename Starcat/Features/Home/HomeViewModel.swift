@@ -525,6 +525,21 @@ final class HomeViewModel {
         statusMap[repoId] ?? .unread
     }
 
+    func libraryState(for repoId: Int64) -> LibraryState {
+        libraryStateMap[repoId] ?? .outsideLibrary
+    }
+
+    /// 详情页 ❤️ 写入成功后的本地同步入口。
+    ///
+    /// Repository 成功后才调用这里，避免乐观更新。若当前列表正在按知识库状态过滤，
+    /// 该 repo 可能需要立即进入/退出列表，因此触发一次当前列表重算或分页重查。
+    func applyLibraryStateChange(repoId: Int64, state: LibraryState) {
+        guard libraryStateMap[repoId] != state else { return }
+        libraryStateMap[repoId] = state
+        guard libraryFilter != .all || selection == .smartCollection(.library) else { return }
+        reloadOrApplyCurrentManageView()
+    }
+
     /// 详情页修改 status 后由 `NotificationCenter.repoStatusDidChange` 触发，
     /// 局部更新 statusMap 让 row 角标即时刷新。
     ///

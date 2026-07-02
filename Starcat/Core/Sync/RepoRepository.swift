@@ -214,6 +214,22 @@ struct GRDBRepoRepository {
         }
     }
 
+    func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo {
+        let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
+
+        return try await database.writer.write { db in
+            let existing = try Repo.fetchOne(db, key: repo.id)
+            var saved = repo
+            // “加入知识库”只能保证本地 metadata 存在，不能把 repo 写成 GitHub starred。
+            // 已有 starred 事实必须保留；没有历史行时一律按未 star 入库。
+            saved.isStarred = existing?.isStarred == true
+            saved.starredAt = existing?.isStarred == true ? existing?.starredAt : nil
+            saved.cachedAt = cachedAtISO
+            try saved.save(db)
+            return saved
+        }
+    }
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数（is_starred = 1）。

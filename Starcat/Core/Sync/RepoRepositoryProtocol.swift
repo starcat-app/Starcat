@@ -48,6 +48,13 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 该方法只维护 repo metadata；真正的知识库归属写在 `repo_notes.library_state`。
     func upsertExternalRepoForLibrary(repoDTO: GitHubRepoDTO, syncedAt: Date) async throws -> Repo
 
+    /// 将当前详情页已有的 `Repo` 元数据写入 `repos`，但不创建 GitHub star 关系。
+    ///
+    /// 用于 Trending / Weekly / Activity 等已经构造出 `Repo` 的详情页直接入库。
+    /// 即便传入 repo 的 `isStarred` 为 true，本方法也以数据库已有 star 事实为准，
+    /// 避免“加入知识库”路径误写 GitHub Star 语义。
+    func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数。

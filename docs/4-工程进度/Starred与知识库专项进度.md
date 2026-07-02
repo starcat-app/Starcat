@@ -89,24 +89,24 @@
 
 ## 5. PR-3: 详情页 ❤️ 入口
 
-- [ ] 新增 `LibraryToggleButton`。
-- [ ] Manage 详情页动作区接入 ❤️。
-- [ ] Trending 详情页动作区接入 ❤️。
+- [x] 新增 `LibraryToggleButton`。
+- [x] Manage 详情页动作区接入 ❤️。
+- [x] Trending 详情页动作区接入 ❤️。
 - [ ] Discovery 详情页动作区接入 ❤️。
-- [ ] Weekly / Activity 详情页动作区接入 ❤️。
-- [ ] 点击加入成功有动画反馈。
-- [ ] 失败有明确错误反馈且不改变本地状态。
-- [ ] 详情页 ❤️ 不做乐观更新,写入成功后再更新 UI 与 registry。
-- [ ] 详情页 ❤️ 操作中禁用重复点击。
-- [ ] 详情页 ❤️ 写入失败时保持原状态,不先变更再回滚。
-- [ ] 未 star repo 也能通过 ❤️ 加入知识库。
-- [ ] 详情页 ❤️ 清晰展示单仓是否已入库,作为单 repo 级查看入口。
-- [ ] 已入库且 `using` 的 repo 点击取消入库时弹二次确认。
-- [ ] 二次确认后同时设置 `libraryState = .outsideLibrary` 并把 `RepoStatus.using` 降级为 `read`。
-- [ ] 二次确认文案明确说明会从“正在使用”改为“已读”。
-- [ ] 非 `using` 的已入库 repo 移出知识库不弹确认。
+- [x] Weekly / Activity 详情页动作区接入 ❤️。
+- [x] 点击加入成功有动画反馈。
+- [x] 失败有明确错误反馈且不改变本地状态。
+- [x] 详情页 ❤️ 不做乐观更新,写入成功后再更新 UI 与 registry。
+- [x] 详情页 ❤️ 操作中禁用重复点击。
+- [x] 详情页 ❤️ 写入失败时保持原状态,不先变更再回滚。
+- [x] 未 star repo 也能通过 ❤️ 加入知识库。
+- [x] 详情页 ❤️ 清晰展示单仓是否已入库,作为单 repo 级查看入口。
+- [x] 已入库且 `using` 的 repo 点击取消入库时弹二次确认。
+- [x] 二次确认后同时设置 `libraryState = .outsideLibrary` 并把 `RepoStatus.using` 降级为 `read`。
+- [x] 二次确认文案明确说明会从“正在使用”改为“已读”。
+- [x] 非 `using` 的已入库 repo 移出知识库不弹确认。
 - [ ] 设置 `RepoStatus.using` 自动入库时给轻量 toast,不弹确认。
-- [ ] 移出知识库只更新 `libraryState`,不删除 notes/tags/status/Releases 订阅关系/repo metadata。
+- [x] 移出知识库只更新 `libraryState`,不删除 notes/tags/status/Releases 订阅关系/repo metadata。
 - [ ] 移出知识库后,若 repo 同时不在 starred 与知识库,release 轮询不再自动刷新它。
 - [ ] 重新 star 或重新入库后,保留的 Releases 订阅关系重新进入自动刷新候选。
 - [ ] 多选菜单支持批量加入知识库。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-3 第一批落地详情页知识库心形入口和真实写库。
 - 2026-07-02: PR-2 第二批落地 Manage 知识库筛选条件和持久化。
 - 2026-07-02: PR-2 第一批落地 Smart Collections 知识库集合入口和列表范围。
 - 2026-07-02: PR-1 第二批落地知识库 repo 查询、FTS 范围和未 star 外部 repo metadata 写入。

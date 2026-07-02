@@ -113,6 +113,26 @@ struct RepoRepositoryTests {
         #expect(try await repo.starredCount() == 1)
     }
 
+    @Test("upsertRepoMetadataForLibrary: 从详情 Repo 写入时不创建 starred 关系")
+    func upsertRepoMetadataForLibraryDoesNotCreateStar() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "seed")
+        var external = try #require(try await repo.findById(1))
+        external.id = 9010
+        external.name = "detail-only"
+        external.fullName = "external/detail-only"
+        external.htmlUrl = "https://github.com/external/detail-only"
+        external.isStarred = true
+        external.starredAt = "2026-05-29T10:00:00Z"
+
+        let saved = try await repo.upsertRepoMetadataForLibrary(repo: external, syncedAt: Date())
+
+        #expect(saved.id == 9010)
+        #expect(saved.isStarred == false)
+        #expect(saved.starredAt == nil)
+        #expect(try await repo.starredCount() == 1)
+    }
+
     @Test("markUnstarredExcept 将本地多出的 repo 设为 is_starred=0")
     func markUnstarred() async throws {
         let (repo, db) = try makeRepo()

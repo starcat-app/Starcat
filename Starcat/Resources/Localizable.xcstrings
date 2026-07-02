@@ -13395,6 +13395,40 @@
         }
       }
     },
+    "library.action.added" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added to Knowledge Base"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加入知识库"
+          }
+        }
+      }
+    },
+    "library.action.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knowledge Base update failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库状态更新失败"
+          }
+        }
+      }
+    },
     "library.action.remove" : {
       "localizations" : {
         "en" : {
@@ -13407,6 +13441,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "移出知识库"
+          }
+        }
+      }
+    },
+    "library.action.removed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed from Knowledge Base"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已移出知识库"
+          }
+        }
+      }
+    },
+    "library.removeUsing.confirmAction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove and mark as read"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移出并改为已读"
+          }
+        }
+      }
+    },
+    "library.removeUsing.confirmMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This repo is marked as Using. Removing it from the Knowledge Base will change its status to Read."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个仓库当前是“正在使用”。移出知识库后会同时改为“已读”。"
+          }
+        }
+      }
+    },
+    "library.removeUsing.confirmTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Knowledge Base?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移出知识库？"
           }
         }
       }

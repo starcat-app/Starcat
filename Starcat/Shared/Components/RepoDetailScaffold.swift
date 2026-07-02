@@ -176,12 +176,14 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 推荐列表 popover 展示状态。只有 `recommendationVM.items` 非空时才允许打开。
     @State private var showsRecommendations = false
 
-    /// UI 先行的知识库二态缓存。
+    /// 当前 repo 的真实知识库状态。
     ///
-    /// 完整数据层落地前，❤️ 只表达当前运行期内的入库反馈；这里按 repo.id 记状态，
-    /// 避免用户在同一窗口切换详情时丢掉刚刚点击的视觉结果。后续接入
-    /// `repo_notes.library_state` 后，这个本地字典应替换为 repository 派生状态。
-    @State private var librarySavedRepoIDs: Set<Int64> = []
+    /// 状态从 `repo_notes.library_state` 读取；点击成功写库后才更新，避免把 ❤️ 做成
+    /// 乐观 UI。Scaffold 会被详情浮窗复用，不能只依赖 HomeViewModel 当前列表页缓存。
+    @State private var libraryState: LibraryState = .outsideLibrary
+    @State private var isLibraryOperationInFlight = false
+    @State private var isConfirmingUsingLibraryRemoval = false
+    @State private var libraryToast: String?
 
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
     @State private var proPaywallContext: ProPaywallContext?
@@ -201,6 +203,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 顶部面板折叠/展开动画。轻阻尼 spring，让 README WebView 让位时跟手。
     private var metadataPanelAnimation: Animation {
         .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
+    }
+
+    private var libraryToastIcon: String {
+        libraryToast == "library.action.failed" ? "exclamationmark.triangle.fill" : "heart.fill"
     }
 
     init(
@@ -274,15 +280,34 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 service: dependencies.recommendationContextService
             )
         }
+        .task(id: repo.id) {
+            await loadLibraryState(for: repo)
+        }
         .sheet(item: $proPaywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
+        .confirmationDialog(
+            "library.removeUsing.confirmTitle",
+            isPresented: $isConfirmingUsingLibraryRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("library.removeUsing.confirmAction", role: .destructive) {
+                Task {
+                    await setLibraryState(.outsideLibrary, downgradeUsingStatus: true)
+                }
+            }
+            Button("general.cancel", role: .cancel) {}
+        } message: {
+            Text("library.removeUsing.confirmMessage")
+        }
+        .toast(message: $libraryToast, icon: libraryToastIcon)
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
                 readmeScrollOverflow = nil
             }
             showsRecommendations = false
+            libraryToast = nil
         }
         .onChange(of: metadataPanelHeight) { _, newHeight in
             guard metadataPanelCollapseProgress > 0 else { return }
@@ -525,8 +550,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     )
                 }
             }
-            LibraryToggleButton(isSaved: isRepoSavedToLibrary(repo)) {
-                toggleLibrarySaved(repo)
+            LibraryToggleButton(
+                isSaved: isRepoSavedToLibrary(repo),
+                isWorking: isLibraryOperationInFlight
+            ) {
+                Task {
+                    await handleLibraryToggleTapped()
+                }
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
@@ -535,14 +565,76 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     }
 
     private func isRepoSavedToLibrary(_ repo: Repo) -> Bool {
-        librarySavedRepoIDs.contains(repo.id)
+        libraryState == .inLibrary
     }
 
-    private func toggleLibrarySaved(_ repo: Repo) {
-        if librarySavedRepoIDs.contains(repo.id) {
-            librarySavedRepoIDs.remove(repo.id)
+    private func loadLibraryState(for repo: Repo) async {
+        guard repo.id > 0 else {
+            libraryState = .outsideLibrary
+            return
+        }
+        libraryState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? .outsideLibrary
+        homeViewModel.applyLibraryStateChange(repoId: repo.id, state: libraryState)
+    }
+
+    private func handleLibraryToggleTapped() async {
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        guard !isLibraryOperationInFlight else { return }
+        guard repo.id > 0 else {
+            libraryToast = "library.action.failed"
+            return
+        }
+
+        isLibraryOperationInFlight = true
+        defer { isLibraryOperationInFlight = false }
+
+        let currentState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? libraryState
+        if currentState == .inLibrary {
+            let status = (try? await dependencies.repoNoteRepository.find(repoId: repo.id))
+                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repo.id)
+            guard status != .using else {
+                libraryState = currentState
+                isConfirmingUsingLibraryRemoval = true
+                return
+            }
+            await setLibraryState(.outsideLibrary, downgradeUsingStatus: false)
         } else {
-            librarySavedRepoIDs.insert(repo.id)
+            await setLibraryState(.inLibrary, downgradeUsingStatus: false)
+        }
+    }
+
+    private func setLibraryState(_ targetState: LibraryState, downgradeUsingStatus: Bool) async {
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        guard repo.id > 0 else {
+            libraryToast = "library.action.failed"
+            return
+        }
+
+        isLibraryOperationInFlight = true
+        defer { isLibraryOperationInFlight = false }
+
+        do {
+            if targetState == .inLibrary {
+                _ = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(repo: repo, syncedAt: Date())
+            }
+            try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: targetState)
+            if downgradeUsingStatus {
+                try await dependencies.repoNoteRepository.updateStatus(repoId: repo.id, status: .read)
+            }
+            libraryState = targetState
+            homeViewModel.applyLibraryStateChange(repoId: repo.id, state: targetState)
+            await homeViewModel.refreshSidebar()
+            await homeViewModel.reloadItems(forceRefresh: true)
+            libraryToast = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
+        } catch {
+            AppLog.database.error("Toggle library state failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            libraryToast = "library.action.failed"
         }
     }
 
