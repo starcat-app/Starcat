@@ -91,6 +91,9 @@ struct RepoNotesSection: View {
     /// 切换 repo / view 销毁时取消，避免对前一个 repo 触发。
     @State private var refreshIndexTask: Task<Void, Never>? = nil
 
+    /// 状态按钮的轻量反馈。`.using` 会自动入库，成功后用 toast 明示这个副作用。
+    @State private var statusToast: String?
+
     enum SaveState { case idle, saving, saved }
 
     var body: some View {
@@ -103,6 +106,7 @@ struct RepoNotesSection: View {
         // 视图底部紧贴下一个组件（README 区顶部 divider）,视觉上"输入框边线与下方分隔线重合"。
         // 这里加 6pt 底部 padding 与父容器 spacing 协同（6 + 父 spacing 12 = 18pt 间距）。
         .padding(.bottom, 6)
+        .toast(message: $statusToast, icon: "heart.fill")
         .task(id: repo.id) {
             await onRepoChange(to: repo.id)
         }
@@ -190,7 +194,11 @@ struct RepoNotesSection: View {
                 StatusBadge(
                     status: vm.status ?? .unread,
                     onPrimaryTap: {
-                        Task { await vm.setStatus(repoId: repo.id, status: .using) }
+                        Task {
+                            if await vm.setStatus(repoId: repo.id, status: .using) {
+                                statusToast = "library.action.added"
+                            }
+                        }
                     },
                     onCancelUsing: {
                         Task { await vm.setStatus(repoId: repo.id, status: .read) }
@@ -457,13 +465,16 @@ final class RepoNotesSectionViewModel {
     ///
     /// 落库 + 重新加载 `note` 后 post `.repoStatusDidChange` 通知，
     /// 让 `HomeViewModel` 的主列表 row 角标即时刷新（v2，2026-06-12）。
-    func setStatus(repoId: Int64, status: RepoStatus) async {
+    @discardableResult
+    func setStatus(repoId: Int64, status: RepoStatus) async -> Bool {
         do {
             try await repoNoteRepository.updateStatus(repoId: repoId, status: status)
             await loadFor(repoId: repoId)
             postStatusDidChange(repoId: repoId)
+            return true
         } catch {
             errorMessage = "repo.notes.saveStatusFailed"
+            return false
         }
     }
 
