@@ -1,93 +1,71 @@
 # Starcat Changelog
 
-> All notable changes to Starcat. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-> Starcat follows [Semantic Versioning](https://semver.org/).
+All notable changes to Starcat are summarized here for release notes.
 
----
+## 1.1.0
 
-## v1.0.0
+### New
 
-### Account & Sync
+- Added similar repository recommendations, with saved results, clearer recommendation cards, starred-repo indicators, and the option to open recommended repositories in a separate Starcat window.
+- Added more GitHub sign-in choices, including browser-based sign-in, token sign-in, a clearer login chooser, and a visible authorization countdown.
+- Added repository code intelligence as a Pro feature, giving each repository its own analysis workspace, cached results, and a dedicated settings entry.
+- Added an in-detail AI assistant entry, README AI summaries, summary caching, and smoother summary generation from both Starcat and browser-based entry points.
+- Added a Browser Plugin workflow for GitHub pages, including local pairing, repository context, notes, tags, health data, Wiki context, recommendations, and Safari WebExtension support.
+- Added a getting started checklist to guide first-time setup and key actions.
+- Added Explore and discovery surfaces for trending, discovery, GitHub search, and ranked repository lists.
+- Added README background fetching and health score prefetching so repository details can feel ready sooner.
+- Added health score sorting, improved health colors, and OpenSSF Scorecard warmup for easier repository evaluation.
+- Added menu bar and macOS menu controls for quicker access to common actions.
+- Added service status badges, service health checks, and local operations tools for easier setup and troubleshooting.
+- Added interface size controls, improved release timeline paging, and release subscription counts in the sidebar.
 
-- **GitHub OAuth Login** — Device Flow authentication, token stored in Apple Keychain (Secure Enclave encryption), `read:user` + `public_repo` scopes.
-- **Full + Incremental Stars Sync** — Paginated fetch with progress callback; incremental sync skips unchanged pages via `starred_at` cutoff; ETag cache reduces redundant requests.
-- **Rate Limit Management** — Parses `X-RateLimit-*` headers, proactive backoff on limit with countdown UI.
+### Improved
 
-### Main Interface (macOS Three-Column Layout)
+- Improved recommendation UI placement, card layout, caching behavior, and Pro gating.
+- Improved README rendering, including GitHub image handling, system-style scrollbars, and clearer loading states.
+- Improved global search with a shortcut, history, better focus behavior, and pagination for GitHub results.
+- Improved GitHub Stars List handling, sidebar counts, language icons, and empty states.
+- Improved Activity and Weekly browsing with richer filters, faster counts, and clearer detail loading.
+- Improved sharing cards with new layouts, color options, better profile details, and safer Pro checks.
+- Improved Settings copy, storage actions, service configuration, and diagnostic log feedback.
+- Improved dark mode support across AI, health, search, sharing, and plugin-related screens.
+- Improved release readiness materials, open-source credits, distribution planning, and in-app release notes loading.
+- Improved internal diagnostics, telemetry safety, and developer-only controls without exposing unfinished features as product features.
 
-- **NavigationSplitView** — Sidebar + repo list + detail panes, window frame persistence.
-- **Sidebar** — User card (avatar / username / stats / profile entry), collapsible Tags & Languages groups with counts.
-- **Contribution Graph + Snake Animation** — GitHub-style 53-week heatmap, 7 selectable snake game modes.
-- **User Share Cards** — 5 themes (minimal B&W / thermal orange / GitHub green / white ID card / dark ID card), export as hi-res PNG or share to X, dynamic Metal flow background.
+### Fixed
 
-### Repository List
+- Fixed cases where closing the main window could prevent Dock or menu bar reopening from restoring Starcat correctly.
+- Fixed cursor behavior when overlays sit above README content or other interactive views.
+- Fixed AI summary generation for repositories whose GitHub names differ only by letter case.
+- Fixed browser plugin actions so unavailable or Pro-only actions are handled more clearly.
+- Fixed notes and tags changed from external entry points so Starcat can refresh the visible content automatically.
+- Fixed recommended repository windows that could crash or leave README content stuck loading.
+- Fixed multiple CodebaseMemory launch, storage, cache, and repository-switching issues.
+- Fixed README images in subdirectories and GitHub raw image paths.
+- Fixed global search focus timing and several search result interaction details.
+- Fixed storage reset completion, unsigned-in storage scrolling, and several settings layout edge cases.
+- Fixed language aggregation sorting when language data is missing.
+- Fixed a release-build issue related to debug-only menu controls.
 
-- **All Repos / Untagged / Languages / Tags** — Multi-dimension browsing; list caching + skeleton screens to avoid blank states on category switch.
-- **Compact / Card Density** — Two density modes, persisted in Settings.
-- **8 Sort Options** — By name / stars / last updated, etc.
-- **FTS5 Full-Text Search** — Indexes repo name / description / owner / notes, BM25 ranking, CJK trigram tokenizer.
-- **Structured Filtering** — Combine language / tag / status / archived / fork filters, save complex query presets.
+## 1.0.0
 
-### Repository Detail
+Initial Starcat release.
 
-- **Metadata Card** — Name / description / language / stars / forks / created / updated / topics / license.
-- **README WebView Rendering** — WKWebView with local cache + ETag + SWR strategy, no repeated requests on 404.
-- **GitHub Shortcuts** — Issues / Pull Requests / Releases / Homepage links open in default browser.
-- **HTTPS / SSH Clone URL Copy** — One-click clipboard copy + toast feedback.
-- **Unstar** — Detail page action + confirmation alert + GitHub API sync.
+### Highlights
 
-### Organization
-
-- **Tag CRUD** — Create / edit / delete / merge tags, 12 preset colors (Apple HIG) + 30 SF Symbol icons + custom ColorPicker.
-- **Batch Tagging** — Multi-select mode + floating bottom action bar.
-- **Private Notes** — Per-repo Markdown notes, 800ms debounced auto-save, save status indicator.
-- **Status Management** — Unread / Reading / Using / Archived, SF Symbol picker with instant persistence.
-
-### Data Management
-
-- **Local SQLite Cache** — GRDB 7 + DatabasePool, 10 tables + FTS5 + 4 triggers.
-- **Cache Cleanup** — README + images (Kingfisher) + diagnostic logs, one-click from Settings.
-- **Starred Export** — Single-file HTML / Markdown export; HTML version includes search / sort / filter / light-dark theme toggle / AI summary.
-
-### AI Features (Pro / BYOK)
-
-- **AI Repo Summaries** — Auto-analyze README to generate structured summaries (what it does / tech stack / use cases), cached per repo, prompt to regenerate when source changes.
-- **AI Tag Suggestions** — Recommends 3–8 tags with confidence scores, 14 preset category taxonomies, synonymous tag detection.
-- **AI Chat** — Repository-level contextual chat, multi-turn memory, code + docs linked.
-- **BYOK Multi-Model** — Self-hosted proxy / Gemini / DeepSeek / OpenAI-compatible / Ollama local models. API keys stored only in local Keychain.
-- **Hybrid Semantic Search** — BM25 keyword + Embedding semantic search + RRF fusion ranking.
-- **AI Settings Panel** — Multi-model switching, fine-grained quota control.
-
-### Trending & Discovery
-
-- **GitHub Trending** — Daily / weekly trending repos, 24h TTL cache.
-- **Weekly 3-Source Aggregation** — Ruan Yifeng Weekly / Zread  Hacknew aggregated via backend services, categorized in client, source articles rendered in WebView.
-- **Zread Trending** — zread.com weekly trending data source.
-- **Backend Services** — 4 Go services (trending / weekly / sharing / wiki), deployed on Fly.io, Bearer Token auth.
-
-### Release Tracking
-
-- **Release Subscription** — Subscribe to repos, push notifications on new releases, unified timeline with read/unread state.
-- **Asset Filtering & Download** — Smart filtering by platform / file type, one-click asset download.
-- **OpenSSF Scorecard** — Integrated security scoring, radar chart visualization across multiple dimensions, cooldown-based smart refresh.
-
-### Settings & System
-
-- **Cmd+, Settings Panel** — General / AI Service / Storage / About tabs.
-- **About Window** — Cmd+I native About Panel, open-source credits list.
-- **Window Management** — Default 1800×900, close / minimize / fullscreen, frame persistence.
-- **macOS Native** — Liquid Glass design language, Apple App Sandbox, Hardened Runtime.
-
-### Internationalization
-
-- **English & Chinese** — String Catalog (`Localizable.xcstrings`) for all localized strings, supports en + zh-Hans.
-
-### Internal Tooling
-
-- **CodeFlow** — Built-in code graph, dependency visualization, branch-level code analysis.
-- **Secrets.xcconfig.template** — Automated script to inject multi-service API keys from `.env`.
-- **Makefile** — `setup-production-api-keys` / `sync-fly-secrets` one-command workflows.
-
----
+- Manage GitHub stars in a native macOS three-column app.
+- Sign in with GitHub and sync starred repositories with progress, refresh, and rate-limit handling.
+- Browse repositories by all stars, tags, languages, smart collections, status, archived state, forks, and search.
+- Read repository details with metadata, README rendering, GitHub shortcuts, clone links, and unstar actions.
+- Organize repositories with tags, batch tagging, private notes, and reading or usage status.
+- Search locally across repository names, owners, descriptions, notes, and related metadata.
+- Explore GitHub Trending, weekly sources, recommendations, and repository activity.
+- Track releases, subscribe to repositories, review assets, and mark updates as read.
+- Use AI features with your own provider settings, including repository summaries, tag suggestions, chat, semantic search, README translation, and sharing support.
+- Review repository health signals, OpenSSF Scorecard information, Wiki context, and related insights.
+- Create and export share cards and repository collections for external sharing.
+- Manage app settings, storage, diagnostics, open-source credits, themes, language, and interface preferences.
+- Use English and Simplified Chinese throughout the app.
+- Run as a native macOS app with sandboxing, hardened runtime, window management, and App Store readiness work in place.
 
 [1.0.0]: https://github.com/dong4j/starcat/releases/tag/1.0.0

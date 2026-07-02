@@ -506,13 +506,16 @@ private final class ReleaseNotesWindowController: NSWindowController, NSWindowDe
 
 /// Release Notes 的 SwiftUI 内容。
 ///
-/// 内容来自 App bundle 内的 `CHANGELOG.md`。根目录的 `CHANGELOG.md` 是发布日志
-/// 单一数据源，`project.yml` 的构建脚本负责在 codesign 前把它拷进 bundle。
+/// 内容来自 App bundle 内的更新日志。`project.yml` 的构建脚本负责在 codesign 前
+/// 同步拷贝英文 `CHANGELOG.md` 与中文 `CHANGELOG-ZH.md`。
 private struct ReleaseNotesView: View {
     @State private var expandedVersionIDs: Set<String> = []
+    @State private var localeStore = LocaleStore.shared
 
     var body: some View {
-        let document = ChangelogParser.parse(ReleaseNotesLoader.loadBundledChangelog())
+        let document = ChangelogParser.parse(
+            ReleaseNotesLoader.loadBundledChangelog(for: localeStore.selection)
+        )
 
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
@@ -762,12 +765,44 @@ private enum ChangelogParser {
 /// 这里保持同步读取：文件体积很小，窗口打开时读一次即可；失败时返回短 Markdown
 /// 兜底，避免 Help 菜单能打开窗口但内容区域空白。
 private enum ReleaseNotesLoader {
-    static func loadBundledChangelog() -> String {
-        guard let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
+    static func loadBundledChangelog(for appLocale: AppLocale) -> String {
+        for resourceName in preferredResourceNames(for: appLocale) {
+            if let markdown = loadMarkdown(resourceName: resourceName) {
+                return markdown
+            }
+        }
+        return fallbackMarkdown
+    }
+
+    /// `LocaleStore` 的 `.system` 代表跟随系统，因此要按系统语言列表决定中文/英文文件。
+    /// 中文文件缺失时总是回退英文，避免中文 bundle 资源漏拷导致发布说明空白。
+    private static func preferredResourceNames(for appLocale: AppLocale) -> [String] {
+        switch appLocale {
+        case .simplifiedChinese:
+            return ["CHANGELOG-ZH", "CHANGELOG"]
+        case .english:
+            return ["CHANGELOG"]
+        case .system:
+            if systemPrefersChinese {
+                return ["CHANGELOG-ZH", "CHANGELOG"]
+            }
+            return ["CHANGELOG"]
+        }
+    }
+
+    private static var systemPrefersChinese: Bool {
+        let identifier = Bundle.main.preferredLocalizations.first
+            ?? Locale.preferredLanguages.first
+            ?? Locale.current.identifier
+        return Locale.Language(identifier: identifier).languageCode?.identifier == "zh"
+    }
+
+    private static func loadMarkdown(resourceName: String) -> String? {
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "md"),
               let markdown = try? String(contentsOf: url, encoding: .utf8),
               markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         else {
-            return fallbackMarkdown
+            return nil
         }
         return markdown
     }
