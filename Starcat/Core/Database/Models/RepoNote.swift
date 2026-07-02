@@ -168,6 +168,17 @@ extension Notification.Name {
     /// 链不直达，单纯为这个轻量信号挂 environment binding 过度工程。
     static let repoStatusDidChange = Notification.Name("StarcatRepoStatusDidChange")
 
+    /// 仓库知识库状态变更事件。
+    ///
+    /// **发射时机**：`RepoNoteRepository.updateLibraryState(...)` 写入完成后，以及
+    /// `updateStatus(..., .using)` 自动入库后。即便 SQL 本身幂等 no-op，重复通知也允许：
+    /// 订阅方按 repoId 覆盖本地 map，成本很低，能保证远端列表角标不需要全量 reload。
+    ///
+    /// **userInfo**：
+    /// - `"repoId": Int64`
+    /// - `"libraryState": String` —— `LibraryState.rawValue`
+    static let repoLibraryStateDidChange = Notification.Name("StarcatRepoLibraryStateDidChange")
+
     /// 仓库私有笔记正文变更事件。
     ///
     /// **发射时机**：`RepoNoteRepository.updateContent(...)` / `upsert(...)` 完成落库后。

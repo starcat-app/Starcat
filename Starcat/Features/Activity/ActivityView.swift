@@ -62,6 +62,7 @@ struct ActivityView: View {
     @State private var weeklyTotalPrefetchTask: Task<Void, Never>?
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
+    @State private var libraryStateMap: [Int64: LibraryState] = [:]
 
     init(
         selectedCategory: Binding<ActivityCategory>,
@@ -96,9 +97,13 @@ struct ActivityView: View {
                 return
             }
             let model = ensureViewModel()
+            await reloadLibraryStateMap()
             await model.ensureLoaded(category: selectedCategory)
             applySelectionPolicy(from: model.items)
             reportItemCount(model)
+        }
+        .task {
+            await observeLibraryStateChanges()
         }
         .onChange(of: selectedCategory) { _, newCategory in
             guard newCategory != .weekly else {
@@ -338,6 +343,7 @@ struct ActivityView: View {
                 card: repo.asCardData(
                     badge: .activityKind(item.category),
                     inlineMetadata: inlineMetadata(for: item),
+                    isInLibrary: isInLibrary(repo.id),
                     openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
                 ),
                 isSelected: isSelected
@@ -420,6 +426,24 @@ struct ActivityView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private func isInLibrary(_ repoId: Int64) -> Bool {
+        libraryStateMap[repoId] == .inLibrary
+    }
+
+    private func reloadLibraryStateMap() async {
+        libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func observeLibraryStateChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { continue }
+            libraryStateMap[repoId] = LibraryState.parse(raw)
+        }
     }
 
     @Environment(AuthSession.self) private var authSession

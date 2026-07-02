@@ -51,6 +51,7 @@ struct WeeklyContentView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var viewModel: WeeklyContentViewModel?
+    @State private var libraryStateMap: [Int64: LibraryState] = [:]
 
     // R-01 §3.1.4 Step 7.3：refreshAngle / reduceMotion 已无外层用途，统一由 SyncIconButton 内部处理。
     // WeeklyProjectRow 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
@@ -66,8 +67,12 @@ struct WeeklyContentView: View {
         }
         .task {
             let model = ensureViewModel()
+            await reloadLibraryStateMap()
             await model.loadInitialIfNeeded()
             applyWeeklyDetailSelectionPolicy(from: model.items)
+        }
+        .task {
+            await observeLibraryStateChanges()
         }
     }
 
@@ -292,6 +297,7 @@ struct WeeklyContentView: View {
                     UnifiedRepoRow(
                         card: project.asCardData(
                             registry: registry,
+                            isInLibrary: isInLibrary(project.ghRepoId),
                             openSSFScore: dependencies.openSSFScoreStore.badge(for: project.ghRepoId)
                         ),
                         isSelected: multiStore.isActive
@@ -397,6 +403,24 @@ struct WeeklyContentView: View {
     private func clearWeeklyDetailSelectionIfChanging(_ isChanging: Bool) {
         guard isChanging else { return }
         clearWeeklyDetailSelection()
+    }
+
+    private func isInLibrary(_ repoId: Int64) -> Bool {
+        libraryStateMap[repoId] == .inLibrary
+    }
+
+    private func reloadLibraryStateMap() async {
+        libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func observeLibraryStateChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { continue }
+            libraryStateMap[repoId] = LibraryState.parse(raw)
+        }
     }
 
     private func applyWeeklyDetailSelectionPolicy(from items: [WeeklyFeedItem]) {

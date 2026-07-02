@@ -106,6 +106,7 @@ private struct ExploreDiscoveryListView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var libraryStateMap: [Int64: LibraryState] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -119,6 +120,7 @@ private struct ExploreDiscoveryListView: View {
         .task(id: queryIdentity) {
             selectedRepoID = nil
             selectedRepo = nil
+            await reloadLibraryStateMap()
             viewModel.sortOption = currentSort
             await viewModel.reload(
                 repository: dependencies.discoveryRepository,
@@ -130,6 +132,9 @@ private struct ExploreDiscoveryListView: View {
             )
             applySelectionPolicy()
             reportRepoCount()
+        }
+        .task {
+            await observeLibraryStateChanges()
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
             applySelectionPolicy()
@@ -255,6 +260,7 @@ private struct ExploreDiscoveryListView: View {
                     UnifiedRepoRow(
                         card: repo.asCardData(
                             registry: dependencies.starredRegistry,
+                            isInLibrary: isInLibrary(repo.repoID),
                             openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.repoID)
                         ),
                         isSelected: selectedRepoID == repo.repoID,
@@ -304,6 +310,24 @@ private struct ExploreDiscoveryListView: View {
 
     private var indexedRepos: [IndexedDiscoveryRepo] {
         viewModel.repos.enumerated().map { IndexedDiscoveryRepo(index: $0.offset, repo: $0.element) }
+    }
+
+    private func isInLibrary(_ repoId: Int64) -> Bool {
+        libraryStateMap[repoId] == .inLibrary
+    }
+
+    private func reloadLibraryStateMap() async {
+        libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func observeLibraryStateChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { continue }
+            libraryStateMap[repoId] = LibraryState.parse(raw)
+        }
     }
 
     private var queryIdentity: String {

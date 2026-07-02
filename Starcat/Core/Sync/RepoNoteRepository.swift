@@ -258,6 +258,9 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt, nowISO]
             )
         }
+        if status == .using {
+            postLibraryStateDidChange(repoId: repoId, state: .inLibrary)
+        }
     }
 
     func updateLibraryState(repoId: Int64, state: LibraryState) async throws {
@@ -292,6 +295,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 )
             }
         }
+        postLibraryStateDidChange(repoId: repoId, state: state)
     }
 
     /// 自动状态机：unread → read，单条 SQL 实现幂等升级。
@@ -333,6 +337,17 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             name: .repoNoteContentDidChange,
             object: nil,
             userInfo: userInfo
+        )
+    }
+
+    private func postLibraryStateDidChange(repoId: Int64, state: LibraryState) {
+        NotificationCenter.default.post(
+            name: .repoLibraryStateDidChange,
+            object: nil,
+            userInfo: [
+                "repoId": repoId,
+                "libraryState": state.rawValue
+            ]
         )
     }
 }

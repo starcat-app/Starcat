@@ -117,18 +117,18 @@
 
 - [x] `RepoCardViewData` 增加知识库状态字段。
 - [x] `Repo.asCardData(...)` 支持注入 library state。
-- [ ] `TrendingRepo.asCardData(...)` 支持从 library registry 回填是否入库。
-- [ ] `DiscoveryRepoDTO.asCardData(...)` / 探索列表适配支持回填是否入库。
-- [ ] `WeeklyFeedItem.asCardData(...)` 支持从 library registry 回填是否入库。
+- [x] `TrendingRepo.asCardData(...)` 支持从 library registry 回填是否入库。
+- [x] `DiscoveryRepoDTO.asCardData(...)` / 探索列表适配支持回填是否入库。
+- [x] `WeeklyFeedItem.asCardData(...)` 支持从 library registry 回填是否入库。
 - [x] `UnifiedRepoRow` 在 repo logo 左上角展示已入库 ❤️。
 - [x] `UnifiedRepoRow` 保留 Activity kind icon 右下角展示,不与 ❤️ 冲突。
 - [x] Manage repo 列表展示已入库 ❤️。
-- [ ] Trending repo 列表展示已入库 ❤️。
-- [ ] Discovery repo 列表展示已入库 ❤️。
-- [ ] Weekly repo 列表展示已入库 ❤️。
-- [ ] Activity repo-backed 卡片展示已入库 ❤️。
+- [x] Trending repo 列表展示已入库 ❤️。
+- [x] Discovery repo 列表展示已入库 ❤️。
+- [x] Weekly repo 列表展示已入库 ❤️。
+- [x] Activity repo-backed 卡片展示已入库 ❤️。
 - [x] 列表 ❤️ 只读,点击 row 仍进入详情页或选择 row,不在列表内执行入库 toggle。
-- [ ] 已 star ✓ 与已入库 ❤️ 可以同时展示,语义和 tooltip 不混淆。
+- [x] 已 star ✓ 与已入库 ❤️ 可以同时展示,语义和 tooltip 不混淆。
 - [x] 详情页 ❤️ 更新成功后列表 ❤️ 状态即时刷新。
 
 ## 7. PR-5: AI 与 MCP 范围改造
@@ -273,7 +273,7 @@
 - [ ] Manage / Trending / Discovery / Weekly / Activity 的已入库 repo 在 repo logo 左上角显示 ❤️。
 - [ ] 未入库 repo 不显示 ❤️,不显示空心心。
 - [ ] repo logo 左上角 ❤️ 不可点击,点击 row 仍执行原有选择/打开详情行为。
-- [ ] GitHub 已 star 标识与知识库 ❤️ 可同时存在,语义不混淆。
+- [x] GitHub 已 star 标识与知识库 ❤️ 可同时存在,语义不混淆。
 - [ ] Activity kind icon 仍在右下角,不与左上角 ❤️ 冲突。
 
 ### 11.4 Smart Collections / Manage
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-4 第二批落地 Trending/Discovery/Weekly/Activity 已入库角标。
 - 2026-07-02: PR-2 第三批落地知识库集合语言筛选和知识库语言统计。
 - 2026-07-02: PR-3 第三批补齐设置 using 自动入库的轻量反馈。
 - 2026-07-02: PR-4 第一批落地 Manage 列表已入库心形角标。

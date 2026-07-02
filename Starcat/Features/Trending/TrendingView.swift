@@ -44,6 +44,7 @@ struct TrendingView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
+    @State private var libraryStateMap: [Int64: LibraryState] = [:]
     @Binding private var selectedLanguage: TrendingLanguage
 
     /// 当前选中的 Trending repo ID（驱动 README 加载）。
@@ -88,6 +89,7 @@ struct TrendingView: View {
         }
         .task {
             reportRepoCount()
+            await reloadLibraryStateMap()
             viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
             if viewModel.selectedLanguage != selectedLanguage {
                 viewModel.selectedLanguage = selectedLanguage
@@ -102,6 +104,9 @@ struct TrendingView: View {
             await viewModel.reload(cachePolicy: .respectTTL)
             applyTrendingDetailSelectionPolicy()
             reportRepoCount()
+        }
+        .task {
+            await observeLibraryStateChanges()
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
@@ -150,6 +155,24 @@ struct TrendingView: View {
     private func clearTrendingDetailSelection() {
         selectedRepoID = nil
         selectedTrendingRepo = nil
+    }
+
+    private func isInLibrary(_ repoId: Int64) -> Bool {
+        libraryStateMap[repoId] == .inLibrary
+    }
+
+    private func reloadLibraryStateMap() async {
+        libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func observeLibraryStateChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { continue }
+            libraryStateMap[repoId] = LibraryState.parse(raw)
+        }
     }
 
     private func applyTrendingDetailSelectionPolicy() {
@@ -449,6 +472,7 @@ struct TrendingView: View {
                     UnifiedRepoRow(
                         card: repo.asCardData(
                             registry: dependencies.starredRegistry,
+                            isInLibrary: isInLibrary(repo.ghRepoId),
                             openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.ghRepoId)
                         ),
                         isSelected: store.isActive

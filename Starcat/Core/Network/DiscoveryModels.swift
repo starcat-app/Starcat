@@ -376,6 +376,7 @@ extension DiscoveryRepoDTO {
     @MainActor
     func asCardData(
         registry: StarredRegistry,
+        isInLibrary: Bool = false,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
         healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
@@ -393,7 +394,7 @@ extension DiscoveryRepoDTO {
             isFork: isFork,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: repoID),
-            isInLibrary: false,
+            isInLibrary: isInLibrary,
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,

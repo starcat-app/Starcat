@@ -188,6 +188,73 @@ struct RepoCardViewDataTests {
         #expect(card.readStatus == nil)
     }
 
+    @Test("远端卡片转换支持显式注入知识库状态")
+    func remoteCardDataAcceptsLibraryStateInjection() {
+        let registry = StarredRegistry()
+        let cardDTO = StarcatRepoCardDTO(
+            ghRepoId: 1001,
+            fullName: "a/lib",
+            owner: "a",
+            repo: "lib"
+        )
+
+        let dtoCard = cardDTO.asCardData(registry: registry, isInLibrary: true)
+        #expect(dtoCard.isInLibrary)
+
+        let trending = TrendingRepo(card: cardDTO, since: .daily)
+        let trendingCard = trending.asCardData(registry: registry, isInLibrary: true)
+        #expect(trendingCard.isInLibrary)
+
+        let weeklyDTO = WeeklyFeedRepoDTO(
+            card: cardDTO,
+            isAvailable: true,
+            sourceTypes: [.weekly],
+            firstEventAt: "2026-07-01T00:00:00Z",
+            latestEventAt: "2026-07-02T00:00:00Z",
+            weekly: nil,
+            zread: nil,
+            discovery: nil
+        )
+        let weekly = WeeklyFeedItem(dto: weeklyDTO)
+        let weeklyCard = weekly.asCardData(registry: registry, isInLibrary: true)
+        #expect(weeklyCard.isInLibrary)
+
+        let discovery = DiscoveryRepoDTO(
+            repoID: 1001,
+            fullName: "a/lib",
+            owner: "a",
+            name: "lib",
+            description: nil,
+            homepage: nil,
+            language: "Swift",
+            stars: 10,
+            forks: 1,
+            watchers: 10,
+            subscribers: 0,
+            openIssues: 0,
+            ownerAvatar: nil,
+            defaultBranch: nil,
+            licenseSpdx: nil,
+            topics: [],
+            platforms: [],
+            pushedAt: nil,
+            updatedAt: nil,
+            createdAt: nil,
+            isArchived: false,
+            isFork: false,
+            latestReleaseTag: nil,
+            latestReleaseAt: nil,
+            latestReleaseURL: nil,
+            releaseDownloadCount: 0,
+            rank: nil,
+            score: nil,
+            reasons: [],
+            signals: []
+        )
+        let discoveryCard = discovery.asCardData(registry: registry, isInLibrary: true)
+        #expect(discoveryCard.isInLibrary)
+    }
+
     // MARK: - Helpers
 
     private func sampleRepo(id: Int64, isStarred: Bool) -> Repo {

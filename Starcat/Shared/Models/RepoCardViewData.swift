@@ -236,6 +236,7 @@ extension StarcatRepoCardDTO {
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil,
+        isInLibrary: Bool = false,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
         healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
@@ -253,7 +254,7 @@ extension StarcatRepoCardDTO {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            isInLibrary: false,
+            isInLibrary: isInLibrary,
             badge: badge,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -284,6 +285,7 @@ extension TrendingRepo {
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil,
+        isInLibrary: Bool = false,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
         healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
@@ -302,7 +304,7 @@ extension TrendingRepo {
             isFork: false,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            isInLibrary: false,
+            isInLibrary: isInLibrary,
             badge: resolvedBadge,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -328,6 +330,7 @@ extension WeeklyFeedItem {
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil,
+        isInLibrary: Bool = false,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
         healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
@@ -345,7 +348,7 @@ extension WeeklyFeedItem {
             isFork: card.isFork,
             isPrivate: card.isPrivate,
             isStarred: registry.contains(ghRepoId: card.ghRepoId),
-            isInLibrary: false,
+            isInLibrary: isInLibrary,
             badge: badge,
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,
