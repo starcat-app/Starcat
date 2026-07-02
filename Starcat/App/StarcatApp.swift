@@ -513,15 +513,251 @@ private final class ReleaseNotesWindowController: NSWindowController, NSWindowDe
 /// 内容来自 App bundle 内的 `CHANGELOG.md`。根目录的 `CHANGELOG.md` 是发布日志
 /// 单一数据源，`project.yml` 的构建脚本负责在 codesign 前把它拷进 bundle。
 private struct ReleaseNotesView: View {
+    @State private var expandedVersionIDs: Set<String> = []
+
     var body: some View {
+        let document = ChangelogParser.parse(ReleaseNotesLoader.loadBundledChangelog())
+
         ScrollView {
-            Markdown(ReleaseNotesLoader.loadBundledChangelog())
-                .font(.body)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 26) {
+                ReleaseNotesHero()
+
+                if let latestVersion = document.latestVersion {
+                    ReleaseNotesVersionCard(
+                        version: latestVersion,
+                        isLatest: true,
+                        isExpanded: true,
+                        toggle: nil
+                    )
+                }
+
+                ForEach(document.previousVersions) { version in
+                    ReleaseNotesVersionCard(
+                        version: version,
+                        isLatest: false,
+                        isExpanded: expandedVersionIDs.contains(version.id),
+                        toggle: {
+                            toggleVersion(version.id)
+                        }
+                    )
+                }
+            }
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .textBackgroundColor).opacity(0.52))
+    }
+
+    private func toggleVersion(_ id: String) {
+        if expandedVersionIDs.contains(id) {
+            expandedVersionIDs.remove(id)
+        } else {
+            expandedVersionIDs.insert(id)
+        }
+    }
+}
+
+private struct ReleaseNotesHero: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("releaseNotes.hero.title")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+
+            Text("releaseNotes.hero.subtitle")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.bottom, 6)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .offset(y: 18)
+        }
+    }
+}
+
+private struct ReleaseNotesVersionCard: View {
+    let version: ChangelogVersion
+    let isLatest: Bool
+    let isExpanded: Bool
+    let toggle: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let toggle {
+                Button(action: toggle) {
+                    ReleaseNotesVersionTitle(
+                        title: version.title,
+                        isExpanded: isExpanded,
+                        showsDisclosureIcon: true
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+            } else {
+                ReleaseNotesVersionTitle(
+                    title: version.title,
+                    isExpanded: true,
+                    showsDisclosureIcon: false,
+                    badgeText: "releaseNotes.badge.new"
+                )
+            }
+
+            if isExpanded {
+                changelogBody
+            }
+        }
+        .padding(18)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        }
+    }
+
+    private var changelogBody: some View {
+        Markdown(version.bodyMarkdown)
+            .font(.body)
+            .textSelection(.enabled)
+            .padding(.leading, 26)
+    }
+
+    private var cardBackground: Color {
+        if isLatest {
+            return Color.accentColor.opacity(0.07)
+        }
+        return Color(nsColor: .controlBackgroundColor)
+    }
+
+    private var cardBorder: Color {
+        if isLatest {
+            return Color.accentColor.opacity(0.18)
+        }
+        return Color(nsColor: .separatorColor).opacity(0.55)
+    }
+}
+
+private struct ReleaseNotesVersionTitle: View {
+    let title: String
+    let isExpanded: Bool
+    let showsDisclosureIcon: Bool
+    var badgeText: String?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.title.weight(.bold))
+                .foregroundStyle(.primary)
+
+            if let badgeText {
+                Text(LocalizedStringKey(badgeText))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+            }
+
+            Spacer(minLength: 0)
+
+            if showsDisclosureIcon {
+                Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .animation(.easeInOut(duration: 0.16), value: isExpanded)
+            }
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 6)
+    }
+}
+
+private struct ChangelogDocument {
+    let preamble: String?
+    let versions: [ChangelogVersion]
+
+    var latestVersion: ChangelogVersion? {
+        versions.first
+    }
+
+    var previousVersions: ArraySlice<ChangelogVersion> {
+        versions.dropFirst()
+    }
+}
+
+private struct ChangelogVersion: Identifiable {
+    let id: String
+    let title: String
+    let bodyMarkdown: String
+
+    var markdown: String {
+        "## \(title)\n\n\(bodyMarkdown)"
+    }
+}
+
+private enum ChangelogParser {
+    static func parse(_ markdown: String) -> ChangelogDocument {
+        let lines = markdown.components(separatedBy: .newlines)
+        var preambleLines: [String] = []
+        var versions: [ChangelogVersion] = []
+        var currentTitle: String?
+        var currentBodyLines: [String] = []
+
+        for line in lines {
+            if let title = versionTitle(from: line) {
+                appendVersion(title: currentTitle, bodyLines: currentBodyLines, to: &versions)
+                currentTitle = title
+                currentBodyLines = []
+            } else if currentTitle == nil {
+                preambleLines.append(line)
+            } else {
+                currentBodyLines.append(line)
+            }
+        }
+        appendVersion(title: currentTitle, bodyLines: currentBodyLines, to: &versions)
+
+        let preamble = normalizedMarkdown(from: preambleLines)
+        return ChangelogDocument(
+            preamble: preamble.isEmpty ? nil : preamble,
+            versions: versions
+        )
+    }
+
+    /// 只按 Keep a Changelog 的二级标题切版本，避免把三级功能小节误判为版本。
+    private static func versionTitle(from line: String) -> String? {
+        guard line.hasPrefix("## ") else { return nil }
+        let rawTitle = String(line.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rawTitle.isEmpty == false else { return nil }
+
+        if rawTitle.hasPrefix("["),
+           let closingBracket = rawTitle.firstIndex(of: "]") {
+            let version = rawTitle[rawTitle.index(after: rawTitle.startIndex)..<closingBracket]
+            let suffix = rawTitle[rawTitle.index(after: closingBracket)...]
+            return "\(version)\(suffix)".trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return rawTitle
+    }
+
+    private static func appendVersion(
+        title: String?,
+        bodyLines: [String],
+        to versions: inout [ChangelogVersion]
+    ) {
+        guard let title else { return }
+        versions.append(
+            ChangelogVersion(
+                id: title,
+                title: title,
+                bodyMarkdown: normalizedMarkdown(from: bodyLines)
+            )
+        )
+    }
+
+    private static func normalizedMarkdown(from lines: [String]) -> String {
+        lines
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
