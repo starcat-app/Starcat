@@ -17,22 +17,6 @@ import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredC
 import MarkdownUI
 import TipKit
 
-/// 顶部菜单读取当前窗口选中仓库的桥。
-///
-/// macOS menu command 不在 `RepoListView` 的 view tree 内，不能直接访问列表状态；
-/// 用 `FocusedValue` 把当前窗口的 `ToolbarRepoSelection` 暴露给菜单，是 SwiftUI
-/// 命令系统读取“当前文档 / 当前选择”的标准路径。
-private struct StarcatFocusedRepoSelectionKey: FocusedValueKey {
-    typealias Value = ToolbarRepoSelection
-}
-
-extension FocusedValues {
-    var starcatSelectedRepo: ToolbarRepoSelection? {
-        get { self[StarcatFocusedRepoSelectionKey.self] }
-        set { self[StarcatFocusedRepoSelectionKey.self] = newValue }
-    }
-}
-
 extension Notification.Name {
     /// 顶部菜单触发全局搜索。HomeView 持有 SearchCenterViewModel，因此命令层只发意图。
     static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
@@ -388,8 +372,6 @@ private extension View {
 private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
 
-    @FocusedValue(\.starcatSelectedRepo) private var selectedRepo
-
     var body: some Commands {
         CommandMenu("commands.actions.menu") {
             Button("commands.actions.syncStars") {
@@ -405,11 +387,6 @@ private struct StarcatAppCommands: Commands {
             Button("diagnostics.export.button") {
                 exportDiagnostics()
             }
-
-            Button("commands.actions.openCurrentRepoOnGitHub") {
-                openSelectedRepoOnGitHub()
-            }
-            .disabled(selectedRepo?.htmlUrl == nil)
         }
 
         CommandGroup(replacing: .help) {
@@ -450,12 +427,6 @@ private struct StarcatAppCommands: Commands {
         Task {
             _ = await DiagnosticBundleExporter.exportFromPanel(settings: dependencies?.settings ?? AppSettings.shared)
         }
-    }
-
-    @MainActor
-    private func openSelectedRepoOnGitHub() {
-        guard let url = selectedRepo?.htmlUrl else { return }
-        NSWorkspace.shared.open(url)
     }
 
     @MainActor

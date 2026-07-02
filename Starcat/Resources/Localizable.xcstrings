@@ -5798,23 +5798,6 @@
         }
       }
     },
-    "commands.actions.openCurrentRepoOnGitHub" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Current Repo on GitHub"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 GitHub 打开当前仓库"
-          }
-        }
-      }
-    },
     "commands.actions.openGlobalSearch" : {
       "extractionState" : "manual",
       "localizations" : {
