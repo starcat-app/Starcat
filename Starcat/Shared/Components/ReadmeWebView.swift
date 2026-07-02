@@ -97,6 +97,7 @@ struct ReadmeWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground") // 透明背景，跟随系统主题底色
+        configureScrollbar(for: webView)
 
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
@@ -114,6 +115,19 @@ struct ReadmeWebView: NSViewRepresentable {
     }
 
     // MARK: - Private
+
+    /// 让 README 的 WebKit 滚动条与详情页其它滚动区域保持一致：只在滚动时以 overlay 方式出现。
+    ///
+    /// `WKWebView` 没有公开 macOS scrollView 属性，只能在 view hierarchy 建好后查找内部
+    /// `NSScrollView`。这里不依赖具体私有 class 名，只配置第一个找到的标准 AppKit scroll view，
+    /// 避免把 WebKit 内部实现细节泄漏到业务层。
+    private func configureScrollbar(for webView: WKWebView) {
+        DispatchQueue.main.async {
+            guard let scrollView = webView.firstDescendant(ofType: NSScrollView.self) else { return }
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+        }
+    }
 
     /// 仅在 html 内容或主题变化时重新 loadHTML。
     ///
@@ -434,6 +448,24 @@ private enum ReadmeWebViewConstants {
     static let scrollMessageName = "readmeScroll"
 }
 
+private extension NSView {
+    /// 在 WebKit 这类内部视图层级里查找标准 AppKit 子视图。
+    ///
+    /// 只按公开类型递归，不匹配私有 class name；这样即使 WebKit 内部层级微调，
+    /// 找不到时也只是保持系统默认滚动条，不会影响 README 正文渲染。
+    func firstDescendant<ViewType: NSView>(ofType type: ViewType.Type) -> ViewType? {
+        for subview in subviews {
+            if let match = subview as? ViewType {
+                return match
+            }
+            if let match = subview.firstDescendant(ofType: type) {
+                return match
+            }
+        }
+        return nil
+    }
+}
+
 /// 缓存键：HTML 片段 + 主题，用于 updateNSView 时判断是否需要重新 loadHTMLString。
 struct ReadmeKey: Equatable {
     let fragment: String
@@ -645,16 +677,6 @@ enum ReadmeCSS {
         margin-bottom: 16px;
         border-left: 4px solid var(--border);
         background: var(--code-bg);
-        border-radius: 4px;
-    }
-    /*
-     * 滚动条美化（webkit only）。
-     * WKWebView 不走 SwiftUI / NSScrollView 的滚动条样式；这里用 8px 贴近 repo List
-     * 原生 overlay scroller 的视觉厚度，避免详情页 README 比中栏列表显得更粗。
-     */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-thumb {
-        background: var(--border);
         border-radius: 4px;
     }
     """
