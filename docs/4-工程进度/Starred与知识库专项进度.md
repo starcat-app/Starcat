@@ -135,12 +135,12 @@
 
 - [x] `SemanticIndexBuilder` 支持 starred / knowledge / all 三种范围。
 - [x] Home 语义搜索候选支持 starred / knowledge / all。
-- [ ] 语义搜索 UI 增加范围筛选: starred / knowledge / all。
+- [x] 语义搜索 UI 增加范围筛选: starred / knowledge / all。
 - [x] FTS 加权与当前语义搜索范围对齐。
 - [x] `StarcatMCPFacade.searchRepos` 支持范围参数。
 - [x] `StarcatMCPFacade.semanticSearch` 支持范围参数。
 - [x] `StarcatMCPFacade.resources` 支持 starred / knowledge / all recent repo。
-- [ ] 搜索 / AI / MCP 的 knowledge 范围可作为使用知识库 repo 数据的入口。
+- [x] 搜索 / AI / MCP 的 knowledge 范围可作为使用知识库 repo 数据的入口。
 - [ ] 单仓库 AI 摘要仍允许未入库 repo 显式触发。
 - [ ] 单测覆盖 starred、knowledge、all 三种候选范围。
 
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-5 第四批语义搜索 UI 增加 starred/knowledge/all 范围筛选。
 - 2026-07-02: PR-5 第三批 MCP search/semantic/resources 支持范围参数。
 - 2026-07-02: PR-5 第二批 Home 搜索候选与 FTS 按当前范围对齐。
 - 2026-07-02: PR-5 第一批 SemanticIndexBuilder 支持 starred/knowledge/all 范围。

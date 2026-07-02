@@ -29,6 +29,7 @@ struct SmartSearchField: View {
     /// 或点击清空时才提交，避免每个字符都触发 FTS5 / AI 语义搜索。
     @Binding var text: String
     @Binding var mode: SmartSearchMode
+    @Binding var semanticScope: SemanticIndexScope
 
     let isIndexing: Bool
     let onSubmitSearch: (String) -> Void
@@ -82,7 +83,7 @@ struct SmartSearchField: View {
     @FocusState private var isCollapsedIconFocused: Bool
 
     private let collapsedWidth: CGFloat = 42
-    private let expandedWidth: CGFloat = 300
+    private var expandedWidth: CGFloat { isSemantic ? 382 : 300 }
     private let height: CGFloat = 38
 
     private var isSemantic: Bool { mode == .semantic }
@@ -124,6 +125,7 @@ struct SmartSearchField: View {
         .help(isDisabled ? disabledHelpKey : (mode == .semantic ? "search.semantic.placeholder" : "search.repoPlaceholder"))
         .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.86), value: shouldExpand)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: mode)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: semanticScope)
         .onChange(of: isTextFieldFocused) { _, focused in
             // PR-2：禁用态不参与展开/折叠状态切换，避免点击造成意外展开。
             guard !isDisabled else { return }
@@ -240,6 +242,10 @@ struct SmartSearchField: View {
         HStack(spacing: 8) {
             modeMenu
 
+            if isSemantic {
+                semanticScopeMenu
+            }
+
             TextField(promptKey, text: $draftText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14, weight: .semibold))
@@ -287,6 +293,41 @@ struct SmartSearchField: View {
             )
             .appLocaleEnvironment()
         }
+    }
+
+    private var semanticScopeMenu: some View {
+        Menu {
+            ForEach(SemanticIndexScope.allCases, id: \.rawValue) { scope in
+                Button {
+                    semanticScope = scope
+                    expandAndFocusInput()
+                } label: {
+                    pickerLabel(
+                        titleKey: scope.displayNameKey,
+                        systemImage: scope.systemImage,
+                        isSelected: semanticScope == scope
+                    )
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: semanticScope.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(semanticScope.shortTitleKey)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+                    .opacity(0.72)
+            }
+            .foregroundStyle(.purple)
+            .frame(width: 74, height: 26)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+        .focusEffectDisabled()
+        .disabled(isDisabled)
+        .help("search.semantic.scope.hint")
     }
 
     private var modeMenu: some View {
@@ -576,6 +617,32 @@ private struct SmartSearchHistoryPanel: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("search.history.removeOne.help")
+        }
+    }
+}
+
+private extension SemanticIndexScope {
+    var displayNameKey: LocalizedStringKey {
+        switch self {
+        case .starred: return "search.semantic.scope.starred"
+        case .knowledge: return "search.semantic.scope.knowledge"
+        case .all: return "search.semantic.scope.all"
+        }
+    }
+
+    var shortTitleKey: LocalizedStringKey {
+        switch self {
+        case .starred: return "search.semantic.scope.starred.short"
+        case .knowledge: return "search.semantic.scope.knowledge.short"
+        case .all: return "search.semantic.scope.all.short"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .starred: return "star.fill"
+        case .knowledge: return "heart.fill"
+        case .all: return "square.grid.2x2"
         }
     }
 }

@@ -1141,6 +1141,7 @@ struct RepoListView: View {
         return SmartSearchField(
             text: $vm.searchQuery,
             mode: $vm.smartSearchMode,
+            semanticScope: $vm.semanticSearchScope,
             isIndexing: viewModel.isSemanticIndexing,
             onSubmitSearch: { query in
                 viewModel.submitSearch(query)

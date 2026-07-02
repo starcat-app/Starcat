@@ -335,6 +335,9 @@ final class HomeViewModel {
     /// Settings 仍是持久化事实源，ViewModel 只保存当前渲染会话的查询模式。
     var smartSearchMode: SmartSearchMode = .keyword
 
+    /// 语义搜索范围。关键词搜索仍跟随当前列表上下文，避免改变既有 Manage 搜索习惯。
+    var semanticSearchScope: SemanticIndexScope = .starred
+
     /// 是否正在构建 / 刷新语义索引。
     private(set) var isSemanticIndexing: Bool = false
 
@@ -767,6 +770,7 @@ final class HomeViewModel {
         shouldScrollSelectedRepoIntoView = false
         searchQuery = ""
         searchSubmissionID &+= 1
+        semanticSearchScope = .starred
 
         loadError = nil
         isRefreshing = false
@@ -1181,6 +1185,9 @@ final class HomeViewModel {
     }
 
     private func currentSemanticIndexScopeForSearch() -> SemanticIndexScope {
+        if smartSearchMode == .semantic {
+            return semanticSearchScope
+        }
         if case .smartCollection(let kind) = selection, kind == .library {
             return .knowledge
         }
