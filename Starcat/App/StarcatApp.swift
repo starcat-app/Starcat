@@ -14,6 +14,7 @@
 
 import SwiftUI
 import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
+import MarkdownUI
 import TipKit
 
 /// 顶部菜单读取当前窗口选中仓库的桥。
@@ -357,7 +358,7 @@ struct StarcatApp: App {
 /// Starcat 顶部菜单命令。
 ///
 /// 这些入口全部复用已有业务路径：同步走 `SyncManager`，搜索由 HomeView 持有的
-/// `SearchCenterViewModel` 响应通知，设置 / 外链 / 诊断导出仍走原 AppKit / 工具类。
+/// `SearchCenterViewModel` 响应通知，外链 / 诊断导出仍走原 AppKit / 工具类。
 /// 这样菜单只是 macOS 可发现性增强，不新增第二套业务状态。
 private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
@@ -508,38 +509,15 @@ private final class ReleaseNotesWindowController: NSWindowController, NSWindowDe
 }
 
 /// Release Notes 的 SwiftUI 内容。
+///
+/// 内容来自 App bundle 内的 `CHANGELOG.md`。根目录的 `CHANGELOG.md` 是发布日志
+/// 单一数据源，`project.yml` 的构建脚本负责在 codesign 前把它拷进 bundle。
 private struct ReleaseNotesView: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("releaseNotes.title")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text("releaseNotes.subtitle")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                ReleaseNotesSection(
-                    title: "releaseNotes.v1.title",
-                    items: [
-                        "releaseNotes.v1.item.native",
-                        "releaseNotes.v1.item.organize",
-                        "releaseNotes.v1.item.discovery",
-                        "releaseNotes.v1.item.ai",
-                        "releaseNotes.v1.item.companion"
-                    ]
-                )
-
-                ReleaseNotesSection(
-                    title: "releaseNotes.next.title",
-                    items: [
-                        "releaseNotes.next.item.cloud",
-                        "releaseNotes.next.item.shortcuts",
-                        "releaseNotes.next.item.releaseDigest"
-                    ]
-                )
-            }
+            Markdown(ReleaseNotesLoader.loadBundledChangelog())
+                .font(.body)
+                .textSelection(.enabled)
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -547,37 +525,26 @@ private struct ReleaseNotesView: View {
     }
 }
 
-private struct ReleaseNotesSection: View {
-    let title: LocalizedStringKey
-    let items: [LocalizedStringKey]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    Label {
-                        Text(item)
-                            .font(.callout)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Color.accentColor)
-                    }
-                }
-            }
+/// 读取随 App 打包的 CHANGELOG。
+///
+/// 这里保持同步读取：文件体积很小，窗口打开时读一次即可；失败时返回短 Markdown
+/// 兜底，避免 Help 菜单能打开窗口但内容区域空白。
+private enum ReleaseNotesLoader {
+    static func loadBundledChangelog() -> String {
+        guard let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
+              let markdown = try? String(contentsOf: url, encoding: .utf8),
+              markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else {
+            return fallbackMarkdown
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
-        }
+        return markdown
     }
+
+    private static let fallbackMarkdown = """
+    # Release Notes
+
+    The bundled changelog is temporarily unavailable.
+    """
 }
 
 // MARK: - DEBUG-only 菜单

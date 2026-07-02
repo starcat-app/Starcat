@@ -133,6 +133,17 @@ targets:
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。
     postBuildScripts:
+      - name: "Copy Changelog Resource"
+        script: |
+          set -euo pipefail
+
+          # App 内 Release Notes 直接读取 bundle 里的 CHANGELOG.md。
+          # 根目录 CHANGELOG.md 是单一数据源：官网生成脚本和 App bundle 都从这里取。
+          mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          cp "${SRCROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
       - name: "Auto Bump Version (from git)"
         script: '"${SRCROOT}/scripts/bump-version.sh"'
         # 不声明 inputFiles / outputFiles：希望每次 build 都跑（hash 可能变），
