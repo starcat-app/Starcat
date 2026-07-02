@@ -56,18 +56,6 @@ import SwiftUI
 import WebKit
 import AppKit
 
-private struct ReadmeImageZoomCursorSuppressedKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// 主窗口浮层盖住 README 时，底层 WebView 图片不应继续声明 zoom-in 光标。
-    var readmeImageZoomCursorSuppressed: Bool {
-        get { self[ReadmeImageZoomCursorSuppressedKey.self] }
-        set { self[ReadmeImageZoomCursorSuppressedKey.self] = newValue }
-    }
-}
-
 struct ReadmeWebView: NSViewRepresentable {
 
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
@@ -88,8 +76,6 @@ struct ReadmeWebView: NSViewRepresentable {
     var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
-    @Environment(\.readmeImageZoomCursorSuppressed) private var readmeImageZoomCursorSuppressed
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -115,17 +101,12 @@ struct ReadmeWebView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
-        context.coordinator.isImageZoomCursorSuppressed =
-            readmeImageZoomCursorSuppressed || firstRunOnboardingActive
         loadIfNeeded(into: webView, context: context)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
-        context.coordinator.isImageZoomCursorSuppressed =
-            readmeImageZoomCursorSuppressed || firstRunOnboardingActive
-        context.coordinator.applyImageZoomCursorSuppression(to: webView)
         loadIfNeeded(into: webView, context: context)
     }
 
@@ -206,7 +187,6 @@ struct ReadmeWebView: NSViewRepresentable {
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
-        var isImageZoomCursorSuppressed = false
         private weak var userContentController: WKUserContentController?
 
         /// 由 `loadIfNeeded` 在调用 `loadHTMLString` 前置 true，
@@ -399,15 +379,6 @@ struct ReadmeWebView: NSViewRepresentable {
             }
         }
 
-        func applyImageZoomCursorSuppression(to webView: WKWebView) {
-            let enabled = isImageZoomCursorSuppressed ? "true" : "false"
-            webView.evaluateJavaScript("""
-            if (document.body) {
-                document.body.classList.toggle('readme-image-zoom-cursor-suppressed', \(enabled));
-            }
-            """)
-        }
-
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
@@ -469,10 +440,6 @@ struct ReadmeWebView: NSViewRepresentable {
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             AppLog.ui.error("ReadmeWebView didFailProvisional: \(error.localizedDescription, privacy: .public)")
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            applyImageZoomCursorSuppression(to: webView)
         }
     }
 }
@@ -647,9 +614,6 @@ enum ReadmeCSS {
     }
     body.readme-js-ready .markdown-body img[data-readme-zoomable="true"] {
         cursor: zoom-in;
-    }
-    body.readme-js-ready.readme-image-zoom-cursor-suppressed .markdown-body img[data-readme-zoomable="true"] {
-        cursor: default;
     }
     body.readme-js-ready .markdown-body img:not(.readme-image-loaded) {
         opacity: 0;

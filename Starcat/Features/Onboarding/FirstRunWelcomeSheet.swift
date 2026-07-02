@@ -291,6 +291,7 @@ struct FirstRunOnboardingView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .ignoresSafeArea(.container, edges: .all)
         .contentShape(Rectangle())
+        .defaultCursorShield()
         .onAppear {
             glowDrift = !reduceMotion
         }

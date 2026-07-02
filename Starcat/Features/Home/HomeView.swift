@@ -240,12 +240,6 @@ struct HomeView: View {
         navigationWithLifecycle
     }
 
-    /// 开始使用清单出现时，底层 README 图片不能继续暴露 zoom-in 光标。
-    /// 判断集中在 HomeView，避免让 WebView 反向理解 onboarding 业务状态。
-    private var isGettingStartedChecklistVisible: Bool {
-        !gettingStartedStore.isDismissed && !gettingStartedStore.isComplete
-    }
-
     private var baseNavigation: AnyView {
         // HomeView 的 modifier 链已经很长，新增后台任务监听后 Swift 6 容易在
         // 巨型泛型链上 type-check 超时。分段 AnyView 只用于切断编译期泛型推断，
@@ -352,7 +346,6 @@ struct HomeView: View {
                 )
                 .hidden()
         }
-        .environment(\.readmeImageZoomCursorSuppressed, isGettingStartedChecklistVisible)
         )
     }
 
