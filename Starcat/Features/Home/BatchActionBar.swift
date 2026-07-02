@@ -46,6 +46,8 @@ struct BatchActionBar: View {
     @State private var toastMessage: String?
     /// GitHub 分组批量移动使用独立状态；不复用 BatchStarService，避免 star/unstar 进度语义串场。
     @State private var isMovingGitHubStarLists: Bool = false
+    /// 批量加入知识库是本地 repo_notes 写入，不进入 GitHub star/unstar 队列。
+    @State private var isAddingToLibrary: Bool = false
 
     /// W12 PR-5：抽出 store 引用，便于 idleContent 直接读 count / snapshots 不必每次走依赖链。
     private var store: MultiSelectionStore { dependencies.manageMultiSelectionStore }
@@ -54,6 +56,8 @@ struct BatchActionBar: View {
         Group {
             if dependencies.batchStarService.isRunning {
                 runningContent
+            } else if isAddingToLibrary {
+                addingToLibraryContent
             } else if isMovingGitHubStarLists {
                 movingGitHubStarListsContent
             } else {
@@ -134,6 +138,14 @@ struct BatchActionBar: View {
             .disabled(count == 0)
             .help(Text("batch.addTags.help"))
 
+            Button {
+                startBatchAddToLibrary()
+            } label: {
+                Label("batch.library.add", systemImage: "heart.fill")
+            }
+            .disabled(count == 0)
+            .help(Text("batch.library.add.help"))
+
             if githubStarListBatchSource != nil {
                 githubStarListMoveMenu
             }
@@ -205,6 +217,19 @@ struct BatchActionBar: View {
         }
     }
 
+    private var addingToLibraryContent: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text("batch.library.add.processing")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+    }
+
     // MARK: - 业务路由
 
     /// 点击「批量取消 Star」：> 5 条走确认 sheet，否则直接 enqueue。
@@ -220,6 +245,43 @@ struct BatchActionBar: View {
 
     private func startBatchUnstar(targets: [BatchStarTarget]) {
         dependencies.batchStarService.enqueue(targets: targets, action: .unstar)
+    }
+
+    private func startBatchAddToLibrary() {
+        let repoIDs = Array(store.snapshots.keys)
+        guard !repoIDs.isEmpty else { return }
+
+        isAddingToLibrary = true
+        Task {
+            var added = 0
+            var skipped = 0
+            var failed = 0
+
+            for repoID in repoIDs {
+                do {
+                    let current = try await dependencies.repoNoteRepository.fetchLibraryState(repoId: repoID)
+                    guard current != .inLibrary else {
+                        skipped += 1
+                        continue
+                    }
+                    try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .inLibrary)
+                    added += 1
+                } catch {
+                    failed += 1
+                }
+            }
+
+            isAddingToLibrary = false
+            toastMessage = String(
+                format: String.l10n("batch.library.add.summaryFormat"),
+                added,
+                skipped,
+                failed
+            )
+            store.exit()
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
+        }
     }
 
     private var githubStarListMoveMenu: some View {

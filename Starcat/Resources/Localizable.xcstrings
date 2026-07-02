@@ -7171,6 +7171,74 @@
         }
       }
     },
+    "batch.library.add" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入知识库"
+          }
+        }
+      }
+    },
+    "batch.library.add.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add all selected repositories to your private library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将所有选中的仓库加入私有知识库"
+          }
+        }
+      }
+    },
+    "batch.library.add.processing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adding to Library..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加入知识库..."
+          }
+        }
+      }
+    },
+    "batch.library.add.summaryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library: added %d / skipped %d / failed %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库：新增 %d / 跳过 %d / 失败 %d"
+          }
+        }
+      }
+    },
     "batch.addTagsFailed" : {
       "extractionState" : "stale",
       "localizations" : {
