@@ -155,10 +155,10 @@
 - [ ] Search Center 直接移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
 - [ ] 新增本机服务写 library state 的 action/route。
 - [ ] Browser Plugin 操作失败时显示插件内 toast 并回滚 ❤️ 状态。
-- [ ] Notes 写入允许已入库未 star repo。
-- [ ] Tags 写入允许已入库未 star repo。
-- [ ] Status 写入允许已入库未 star repo。
-- [ ] notes / tags / status 的本地写入前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
+- [x] Notes 写入允许已入库未 star repo。
+- [x] Tags 写入允许已入库未 star repo。
+- [x] Status 写入允许已入库未 star repo。
+- [x] notes / tags / status 的本地写入前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
 - [ ] Releases 订阅入口允许已入库未 star repo。
 - [ ] Releases 订阅本地关系前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
 - [ ] Release 列表拉取和通知刷新仍按 GitHub token、权限和 repo 可访问性降级。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-6 第一批放宽已入库未 star repo 的 notes/tags/status 本地写入。
 - 2026-07-02: PR-4 第二批落地 Trending/Discovery/Weekly/Activity 已入库角标。
 - 2026-07-02: PR-2 第三批落地知识库集合语言筛选和知识库语言统计。
 - 2026-07-02: PR-3 第三批补齐设置 using 自动入库的轻量反馈。

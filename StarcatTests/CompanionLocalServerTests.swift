@@ -295,6 +295,40 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("repo_not_starred"))
     }
 
+    @Test("PATCH /plugin/v1/notes 未 star 已入库 repo 可以保存私人笔记")
+    func patchNotesSavesUnstarredLibraryRepoNote() async throws {
+        let writer = CompanionNoteWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            lookupLibraryState: { _ in .inLibrary },
+            updateContent: { repoID, content in
+                #expect(repoID == 44_838_949)
+                #expect(content == "hello")
+            },
+            lookupNote: { repoID in
+                RepoNote(
+                    repoId: repoID,
+                    content: "hello",
+                    status: RepoStatus.unread.rawValue,
+                    libraryState: LibraryState.inLibrary.rawValue,
+                    libraryUpdatedAt: "2026-07-01T10:00:00Z",
+                    isAIGenerated: false,
+                    editedAt: "2026-07-01T10:01:00Z"
+                )
+            }
+        )
+        let server = try makeServer(noteWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/notes HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","content":"hello"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"content\":\"hello\""))
+    }
+
     @Test("PATCH /plugin/v1/tags 保存 repo 标签关联")
     func patchTagsSavesRepoTags() async throws {
         let writer = CompanionTagWriter(
@@ -350,6 +384,31 @@ struct CompanionLocalServerTests {
 
         #expect(statusCode(response) == 403)
         #expect(bodyString(response).contains("repo_not_starred"))
+    }
+
+    @Test("PATCH /plugin/v1/tags 未 star 已入库 repo 可以保存标签")
+    func patchTagsSavesUnstarredLibraryRepoTags() async throws {
+        let writer = CompanionTagWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            lookupLibraryState: { _ in .inLibrary },
+            lookupAllTags: { [Self.makeTag(id: "tag-ai", name: "AI", color: "#0A84FF", icon: "tag")] },
+            setTags: { repoID, tagIDs in
+                #expect(repoID == 44_838_949)
+                #expect(tagIDs == ["tag-ai"])
+            },
+            lookupAssignedTags: { _ in [Self.makeTag(id: "tag-ai", name: "AI", color: "#0A84FF", icon: "tag")] }
+        )
+        let server = try makeServer(tagWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/tags HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","tag_ids":["tag-ai"]}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"name\":\"AI\""))
     }
 
     @Test("POST /plugin/v1/actions/open 打开 codeflow")

@@ -65,6 +65,34 @@ struct CompanionNoteWriterTests {
         }
     }
 
+    @Test("unstarred library repo can update note content")
+    func unstarredLibraryRepoCanUpdateNote() async throws {
+        let recorder = CompanionNoteUpdateRecorder()
+        let writer = CompanionNoteWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            lookupLibraryState: { _ in .inLibrary },
+            updateContent: { repoID, content in await recorder.record(repoID: repoID, content: content) },
+            lookupNote: { repoID in
+                RepoNote(
+                    repoId: repoID,
+                    content: "library note",
+                    status: RepoStatus.unread.rawValue,
+                    libraryState: LibraryState.inLibrary.rawValue,
+                    libraryUpdatedAt: "2026-07-01T10:00:00Z",
+                    isAIGenerated: false,
+                    editedAt: "2026-07-01T10:01:00Z"
+                )
+            }
+        )
+
+        let note = try await writer.save(owner: "apple", repo: "swift", content: "library note")
+        let updated = await recorder.value
+
+        #expect(updated?.repoID == 44_838_949)
+        #expect(updated?.content == "library note")
+        #expect(note.content == "library note")
+    }
+
     @Test("content over 20000 characters is rejected before lookup")
     func oversizedContentRejected() async {
         let writer = CompanionNoteWriter(

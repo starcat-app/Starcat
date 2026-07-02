@@ -7,7 +7,8 @@
 //  设计约束:
 //  - 插件只修改“当前 repo 关联哪些已有标签”，不创建/改名/改色标签本体；
 //    标签本体仍由 Starcat App 的标签管理入口维护，避免两套管理 UI 产生规则分叉。
-//  - 只允许已 starred repo 写入标签，未收藏项目不进入用户正式知识库。
+//  - 只允许 GitHub starred 或已加入 Starcat 知识库的 repo 写入标签，避免外部页面
+//    随意给未入库项目挂用户私有标签。
 //  - 写入成功后重新读取已关联标签并返回，确保插件展示的是数据库确认后的状态。
 //
 
@@ -21,6 +22,7 @@ enum CompanionTagWriteError: Error, Equatable {
 
 struct CompanionTagWriter {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
+    private let lookupLibraryState: @Sendable (Int64) async throws -> LibraryState
     private let lookupAllTags: @Sendable () async throws -> [Tag]
     private let setTags: @Sendable (Int64, [String]) async throws -> Void
     private let lookupAssignedTags: @Sendable (Int64) async throws -> [Tag]
@@ -28,11 +30,15 @@ struct CompanionTagWriter {
     init(
         repoRepository: any RepoRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
-        repoTagRepository: any RepoTagRepositoryProtocol
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        repoNoteRepository: any RepoNoteRepositoryProtocol
     ) {
         self.init(
             lookupRepo: { owner, name in
                 try await repoRepository.findByOwnerName(owner: owner, name: name)
+            },
+            lookupLibraryState: { repoID in
+                try await repoNoteRepository.fetchLibraryState(repoId: repoID)
             },
             lookupAllTags: {
                 try await tagRepository.fetchAll()
@@ -48,11 +54,13 @@ struct CompanionTagWriter {
 
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
+        lookupLibraryState: @escaping @Sendable (Int64) async throws -> LibraryState = { _ in .outsideLibrary },
         lookupAllTags: @escaping @Sendable () async throws -> [Tag],
         setTags: @escaping @Sendable (Int64, [String]) async throws -> Void,
         lookupAssignedTags: @escaping @Sendable (Int64) async throws -> [Tag]
     ) {
         self.lookupRepo = lookupRepo
+        self.lookupLibraryState = lookupLibraryState
         self.lookupAllTags = lookupAllTags
         self.setTags = setTags
         self.lookupAssignedTags = lookupAssignedTags
@@ -62,7 +70,8 @@ struct CompanionTagWriter {
         guard let repo = try await lookupRepo(owner, name) else {
             throw CompanionTagWriteError.repoNotFound
         }
-        guard repo.isStarred else {
+        let libraryState = try await lookupLibraryState(repo.id)
+        guard repo.isStarred || libraryState == .inLibrary else {
             throw CompanionTagWriteError.repoNotStarred
         }
 
