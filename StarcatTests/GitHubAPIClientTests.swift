@@ -101,6 +101,50 @@ struct GitHubAPIClientTests {
         #expect(req.value(forHTTPHeaderField: "Authorization") == nil)
     }
 
+    @Test("getCurrentUser: REST 用户资料后补 GraphQL viewer.status")
+    func getCurrentUserMergesGraphQLStatus() async throws {
+        let client = makeClient(token: "status-token")
+        URLProtocolStub.requestHandler = { request in
+            switch request.url?.path {
+            case "/user":
+                let body = #"{"id":42,"login":"alice","avatar_url":"https://avatars.example/alice.png"}"#.data(using: .utf8)!
+                return (httpResponse(200, request.url!), body)
+            case "/graphql":
+                let body = """
+                {
+                  "data": {
+                    "viewer": {
+                      "status": {
+                        "emoji": "face_blowing_a_kiss",
+                        "emojiHTML": "<g-emoji class=\\"g-emoji\\" alias=\\"face_blowing_a_kiss\\">😘</g-emoji>",
+                        "message": "Shipping Starcat",
+                        "expiresAt": null,
+                        "indicatesLimitedAvailability": false,
+                        "updatedAt": "2026-07-02T12:00:00Z"
+                      }
+                    }
+                  }
+                }
+                """.data(using: .utf8)!
+                return (httpResponse(200, request.url!), body)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+
+        let user = try await client.getCurrentUser()
+
+        #expect(user.status?.emoji == "face_blowing_a_kiss")
+        #expect(user.status?.displayEmoji == "😘")
+        #expect(user.status?.message == "Shipping Starcat")
+        #expect(user.activeStatus?.displayEmoji == "😘")
+        #expect(URLProtocolStub.receivedRequests.map { $0.url?.path } == ["/user", "/graphql"])
+        let graphQLRequest = try #require(URLProtocolStub.receivedRequests.last)
+        #expect(graphQLRequest.httpMethod == "POST")
+        #expect(graphQLRequest.value(forHTTPHeaderField: "Authorization") == "Bearer status-token")
+        #expect(graphQLRequest.value(forHTTPHeaderField: "Content-Type") == "application/json")
+    }
+
     @Test("securityAdvisories: summary 缺失时用 description 降级，避免整批解析失败")
     func securityAdvisoriesMissingSummaryFallback() async throws {
         let client = makeClient(token: "abc123")

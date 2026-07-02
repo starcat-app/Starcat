@@ -615,10 +615,21 @@ private struct ReleaseTimelineRow: View {
         let assets = ReleaseAssetCodec.decode(entry.release.assetsJson)
         let q = assetFilter.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return assets }
+        if releaseMetadataMatches(q) {
+            return assets
+        }
         return assets.filter { asset in
             asset.name.lowercased().contains(q) ||
             (asset.contentType?.lowercased().contains(q) ?? false)
         }
+    }
+
+    private func releaseMetadataMatches(_ query: String) -> Bool {
+        // 过滤入口仍服务于资产列表：命中项目名 / 版本 / Release 标题时展示该条 Release 的全部资产，
+        // 避免用户按版本或项目定位后还被文件名二次过滤掉。
+        entry.repo.fullName.lowercased().contains(query) ||
+        entry.release.tagName.lowercased().contains(query) ||
+        (entry.release.name?.lowercased().contains(query) ?? false)
     }
 
     private func relativeDate(_ iso: String?) -> String? {

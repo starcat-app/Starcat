@@ -124,11 +124,13 @@ struct UserAvatar: View {
     let avatarUrl: String?
     /// 用户登录名，用于构建主页链接
     let login: String?
+    /// GitHub profile status；仅当前登录用户头像使用。
+    var status: GitHubUserStatusDTO? = nil
     /// 点击未登录头像时触发，用于打开登录弹窗
     let onLoginTapped: () -> Void
 
     /// 头像大小
-    var size: CGFloat = 56
+    var size: CGFloat = 68
 
     var body: some View {
         Button {
@@ -145,16 +147,18 @@ struct UserAvatar: View {
 
                     if settings.isProUser {
                         AvatarProBadge()
-                            // 2026-06-06 dong4j 反馈：原 (x:5, y:3) 导致
-                            //   ① 徽章底部超出头像圆底 ~3pt（y:3 把它往下推了）
-                            //   ② 整体偏左，需要往右再挪一点
-                            // 修复：y 改为 0（与 ZStack bottomTrailing 自然底对齐，
-                            // 徽章 Capsule 底部与头像圆 bounding box 底部齐平）；
-                            // x 从 5 增到 8（视觉上像"嵌"在头像右下角而不是压住下沿）。
-                            .offset(x: 8, y: 0)
+                            .frame(width: size, height: size, alignment: .topTrailing)
+                            // PRO 是 Starcat 身份标识，放在头像圆外右上角，和分享按钮处在同一水平线；
+                            // 只向外偏移，不覆盖头像内容，避免和 GitHub status 的右下角语义冲突。
+                            .offset(x: 24, y: 0)
+                    }
+
+                    if let status, let emoji = status.displayEmoji {
+                        AvatarStatusBadge(status: status, emoji: emoji)
+                            .offset(x: 4, y: 0)
                     }
                 }
-                .frame(width: size + 10, height: size + 6)
+                .frame(width: size + 34, height: size + 6)
                 .frame(maxWidth: .infinity)
             } else {
                 // 故意弱化：未登录 sidebar 占位头像，非操作主文案（CLAUDE.md UI 颜色规范例外）。
@@ -179,13 +183,43 @@ struct UserAvatar: View {
     }
 }
 
+private struct AvatarStatusBadge: View {
+    let status: GitHubUserStatusDTO
+    let emoji: String
+
+    var body: some View {
+        Text(verbatim: emoji)
+            .font(.system(size: 8))
+            .frame(width: 14, height: 14)
+            .background {
+                Circle()
+                    .fill(.bar)
+                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            }
+            .overlay {
+                Circle()
+                    .stroke(status.indicatesLimitedAvailability ? Color.orange : Color.accentColor, lineWidth: 0.7)
+            }
+            .help(helpText)
+            .accessibilityLabel(Text(helpText))
+    }
+
+    private var helpText: String {
+        guard let message = status.message?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else {
+            return emoji
+        }
+        return "\(emoji) \(message)"
+    }
+}
+
 private struct AvatarProBadge: View {
     var body: some View {
         Text("PRO")
             .font(.system(size: 8, weight: .black))
             .foregroundStyle(.white)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1.5)
             .background {
                 Capsule()
                     .fill(

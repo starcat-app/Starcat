@@ -62,7 +62,7 @@ struct SidebarHeaderView: View {
     @State private var showShareCardSheet: Bool = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             switch authSession.state {
             case .authenticated(let user):
                 avatarRow(user: user)
@@ -79,7 +79,7 @@ struct SidebarHeaderView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.top, 14)
+        .padding(.top, 8)
         .padding(.bottom, 12)
         .background(alignment: .top) { sidebarTintBackground }
         // HOM-175：防御性兜底，强制整张头像卡严格按内容尺寸（垂直方向不被拉伸）。
@@ -342,6 +342,7 @@ struct SidebarHeaderView: View {
                 isLoggedIn: true,
                 avatarUrl: user.avatarUrl,
                 login: user.login,
+                status: user.activeStatus,
                 onLoginTapped: { showLoginSheet = true }
             )
 
@@ -430,14 +431,30 @@ struct SidebarHeaderView: View {
     private func identity(user: GitHubUserDTO) -> some View {
         VStack(spacing: 2) {
             if let name = user.name, !name.isEmpty {
-                Text(name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
+                identityNameText(name)
             } else {
-                Text(user.login)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
+                identityNameText(user.login)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func identityNameText(_ value: String) -> some View {
+        let text = Text(value)
+            .font(.system(size: 14, weight: .semibold))
+            .lineLimit(1)
+
+        if appSettings.isProUser {
+            // Pro 用户用多色渐变强化身份感；只作用在 Sidebar 用户名，避免污染其它 profile 展示。
+            text.foregroundStyle(
+                LinearGradient(
+                    colors: [.blue, .purple, .pink, .orange, .yellow],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+        } else {
+            text
         }
     }
 

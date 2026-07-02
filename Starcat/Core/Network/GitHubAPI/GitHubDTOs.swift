@@ -60,6 +60,108 @@ struct GitHubUserDTO: Codable, Equatable {
     let twitterUsername: String?
     /// GitHub 主页完整 URL（`https://github.com/{login}`）。
     let htmlUrl: String?
+    /// GitHub 个人主页 status（头像右下角的状态 emoji）。
+    ///
+    /// REST `/user` 不返回该字段；`UserAPI.getCurrentUser()` 会在 REST 身份校验后用 GraphQL
+    /// `viewer.status` 补齐。保持 Optional，让无 status、GraphQL 临时失败、旧缓存都能自然降级。
+    let status: GitHubUserStatusDTO?
+
+    init(
+        id: Int64,
+        login: String,
+        name: String?,
+        avatarUrl: String?,
+        publicRepos: Int? = nil,
+        followers: Int? = nil,
+        following: Int? = nil,
+        bio: String? = nil,
+        company: String? = nil,
+        location: String? = nil,
+        email: String? = nil,
+        blog: String? = nil,
+        twitterUsername: String? = nil,
+        htmlUrl: String? = nil,
+        status: GitHubUserStatusDTO? = nil
+    ) {
+        self.id = id
+        self.login = login
+        self.name = name
+        self.avatarUrl = avatarUrl
+        self.publicRepos = publicRepos
+        self.followers = followers
+        self.following = following
+        self.bio = bio
+        self.company = company
+        self.location = location
+        self.email = email
+        self.blog = blog
+        self.twitterUsername = twitterUsername
+        self.htmlUrl = htmlUrl
+        self.status = status
+    }
+
+    /// 当前仍应显示的 status。GitHub 会返回 `expiresAt`，客户端需要在本地兜底过滤过期状态，
+    /// 避免离线缓存里残留的 emoji 继续覆盖在头像上。
+    var activeStatus: GitHubUserStatusDTO? {
+        guard let status else { return nil }
+        guard let expiresAt = status.expiresAt else { return status }
+        guard let expiresAtDate = ISO8601DateFormatter.githubDate(from: expiresAt) else { return status }
+        return expiresAtDate > Date() ? status : nil
+    }
+
+    func replacingStatus(_ status: GitHubUserStatusDTO?) -> GitHubUserDTO {
+        GitHubUserDTO(
+            id: id,
+            login: login,
+            name: name,
+            avatarUrl: avatarUrl,
+            publicRepos: publicRepos,
+            followers: followers,
+            following: following,
+            bio: bio,
+            company: company,
+            location: location,
+            email: email,
+            blog: blog,
+            twitterUsername: twitterUsername,
+            htmlUrl: htmlUrl,
+            status: status
+        )
+    }
+}
+
+/// GitHub GraphQL `UserStatus` 的 UI 子集。
+///
+/// `emoji` 可能是 GitHub emoji alias（例如 `face_blowing_a_kiss`），不能直接显示在圆形 badge 里；
+/// UI 使用 `emojiHTML` 解析出的真实 Unicode emoji，解析失败则不显示 badge。
+struct GitHubUserStatusDTO: Codable, Equatable {
+    let emoji: String?
+    let emojiHTML: String?
+    let message: String?
+    let expiresAt: String?
+    let indicatesLimitedAvailability: Bool
+    let updatedAt: String?
+
+    var displayEmoji: String? {
+        if let parsed = emojiHTML.flatMap(Self.extractEmoji(fromHTML:)) {
+            return parsed
+        }
+        guard let emoji,
+              emoji.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation }) else {
+            return nil
+        }
+        return emoji
+    }
+
+    private static func extractEmoji(fromHTML html: String) -> String? {
+        guard let start = html.range(of: ">"),
+              let end = html.range(of: "<", range: start.upperBound..<html.endIndex) else {
+            return nil
+        }
+        let text = html[start.upperBound..<end.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
 }
 
 // MARK: - License
