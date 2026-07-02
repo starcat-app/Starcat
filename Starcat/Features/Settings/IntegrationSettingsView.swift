@@ -21,6 +21,8 @@ struct IntegrationSettingsTab: View {
     @State private var pluginConfiguration = CompanionConfiguration.shared
     @State private var isHoveringCopyToken = false
     @State private var isHoveringResetToken = false
+    @State private var isHoveringChromePlugin = false
+    @State private var isHoveringSafariPlugin = false
     // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
     // 本 Tab 仅保留"精细化操作"（输出目录配置、单项目预览/打开/删除）。
     // → 与 AISettingsView.repoContextManageStorageRow 同款职责划分。
@@ -209,13 +211,17 @@ struct IntegrationSettingsTab: View {
                     browserPluginRepositoryLink(
                         assetName: "chrome",
                         titleKey: "settings.integration.browserPlugin.chromeRepository",
+                        isHovering: isHoveringChromePlugin,
                         destination: BrowserPluginRepositoryLinks.chrome
                     )
+                    .onHover { isHoveringChromePlugin = $0 }
                     browserPluginRepositoryLink(
                         assetName: "safari",
                         titleKey: "settings.integration.browserPlugin.safariRepository",
+                        isHovering: isHoveringSafariPlugin,
                         destination: BrowserPluginRepositoryLinks.safari
                     )
+                    .onHover { isHoveringSafariPlugin = $0 }
                 }
             } label: {
                 Text("settings.integration.browserPlugin.header")
@@ -236,20 +242,29 @@ struct IntegrationSettingsTab: View {
     private func browserPluginRepositoryLink(
         assetName: String,
         titleKey: LocalizedStringKey,
+        isHovering: Bool,
         destination: URL
     ) -> some View {
         Link(destination: destination) {
-            Image(assetName)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: 18, height: 18)
-                .padding(4)
-                .contentShape(Rectangle())
+            browserPluginRepositoryIcon(assetName: assetName, isHovering: isHovering)
         }
         .buttonStyle(.plain)
         .help(Text(titleKey))
         .accessibilityLabel(Text(titleKey))
+    }
+
+    private func browserPluginRepositoryIcon(assetName: String, isHovering: Bool) -> some View {
+        Image(assetName)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: 18, height: 18)
+            .frame(width: 36, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(isHovering ? 0.14 : 0.10))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var maskedPluginToken: String {
