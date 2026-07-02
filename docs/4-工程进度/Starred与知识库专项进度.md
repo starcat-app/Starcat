@@ -153,7 +153,7 @@
 - [ ] Search Center 可操作 ❤️ 放在 trailing action 区或详情/预览动作区,logo 角标不可点击。
 - [ ] Search Center 搜索结果支持直接加入/移出知识库。
 - [ ] Search Center 直接移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
-- [ ] 新增本机服务写 library state 的 action/route。
+- [x] 新增本机服务写 library state 的 action/route。
 - [ ] Browser Plugin 操作失败时显示插件内 toast 并回滚 ❤️ 状态。
 - [x] Notes 写入允许已入库未 star repo。
 - [x] Tags 写入允许已入库未 star repo。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-6 第三批新增 Companion library-state 写入 route。
 - 2026-07-02: PR-6 第二批 repo-context DTO 增加 library state。
 - 2026-07-02: PR-6 第一批放宽已入库未 star repo 的 notes/tags/status 本地写入。
 - 2026-07-02: PR-4 第二批落地 Trending/Discovery/Weekly/Activity 已入库角标。

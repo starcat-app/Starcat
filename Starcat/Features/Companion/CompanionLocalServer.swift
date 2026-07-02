@@ -20,6 +20,7 @@ final class CompanionLocalServer {
     private let contextProvider: CompanionContextProvider
     private let noteWriter: CompanionNoteWriter?
     private let tagWriter: CompanionTagWriter?
+    private let libraryStateWriter: CompanionLibraryStateWriter?
     private let actionHandler: CompanionActionHandler?
     private let eventHub: CompanionEventHub
     private var listener: NWListener?
@@ -40,6 +41,7 @@ final class CompanionLocalServer {
         contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil },
         noteWriter: CompanionNoteWriter? = nil,
         tagWriter: CompanionTagWriter? = nil,
+        libraryStateWriter: CompanionLibraryStateWriter? = nil,
         actionHandler: CompanionActionHandler? = nil,
         eventHub: CompanionEventHub? = nil
     ) {
@@ -47,6 +49,7 @@ final class CompanionLocalServer {
         self.contextProvider = contextProvider
         self.noteWriter = noteWriter
         self.tagWriter = tagWriter
+        self.libraryStateWriter = libraryStateWriter
         self.actionHandler = actionHandler
         self.eventHub = eventHub ?? CompanionEventHub()
     }
@@ -165,6 +168,8 @@ final class CompanionLocalServer {
             return await saveNoteResponse(request: request, origin: origin)
         case ("PATCH", "/plugin/v1/tags"):
             return await saveTagsResponse(request: request, origin: origin)
+        case ("PATCH", "/plugin/v1/library-state"):
+            return await saveLibraryStateResponse(request: request, origin: origin)
         case ("POST", "/plugin/v1/actions/open"):
             return await openActionResponse(request: request, origin: origin)
         default:
@@ -290,6 +295,45 @@ final class CompanionLocalServer {
             return response(status: 403, body: ["error": "repo_not_starred"], origin: origin)
         } catch CompanionTagWriteError.unknownTagIDs {
             return response(status: 400, body: ["error": "unknown_tag"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+    }
+
+    private func saveLibraryStateResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let libraryStateWriter else {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+        let payload: CompanionLibraryStateUpdateRequest
+        do {
+            payload = try Self.jsonDecoder.decode(CompanionLibraryStateUpdateRequest.self, from: request.body)
+        } catch {
+            return response(status: 400, body: ["error": "bad_json"], origin: origin)
+        }
+
+        do {
+            let result = try await libraryStateWriter.save(
+                owner: payload.owner,
+                repo: payload.repo,
+                state: payload.state,
+                downgradeUsingStatus: payload.downgradeUsingStatus ?? false
+            )
+            return response(
+                status: 200,
+                body: CompanionLibraryStateUpdateResponse(
+                    schemaVersion: 1,
+                    status: "ok",
+                    repoID: result.repoID,
+                    libraryState: result.state.rawValue
+                ),
+                origin: origin
+            )
+        } catch CompanionLibraryStateWriteError.invalidState {
+            return response(status: 400, body: ["error": "invalid_library_state"], origin: origin)
+        } catch CompanionLibraryStateWriteError.repoNotFound {
+            return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
+        } catch CompanionLibraryStateWriteError.usingRemovalRequiresConfirmation {
+            return response(status: 409, body: ["error": "using_removal_requires_confirmation"], origin: origin)
         } catch {
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }

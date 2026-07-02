@@ -41,6 +41,16 @@ struct CompanionLocalServerTests {
         )
     }
 
+    private func makeServer(libraryStateWriter: CompanionLibraryStateWriter) throws -> CompanionLocalServer {
+        let keychain = InMemoryKeychain()
+        try keychain.storeCompanionToken("test-token")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        return CompanionLocalServer(
+            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            libraryStateWriter: libraryStateWriter
+        )
+    }
+
     private func makeServer(actionHandler: CompanionActionHandler) throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
         try keychain.storeCompanionToken("test-token")
@@ -411,6 +421,92 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("\"name\":\"AI\""))
     }
 
+    @Test("PATCH /plugin/v1/library-state 可以加入知识库")
+    func patchLibraryStateAddsRepoToLibrary() async throws {
+        let recorder = CompanionLibraryStateRecorder()
+        let writer = CompanionLibraryStateWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            updateLibraryState: { repoID, state in await recorder.recordLibrary(repoID: repoID, state: state) }
+        )
+        let server = try makeServer(libraryStateWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/library-state HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","state":"in_library"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"library_state\":\"in_library\""))
+        let recorded = await recorder.libraryValue
+        #expect(recorded?.repoID == 44_838_949)
+        #expect(recorded?.state == .inLibrary)
+    }
+
+    @Test("PATCH /plugin/v1/library-state 移出 using repo 需要确认")
+    func patchLibraryStateRemovingUsingRequiresConfirmation() async throws {
+        let writer = CompanionLibraryStateWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            lookupNote: { repoID in
+                RepoNote(
+                    repoId: repoID,
+                    content: nil,
+                    status: RepoStatus.using.rawValue,
+                    isAIGenerated: false,
+                    editedAt: nil
+                )
+            },
+            updateLibraryState: { _, _ in
+                Issue.record("using repo removal must not write before confirmation")
+            }
+        )
+        let server = try makeServer(libraryStateWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/library-state HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","state":"outside_library"}
+        """))
+
+        #expect(statusCode(response) == 409)
+        #expect(bodyString(response).contains("using_removal_requires_confirmation"))
+    }
+
+    @Test("PATCH /plugin/v1/library-state 确认后移出 using repo 并降级 read")
+    func patchLibraryStateConfirmedUsingRemovalDowngradesStatus() async throws {
+        let recorder = CompanionLibraryStateRecorder()
+        let writer = CompanionLibraryStateWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            lookupNote: { repoID in
+                RepoNote(
+                    repoId: repoID,
+                    content: nil,
+                    status: RepoStatus.using.rawValue,
+                    isAIGenerated: false,
+                    editedAt: nil
+                )
+            },
+            updateLibraryState: { repoID, state in await recorder.recordLibrary(repoID: repoID, state: state) },
+            updateStatus: { repoID, status in await recorder.recordStatus(repoID: repoID, status: status) }
+        )
+        let server = try makeServer(libraryStateWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/library-state HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","state":"outside_library","downgrade_using_status":true}
+        """))
+
+        #expect(statusCode(response) == 200)
+        let library = await recorder.libraryValue
+        let status = await recorder.statusValue
+        #expect(library?.state == .outsideLibrary)
+        #expect(status?.status == .read)
+    }
+
     @Test("POST /plugin/v1/actions/open 打开 codeflow")
     func postActionOpenCodeFlow() async throws {
         let recorder = CompanionActionRecorder()
@@ -580,5 +676,18 @@ private final class CompanionActionRecorder {
 
     func record(_ action: CompanionActionDispatcher.Request.Kind, repo: Repo) {
         value = (action, repo)
+    }
+}
+
+private actor CompanionLibraryStateRecorder {
+    private(set) var libraryValue: (repoID: Int64, state: LibraryState)?
+    private(set) var statusValue: (repoID: Int64, status: RepoStatus)?
+
+    func recordLibrary(repoID: Int64, state: LibraryState) {
+        libraryValue = (repoID, state)
+    }
+
+    func recordStatus(repoID: Int64, status: RepoStatus) {
+        statusValue = (repoID, status)
     }
 }

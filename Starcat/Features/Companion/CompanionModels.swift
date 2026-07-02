@@ -112,6 +112,20 @@ struct CompanionNoteSaveResponse: Codable, Equatable {
     let note: CompanionNoteDTO
 }
 
+struct CompanionLibraryStateUpdateRequest: Codable, Equatable {
+    let owner: String
+    let repo: String
+    let state: String
+    let downgradeUsingStatus: Bool?
+}
+
+struct CompanionLibraryStateUpdateResponse: Codable, Equatable {
+    let schemaVersion: Int
+    let status: String
+    let repoID: Int64
+    let libraryState: String
+}
+
 struct CompanionEventEnvelope: Codable, Equatable {
     let schemaVersion: Int
     let type: String

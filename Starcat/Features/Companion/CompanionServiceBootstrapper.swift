@@ -54,6 +54,10 @@ enum CompanionServiceBootstrapper {
             repoTagRepository: dependencies.repoTagRepository,
             repoNoteRepository: dependencies.repoNoteRepository
         )
+        let libraryStateWriter = CompanionLibraryStateWriter(
+            repoRepository: dependencies.repoRepository,
+            noteRepository: dependencies.repoNoteRepository
+        )
         let actionHandler = CompanionActionHandler(
             repoRepository: dependencies.repoRepository,
             dispatcher: dependencies.companionActionDispatcher,
@@ -74,6 +78,7 @@ enum CompanionServiceBootstrapper {
             contextProvider: provider,
             noteWriter: noteWriter,
             tagWriter: tagWriter,
+            libraryStateWriter: libraryStateWriter,
             actionHandler: actionHandler,
             eventHub: eventHub
         )
