@@ -13362,6 +13362,38 @@
         }
       }
     },
+    "library.action.add" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to Knowledge Base"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入知识库"
+          }
+        }
+      }
+    },
+    "library.action.remove" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Knowledge Base"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移出知识库"
+          }
+        }
+      }
+    },
     "min=0 透传" : {
 
     },

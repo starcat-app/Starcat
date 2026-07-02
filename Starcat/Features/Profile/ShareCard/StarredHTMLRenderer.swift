@@ -40,6 +40,9 @@ import Foundation
 /// 把 [Repo] 渲染为离线可打开的单页面 HTML。无状态。
 enum StarredHTMLRenderer {
 
+    /// Starcat 官网地址。导出 HTML 里所有 Starcat 品牌链接都指向官网，不再分散写仓库地址。
+    private static let starcatWebsiteURL = "https://starcat.ink"
+
     /// 导出 HTML 需要的"附加资源"。
     ///
     /// 这些是从 Repo 元数据本身拿不到、必须额外从其它 Repository / 网络拉的数据。
@@ -116,7 +119,7 @@ enum StarredHTMLRenderer {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>\(title)</title>
-          <meta name="generator" content="Starcat (https://github.com/dong4j/Starcat)">
+          <meta name="generator" content="Starcat (\(starcatWebsiteURL))">
           <style>\(buildStylesheet())</style>
         </head>
         """
@@ -213,7 +216,7 @@ enum StarredHTMLRenderer {
 
             <p class="hero-meta">
               Exported on <time datetime="\(exportedISO)">\(exportedISO)</time>
-              by <a href="https://github.com/dong4j/Starcat" target="_blank" rel="noopener">Starcat</a>
+              by <a href="\(starcatWebsiteURL)" target="_blank" rel="noopener">Starcat</a>
               — a native macOS app to manage your GitHub stars.
             </p>
           </div>
@@ -322,7 +325,7 @@ enum StarredHTMLRenderer {
     private static func buildFooter() -> String {
         return """
         <footer class="footer">
-          Crafted with <a href="https://github.com/dong4j/Starcat" target="_blank" rel="noopener">Starcat</a>
+          Crafted with <a href="\(starcatWebsiteURL)" target="_blank" rel="noopener">Starcat</a>
           · Single-file export · Works fully offline · No tracking
         </footer>
         """

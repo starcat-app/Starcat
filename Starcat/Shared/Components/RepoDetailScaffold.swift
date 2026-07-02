@@ -176,6 +176,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 推荐列表 popover 展示状态。只有 `recommendationVM.items` 非空时才允许打开。
     @State private var showsRecommendations = false
 
+    /// UI 先行的知识库二态缓存。
+    ///
+    /// 完整数据层落地前，❤️ 只表达当前运行期内的入库反馈；这里按 repo.id 记状态，
+    /// 避免用户在同一窗口切换详情时丢掉刚刚点击的视觉结果。后续接入
+    /// `repo_notes.library_state` 后，这个本地字典应替换为 repository 派生状态。
+    @State private var librarySavedRepoIDs: Set<Int64> = []
+
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
     @State private var proPaywallContext: ProPaywallContext?
 
@@ -518,9 +525,24 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     )
                 }
             }
+            LibraryToggleButton(isSaved: isRepoSavedToLibrary(repo)) {
+                toggleLibrarySaved(repo)
+            }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
             }
+        }
+    }
+
+    private func isRepoSavedToLibrary(_ repo: Repo) -> Bool {
+        librarySavedRepoIDs.contains(repo.id)
+    }
+
+    private func toggleLibrarySaved(_ repo: Repo) {
+        if librarySavedRepoIDs.contains(repo.id) {
+            librarySavedRepoIDs.remove(repo.id)
+        } else {
+            librarySavedRepoIDs.insert(repo.id)
         }
     }
 

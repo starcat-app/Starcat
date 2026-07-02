@@ -141,10 +141,17 @@ struct ShareCardContent: View {
         style == .social
     }
 
-    /// 第 4 套终端卡走像素风，外框圆角收窄；其它样式保持原来的大圆角分享卡质感。
-    private var cardCornerRadius: CGFloat {
-        style == .terminal ? 12 : 24
-    }
+    /// 分享卡统一圆角来源。所有样式和所有配色都必须走这里，避免不同分支各写一套数字。
+    private var shareCardCornerRadius: CGFloat { 12 }
+
+    /// 外轮廓圆角只做语义别名，不再按样式分叉。
+    private var cardCornerRadius: CGFloat { shareCardCornerRadius }
+
+    /// 内部面板圆角只做语义别名，和外轮廓保持同一个视觉尺度。
+    private var panelCornerRadius: CGFloat { shareCardCornerRadius }
+
+    /// QR 容器同样复用统一圆角，避免前后样式的扫码块边角不一致。
+    private var qrCornerRadius: CGFloat { shareCardCornerRadius }
 
     /// 卡片背景：双色线性渐变（顶部稍亮 → 底部主色），让深色卡片有微弱呼吸感。
     /// 不做 RadialGradient 是因为分享卡尺寸 400×560 矩形比例下椭圆光斑会偏中心，
@@ -319,10 +326,10 @@ struct ShareCardContent: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: panelCornerRadius)
                     .fill(palette.cardBackgroundSecondary.opacity(0.58))
                     .overlay(
-                        Capsule()
+                        RoundedRectangle(cornerRadius: panelCornerRadius)
                             .stroke(palette.divider.opacity(0.85), lineWidth: 0.8)
                     )
             )
@@ -477,10 +484,10 @@ struct ShareCardContent: View {
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.58))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.divider.opacity(0.72), lineWidth: 0.8)
                 )
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
@@ -511,10 +518,10 @@ struct ShareCardContent: View {
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.72))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.divider, lineWidth: 0.7)
                 )
         )
@@ -547,29 +554,13 @@ struct ShareCardContent: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.7))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.divider, lineWidth: 0.7)
                 )
         )
-    }
-
-    /// 终端版式的一行键值输出。key 是固定设计文案，不走 i18n，避免导出图随语言变成伪命令。
-    @ViewBuilder
-    private func terminalLine(key: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: "\(key):")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(palette.accent)
-                .frame(width: 70, alignment: .leading)
-            Text(verbatim: value)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(palette.secondaryText)
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
-        }
     }
 
     /// 把整数格式化成紧凑形式（1234 → 1.2K，4823 → 4.8K，999 → 999）。
@@ -796,7 +787,7 @@ struct ShareCardContent: View {
         HStack(spacing: 6) {
             // 绿色背景图标
             ZStack {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: shareCardCornerRadius)
                     .fill(Color.green.opacity(0.2))
                     .frame(width: 20, height: 20)
                 Image(systemName: link.symbolName)
@@ -955,14 +946,23 @@ struct ShareCardContent: View {
 
     // MARK: - 通用元素
 
-    /// Pro 用户彩虹渐变徽章。杂志卡 / ID 卡共用，由调用方决定挂载位置。
+    /// Pro 用户彩虹渐变徽章。默认尺寸兼容既有样式；小头像样式可传入更小参数避免遮挡头像。
     @ViewBuilder
     private var shareCardProBadge: some View {
+        shareCardProBadgeView()
+    }
+
+    @ViewBuilder
+    private func shareCardProBadgeView(
+        fontSize: CGFloat = 8,
+        horizontalPadding: CGFloat = 5,
+        verticalPadding: CGFloat = 2
+    ) -> some View {
         Text("PRO")
-            .font(.system(size: 8, weight: .black))
+            .font(.system(size: fontSize, weight: .black))
             .foregroundStyle(.white)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
             .background {
                 Capsule()
                     .fill(
@@ -1211,10 +1211,10 @@ struct ShareCardContent: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.48))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.divider, lineWidth: 0.7)
                 )
         )
@@ -1300,10 +1300,10 @@ struct ShareCardContent: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.38))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.divider, lineWidth: 0.7)
                 )
         )
@@ -1320,10 +1320,10 @@ struct ShareCardContent: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.34))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.divider, lineWidth: 0.7)
                 )
         )
@@ -1397,6 +1397,7 @@ struct ShareCardContent: View {
         VStack(alignment: .leading, spacing: 8) {
             adventureIdentityHeader
             adventureSocialLinksBlock
+                .frame(width: 282, alignment: .leading)
 
             Text(user.bio?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                  ? user.bio!.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1406,28 +1407,36 @@ struct ShareCardContent: View {
                 .lineSpacing(2)
                 .lineLimit(2)
                 .minimumScaleFactor(0.78)
+                .frame(width: 282, alignment: .leading)
         }
-        .frame(width: 282, alignment: .leading)
+        .frame(width: 356, alignment: .leading)
     }
 
     /// 冒险样式顶部身份行：头像 + 用户名两行 + 小 QR。
     ///
-    /// 顶部插画左侧留白足够，头像和 QR 放在同一行能增强识别度；
-    /// 仍限制在 282pt 宽度内，避免压到右侧主视觉。
+    /// 头像和文案仍占左侧资料区，QR 使用整张内容宽度右对齐，避免漂在卡片中部。
     @ViewBuilder
     private var adventureIdentityHeader: some View {
-        HStack(alignment: .center, spacing: 10) {
-            decoratedAvatar(size: 52, borderWidth: 1.6)
+        HStack(alignment: .center, spacing: 12) {
+            decoratedAvatar(
+                size: 62,
+                borderWidth: 1.6,
+                proBadgeFontSize: 6.2,
+                proBadgeHorizontalPadding: 3.5,
+                proBadgeVerticalPadding: 1.2,
+                proBadgeOffsetXRatio: 0.12,
+                proBadgeOffsetYRatio: 0.04
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayName)
-                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .font(.system(size: 28, weight: .regular, design: .rounded))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
 
                 Text(verbatim: "@\(user.login)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.primaryText.opacity(0.84))
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
@@ -1435,9 +1444,10 @@ struct ShareCardContent: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
 
+            Spacer(minLength: 12)
             adventureQRCodeView
         }
-        .frame(width: 282, height: 62, alignment: .leading)
+        .frame(width: 356, height: 70, alignment: .leading)
     }
 
     /// 冒险样式社交信息：替换原先写死的 slogan，把顶部留白变成真实 profile 信息。
@@ -1692,30 +1702,45 @@ struct ShareCardContent: View {
         }
         .padding(12)
         .frame(height: 116)
-        .background(prototypePanelBackground(cornerRadius: 18, opacity: style == .adventure ? 0.62 : 0.72))
+        .background(prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: style == .adventure ? 0.62 : 0.72))
     }
 
-    /// 终端身份块：头像 + 命令输出 + 小 QR。
+    /// 终端身份块：头像 + 真实 GitHub 身份 + 小 QR。
+    ///
+    /// 这里不用 `login:` / `role:` 这类字段表，避免第一张卡片像调试日志。
+    /// `$ whoami` 只承担终端主题提示，真正的信息只来自 GitHub profile。
     @ViewBuilder
     private var terminalIdentityBlock: some View {
         HStack(spacing: 12) {
             decoratedAvatar(size: 74, borderWidth: 2)
 
-            VStack(alignment: .leading, spacing: 5) {
-                terminalLine(key: "login", value: "@\(user.login)")
-                if let bio = user.bio?.trimmingCharacters(in: .whitespacesAndNewlines), !bio.isEmpty {
-                    terminalLine(key: "bio", value: bio)
-                } else {
-                    terminalLine(key: "role", value: "open-source developer")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: "$ whoami")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(palette.accent.opacity(0.78))
+                    .lineLimit(1)
+
+                Text(verbatim: "@\(user.login)")
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                if displayName.lowercased() != user.login.lowercased() {
+                    Text(verbatim: displayName)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 0)
             compactQRCodeView
         }
         .padding(10)
         .frame(height: 96)
-        .background(prototypePanelBackground(cornerRadius: 8, opacity: 0.80))
+        .background(prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: 0.80))
     }
 
     /// 后四类共享的四项统计块。
@@ -1753,7 +1778,7 @@ struct ShareCardContent: View {
         .padding(.horizontal, 8)
         .padding(.vertical, usesSocialColoredStats ? 12 : 10)
         .frame(height: usesSocialColoredStats ? 82 : 70)
-        .background(prototypePanelBackground(cornerRadius: 16, opacity: style == .adventure ? 0.66 : 0.76))
+        .background(prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: style == .adventure ? 0.66 : 0.76))
     }
 
     @ViewBuilder
@@ -1815,7 +1840,7 @@ struct ShareCardContent: View {
         }
         .padding(12)
         .frame(height: 100)
-        .background(prototypePanelBackground(cornerRadius: 16, opacity: style == .adventure ? 0.66 : 0.76))
+        .background(prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: style == .adventure ? 0.66 : 0.76))
     }
 
     /// 终端语言块用行式进度条，更贴近原型 3。
@@ -1841,7 +1866,7 @@ struct ShareCardContent: View {
         .padding(12)
         .frame(height: 112)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(prototypePanelBackground(cornerRadius: 8, opacity: 0.80))
+        .background(prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: 0.80))
     }
 
     /// 后四类共享的草坪块。
@@ -1883,7 +1908,7 @@ struct ShareCardContent: View {
             if style == .adventure {
                 adventureGlassPanelBackground
             } else {
-                prototypePanelBackground(cornerRadius: style == .terminal ? 8 : 16, opacity: 0.76)
+                prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: 0.76)
             }
         }
     }
@@ -1896,18 +1921,18 @@ struct ShareCardContent: View {
     @ViewBuilder
     private var adventureGlassPanelBackground: some View {
         if isDarkAdventureVariant {
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(palette.cardBackgroundSecondary.opacity(0.68))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.accent.opacity(0.34), lineWidth: 0.8)
                 )
                 .shadow(color: Color.black.opacity(0.22), radius: 12, y: 6)
         } else {
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: panelCornerRadius)
                 .fill(Color.fromHex6(0xFFE8A6).opacity(0.42))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(Color.white.opacity(0.52), lineWidth: 0.8)
                 )
                 .shadow(color: Color.fromHex6(0xB7791F).opacity(0.10), radius: 10, y: 5)
@@ -1929,7 +1954,15 @@ struct ShareCardContent: View {
     }
 
     @ViewBuilder
-    private func decoratedAvatar(size: CGFloat, borderWidth: CGFloat) -> some View {
+    private func decoratedAvatar(
+        size: CGFloat,
+        borderWidth: CGFloat,
+        proBadgeFontSize: CGFloat = 8,
+        proBadgeHorizontalPadding: CGFloat = 5,
+        proBadgeVerticalPadding: CGFloat = 2,
+        proBadgeOffsetXRatio: CGFloat = 0.08,
+        proBadgeOffsetYRatio: CGFloat = 0.02
+    ) -> some View {
         let usesGoldRing = isSocialLightCard || usesAdventureGoldAvatarRing
         let avatarAccent = usesGoldRing ? Color.fromHex6(0xF59E0B) : palette.accent
         let avatarRingColors = usesGoldRing
@@ -1957,8 +1990,12 @@ struct ShareCardContent: View {
                 .shadow(color: avatarAccent.opacity(style == .adventure ? 0.16 : 0.28), radius: 10, y: 4)
 
             if isProUser {
-                shareCardProBadge
-                    .offset(x: size * 0.08, y: size * 0.02)
+                shareCardProBadgeView(
+                    fontSize: proBadgeFontSize,
+                    horizontalPadding: proBadgeHorizontalPadding,
+                    verticalPadding: proBadgeVerticalPadding
+                )
+                .offset(x: size * proBadgeOffsetXRatio, y: size * proBadgeOffsetYRatio)
             }
         }
     }
@@ -1969,19 +2006,21 @@ struct ShareCardContent: View {
         let strokeOpacity = isSocialLightCard ? 0.95 : (style == .terminal ? 0.62 : (style == .adventure ? 0.52 : 0.78))
         let shadowOpacity = isSocialLightCard ? 0.08 : (style == .terminal ? 0.10 : (style == .adventure ? 0.08 : 0.18))
 
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+
         if style == .terminal {
-            Rectangle()
+            shape
                 .fill(prototypePanelFill.opacity(max(fillOpacity, 0.90)))
                 .overlay {
                     terminalPanelTexture
                 }
                 .overlay(
-                    Rectangle()
+                    shape
                         .stroke(palette.cardBorder.opacity(strokeOpacity), lineWidth: 1)
                 )
                 .overlay {
                     // 外层再压一圈像素风虚线，强调“屏幕面板”而不是普通卡片。
-                    Rectangle()
+                    shape
                         .stroke(
                             palette.accent.opacity(0.28),
                             style: StrokeStyle(lineWidth: 1, dash: [3, 3])
@@ -1989,10 +2028,10 @@ struct ShareCardContent: View {
                 }
                 .shadow(color: .black.opacity(shadowOpacity), radius: 4, y: 2)
         } else {
-            RoundedRectangle(cornerRadius: cornerRadius)
+            shape
                 .fill(prototypePanelFill.opacity(fillOpacity))
                 .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
+                    shape
                         .stroke(palette.cardBorder.opacity(strokeOpacity), lineWidth: 0.7)
                 )
                 .shadow(color: .black.opacity(shadowOpacity), radius: 10, y: 4)
@@ -2097,7 +2136,7 @@ struct ShareCardContent: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .frame(height: 78)
-        .background(prototypePanelBackground(cornerRadius: 8, opacity: 0.80))
+        .background(prototypePanelBackground(cornerRadius: panelCornerRadius, opacity: 0.80))
     }
 
     @ViewBuilder
@@ -2148,9 +2187,9 @@ struct ShareCardContent: View {
         ZStack(alignment: .bottom) {
             avatarFillView
                 .frame(width: avatarSide, height: avatarHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
+                    RoundedRectangle(cornerRadius: panelCornerRadius)
                         .stroke(palette.cardBorder, lineWidth: 0.5)
                 )
 
@@ -2163,8 +2202,8 @@ struct ShareCardContent: View {
             .frame(width: avatarSide, height: 60)
             .clipShape(
                 UnevenRoundedRectangle(
-                    bottomLeadingRadius: 18,
-                    bottomTrailingRadius: 18
+                    bottomLeadingRadius: panelCornerRadius,
+                    bottomTrailingRadius: panelCornerRadius
                 )
             )
         }
@@ -2310,7 +2349,7 @@ struct ShareCardContent: View {
         let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 64)
 
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: qrCornerRadius)
                 .fill(palette.onAccent)
                 .frame(width: 76, height: 76)
 
@@ -2337,7 +2376,7 @@ struct ShareCardContent: View {
         let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 48)
 
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: qrCornerRadius)
                 .fill(palette.onAccent)
                 .frame(width: 58, height: 58)
 
