@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// Manage 列表的基础数据范围。
 ///
@@ -24,6 +25,39 @@ enum RepoListScope: Equatable, Sendable {
     case githubStarListUngrouped
 }
 
+/// Manage 列表的知识库筛选条件。
+///
+/// 这里独立于 `LibraryState`：`LibraryState` 是单 repo 的真实入库状态，
+/// 本枚举是列表过滤器，多了 `.all` 代表不按知识库状态收窄。
+enum RepoLibraryFilter: String, CaseIterable, Codable, Sendable {
+    case all
+    case inLibrary = "in_library"
+    case outsideLibrary = "outside_library"
+
+    static func parse(_ raw: String?) -> RepoLibraryFilter {
+        guard let raw, let value = RepoLibraryFilter(rawValue: raw) else {
+            return .all
+        }
+        return value
+    }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .all: return "general.all"
+        case .inLibrary: return "library.state.inLibrary"
+        case .outsideLibrary: return "library.state.outsideLibrary"
+        }
+    }
+
+    var localizedDisplayName: String {
+        switch self {
+        case .all: return String.l10n("general.all")
+        case .inLibrary: return String.l10n("library.state.inLibrary")
+        case .outsideLibrary: return String.l10n("library.state.outsideLibrary")
+        }
+    }
+}
+
 /// Manage 列表的可下推过滤条件。
 ///
 /// `selectedTagIDs` 语义与 HomeViewModel 保持一致：命中任意一个标签即可保留（OR）。
@@ -32,12 +66,28 @@ struct RepoListFilters: Equatable, Sendable {
     var hideArchived: Bool
     var hideForks: Bool
     var status: RepoStatus?
+    var library: RepoLibraryFilter
     var selectedTagIDs: Set<String>
+
+    init(
+        hideArchived: Bool,
+        hideForks: Bool,
+        status: RepoStatus?,
+        library: RepoLibraryFilter = .all,
+        selectedTagIDs: Set<String>
+    ) {
+        self.hideArchived = hideArchived
+        self.hideForks = hideForks
+        self.status = status
+        self.library = library
+        self.selectedTagIDs = selectedTagIDs
+    }
 
     static let empty = RepoListFilters(
         hideArchived: false,
         hideForks: false,
         status: nil,
+        library: .all,
         selectedTagIDs: []
     )
 }

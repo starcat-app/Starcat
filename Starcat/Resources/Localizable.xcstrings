@@ -13229,6 +13229,23 @@
         }
       }
     },
+    "list.filter.library" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库"
+          }
+        }
+      }
+    },
     "list.filter.status" : {
       "localizations" : {
         "en" : {

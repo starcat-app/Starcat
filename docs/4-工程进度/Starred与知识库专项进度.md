@@ -75,11 +75,11 @@
 - [x] Smart Collections 总览展示“知识库”集合。
 - [x] 中栏列表可进入知识库集合。
 - [x] 第一版查看知识库 repo 的整库入口固定为 Smart Collections -> 知识库。
-- [ ] Manage / 列表筛选菜单增加知识库筛选条件: 全部 / 已入库 / 未入库。
+- [x] Manage / 列表筛选菜单增加知识库筛选条件: 全部 / 已入库 / 未入库。
 - [x] Manage 默认列表仍是 starred 管理视图,不混入未 star 已入库 repo。
 - [x] 知识库集合包含 `libraryState == .inLibrary`。
 - [x] 未 star 已入库 repo 能出现在知识库集合。
-- [ ] 知识库筛选与现有 status / tag / hide archived / hide forks 条件可组合。
+- [x] 知识库筛选与现有 status / tag / hide archived / hide forks 条件可组合。
 - [ ] 知识库集合支持 tag / status / language / archived / fork 筛选。
 - [x] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
 - [x] 未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-2 第二批落地 Manage 知识库筛选条件和持久化。
 - 2026-07-02: PR-2 第一批落地 Smart Collections 知识库集合入口和列表范围。
 - 2026-07-02: PR-1 第二批落地知识库 repo 查询、FTS 范围和未 star 外部 repo metadata 写入。
 - 2026-07-02: PR-1 第一批落地 LibraryState、repo_notes 字段和 RepoNoteRepository 查询/更新能力。

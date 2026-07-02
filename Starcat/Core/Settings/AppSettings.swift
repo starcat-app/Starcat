@@ -622,6 +622,11 @@ final class AppSettings {
         }
     }
 
+    /// Manage 列表知识库筛选。`.all` 表示不过滤。
+    var libraryFilter: RepoLibraryFilter {
+        didSet { persist(key: Keys.libraryFilter, value: libraryFilter.rawValue) }
+    }
+
     /// 用户在 Manage 页最后选中的分类，用于跨启动恢复。
     ///
     /// 为什么存字符串而非 `SidebarItem`：
@@ -1228,6 +1233,9 @@ final class AppSettings {
         let statusRaw = defaults.string(forKey: Keys.statusFilter) ?? ""
         self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus.parse(statusRaw)
 
+        let libraryRaw = defaults.string(forKey: Keys.libraryFilter)
+        self.libraryFilter = RepoLibraryFilter.parse(libraryRaw)
+
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
 
@@ -1445,6 +1453,7 @@ final class AppSettings {
         hideArchived = false
         hideForks = false
         statusFilter = nil
+        libraryFilter = .all
         lastManageSelectionRaw = ""
         lastActivityCategoryRaw = ""
         openFirstDetailOnCategoryChange = false
@@ -1660,6 +1669,7 @@ final class AppSettings {
         static let hideArchived = "settings.hideArchived"
         static let hideForks = "settings.hideForks"
         static let statusFilter = "settings.statusFilter"
+        static let libraryFilter = "settings.libraryFilter"
         static let lastManageSelection = "settings.lastManageSelection"
         static let lastActivityCategory = "settings.lastActivityCategory"
         static let openFirstDetailOnCategoryChange = "settings.detail.openFirstOnCategoryChange.v1"
@@ -1727,6 +1737,7 @@ final class AppSettings {
             hideArchived,
             hideForks,
             statusFilter,
+            libraryFilter,
             lastManageSelection,
             lastActivityCategory,
             openFirstDetailOnCategoryChange,

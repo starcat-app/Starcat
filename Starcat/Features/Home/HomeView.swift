@@ -1239,6 +1239,9 @@ struct HomeView: View {
         if viewModel.statusFilter != settings.statusFilter {
             viewModel.statusFilter = settings.statusFilter
         }
+        if viewModel.libraryFilter != settings.libraryFilter {
+            viewModel.libraryFilter = settings.libraryFilter
+        }
         if viewModel.smartSearchMode != settings.smartSearchMode {
             viewModel.smartSearchMode = settings.smartSearchMode
         }

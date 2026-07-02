@@ -614,6 +614,16 @@ struct RepoListView: View {
                 .pickerStyle(.inline)
             )),
             .divider(id: "after-status"),
+            .content(id: "library", view: AnyView(
+                Picker("list.filter.library", selection: $vm.libraryFilter) {
+                    ForEach(RepoLibraryFilter.allCases, id: \.self) { filter in
+                        Label(filter.displayName, systemImage: libraryFilterIcon(for: filter))
+                            .tag(filter)
+                    }
+                }
+                .pickerStyle(.inline)
+            )),
+            .divider(id: "after-library"),
             .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
             .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
         ]
@@ -654,6 +664,9 @@ struct RepoListView: View {
                 }
                 .onChange(of: viewModel.statusFilter) { _, newValue in
                     settings.statusFilter = newValue
+                }
+                .onChange(of: viewModel.libraryFilter) { _, newValue in
+                    settings.libraryFilter = newValue
                 }
 
                 // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
@@ -1662,6 +1675,14 @@ struct RepoListView: View {
         case .unread: return "envelope.badge"
         case .read:   return "envelope.open"
         case .using:  return "checkmark.seal"
+        }
+    }
+
+    private func libraryFilterIcon(for filter: RepoLibraryFilter) -> String {
+        switch filter {
+        case .all: return "tray.full"
+        case .inLibrary: return "heart.fill"
+        case .outsideLibrary: return "heart"
         }
     }
 

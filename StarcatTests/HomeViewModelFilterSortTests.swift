@@ -182,6 +182,41 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.hasActiveFilter)
     }
 
+    @Test("PR-2: Manage 知识库筛选支持全部 / 已入库 / 未入库并可组合")
+    func libraryFilterStacksWithManageFilters() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/outside-normal", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/in-library", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(
+            db,
+            id: 3,
+            fullName: "o/outside-fork",
+            stars: 0,
+            starredAt: "2026-05-03T00:00:00Z",
+            isFork: true
+        )
+        try await noteRepo.updateLibraryState(repoId: 2, state: .inLibrary)
+
+        await vm.reloadItems(forceRefresh: true)
+        #expect(vm.items.map(\.id) == [3, 2, 1])
+
+        vm.libraryFilter = .inLibrary
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [2])
+
+        vm.libraryFilter = .outsideLibrary
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [3, 1])
+
+        vm.hideForks = true
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [1])
+
+        vm.libraryFilter = .all
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [2, 1])
+    }
+
     @Test("D2: 过滤掉当前选中行 → selectedRepoID 自动清空")
     func filterClearsSelectionWhenItemHidden() async throws {
         let (vm, db, _) = try makeSUT()
@@ -634,5 +669,20 @@ struct AppSettingsFilterTests {
         s1.statusFilter = nil
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.statusFilter == nil)
+    }
+
+    @Test("PR-2: 默认 libraryFilter = .all")
+    func libraryFilterDefault() {
+        let s = AppSettings(defaults: makeIsolatedDefaults())
+        #expect(s.libraryFilter == .all)
+    }
+
+    @Test("PR-2: 设置 libraryFilter 后重新读取保持")
+    func libraryFilterPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.libraryFilter = .inLibrary
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.libraryFilter == .inLibrary)
     }
 }

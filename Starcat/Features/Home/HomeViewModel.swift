@@ -82,6 +82,7 @@ final class HomeViewModel {
                 if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 self.rawItems = cached.rawItems
                 self.statusMap = cached.statusMap
+                self.libraryStateMap = cached.libraryStateMap
                 self.applyView()             // items / itemsRevision 同步就位
                 if self.isLoading { self.isLoading = false }
                 if self.isRefreshing { self.isRefreshing = false }    // 只用缓存瞬切；真实变更路径再显式 force refresh。
@@ -100,6 +101,7 @@ final class HomeViewModel {
                 currentPage = 1
                 hasMore = false
                 statusMap = [:]
+                libraryStateMap = [:]
                 if !items.isEmpty {
                     items = []
                     itemsRevision &+= 1
@@ -270,11 +272,12 @@ final class HomeViewModel {
 
     // MARK: - 列表缓存（HOM-46 优化）
 
-    /// 列表缓存条目：包含原始 repos + statusMap + 缓存时间。
+    /// 列表缓存条目：包含原始 repos + 用户私有状态映射 + 缓存时间。
     /// 用于 stale-while-revalidate：切换到已访问分类时先展示缓存，后台刷新新数据。
     private struct CacheEntry {
         let rawItems: [Repo]
         let statusMap: [Int64: RepoStatus]
+        let libraryStateMap: [Int64: LibraryState]
         let cachedAt: Date
 
         /// 缓存是否过期（5 分钟 TTL）。
@@ -461,6 +464,18 @@ final class HomeViewModel {
         }
     }
 
+    /// 按 Starcat 私有知识库状态过滤。`.all` 表示不收窄范围。
+    ///
+    /// 这是 Manage/list 级别过滤器，不改变当前 Sidebar 选择；例如 All Stars + 已入库
+    /// 只看已 star 且已入库的交集，Smart Collections -> 知识库 + 未入库自然为空。
+    var libraryFilter: RepoLibraryFilter = .all {
+        didSet {
+            guard oldValue != libraryFilter else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
     // MARK: - 语义搜索阈值（HOM-197，2026-06-13 dong4j）
 
     /// AI 语义搜索结果过滤阈值（cosine similarity 分数，0.0 - 1.0）。
@@ -491,6 +506,12 @@ final class HomeViewModel {
     /// 改 status 后通过 `applyStatusChange(...)` 局部更新 dict → SwiftUI
     /// 触发 List 重渲染 → row 角标即时刷新。
     private(set) var statusMap: [Int64: RepoStatus] = [:]
+
+    /// repoId -> 私有知识库状态。
+    ///
+    /// 列表筛选需要把“没有 repo_notes 行”视为未入库；因此字典只保存显式状态，
+    /// 读取时统一用 `.outsideLibrary` 兜底，和数据库 `NOT EXISTS in_library` 语义一致。
+    private(set) var libraryStateMap: [Int64: LibraryState] = [:]
 
     /// `RepoListView` 渲染 row 时读取本方法填充 `RepoCardViewData.readStatus`。
     ///
@@ -546,7 +567,7 @@ final class HomeViewModel {
     }
 
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
-    var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil }
+    var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil || libraryFilter != .all }
 
     // MARK: - 依赖
 
@@ -630,7 +651,7 @@ final class HomeViewModel {
     /// 切到了新用户的 `users/<newId>/starcat.sqlite`，**DB 层物理隔离已经完成**。
     /// 但 `HomeViewModel` 是个 `@Observable` 长生命周期对象（由 `HomeView` 用 `@State`
     /// 持有，跨账号切换不重建），它持有的 in-memory 状态 —— `listCache` /
-    /// `items` / Sidebar 计数 / `statusMap` / `tags` / `repoTagsMap` —— 仍然是
+    /// `items` / Sidebar 计数 / `statusMap` / `libraryStateMap` / `tags` / `repoTagsMap` —— 仍然是
     /// **旧账号的快照**。
     ///
     /// 不主动清这些缓存 → 表现为「退出 A 用 B 登录，看到的还是 A 的列表」：
@@ -647,7 +668,7 @@ final class HomeViewModel {
     /// **清空的字段（与账号强绑定）**：列表与 Sidebar 全套数据 + 选择/搜索状态。
     ///
     /// **保留的字段（用户级偏好，跨账号共享）**：
-    /// - `sortOption` / `hideArchived` / `hideForks` / `statusFilter` / `smartSearchMode`
+    /// - `sortOption` / `hideArchived` / `hideForks` / `statusFilter` / `libraryFilter` / `smartSearchMode`
     ///   —— 这些 4 个偏好从 `AppSettings` 同步进来，**`AppSettings` 是跨账号全局的**
     ///   （NSUbiquitousKeyValueStore / UserDefaults），所以在 viewModel 这一层
     ///   也保留这些值，不需要重置。
@@ -681,6 +702,7 @@ final class HomeViewModel {
         listCache.removeAll()
         rawItems = []
         statusMap = [:]
+        libraryStateMap = [:]
         repoTagsMap = [:]
         semanticHitMap = [:]
         selectedTagIds = []
@@ -1061,6 +1083,7 @@ final class HomeViewModel {
             hideArchived: hideArchived,
             hideForks: hideForks,
             status: statusFilter,
+            library: libraryFilter,
             selectedTagIDs: selectedTagIds
         )
     }
@@ -1259,6 +1282,7 @@ final class HomeViewModel {
 
             let outcome: Result<(repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]), Error>
             let fetchedStatusMap: [Int64: RepoStatus]
+            let fetchedLibraryStateMap: [Int64: LibraryState]
 
             do {
                 // HOM-46 性能优化（2026-06-02）：把 repo fetch 和 status map fetch 真正并行。
@@ -1371,13 +1395,16 @@ final class HomeViewModel {
                 }
 
                 async let statusMapAsync: [Int64: RepoStatus] = self.repoNoteRepository.fetchAllStatusMap()
+                async let libraryStateMapAsync: [Int64: LibraryState] = self.repoNoteRepository.fetchAllLibraryStateMap()
 
                 let fetched = try await fetchedTask()
                 fetchedStatusMap = (try? await statusMapAsync) ?? [:]
+                fetchedLibraryStateMap = (try? await libraryStateMapAsync) ?? [:]
 
                 outcome = .success(fetched)
             } catch {
                 fetchedStatusMap = [:]
+                fetchedLibraryStateMap = [:]
                 outcome = .failure(error)
             }
 
@@ -1402,6 +1429,7 @@ final class HomeViewModel {
                     self.listCache[self.selection] = CacheEntry(
                         rawItems: fetched,
                         statusMap: fetchedStatusMap,
+                        libraryStateMap: fetchedLibraryStateMap,
                         cachedAt: Date()
                     )
                 }
@@ -1428,15 +1456,17 @@ final class HomeViewModel {
                 let idsIdentical = fetched.count == self.rawItems.count &&
                                    zip(fetched, self.rawItems).allSatisfy { $0.id == $1.id }
                 let statusIdentical = fetchedStatusMap == self.statusMap
+                let libraryIdentical = fetchedLibraryStateMap == self.libraryStateMap
                 // 用户智能集合：rawItems ID 序列可能与 All Stars 相同，但 filter context / 规则不同，
                 // 不能走静默跳过，否则 items 仍停留在上一分类的 filteredSorted（常见表现：空列表）。
                 let mustReapplyView = isUserSmartCollectionSelection
 
-                if idsIdentical && statusIdentical && !mustReapplyView {
+                if idsIdentical && statusIdentical && libraryIdentical && !mustReapplyView {
                     // 静默更新底层引用（rawItems / statusMap 是 private 属性，不参与视图重建）。
                     // 不动 items / itemsRevision → 不触发 SwiftUI re-render，避免第二波动画。
                     self.rawItems = fetched
                     self.statusMap = fetchedStatusMap
+                    self.libraryStateMap = fetchedLibraryStateMap
                     #if DEBUG
                     AppLog.ui.notice("[switch-cat] T6' bg fetch identical, skipped applyView +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                     #endif
@@ -1446,6 +1476,7 @@ final class HomeViewModel {
                     // （preserveScrollPosition：A 收尾的"100 → 1800"切换对用户透明的关键）。
                     self.rawItems = fetched
                     self.statusMap = fetchedStatusMap
+                    self.libraryStateMap = fetchedLibraryStateMap
                     self.applyView(resetPage: false)
                     #if DEBUG
                     AppLog.ui.notice("[switch-cat] T6 applyView done after bg fetch +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
@@ -1529,7 +1560,7 @@ final class HomeViewModel {
                     self.isDatabasePageAppendInFlight = false
                 }
             }
-            let result: Result<([Repo], [Int64: RepoStatus]), Error>
+            let result: Result<([Repo], [Int64: RepoStatus], [Int64: LibraryState]), Error>
             let countResult: Result<Int, Error>
             do {
                 async let reposTask = self.repository.fetchListPage(
@@ -1547,7 +1578,8 @@ final class HomeViewModel {
                 // 都全表扫 repo_notes 会把滚动成本重新绑回用户数据总量。
                 let visibleStatusIDs = pageRows.map(\.id)
                 let pageStatusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: visibleStatusIDs)) ?? [:]
-                result = .success((rowsWithSentinel, pageStatusMap))
+                let pageLibraryStateMap = (try? await self.repoNoteRepository.fetchLibraryStateMap(repoIds: visibleStatusIDs)) ?? [:]
+                result = .success((rowsWithSentinel, pageStatusMap, pageLibraryStateMap))
                 countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
             } catch {
                 result = .failure(error)
@@ -1562,7 +1594,7 @@ final class HomeViewModel {
             }
 
             switch result {
-            case .success(let (rowsWithSentinel, pageStatusMap)):
+            case .success(let (rowsWithSentinel, pageStatusMap, pageLibraryStateMap)):
                 let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
                 let nextHasMore = rowsWithSentinel.count > requestedLimit
                 let queryTotalCount = (try? countResult.get()) ?? self.visibleRepoTotalCount
@@ -1580,6 +1612,7 @@ final class HomeViewModel {
                     self.hasMore = nextHasMore
                     self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
                     self.statusMap.merge(pageStatusMap) { _, new in new }
+                    self.libraryStateMap.merge(pageLibraryStateMap) { _, new in new }
                 } else {
                     let visibleRows = pageRows
                     let idsIdentical = visibleRows.count == self.items.count &&
@@ -1594,6 +1627,7 @@ final class HomeViewModel {
                         self.itemsRevision &+= 1
                     }
                     self.statusMap = pageStatusMap
+                    self.libraryStateMap = pageLibraryStateMap
                 }
                 self.listCache.removeValue(forKey: self.selection)
 
@@ -1658,6 +1692,7 @@ final class HomeViewModel {
     private func loadFromCache(_ entry: CacheEntry) {
         self.rawItems = entry.rawItems
         self.statusMap = entry.statusMap
+        self.libraryStateMap = entry.libraryStateMap
         #if DEBUG
         let beforeApply = Date()
         self.applyView()
@@ -1735,16 +1770,19 @@ final class HomeViewModel {
                 }
 
                 async let statusMapAsync = self.repoNoteRepository.fetchAllStatusMap()
+                async let libraryStateMapAsync = self.repoNoteRepository.fetchAllLibraryStateMap()
 
                 guard let fetched = try await fetchedTask() else { return }
 
                 guard !Task.isCancelled else { return }
                 let statusMap = (try? await statusMapAsync) ?? [:]
+                let libraryStateMap = (try? await libraryStateMapAsync) ?? [:]
 
                 guard !Task.isCancelled else { return }
                 self.listCache[selection] = CacheEntry(
                     rawItems: fetched,
                     statusMap: statusMap,
+                    libraryStateMap: libraryStateMap,
                     cachedAt: Date()
                 )
             } catch {
@@ -1840,6 +1878,18 @@ final class HomeViewModel {
                 view.removeAll { repo in
                     let actual = statusMap[repo.id] ?? .unread
                     return actual != status
+                }
+            }
+            switch libraryFilter {
+            case .all:
+                break
+            case .inLibrary:
+                view.removeAll { repo in
+                    (libraryStateMap[repo.id] ?? .outsideLibrary) != .inLibrary
+                }
+            case .outsideLibrary:
+                view.removeAll { repo in
+                    (libraryStateMap[repo.id] ?? .outsideLibrary) == .inLibrary
                 }
             }
             if !selectedTagIds.isEmpty {

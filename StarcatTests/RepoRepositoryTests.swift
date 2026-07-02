@@ -575,12 +575,15 @@ struct RepoRepositoryTests {
     @Test("DB Paging: fetchListCount 遵守当前 Manage 筛选条件")
     func listCountHonorsManageFilters() async throws {
         let (repo, db) = try makeRepo()
+        let noteRepo = GRDBRepoNoteRepository(database: db)
         try await seedDataset(repo)
 
         try await db.writer.write { db in
             try db.execute(sql: "UPDATE repos SET is_fork = 1 WHERE id = 2")
             try db.execute(sql: "UPDATE repos SET is_archived = 1 WHERE id = 3")
         }
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 4, state: .inLibrary)
 
         #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 5)
         #expect(try await repo.fetchListCount(
@@ -593,6 +596,18 @@ struct RepoRepositoryTests {
         ) == 3)
         #expect(try await repo.fetchListCount(scope: .language("Swift"), filters: .empty) == 2)
         #expect(try await repo.fetchListCount(scope: .language(nil), filters: .empty) == 1)
+        #expect(try await repo.fetchListCount(
+            scope: .allStars,
+            filters: RepoListFilters(hideArchived: false, hideForks: false, status: nil, library: .inLibrary, selectedTagIDs: [])
+        ) == 2)
+        #expect(try await repo.fetchListCount(
+            scope: .allStars,
+            filters: RepoListFilters(hideArchived: false, hideForks: false, status: nil, library: .outsideLibrary, selectedTagIDs: [])
+        ) == 3)
+        #expect(try await repo.fetchListCount(
+            scope: .library,
+            filters: RepoListFilters(hideArchived: false, hideForks: false, status: nil, library: .outsideLibrary, selectedTagIDs: [])
+        ) == 0)
     }
 
     @Test("DB Paging: GitHub Star List scope 只返回指定分组 repo")

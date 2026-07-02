@@ -613,6 +613,26 @@ struct GRDBRepoRepository {
             }
             args.append(status.rawValue)
         }
+        switch filters.library {
+        case .all:
+            break
+        case .inLibrary:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_notes rn_library
+                    WHERE rn_library.repo_id = r.id
+                      AND rn_library.library_state = 'in_library'
+                )
+                """)
+        case .outsideLibrary:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_notes rn_library
+                    WHERE rn_library.repo_id = r.id
+                      AND rn_library.library_state = 'in_library'
+                )
+                """)
+        }
         if !filters.selectedTagIDs.isEmpty {
             let tagIDs = Array(filters.selectedTagIDs).sorted()
             let placeholders = Array(repeating: "?", count: tagIDs.count).joined(separator: ", ")
