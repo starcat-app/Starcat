@@ -19,6 +19,59 @@ import Testing
 import Foundation
 @testable import Starcat
 
+// MARK: - SemanticIndexScope
+
+@Suite("SemanticIndexScope")
+struct SemanticIndexScopeTests {
+
+    @Test("all 范围合并 starred 与知识库并按 repo id 去重")
+    func allScopeMergesStarredAndKnowledgeRepos() {
+        let starred = [
+            makeRepo(id: 1, fullName: "owner/starred-a"),
+            makeRepo(id: 2, fullName: "owner/overlap")
+        ]
+        let knowledge = [
+            makeRepo(id: 2, fullName: "owner/overlap"),
+            makeRepo(id: 3, fullName: "owner/library-only")
+        ]
+
+        let merged = SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+
+        #expect(merged.map(\.id) == [1, 2, 3])
+        #expect(merged.map(\.fullName) == ["owner/starred-a", "owner/overlap", "owner/library-only"])
+    }
+
+    private func makeRepo(id: Int64, fullName: String) -> Repo {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        return Repo(
+            id: id,
+            owner: parts.first ?? "owner",
+            name: parts.last ?? "repo",
+            fullName: fullName,
+            description: nil,
+            language: nil,
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/\(fullName)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: true,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
+    }
+}
+
 // MARK: - ReadmePreprocessor
 
 @Suite("ReadmePreprocessor")

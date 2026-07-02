@@ -133,7 +133,7 @@
 
 ## 7. PR-5: AI 与 MCP 范围改造
 
-- [ ] `SemanticIndexBuilder` 支持 starred / knowledge / all 三种范围。
+- [x] `SemanticIndexBuilder` 支持 starred / knowledge / all 三种范围。
 - [ ] Home 语义搜索候选支持 starred / knowledge / all。
 - [ ] 语义搜索 UI 增加范围筛选: starred / knowledge / all。
 - [ ] FTS 加权与当前语义搜索范围对齐。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-5 第一批 SemanticIndexBuilder 支持 starred/knowledge/all 范围。
 - 2026-07-02: PR-6 第四批 Browser Plugin 接入知识库心形状态与写入。
 - 2026-07-02: PR-6 第三批新增 Companion library-state 写入 route。
 - 2026-07-02: PR-6 第二批 repo-context DTO 增加 library state。

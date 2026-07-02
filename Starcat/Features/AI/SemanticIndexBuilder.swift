@@ -6,7 +6,7 @@
 //
 //  模块职责：
 //  - 给 Settings UI 的"开始预拉 / 暂停 / 全量重建"按钮提供后端实现；
-//  - 顺序处理 starred repo 列表：
+//  - 顺序处理指定范围内的 repo 列表（默认 starred + 知识库并集）：
 //      ① 按需懒补全 README Markdown（`ReadmeAPI.refreshMarkdownIfNeeded`）
 //      ② 调用 `SemanticSearchService.refreshIndexIfChanged` 走 diff 判定后重建向量
 //  - 严格限速：GitHub README 拉取 ≤ 4500 次/h（设计文档：留 500 buffer 给同步流程）；
@@ -50,6 +50,30 @@ enum SemanticIndexBuilderStatus: Equatable, Sendable {
     case failed(message: String)
 }
 
+/// 语义索引候选范围。
+///
+/// `all` 是后台预拉的默认值：Starred 和知识库都属于用户主动维护的长期上下文。
+/// 后续搜索 UI / MCP 暴露范围参数时也复用这三个语义，避免各入口各自发明一套命名。
+enum SemanticIndexScope: String, CaseIterable, Sendable {
+    /// 只索引当前 GitHub 已 star 的 repo。
+    case starred
+    /// 只索引 Starcat 私有知识库 repo，包含未 star 但已入库的 repo。
+    case knowledge
+    /// 索引 starred 与知识库并集，按 repo id 去重。
+    case all
+
+    static func mergeStarredAndKnowledge(starred: [Repo], knowledge: [Repo]) -> [Repo] {
+        var seenIDs = Set<Int64>()
+        var merged: [Repo] = []
+        merged.reserveCapacity(starred.count + knowledge.count)
+
+        for repo in starred + knowledge where seenIDs.insert(repo.id).inserted {
+            merged.append(repo)
+        }
+        return merged
+    }
+}
+
 @MainActor
 @Observable
 final class SemanticIndexBuilder {
@@ -85,6 +109,7 @@ final class SemanticIndexBuilder {
     private let repoRepository: any RepoRepositoryProtocol
     private let readmeAPI: ReadmeAPI
     private let semanticSearchService: SemanticSearchService
+    private let scope: SemanticIndexScope
 
     /// 单条 README 拉取之间的限速间隔（毫秒）。
     /// 默认 800ms ≈ 4500 req/h，留 500 给同步流程，详见模块注释。
@@ -106,11 +131,13 @@ final class SemanticIndexBuilder {
         repoRepository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
         semanticSearchService: SemanticSearchService,
+        scope: SemanticIndexScope = .all,
         intervalMillis: Int = 800
     ) {
         self.repoRepository = repoRepository
         self.readmeAPI = readmeAPI
         self.semanticSearchService = semanticSearchService
+        self.scope = scope
         self.intervalMillis = intervalMillis
     }
 
@@ -144,7 +171,7 @@ final class SemanticIndexBuilder {
         run(force: false)
     }
 
-    /// 全量重建：忽略 diff 阈值，所有 starred repo 都重新调一次 embedding API。
+    /// 全量重建：忽略 diff 阈值，当前语义索引范围内所有 repo 都重新调一次 embedding API。
     ///
     /// 调用方应已通过 Settings UI 弹出"危险操作"确认对话框（API 配额成本高）。
     /// 与 `start` 共用 task；如果有在跑的 task 会先 cancel。
@@ -211,18 +238,18 @@ final class SemanticIndexBuilder {
         do {
             let repos: [Repo]
             if total == 0 {
-                // 首次启动 / rebuildAll：重新查全表
-                repos = try await repoRepository.fetchAllStarred()
+                // 首次启动 / rebuildAll：重新查询当前语义索引范围。
+                repos = try await fetchRepos(scope: scope)
                 total = repos.count
                 processed = 0
                 failures = 0
                 skipped = 0
             } else {
                 // 恢复（从断点继续）：跳过 processed 个
-                repos = try await repoRepository.fetchAllStarred()
-                // 保护：如果 starred 列表期间发生变化（用户新 star / unstar），
+                repos = try await fetchRepos(scope: scope)
+                // 保护：如果索引范围列表期间发生变化（用户 star/unstar 或改知识库状态），
                 // 我们简单按当前列表的 prefix(processed) 当作"已处理"。这不精确但够用——
-                // 极端 corner case（resume 后 starred 增长 X 个）顶多让早期 X 个 repo 多走
+                // 极端 corner case（resume 后候选增长 X 个）顶多让早期 X 个 repo 多走
                 // 一次 diff 判定（diff 未超阈值会立即跳过，不烧 embedding API）。
             }
 
@@ -279,6 +306,19 @@ final class SemanticIndexBuilder {
         } catch {
             AppLog.ai.error("SemanticIndexBuilder failed: \(error.localizedDescription, privacy: .public)")
             status = .failed(message: error.localizedDescription)
+        }
+    }
+
+    private func fetchRepos(scope: SemanticIndexScope) async throws -> [Repo] {
+        switch scope {
+        case .starred:
+            return try await repoRepository.fetchAllStarred()
+        case .knowledge:
+            return try await repoRepository.fetchKnowledgeRepos()
+        case .all:
+            let starred = try await repoRepository.fetchAllStarred()
+            let knowledge = try await repoRepository.fetchKnowledgeRepos()
+            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
         }
     }
 
