@@ -66,17 +66,20 @@ enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
 struct RepoAIWindowContentView: View {
 
     let repo: Repo
+    let autoGenerateSummaryOnOpen: Bool
     let onClose: () -> Void
     let onInlineResizeTapped: (() -> Void)?
     let isInlineMaximized: Bool
 
     init(
         repo: Repo,
+        autoGenerateSummaryOnOpen: Bool = false,
         onClose: @escaping () -> Void,
         onInlineResizeTapped: (() -> Void)? = nil,
         isInlineMaximized: Bool = false
     ) {
         self.repo = repo
+        self.autoGenerateSummaryOnOpen = autoGenerateSummaryOnOpen
         self.onClose = onClose
         self.onInlineResizeTapped = onInlineResizeTapped
         self.isInlineMaximized = isInlineMaximized
@@ -100,6 +103,7 @@ struct RepoAIWindowContentView: View {
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
+    @State private var didRunInitialExternalSummaryRequest = false
     /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
     /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
     @State private var pendingChatDraftReplacement: String?
@@ -234,6 +238,14 @@ struct RepoAIWindowContentView: View {
             starredAtOpen = dependencies.starredRegistry.contains(ghRepoId: repo.id)
             await initializeInsightViewModelIfNeeded()
             await insightVM?.load(repo: repo)
+            if autoGenerateSummaryOnOpen, !didRunInitialExternalSummaryRequest {
+                didRunInitialExternalSummaryRequest = true
+                await generateSummaryFromExternalRequest()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .repoAIWindowGenerateSummaryRequested)) { notification in
+            guard let repoID = notification.userInfo?["repoId"] as? Repo.ID, repoID == repo.id else { return }
+            Task { await generateSummaryFromExternalRequest() }
         }
         .sheet(item: aiPaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -252,6 +264,19 @@ struct RepoAIWindowContentView: View {
                 }
             }
         )
+    }
+
+    /// Browser Plugin 触发“生成摘要”时复用窗口内 ViewModel。
+    ///
+    /// 关键约束：
+    /// - 仍走 `RepoAIInsightViewModel.generate`，因此 Pro 门控、Keychain、流式状态、
+    ///   tag hints、缓存写入和 SSE 推送都沿用现有路径；
+    /// - 已在生成中则不重复发起，避免浏览器重复点击造成并发 LLM 请求。
+    private func generateSummaryFromExternalRequest() async {
+        await initializeInsightViewModelIfNeeded()
+        guard let vm = insightVM, !vm.isGenerating else { return }
+        panelMode = .summary
+        await vm.generate(repo: repo, includeTags: starredAtOpen == true)
     }
 
     /// 任一时刻只让当前面板进入 SwiftUI 视图树。旧实现把另一面板压到高度 0，

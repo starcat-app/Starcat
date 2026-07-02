@@ -53,6 +53,11 @@ struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
             var copy = record
             try copy.save(db)
         }
+        NotificationCenter.default.post(
+            name: .aiSummaryDidChange,
+            object: nil,
+            userInfo: ["repoId": record.repoId]
+        )
     }
 
     /// 一次性查所有 repo 最新摘要——按 `generated_at DESC` 拉全表，遍历时按 repo_id 去重保留首条。

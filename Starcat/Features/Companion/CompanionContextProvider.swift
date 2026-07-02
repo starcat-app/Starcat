@@ -19,6 +19,7 @@ struct CompanionContextProvider {
     private let lookupNote: @Sendable (Int64) async throws -> RepoNote?
     private let lookupTags: @Sendable (Int64) async throws -> [Tag]
     private let lookupAllTags: @Sendable () async throws -> [Tag]
+    private let lookupLatestSummary: @Sendable (Int64) async throws -> AISummaryRecord?
     private let lookupHealth: @Sendable (Int64) async throws -> RepoHealthSnapshot?
     private let lookupOpenSSF: @Sendable (Int64) async throws -> OpenSSFScoreRecord?
     private let lookupWikiLinks: @Sendable (String, String) async -> [WikiLink]
@@ -30,6 +31,7 @@ struct CompanionContextProvider {
         noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
         tagRepository: (any TagRepositoryProtocol)? = nil,
         repoTagRepository: (any RepoTagRepositoryProtocol)? = nil,
+        summaryRepository: (any AISummaryRepositoryProtocol)? = nil,
         healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         wikiContextService: WikiContextService? = nil,
@@ -47,6 +49,9 @@ struct CompanionContextProvider {
         }
         lookupAllTags = {
             try await tagRepository?.fetchAll() ?? []
+        }
+        lookupLatestSummary = { repoID in
+            try await summaryRepository?.fetchLatestPerRepo()[repoID]
         }
         lookupHealth = { repoID in
             try await healthRepository?.snapshot(for: repoID)
@@ -87,6 +92,7 @@ struct CompanionContextProvider {
         lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil },
         lookupTags: @escaping @Sendable (Int64) async throws -> [Tag] = { _ in [] },
         lookupAllTags: @escaping @Sendable () async throws -> [Tag] = { [] },
+        lookupLatestSummary: @escaping @Sendable (Int64) async throws -> AISummaryRecord? = { _ in nil },
         lookupHealth: @escaping @Sendable (Int64) async throws -> RepoHealthSnapshot? = { _ in nil },
         lookupOpenSSF: @escaping @Sendable (Int64) async throws -> OpenSSFScoreRecord? = { _ in nil },
         lookupWikiLinks: @escaping @Sendable (String, String) async -> [WikiLink] = { _, _ in [] },
@@ -97,6 +103,7 @@ struct CompanionContextProvider {
         self.lookupNote = lookupNote
         self.lookupTags = lookupTags
         self.lookupAllTags = lookupAllTags
+        self.lookupLatestSummary = lookupLatestSummary
         self.lookupHealth = lookupHealth
         self.lookupOpenSSF = lookupOpenSSF
         self.lookupWikiLinks = lookupWikiLinks
@@ -120,6 +127,7 @@ struct CompanionContextProvider {
         // is cut at the local API boundary instead of relying on content-script UI
         // hiding. Private notes remain available for starred repos because they are
         // first-party local data, not one of the paid external insight surfaces.
+        let aiSummary = hasProEntitlement ? await summaryDTO(for: localRepo) : nil
         let health = hasProEntitlement ? await healthDTO(for: localRepo) : nil
         let openssf = hasProEntitlement ? await openSSFDTO(for: localRepo) : nil
         let wikiLinks = hasProEntitlement ? await wikiLinkDTOs(owner: owner, name: name) : []
@@ -132,11 +140,13 @@ struct CompanionContextProvider {
             wikiLinks: wikiLinks,
             tags: tags,
             availableTags: availableTags,
+            aiSummary: aiSummary,
             note: note,
             health: health,
             openssf: openssf,
             actions: CompanionActionsDTO(
                 openInStarcat: canOpenLocalActions,
+                generateSummary: canOpenLocalActions,
                 codeflow: canOpenLocalActions,
                 codebase: canOpenLocalActions
             ),
@@ -191,6 +201,16 @@ struct CompanionContextProvider {
             return try await lookupAllTags().map(Self.tagDTO(_:))
         } catch {
             return []
+        }
+    }
+
+    private func summaryDTO(for repo: Repo?) async -> CompanionAISummaryDTO? {
+        guard let repo, repo.isStarred else { return nil }
+        do {
+            guard let record = try await lookupLatestSummary(repo.id) else { return nil }
+            return Self.summaryDTO(record)
+        } catch {
+            return nil
         }
     }
 
@@ -257,6 +277,24 @@ struct CompanionContextProvider {
             color: tag.color,
             icon: tag.icon
         )
+    }
+
+    static func summaryDTO(_ record: AISummaryRecord) -> CompanionAISummaryDTO? {
+        guard let insight = try? RepoAIInsightService.decodeInsight(json: record.summaryJson) else {
+            return nil
+        }
+        let markdown = normalizedNonEmpty(insight.summaryMarkdown) ?? normalizedNonEmpty(insight.summary)
+        guard let markdown else { return nil }
+        return CompanionAISummaryDTO(
+            markdown: markdown,
+            model: normalizedNonEmpty(insight.model),
+            generatedAt: normalizedNonEmpty(insight.generatedAt) ?? normalizedNonEmpty(record.generatedAt)
+        )
+    }
+
+    private static func normalizedNonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     private static func isValidGitHubPathComponent(_ value: String) -> Bool {

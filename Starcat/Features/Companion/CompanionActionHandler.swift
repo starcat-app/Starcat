@@ -13,6 +13,7 @@ import Foundation
 
 enum CompanionOpenAction: String, Codable, Equatable {
     case openRepo = "open-repo"
+    case generateSummary = "generate-summary"
     case codeflow
     case codebase
 }
@@ -30,6 +31,7 @@ final class CompanionActionDispatcher {
     struct Request: Identifiable, Equatable {
         enum Kind: Equatable {
             case openRepo
+            case generateSummary
             case codeflow
             case codebase
         }
@@ -45,6 +47,10 @@ final class CompanionActionDispatcher {
         pendingRequest = Request(kind: .openRepo, repo: repo)
     }
 
+    func requestGenerateSummary(_ repo: Repo) {
+        pendingRequest = Request(kind: .generateSummary, repo: repo)
+    }
+
     func requestCodeFlow(for repo: Repo) {
         pendingRequest = Request(kind: .codeflow, repo: repo)
     }
@@ -57,6 +63,7 @@ final class CompanionActionDispatcher {
 struct CompanionActionHandler {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
     private let requestOpenRepo: @MainActor @Sendable (Repo) -> Void
+    private let requestGenerateSummary: @MainActor @Sendable (Repo) -> Void
     private let requestCodeFlow: @MainActor @Sendable (Repo) -> Void
     private let requestCodebase: @MainActor @Sendable (Repo) -> Void
     private let isProUser: @Sendable () async -> Bool
@@ -72,6 +79,9 @@ struct CompanionActionHandler {
             },
             requestOpenRepo: { repo in
                 dispatcher.requestOpenRepo(repo)
+            },
+            requestGenerateSummary: { repo in
+                dispatcher.requestGenerateSummary(repo)
             },
             requestCodeFlow: { repo in
                 dispatcher.requestCodeFlow(for: repo)
@@ -90,12 +100,14 @@ struct CompanionActionHandler {
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
         requestOpenRepo: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
+        requestGenerateSummary: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestCodeFlow: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestCodebase: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
         self.requestOpenRepo = requestOpenRepo
+        self.requestGenerateSummary = requestGenerateSummary
         self.requestCodeFlow = requestCodeFlow
         self.requestCodebase = requestCodebase
         self.isProUser = isProUser
@@ -112,6 +124,8 @@ struct CompanionActionHandler {
         switch action {
         case .openRepo:
             await requestOpenRepo(repo)
+        case .generateSummary:
+            await requestGenerateSummary(repo)
         case .codeflow:
             guard await isProUser() else { throw CompanionActionError.requiresPro(.codeFlow) }
             await requestCodeFlow(repo)

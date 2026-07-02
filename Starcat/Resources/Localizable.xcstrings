@@ -5872,13 +5872,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release Notes"
+            "value" : "What's New"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "版本说明"
+            "value" : "What's New"
           }
         }
       }
@@ -15958,13 +15958,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release Notes"
+            "value" : "What's New"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "版本说明"
+            "value" : "What's New"
           }
         }
       }
@@ -39404,6 +39404,57 @@
     },
     "𝕏" : {
 
+    },
+    "releaseNotes.badge.new" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New"
+          }
+        }
+      }
+    },
+    "releaseNotes.hero.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest improvements, fixes, and product updates."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest improvements, fixes, and product updates."
+          }
+        }
+      }
+    },
+    "releaseNotes.hero.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What's New in Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What's New in Starcat"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

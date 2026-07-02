@@ -622,7 +622,7 @@ struct HomeView: View {
     /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
     /// 这里复用 Search Center 本地结果跳转语义：切到 Manage / All Stars，清空搜索，
     /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
-    private func openCompanionRepository(_ repo: Repo) {
+    private func openCompanionRepository(_ repo: Repo, generateSummary: Bool = false) {
         selectedSidebarPage = .manage
         viewModel.selection = .allStars
         viewModel.submitSearch("")
@@ -630,6 +630,18 @@ struct HomeView: View {
             await viewModel.reloadItems(forceRefresh: true)
             viewModel.shouldScrollSelectedRepoIntoView = true
             viewModel.selectedRepoID = repo.id
+            guard generateSummary else { return }
+            NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
+            dependencies.telemetryManager.track(
+                .aiPanelOpened,
+                properties: [.source: .string("browser-plugin")]
+            )
+            RepoAIWindowController.show(
+                repo: repo,
+                dependencies: dependencies,
+                homeViewModel: viewModel,
+                autoGenerateSummary: true
+            )
         }
     }
 
@@ -750,6 +762,9 @@ struct HomeView: View {
             },
             onOpenCompanionRepo: { repo in
                 openCompanionRepository(repo)
+            },
+            onGenerateCompanionSummary: { repo in
+                openCompanionRepository(repo, generateSummary: true)
             }
         )
         .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)

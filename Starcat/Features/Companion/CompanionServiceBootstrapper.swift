@@ -37,6 +37,7 @@ enum CompanionServiceBootstrapper {
             noteRepository: dependencies.repoNoteRepository,
             tagRepository: dependencies.tagRepository,
             repoTagRepository: dependencies.repoTagRepository,
+            summaryRepository: dependencies.aiSummaryRepository,
             healthRepository: dependencies.repoHealthRepository,
             openSSFRepository: dependencies.openSSFScoreRepository,
             wikiContextService: dependencies.wikiContextService,
@@ -57,10 +58,16 @@ enum CompanionServiceBootstrapper {
             dispatcher: dependencies.companionActionDispatcher,
             entitlementGate: dependencies.entitlementGate
         )
-        let eventHub = CompanionEventHub { repoID in
-            let tags = try await dependencies.repoTagRepository.fetchTags(forRepo: repoID)
-            return tags.map(CompanionContextProvider.tagDTO(_:))
-        }
+        let eventHub = CompanionEventHub(
+            lookupTags: { repoID in
+                let tags = try await dependencies.repoTagRepository.fetchTags(forRepo: repoID)
+                return tags.map(CompanionContextProvider.tagDTO(_:))
+            },
+            lookupSummary: { repoID in
+                try await dependencies.aiSummaryRepository.fetchLatestPerRepo()[repoID]
+                    .flatMap(CompanionContextProvider.summaryDTO(_:))
+            }
+        )
         let nextServer = CompanionLocalServer(
             configuration: configuration,
             contextProvider: provider,

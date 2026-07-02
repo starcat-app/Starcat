@@ -34,3 +34,13 @@ struct AISummaryRecord: Codable, FetchableRecord, MutablePersistableRecord, Equa
         case generatedAt = "generated_at"
     }
 }
+
+// MARK: - Notification.Name
+
+extension Notification.Name {
+    /// AI 摘要缓存变更事件。
+    ///
+    /// `AISummaryRepository.upsert` 成功写入后发送。Companion 事件桥只依赖 repo.id
+    /// 重新读取最新摘要，避免把 RepoAIInsight JSON 解析逻辑复制到每个生成入口。
+    static let aiSummaryDidChange = Notification.Name("StarcatAISummaryDidChange")
+}

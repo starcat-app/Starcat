@@ -20,7 +20,7 @@ struct CompanionModelsTests {
         #expect(object["schema_version"] as? Int == 1)
         #expect(object["status"] as? String == "ok")
         #expect(object["app"] as? String == "Starcat")
-        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "tags", "actions", "events"])
+        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "tags", "ai-summary", "actions", "events"])
     }
 
     @Test("repo-context response keeps snake_case contract")
@@ -46,10 +46,11 @@ struct CompanionModelsTests {
             availableTags: [
                 CompanionTagDTO(id: "1", name: "AI", color: "#0A84FF", icon: "tag")
             ],
+            aiSummary: CompanionAISummaryDTO(markdown: "summary", model: "gpt-test", generatedAt: "2026-07-01T10:00:00Z"),
             note: CompanionNoteDTO(editable: true, content: "note", editedAt: "2026-07-01T10:00:00Z"),
             health: CompanionHealthDTO(score: 82, grade: "B", computedAt: "2026-07-01T10:00:00Z"),
             openssf: CompanionOpenSSFDTO(score: 7.4, scoreDate: "2026-06-30"),
-            actions: CompanionActionsDTO(openInStarcat: true, codeflow: true, codebase: true),
+            actions: CompanionActionsDTO(openInStarcat: true, generateSummary: true, codeflow: true, codebase: true),
             entitlement: CompanionEntitlementDTO(isPro: true)
         )
 
@@ -67,7 +68,9 @@ struct CompanionModelsTests {
         #expect(object["wiki_links"] is [[String: Any]])
         #expect(object["tags"] is [[String: Any]])
         #expect(object["available_tags"] is [[String: Any]])
+        #expect((object["ai_summary"] as? [String: Any])?["markdown"] as? String == "summary")
         #expect(actions["open_in_starcat"] as? Bool == true)
+        #expect(actions["generate_summary"] as? Bool == true)
         #expect(entitlement["is_pro"] as? Bool == true)
     }
 
@@ -78,7 +81,8 @@ struct CompanionModelsTests {
             type: "note.updated",
             repoID: 44_838_949,
             note: CompanionNoteDTO(editable: true, content: "live note", editedAt: "2026-07-01T10:00:00Z"),
-            tags: nil
+            tags: nil,
+            aiSummary: nil
         )
 
         let data = try CompanionJSONTestEncoder.encode(event)
@@ -101,7 +105,8 @@ struct CompanionModelsTests {
             note: nil,
             tags: [
                 CompanionTagDTO(id: "1", name: "AI", color: "#0A84FF", icon: "tag")
-            ]
+            ],
+            aiSummary: nil
         )
 
         let data = try CompanionJSONTestEncoder.encode(event)
@@ -111,6 +116,27 @@ struct CompanionModelsTests {
         #expect(object["type"] as? String == "tags.updated")
         #expect(object["repo_id"] as? Int == 44_838_949)
         #expect(tags.first?["color"] as? String == "#0A84FF")
+    }
+
+    @Test("summary event envelope keeps snake_case contract")
+    func summaryEventEnvelopeEncodingShape() throws {
+        let event = CompanionEventEnvelope(
+            schemaVersion: 1,
+            type: "summary.updated",
+            repoID: 44_838_949,
+            note: nil,
+            tags: nil,
+            aiSummary: CompanionAISummaryDTO(markdown: "summary", model: "gpt-test", generatedAt: "2026-07-01T10:00:00Z")
+        )
+
+        let data = try CompanionJSONTestEncoder.encode(event)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let summary = try #require(object["ai_summary"] as? [String: Any])
+
+        #expect(object["type"] as? String == "summary.updated")
+        #expect(object["repo_id"] as? Int == 44_838_949)
+        #expect(summary["markdown"] as? String == "summary")
+        #expect(summary["generated_at"] as? String == "2026-07-01T10:00:00Z")
     }
 }
 

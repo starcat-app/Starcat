@@ -86,6 +86,8 @@ struct RepoListView: View {
     var onOpenAgentWorkspace: (() -> Void)?
     /// Browser Plugin 的 Open in Starcat 由 HomeView 负责切换根页面和选中详情。
     var onOpenCompanionRepo: ((Repo) -> Void)?
+    /// Browser Plugin 的生成摘要动作需要先定位 repo，再打开 AI 窗口并启动生成。
+    var onGenerateCompanionSummary: ((Repo) -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -1736,6 +1738,8 @@ struct RepoListView: View {
         switch request.kind {
         case .openRepo:
             onOpenCompanionRepo?(request.repo)
+        case .generateSummary:
+            onGenerateCompanionSummary?(request.repo)
         case .codeflow:
             openCodeFlow(for: request.repo)
         case .codebase:

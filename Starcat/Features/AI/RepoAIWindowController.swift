@@ -74,20 +74,25 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     static func show(
         repo: Repo,
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
+        homeViewModel: HomeViewModel,
+        autoGenerateSummary: Bool = false
     ) {
         if let existing = instances[repo.id] {
             existing.showWindow(nil)
             alignWindow(existing.window)
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            if autoGenerateSummary {
+                NotificationCenter.default.post(name: .repoAIWindowGenerateSummaryRequested, object: nil, userInfo: ["repoId": repo.id])
+            }
             return
         }
 
         let controller = RepoAIWindowController(
             repo: repo,
             dependencies: dependencies,
-            homeViewModel: homeViewModel
+            homeViewModel: homeViewModel,
+            autoGenerateSummary: autoGenerateSummary
         )
         instances[repo.id] = controller
         controller.showWindow(nil)
@@ -117,7 +122,8 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     private init(
         repo: Repo,
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
+        homeViewModel: HomeViewModel,
+        autoGenerateSummary: Bool
     ) {
         self.repoId = repo.id
 
@@ -134,6 +140,7 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         // 会读 settings；与主窗 `StarcatApp` 给 ContentView 注入的链路对齐。
         let content = RepoAIWindowContentView(
             repo: repo,
+            autoGenerateSummaryOnOpen: autoGenerateSummary,
             onClose: { [weak window] in
                 window?.close()
             }
@@ -251,4 +258,13 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         Self.instances.removeValue(forKey: repoId)
     }
+}
+
+extension Notification.Name {
+    /// 外部入口请求 AI 窗口对指定 repo 立即生成摘要。
+    ///
+    /// Browser Plugin 的 Companion action 可能命中一个已经打开的 AI 窗口；AppKit
+    /// controller 只负责把窗口带到前台，真正生成仍交给 SwiftUI 内部的
+    /// `RepoAIInsightViewModel`，因此用通知跨过 AppKit/SwiftUI 边界。
+    static let repoAIWindowGenerateSummaryRequested = Notification.Name("StarcatRepoAIWindowGenerateSummaryRequested")
 }

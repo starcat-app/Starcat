@@ -127,6 +127,31 @@ struct CompanionContextProviderTests {
         #expect(context.note?.editedAt == "2026-07-01T10:00:00Z")
     }
 
+    @Test("starred repo exposes cached AI summary")
+    func starredRepoReturnsCachedAISummary() async throws {
+        let repo = makeRepo(isStarred: true)
+        let summaryJSON = try makeSummaryJSON()
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupLatestSummary: { repoID in
+                #expect(repoID == 44_838_949)
+                return AISummaryRecord(
+                    repoId: repoID,
+                    model: "gpt-test",
+                    sourceHash: "hash",
+                    summaryJson: summaryJSON,
+                    generatedAt: "2026-07-01T10:00:00Z"
+                )
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.aiSummary?.markdown == "## Summary\nA test summary.")
+        #expect(context.aiSummary?.model == "gpt-test")
+        #expect(context.aiSummary?.generatedAt == "2026-07-01T10:00:00Z")
+    }
+
     @Test("unstarred local repo does not expose private note")
     func unstarredRepoHidesPrivateNote() async throws {
         let repo = makeRepo(isStarred: false)
@@ -378,5 +403,26 @@ struct CompanionContextProviderTests {
             starredAt: nil,
             cachedAt: "2026-07-01T10:00:00Z"
         )
+    }
+
+    private func makeSummaryJSON() throws -> String {
+        let insight = RepoAIInsight(
+            oneLiner: "A test summary.",
+            summary: "legacy summary",
+            summaryMarkdown: "## Summary\nA test summary.",
+            platforms: [],
+            suitableFor: [],
+            strengths: [],
+            risks: [],
+            minimalExample: nil,
+            suggestedTags: [],
+            model: "gpt-test",
+            generatedAt: "2026-07-01T10:00:00Z",
+            contextMetadata: nil,
+            externalContextMarkdown: nil,
+            generationContextSettings: nil
+        )
+        let data = try JSONEncoder().encode(insight)
+        return String(decoding: data, as: UTF8.self)
     }
 }

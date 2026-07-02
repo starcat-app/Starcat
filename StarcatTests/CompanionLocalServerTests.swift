@@ -378,6 +378,29 @@ struct CompanionLocalServerTests {
         #expect(recorder.value?.action == .openRepo)
     }
 
+    @Test("POST /plugin/v1/actions/open 触发 AI 摘要生成")
+    func postActionGenerateSummary() async throws {
+        let recorder = CompanionActionRecorder()
+        let handler = CompanionActionHandler(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            requestGenerateSummary: { repo in
+                recorder.record(.generateSummary, repo: repo)
+            }
+        )
+        let server = try makeServer(actionHandler: handler)
+        let response = await server.handle(request("""
+        POST /plugin/v1/actions/open HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","action":"generate-summary"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"action\":\"generate-summary\""))
+        #expect(recorder.value?.action == .generateSummary)
+    }
+
     @Test("POST /plugin/v1/actions/open 未 star repo 返回 403")
     func postActionRejectsUnstarredRepo() async throws {
         let handler = CompanionActionHandler(

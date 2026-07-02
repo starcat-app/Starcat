@@ -6,7 +6,7 @@
 //
 //  关键约束:
 //  - 只广播 Starcat 已落库后的本地事件, 不做乐观推送;
-//  - 当前支持 notes / tags, envelope 保留 type/repoID, 后续可扩展 health/wiki;
+//  - 当前支持 notes / tags / AI summary, envelope 保留 type/repoID, 后续可扩展 health/wiki;
 //  - 客户端按 repoID 订阅, 避免把无关仓库的私有笔记发到 GitHub 页面。
 //
 
@@ -24,13 +24,17 @@ final class CompanionEventHub {
     private var clients: [UUID: Client] = [:]
     private var noteObservationTask: Task<Void, Never>?
     private var tagsObservationTask: Task<Void, Never>?
+    private var summaryObservationTask: Task<Void, Never>?
     private let lookupTags: @Sendable (Int64) async throws -> [CompanionTagDTO]
+    private let lookupSummary: @Sendable (Int64) async throws -> CompanionAISummaryDTO?
 
     init(
         notificationCenter: NotificationCenter = .default,
-        lookupTags: @escaping @Sendable (Int64) async throws -> [CompanionTagDTO] = { _ in [] }
+        lookupTags: @escaping @Sendable (Int64) async throws -> [CompanionTagDTO] = { _ in [] },
+        lookupSummary: @escaping @Sendable (Int64) async throws -> CompanionAISummaryDTO? = { _ in nil }
     ) {
         self.lookupTags = lookupTags
+        self.lookupSummary = lookupSummary
 
         noteObservationTask = Task { @MainActor [weak self] in
             let stream = notificationCenter.notifications(named: .repoNoteContentDidChange)
@@ -55,11 +59,26 @@ final class CompanionEventHub {
                 }
             }
         }
+
+        summaryObservationTask = Task { @MainActor [weak self] in
+            let stream = notificationCenter.notifications(named: .aiSummaryDidChange)
+            for await notification in stream {
+                guard let self,
+                      let repoID = notification.userInfo?["repoId"] as? Int64 else { continue }
+                do {
+                    guard let summary = try await self.lookupSummary(repoID) else { continue }
+                    self.publishSummary(repoID: repoID, summary: summary)
+                } catch {
+                    AppLog.general.warning("CompanionEventHub failed to publish summary update for repoID \(repoID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
     }
 
     deinit {
         noteObservationTask?.cancel()
         tagsObservationTask?.cancel()
+        summaryObservationTask?.cancel()
     }
 
     func addClient(repoID: Int64?, sink: @escaping Sink) -> UUID {
@@ -78,7 +97,8 @@ final class CompanionEventHub {
             type: "note.updated",
             repoID: repoID,
             note: CompanionNoteDTO(editable: true, content: content, editedAt: editedAt),
-            tags: nil
+            tags: nil,
+            aiSummary: nil
         )
         publish(envelope)
     }
@@ -89,7 +109,20 @@ final class CompanionEventHub {
             type: "tags.updated",
             repoID: repoID,
             note: nil,
-            tags: tags
+            tags: tags,
+            aiSummary: nil
+        )
+        publish(envelope)
+    }
+
+    func publishSummary(repoID: Int64, summary: CompanionAISummaryDTO) {
+        let envelope = CompanionEventEnvelope(
+            schemaVersion: 1,
+            type: "summary.updated",
+            repoID: repoID,
+            note: nil,
+            tags: nil,
+            aiSummary: summary
         )
         publish(envelope)
     }
