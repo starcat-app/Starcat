@@ -28,6 +28,9 @@ enum SmartCollectionSystemRuleSummary {
 
     private static func criteriaLines(for kind: SmartCollectionKind) -> [String] {
         switch kind {
+        case .library:
+            return [String.l10n("library.state.inLibrary")]
+
         case .needsReview:
             return [
                 String.l10n("smartCollections.systemRule.matchAny"),

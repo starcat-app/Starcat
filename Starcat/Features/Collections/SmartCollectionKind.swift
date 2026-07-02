@@ -12,6 +12,7 @@ import Foundation
 import SwiftUI
 
 enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case library
     case needsReview
     case unmaintained
     case highValue
@@ -23,6 +24,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
 
     var titleKey: LocalizedStringKey {
         switch self {
+        case .library: return "smartCollections.library.title"
         case .needsReview: return "smartCollections.needsReview.title"
         case .unmaintained: return "smartCollections.unmaintained.title"
         case .highValue: return "smartCollections.highValue.title"
@@ -34,6 +36,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
 
     var subtitleKey: LocalizedStringKey {
         switch self {
+        case .library: return "smartCollections.library.subtitle"
         case .needsReview: return "smartCollections.needsReview.subtitle"
         case .unmaintained: return "smartCollections.unmaintained.subtitle"
         case .highValue: return "smartCollections.highValue.subtitle"
@@ -45,6 +48,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
 
     var systemImage: String {
         switch self {
+        case .library: return "heart.fill"
         case .needsReview: return "exclamationmark.magnifyingglass"
         case .unmaintained: return "clock.badge.exclamationmark"
         case .highValue: return "star.circle.fill"
@@ -56,6 +60,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
 
     var tint: Color {
         switch self {
+        case .library: return .pink
         case .needsReview: return .orange
         case .unmaintained: return .red
         case .highValue: return .green

@@ -121,16 +121,18 @@ struct SmartCollectionsOverviewView: View {
 
                 systemCountLabel(for: kind)
 
-                // 内置集合仅「另存为自定义」一个动作，用 Button 避免 Menu 自带 chevron 与图标重复。
-                Button {
-                    createFromTemplateKind = kind
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.caption)
+                // 知识库是系统入库边界，不提供“另存为自定义规则”，避免用户误以为它是普通规则集合。
+                if kind != .library {
+                    Button {
+                        createFromTemplateKind = kind
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("smartCollections.saveAsTemplate")
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("smartCollections.saveAsTemplate")
             }
 
             Text(kind.titleKey)
@@ -293,7 +295,9 @@ struct SmartCollectionsOverviewView: View {
             let statusMap = (try? await statusMapAsync) ?? [:]
             var nextSystem: [SmartCollectionKind: Int] = [:]
             for kind in SmartCollectionKind.allCases {
-                if kind == .noTags {
+                if kind == .library {
+                    nextSystem[kind] = try await dependencies.repoRepository.knowledgeCount()
+                } else if kind == .noTags {
                     nextSystem[kind] = try await dependencies.repoRepository.fetchUntagged().count
                 } else {
                     nextSystem[kind] = repos.filter { repo in

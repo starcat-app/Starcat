@@ -1049,6 +1049,8 @@ final class HomeViewModel {
             return .githubStarList(listID)
         case .githubStarListUngrouped:
             return .githubStarListUngrouped
+        case .smartCollection(.library):
+            return .library
         case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
             return nil
         }
@@ -1312,7 +1314,9 @@ final class HomeViewModel {
                         case .smartCollectionsHome:
                             repos = []
                         case .smartCollection(let kind):
-                            if kind == .noTags {
+                            if kind == .library {
+                                repos = try await self.repository.fetchKnowledgeRepos()
+                            } else if kind == .noTags {
                                 repos = try await self.repository.fetchUntagged()
                             } else if kind == .using {
                                 repos = try await self.repoNoteRepository.fetchRepos(byStatus: .using)
@@ -1693,7 +1697,9 @@ final class HomeViewModel {
                     case .smartCollectionsHome:
                         return nil
                     case .smartCollection(let kind):
-                        if kind == .noTags {
+                        if kind == .library {
+                            return try await self.repository.fetchKnowledgeRepos()
+                        } else if kind == .noTags {
                             return try await self.repository.fetchUntagged()
                         } else if kind == .using {
                             return try await self.repoNoteRepository.fetchRepos(byStatus: .using)
@@ -1997,6 +2003,8 @@ final class HomeViewModel {
         now: Date = Date()
     ) -> Bool {
         switch kind {
+        case .library:
+            return false
         case .needsReview:
             return repo.isArchived
                 || health.map { $0.overallScore < 60 } == true

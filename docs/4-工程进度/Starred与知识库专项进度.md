@@ -1,6 +1,6 @@
 # Starred 与知识库专项进度
 
-> 状态: 方案已确认, 待实施
+> 状态: 方案已确认, 进行中
 > 创建: 2026-07-02
 > 需求讨论: `docs/2-产品/需求讨论/Starred与知识库语义拆分需求讨论.md`
 > 正式方案: `docs/2-产品/需求讨论/正式方案/Starred与知识库正式方案.md`
@@ -71,21 +71,21 @@
 
 ## 4. PR-2: Smart Collections 知识库集合
 
-- [ ] `SmartCollectionKind` 新增 `library`。
-- [ ] Smart Collections 总览展示“知识库”集合。
-- [ ] 中栏列表可进入知识库集合。
-- [ ] 第一版查看知识库 repo 的整库入口固定为 Smart Collections -> 知识库。
+- [x] `SmartCollectionKind` 新增 `library`。
+- [x] Smart Collections 总览展示“知识库”集合。
+- [x] 中栏列表可进入知识库集合。
+- [x] 第一版查看知识库 repo 的整库入口固定为 Smart Collections -> 知识库。
 - [ ] Manage / 列表筛选菜单增加知识库筛选条件: 全部 / 已入库 / 未入库。
-- [ ] Manage 默认列表仍是 starred 管理视图,不混入未 star 已入库 repo。
-- [ ] 知识库集合包含 `libraryState == .inLibrary`。
-- [ ] 未 star 已入库 repo 能出现在知识库集合。
+- [x] Manage 默认列表仍是 starred 管理视图,不混入未 star 已入库 repo。
+- [x] 知识库集合包含 `libraryState == .inLibrary`。
+- [x] 未 star 已入库 repo 能出现在知识库集合。
 - [ ] 知识库筛选与现有 status / tag / hide archived / hide forks 条件可组合。
 - [ ] 知识库集合支持 tag / status / language / archived / fork 筛选。
-- [ ] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
-- [ ] 未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
+- [x] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
+- [x] 未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
 - [ ] 知识库集合中不可访问 repo 仍显示,并标记为不可访问/已失效。
-- [ ] i18n 补齐知识库相关文案。
-- [ ] 单测覆盖集合命中与计数。
+- [x] i18n 补齐知识库相关文案。
+- [x] 单测覆盖集合命中与计数。
 
 ## 5. PR-3: 详情页 ❤️ 入口
 
@@ -218,13 +218,13 @@
 ## 10. 验证记录
 
 - [ ] `rtk xcodegen generate`
-- [ ] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
+- [x] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoNoteRepositoryTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
-- [ ] `rtk git diff --check`
+- [x] `rtk git diff --check`
 
 ## 11. 人工验证流程
 
@@ -278,13 +278,13 @@
 
 ### 11.4 Smart Collections / Manage
 
-- [ ] Smart Collections 出现系统集合“知识库”。
-- [ ] 知识库集合包含 B / D。
-- [ ] Manage 默认列表不显示 D。
+- [x] Smart Collections 出现系统集合“知识库”。
+- [x] 知识库集合包含 B / D。
+- [x] Manage 默认列表不显示 D。
 - [ ] Manage 知识库筛选条件支持全部 / 已入库 / 未入库,并可与 status / tag / hide archived / hide forks 组合。
 - [ ] 知识库集合支持 tag / status / language / archived / fork 筛选。
-- [ ] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
-- [ ] D 这类未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
+- [x] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
+- [x] D 这类未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
 - [ ] GitHub 404/410/权限不足的已入库 repo 仍出现在知识库集合。
 - [ ] 不可访问 repo 在 UI 中标记为不可访问/已失效。
 - [ ] 无 token / token 权限不足时,已入库私有 repo 的本地 notes/tags/status 与入库状态仍可正常查看和修改。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-2 第一批落地 Smart Collections 知识库集合入口和列表范围。
 - 2026-07-02: PR-1 第二批落地知识库 repo 查询、FTS 范围和未 star 外部 repo metadata 写入。
 - 2026-07-02: PR-1 第一批落地 LibraryState、repo_notes 字段和 RepoNoteRepository 查询/更新能力。
 - 2026-07-02: 确认详情页 ❤️ 不做乐观更新,写入成功后再更新 UI。

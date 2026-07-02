@@ -29,7 +29,8 @@ struct HomeViewModelFilterSortTests {
         stars: Int,
         starredAt: String,
         isArchived: Bool = false,
-        isFork: Bool = false
+        isFork: Bool = false,
+        isStarred: Bool = true
     ) async throws {
         try await db.writer.write { db in
             try db.execute(
@@ -44,7 +45,7 @@ struct HomeViewModelFilterSortTests {
                     ?, 'o', ?, ?, NULL, NULL,
                     ?, 0, 0, NULL, NULL,
                     NULL, ?, NULL, NULL,
-                    0, ?, ?, 1,
+                    0, ?, ?, ?,
                     NULL, NULL, NULL, ?, '2026-05-30T00:00:00Z'
                 )
                 """,
@@ -56,6 +57,7 @@ struct HomeViewModelFilterSortTests {
                     "https://github.com/\(fullName)",
                     isFork,
                     isArchived,
+                    isStarred,
                     starredAt
                 ]
             )
@@ -246,6 +248,32 @@ struct HomeViewModelFilterSortTests {
 
         // Smart Collection 复用 repo_notes 的显式 using 状态；无 note / read 不应混入。
         #expect(vm.items.map(\.id) == [3, 1])
+    }
+
+    @Test("Smart Collections: .library 包含未 star 已入库 repo,Manage 默认不混入")
+    func smartCollectionLibraryIncludesUnstarredLibraryRepos() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/starred-library", stars: 0, starredAt: "2026-05-03T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/starred-outside", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(
+            db,
+            id: 3,
+            fullName: "o/library-only",
+            stars: 0,
+            starredAt: "2026-05-01T00:00:00Z",
+            isStarred: false
+        )
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 3, state: .inLibrary)
+
+        await vm.reloadItems(forceRefresh: true)
+        #expect(vm.items.map(\.id) == [1, 2], "Manage 默认仍是 starred 管理视图")
+
+        vm.selectSidebar(.smartCollection(.library))
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(Set(vm.items.map(\.id)) == [1, 3])
+        #expect(vm.items.map(\.id).contains(2) == false)
     }
 
     @Test("D3: 按 .unread 过滤包含 implicit unread(无 note)与 explicit unread")

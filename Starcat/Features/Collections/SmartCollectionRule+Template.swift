@@ -16,6 +16,8 @@ extension SmartCollectionRule {
     static func template(for kind: SmartCollectionKind) -> SmartCollectionRule {
         var rule = baseline
         switch kind {
+        case .library:
+            break
         case .needsReview:
             rule.healthScoreMax = 59
             rule.requireLicense = false
@@ -40,6 +42,7 @@ extension SmartCollectionRule {
 
     static func defaultName(for kind: SmartCollectionKind) -> String {
         switch kind {
+        case .library: return String.l10n("smartCollections.library.title")
         case .needsReview: return String.l10n("smartCollections.needsReview.title")
         case .unmaintained: return String.l10n("smartCollections.unmaintained.title")
         case .highValue: return String.l10n("smartCollections.highValue.title")
