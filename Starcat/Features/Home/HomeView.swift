@@ -693,13 +693,23 @@ struct HomeView: View {
         viewModel.selectedRepoID = first.id
     }
 
-    /// 开始使用清单里的 AI 入口复用当前选中仓库，不创建新的 AI 专用流程。
+    /// 开始使用清单里的 AI 入口必须走详情页底部横条。
+    /// 这里不复用搜索结果的独立窗口入口，避免最后一步和用户在详情页看到的 AI 入口不一致。
     private func openSelectedRepoAIForGettingStarted() {
         guard let repo = viewModel.selectedRepo else {
             selectFirstRepoForGettingStarted()
             return
         }
-        openSearchRepositoryAI(repo)
+        NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
+        dependencies.telemetryManager.track(
+            .aiPanelOpened,
+            properties: [.source: .string("getting-started")]
+        )
+        NotificationCenter.default.post(
+            name: .repoAIInlineGenerateSummaryRequested,
+            object: nil,
+            userInfo: ["repoId": repo.id]
+        )
     }
 
     private func toggleSearchRepositoryStar(_ repo: Repo) async throws -> Bool {

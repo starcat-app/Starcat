@@ -39,9 +39,11 @@ import AppKit
 /// 这里也承接 Dock reopen / 前台激活兜底。SwiftUI 只能挂一个
 /// `NSApplicationDelegateAdaptor`，所以 AppKit 生命周期职责必须收敛在同一个 delegate，
 /// 避免 OAuth URL handler 与窗口重开逻辑互相覆盖。
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let incomingURLNotification = Notification.Name("starcat.incomingURL")
+    static var openMainWindowFallback: (() -> Void)?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(
@@ -55,12 +57,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.applyActivationPolicy(hideDockIcon: AppSettings.shared.hideDockIcon)
-        Self.activateMainWindowIfPossible()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // Starcat 有菜单栏常驻入口；关闭主窗口只表示隐藏工作区，不能让进程退出，
+        // 否则隐藏 Dock 图标时用户会失去从菜单栏恢复主窗口的路径。
+        false
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         Self.activateMainWindowIfPossible()
-        return true
+        // 返回 false 表示 Dock reopen 已由 Starcat 自己接管；如果返回 true，
+        // AppKit/SwiftUI 会继续执行默认 WindowGroup reopen，和 openWindow fallback
+        // 叠加后会一次打开两个主窗口。
+        return false
     }
 
     @objc private func handleGetURLEvent(
@@ -91,14 +101,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 恢复并激活主窗口。Dock reopen 和菜单栏左键共用这条路径，避免出现两套
     /// “打开主窗口”语义。
     static func activateMainWindowIfPossible() {
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows
-                .first { !$0.isMiniaturized }
-                .map { window in
-                    window.makeKeyAndOrderFront(nil)
-                    window.orderFrontRegardless()
-                }
+        NSApp.activate(ignoringOtherApps: true)
+        guard let window = mainWindowCandidate() else {
+            // 主窗口被关闭后，SwiftUI WindowGroup 对应的 NSWindow 已经从
+            // NSApp.windows 移除；这时必须回到 SwiftUI 的 openWindow(id:)
+            // 创建窗口，不能只激活 AppKit 进程。
+            openMainWindowFallback?()
+            return
+        }
+
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    private static func mainWindowCandidate() -> NSWindow? {
+        NSApp.windows.first { window in
+            window.frameAutosaveName == MainWindowFrameDefaults.autosaveName
+        } ?? NSApp.windows.first { window in
+            // 冷启动早期 MainWindowFrameReader 可能尚未写入 autosaveName。
+            // 用 WindowGroup 的标题做短暂兜底，避免启动期误判为"没有主窗口"。
+            window.title == "Starcat" && window.canBecomeMain
         }
     }
 }

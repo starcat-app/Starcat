@@ -113,8 +113,9 @@ struct StarcatApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Starcat") {
+        Window("Starcat", id: "main") {
             windowRoot
+                .registerMainWindowOpenFallback()
                 // 2026-06-29：监听 AppDelegate 转发过来的 starcat://callback URL。
                 // NSAppleEventManager handler 会消费 kAEGetURL 事件 → .onOpenURL 收不到 →
                 // 必须在 AppDelegate handler 里通过 NotificationCenter 显式转发。
@@ -350,6 +351,30 @@ struct StarcatApp: App {
         }
 
         AppLog.general.info("Starcat bootstrap complete")
+    }
+}
+
+/// 把 SwiftUI `openWindow(id:)` 暴露给 AppKit 生命周期入口。
+///
+/// 菜单栏 `NSStatusItem`、Dock reopen 都在 AppDelegate / AppKit 一侧触发；当主窗口
+/// 已被用户关闭时，AppKit 的 `NSApp.windows` 没有可恢复对象，必须回到 SwiftUI
+/// WindowGroup 重新创建窗口。这里保持桥接很薄，只注册固定 id 的主窗口打开动作。
+private struct MainWindowOpenFallbackRegistrar: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                AppDelegate.openMainWindowFallback = {
+                    openWindow(id: "main")
+                }
+            }
+    }
+}
+
+private extension View {
+    func registerMainWindowOpenFallback() -> some View {
+        modifier(MainWindowOpenFallbackRegistrar())
     }
 }
 
