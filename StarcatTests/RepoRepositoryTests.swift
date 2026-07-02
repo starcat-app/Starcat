@@ -119,6 +119,53 @@ struct RepoRepositoryTests {
         }
     }
 
+    @Test("findByOwnerName 大小写不敏感匹配 full_name")
+    func findByOwnerNameIsCaseInsensitive() async throws {
+        let (repo, _) = try makeRepo()
+        let owner = GitHubUserDTO(id: 1, login: "JetBrains", name: nil, avatarUrl: nil,
+                                  publicRepos: nil, followers: nil, following: nil,
+                                  bio: nil, company: nil, location: nil, email: nil,
+                                  blog: nil, twitterUsername: nil, htmlUrl: nil)
+        let dto = StarredRepoDTO(
+            starredAt: "2026-05-29T10:00:00Z",
+            repo: GitHubRepoDTO(
+                id: 42,
+                name: "intellij-community",
+                fullName: "JetBrains/intellij-community",
+                owner: owner,
+                description: nil,
+                language: "Java",
+                stargazersCount: 0,
+                forksCount: 0,
+                watchersCount: 0,
+                topics: nil,
+                license: nil,
+                homepage: nil,
+                htmlUrl: "https://github.com/JetBrains/intellij-community",
+                cloneUrl: nil,
+                sshUrl: nil,
+                isPrivate: false,
+                fork: false,
+                archived: false,
+                pushedAt: nil,
+                createdAt: nil,
+                updatedAt: nil,
+                openIssuesCount: nil,
+                defaultBranch: nil,
+                disabled: nil,
+                isTemplate: nil,
+                score: nil
+            )
+        )
+        try await repo.upsertStarred([dto], userID: 100, syncedAt: Date())
+
+        let hit = try await repo.findByOwnerName(owner: "jetbrains", name: "intellij-community")
+
+        #expect(hit?.id == 42)
+        #expect(hit?.fullName == "JetBrains/intellij-community")
+        #expect(hit?.isStarred == true)
+    }
+
     @Test("topStarred 按 starred_at 倒序返回")
     func topStarred() async throws {
         let (repo, _) = try makeRepo()

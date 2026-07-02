@@ -3316,6 +3316,23 @@
         }
       }
     },
+    "ai.assistant.inline.detach.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in a separate window"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在独立窗口中打开"
+          }
+        }
+      }
+    },
     "ai.assistant.inline.resize.maximize.help" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -636,12 +636,18 @@ struct HomeView: View {
                 .aiPanelOpened,
                 properties: [.source: .string("browser-plugin")]
             )
-            RepoAIWindowController.show(
-                repo: repo,
-                dependencies: dependencies,
-                homeViewModel: viewModel,
-                autoGenerateSummary: true
-            )
+            // 详情页底部横条入口随 selectedRepoID 渲染；排到下一轮 main queue 再发请求，
+            // 避免通知早于 RepoAIFloatingOverlay 挂载而被丢弃。
+            let repoID = repo.id
+            await MainActor.run {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: .repoAIInlineGenerateSummaryRequested,
+                        object: nil,
+                        userInfo: ["repoId": repoID]
+                    )
+                }
+            }
         }
     }
 

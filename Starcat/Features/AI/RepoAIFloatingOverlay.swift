@@ -18,9 +18,12 @@ import SwiftUI
 struct RepoAIFloatingOverlay: View {
     let repo: Repo
 
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var presentation: Presentation = .collapsed
     @State private var escapeKeyMonitor: Any?
+    @State private var autoGenerateSummaryOnOpen = false
 
     private enum Presentation: Equatable {
         case collapsed
@@ -69,6 +72,9 @@ struct RepoAIFloatingOverlay: View {
             .animation(overlayAnimation, value: presentation)
         }
         .allowsHitTesting(true)
+        .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineGenerateSummaryRequested)) { notification in
+            handleExternalSummaryRequest(notification)
+        }
         .onExitCommand {
             guard presentation.isPanelVisible else { return }
             presentation = .collapsed
@@ -106,8 +112,14 @@ struct RepoAIFloatingOverlay: View {
 
         return RepoAIWindowContentView(
             repo: repo,
-            onClose: { presentation = .collapsed },
+            autoGenerateSummaryOnOpen: autoGenerateSummaryOnOpen,
+            respondsToInlineGenerateRequests: true,
+            onClose: {
+                autoGenerateSummaryOnOpen = false
+                presentation = .collapsed
+            },
             onInlineResizeTapped: togglePanelSize,
+            onOpenDetachedWindow: openDetachedWindow,
             isInlineMaximized: isMaximized
         )
         .frame(width: width, height: height)
@@ -138,6 +150,29 @@ struct RepoAIFloatingOverlay: View {
 
     private func togglePanelSize() {
         presentation = presentation == .maximized ? .expanded : .maximized
+    }
+
+    private func openDetachedWindow() {
+        let detachedRepo = repo
+        autoGenerateSummaryOnOpen = false
+        presentation = .collapsed
+        DispatchQueue.main.async {
+            RepoAIWindowController.show(
+                repo: detachedRepo,
+                dependencies: dependencies,
+                homeViewModel: homeViewModel
+            )
+        }
+    }
+
+    private func handleExternalSummaryRequest(_ notification: Notification) {
+        guard let repoID = notification.userInfo?["repoId"] as? Repo.ID, repoID == repo.id else { return }
+        // Browser Plugin 的“生成摘要”必须复用详情页底部横条入口，而不是旧的独立 AI window。
+        // 若面板尚未创建，先记录 auto-generate 意图，展开后由 RepoAIWindowContentView 的 task 消费。
+        autoGenerateSummaryOnOpen = true
+        if presentation == .collapsed {
+            presentation = .expanded
+        }
     }
 
     private func installEscapeKeyMonitor() {
@@ -173,6 +208,14 @@ struct RepoAIFloatingOverlay: View {
         guard !reduceMotion else { return .opacity }
         return .opacity.combined(with: .scale(scale: 0.96, anchor: .bottom))
     }
+}
+
+extension Notification.Name {
+    /// 外部入口请求详情页底部 AI 横条展开并生成指定 repo 的摘要。
+    ///
+    /// 这个通知只面向 inline overlay。旧的独立 AI window 仍可被历史入口打开，
+    /// 但 Browser Plugin 的 generate-summary 动作必须落到当前详情页入口。
+    static let repoAIInlineGenerateSummaryRequested = Notification.Name("StarcatRepoAIInlineGenerateSummaryRequested")
 }
 
 private extension View {

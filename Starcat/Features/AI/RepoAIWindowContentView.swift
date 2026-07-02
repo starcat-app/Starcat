@@ -67,21 +67,27 @@ struct RepoAIWindowContentView: View {
 
     let repo: Repo
     let autoGenerateSummaryOnOpen: Bool
+    let respondsToInlineGenerateRequests: Bool
     let onClose: () -> Void
     let onInlineResizeTapped: (() -> Void)?
+    let onOpenDetachedWindow: (() -> Void)?
     let isInlineMaximized: Bool
 
     init(
         repo: Repo,
         autoGenerateSummaryOnOpen: Bool = false,
+        respondsToInlineGenerateRequests: Bool = false,
         onClose: @escaping () -> Void,
         onInlineResizeTapped: (() -> Void)? = nil,
+        onOpenDetachedWindow: (() -> Void)? = nil,
         isInlineMaximized: Bool = false
     ) {
         self.repo = repo
         self.autoGenerateSummaryOnOpen = autoGenerateSummaryOnOpen
+        self.respondsToInlineGenerateRequests = respondsToInlineGenerateRequests
         self.onClose = onClose
         self.onInlineResizeTapped = onInlineResizeTapped
+        self.onOpenDetachedWindow = onOpenDetachedWindow
         self.isInlineMaximized = isInlineMaximized
     }
 
@@ -243,7 +249,8 @@ struct RepoAIWindowContentView: View {
                 await generateSummaryFromExternalRequest()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .repoAIWindowGenerateSummaryRequested)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineGenerateSummaryRequested)) { notification in
+            guard respondsToInlineGenerateRequests else { return }
             guard let repoID = notification.userInfo?["repoId"] as? Repo.ID, repoID == repo.id else { return }
             Task { await generateSummaryFromExternalRequest() }
         }
@@ -309,6 +316,19 @@ struct RepoAIWindowContentView: View {
             .lineLimit(1)
 
             Spacer(minLength: 12)
+
+            if let onOpenDetachedWindow {
+                Button(action: onOpenDetachedWindow) {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("ai.assistant.inline.detach.help")
+            }
 
             if let onInlineResizeTapped {
                 Button(action: onInlineResizeTapped) {

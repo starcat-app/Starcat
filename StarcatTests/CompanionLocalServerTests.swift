@@ -154,17 +154,39 @@ struct CompanionLocalServerTests {
     @Test("OPTIONS 预检允许 Google 搜索页 Origin")
     func optionsAllowsGoogleOrigin() async throws {
         let server = try makeServer()
+        for origin in [
+            "https://www.google.com",
+            "https://www.google.com.hk",
+            "https://www.google.co.jp",
+            "https://google.com"
+        ] {
+            let response = await server.handle(request("""
+            OPTIONS /plugin/v1/repo-context?owner=microsoft&repo=vscode HTTP/1.1\r
+            Origin: \(origin)\r
+            Access-Control-Request-Method: GET\r
+            Access-Control-Request-Headers: authorization,content-type\r
+            \r
+
+            """))
+
+            #expect(statusCode(response) == 204)
+            #expect(header(response, "Access-Control-Allow-Origin") == origin)
+        }
+    }
+
+    @Test("OPTIONS 预检拒绝非 Google 搜索页 Origin")
+    func optionsRejectsNonGoogleSearchOrigin() async throws {
+        let server = try makeServer()
         let response = await server.handle(request("""
         OPTIONS /plugin/v1/repo-context?owner=microsoft&repo=vscode HTTP/1.1\r
-        Origin: https://www.google.com\r
+        Origin: https://www.example.com\r
         Access-Control-Request-Method: GET\r
         Access-Control-Request-Headers: authorization,content-type\r
         \r
 
         """))
 
-        #expect(statusCode(response) == 204)
-        #expect(header(response, "Access-Control-Allow-Origin") == "https://www.google.com")
+        #expect(statusCode(response) == 403)
     }
 
     @Test("未知路径返回 404")

@@ -233,13 +233,19 @@ struct GRDBRepoRepository {
 
     /// 按 owner / name 找单条 repo 记录（2026-06-08 引入，Weekly 详情页用）。
     ///
-    /// 用 `full_name` 列（已建唯一索引）一次定位，效率比 `owner = ? AND name = ?` 复合过滤高；
+    /// 用 `full_name` 列一次定位，效率比 `owner = ? AND name = ?` 复合过滤高；
     /// 调用方传入 owner / name 由本方法内部拼 `owner/name` 字符串，避免散落拼接出错。
+    /// GitHub / 浏览器 URL 可能把 owner 规范化成小写（例如 JetBrains -> jetbrains），
+    /// 这里必须大小写不敏感，否则 Browser Plugin / Weekly / Trending 的本地命中会误判为 nil。
     /// 不限制 `is_starred = true`：用户 star 后取消的"墓碑行"也会命中，调用方按 `repo.isStarred` 决定 UI。
     func findByOwnerName(owner: String, name: String) async throws -> Repo? {
         let fullName = "\(owner)/\(name)"
         return try await database.writer.read { db in
-            try Repo.filter(Column("full_name") == fullName).fetchOne(db)
+            try Repo.fetchOne(
+                db,
+                sql: "SELECT * FROM repos WHERE LOWER(full_name) = LOWER(?) LIMIT 1",
+                arguments: [fullName]
+            )
         }
     }
 

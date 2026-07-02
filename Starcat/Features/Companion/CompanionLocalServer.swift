@@ -329,10 +329,24 @@ final class CompanionLocalServer {
         // Content script 在 GitHub 页面上下文里发起 loopback fetch 时，浏览器预检
         // 使用页面 Origin（https://github.com），不是固定扩展 Origin。这里放开
         // GitHub/Google 页面、Chrome 扩展和 Safari WebExtension；真正业务请求仍必须通过 Bearer token。
+        // Google 搜索有大量国家域名，不能只放行 www.google.com，否则 google.com.hk
+        // 这类实际搜索页会被 CORS 预检挡掉。
         return origin.hasPrefix("chrome-extension://")
             || origin.hasPrefix("safari-web-extension://")
             || origin == "https://github.com"
-            || origin == "https://www.google.com"
+            || Self.isAllowedGoogleOrigin(origin)
+    }
+
+    private static func isAllowedGoogleOrigin(_ origin: String) -> Bool {
+        guard let url = URL(string: origin),
+              url.scheme == "https",
+              let host = url.host(percentEncoded: false)
+        else { return false }
+        var labels = host.lowercased().split(separator: ".").map(String.init)
+        if labels.first == "www" {
+            labels.removeFirst()
+        }
+        return labels.count >= 2 && labels.first == "google"
     }
 
     private func response(status: Int, body: some Encodable, origin: String?) -> Data {
