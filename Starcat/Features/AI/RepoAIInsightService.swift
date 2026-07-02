@@ -247,6 +247,14 @@ final class RepoAIInsightService {
         return try await provider.contextOutcome(for: repo, onProgress: onStep)
     }
 
+    /// 用户停止后台代码上下文准备时的窄清理入口。
+    ///
+    /// 这里不删除正式 ZIP / 已生成 context.xml，只清理下载链路的未完成临时文件；
+    /// 这样下次生成仍能复用已经完整落盘的缓存，避免把「停止」变成破坏性清缓存。
+    func cleanupTemporaryContextPreparation(for repo: Repo) {
+        repoAIContextProvider?.cleanupTemporaryContextPreparation(for: repo)
+    }
+
     /// Y9（2026-06-14）：根据已经算好的 `Source` 加载缓存 insight。
     ///
     /// 提取该 helper 是为了让 `chatStream` 只调一次 `makeSource`（重 IO：可能触发

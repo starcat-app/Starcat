@@ -110,10 +110,12 @@ struct RepoAIWindowContentView: View {
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
     @State private var didRunInitialExternalSummaryRequest = false
+    @State private var hoveredPrepStopStep: PrepStep?
     /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
     /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
     @State private var pendingChatDraftReplacement: String?
     @FocusState private var isChatInputFocused: Bool
+    @FocusState private var focusedPrepStopStep: PrepStep?
 
     /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
     ///
@@ -679,7 +681,7 @@ struct RepoAIWindowContentView: View {
     private func prepStepChip(step: PrepStep, vm: RepoAIInsightViewModel) -> some View {
         let state = prepStepState(step: step, vm: vm)
         HStack(spacing: 4) {
-            prepStepIcon(state: state)
+            prepStepIcon(step: step, state: state, vm: vm)
             Text(step.displayKey)
                 .font(.caption2)
                 .foregroundStyle(prepStepTextColor(state: state))
@@ -688,20 +690,50 @@ struct RepoAIWindowContentView: View {
     }
 
     @ViewBuilder
-    private func prepStepIcon(state: PrepStepState) -> some View {
+    private func prepStepIcon(step: PrepStep, state: PrepStepState, vm: RepoAIInsightViewModel) -> some View {
         switch state {
         case .done:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         case .active:
-            ProgressView()
-                .controlSize(.mini)
+            prepStopButton(step: step, vm: vm)
         case .pending:
             Image(systemName: "circle")
                 // 故意用 .tertiary：pending 是「视觉降级」态，需要明显比 active 暗一档。
                 // 此处属"刻意弱化的装饰性图标占位"例外，详见 CLAUDE.md UI 颜色规范说明。
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    private func prepStopButton(step: PrepStep, vm: RepoAIInsightViewModel) -> some View {
+        let showsStop = hoveredPrepStopStep == step || focusedPrepStopStep == step
+        return Button {
+            vm.cancelContextPreparation(repo: repo)
+        } label: {
+            Group {
+                if showsStop {
+                    Image(systemName: "stop.circle.fill")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            }
+            // 固定命中区和布局尺寸，避免 hover 时 spinner / SF Symbol 宽度差造成文字抖动。
+            .frame(width: 14, height: 14)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .focused($focusedPrepStopStep, equals: step)
+        .onHover { isHovered in
+            hoveredPrepStopStep = isHovered ? step : nil
+        }
+        .onDisappear {
+            if hoveredPrepStopStep == step { hoveredPrepStopStep = nil }
+            if focusedPrepStopStep == step { focusedPrepStopStep = nil }
+        }
+        .accessibilityLabel(Text("ai.assistant.prep.stop.accessibility"))
+        .help("ai.assistant.prep.stop.accessibility")
     }
 
     private enum PrepStepState { case done, active, pending }

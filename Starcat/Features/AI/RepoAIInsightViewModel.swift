@@ -64,7 +64,7 @@ enum PrepProgress: Sendable, Equatable {
 }
 
 /// W4：prep 步骤枚举。对应 `RepoAIContextProgress`，但限定到 ViewModel 关心的 3 段。
-enum PrepStep: String, Sendable, Equatable {
+enum PrepStep: String, Sendable, Equatable, Hashable {
     /// 正在解析 default branch 拿 commit SHA（GitHub `/branches/:name`）。
     case resolvingBranch
     /// 正在下载仓库 ZIP（cache 命中时不会进入此步骤）。
@@ -202,9 +202,14 @@ final class RepoAIInsightViewModel {
                         self.prepProgress = .preparing(step: Self.mapStep(step))
                     }
                 }
+            } catch is CancellationError {
+                // 用户主动停止 / repo 切换 cancel 都不应降级成失败态；调用方已经把
+                // prepProgress 收回 idle，旧 task 直接退出，避免异步回写污染新 UI。
+                return
             } catch {
                 outcome = .degraded(.networkUnavailable)
             }
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self else { return }
                 switch outcome {
@@ -225,6 +230,17 @@ final class RepoAIInsightViewModel {
             }
         }
         prepTask = task
+    }
+
+    /// 用户显式停止后台代码上下文准备。
+    ///
+    /// 交互语义：停止后进度 chip 直接隐藏；只清理当前下载留下的 `.tmp`，不删除已经
+    /// 完整落盘的共享 ZIP / context 缓存，避免下一次生成失去可复用产物。
+    func cancelContextPreparation(repo: Repo) {
+        prepTask?.cancel()
+        prepTask = nil
+        prepProgress = .idle
+        service.cleanupTemporaryContextPreparation(for: repo)
     }
 
     /// W4：把 provider 给的 `RepoAIContextProgress` 映射成 ViewModel 自己的 `PrepStep`。

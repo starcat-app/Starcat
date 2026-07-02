@@ -210,6 +210,8 @@ final class SearchCenterViewModel {
             .searchPerformed,
             properties: [.source: .string(request.scope.rawValue)]
         )
+        // Getting Started 清单的“试用一次搜索”对应真实提交行为，而不是只打开搜索面板。
+        NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
         await coordinator.search(request)
         clampSelection()
     }

@@ -174,6 +174,16 @@ struct SharedSnapshotService: @unchecked Sendable {
             .appendingPathComponent("\(name).zip", isDirectory: false)
     }
 
+    /// 清理当前仓库 ZIP 下载的未完成临时文件。
+    ///
+    /// `archiveIfNeeded` 只有在完整响应通过校验后才会把 `<repo>.zip.tmp` 替换成正式
+    /// `<repo>.zip`。用户点击「停止」时只删除 `.tmp`，明确不碰正式 ZIP：正式文件可能
+    /// 是上一次成功生成留下的共享缓存，CodeFlow / RepoContextPacker 后续仍可复用。
+    func cleanupTemporaryArchive(owner: String, name: String) {
+        guard let archiveURL = try? archiveFileURL(owner: owner, name: name, commitSHA: "") else { return }
+        try? fileManager.removeItem(at: archiveURL.appendingPathExtension("tmp"))
+    }
+
     // MARK: - 内部工具
 
     private func applicationSupportDirectory() throws -> URL {

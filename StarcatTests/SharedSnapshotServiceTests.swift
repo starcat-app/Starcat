@@ -85,6 +85,23 @@ struct SharedSnapshotServiceTests {
         #expect(urls.first?.absoluteString.contains("zipball/\(sha)") == true)
     }
 
+    @Test("清理下载临时文件只删除 .tmp，不删除正式 ZIP 缓存")
+    func cleanupTemporaryArchivePreservesCompletedArchive() async throws {
+        let service = SharedSnapshotService(downloader: SnapshotRecordingDownloader(data: Data()), github: SnapshotStubGitHubProvider())
+        let repo = makeRepo(owner: "starcat-cleanup-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
+        let temporaryURL = archiveURL.appendingPathExtension("tmp")
+        try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("complete-zip".utf8).write(to: archiveURL)
+        try Data("partial-download".utf8).write(to: temporaryURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        service.cleanupTemporaryArchive(owner: repo.owner, name: repo.name)
+
+        #expect(FileManager.default.fileExists(atPath: archiveURL.path))
+        #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
+    }
+
     @Test("ZIP 超过 100MB 上限时抛 archiveTooLarge")
     func rejectsOversizedArchive() async throws {
         // 构造一个超过 maximumArchiveBytes 1 字节的 payload

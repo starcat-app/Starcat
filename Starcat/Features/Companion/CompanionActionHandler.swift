@@ -44,19 +44,26 @@ final class CompanionActionDispatcher {
     var pendingRequest: Request?
 
     func requestOpenRepo(_ repo: Repo) {
-        pendingRequest = Request(kind: .openRepo, repo: repo)
+        publish(Request(kind: .openRepo, repo: repo))
     }
 
     func requestGenerateSummary(_ repo: Repo) {
-        pendingRequest = Request(kind: .generateSummary, repo: repo)
+        publish(Request(kind: .generateSummary, repo: repo))
     }
 
     func requestCodeFlow(for repo: Repo) {
-        pendingRequest = Request(kind: .codeflow, repo: repo)
+        publish(Request(kind: .codeflow, repo: repo))
     }
 
     func requestCodebase(for repo: Repo) {
-        pendingRequest = Request(kind: .codebase, repo: repo)
+        publish(Request(kind: .codebase, repo: repo))
+    }
+
+    private func publish(_ request: Request) {
+        pendingRequest = request
+        // Browser Plugin 的 action 可能在主窗口关闭时到达。先保存请求，再恢复主窗口；
+        // 新窗口挂载后会消费这份 pendingRequest 并定位到目标 repo。
+        AppDelegate.activateMainWindowIfPossible()
     }
 }
 

@@ -153,6 +153,7 @@ struct GettingStartedChecklistView: View {
     let onSignIn: () -> Void
     let onSyncStars: () -> Void
     let onSelectRepo: () -> Void
+    let onAddTag: () -> Void
     let onOpenSearch: () -> Void
     let onOpenAI: () -> Void
 
@@ -204,8 +205,8 @@ struct GettingStartedChecklistView: View {
                 detail: "gettingStarted.step.organize.detail",
                 systemImage: "tag",
                 actionTitle: "gettingStarted.step.organize.action",
-                isAvailable: hasSelectedRepo,
-                action: onSelectRepo
+                isAvailable: true,
+                action: onAddTag
             ),
             GettingStartedStep(
                 id: .useSearch,

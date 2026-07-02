@@ -75,6 +75,25 @@ struct TagManagementViewModelTests {
         #expect(vm.selection.first == vm.tags[0].id)
     }
 
+    @Test("create: 新增标签会完成开始使用清单的整理步骤")
+    func createPostsGettingStartedOrganizeNotification() async throws {
+        let (vm, _, _, _) = try makeVM()
+        let recorder = NotificationRecorder()
+        let token = NotificationCenter.default.addObserver(
+            forName: .gettingStartedDidOrganizeRepo,
+            object: nil,
+            queue: nil
+        ) { _ in
+            recorder.record()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let ok = await vm.create(name: "swift", color: nil, icon: nil)
+
+        #expect(ok == true)
+        #expect(recorder.count == 1)
+    }
+
     @Test("create: 自动 trim 前后空格")
     func createTrimsWhitespace() async throws {
         let (vm, _, _, _) = try makeVM()
@@ -204,5 +223,18 @@ struct TagManagementViewModelTests {
         vm.selection = [a.id, b.id]
         #expect(vm.singleSelected == nil)
         #expect(vm.canMerge == true)
+    }
+}
+
+private final class NotificationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    var count: Int {
+        lock.withLock { value }
+    }
+
+    func record() {
+        lock.withLock { value += 1 }
     }
 }

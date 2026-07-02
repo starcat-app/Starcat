@@ -178,6 +178,11 @@ struct RepoListView: View {
                 .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
+        .onAppear {
+            // Browser Plugin 请求可能先于主窗口恢复到达；窗口重新挂载时需要补消费
+            // 已保存的 pendingRequest，否则用户关闭主窗口后点击 Open in Starcat 无响应。
+            handleCompanionActionRequest(dependencies.companionActionDispatcher.pendingRequest)
+        }
         .onChange(of: dependencies.companionActionDispatcher.pendingRequest) { _, request in
             handleCompanionActionRequest(request)
         }

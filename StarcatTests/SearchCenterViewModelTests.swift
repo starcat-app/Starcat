@@ -77,6 +77,29 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.candidates.count == 2)
     }
 
+    @Test("submit: 非空搜索会完成开始使用清单的搜索步骤")
+    func submitPostsGettingStartedSearchNotification() async throws {
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let provider = SearchCenterSessionStubProvider(candidate: Self.makeCandidate())
+        let coordinator = SearchCoordinator(providers: [provider])
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
+        let recorder = NotificationRecorder()
+        let token = NotificationCenter.default.addObserver(
+            forName: .gettingStartedDidUseSearch,
+            object: nil,
+            queue: nil
+        ) { _ in
+            recorder.record()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        viewModel.query = "swift"
+        await viewModel.submit()
+
+        #expect(recorder.count == 1)
+    }
+
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
@@ -113,6 +136,19 @@ struct SearchCenterViewModelTests {
             remoteRepo: nil,
             semanticScore: nil
         )
+    }
+}
+
+private final class NotificationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    var count: Int {
+        lock.withLock { value }
+    }
+
+    func record() {
+        lock.withLock { value += 1 }
     }
 }
 

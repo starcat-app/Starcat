@@ -3604,6 +3604,23 @@
         }
       }
     },
+    "ai.assistant.prep.stop.accessibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop preparing code context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止准备代码上下文"
+          }
+        }
+      }
+    },
     "ai.assistant.prep.step.downloadingArchive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13958,13 +13975,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open repo"
+            "value" : "Add tag"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开详情"
+            "value" : "添加标签"
           }
         }
       }
@@ -14406,7 +14423,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Welcome aboard!"
+            "value" : "Welcome Starcat"
           }
         },
         "zh-Hans" : {

@@ -72,6 +72,8 @@ struct HomeView: View {
 
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
+    /// 开始使用清单的“添加标签”应直接打开 Tags 管理里的新建标签 sheet。
+    @State private var showNewTagSheetOnTagManagementOpen: Bool = false
 
     /// HOM-52：批量 AI 整理"操作选择" sheet 显示状态。
     @State private var showBatchAIOptions: Bool = false
@@ -238,6 +240,12 @@ struct HomeView: View {
         navigationWithLifecycle
     }
 
+    /// 开始使用清单出现时，底层 README 图片不能继续暴露 zoom-in 光标。
+    /// 判断集中在 HomeView，避免让 WebView 反向理解 onboarding 业务状态。
+    private var isGettingStartedChecklistVisible: Bool {
+        !gettingStartedStore.isDismissed && !gettingStartedStore.isComplete
+    }
+
     private var baseNavigation: AnyView {
         // HomeView 的 modifier 链已经很长，新增后台任务监听后 Swift 6 容易在
         // 巨型泛型链上 type-check 超时。分段 AnyView 只用于切断编译期泛型推断，
@@ -282,6 +290,9 @@ struct HomeView: View {
                 },
                 onSelectRepo: {
                     selectFirstRepoForGettingStarted()
+                },
+                onAddTag: {
+                    openNewTagSheetForGettingStarted()
                 },
                 onOpenSearch: {
                     searchCenterViewModel.present()
@@ -341,13 +352,17 @@ struct HomeView: View {
                 )
                 .hidden()
         }
+        .environment(\.readmeImageZoomCursorSuppressed, isGettingStartedChecklistVisible)
         )
     }
 
     private var navigationWithSheets: AnyView {
         AnyView(navigationWithOverlays
         .sheet(isPresented: $showTagManagement, onDismiss: handleTagManagementDismissed) {
-            TagManagementView(viewModel: tagMgmtVM)
+            TagManagementView(
+                viewModel: tagMgmtVM,
+                opensNewTagSheetOnAppear: showNewTagSheetOnTagManagementOpen
+            )
                 .appSheetRootEnvironment(dependencies)
         }
         // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
@@ -528,10 +543,16 @@ struct HomeView: View {
             }
             handleAuthRoutingChange(oldState: oldState, newState: newState)
         }
+        .onAppear {
+            syncGettingStartedProgressFromCurrentState()
+        }
         // Manage 页分类变化 → 持久化为"上次分类"，供下次启动恢复。
         // 仅在 Manage 页且非 Trending 时记录，避免把 Trending 写成 Manage 分类。
         .onChange(of: viewModel.selection) { _, newSelection in
             handleManageSelectionChange(newSelection)
+        }
+        .onChange(of: viewModel.totalCount) { _, _ in
+            syncGettingStartedProgressFromCurrentState()
         }
         .onChange(of: settings.smartSearchMode) { _, newMode in
             if viewModel.smartSearchMode != newMode {
@@ -559,6 +580,7 @@ struct HomeView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
             gettingStartedStore.reset()
+            syncGettingStartedProgressFromCurrentState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenGlobalSearch)) { _ in
             searchCenterViewModel.present()
@@ -576,6 +598,20 @@ struct HomeView: View {
             handleActivityCategoryChange(newCategory)
         }
         )
+    }
+
+    /// 开始使用清单既要响应用户动作，也要吸收当前 App 状态。
+    /// 否则用户已登录 / 已同步 / 已选仓库后再显示面板时，`onChange` 不会回放历史状态。
+    private func syncGettingStartedProgressFromCurrentState() {
+        if authSession.state.isAuthenticated {
+            gettingStartedStore.markCompleted(.signIn)
+        }
+        if viewModel.totalCount > 0 {
+            gettingStartedStore.markCompleted(.syncStars)
+        }
+        if viewModel.selectedRepoID != nil {
+            gettingStartedStore.markCompleted(.selectRepo)
+        }
     }
 
     /// 本地结果回到 Manage 并复用现有列表加载流程，确保列表与详情状态仍由
@@ -691,6 +727,15 @@ struct HomeView: View {
         guard viewModel.selectedRepoID == nil, let first = viewModel.items.first else { return }
         viewModel.shouldScrollSelectedRepoIntoView = true
         viewModel.selectedRepoID = first.id
+    }
+
+    /// 开始使用清单里的“添加标签”复用左侧 Tags 的管理入口，并直接弹出新建标签 sheet。
+    private func openNewTagSheetForGettingStarted() {
+        if selectedSidebarPage != .manage {
+            selectedSidebarPage = .manage
+        }
+        showNewTagSheetOnTagManagementOpen = true
+        showTagManagement = true
     }
 
     /// 开始使用清单里的 AI 入口必须走详情页底部横条。
@@ -1179,6 +1224,7 @@ struct HomeView: View {
     /// 标签管理 sheet 关闭后刷新 Sidebar 与当前列表。放在独立方法里能减少
     /// `HomeView.body` 的闭包推断压力；行为仍保持 W4 A6 的原始约束。
     private func handleTagManagementDismissed() {
+        showNewTagSheetOnTagManagementOpen = false
         Task {
             await viewModel.refreshSidebar()
             await viewModel.reloadItems(forceRefresh: true)

@@ -38,11 +38,15 @@ struct TagManagementView: View {
 
     /// 由 HomeView 注入；@Bindable 让 selection 双向绑定到 List。
     @State var viewModel: TagManagementViewModel
+    /// 开始使用清单会复用 Tags 管理入口，并要求打开后直接进入新建标签流程。
+    var opensNewTagSheetOnAppear: Bool = false
 
     // MARK: - 子 UI 状态
 
     /// 新建标签 sheet 显示状态。
     @State private var showNewSheet: Bool = false
+    /// 防止 SwiftUI 重新触发 onAppear 时重复弹出新建 sheet。
+    @State private var didApplyOpenNewTagIntent: Bool = false
     /// 删除确认 alert 显示状态。
     @State private var showDeleteAlert: Bool = false
     /// 合并 alert 显示状态。
@@ -73,6 +77,11 @@ struct TagManagementView: View {
         .frame(minWidth: 680, minHeight: 460, idealHeight: 540)
         .task {
             await viewModel.loadAll()
+        }
+        .onAppear {
+            guard opensNewTagSheetOnAppear, !didApplyOpenNewTagIntent else { return }
+            didApplyOpenNewTagIntent = true
+            showNewSheet = true
         }
         .sheet(isPresented: $showNewSheet) {
             NewTagSheet { name, color, icon in

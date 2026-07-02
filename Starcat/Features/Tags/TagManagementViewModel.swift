@@ -110,6 +110,8 @@ final class TagManagementViewModel {
             )
             try await tagRepository.create(tag)
             await loadAll()
+            // Getting Started 的“整理一个仓库”接受最小整理动作：新增一个可复用 tag。
+            NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
             // 自动选中新建项，便于用户立刻编辑细节
             selection = [tag.id]
             return true

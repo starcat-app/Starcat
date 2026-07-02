@@ -232,6 +232,14 @@ struct RepoAIContextProvider {
         }
     }
 
+    /// 用户显式停止后台准备时，清理源码 ZIP 下载层留下的未完成临时文件。
+    ///
+    /// 这里只委托 `SharedSnapshotService` 删除 `.tmp`，不删除已完成的 context 产物；
+    /// packer / storage 写盘本身是原子写，半成品不会以正式文件名暴露给消费方。
+    func cleanupTemporaryContextPreparation(for repo: Repo) {
+        snapshotService.cleanupTemporaryArchive(owner: repo.owner, name: repo.name)
+    }
+
     // MARK: - 内部 pipeline
 
     private func prepareContext(
