@@ -124,6 +124,7 @@ struct RepoAIFloatingOverlay: View {
         )
         .frame(width: width, height: height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
+        .defaultCursorShield()
         .shadow(color: .black.opacity(0.18), radius: 22, x: 0, y: 12)
         .accessibilityElement(children: .contain)
     }

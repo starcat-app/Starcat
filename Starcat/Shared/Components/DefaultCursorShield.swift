@@ -30,7 +30,8 @@ private final class DefaultCursorShieldView: NSView {
     override var isFlipped: Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // 只负责 cursor rect，不拦截按钮点击、hover 和滚动事件。
+        // 只做 cursor 接管，不参与点击命中。SwiftUI 面板内的按钮、hover 和滚动
+        // 仍应由原本的控件处理；cursor 则通过前层 tracking area 在事件尾部抢回。
         nil
     }
 
@@ -47,7 +48,7 @@ private final class DefaultCursorShieldView: NSView {
 
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -56,11 +57,49 @@ private final class DefaultCursorShieldView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        NSCursor.arrow.set()
+        enforceArrowCursor(for: event)
     }
 
     override func mouseMoved(with event: NSEvent) {
+        enforceArrowCursor(for: event)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        enforceArrowCursor(for: event)
+    }
+
+    private func enforceArrowCursor(for event: NSEvent) {
+        guard !isTextInputHit(atWindowLocation: event.locationInWindow) else { return }
         NSCursor.arrow.set()
+
+        // WKWebView 会在同一轮 mouse-move 里根据 DOM/CSS cursor 再次 set cursor。
+        // 延后一轮补设 arrow，确保视觉上位于浮层区域时最终由浮层决定光标。
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isTextInputUnderCurrentMouse() else { return }
+            NSCursor.arrow.set()
+        }
+    }
+
+    private func isTextInputUnderCurrentMouse() -> Bool {
+        guard let window else { return false }
+        return isTextInputHit(atWindowLocation: window.mouseLocationOutsideOfEventStream)
+    }
+
+    private func isTextInputHit(atWindowLocation location: NSPoint) -> Bool {
+        guard let contentView = window?.contentView else { return false }
+        let point = contentView.convert(location, from: nil)
+        guard let hitView = contentView.hitTest(point), hitView !== self else { return false }
+        return hitView.hasTextInputAncestor
+    }
+}
+
+private extension NSView {
+    /// 文本输入区域必须保留系统 I-beam 光标；否则全局搜索框和 AI 输入框会被误改成箭头。
+    var hasTextInputAncestor: Bool {
+        if self is NSTextView || self is NSTextField || self is NSSearchField {
+            return true
+        }
+        return superview?.hasTextInputAncestor ?? false
     }
 }
 
