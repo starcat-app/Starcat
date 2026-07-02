@@ -17,6 +17,8 @@ enum CompanionContextError: Error, Equatable {
 struct CompanionContextProvider {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
     private let lookupNote: @Sendable (Int64) async throws -> RepoNote?
+    private let lookupTags: @Sendable (Int64) async throws -> [Tag]
+    private let lookupAllTags: @Sendable () async throws -> [Tag]
     private let lookupHealth: @Sendable (Int64) async throws -> RepoHealthSnapshot?
     private let lookupOpenSSF: @Sendable (Int64) async throws -> OpenSSFScoreRecord?
     private let lookupWikiLinks: @Sendable (String, String) async -> [WikiLink]
@@ -26,6 +28,8 @@ struct CompanionContextProvider {
     init(
         repoRepository: any RepoRepositoryProtocol,
         noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
+        tagRepository: (any TagRepositoryProtocol)? = nil,
+        repoTagRepository: (any RepoTagRepositoryProtocol)? = nil,
         healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         wikiContextService: WikiContextService? = nil,
@@ -37,6 +41,12 @@ struct CompanionContextProvider {
         }
         lookupNote = { repoID in
             try await noteRepository?.find(repoId: repoID)
+        }
+        lookupTags = { repoID in
+            try await repoTagRepository?.fetchTags(forRepo: repoID) ?? []
+        }
+        lookupAllTags = {
+            try await tagRepository?.fetchAll() ?? []
         }
         lookupHealth = { repoID in
             try await healthRepository?.snapshot(for: repoID)
@@ -75,6 +85,8 @@ struct CompanionContextProvider {
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
         lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil },
+        lookupTags: @escaping @Sendable (Int64) async throws -> [Tag] = { _ in [] },
+        lookupAllTags: @escaping @Sendable () async throws -> [Tag] = { [] },
         lookupHealth: @escaping @Sendable (Int64) async throws -> RepoHealthSnapshot? = { _ in nil },
         lookupOpenSSF: @escaping @Sendable (Int64) async throws -> OpenSSFScoreRecord? = { _ in nil },
         lookupWikiLinks: @escaping @Sendable (String, String) async -> [WikiLink] = { _, _ in [] },
@@ -83,6 +95,8 @@ struct CompanionContextProvider {
     ) {
         self.lookupRepo = lookupRepo
         self.lookupNote = lookupNote
+        self.lookupTags = lookupTags
+        self.lookupAllTags = lookupAllTags
         self.lookupHealth = lookupHealth
         self.lookupOpenSSF = lookupOpenSSF
         self.lookupWikiLinks = lookupWikiLinks
@@ -100,6 +114,8 @@ struct CompanionContextProvider {
         let localRepo = try await lookupRepo(owner, name)
         let hasProEntitlement = await isProUser()
         let note = await noteDTO(for: localRepo)
+        let tags = await tagDTOs(for: localRepo)
+        let availableTags = await allTagDTOs(for: localRepo)
         // Companion API is reachable from the browser extension, so Pro-only data
         // is cut at the local API boundary instead of relying on content-script UI
         // hiding. Private notes remain available for starred repos because they are
@@ -114,6 +130,8 @@ struct CompanionContextProvider {
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
             recommendations: recommendations,
             wikiLinks: wikiLinks,
+            tags: tags,
+            availableTags: availableTags,
             note: note,
             health: health,
             openssf: openssf,
@@ -155,6 +173,24 @@ struct CompanionContextProvider {
                 title: Self.englishWikiTitle(for: link.source),
                 url: link.url.absoluteString
             )
+        }
+    }
+
+    private func tagDTOs(for repo: Repo?) async -> [CompanionTagDTO] {
+        guard let repo, repo.isStarred else { return [] }
+        do {
+            return try await lookupTags(repo.id).map(Self.tagDTO(_:))
+        } catch {
+            return []
+        }
+    }
+
+    private func allTagDTOs(for repo: Repo?) async -> [CompanionTagDTO] {
+        guard let repo, repo.isStarred else { return [] }
+        do {
+            return try await lookupAllTags().map(Self.tagDTO(_:))
+        } catch {
+            return []
         }
     }
 
@@ -211,6 +247,15 @@ struct CompanionContextProvider {
             htmlURL: "https://github.com/\(fullName)",
             knownToStarcat: false,
             isStarred: false
+        )
+    }
+
+    static func tagDTO(_ tag: Tag) -> CompanionTagDTO {
+        CompanionTagDTO(
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+            icon: tag.icon
         )
     }
 

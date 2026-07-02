@@ -31,6 +31,16 @@ struct CompanionLocalServerTests {
         )
     }
 
+    private func makeServer(tagWriter: CompanionTagWriter) throws -> CompanionLocalServer {
+        let keychain = InMemoryKeychain()
+        try keychain.storeCompanionToken("test-token")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        return CompanionLocalServer(
+            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            tagWriter: tagWriter
+        )
+    }
+
     private func makeServer(actionHandler: CompanionActionHandler) throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
         try keychain.storeCompanionToken("test-token")
@@ -141,6 +151,22 @@ struct CompanionLocalServerTests {
         #expect(header(response, "Access-Control-Allow-Private-Network") == "true")
     }
 
+    @Test("OPTIONS 预检允许 Google 搜索页 Origin")
+    func optionsAllowsGoogleOrigin() async throws {
+        let server = try makeServer()
+        let response = await server.handle(request("""
+        OPTIONS /plugin/v1/repo-context?owner=microsoft&repo=vscode HTTP/1.1\r
+        Origin: https://www.google.com\r
+        Access-Control-Request-Method: GET\r
+        Access-Control-Request-Headers: authorization,content-type\r
+        \r
+
+        """))
+
+        #expect(statusCode(response) == 204)
+        #expect(header(response, "Access-Control-Allow-Origin") == "https://www.google.com")
+    }
+
     @Test("未知路径返回 404")
     func unknownPathReturnsNotFound() async throws {
         let server = try makeServer()
@@ -247,6 +273,63 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("repo_not_starred"))
     }
 
+    @Test("PATCH /plugin/v1/tags 保存 repo 标签关联")
+    func patchTagsSavesRepoTags() async throws {
+        let writer = CompanionTagWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            lookupAllTags: {
+                [
+                    Self.makeTag(id: "tag-ai", name: "AI", color: "#0A84FF", icon: "tag"),
+                    Self.makeTag(id: "tag-tool", name: "Tool", color: "#30D158", icon: "hammer")
+                ]
+            },
+            setTags: { repoID, tagIDs in
+                #expect(repoID == 44_838_949)
+                #expect(Set(tagIDs) == Set(["tag-ai", "tag-tool"]))
+            },
+            lookupAssignedTags: { _ in
+                [
+                    Self.makeTag(id: "tag-ai", name: "AI", color: "#0A84FF", icon: "tag"),
+                    Self.makeTag(id: "tag-tool", name: "Tool", color: "#30D158", icon: "hammer")
+                ]
+            }
+        )
+        let server = try makeServer(tagWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/tags HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","tag_ids":["tag-ai","tag-tool"]}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"status\":\"ok\""))
+        #expect(bodyString(response).contains("\"name\":\"AI\""))
+        #expect(bodyString(response).contains("\"color\":\"#0A84FF\""))
+    }
+
+    @Test("PATCH /plugin/v1/tags 未 star repo 返回 403")
+    func patchTagsRejectsUnstarredRepo() async throws {
+        let writer = CompanionTagWriter(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            lookupAllTags: { [Self.makeTag(id: "tag-ai", name: "AI", color: "#0A84FF", icon: "tag")] },
+            setTags: { _, _ in },
+            lookupAssignedTags: { _ in [] }
+        )
+        let server = try makeServer(tagWriter: writer)
+        let response = await server.handle(request("""
+        PATCH /plugin/v1/tags HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","tag_ids":["tag-ai"]}
+        """))
+
+        #expect(statusCode(response) == 403)
+        #expect(bodyString(response).contains("repo_not_starred"))
+    }
+
     @Test("POST /plugin/v1/actions/open 打开 codeflow")
     func postActionOpenCodeFlow() async throws {
         let recorder = CompanionActionRecorder()
@@ -270,6 +353,29 @@ struct CompanionLocalServerTests {
         let event = recorder.value
         #expect(event?.action == .codeflow)
         #expect(event?.repo.fullName == "apple/swift")
+    }
+
+    @Test("POST /plugin/v1/actions/open 打开 Starcat 仓库")
+    func postActionOpenRepo() async throws {
+        let recorder = CompanionActionRecorder()
+        let handler = CompanionActionHandler(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            requestOpenRepo: { repo in
+                recorder.record(.openRepo, repo: repo)
+            }
+        )
+        let server = try makeServer(actionHandler: handler)
+        let response = await server.handle(request("""
+        POST /plugin/v1/actions/open HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","action":"open-repo"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"action\":\"open-repo\""))
+        #expect(recorder.value?.action == .openRepo)
     }
 
     @Test("POST /plugin/v1/actions/open 未 star repo 返回 403")
@@ -346,6 +452,20 @@ struct CompanionLocalServerTests {
             updatedAt: nil,
             starredAt: nil,
             cachedAt: nil
+        )
+    }
+
+    nonisolated private static func makeTag(id: String, name: String, color: String, icon: String) -> Starcat.Tag {
+        Starcat.Tag(
+            id: id,
+            name: name,
+            color: color,
+            icon: icon,
+            sortOrder: 0,
+            isPreset: false,
+            parentId: nil,
+            createdAt: "2026-07-01T10:00:00Z",
+            updatedAt: "2026-07-01T10:00:00Z"
         )
     }
 }

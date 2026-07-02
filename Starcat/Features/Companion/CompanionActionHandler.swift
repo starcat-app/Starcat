@@ -9,7 +9,6 @@
 //  "需要打开某个 UI"的瞬时事件, 由稳定页面根视图负责呈现。
 //
 
-import AppKit
 import Foundation
 
 enum CompanionOpenAction: String, Codable, Equatable {
@@ -30,6 +29,7 @@ enum CompanionActionError: Error, Equatable {
 final class CompanionActionDispatcher {
     struct Request: Identifiable, Equatable {
         enum Kind: Equatable {
+            case openRepo
             case codeflow
             case codebase
         }
@@ -40,6 +40,10 @@ final class CompanionActionDispatcher {
     }
 
     var pendingRequest: Request?
+
+    func requestOpenRepo(_ repo: Repo) {
+        pendingRequest = Request(kind: .openRepo, repo: repo)
+    }
 
     func requestCodeFlow(for repo: Repo) {
         pendingRequest = Request(kind: .codeflow, repo: repo)
@@ -52,7 +56,7 @@ final class CompanionActionDispatcher {
 
 struct CompanionActionHandler {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
-    private let openURL: @MainActor @Sendable (URL) -> Void
+    private let requestOpenRepo: @MainActor @Sendable (Repo) -> Void
     private let requestCodeFlow: @MainActor @Sendable (Repo) -> Void
     private let requestCodebase: @MainActor @Sendable (Repo) -> Void
     private let isProUser: @Sendable () async -> Bool
@@ -66,8 +70,8 @@ struct CompanionActionHandler {
             lookupRepo: { owner, name in
                 try await repoRepository.findByOwnerName(owner: owner, name: name)
             },
-            openURL: { url in
-                NSWorkspace.shared.open(url)
+            requestOpenRepo: { repo in
+                dispatcher.requestOpenRepo(repo)
             },
             requestCodeFlow: { repo in
                 dispatcher.requestCodeFlow(for: repo)
@@ -85,13 +89,13 @@ struct CompanionActionHandler {
 
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
-        openURL: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
+        requestOpenRepo: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestCodeFlow: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestCodebase: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
-        self.openURL = openURL
+        self.requestOpenRepo = requestOpenRepo
         self.requestCodeFlow = requestCodeFlow
         self.requestCodebase = requestCodebase
         self.isProUser = isProUser
@@ -107,8 +111,7 @@ struct CompanionActionHandler {
 
         switch action {
         case .openRepo:
-            let url = URL(string: repo.htmlUrl) ?? GitHubURLs.repo(owner: repo.owner, repo: repo.name)
-            await openURL(url)
+            await requestOpenRepo(repo)
         case .codeflow:
             guard await isProUser() else { throw CompanionActionError.requiresPro(.codeFlow) }
             await requestCodeFlow(repo)

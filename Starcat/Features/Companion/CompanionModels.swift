@@ -21,7 +21,7 @@ struct CompanionPingResponse: Codable, Equatable {
         schemaVersion: 1,
         status: "ok",
         app: "Starcat",
-        capabilities: ["repo-context", "notes", "actions", "events"]
+        capabilities: ["repo-context", "notes", "tags", "actions", "events"]
     )
 }
 
@@ -30,6 +30,8 @@ struct CompanionRepoContextResponse: Codable, Equatable {
     let repo: CompanionRepoDTO
     let recommendations: [CompanionRecommendationDTO]
     let wikiLinks: [CompanionWikiLinkDTO]
+    let tags: [CompanionTagDTO]
+    let availableTags: [CompanionTagDTO]
     let note: CompanionNoteDTO?
     let health: CompanionHealthDTO?
     let openssf: CompanionOpenSSFDTO?
@@ -70,6 +72,25 @@ struct CompanionNoteDTO: Codable, Equatable {
     let editedAt: String?
 }
 
+struct CompanionTagDTO: Codable, Equatable {
+    let id: String
+    let name: String
+    let color: String?
+    let icon: String?
+}
+
+struct CompanionTagsUpdateRequest: Codable, Equatable {
+    let owner: String
+    let repo: String
+    let tagIds: [String]
+}
+
+struct CompanionTagsUpdateResponse: Codable, Equatable {
+    let schemaVersion: Int
+    let status: String
+    let tags: [CompanionTagDTO]
+}
+
 struct CompanionNoteSaveRequest: Codable, Equatable {
     let owner: String
     let repo: String
@@ -87,6 +108,7 @@ struct CompanionEventEnvelope: Codable, Equatable {
     let type: String
     let repoID: Int64?
     let note: CompanionNoteDTO?
+    let tags: [CompanionTagDTO]?
 }
 
 struct CompanionOpenActionRequest: Codable, Equatable {

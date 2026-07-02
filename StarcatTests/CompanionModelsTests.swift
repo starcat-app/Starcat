@@ -20,7 +20,7 @@ struct CompanionModelsTests {
         #expect(object["schema_version"] as? Int == 1)
         #expect(object["status"] as? String == "ok")
         #expect(object["app"] as? String == "Starcat")
-        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "actions", "events"])
+        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "tags", "actions", "events"])
     }
 
     @Test("repo-context response keeps snake_case contract")
@@ -39,6 +39,12 @@ struct CompanionModelsTests {
             recommendations: [],
             wikiLinks: [
                 CompanionWikiLinkDTO(source: "deepwiki", title: "DeepWiki", url: "https://deepwiki.com/apple/swift")
+            ],
+            tags: [
+                CompanionTagDTO(id: "1", name: "AI", color: "#0A84FF", icon: "tag")
+            ],
+            availableTags: [
+                CompanionTagDTO(id: "1", name: "AI", color: "#0A84FF", icon: "tag")
             ],
             note: CompanionNoteDTO(editable: true, content: "note", editedAt: "2026-07-01T10:00:00Z"),
             health: CompanionHealthDTO(score: 82, grade: "B", computedAt: "2026-07-01T10:00:00Z"),
@@ -59,6 +65,8 @@ struct CompanionModelsTests {
         #expect(repo["known_to_starcat"] as? Bool == true)
         #expect(repo["is_starred"] as? Bool == true)
         #expect(object["wiki_links"] is [[String: Any]])
+        #expect(object["tags"] is [[String: Any]])
+        #expect(object["available_tags"] is [[String: Any]])
         #expect(actions["open_in_starcat"] as? Bool == true)
         #expect(entitlement["is_pro"] as? Bool == true)
     }
@@ -69,7 +77,8 @@ struct CompanionModelsTests {
             schemaVersion: 1,
             type: "note.updated",
             repoID: 44_838_949,
-            note: CompanionNoteDTO(editable: true, content: "live note", editedAt: "2026-07-01T10:00:00Z")
+            note: CompanionNoteDTO(editable: true, content: "live note", editedAt: "2026-07-01T10:00:00Z"),
+            tags: nil
         )
 
         let data = try CompanionJSONTestEncoder.encode(event)
@@ -81,6 +90,27 @@ struct CompanionModelsTests {
         #expect(object["repo_id"] as? Int == 44_838_949)
         #expect(note["content"] as? String == "live note")
         #expect(note["edited_at"] as? String == "2026-07-01T10:00:00Z")
+    }
+
+    @Test("tags event envelope keeps snake_case contract")
+    func tagsEventEnvelopeEncodingShape() throws {
+        let event = CompanionEventEnvelope(
+            schemaVersion: 1,
+            type: "tags.updated",
+            repoID: 44_838_949,
+            note: nil,
+            tags: [
+                CompanionTagDTO(id: "1", name: "AI", color: "#0A84FF", icon: "tag")
+            ]
+        )
+
+        let data = try CompanionJSONTestEncoder.encode(event)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let tags = try #require(object["tags"] as? [[String: Any]])
+
+        #expect(object["type"] as? String == "tags.updated")
+        #expect(object["repo_id"] as? Int == 44_838_949)
+        #expect(tags.first?["color"] as? String == "#0A84FF")
     }
 }
 

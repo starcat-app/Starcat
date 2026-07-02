@@ -6,7 +6,7 @@
 //
 //  关键约束:
 //  - 只广播 Starcat 已落库后的本地事件, 不做乐观推送;
-//  - 当前只支持 notes, 但事件 envelope 保留 type/repoID, 后续可扩展 health/wiki;
+//  - 当前支持 notes / tags, envelope 保留 type/repoID, 后续可扩展 health/wiki;
 //  - 客户端按 repoID 订阅, 避免把无关仓库的私有笔记发到 GitHub 页面。
 //
 
@@ -22,10 +22,17 @@ final class CompanionEventHub {
     }
 
     private var clients: [UUID: Client] = [:]
-    private var observationTask: Task<Void, Never>?
+    private var noteObservationTask: Task<Void, Never>?
+    private var tagsObservationTask: Task<Void, Never>?
+    private let lookupTags: @Sendable (Int64) async throws -> [CompanionTagDTO]
 
-    init(notificationCenter: NotificationCenter = .default) {
-        observationTask = Task { @MainActor [weak self] in
+    init(
+        notificationCenter: NotificationCenter = .default,
+        lookupTags: @escaping @Sendable (Int64) async throws -> [CompanionTagDTO] = { _ in [] }
+    ) {
+        self.lookupTags = lookupTags
+
+        noteObservationTask = Task { @MainActor [weak self] in
             let stream = notificationCenter.notifications(named: .repoNoteContentDidChange)
             for await notification in stream {
                 guard let repoID = notification.userInfo?["repoId"] as? Int64 else { continue }
@@ -34,10 +41,25 @@ final class CompanionEventHub {
                 self?.publishNote(repoID: repoID, content: content, editedAt: editedAt)
             }
         }
+
+        tagsObservationTask = Task { @MainActor [weak self] in
+            let stream = notificationCenter.notifications(named: .repoTagsDidChange)
+            for await notification in stream {
+                guard let self,
+                      let repoID = notification.userInfo?["repoId"] as? Int64 else { continue }
+                do {
+                    let tags = try await self.lookupTags(repoID)
+                    self.publishTags(repoID: repoID, tags: tags)
+                } catch {
+                    AppLog.general.warning("CompanionEventHub failed to publish tag update for repoID \(repoID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
     }
 
     deinit {
-        observationTask?.cancel()
+        noteObservationTask?.cancel()
+        tagsObservationTask?.cancel()
     }
 
     func addClient(repoID: Int64?, sink: @escaping Sink) -> UUID {
@@ -55,9 +77,25 @@ final class CompanionEventHub {
             schemaVersion: 1,
             type: "note.updated",
             repoID: repoID,
-            note: CompanionNoteDTO(editable: true, content: content, editedAt: editedAt)
+            note: CompanionNoteDTO(editable: true, content: content, editedAt: editedAt),
+            tags: nil
         )
-        for client in clients.values where client.repoID == nil || client.repoID == repoID {
+        publish(envelope)
+    }
+
+    func publishTags(repoID: Int64, tags: [CompanionTagDTO]) {
+        let envelope = CompanionEventEnvelope(
+            schemaVersion: 1,
+            type: "tags.updated",
+            repoID: repoID,
+            note: nil,
+            tags: tags
+        )
+        publish(envelope)
+    }
+
+    private func publish(_ envelope: CompanionEventEnvelope) {
+        for client in clients.values where client.repoID == nil || client.repoID == envelope.repoID {
             client.sink(envelope)
         }
     }

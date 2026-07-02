@@ -19,6 +19,7 @@ final class CompanionLocalServer {
     private let configuration: CompanionConfiguration
     private let contextProvider: CompanionContextProvider
     private let noteWriter: CompanionNoteWriter?
+    private let tagWriter: CompanionTagWriter?
     private let actionHandler: CompanionActionHandler?
     private let eventHub: CompanionEventHub
     private var listener: NWListener?
@@ -38,12 +39,14 @@ final class CompanionLocalServer {
         configuration: CompanionConfiguration,
         contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil },
         noteWriter: CompanionNoteWriter? = nil,
+        tagWriter: CompanionTagWriter? = nil,
         actionHandler: CompanionActionHandler? = nil,
         eventHub: CompanionEventHub? = nil
     ) {
         self.configuration = configuration
         self.contextProvider = contextProvider
         self.noteWriter = noteWriter
+        self.tagWriter = tagWriter
         self.actionHandler = actionHandler
         self.eventHub = eventHub ?? CompanionEventHub()
     }
@@ -160,6 +163,8 @@ final class CompanionLocalServer {
             return response(status: 426, body: ["error": "stream_required"], origin: origin)
         case ("PATCH", "/plugin/v1/notes"):
             return await saveNoteResponse(request: request, origin: origin)
+        case ("PATCH", "/plugin/v1/tags"):
+            return await saveTagsResponse(request: request, origin: origin)
         case ("POST", "/plugin/v1/actions/open"):
             return await openActionResponse(request: request, origin: origin)
         default:
@@ -261,6 +266,35 @@ final class CompanionLocalServer {
         }
     }
 
+    private func saveTagsResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let tagWriter else {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+        let payload: CompanionTagsUpdateRequest
+        do {
+            payload = try Self.jsonDecoder.decode(CompanionTagsUpdateRequest.self, from: request.body)
+        } catch {
+            return response(status: 400, body: ["error": "bad_json"], origin: origin)
+        }
+
+        do {
+            let result = try await tagWriter.save(owner: payload.owner, repo: payload.repo, tagIDs: payload.tagIds)
+            return response(
+                status: 200,
+                body: CompanionTagsUpdateResponse(schemaVersion: 1, status: "ok", tags: result.tags),
+                origin: origin
+            )
+        } catch CompanionTagWriteError.repoNotFound {
+            return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
+        } catch CompanionTagWriteError.repoNotStarred {
+            return response(status: 403, body: ["error": "repo_not_starred"], origin: origin)
+        } catch CompanionTagWriteError.unknownTagIDs {
+            return response(status: 400, body: ["error": "unknown_tag"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+    }
+
     private func openActionResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
         guard let actionHandler else {
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
@@ -294,10 +328,11 @@ final class CompanionLocalServer {
         guard let origin else { return true }
         // Content script 在 GitHub 页面上下文里发起 loopback fetch 时，浏览器预检
         // 使用页面 Origin（https://github.com），不是固定扩展 Origin。这里放开
-        // GitHub 页面、Chrome 扩展和 Safari WebExtension；真正业务请求仍必须通过 Bearer token。
+        // GitHub/Google 页面、Chrome 扩展和 Safari WebExtension；真正业务请求仍必须通过 Bearer token。
         return origin.hasPrefix("chrome-extension://")
             || origin.hasPrefix("safari-web-extension://")
             || origin == "https://github.com"
+            || origin == "https://www.google.com"
     }
 
     private func response(status: Int, body: some Encodable, origin: String?) -> Data {

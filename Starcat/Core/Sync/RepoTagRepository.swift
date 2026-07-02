@@ -41,6 +41,7 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
                 arguments: [repoId, tagId, now]
             )
         }
+        postTagsDidChange(repoId: repoId)
     }
 
     func removeTag(repoId: Int64, tagId: String) async throws {
@@ -50,6 +51,7 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
                 arguments: [repoId, tagId]
             )
         }
+        postTagsDidChange(repoId: repoId)
     }
 
     /// 替换式更新（适合 picker 一次提交）。
@@ -69,6 +71,7 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
                 )
             }
         }
+        postTagsDidChange(repoId: repoId)
     }
 
     // MARK: - 批量
@@ -201,5 +204,13 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
             }
             return result
         }
+    }
+
+    private func postTagsDidChange(repoId: Int64) {
+        NotificationCenter.default.post(
+            name: .repoTagsDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
     }
 }
