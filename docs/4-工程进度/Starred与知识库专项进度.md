@@ -115,21 +115,21 @@
 
 ## 6. PR-4: Repo 卡片 ❤️ 入库标识
 
-- [ ] `RepoCardViewData` 增加知识库状态字段。
-- [ ] `Repo.asCardData(...)` 支持注入 library state。
+- [x] `RepoCardViewData` 增加知识库状态字段。
+- [x] `Repo.asCardData(...)` 支持注入 library state。
 - [ ] `TrendingRepo.asCardData(...)` 支持从 library registry 回填是否入库。
 - [ ] `DiscoveryRepoDTO.asCardData(...)` / 探索列表适配支持回填是否入库。
 - [ ] `WeeklyFeedItem.asCardData(...)` 支持从 library registry 回填是否入库。
-- [ ] `UnifiedRepoRow` 在 repo logo 左上角展示已入库 ❤️。
-- [ ] `UnifiedRepoRow` 保留 Activity kind icon 右下角展示,不与 ❤️ 冲突。
-- [ ] Manage repo 列表展示已入库 ❤️。
+- [x] `UnifiedRepoRow` 在 repo logo 左上角展示已入库 ❤️。
+- [x] `UnifiedRepoRow` 保留 Activity kind icon 右下角展示,不与 ❤️ 冲突。
+- [x] Manage repo 列表展示已入库 ❤️。
 - [ ] Trending repo 列表展示已入库 ❤️。
 - [ ] Discovery repo 列表展示已入库 ❤️。
 - [ ] Weekly repo 列表展示已入库 ❤️。
 - [ ] Activity repo-backed 卡片展示已入库 ❤️。
-- [ ] 列表 ❤️ 只读,点击 row 仍进入详情页或选择 row,不在列表内执行入库 toggle。
+- [x] 列表 ❤️ 只读,点击 row 仍进入详情页或选择 row,不在列表内执行入库 toggle。
 - [ ] 已 star ✓ 与已入库 ❤️ 可以同时展示,语义和 tooltip 不混淆。
-- [ ] 详情页 ❤️ 更新成功后列表 ❤️ 状态即时刷新。
+- [x] 详情页 ❤️ 更新成功后列表 ❤️ 状态即时刷新。
 
 ## 7. PR-5: AI 与 MCP 范围改造
 
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-4 第一批落地 Manage 列表已入库心形角标。
 - 2026-07-02: PR-3 第二批落地 Manage 多选批量加入知识库。
 - 2026-07-02: PR-3 第一批落地详情页知识库心形入口和真实写库。
 - 2026-07-02: PR-2 第二批落地 Manage 知识库筛选条件和持久化。

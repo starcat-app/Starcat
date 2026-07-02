@@ -56,6 +56,7 @@ struct SearchCoordinatorTests {
             isFork: false,
             isPrivate: false,
             isStarred: false,
+            isInLibrary: false,
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,

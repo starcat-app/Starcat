@@ -82,6 +82,12 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     /// SwiftUI 监听到 registry 变更后会重新调用转换扩展，本字段同步刷新。
     let isStarred: Bool
 
+    /// 当前 repo 是否已加入 Starcat 私有知识库。
+    ///
+    /// 该字段必须由调用方显式注入；默认 false 表示“未查询/不展示”，避免
+    /// Trending / Weekly 等远端列表在没有本地 `library_state` 信号时误画 ❤️。
+    let isInLibrary: Bool
+
     /// 场景独有徽章（trending +N / weekly 第 N 期 / activity kind icon）。
     let badge: CardBadge?
 
@@ -186,6 +192,7 @@ extension Repo {
         badge: CardBadge? = nil,
         inlineMetadata: RepoCardInlineMetadata? = nil,
         readStatus: RepoStatus? = nil,
+        isInLibrary: Bool = false,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
         healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
@@ -203,6 +210,7 @@ extension Repo {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: self.isStarred,
+            isInLibrary: isInLibrary,
             badge: badge,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -245,6 +253,7 @@ extension StarcatRepoCardDTO {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
+            isInLibrary: false,
             badge: badge,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -293,6 +302,7 @@ extension TrendingRepo {
             isFork: false,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
+            isInLibrary: false,
             badge: resolvedBadge,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -335,6 +345,7 @@ extension WeeklyFeedItem {
             isFork: card.isFork,
             isPrivate: card.isPrivate,
             isStarred: registry.contains(ghRepoId: card.ghRepoId),
+            isInLibrary: false,
             badge: badge,
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,

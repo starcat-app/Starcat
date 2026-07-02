@@ -42,6 +42,7 @@ extension RepoRecommendationItem {
             isFork: false,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: repoID),
+            isInLibrary: false,
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,

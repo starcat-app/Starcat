@@ -63,7 +63,7 @@ struct SearchModelsTests {
             avatarURL: nil, description: nil, language: nil,
             starsCount: 0, forksCount: 0,
             isArchived: false, isFork: false, isPrivate: false,
-            isStarred: false, badge: nil,
+            isStarred: false, isInLibrary: false, badge: nil,
             weeklySources: [], weeklySourceLabel: nil,
             inlineMetadata: nil, readStatus: nil,
             openSSFScore: nil,

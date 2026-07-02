@@ -393,6 +393,7 @@ extension DiscoveryRepoDTO {
             isFork: isFork,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: repoID),
+            isInLibrary: false,
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,

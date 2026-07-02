@@ -1230,6 +1230,7 @@ struct RepoListView: View {
                         UnifiedRepoRow(
                             card: repo.asCardData(
                                 readStatus: viewModel.readStatus(for: repo.id),
+                                isInLibrary: viewModel.libraryState(for: repo.id) == .inLibrary,
                                 openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
                                 healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
                             ),

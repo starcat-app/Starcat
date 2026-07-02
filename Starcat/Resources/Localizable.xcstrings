@@ -17043,6 +17043,23 @@
     "repo.card.alreadyStarred" : {
 
     },
+    "repo.card.inLibrary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已入库"
+          }
+        }
+      }
+    },
     "repo.created" : {
       "extractionState" : "stale",
       "localizations" : {

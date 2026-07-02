@@ -140,7 +140,7 @@ struct UnifiedRepoRow: View {
         RepoRowSurface(isSelected: isSelected, accentColor: accentColor) {
             HStack(alignment: .center, spacing: 12) {
 
-                // 头像 + 「activity kind icon」徽章覆盖（仅 Activity 场景）
+                // 头像 + 知识库 ❤️ + 「activity kind icon」徽章覆盖（仅 Activity 场景）
                 avatarWithKindBadge
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -267,13 +267,15 @@ struct UnifiedRepoRow: View {
         return LanguageColor.color(for: language)
     }
 
-    /// 头像 + Activity kind icon 角标
+    /// 头像 + 知识库/Activity 角标。
+    ///
+    /// 知识库 ❤️ 固定在左上角且不可点击；Activity kind icon 保留右下角，避免两个语义
+    /// 抢同一个角。入库/移出操作只在详情页按钮执行，列表 row 仍保持原有选择行为。
     @ViewBuilder
     private var avatarWithKindBadge: some View {
-        if case .activityKind(let category) = card.badge {
-            // 头像右下角 kind icon 圆形小角标
-            ZStack(alignment: .bottomTrailing) {
-                RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
+        ZStack(alignment: .bottomTrailing) {
+            RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
+            if case .activityKind(let category) = card.badge {
                 Image(systemName: category.systemImage)
                     .font(interfaceScale.font(size: 8, weight: .bold))
                     .foregroundStyle(.white)
@@ -282,8 +284,19 @@ struct UnifiedRepoRow: View {
                     .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
                     .offset(x: 2, y: 2)
             }
-        } else {
-            RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
+        }
+        .overlay(alignment: .topLeading) {
+            if card.isInLibrary {
+                Image(systemName: "heart.fill")
+                    .font(interfaceScale.font(size: 8, weight: .bold))
+                    .foregroundStyle(Color.fromHex6(0xE11D48))
+                    .padding(3)
+                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+                    .offset(x: -2, y: -2)
+                    .accessibilityLabel(Text("repo.card.inLibrary"))
+                    .help(Text("repo.card.inLibrary"))
+            }
         }
     }
 
