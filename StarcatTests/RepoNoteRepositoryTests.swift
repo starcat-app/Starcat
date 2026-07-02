@@ -51,6 +51,8 @@ struct RepoNoteRepositoryTests {
         let got = try #require(try await repo.find(repoId: 1))
         #expect(got.content == "这是一段测试笔记")
         #expect(got.status == "read")
+        #expect(got.libraryState == LibraryState.outsideLibrary.rawValue)
+        #expect(got.libraryUpdatedAt == nil)
         #expect(got.editedAt == "2026-05-30T10:00:00Z")
     }
 
@@ -73,12 +75,17 @@ struct RepoNoteRepositoryTests {
     func updateContentExisting() async throws {
         let (repo, db) = try makeRepo()
         try await db.insertRepoFixture(id: 1)
-        try await repo.updateStatus(repoId: 1, status: .using) // 先设状态
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        let before = try #require(try await repo.find(repoId: 1))
+
+        try await repo.updateStatus(repoId: 1, status: .read) // 先设状态
         try await repo.updateContent(repoId: 1, content: "later edit")
 
         let got = try #require(try await repo.find(repoId: 1))
         #expect(got.content == "later edit")
-        #expect(got.status == "using") // status 保留
+        #expect(got.status == "read") // status 保留
+        #expect(got.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(got.libraryUpdatedAt == before.libraryUpdatedAt)
     }
 
     @Test("updateContent: nil 表示清空内容（status 保留）")
@@ -118,6 +125,107 @@ struct RepoNoteRepositoryTests {
         let got = try #require(try await repo.find(repoId: 1))
         #expect(got.content == "已写笔记")
         #expect(got.status == "using")
+        #expect(got.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(got.libraryUpdatedAt != nil)
+    }
+
+    @Test("updateStatus: 设置 using 会自动入库，取消 using 不会自动移出")
+    func updateStatusUsingAutoEntersLibraryOnly() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        try await repo.updateStatus(repoId: 1, status: .using)
+        let usingNote = try #require(try await repo.find(repoId: 1))
+        let libraryUpdatedAt = try #require(usingNote.libraryUpdatedAt)
+        #expect(usingNote.status == RepoStatus.using.rawValue)
+        #expect(usingNote.libraryState == LibraryState.inLibrary.rawValue)
+
+        try await repo.updateStatus(repoId: 1, status: .read)
+        let readNote = try #require(try await repo.find(repoId: 1))
+        #expect(readNote.status == RepoStatus.read.rawValue)
+        #expect(readNote.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(readNote.libraryUpdatedAt == libraryUpdatedAt)
+    }
+
+    // MARK: - LibraryState
+
+    @Test("fetchLibraryState: 未写过 repo_notes 时默认未入库")
+    func fetchLibraryStateMissingDefaultsOutside() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        let state = try await repo.fetchLibraryState(repoId: 1)
+        #expect(state == .outsideLibrary)
+    }
+
+    @Test("updateLibraryState: 手动加入知识库会创建 unread 行")
+    func updateLibraryStateCreatesUnreadRow() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+
+        let got = try #require(try await repo.find(repoId: 1))
+        #expect(got.status == RepoStatus.unread.rawValue)
+        #expect(got.content == nil)
+        #expect(got.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(got.libraryUpdatedAt != nil)
+    }
+
+    @Test("updateLibraryState: content/status/library state 互不覆盖")
+    func updateLibraryStateDoesNotTouchContentOrStatus() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+        try await repo.updateContent(repoId: 1, content: "保留笔记")
+        try await repo.updateStatus(repoId: 1, status: .read)
+
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        let inLibrary = try #require(try await repo.find(repoId: 1))
+        #expect(inLibrary.content == "保留笔记")
+        #expect(inLibrary.status == RepoStatus.read.rawValue)
+        #expect(inLibrary.libraryState == LibraryState.inLibrary.rawValue)
+
+        try await repo.updateLibraryState(repoId: 1, state: .outsideLibrary)
+        let outside = try #require(try await repo.find(repoId: 1))
+        #expect(outside.content == "保留笔记")
+        #expect(outside.status == RepoStatus.read.rawValue)
+        #expect(outside.libraryState == LibraryState.outsideLibrary.rawValue)
+    }
+
+    @Test("updateLibraryState: 重复加入已入库 repo 不更新 libraryUpdatedAt")
+    func updateLibraryStateDuplicateDoesNotTouchTimestamp() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        let before = try #require(try await repo.find(repoId: 1))
+        let beforeUpdatedAt = try #require(before.libraryUpdatedAt)
+
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+
+        let after = try #require(try await repo.find(repoId: 1))
+        #expect(after.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(after.libraryUpdatedAt == beforeUpdatedAt)
+    }
+
+    @Test("fetchLibraryStateMap + counts: 批量返回入库状态")
+    func fetchLibraryStateMapAndCounts() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixtures(count: 3, idStart: 1)
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await repo.updateContent(repoId: 2, content: "只写笔记")
+
+        let map = try await repo.fetchLibraryStateMap(repoIds: [1, 2, 3])
+        #expect(map[1] == .inLibrary)
+        #expect(map[2] == .outsideLibrary)
+        #expect(map[3] == nil)
+
+        let allMap = try await repo.fetchAllLibraryStateMap()
+        #expect(allMap[1] == .inLibrary)
+        #expect(allMap[2] == .outsideLibrary)
+
+        let counts = try await repo.libraryStateCounts()
+        #expect(counts[.inLibrary] == 1)
+        #expect(counts[.outsideLibrary] == 1)
     }
 
     // MARK: - 状态批量查询

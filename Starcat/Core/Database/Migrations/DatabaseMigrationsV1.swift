@@ -415,17 +415,26 @@ enum DatabaseMigrations {
         try db.create(index: "idx_repo_github_star_lists_list", on: "repo_github_star_lists", columns: ["list_id"])
     }
 
-    /// repo_notes：用户对 repo 的私有笔记 + 阅读状态。
-    /// `status` enum: `unread` / `reading` / `using` / `deprecated`；UI 侧排序 / 筛选用。
+    /// repo_notes：用户对 repo 的私有笔记 + 阅读状态 + Starcat 私有知识库状态。
+    ///
+    /// `library_state` 放在这里，而不是 `repos` / `starred_repos`：
+    /// - `repos` 是可重建的 GitHub 元数据缓存；
+    /// - `starred_repos` 是 GitHub 公开 star 关系；
+    /// - 知识库状态与 notes/status 一样是用户私有数据，后续 CloudKit 也应同层同步。
     private static func createRepoNotes(_ db: Database) throws {
         try db.create(table: "repo_notes") { t in
             t.column("repo_id", .integer).primaryKey()
                 .references("repos", column: "id", onDelete: .cascade)
             t.column("content", .text)
             t.column("status", .text).notNull().defaults(to: "unread")
+            t.column("library_state", .text).notNull().defaults(to: "outside_library")
+            t.column("library_updated_at", .text)
             t.column("is_ai_generated", .boolean).notNull().defaults(to: false)
             t.column("edited_at", .text)
         }
+
+        try db.create(index: "idx_repo_notes_library_state", on: "repo_notes", columns: ["library_state"])
+        try db.create(index: "idx_repo_notes_library_updated_at", on: "repo_notes", columns: ["library_updated_at"])
     }
 
     /// readmes：GitHub 原 README 缓存（与翻译表 readme_translations 完全独立，ETag 流程独占）。

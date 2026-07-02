@@ -2,11 +2,12 @@
 //  RepoNote.swift
 //  Starcat
 //
-//  仓库私有笔记 + 状态，对应 `repo_notes` 表。
+//  仓库私有笔记 + 阅读状态 + 私有知识库状态，对应 `repo_notes` 表。
 //
 //  关键约束：
 //  - 一个 repo 对应至多一条笔记，故 repo_id 直接作主键
 //  - status 用字符串而非 enum 入库，避免 schema 与 Swift enum 强耦合；解析在业务层
+//  - libraryState 是 Starcat 私有入库关系，不能和 GitHub starred 或 RepoStatus 混用
 //
 
 import Foundation
@@ -26,6 +27,12 @@ struct RepoNote: Codable, FetchableRecord, MutablePersistableRecord, Equatable {
     /// 状态字符串，参考 `RepoStatus`；存裸字符串以便 SQL 直接过滤。
     var status: String
 
+    /// Starcat 私有知识库状态字符串，参考 `LibraryState`。
+    var libraryState: String = LibraryState.outsideLibrary.rawValue
+
+    /// 知识库状态最后一次实际变化时间，ISO8601；只在入库/移出时更新。
+    var libraryUpdatedAt: String?
+
     /// 是否 AI 生成（P1+ 使用，v1 始终为 false）。
     var isAIGenerated: Bool
 
@@ -36,8 +43,42 @@ struct RepoNote: Codable, FetchableRecord, MutablePersistableRecord, Equatable {
         case repoId = "repo_id"
         case content
         case status
+        case libraryState = "library_state"
+        case libraryUpdatedAt = "library_updated_at"
         case isAIGenerated = "is_ai_generated"
         case editedAt = "edited_at"
+    }
+}
+
+/// Starcat 私有知识库归属状态。
+///
+/// 它只表达“是否进入 Starcat 私有知识库”，不承载阅读/使用进度，也不代表 GitHub
+/// Star。保留独立 enum 是为了避免后续把 `RepoStatus.using` 或 `repos.is_starred`
+/// 误当成知识库边界。
+enum LibraryState: String, CaseIterable, Codable {
+    case outsideLibrary = "outside_library"
+    case inLibrary = "in_library"
+
+    /// 数据库裸值解析。未知值保守视为未入库，避免异常数据把 repo 错放进知识库。
+    static func parse(_ raw: String?) -> LibraryState {
+        guard let raw, let value = LibraryState(rawValue: raw) else {
+            return .outsideLibrary
+        }
+        return value
+    }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .outsideLibrary: return "library.state.outsideLibrary"
+        case .inLibrary: return "library.state.inLibrary"
+        }
+    }
+
+    var localizedDisplayName: String {
+        switch self {
+        case .outsideLibrary: return String.l10n("library.state.outsideLibrary")
+        case .inLibrary: return String.l10n("library.state.inLibrary")
+        }
     }
 }
 

@@ -110,6 +110,22 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("repo_notes 应包含知识库状态列")
+    func repoNotesLibraryColumnsCreated() throws {
+        let db = try makeDB()
+        try db.read { db in
+            let cols = try Row.fetchAll(db, sql: "PRAGMA table_info(repo_notes)")
+            let names = cols.compactMap { $0["name"] as String? }
+
+            #expect(names.contains("library_state"))
+            #expect(names.contains("library_updated_at"))
+
+            let libraryState = try #require(cols.first { ($0["name"] as String?) == "library_state" })
+            #expect(libraryState["notnull"] as Int == 1)
+            #expect(libraryState["dflt_value"] as String? == "'outside_library'")
+        }
+    }
+
     @Test("插入 repo_notes 后 notes_fts 应可搜到，且 status 变化不重建索引")
     func notesFtsInsertAndStatusUpdate() throws {
         let db = try makeDB()

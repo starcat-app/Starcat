@@ -2,7 +2,7 @@
 //  RepoNoteRepository.swift
 //  Starcat
 //
-//  RepoNote 持久化 Repository（GRDB 实现，承载笔记 + 状态）。
+//  RepoNote 持久化 Repository（GRDB 实现，承载笔记 + 状态 + 私有知识库状态）。
 //
 //  ⚠️ 命名约定（与 D-01 一致）：
 //  - 内部 struct `GRDBRepoNoteRepository`
@@ -12,6 +12,8 @@
 //    repo_id INTEGER PRIMARY KEY → repos.id ON DELETE CASCADE
 //    content TEXT
 //    status  TEXT NOT NULL DEFAULT 'unread'
+//    library_state TEXT NOT NULL DEFAULT 'outside_library'
+//    library_updated_at TEXT
 //    is_ai_generated BOOLEAN NOT NULL DEFAULT 0
 //    edited_at TEXT
 //
@@ -66,6 +68,37 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         }
     }
 
+    func fetchLibraryState(repoId: Int64) async throws -> LibraryState {
+        try await database.writer.read { db in
+            let raw = try String.fetchOne(
+                db,
+                sql: "SELECT library_state FROM repo_notes WHERE repo_id = ?",
+                arguments: [repoId]
+            )
+            return LibraryState.parse(raw)
+        }
+    }
+
+    func fetchLibraryStateMap(repoIds: [Int64]) async throws -> [Int64: LibraryState] {
+        guard !repoIds.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: repoIds.count).joined(separator: ",")
+        return try await database.writer.read { db in
+            let args = repoIds.map { $0 as DatabaseValueConvertible }
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT repo_id, library_state FROM repo_notes WHERE repo_id IN (\(placeholders))",
+                arguments: StatementArguments(args)
+            )
+            var map: [Int64: LibraryState] = [:]
+            for row in rows {
+                let id: Int64 = row["repo_id"]
+                let raw: String? = row["library_state"]
+                map[id] = LibraryState.parse(raw)
+            }
+            return map
+        }
+    }
+
     /// 全表 status 映射。
     ///
     /// 性能特征：
@@ -80,6 +113,19 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 let id: Int64 = row["repo_id"]
                 let raw: String = row["status"]
                 map[id] = RepoStatus.parse(raw)
+            }
+            return map
+        }
+    }
+
+    func fetchAllLibraryStateMap() async throws -> [Int64: LibraryState] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT repo_id, library_state FROM repo_notes")
+            var map: [Int64: LibraryState] = [:]
+            for row in rows {
+                let id: Int64 = row["repo_id"]
+                let raw: String? = row["library_state"]
+                map[id] = LibraryState.parse(raw)
             }
             return map
         }
@@ -128,6 +174,24 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         }
     }
 
+    func libraryStateCounts() async throws -> [LibraryState: Int] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT library_state, COUNT(*) AS cnt
+                FROM repo_notes
+                GROUP BY library_state
+                """)
+            var result: [LibraryState: Int] = [:]
+            for row in rows {
+                let raw: String? = row["library_state"]
+                let count: Int = row["cnt"]
+                let state = LibraryState.parse(raw)
+                result[state, default: 0] += count
+            }
+            return result
+        }
+    }
+
     // MARK: - 写入
 
     func upsert(_ note: RepoNote) async throws {
@@ -150,8 +214,10 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             // 用 UPSERT 语义：先 INSERT（如不存在），ON CONFLICT 时 UPDATE content + edited_at
             try db.execute(
                 sql: """
-                INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
-                VALUES (?, ?, 'unread', 0, ?)
+                INSERT INTO repo_notes (
+                    repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
+                )
+                VALUES (?, ?, 'unread', 'outside_library', NULL, 0, ?)
                 ON CONFLICT(repo_id) DO UPDATE SET
                     content = excluded.content,
                     edited_at = excluded.edited_at
@@ -165,17 +231,66 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
+        let insertedLibraryState = status == .using
+            ? LibraryState.inLibrary.rawValue
+            : LibraryState.outsideLibrary.rawValue
+        let insertedLibraryUpdatedAt: String? = status == .using ? nowISO : nil
         try await database.writer.write { db in
             try db.execute(
                 sql: """
-                INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
-                VALUES (?, NULL, ?, 0, ?)
+                INSERT INTO repo_notes (
+                    repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
+                )
+                VALUES (?, NULL, ?, ?, ?, 0, ?)
                 ON CONFLICT(repo_id) DO UPDATE SET
                     status = excluded.status,
+                    library_state = CASE
+                        WHEN excluded.status = 'using' THEN 'in_library'
+                        ELSE repo_notes.library_state
+                    END,
+                    library_updated_at = CASE
+                        WHEN excluded.status = 'using' AND repo_notes.library_state != 'in_library'
+                            THEN excluded.edited_at
+                        ELSE repo_notes.library_updated_at
+                    END,
                     edited_at = excluded.edited_at
                 """,
-                arguments: [repoId, status.rawValue, nowISO]
+                arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt, nowISO]
             )
+        }
+    }
+
+    func updateLibraryState(repoId: Int64, state: LibraryState) async throws {
+        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
+        try await database.writer.write { db in
+            switch state {
+            case .inLibrary:
+                try db.execute(
+                    sql: """
+                    INSERT INTO repo_notes (
+                        repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
+                    )
+                    VALUES (?, NULL, 'unread', 'in_library', ?, 0, ?)
+                    ON CONFLICT(repo_id) DO UPDATE SET
+                        library_state = excluded.library_state,
+                        library_updated_at = excluded.library_updated_at
+                    WHERE repo_notes.library_state != excluded.library_state
+                    """,
+                    arguments: [repoId, nowISO, nowISO]
+                )
+
+            case .outsideLibrary:
+                // 默认状态不创建空 repo_notes 行；只有已有用户数据时才记录这次实际移出。
+                try db.execute(
+                    sql: """
+                    UPDATE repo_notes
+                    SET library_state = 'outside_library',
+                        library_updated_at = ?
+                    WHERE repo_id = ? AND library_state != 'outside_library'
+                    """,
+                    arguments: [nowISO, repoId]
+                )
+            }
         }
     }
 
@@ -192,8 +307,10 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         try await database.writer.write { db in
             try db.execute(
                 sql: """
-                INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
-                VALUES (?, NULL, 'read', 0, ?)
+                INSERT INTO repo_notes (
+                    repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
+                )
+                VALUES (?, NULL, 'read', 'outside_library', NULL, 0, ?)
                 ON CONFLICT(repo_id) DO UPDATE SET
                     status = 'read',
                     edited_at = excluded.edited_at

@@ -27,23 +27,23 @@
 
 ## 3. PR-1: 数据模型与 Repository
 
-- [ ] 新增 `LibraryState` enum。
-- [ ] `repo_notes` 增加 `library_state` 与更新时间字段。
-- [ ] `RepoNote` 模型补 library state 字段。
-- [ ] `RepoNoteRepositoryProtocol` 增加查询/更新 library state 方法。
-- [ ] `GRDBRepoNoteRepository` 实现 library state 查询/更新/统计。
+- [x] 新增 `LibraryState` enum。
+- [x] `repo_notes` 增加 `library_state` 与更新时间字段。
+- [x] `RepoNote` 模型补 library state 字段。
+- [x] `RepoNoteRepositoryProtocol` 增加查询/更新 library state 方法。
+- [x] `GRDBRepoNoteRepository` 实现 library state 查询/更新/统计。
 - [ ] `RepoRepositoryProtocol` 增加知识库范围查询。
 - [ ] `GRDBRepoRepository` 支持未 star repo 入库写入。
-- [ ] 单测覆盖 status/content/library state 互不覆盖。
-- [ ] 单测覆盖设置 `RepoStatus.using` 时自动设为 `libraryState = .inLibrary`。
-- [ ] 单测覆盖取消 `RepoStatus.using` 时不自动取消入库。
-- [ ] 单测覆盖手动加入知识库时默认 `RepoStatus.unread`。
-- [ ] 单测覆盖从 `RepoStatus.using` 自动入库时保持 `using`。
+- [x] 单测覆盖 status/content/library state 互不覆盖。
+- [x] 单测覆盖设置 `RepoStatus.using` 时自动设为 `libraryState = .inLibrary`。
+- [x] 单测覆盖取消 `RepoStatus.using` 时不自动取消入库。
+- [x] 单测覆盖手动加入知识库时默认 `RepoStatus.unread`。
+- [x] 单测覆盖从 `RepoStatus.using` 自动入库时保持 `using`。
 - [ ] 单测覆盖批量加入知识库时已入库 repo 保持不变、未入库 repo 设为 `.inLibrary`。
 - [ ] 单测覆盖批量加入知识库不调用 GitHub star。
-- [ ] 预留 `library_updated_at`,后续 CloudKit 冲突解决按最后更新时间胜出。
-- [ ] `library_updated_at` 只在 `libraryState` 实际变化时更新。
-- [ ] 重复加入已入库 repo 不更新 `library_updated_at`。
+- [x] 预留 `library_updated_at`,后续 CloudKit 冲突解决按最后更新时间胜出。
+- [x] `library_updated_at` 只在 `libraryState` 实际变化时更新。
+- [x] 重复加入已入库 repo 不更新 `library_updated_at`。
 - [ ] notes / tags / status 改变不更新 `library_updated_at`。
 - [ ] 不可访问/恢复可访问不更新 `library_updated_at`。
 - [ ] `libraryState` 按 GitHub 登录用户隔离,与 notes/status/tags 的用户私有语义一致。
@@ -219,7 +219,7 @@
 
 - [ ] `rtk xcodegen generate`
 - [ ] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoNoteRepositoryTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoNoteRepositoryTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-1 第一批落地 LibraryState、repo_notes 字段和 RepoNoteRepository 查询/更新能力。
 - 2026-07-02: 确认详情页 ❤️ 不做乐观更新,写入成功后再更新 UI。
 - 2026-07-02: 确认单 repo 手动 README/Health/OpenSSF 刷新允许已入库未 star repo,失败不改状态不清缓存。
 - 2026-07-02: 确认移出知识库保留 Releases 订阅关系,但非 active repo 不再自动 release 轮询。
