@@ -42,13 +42,25 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 不删除 repo / 笔记 / 标签 —— 用户后续若 re-star 仍能拿回原数据。
     func markUnstarred(repoId: Int64, userID: Int64) async throws
 
+    /// 将外部来源 repo 元数据写入 `repos`，但不创建 GitHub star 关系。
+    ///
+    /// 用于 Search Center / Discovery / Trending 等“未 star 也可加入知识库”的路径。
+    /// 该方法只维护 repo metadata；真正的知识库归属写在 `repo_notes.library_state`。
+    func upsertExternalRepoForLibrary(repoDTO: GitHubRepoDTO, syncedAt: Date) async throws -> Repo
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数。
     func starredCount() async throws -> Int
 
+    /// Starcat 私有知识库 repo 总数（`repo_notes.library_state = in_library`）。
+    func knowledgeCount() async throws -> Int
+
     /// 全部已 star 的 repo（按 starred_at 倒序）。
     func fetchAllStarred() async throws -> [Repo]
+
+    /// 全部已入库 repo；允许包含 `is_starred = 0` 的私有知识库 repo。
+    func fetchKnowledgeRepos() async throws -> [Repo]
 
     /// 最近 star 的 repo（`ORDER BY starred_at DESC LIMIT ?`）。
     ///
@@ -83,6 +95,9 @@ protocol RepoRepositoryProtocol: Sendable {
 
     /// FTS5 全文搜索（空 query 退化为 fetchAllStarred）。
     func searchFTS(query: String) async throws -> [Repo]
+
+    /// 知识库范围 FTS5 全文搜索；空 query 退化为 fetchKnowledgeRepos。
+    func searchKnowledgeFTS(query: String) async throws -> [Repo]
 
     /// Manage 大数据量列表分页查询。
     ///
@@ -154,6 +169,9 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 当前规模（< 2K starred）下 SELECT 应在 < 10ms 完成；> 5000 时按 §4.3.2
     /// Snapshot 扩展点占位实现 `~/Library/Application Support/Starcat/registry.snapshot`。
     func fetchStarredRepoIDs() async throws -> [Int64]
+
+    /// 当前已入库 repo id 集合，供知识库 registry / AI 范围候选使用。
+    func fetchKnowledgeRepoIDs() async throws -> [Int64]
 
     /// R-01：单个 repo 「重新 / 首次 star」时把字段写入 `repos` + `starred_repos`。
     ///

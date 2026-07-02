@@ -144,6 +144,18 @@ struct GRDBRepoRepository {
         }
     }
 
+    func fetchKnowledgeRepoIDs() async throws -> [Int64] {
+        try await database.writer.read { db in
+            try Int64.fetchAll(db, sql: """
+                SELECT r.id
+                FROM repos r
+                JOIN repo_notes rn ON rn.repo_id = r.id
+                WHERE rn.library_state = 'in_library'
+                ORDER BY r.id
+                """)
+        }
+    }
+
     /// R-01：单个 repo star 时写入 `repos` + `starred_repos`。
     ///
     /// 调用链：`StarActionService.star(owner:repo:)`
@@ -182,12 +194,44 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// 外部来源 repo 写入 `repos`，但不写 `starred_repos`。
+    ///
+    /// 关键约束：
+    /// - 新 repo 一律以 `is_starred = false` 落库，避免把私有入库误写成 GitHub Star。
+    /// - 如果本地已经是 starred，则只刷新 metadata，不把 `is_starred/starred_at` 降级。
+    /// - `library_state` 仍由 `RepoNoteRepository.updateLibraryState` 写入，两个语义分层。
+    func upsertExternalRepoForLibrary(repoDTO: GitHubRepoDTO, syncedAt: Date) async throws -> Repo {
+        let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
+
+        return try await database.writer.write { db in
+            var repo = Self.repoFromDTO(repoDTO, starredAt: nil, cachedAt: cachedAtISO, isStarred: false)
+            if let existing = try Repo.fetchOne(db, key: repo.id), existing.isStarred {
+                repo.isStarred = true
+                repo.starredAt = existing.starredAt
+            }
+            try repo.save(db)
+            return repo
+        }
+    }
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数（is_starred = 1）。
     func starredCount() async throws -> Int {
         try await database.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT count(*) FROM repos WHERE is_starred = 1") ?? 0
+        }
+    }
+
+    /// 当前用户私有知识库 repo 总数。
+    func knowledgeCount() async throws -> Int {
+        try await database.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*)
+                FROM repos r
+                JOIN repo_notes rn ON rn.repo_id = r.id
+                WHERE rn.library_state = 'in_library'
+                """) ?? 0
         }
     }
 
@@ -210,6 +254,18 @@ struct GRDBRepoRepository {
             try Repo.filter(Column("is_starred") == true)
                 .order(Column("starred_at").desc)
                 .fetchAll(db)
+        }
+    }
+
+    func fetchKnowledgeRepos() async throws -> [Repo] {
+        try await database.writer.read { db in
+            try Repo.fetchAll(db, sql: """
+                SELECT r.*
+                FROM repos r
+                JOIN repo_notes rn ON rn.repo_id = r.id
+                WHERE rn.library_state = 'in_library'
+                ORDER BY COALESCE(r.starred_at, rn.library_updated_at, r.cached_at) DESC, r.id DESC
+                """)
         }
     }
 
@@ -339,6 +395,34 @@ struct GRDBRepoRepository {
                 ) m ON r.id = m.repo_id
                 WHERE r.is_starred = 1
                 ORDER BY m.best_score ASC, r.starred_at DESC
+            """, arguments: [ftsQuery, ftsQuery])
+        }
+    }
+
+    func searchKnowledgeFTS(query: String) async throws -> [Repo] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return try await fetchKnowledgeRepos()
+        }
+        let ftsQuery = FTSQuery.sanitize(trimmed)
+        return try await database.writer.read { db in
+            try Repo.fetchAll(db, sql: """
+                WITH hits(repo_id, score) AS (
+                    SELECT rowid, bm25(repos_fts) FROM repos_fts WHERE repos_fts MATCH ?
+                    UNION ALL
+                    SELECT rowid, bm25(notes_fts) FROM notes_fts WHERE notes_fts MATCH ?
+                )
+                SELECT r.* FROM repos r
+                JOIN repo_notes rn ON rn.repo_id = r.id
+                JOIN (
+                    SELECT repo_id, MIN(score) AS best_score
+                    FROM hits
+                    GROUP BY repo_id
+                ) m ON r.id = m.repo_id
+                WHERE rn.library_state = 'in_library'
+                ORDER BY m.best_score ASC,
+                         COALESCE(r.starred_at, rn.library_updated_at, r.cached_at) DESC,
+                         r.id DESC
                 """, arguments: [ftsQuery, ftsQuery])
         }
     }
@@ -452,13 +536,17 @@ struct GRDBRepoRepository {
         includeOrderBy: Bool = true
     ) -> (sql: String, arguments: StatementArguments) {
         var joins: [String] = []
-        var whereClauses: [String] = ["r.is_starred = 1"]
+        var whereClauses: [String] = []
         var args: [any DatabaseValueConvertible] = []
 
         switch scope {
         case .allStars:
-            break
+            whereClauses.append("r.is_starred = 1")
+        case .library:
+            joins.append("JOIN repo_notes rn_scope ON rn_scope.repo_id = r.id AND rn_scope.library_state = 'in_library'")
+            whereClauses.append("1 = 1")
         case .untagged:
+            whereClauses.append("r.is_starred = 1")
             whereClauses.append("""
                 NOT EXISTS (
                     SELECT 1 FROM repo_tags rt_scope
@@ -466,6 +554,7 @@ struct GRDBRepoRepository {
                 )
                 """)
         case .language(let language):
+            whereClauses.append("r.is_starred = 1")
             if let language {
                 whereClauses.append("r.language = ?")
                 args.append(language)
@@ -473,22 +562,25 @@ struct GRDBRepoRepository {
                 whereClauses.append("r.language IS NULL")
             }
         case .tag(let tagID):
+            whereClauses.append("r.is_starred = 1")
             whereClauses.append("""
                 EXISTS (
                     SELECT 1 FROM repo_tags rt_scope
                     WHERE rt_scope.repo_id = r.id AND rt_scope.tag_id = ?
                 )
-                """)
+            """)
             args.append(tagID)
         case .githubStarList(let listID):
+            whereClauses.append("r.is_starred = 1")
             whereClauses.append("""
                 EXISTS (
                     SELECT 1 FROM repo_github_star_lists rgl_scope
                     WHERE rgl_scope.repo_id = r.id AND rgl_scope.list_id = ?
                 )
-                """)
+            """)
             args.append(listID)
         case .githubStarListUngrouped:
+            whereClauses.append("r.is_starred = 1")
             whereClauses.append("""
                 NOT EXISTS (
                     SELECT 1 FROM repo_github_star_lists rgl_scope
@@ -541,7 +633,11 @@ struct GRDBRepoRepository {
         let orderBy: String
         switch sort {
         case .starredAtDesc:
-            orderBy = "r.starred_at DESC, r.id DESC"
+            if scope == .library {
+                orderBy = "COALESCE(r.starred_at, rn_scope.library_updated_at, r.cached_at) DESC, r.id DESC"
+            } else {
+                orderBy = "r.starred_at DESC, r.id DESC"
+            }
         case .starredAtAsc:
             orderBy = "r.starred_at IS NULL ASC, r.starred_at ASC, r.id ASC"
         case .nameAsc:

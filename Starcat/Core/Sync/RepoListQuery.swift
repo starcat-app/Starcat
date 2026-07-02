@@ -16,6 +16,7 @@ import Foundation
 /// 只放 Core 层可理解的语义，避免 Repository 反向依赖 `SidebarItem` 这种 UI 导航枚举。
 enum RepoListScope: Equatable, Sendable {
     case allStars
+    case library
     case untagged
     case language(String?)
     case tag(String)

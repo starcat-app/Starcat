@@ -77,6 +77,42 @@ struct RepoRepositoryTests {
         #expect(count == 1)
     }
 
+    @Test("upsertExternalRepoForLibrary: 未 star 外部 repo 只写 metadata,不创建 starred 关系")
+    func upsertExternalRepoForLibraryCreatesUnstarredRepo() async throws {
+        let (repo, db) = try makeRepo()
+        let dto = makeDTO(id: 9001, name: "external").repo
+
+        let saved = try await repo.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: Date())
+
+        #expect(saved.id == 9001)
+        #expect(saved.isStarred == false)
+        #expect(saved.starredAt == nil)
+        #expect(try await repo.starredCount() == 0)
+
+        try await db.writer.read { db in
+            let relationCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM starred_repos WHERE repo_id = ?",
+                arguments: [9001]
+            ) ?? 0
+            #expect(relationCount == 0)
+        }
+    }
+
+    @Test("upsertExternalRepoForLibrary: 已 star repo 不会被外部 metadata 写入降级")
+    func upsertExternalRepoForLibraryPreservesExistingStarState() async throws {
+        let (repo, _) = try makeRepo()
+        let starred = makeDTO(id: 9002, name: "already-starred")
+        try await repo.upsertStarred([starred], userID: 100, syncedAt: Date())
+        let before = try #require(try await repo.findById(9002))
+
+        let saved = try await repo.upsertExternalRepoForLibrary(repoDTO: starred.repo, syncedAt: Date())
+
+        #expect(saved.isStarred == true)
+        #expect(saved.starredAt == before.starredAt)
+        #expect(try await repo.starredCount() == 1)
+    }
+
     @Test("markUnstarredExcept 将本地多出的 repo 设为 is_starred=0")
     func markUnstarred() async throws {
         let (repo, db) = try makeRepo()
@@ -244,6 +280,36 @@ struct RepoRepositoryTests {
         #expect(all.count == 5)
     }
 
+    @Test("知识库查询包含未 star 已入库 repo,但 starred 查询不被污染")
+    func knowledgeQueriesIncludeUnstarredLibraryReposOnlyInKnowledgeScope() async throws {
+        let (repo, db) = try makeRepo()
+        try await seedDataset(repo)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+
+        let external = makeDTO(id: 9003, name: "library-only").repo
+        _ = try await repo.upsertExternalRepoForLibrary(repoDTO: external, syncedAt: Date())
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 9003, state: .inLibrary)
+
+        let knowledge = try await repo.fetchKnowledgeRepos()
+        #expect(Set(knowledge.map(\.id)) == [1, 9003])
+        #expect(try await repo.knowledgeCount() == 2)
+        #expect(try await repo.fetchKnowledgeRepoIDs() == [1, 9003])
+
+        let starred = try await repo.fetchAllStarred()
+        #expect(starred.map(\.id).contains(9003) == false)
+        #expect(try await repo.fetchListCount(scope: .library, filters: .empty) == 2)
+
+        let libraryPage = try await repo.fetchListPage(
+            scope: .library,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 10,
+            offset: 0
+        )
+        #expect(Set(libraryPage.map(\.id)) == [1, 9003])
+    }
+
     @Test("fetchRecentStarred 只返回最近 N 条且仍按 starred_at 倒序")
     func fetchRecentStarred_respectsLimit() async throws {
         let (repo, _) = try makeRepo()
@@ -319,6 +385,20 @@ struct RepoRepositoryTests {
 
         let hits = try await repo.searchFTS(query: "   ")
         #expect(hits.count == 5)
+    }
+
+    @Test("searchKnowledgeFTS 只返回知识库范围命中")
+    func searchKnowledgeFTSRestrictsToLibraryScope() async throws {
+        let (repo, db) = try makeRepo()
+        try await seedDataset(repo)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+
+        let hits = try await repo.searchKnowledgeFTS(query: "swift")
+        #expect(hits.map(\.id) == [1])
+
+        let emptyHits = try await repo.searchKnowledgeFTS(query: " ")
+        #expect(emptyHits.map(\.id) == [1])
     }
 
     @Test("searchFTS 多词关键词")

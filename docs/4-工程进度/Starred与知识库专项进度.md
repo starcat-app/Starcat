@@ -32,8 +32,8 @@
 - [x] `RepoNote` 模型补 library state 字段。
 - [x] `RepoNoteRepositoryProtocol` 增加查询/更新 library state 方法。
 - [x] `GRDBRepoNoteRepository` 实现 library state 查询/更新/统计。
-- [ ] `RepoRepositoryProtocol` 增加知识库范围查询。
-- [ ] `GRDBRepoRepository` 支持未 star repo 入库写入。
+- [x] `RepoRepositoryProtocol` 增加知识库范围查询。
+- [x] `GRDBRepoRepository` 支持未 star repo 入库写入。
 - [x] 单测覆盖 status/content/library state 互不覆盖。
 - [x] 单测覆盖设置 `RepoStatus.using` 时自动设为 `libraryState = .inLibrary`。
 - [x] 单测覆盖取消 `RepoStatus.using` 时不自动取消入库。
@@ -220,7 +220,7 @@
 - [ ] `rtk xcodegen generate`
 - [ ] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoNoteRepositoryTests test`
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-1 第二批落地知识库 repo 查询、FTS 范围和未 star 外部 repo metadata 写入。
 - 2026-07-02: PR-1 第一批落地 LibraryState、repo_notes 字段和 RepoNoteRepository 查询/更新能力。
 - 2026-07-02: 确认详情页 ❤️ 不做乐观更新,写入成功后再更新 UI。
 - 2026-07-02: 确认单 repo 手动 README/Health/OpenSSF 刷新允许已入库未 star repo,失败不改状态不清缓存。
