@@ -560,6 +560,9 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
             gettingStartedStore.reset()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenGlobalSearch)) { _ in
+            searchCenterViewModel.present()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOrganizeRepo)) { _ in
             gettingStartedStore.markCompleted(.organizeRepo)
         }
@@ -614,6 +617,20 @@ struct HomeView: View {
     private func openSearchRepositoryURL(_ candidate: RepositoryCandidate) {
         guard let url = URL(string: "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
+    /// 这里复用 Search Center 本地结果跳转语义：切到 Manage / All Stars，清空搜索，
+    /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
+    private func openCompanionRepository(_ repo: Repo) {
+        selectedSidebarPage = .manage
+        viewModel.selection = .allStars
+        viewModel.submitSearch("")
+        Task {
+            await viewModel.reloadItems(forceRefresh: true)
+            viewModel.shouldScrollSelectedRepoIntoView = true
+            viewModel.selectedRepoID = repo.id
+        }
     }
 
     /// 首次引导的「先逛 Trending」选择只负责路由，不触发登录 / 同步副作用。
@@ -730,6 +747,9 @@ struct HomeView: View {
             },
             onOpenAgentWorkspace: {
                 showAgentWorkspace = true
+            },
+            onOpenCompanionRepo: { repo in
+                openCompanionRepository(repo)
             }
         )
         .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)

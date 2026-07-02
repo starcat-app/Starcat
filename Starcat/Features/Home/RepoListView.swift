@@ -84,6 +84,8 @@ struct RepoListView: View {
     var onOpenSearchCenter: (() -> Void)?
     /// 覆盖式 Agent Workspace 由 HomeView 承载；列表 toolbar 只暴露入口。
     var onOpenAgentWorkspace: (() -> Void)?
+    /// Browser Plugin 的 Open in Starcat 由 HomeView 负责切换根页面和选中详情。
+    var onOpenCompanionRepo: ((Repo) -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -132,6 +134,9 @@ struct RepoListView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 顶部 App 菜单不在本 view tree 内，必须通过 focused value 读取当前窗口选择；
+        // 没有选中仓库时传 nil，菜单项会自然禁用。
+        .focusedValue(\.starcatSelectedRepo, focusedRepoSelection)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
@@ -427,6 +432,51 @@ struct RepoListView: View {
         case .manage:    return makeManageToolbarSpec()
         case .trending:  return selectedExploreMode == .trending ? makeTrendingToolbarSpec() : makeDiscoveryToolbarSpec()
         case .activity:  return makeActivityToolbarSpec()
+        }
+    }
+
+    /// 当前窗口暴露给 macOS 顶部菜单的仓库选择。
+    ///
+    /// 这里只提供“打开当前 Repo GitHub 页面”需要的最小上下文，复用
+    /// `ToolbarRepoSelection` 的四场景适配，避免菜单层再理解 Manage / Trending /
+    /// Weekly / Activity 各自的数据模型。
+    private var focusedRepoSelection: ToolbarRepoSelection? {
+        let registry = dependencies.starredRegistry
+
+        switch selectedPage {
+        case .manage:
+            guard let repo = viewModel.selectedRepo else { return nil }
+            return ToolbarRepoSelection.from(
+                repo: repo,
+                isStarred: repo.isStarred || registry.contains(ghRepoId: repo.id)
+            )
+        case .trending:
+            if selectedExploreMode == .trending {
+                guard let repo = selectedTrendingRepo else { return nil }
+                return ToolbarRepoSelection.from(
+                    trending: repo,
+                    isStarred: registry.contains(ghRepoId: repo.ghRepoId)
+                )
+            }
+            guard let repo = selectedDiscoveryRepo else { return nil }
+            let isStarred = registry.contains(ghRepoId: repo.repoID)
+            return ToolbarRepoSelection.from(
+                repo: repo.toEphemeralRepo(isStarred: isStarred),
+                isStarred: isStarred
+            )
+        case .activity:
+            if selectedActivityCategory == .weekly {
+                guard let item = dependencies.weeklySelectionService.selectedItem else { return nil }
+                return ToolbarRepoSelection.from(
+                    weekly: item,
+                    isStarred: registry.contains(ghRepoId: item.ghRepoId)
+                )
+            }
+            guard let repo = selectedActivityItem?.repo else { return nil }
+            return ToolbarRepoSelection.from(
+                repo: repo,
+                isStarred: repo.isStarred || registry.contains(ghRepoId: repo.id)
+            )
         }
     }
 
@@ -1684,6 +1734,8 @@ struct RepoListView: View {
         guard let request else { return }
         NSApp.activate(ignoringOtherApps: true)
         switch request.kind {
+        case .openRepo:
+            onOpenCompanionRepo?(request.repo)
         case .codeflow:
             openCodeFlow(for: request.repo)
         case .codebase:

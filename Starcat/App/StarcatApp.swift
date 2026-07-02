@@ -16,6 +16,27 @@ import SwiftUI
 import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
 import TipKit
 
+/// 顶部菜单读取当前窗口选中仓库的桥。
+///
+/// macOS menu command 不在 `RepoListView` 的 view tree 内，不能直接访问列表状态；
+/// 用 `FocusedValue` 把当前窗口的 `ToolbarRepoSelection` 暴露给菜单，是 SwiftUI
+/// 命令系统读取“当前文档 / 当前选择”的标准路径。
+private struct StarcatFocusedRepoSelectionKey: FocusedValueKey {
+    typealias Value = ToolbarRepoSelection
+}
+
+extension FocusedValues {
+    var starcatSelectedRepo: ToolbarRepoSelection? {
+        get { self[StarcatFocusedRepoSelectionKey.self] }
+        set { self[StarcatFocusedRepoSelectionKey.self] = newValue }
+    }
+}
+
+extension Notification.Name {
+    /// 顶部菜单触发全局搜索。HomeView 持有 SearchCenterViewModel，因此命令层只发意图。
+    static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
+}
+
 @main
 struct StarcatApp: App {
 
@@ -115,6 +136,8 @@ struct StarcatApp: App {
                 }
                 .keyboardShortcut("I", modifiers: .command)
             }
+
+            StarcatAppCommands(dependencies: dependencies)
 
             // DEBUG-only 菜单：作为后续调试入口的容器（清缓存 / 强制制造网络
             // 错误 / Dump 数据库等）。语言切换 2026-06-16 移除（已在设置页落地）。
@@ -326,6 +349,234 @@ struct StarcatApp: App {
         }
 
         AppLog.general.info("Starcat bootstrap complete")
+    }
+}
+
+// MARK: - App 菜单命令
+
+/// Starcat 顶部菜单命令。
+///
+/// 这些入口全部复用已有业务路径：同步走 `SyncManager`，搜索由 HomeView 持有的
+/// `SearchCenterViewModel` 响应通知，设置 / 外链 / 诊断导出仍走原 AppKit / 工具类。
+/// 这样菜单只是 macOS 可发现性增强，不新增第二套业务状态。
+private struct StarcatAppCommands: Commands {
+    let dependencies: AppDependencies?
+
+    @FocusedValue(\.starcatSelectedRepo) private var selectedRepo
+
+    var body: some Commands {
+        CommandMenu("commands.actions.menu") {
+            Button("commands.actions.syncStars") {
+                syncStars()
+            }
+            .disabled(dependencies == nil)
+
+            Button("commands.actions.openGlobalSearch") {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(name: .starcatCommandOpenGlobalSearch, object: nil)
+            }
+
+            Button("diagnostics.export.button") {
+                exportDiagnostics()
+            }
+
+            Button("commands.actions.openCurrentRepoOnGitHub") {
+                openSelectedRepoOnGitHub()
+            }
+            .disabled(selectedRepo?.htmlUrl == nil)
+        }
+
+        CommandGroup(replacing: .help) {
+            Button("commands.help.helpCenter") {
+                openExternal("https://starcat.ink/support")
+            }
+
+            Button("commands.help.contactSupport") {
+                openExternal("mailto:dong4j@gmail.com")
+            }
+
+            Button("commands.help.privacyPolicy") {
+                openExternal("https://starcat.ink/privacy")
+            }
+
+            Divider()
+
+            Button("commands.help.releaseNotes") {
+                ReleaseNotesWindowController.show()
+            }
+        }
+    }
+
+    @MainActor
+    private func syncStars() {
+        guard let dependencies,
+              let user = dependencies.authSession.state.user
+        else {
+            NSApp.activate(ignoringOtherApps: true)
+            dependencies?.authSession.requestLoginSheet()
+            return
+        }
+        dependencies.syncManager.performFullSync(userID: user.id, force: true)
+    }
+
+    @MainActor
+    private func exportDiagnostics() {
+        Task {
+            _ = await DiagnosticBundleExporter.exportFromPanel(settings: dependencies?.settings ?? AppSettings.shared)
+        }
+    }
+
+    @MainActor
+    private func openSelectedRepoOnGitHub() {
+        guard let url = selectedRepo?.htmlUrl else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @MainActor
+    private func openExternal(_ rawURL: String) {
+        guard let url = URL(string: rawURL) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+// MARK: - Release Notes
+
+/// Release Notes 窗口尺寸。
+private enum ReleaseNotesWindowMetrics {
+    static let defaultContentSize = NSSize(width: 620, height: 520)
+    static let minimumContentSize = NSSize(width: 540, height: 420)
+}
+
+/// App 内静态版本说明窗口。
+///
+/// 首版只需要一个可从 Help 菜单打开的说明面板，不接 Sparkle / GitHub Releases
+/// 之类自动更新链路，避免上架前引入额外分发和网络语义。
+private final class ReleaseNotesWindowController: NSWindowController, NSWindowDelegate {
+    private static var shared: ReleaseNotesWindowController?
+
+    @MainActor
+    static func show() {
+        let controller: ReleaseNotesWindowController
+        let shouldCenter: Bool
+
+        if let shared {
+            controller = shared
+            shouldCenter = false
+        } else {
+            controller = ReleaseNotesWindowController()
+            shared = controller
+            shouldCenter = true
+        }
+
+        controller.showWindow(nil)
+        if shouldCenter {
+            controller.window?.center()
+        }
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private init() {
+        let content = ReleaseNotesView()
+            .starcatAnimationOverride()
+            .appLocaleEnvironment()
+            .environment(AppSettings.shared)
+        let hostingController = NSHostingController(rootView: content)
+        let window = NSWindow(contentViewController: hostingController)
+
+        window.title = String.l10n("releaseNotes.window.title")
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(ReleaseNotesWindowMetrics.defaultContentSize)
+        window.contentMinSize = ReleaseNotesWindowMetrics.minimumContentSize
+        window.minSize = ReleaseNotesWindowMetrics.minimumContentSize
+        window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .windowBackgroundColor
+
+        super.init(window: window)
+        window.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("ReleaseNotesWindowController does not support storyboard initialization")
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window?.resignKey()
+    }
+}
+
+/// Release Notes 的 SwiftUI 内容。
+private struct ReleaseNotesView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("releaseNotes.title")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                    Text("releaseNotes.subtitle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                ReleaseNotesSection(
+                    title: "releaseNotes.v1.title",
+                    items: [
+                        "releaseNotes.v1.item.native",
+                        "releaseNotes.v1.item.organize",
+                        "releaseNotes.v1.item.discovery",
+                        "releaseNotes.v1.item.ai",
+                        "releaseNotes.v1.item.companion"
+                    ]
+                )
+
+                ReleaseNotesSection(
+                    title: "releaseNotes.next.title",
+                    items: [
+                        "releaseNotes.next.item.cloud",
+                        "releaseNotes.next.item.shortcuts",
+                        "releaseNotes.next.item.releaseDigest"
+                    ]
+                )
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.52))
+    }
+}
+
+private struct ReleaseNotesSection: View {
+    let title: LocalizedStringKey
+    let items: [LocalizedStringKey]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    Label {
+                        Text(item)
+                            .font(.callout)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
+        }
     }
 }
 
