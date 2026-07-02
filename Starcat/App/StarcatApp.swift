@@ -811,25 +811,24 @@ private enum ReleaseNotesLoader {
 // MARK: - DEBUG-only 菜单
 
 #if DEBUG
-/// DEBUG 菜单聚合（顶部菜单栏出现一个 `Debug` 入口）。
+/// DEBUG 菜单聚合（顶部菜单栏出现一个开发专用入口）。
 ///
 /// 设计：
 /// - 用 `Commands` 协议而不是直接写在 `.commands` 里——把所有调试入口聚拢到一个
 ///   独立类型，未来要加新调试项（清数据库 / Dump 偏好 / 强制限流等）就在这个
 ///   类型里加 `CommandGroup` / `CommandMenu`，主 `StarcatApp.body` 不会被撑大
-/// - `CommandMenu("Debug")` 在 menubar 上插入一个顶级菜单（位置由 SwiftUI 决定，
+/// - `CommandMenu("Who's Your Daddy")` 在 menubar 上插入一个顶级菜单（位置由 SwiftUI 决定，
 ///   一般在 View 菜单之后），不与系统标准菜单冲突
 ///
 /// 2026-06-16 dong4j 删除了「语言切换」子菜单（语言切换正式入口已在「设置 →
-/// 通用 → 语言」落地）。Debug 菜单本身保留作为后续调试入口的容器；菜单内
-/// 当前只有一个 disabled 占位项，避免空 `CommandMenu` 在某些 SwiftUI 版本下
-/// 不渲染菜单栏标题——加入第一个真功能时移除占位。
+/// 通用 → 语言」落地）。该菜单本身保留作为后续调试入口的容器；菜单标题故意
+/// 使用非产品化文案，避免 DEBUG-only 能力看起来像正式用户功能。
 	struct DebugMenuCommands: Commands {
         @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
         @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
 
 		var body: some Commands {
-			CommandMenu("Debug") {
+			CommandMenu("Who's Your Daddy") {
 				Button("Replay First-Run Onboarding") {
 					FirstRunOnboardingPreferences.resetForDebugReplay()
 					NotificationCenter.default.post(
