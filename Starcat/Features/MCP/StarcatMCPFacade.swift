@@ -40,12 +40,12 @@ final class StarcatMCPFacade {
         self.settings = settings
     }
 
-    func searchRepos(query: String?, limit: Int) async throws -> MCPRepoSearchResult {
+    func searchRepos(query: String?, limit: Int, scope: SemanticIndexScope = .starred) async throws -> MCPRepoSearchResult {
         let sanitizedLimit = Self.sanitizeLimit(limit, defaultValue: 20, maxValue: 100)
         let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let repos = trimmed.isEmpty
-            ? try await repoRepository.fetchAllStarred()
-            : try await repoRepository.searchFTS(query: trimmed)
+            ? try await fetchRepos(scope: scope)
+            : try await searchFTS(query: trimmed, scope: scope)
         let clipped = Array(repos.prefix(sanitizedLimit)).map(MCPRepoDTO.init(repo:))
         return MCPRepoSearchResult(
             query: trimmed.isEmpty ? nil : trimmed,
@@ -55,11 +55,11 @@ final class StarcatMCPFacade {
         )
     }
 
-    func semanticSearch(query: String, limit: Int) async throws -> MCPSemanticSearchResult {
+    func semanticSearch(query: String, limit: Int, scope: SemanticIndexScope = .starred) async throws -> MCPSemanticSearchResult {
         let sanitizedLimit = Self.sanitizeLimit(limit, defaultValue: 20, maxValue: 80)
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidates = try await repoRepository.fetchAllStarred()
-        let ftsHits = try await repoRepository.searchFTS(query: trimmed)
+        let candidates = try await fetchRepos(scope: scope)
+        let ftsHits = try await searchFTS(query: trimmed, scope: scope)
         let hits = try await semanticSearchService.search(
             query: trimmed,
             candidates: candidates,
@@ -106,7 +106,9 @@ final class StarcatMCPFacade {
     }
 
     func resources() async throws -> [MCPResourceDescriptor] {
-        let recent = try await repoRepository.fetchRecentStarred(limit: 20)
+        let starred = try await repoRepository.fetchRecentStarred(limit: 20)
+        let knowledge = Array((try await repoRepository.fetchKnowledgeRepos()).prefix(20))
+        let all = Array(SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge).prefix(20))
         var out = [
             MCPResourceDescriptor(
                 uri: "starcat://tags",
@@ -115,15 +117,21 @@ final class StarcatMCPFacade {
                 mimeType: "application/json"
             )
         ]
-        out.append(contentsOf: recent.map { repo in
+        out.append(contentsOf: resourceDescriptors(scope: .starred, repos: starred))
+        out.append(contentsOf: resourceDescriptors(scope: .knowledge, repos: knowledge))
+        out.append(contentsOf: resourceDescriptors(scope: .all, repos: all))
+        return out
+    }
+
+    private func resourceDescriptors(scope: SemanticIndexScope, repos: [Repo]) -> [MCPResourceDescriptor] {
+        repos.map { repo in
             MCPResourceDescriptor(
-                uri: "starcat://repos/\(repo.owner)/\(repo.name)",
+                uri: "starcat://repos/\(scope.rawValue)/\(repo.owner)/\(repo.name)",
                 name: repo.fullName,
-                description: repo.description,
+                description: repo.description ?? "\(scope.rawValue) scope",
                 mimeType: "application/json"
             )
-        })
-        return out
+        }
     }
 
     func readResource(uri: String) async throws -> (mimeType: String, text: String) {
@@ -139,7 +147,10 @@ final class StarcatMCPFacade {
         guard components.host == "repos" else {
             throw StarcatMCPError.invalidArguments("Unknown resource URI: \(uri)")
         }
-        let parts = components.path.split(separator: "/").map(String.init)
+        var parts = components.path.split(separator: "/").map(String.init)
+        if let first = parts.first, SemanticIndexScope(rawValue: first) != nil {
+            parts.removeFirst()
+        }
         guard parts.count >= 2 else {
             throw StarcatMCPError.invalidArguments("Repo resource must be starcat://repos/{owner}/{repo}")
         }
@@ -151,6 +162,32 @@ final class StarcatMCPFacade {
         }
         let value = try await getRepo(repoID: nil, owner: owner, name: name)
         return ("application/json", try Self.prettyJSON(value))
+    }
+
+    private func fetchRepos(scope: SemanticIndexScope) async throws -> [Repo] {
+        switch scope {
+        case .starred:
+            return try await repoRepository.fetchAllStarred()
+        case .knowledge:
+            return try await repoRepository.fetchKnowledgeRepos()
+        case .all:
+            let starred = try await repoRepository.fetchAllStarred()
+            let knowledge = try await repoRepository.fetchKnowledgeRepos()
+            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+        }
+    }
+
+    private func searchFTS(query: String, scope: SemanticIndexScope) async throws -> [Repo] {
+        switch scope {
+        case .starred:
+            return try await repoRepository.searchFTS(query: query)
+        case .knowledge:
+            return try await repoRepository.searchKnowledgeFTS(query: query)
+        case .all:
+            let starred = try await repoRepository.searchFTS(query: query)
+            let knowledge = try await repoRepository.searchKnowledgeFTS(query: query)
+            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+        }
     }
 
     private func resolveRepo(repoID: Int64?, owner: String?, name: String?) async throws -> Repo {

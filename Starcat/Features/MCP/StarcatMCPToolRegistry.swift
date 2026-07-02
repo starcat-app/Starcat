@@ -69,9 +69,10 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.search_repos",
                 title: "Search Starcat repositories",
-                description: "Search the user's starred repositories cached in Starcat using local keyword/FTS data.",
+                description: "Search repositories cached in Starcat using local keyword/FTS data.",
                 inputSchema: Self.objectSchema([
-                    "query": Self.stringSchema("Optional keyword query. Empty or omitted returns recent/all starred repositories."),
+                    "query": Self.stringSchema("Optional keyword query. Empty or omitted returns recent/all repositories for the selected scope."),
+                    "scope": Self.semanticScopeSchema(),
                     "limit": Self.integerSchema("Maximum number of repositories to return.", defaultValue: 20, minimum: 1, maximum: 100)
                 ]),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
@@ -79,9 +80,10 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.semantic_search",
                 title: "Semantic search Starcat repositories",
-                description: "Use Starcat's local embedding index and configured BYOK provider to semantically search starred repositories.",
+                description: "Use Starcat's local embedding index and configured BYOK provider to semantically search repositories.",
                 inputSchema: Self.objectSchema([
                     "query": Self.stringSchema("Required semantic search query."),
+                    "scope": Self.semanticScopeSchema(),
                     "limit": Self.integerSchema("Maximum number of semantic matches to return.", defaultValue: 20, minimum: 1, maximum: 80)
                 ], required: ["query"]),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
@@ -201,7 +203,8 @@ final class StarcatMCPToolRegistry {
             case "starcat.search_repos":
                 let query = params.arguments?["query"]?.stringValue
                 let limit = params.arguments?["limit"]?.intValue ?? 20
-                let value = try await facade.searchRepos(query: query, limit: limit)
+                let scope = try Self.semanticScope(from: params.arguments)
+                let value = try await facade.searchRepos(query: query, limit: limit, scope: scope)
                 return try Self.result(value)
 
             case "starcat.semantic_search":
@@ -209,7 +212,8 @@ final class StarcatMCPToolRegistry {
                     throw StarcatMCPError.invalidArguments("Missing required argument: query")
                 }
                 let limit = params.arguments?["limit"]?.intValue ?? 20
-                let value = try await facade.semanticSearch(query: query, limit: limit)
+                let scope = try Self.semanticScope(from: params.arguments)
+                let value = try await facade.semanticSearch(query: query, limit: limit, scope: scope)
                 return try Self.result(value)
 
             case "starcat.get_repo":
@@ -343,6 +347,23 @@ final class StarcatMCPToolRegistry {
             "owner": stringSchema("Repository owner, e.g. apple."),
             "name": stringSchema("Repository name, e.g. swift.")
         ]
+    }
+
+    private static func semanticScope(from arguments: [String: Value]?) throws -> SemanticIndexScope {
+        guard let raw = arguments?["scope"]?.stringValue, !raw.isEmpty else {
+            return .starred
+        }
+        guard let scope = SemanticIndexScope(rawValue: raw) else {
+            throw StarcatMCPError.invalidArguments("scope must be one of: starred, knowledge, all")
+        }
+        return scope
+    }
+
+    private static func semanticScopeSchema() -> Value {
+        stringSchema(
+            "Repository scope. Defaults to starred.",
+            enumValues: SemanticIndexScope.allCases.map(\.rawValue)
+        )
     }
 
     private static func objectSchema(_ properties: [String: Value], required: [String] = []) -> Value {

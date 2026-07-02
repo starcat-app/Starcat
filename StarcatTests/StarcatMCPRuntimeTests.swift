@@ -39,8 +39,11 @@ struct StarcatMCPRuntimeTests {
         let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
         let properties = try #require(inputSchema["properties"] as? [String: Any])
         let querySchema = try #require(properties["query"] as? [String: Any])
+        let scopeSchema = try #require(properties["scope"] as? [String: Any])
         let limitSchema = try #require(properties["limit"] as? [String: Any])
         #expect(querySchema["type"] as? String == "string")
+        #expect(scopeSchema["type"] as? String == "string")
+        #expect(scopeSchema["enum"] as? [String] == ["starred", "knowledge", "all"])
         #expect(limitSchema["type"] as? String == "integer")
         #expect(limitSchema["default"] as? Int == 20)
 
@@ -57,6 +60,30 @@ struct StarcatMCPRuntimeTests {
         #expect(result["isError"] as? Bool != true)
         let structured = try #require(result["structuredContent"] as? [String: Any])
         #expect(structured["total"] as? Int == 1)
+
+        let knowledgeCall = await runtime.handle(Self.request(
+            id: 4,
+            method: "tools/call",
+            params: [
+                "name": "starcat.search_repos",
+                "arguments": ["query": "codex", "scope": "knowledge", "limit": 5]
+            ]
+        ))
+        let knowledgeJSON = try Self.jsonObject(from: knowledgeCall)
+        let knowledgeResult = try #require(knowledgeJSON["result"] as? [String: Any])
+        #expect(knowledgeResult["isError"] as? Bool != true)
+        let knowledgeStructured = try #require(knowledgeResult["structuredContent"] as? [String: Any])
+        let repos = try #require(knowledgeStructured["repos"] as? [[String: Any]])
+        #expect(knowledgeStructured["total"] as? Int == 1)
+        #expect(repos.first?["full_name"] as? String == "openai/codex")
+
+        let resourcesList = await runtime.handle(Self.request(id: 5, method: "resources/list"))
+        let resourcesJSON = try Self.jsonObject(from: resourcesList)
+        let resources = try #require((resourcesJSON["result"] as? [String: Any])?["resources"] as? [[String: Any]])
+        let uris = Set(resources.compactMap { $0["uri"] as? String })
+        #expect(uris.contains("starcat://repos/starred/apple/swift"))
+        #expect(uris.contains("starcat://repos/knowledge/openai/codex"))
+        #expect(uris.contains("starcat://repos/all/openai/codex"))
     }
 
     @Test("重复 initialize 会重建 SDK 会话，不返回 Server is already initialized")
@@ -82,6 +109,10 @@ struct StarcatMCPRuntimeTests {
     private static func makeRuntime() async throws -> StarcatMCPRuntime {
         let db = try InMemoryDatabaseManager()
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
+        try await db.insertRepoFixture(id: 2, owner: "openai", name: "codex")
+        try await db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 2")
+        }
 
         let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.runtime.\(UUID().uuidString)")!)
         settings.mcpExposePrivateNotes = true
@@ -95,6 +126,7 @@ struct StarcatMCPRuntimeTests {
         let tagRepository = GRDBTagRepository(database: db)
         let repoTagRepository = GRDBRepoTagRepository(database: db)
         let noteRepository = GRDBRepoNoteRepository(database: db)
+        try await noteRepository.updateLibraryState(repoId: 2, state: .inLibrary)
         let readmeRepository = ReadmeRepository(database: db)
         let semanticSearch = SemanticSearchService(
             embeddingRepository: GRDBRepoEmbeddingRepository(database: db),
