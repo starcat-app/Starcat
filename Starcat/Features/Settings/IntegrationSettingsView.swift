@@ -19,7 +19,8 @@ struct IntegrationSettingsTab: View {
     @State private var showAnySearchAPIKey: Bool = false
     @State private var anySearchAPIKeyTestState: AnySearchAPIKeyTestState = .idle
     @State private var pluginConfiguration = CompanionConfiguration.shared
-    @State private var pluginTokenCopied = false
+    @State private var isHoveringCopyToken = false
+    @State private var isHoveringResetToken = false
     // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
     // 本 Tab 仅保留"精细化操作"（输出目录配置、单项目预览/打开/删除）。
     // → 与 AISettingsView.repoContextManageStorageRow 同款职责划分。
@@ -200,37 +201,24 @@ struct IntegrationSettingsTab: View {
                     titleKey: "settings.integration.browserPlugin.endpoint",
                     value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1"
                 )
-                pluginInfoRow(
-                    titleKey: "settings.integration.browserPlugin.token",
-                    value: maskedPluginToken
-                )
+                pluginTokenInfoRow
             }
 
-            HStack(spacing: 8) {
-                if pluginTokenCopied {
-                    Label("settings.integration.browserPlugin.tokenCopied", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
+            LabeledContent {
+                HStack(spacing: 10) {
+                    browserPluginRepositoryLink(
+                        assetName: "chrome",
+                        titleKey: "settings.integration.browserPlugin.chromeRepository",
+                        destination: BrowserPluginRepositoryLinks.chrome
+                    )
+                    browserPluginRepositoryLink(
+                        assetName: "safari",
+                        titleKey: "settings.integration.browserPlugin.safariRepository",
+                        destination: BrowserPluginRepositoryLinks.safari
+                    )
                 }
-                Spacer()
-                Button("settings.integration.browserPlugin.copyToken") {
-                    copyPluginToken()
-                }
-                Button("settings.integration.browserPlugin.resetToken") {
-                    resetPluginToken()
-                }
-            }
-
-            HStack(spacing: 8) {
-                Spacer()
-                browserPluginRepositoryLink(
-                    titleKey: "settings.integration.browserPlugin.chromeRepository",
-                    destination: BrowserPluginRepositoryLinks.chrome
-                )
-                browserPluginRepositoryLink(
-                    titleKey: "settings.integration.browserPlugin.safariRepository",
-                    destination: BrowserPluginRepositoryLinks.safari
-                )
+            } label: {
+                Text("settings.integration.browserPlugin.header")
             }
 
             Text("settings.integration.browserPlugin.description")
@@ -245,12 +233,23 @@ struct IntegrationSettingsTab: View {
         static let safari = URL(string: "https://github.com/dong4j/starcat-safari-plugin")!
     }
 
-    private func browserPluginRepositoryLink(titleKey: LocalizedStringKey, destination: URL) -> some View {
+    private func browserPluginRepositoryLink(
+        assetName: String,
+        titleKey: LocalizedStringKey,
+        destination: URL
+    ) -> some View {
         Link(destination: destination) {
-            Label(titleKey, systemImage: "arrow.up.right.square")
+            Image(assetName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .padding(4)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
+        .buttonStyle(.plain)
+        .help(Text(titleKey))
+        .accessibilityLabel(Text(titleKey))
     }
 
     private var maskedPluginToken: String {
@@ -287,15 +286,83 @@ struct IntegrationSettingsTab: View {
         }
     }
 
-    private func copyPluginToken() {
+    private var pluginTokenInfoRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("settings.integration.browserPlugin.token")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 88, alignment: .leading)
+            Text(verbatim: maskedPluginToken)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            CopyFeedbackButton(
+                providesContent: { pluginConfiguration.token },
+                tooltip: "settings.integration.browserPlugin.copyToken"
+            ) { didCopy in
+                tokenActionIcon(
+                    systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc",
+                    foregroundStyle: didCopy ? Color.green : Color.secondary,
+                    isHovering: isHoveringCopyToken
+                )
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .onHover { isHoveringCopyToken = $0 }
+            tokenActionButton(
+                systemImage: "arrow.clockwise",
+                titleKey: "settings.integration.browserPlugin.resetToken",
+                isHovering: isHoveringResetToken,
+                action: resetPluginToken
+            )
+            .onHover { isHoveringResetToken = $0 }
+        }
+    }
+
+    private func tokenActionButton(
+        systemImage: String,
+        titleKey: LocalizedStringKey,
+        isHovering: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            tokenActionIcon(
+                systemImage: systemImage,
+                foregroundStyle: Color.secondary,
+                isHovering: isHovering
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(titleKey))
+        .accessibilityLabel(Text(titleKey))
+    }
+
+    private func tokenActionIcon(
+        systemImage: String,
+        foregroundStyle: Color,
+        isHovering: Bool
+    ) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(foregroundStyle)
+            .frame(width: 36, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(isHovering ? 0.14 : 0.10))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func copyPluginTokenToPasteboard() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(pluginConfiguration.token, forType: .string)
-        pluginTokenCopied = true
     }
 
     private func resetPluginToken() {
         pluginConfiguration.resetToken()
-        copyPluginToken()
+        copyPluginTokenToPasteboard()
         if pluginConfiguration.isEnabled {
             CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
         }
