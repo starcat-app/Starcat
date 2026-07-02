@@ -100,6 +100,9 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 语言聚合统计。
     func languageStats() async throws -> [LanguageStat]
 
+    /// 知识库范围语言聚合统计，允许包含未 star 但已入库的 repo。
+    func knowledgeLanguageStats() async throws -> [LanguageStat]
+
     /// FTS5 全文搜索（空 query 退化为 fetchAllStarred）。
     func searchFTS(query: String) async throws -> [Repo]
 

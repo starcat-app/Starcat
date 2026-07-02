@@ -28,6 +28,7 @@ struct HomeViewModelFilterSortTests {
         fullName: String,
         stars: Int,
         starredAt: String,
+        language: String? = nil,
         isArchived: Bool = false,
         isFork: Bool = false,
         isStarred: Bool = true
@@ -42,7 +43,7 @@ struct HomeViewModelFilterSortTests {
                     is_private, is_fork, is_archived, is_starred,
                     pushed_at, created_at, updated_at, starred_at, cached_at
                 ) VALUES (
-                    ?, 'o', ?, ?, NULL, NULL,
+                    ?, 'o', ?, ?, NULL, ?,
                     ?, 0, 0, NULL, NULL,
                     NULL, ?, NULL, NULL,
                     0, ?, ?, ?,
@@ -53,6 +54,7 @@ struct HomeViewModelFilterSortTests {
                     id,
                     fullName.split(separator: "/").last.map(String.init) ?? "n",
                     fullName,
+                    language,
                     stars,
                     "https://github.com/\(fullName)",
                     isFork,
@@ -288,14 +290,29 @@ struct HomeViewModelFilterSortTests {
     @Test("Smart Collections: .library 包含未 star 已入库 repo,Manage 默认不混入")
     func smartCollectionLibraryIncludesUnstarredLibraryRepos() async throws {
         let (vm, db, noteRepo) = try makeSUT()
-        try await insertRepo(db, id: 1, fullName: "o/starred-library", stars: 0, starredAt: "2026-05-03T00:00:00Z")
-        try await insertRepo(db, id: 2, fullName: "o/starred-outside", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(
+            db,
+            id: 1,
+            fullName: "o/starred-library",
+            stars: 0,
+            starredAt: "2026-05-03T00:00:00Z",
+            language: "Swift"
+        )
+        try await insertRepo(
+            db,
+            id: 2,
+            fullName: "o/starred-outside",
+            stars: 0,
+            starredAt: "2026-05-02T00:00:00Z",
+            language: "Rust"
+        )
         try await insertRepo(
             db,
             id: 3,
             fullName: "o/library-only",
             stars: 0,
             starredAt: "2026-05-01T00:00:00Z",
+            language: "TypeScript",
             isStarred: false
         )
         try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
@@ -309,6 +326,14 @@ struct HomeViewModelFilterSortTests {
 
         #expect(Set(vm.items.map(\.id)) == [1, 3])
         #expect(vm.items.map(\.id).contains(2) == false)
+
+        vm.repoLanguageFilter = .language("TypeScript")
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [3])
+
+        vm.repoLanguageFilter = .language("Swift")
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [1])
     }
 
     @Test("D3: 按 .unread 过滤包含 implicit unread(无 note)与 explicit unread")
@@ -684,5 +709,18 @@ struct AppSettingsFilterTests {
         s1.libraryFilter = .inLibrary
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.libraryFilter == .inLibrary)
+    }
+
+    @Test("PR-2: 设置 repoLanguageFilter 后重新读取保持")
+    func repoLanguageFilterPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.repoLanguageFilter = .language("Swift")
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.repoLanguageFilter == .language("Swift"))
+
+        s1.repoLanguageFilter = .uncategorized
+        let s3 = AppSettings(defaults: defaults)
+        #expect(s3.repoLanguageFilter == .uncategorized)
     }
 }

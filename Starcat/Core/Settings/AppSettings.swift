@@ -627,6 +627,11 @@ final class AppSettings {
         didSet { persist(key: Keys.libraryFilter, value: libraryFilter.rawValue) }
     }
 
+    /// Manage 列表语言筛选。`.all` 表示不过滤。
+    var repoLanguageFilter: RepoLanguageFilter {
+        didSet { persist(key: Keys.repoLanguageFilter, value: repoLanguageFilter.persistedRawValue) }
+    }
+
     /// 用户在 Manage 页最后选中的分类，用于跨启动恢复。
     ///
     /// 为什么存字符串而非 `SidebarItem`：
@@ -1236,6 +1241,9 @@ final class AppSettings {
         let libraryRaw = defaults.string(forKey: Keys.libraryFilter)
         self.libraryFilter = RepoLibraryFilter.parse(libraryRaw)
 
+        let languageRaw = defaults.string(forKey: Keys.repoLanguageFilter)
+        self.repoLanguageFilter = RepoLanguageFilter.parse(languageRaw)
+
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
 
@@ -1454,6 +1462,7 @@ final class AppSettings {
         hideForks = false
         statusFilter = nil
         libraryFilter = .all
+        repoLanguageFilter = .all
         lastManageSelectionRaw = ""
         lastActivityCategoryRaw = ""
         openFirstDetailOnCategoryChange = false
@@ -1670,6 +1679,7 @@ final class AppSettings {
         static let hideForks = "settings.hideForks"
         static let statusFilter = "settings.statusFilter"
         static let libraryFilter = "settings.libraryFilter"
+        static let repoLanguageFilter = "settings.repoLanguageFilter"
         static let lastManageSelection = "settings.lastManageSelection"
         static let lastActivityCategory = "settings.lastActivityCategory"
         static let openFirstDetailOnCategoryChange = "settings.detail.openFirstOnCategoryChange.v1"
@@ -1738,6 +1748,7 @@ final class AppSettings {
             hideForks,
             statusFilter,
             libraryFilter,
+            repoLanguageFilter,
             lastManageSelection,
             lastActivityCategory,
             openFirstDetailOnCategoryChange,

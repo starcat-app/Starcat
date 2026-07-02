@@ -58,6 +58,41 @@ enum RepoLibraryFilter: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// Manage 列表的语言筛选条件。
+///
+/// 不能直接复用 `RepoListScope.language`：scope 代表左侧导航的基础集合，
+/// filter 代表 toolbar 上可叠加的收窄条件。知识库集合需要在 `.library`
+/// scope 内继续按语言过滤，所以单独建一个轻量值类型。
+enum RepoLanguageFilter: Equatable, Hashable, Codable, Sendable {
+    case all
+    case uncategorized
+    case language(String)
+
+    private static let uncategorizedRawValue = "__starcat_uncategorized__"
+
+    static func parse(_ raw: String?) -> RepoLanguageFilter {
+        guard let raw, !raw.isEmpty else { return .all }
+        if raw == uncategorizedRawValue { return .uncategorized }
+        return .language(raw)
+    }
+
+    var persistedRawValue: String {
+        switch self {
+        case .all: return ""
+        case .uncategorized: return Self.uncategorizedRawValue
+        case .language(let language): return language
+        }
+    }
+
+    var queryLanguage: String?? {
+        switch self {
+        case .all: return nil
+        case .uncategorized: return .some(nil)
+        case .language(let language): return .some(language)
+        }
+    }
+}
+
 /// Manage 列表的可下推过滤条件。
 ///
 /// `selectedTagIDs` 语义与 HomeViewModel 保持一致：命中任意一个标签即可保留（OR）。
@@ -67,6 +102,7 @@ struct RepoListFilters: Equatable, Sendable {
     var hideForks: Bool
     var status: RepoStatus?
     var library: RepoLibraryFilter
+    var language: RepoLanguageFilter
     var selectedTagIDs: Set<String>
 
     init(
@@ -74,12 +110,14 @@ struct RepoListFilters: Equatable, Sendable {
         hideForks: Bool,
         status: RepoStatus?,
         library: RepoLibraryFilter = .all,
+        language: RepoLanguageFilter = .all,
         selectedTagIDs: Set<String>
     ) {
         self.hideArchived = hideArchived
         self.hideForks = hideForks
         self.status = status
         self.library = library
+        self.language = language
         self.selectedTagIDs = selectedTagIDs
     }
 
@@ -88,6 +126,7 @@ struct RepoListFilters: Equatable, Sendable {
         hideForks: false,
         status: nil,
         library: .all,
+        language: .all,
         selectedTagIDs: []
     )
 }

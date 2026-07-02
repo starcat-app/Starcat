@@ -357,6 +357,12 @@ final class HomeViewModel {
     /// Languages 聚合（Sidebar Languages 组）。D-04：`private(set)` 收敛。
     private(set) var languageStats: [LanguageStat] = []
 
+    /// 知识库集合专用语言聚合。
+    ///
+    /// Sidebar 的 `languageStats` 必须继续保持 GitHub starred 口径；这里单独维护
+    /// `library_state = in_library` 范围，避免未 star 但已入库的 repo 语言在筛选菜单里消失。
+    private(set) var knowledgeLanguageStats: [LanguageStat] = []
+
     /// W4 A6：用户自定义标签列表（Sidebar Tags 组）。
     private(set) var tags: [Tag] = []
     /// W4 A6：tagId → starred repo count（Sidebar Tags 行右侧计数）。
@@ -476,6 +482,15 @@ final class HomeViewModel {
         }
     }
 
+    /// Manage/Smart Collections 列表语言过滤。`.all` 表示不按语言收窄。
+    var repoLanguageFilter: RepoLanguageFilter = .all {
+        didSet {
+            guard oldValue != repoLanguageFilter else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
     // MARK: - 语义搜索阈值（HOM-197，2026-06-13 dong4j）
 
     /// AI 语义搜索结果过滤阈值（cosine similarity 分数，0.0 - 1.0）。
@@ -582,7 +597,13 @@ final class HomeViewModel {
     }
 
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
-    var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil || libraryFilter != .all }
+    var hasActiveFilter: Bool {
+        hideArchived
+            || hideForks
+            || statusFilter != nil
+            || libraryFilter != .all
+            || repoLanguageFilter != .all
+    }
 
     // MARK: - 依赖
 
@@ -721,6 +742,7 @@ final class HomeViewModel {
         repoTagsMap = [:]
         semanticHitMap = [:]
         selectedTagIds = []
+        repoLanguageFilter = .all
 
         items = []
         // R-07：客户端分页全套字段也要复位，避免新账号沿用旧账号的页位置 / hasMore
@@ -798,6 +820,7 @@ final class HomeViewModel {
             async let total = repository.starredCount()
             async let untagged = repository.fetchUntagged().count
             async let langs = repository.languageStats()
+            async let knowledgeLangs = repository.knowledgeLanguageStats()
             async let tagsResult = tagRepository.fetchAll()
             async let tagCountsResult = repoTagRepository.repoCountsByTag()
             async let githubListsResult = fetchGitHubStarLists()
@@ -812,6 +835,7 @@ final class HomeViewModel {
             self.totalCount = try await total
             self.untaggedCount = try await untagged
             self.languageStats = try await langs
+            self.knowledgeLanguageStats = try await knowledgeLangs
             self.tags = try await tagsResult
             self.tagCounts = try await tagCountsResult
             self.githubStarLists = try await githubListsResult
@@ -898,6 +922,7 @@ final class HomeViewModel {
         hideArchived = rule.hideArchived
         hideForks = rule.hideForks
         statusFilter = rule.status
+        repoLanguageFilter = .all
         selectedTagIds = Set(rule.selectedTagIDs)
         sortOption = rule.sortOption
         smartSearchMode = rule.searchMode
@@ -1099,6 +1124,7 @@ final class HomeViewModel {
             hideForks: hideForks,
             status: statusFilter,
             library: libraryFilter,
+            language: repoLanguageFilter,
             selectedTagIDs: selectedTagIds
         )
     }
@@ -1893,6 +1919,13 @@ final class HomeViewModel {
                 view.removeAll { repo in
                     let actual = statusMap[repo.id] ?? .unread
                     return actual != status
+                }
+            }
+            if let language = repoLanguageFilter.queryLanguage {
+                if let language {
+                    view.removeAll { $0.language != language }
+                } else {
+                    view.removeAll { $0.language != nil }
                 }
             }
             switch libraryFilter {

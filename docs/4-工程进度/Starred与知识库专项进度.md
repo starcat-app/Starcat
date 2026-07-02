@@ -80,7 +80,7 @@
 - [x] 知识库集合包含 `libraryState == .inLibrary`。
 - [x] 未 star 已入库 repo 能出现在知识库集合。
 - [x] 知识库筛选与现有 status / tag / hide archived / hide forks 条件可组合。
-- [ ] 知识库集合支持 tag / status / language / archived / fork 筛选。
+- [x] 知识库集合支持 tag / status / language / archived / fork 筛选。
 - [x] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
 - [x] 未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
 - [ ] 知识库集合中不可访问 repo 仍显示,并标记为不可访问/已失效。
@@ -281,8 +281,8 @@
 - [x] Smart Collections 出现系统集合“知识库”。
 - [x] 知识库集合包含 B / D。
 - [x] Manage 默认列表不显示 D。
-- [ ] Manage 知识库筛选条件支持全部 / 已入库 / 未入库,并可与 status / tag / hide archived / hide forks 组合。
-- [ ] 知识库集合支持 tag / status / language / archived / fork 筛选。
+- [x] Manage 知识库筛选条件支持全部 / 已入库 / 未入库,并可与 status / tag / hide archived / hide forks 组合。
+- [x] 知识库集合支持 tag / status / language / archived / fork 筛选。
 - [x] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
 - [x] D 这类未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
 - [ ] GitHub 404/410/权限不足的已入库 repo 仍出现在知识库集合。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-2 第三批落地知识库集合语言筛选和知识库语言统计。
 - 2026-07-02: PR-3 第三批补齐设置 using 自动入库的轻量反馈。
 - 2026-07-02: PR-4 第一批落地 Manage 列表已入库心形角标。
 - 2026-07-02: PR-3 第二批落地 Manage 多选批量加入知识库。

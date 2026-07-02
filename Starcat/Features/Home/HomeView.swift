@@ -1242,6 +1242,9 @@ struct HomeView: View {
         if viewModel.libraryFilter != settings.libraryFilter {
             viewModel.libraryFilter = settings.libraryFilter
         }
+        if viewModel.repoLanguageFilter != settings.repoLanguageFilter {
+            viewModel.repoLanguageFilter = settings.repoLanguageFilter
+        }
         if viewModel.smartSearchMode != settings.smartSearchMode {
             viewModel.smartSearchMode = settings.smartSearchMode
         }

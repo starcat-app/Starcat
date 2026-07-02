@@ -598,6 +598,9 @@ struct RepoListView: View {
     private func makeManageToolbarSpec() -> PageToolbarSpec {
         // @Bindable 让 `$vm.statusFilter` 等可派生 Binding，传给下游 picker / toggle。
         @Bindable var vm = viewModel
+        let languageOptions = viewModel.selection == .smartCollection(.library)
+            ? viewModel.knowledgeLanguageStats
+            : viewModel.languageStats
 
         let filterItems: [FilterMenuItem] = [
             .content(id: "status", view: AnyView(
@@ -624,6 +627,24 @@ struct RepoListView: View {
                 .pickerStyle(.inline)
             )),
             .divider(id: "after-library"),
+            .content(id: "language", view: AnyView(
+                Picker("list.filter.language", selection: $vm.repoLanguageFilter) {
+                    Label("general.all", systemImage: "tray.full").tag(RepoLanguageFilter.all)
+                    ForEach(languageOptions) { stat in
+                        Label {
+                            Text(stat.displayName)
+                        } icon: {
+                            Image(systemName: languageFilterIcon(for: stat))
+                        }
+                        .tag(stat.language.isEmpty
+                            ? RepoLanguageFilter.uncategorized
+                            : RepoLanguageFilter.language(stat.language)
+                        )
+                    }
+                }
+                .pickerStyle(.inline)
+            )),
+            .divider(id: "after-language"),
             .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
             .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
         ]
@@ -667,6 +688,9 @@ struct RepoListView: View {
                 }
                 .onChange(of: viewModel.libraryFilter) { _, newValue in
                     settings.libraryFilter = newValue
+                }
+                .onChange(of: viewModel.repoLanguageFilter) { _, newValue in
+                    settings.repoLanguageFilter = newValue
                 }
 
                 // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
@@ -1685,6 +1709,10 @@ struct RepoListView: View {
         case .inLibrary: return "heart.fill"
         case .outsideLibrary: return "heart"
         }
+    }
+
+    private func languageFilterIcon(for stat: LanguageStat) -> String {
+        stat.language.isEmpty ? "questionmark.folder" : "chevron.left.forwardslash.chevron.right"
     }
 
     /// CodeFlow 为 Pro 能力：入口统一走权益门控，免费用户只看到付费墙。

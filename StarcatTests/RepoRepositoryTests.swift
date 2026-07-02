@@ -328,6 +328,9 @@ struct RepoRepositoryTests {
             offset: 0
         )
         #expect(Set(libraryPage.map(\.id)) == [1, 9003])
+
+        let languageStats = try await repo.knowledgeLanguageStats()
+        #expect(languageStats.first { $0.language == "Swift" }?.count == 2)
     }
 
     @Test("fetchRecentStarred 只返回最近 N 条且仍按 starred_at 倒序")
@@ -627,6 +630,28 @@ struct RepoRepositoryTests {
         #expect(try await repo.fetchListCount(
             scope: .library,
             filters: RepoListFilters(hideArchived: false, hideForks: false, status: nil, library: .outsideLibrary, selectedTagIDs: [])
+        ) == 0)
+        #expect(try await repo.fetchListCount(
+            scope: .library,
+            filters: RepoListFilters(
+                hideArchived: false,
+                hideForks: false,
+                status: nil,
+                library: .all,
+                language: .language("Swift"),
+                selectedTagIDs: []
+            )
+        ) == 2)
+        #expect(try await repo.fetchListCount(
+            scope: .library,
+            filters: RepoListFilters(
+                hideArchived: false,
+                hideForks: false,
+                status: nil,
+                library: .all,
+                language: .uncategorized,
+                selectedTagIDs: []
+            )
         ) == 0)
     }
 

@@ -371,6 +371,20 @@ struct GRDBRepoRepository {
         }
     }
 
+    func knowledgeLanguageStats() async throws -> [LanguageStat] {
+        try await database.writer.read { db in
+            try LanguageStat.fetchAll(db, sql: """
+                SELECT COALESCE(r.language, '') AS language, COUNT(*) AS count
+                FROM repos r
+                JOIN repo_notes rn ON rn.repo_id = r.id AND rn.library_state = 'in_library'
+                GROUP BY COALESCE(r.language, '')
+                ORDER BY CASE WHEN COALESCE(r.language, '') = '' THEN 0 ELSE 1 END ASC,
+                         count DESC,
+                         language ASC
+                """)
+        }
+    }
+
     /// FTS5 全文搜索（2026-06-14 召回扩展）。
     ///
     /// **索引列**：
@@ -610,6 +624,14 @@ struct GRDBRepoRepository {
         }
         if filters.hideForks {
             whereClauses.append("r.is_fork = 0")
+        }
+        if let language = filters.language.queryLanguage {
+            if let language {
+                whereClauses.append("r.language = ?")
+                args.append(language)
+            } else {
+                whereClauses.append("r.language IS NULL")
+            }
         }
         if let status = filters.status {
             if status == .unread {
