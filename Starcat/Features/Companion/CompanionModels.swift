@@ -48,6 +48,8 @@ struct CompanionRepoDTO: Codable, Equatable {
     let htmlURL: String
     let knownToStarcat: Bool
     let isStarred: Bool
+    let libraryState: String
+    let isInLibrary: Bool
 }
 
 struct CompanionRecommendationDTO: Codable, Equatable {

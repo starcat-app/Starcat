@@ -27,6 +27,8 @@ struct CompanionContextProviderTests {
         #expect(context.repo.htmlURL == "https://github.com/apple/swift")
         #expect(context.repo.knownToStarcat == false)
         #expect(context.repo.isStarred == false)
+        #expect(context.repo.libraryState == LibraryState.outsideLibrary.rawValue)
+        #expect(context.repo.isInLibrary == false)
         #expect(context.recommendations.isEmpty)
         #expect(context.wikiLinks.isEmpty)
         #expect(context.note == nil)
@@ -39,11 +41,17 @@ struct CompanionContextProviderTests {
     @Test("known local repo maps Starcat fields")
     func knownRepoContext() async throws {
         let repo = makeRepo(isStarred: true)
-        let provider = CompanionContextProvider { owner, name in
-            #expect(owner == "apple")
-            #expect(name == "swift")
-            return repo
-        }
+        let provider = CompanionContextProvider(
+            lookupRepo: { owner, name in
+                #expect(owner == "apple")
+                #expect(name == "swift")
+                return repo
+            },
+            lookupLibraryState: { repoID in
+                #expect(repoID == 44_838_949)
+                return .inLibrary
+            }
+        )
 
         let context = try await provider.context(owner: " apple ", repo: " swift ")
 
@@ -51,6 +59,8 @@ struct CompanionContextProviderTests {
         #expect(context.repo.fullName == "apple/swift")
         #expect(context.repo.knownToStarcat == true)
         #expect(context.repo.isStarred == true)
+        #expect(context.repo.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(context.repo.isInLibrary == true)
         #expect(context.actions.openInStarcat == true)
         #expect(context.actions.codeflow == true)
         #expect(context.actions.codebase == true)
@@ -171,6 +181,45 @@ struct CompanionContextProviderTests {
         #expect(context.actions.openInStarcat == false)
         #expect(context.actions.codeflow == false)
         #expect(context.actions.codebase == false)
+    }
+
+    @Test("unstarred library repo exposes private note and tags")
+    func unstarredLibraryRepoExposesPrivateNoteAndTags() async throws {
+        let repo = makeRepo(isStarred: false)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupLibraryState: { repoID in
+                #expect(repoID == 44_838_949)
+                return .inLibrary
+            },
+            lookupNote: { repoID in
+                #expect(repoID == 44_838_949)
+                return RepoNote(
+                    repoId: repoID,
+                    content: "library note",
+                    status: RepoStatus.unread.rawValue,
+                    libraryState: LibraryState.inLibrary.rawValue,
+                    libraryUpdatedAt: "2026-07-01T10:00:00Z",
+                    isAIGenerated: false,
+                    editedAt: "2026-07-01T10:01:00Z"
+                )
+            },
+            lookupTags: { repoID in
+                #expect(repoID == 44_838_949)
+                return [Self.makeTag(name: "AI")]
+            },
+            lookupAllTags: {
+                [Self.makeTag(name: "AI")]
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.repo.isStarred == false)
+        #expect(context.repo.isInLibrary == true)
+        #expect(context.note?.content == "library note")
+        #expect(context.tags.map { $0.name } == ["AI"])
+        #expect(context.availableTags.map { $0.name } == ["AI"])
     }
 
     @Test("cached health and OpenSSF are exposed without refresh")
@@ -424,5 +473,19 @@ struct CompanionContextProviderTests {
         )
         let data = try JSONEncoder().encode(insight)
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func makeTag(name: String) -> Starcat.Tag {
+        Starcat.Tag(
+            id: "tag-\(name.lowercased())",
+            name: name,
+            color: "#0A84FF",
+            icon: "tag",
+            sortOrder: 0,
+            isPreset: false,
+            parentId: nil,
+            createdAt: "2026-07-01T00:00:00Z",
+            updatedAt: "2026-07-01T00:00:00Z"
+        )
     }
 }

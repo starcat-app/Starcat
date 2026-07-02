@@ -16,6 +16,7 @@ enum CompanionContextError: Error, Equatable {
 
 struct CompanionContextProvider {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
+    private let lookupLibraryState: @Sendable (Int64) async throws -> LibraryState
     private let lookupNote: @Sendable (Int64) async throws -> RepoNote?
     private let lookupTags: @Sendable (Int64) async throws -> [Tag]
     private let lookupAllTags: @Sendable () async throws -> [Tag]
@@ -40,6 +41,9 @@ struct CompanionContextProvider {
     ) {
         lookupRepo = { owner, name in
             try await repoRepository.findByOwnerName(owner: owner, name: name)
+        }
+        lookupLibraryState = { repoID in
+            try await noteRepository?.fetchLibraryState(repoId: repoID) ?? .outsideLibrary
         }
         lookupNote = { repoID in
             try await noteRepository?.find(repoId: repoID)
@@ -89,6 +93,7 @@ struct CompanionContextProvider {
     /// 测试专用注入点。用闭包替代假 Repository, 避免为了一个查询实现整套协议。
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
+        lookupLibraryState: @escaping @Sendable (Int64) async throws -> LibraryState = { _ in .outsideLibrary },
         lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil },
         lookupTags: @escaping @Sendable (Int64) async throws -> [Tag] = { _ in [] },
         lookupAllTags: @escaping @Sendable () async throws -> [Tag] = { [] },
@@ -100,6 +105,7 @@ struct CompanionContextProvider {
         isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
+        self.lookupLibraryState = lookupLibraryState
         self.lookupNote = lookupNote
         self.lookupTags = lookupTags
         self.lookupAllTags = lookupAllTags
@@ -119,10 +125,11 @@ struct CompanionContextProvider {
         }
 
         let localRepo = try await lookupRepo(owner, name)
+        let libraryState = await libraryState(for: localRepo)
         let hasProEntitlement = await isProUser()
-        let note = await noteDTO(for: localRepo)
-        let tags = await tagDTOs(for: localRepo)
-        let availableTags = await allTagDTOs(for: localRepo)
+        let note = await noteDTO(for: localRepo, libraryState: libraryState)
+        let tags = await tagDTOs(for: localRepo, libraryState: libraryState)
+        let availableTags = await allTagDTOs(for: localRepo, libraryState: libraryState)
         // Companion API is reachable from the browser extension, so Pro-only data
         // is cut at the local API boundary instead of relying on content-script UI
         // hiding. Private notes remain available for starred repos because they are
@@ -135,7 +142,7 @@ struct CompanionContextProvider {
         let canOpenLocalActions = localRepo?.isStarred == true && hasProEntitlement
         return CompanionRepoContextResponse(
             schemaVersion: 1,
-            repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
+            repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo, libraryState: libraryState),
             recommendations: recommendations,
             wikiLinks: wikiLinks,
             tags: tags,
@@ -186,8 +193,18 @@ struct CompanionContextProvider {
         }
     }
 
-    private func tagDTOs(for repo: Repo?) async -> [CompanionTagDTO] {
-        guard let repo, repo.isStarred else { return [] }
+    private func libraryState(for repo: Repo?) async -> LibraryState {
+        guard let repo else { return .outsideLibrary }
+        return (try? await lookupLibraryState(repo.id)) ?? .outsideLibrary
+    }
+
+    private func isActiveLocalRepo(_ repo: Repo?, libraryState: LibraryState) -> Bool {
+        guard let repo else { return false }
+        return repo.isStarred || libraryState == .inLibrary
+    }
+
+    private func tagDTOs(for repo: Repo?, libraryState: LibraryState) async -> [CompanionTagDTO] {
+        guard let repo, isActiveLocalRepo(repo, libraryState: libraryState) else { return [] }
         do {
             return try await lookupTags(repo.id).map(Self.tagDTO(_:))
         } catch {
@@ -195,8 +212,8 @@ struct CompanionContextProvider {
         }
     }
 
-    private func allTagDTOs(for repo: Repo?) async -> [CompanionTagDTO] {
-        guard let repo, repo.isStarred else { return [] }
+    private func allTagDTOs(for repo: Repo?, libraryState: LibraryState) async -> [CompanionTagDTO] {
+        guard isActiveLocalRepo(repo, libraryState: libraryState) else { return [] }
         do {
             return try await lookupAllTags().map(Self.tagDTO(_:))
         } catch {
@@ -235,8 +252,8 @@ struct CompanionContextProvider {
         )
     }
 
-    private func noteDTO(for repo: Repo?) async -> CompanionNoteDTO? {
-        guard let repo, repo.isStarred else { return nil }
+    private func noteDTO(for repo: Repo?, libraryState: LibraryState) async -> CompanionNoteDTO? {
+        guard let repo, isActiveLocalRepo(repo, libraryState: libraryState) else { return nil }
         let note = try? await lookupNote(repo.id)
         return CompanionNoteDTO(
             editable: true,
@@ -245,7 +262,12 @@ struct CompanionContextProvider {
         )
     }
 
-    private static func repoDTO(owner: String, name: String, localRepo: Repo?) -> CompanionRepoDTO {
+    private static func repoDTO(
+        owner: String,
+        name: String,
+        localRepo: Repo?,
+        libraryState: LibraryState
+    ) -> CompanionRepoDTO {
         if let localRepo {
             return CompanionRepoDTO(
                 owner: localRepo.owner,
@@ -254,7 +276,9 @@ struct CompanionContextProvider {
                 repoID: localRepo.id,
                 htmlURL: localRepo.htmlUrl,
                 knownToStarcat: true,
-                isStarred: localRepo.isStarred
+                isStarred: localRepo.isStarred,
+                libraryState: libraryState.rawValue,
+                isInLibrary: libraryState == .inLibrary
             )
         }
 
@@ -266,7 +290,9 @@ struct CompanionContextProvider {
             repoID: nil,
             htmlURL: "https://github.com/\(fullName)",
             knownToStarcat: false,
-            isStarred: false
+            isStarred: false,
+            libraryState: LibraryState.outsideLibrary.rawValue,
+            isInLibrary: false
         )
     }
 

@@ -146,7 +146,7 @@
 
 ## 8. PR-6: Companion / Browser Plugin / 外部来源
 
-- [ ] repo-context DTO 增加 library state。
+- [x] repo-context DTO 增加 library state。
 - [ ] Browser Plugin GitHub 页面展示空心/实心 ❤️ 知识库状态。
 - [ ] Browser Plugin 支持直接加入/移出知识库,逻辑与详情页一致。
 - [ ] Search Center 搜索结果展示入库状态。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-02: PR-6 第二批 repo-context DTO 增加 library state。
 - 2026-07-02: PR-6 第一批放宽已入库未 star repo 的 notes/tags/status 本地写入。
 - 2026-07-02: PR-4 第二批落地 Trending/Discovery/Weekly/Activity 已入库角标。
 - 2026-07-02: PR-2 第三批落地知识库集合语言筛选和知识库语言统计。

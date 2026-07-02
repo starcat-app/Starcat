@@ -34,7 +34,9 @@ struct CompanionModelsTests {
                 repoID: 44_838_949,
                 htmlURL: "https://github.com/apple/swift",
                 knownToStarcat: true,
-                isStarred: true
+                isStarred: true,
+                libraryState: LibraryState.inLibrary.rawValue,
+                isInLibrary: true
             ),
             recommendations: [],
             wikiLinks: [
@@ -65,6 +67,8 @@ struct CompanionModelsTests {
         #expect(repo["html_url"] as? String == "https://github.com/apple/swift")
         #expect(repo["known_to_starcat"] as? Bool == true)
         #expect(repo["is_starred"] as? Bool == true)
+        #expect(repo["library_state"] as? String == "in_library")
+        #expect(repo["is_in_library"] as? Bool == true)
         #expect(object["wiki_links"] is [[String: Any]])
         #expect(object["tags"] is [[String: Any]])
         #expect(object["available_tags"] is [[String: Any]])
