@@ -44,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let incomingURLNotification = Notification.Name("starcat.incomingURL")
     static var openMainWindowFallback: (() -> Void)?
+    private static weak var dependencies: AppDependencies?
+
+    static func configure(dependencies: AppDependencies) {
+        self.dependencies = dependencies
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(
@@ -71,6 +76,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // AppKit/SwiftUI 会继续执行默认 WindowGroup reopen，和 openWindow fallback
         // 叠加后会一次打开两个主窗口。
         return false
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let resetItem = NSMenuItem(
+            title: String.l10n("settings.listPreferences.reset.title"),
+            action: #selector(resetListPreferencesFromDockMenu),
+            keyEquivalent: ""
+        )
+        resetItem.target = self
+        resetItem.image = NSImage(
+            systemSymbolName: "arrow.counterclockwise",
+            accessibilityDescription: String.l10n("settings.listPreferences.reset.title")
+        )
+        resetItem.isEnabled = Self.dependencies?.authSession.state.isAuthenticated == true
+        menu.addItem(resetItem)
+
+        return menu
+    }
+
+    @objc private func resetListPreferencesFromDockMenu() {
+        Self.activateMainWindowIfPossible()
+        NotificationCenter.default.post(name: .starcatResetListPreferencesRequested, object: nil)
     }
 
     @objc private func handleGetURLEvent(

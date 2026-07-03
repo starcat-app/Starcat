@@ -105,6 +105,10 @@ struct HomeView: View {
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
     /// SwiftUI 刷新；Debug 菜单广播后更新该状态，RepoListView 的 toolbar 立即重建。
     @State private var showsAgentToolbarEntry: Bool = DebugFlags.agentToolbarEntry
+    /// 系统入口发来的重置动作必须先二次确认，避免用户误清语言 / 排序 / 筛选偏好。
+    @State private var showsResetListPreferencesConfirmation: Bool = false
+    /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
+    @State private var listPreferenceResetToast: String?
 
     /// 三栏显示状态。
     ///
@@ -592,6 +596,10 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenGlobalSearch)) { _ in
             searchCenterViewModel.present()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
+            guard authSession.state.isAuthenticated else { return }
+            showsResetListPreferencesConfirmation = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOrganizeRepo)) { _ in
             gettingStartedStore.markCompleted(.organizeRepo)
         }
@@ -618,6 +626,19 @@ struct HomeView: View {
         .onChange(of: selectedWeeklyLanguage) { _, language in
             persistListPreference(language, key: ListPreferenceKey.weeklyLanguage)
         }
+        .alert("settings.listPreferences.reset.title", isPresented: $showsResetListPreferencesConfirmation) {
+            Button("general.cancel", role: .cancel) {}
+            Button("settings.listPreferences.reset.confirm", role: .destructive) {
+                resetListPreferencesForCurrentAccount()
+            }
+        } message: {
+            Text("settings.listPreferences.reset.message")
+        }
+        .toast(
+            message: $listPreferenceResetToast,
+            icon: "arrow.counterclockwise",
+            bottomPadding: 24
+        )
         )
     }
 
@@ -1525,6 +1546,46 @@ struct HomeView: View {
         case .discover:
             break
         }
+    }
+
+    private func resetListPreferencesForCurrentAccount() {
+        guard let login = currentListPreferenceLogin else { return }
+
+        settings.resetListPreferences(login: login)
+        resetVisibleListPreferencesToDefault()
+        listPreferenceResetToast = String.l10n("settings.listPreferences.reset.toast")
+        dependencies.telemetryManager.track(.listPreferencesReset)
+
+        Task { @MainActor in
+            await viewModel.reloadItems(forceRefresh: true)
+        }
+    }
+
+    private func resetVisibleListPreferencesToDefault() {
+        selectedExploreMode = .discover
+        selectedTrendingLanguage = .all
+        selectedDiscoveryLanguage = nil
+        selectedDiscoveryTopic = nil
+        selectedDiscoveryPlatform = nil
+        selectedWeeklyLanguage = nil
+
+        selectedActivityCategory = .all
+        savedActivityCategory = .all
+
+        settings.repoSortOption = .starredAtDesc
+        settings.hideArchived = false
+        settings.hideForks = false
+        settings.statusFilter = nil
+        settings.libraryFilter = .all
+        settings.repoLanguageFilter = .all
+        settings.lastManageSelectionRaw = ""
+        settings.lastActivityCategoryRaw = ""
+
+        savedManageSelection = .allStars
+        if selectedSidebarPage == .manage {
+            viewModel.selection = .allStars
+        }
+        syncViewModelSettingsFromAppSettings()
     }
 
     private func syncGitHubStarListsAndRefreshSidebar(login: String) async {

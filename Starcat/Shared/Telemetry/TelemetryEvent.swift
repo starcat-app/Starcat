@@ -23,6 +23,7 @@ enum TelemetryEventName: String, CaseIterable, Sendable {
     case readmeOpened = "readme_opened"
     case aiPanelOpened = "ai_panel_opened"
     case settingsOpened = "settings_opened"
+    case listPreferencesReset = "list_preferences_reset"
     case syncStarted = "sync_started"
     case syncFinished = "sync_finished"
     case syncFailed = "sync_failed"

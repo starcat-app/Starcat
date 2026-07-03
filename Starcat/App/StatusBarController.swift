@@ -103,6 +103,14 @@ final class StatusBarController: NSObject {
             ))
         }
 
+        let resetItem = actionItem(
+            title: String.l10n("settings.listPreferences.reset.title"),
+            action: #selector(resetListPreferences),
+            imageName: "arrow.counterclockwise"
+        )
+        resetItem.isEnabled = dependencies?.authSession.state.isAuthenticated == true
+        menu.addItem(resetItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(actionItem(
             title: String.l10n("app.about"),
@@ -239,6 +247,11 @@ final class StatusBarController: NSObject {
             return
         }
         dependencies.syncManager.performFullSync(userID: user.id, force: true)
+    }
+
+    @objc private func resetListPreferences() {
+        AppDelegate.activateMainWindowIfPossible()
+        NotificationCenter.default.post(name: .starcatResetListPreferencesRequested, object: nil)
     }
 
     @objc private func openAbout() {

@@ -20,6 +20,8 @@ import TipKit
 extension Notification.Name {
     /// 顶部菜单触发全局搜索。HomeView 持有 SearchCenterViewModel，因此命令层只发意图。
     static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
+    /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
+    static let starcatResetListPreferencesRequested = Notification.Name("starcat.resetListPreferencesRequested")
 }
 
 @main
@@ -181,6 +183,7 @@ struct StarcatApp: App {
                     dependencies.subscriptionManager.applyDebugProOverride(active: DebugFlags.debugProOverride)
                     #endif
                     StatusBarController.shared.configure(dependencies: dependencies)
+                    AppDelegate.configure(dependencies: dependencies)
                     AppDelegate.applyActivationPolicy(hideDockIcon: dependencies.settings.hideDockIcon)
                     applyAppearance(dependencies.settings.appearanceMode)
                     MetricKitReporter.shared.start()

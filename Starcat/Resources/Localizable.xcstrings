@@ -25917,6 +25917,91 @@
         }
       }
     },
+    "settings.listPreferences.reset.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置"
+          }
+        }
+      }
+    },
+    "settings.listPreferences.reset.disabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to reset list preferences."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后可重置列表偏好。"
+          }
+        }
+      }
+    },
+    "settings.listPreferences.reset.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This clears saved language, sort, filter, and default list choices. It will not clear repository cache, search history, tags, notes, knowledge base state, smart collection rules, or drafts."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这会清除已保存的语言、排序、筛选和默认列表选择，不会清除仓库缓存、搜索历史、标签、笔记、知识库状态、Smart Collection 规则或草稿。"
+          }
+        }
+      }
+    },
+    "settings.listPreferences.reset.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset List Preferences"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置列表偏好"
+          }
+        }
+      }
+    },
+    "settings.listPreferences.reset.toast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List preferences reset"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已重置列表偏好"
+          }
+        }
+      }
+    },
     "settings.general.shortcuts" : {
       "extractionState" : "stale",
       "localizations" : {

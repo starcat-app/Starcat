@@ -437,6 +437,18 @@ struct SettingsView: View {
                     Spacer()
 
                     Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NotificationCenter.default.post(
+                            name: .starcatResetListPreferencesRequested,
+                            object: nil
+                        )
+                    } label: {
+                        Label("settings.listPreferences.reset.title", systemImage: "arrow.counterclockwise")
+                    }
+                    .disabled(!dependencies.authSession.state.isAuthenticated)
+                    .help(Text("settings.listPreferences.reset.disabled"))
+
+                    Button {
                         NSApp.keyWindow?.close()
                         FirstRunOnboardingPreferences.resetForDebugReplay()
                         NotificationCenter.default.post(
