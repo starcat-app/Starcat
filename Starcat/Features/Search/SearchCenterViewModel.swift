@@ -35,6 +35,8 @@ final class SearchCenterViewModel {
     /// AnySearch 筛选条件（domain / contentTypes / zone / maxResults）。
     /// 默认 `.empty` 表示「自动」，与未做本次改造前的行为完全一致。
     var anySearchFilters: AnySearchFilters = .empty
+    /// Web tab 当前 External Search Provider。会话级保存，App 重启回到设置页默认值。
+    var webSearchProvider: ExternalSearchProviderID
     /// 当前搜索入口触发的 Pro 付费墙。只在用户明确进入网页搜索时弹出，避免 `.all`
     /// 搜索里本地/GitHub 结果也被一起挡住。
     var paywallContext: ProPaywallContext?
@@ -63,6 +65,7 @@ final class SearchCenterViewModel {
         self.includeWebInAll = includeWebInAll
         self.entitlementGate = entitlementGate
         self.telemetryManager = telemetryManager
+        self.webSearchProvider = AppSettings.shared.externalSearchDefaultProvider
 
         // 历史加载放在 `present()` 触发，不在 init 做。
         //
@@ -274,6 +277,14 @@ final class SearchCenterViewModel {
         clampSelection()
     }
 
+    func changeWebSearchProvider(_ provider: ExternalSearchProviderID) async {
+        webSearchProvider = provider
+        guard scope == .web, !lastSubmittedQuery.isEmpty else { return }
+        selectedIndex = nil
+        await coordinator.search(makeRequest(query: lastSubmittedQuery))
+        clampSelection()
+    }
+
     func loadMoreGitHub() async {
         guard canLoadMoreGitHub, !lastSubmittedQuery.isEmpty else { return }
         currentGitHubPage += 1
@@ -282,6 +293,7 @@ final class SearchCenterViewModel {
             scope: scope,
             githubFilters: githubFilters,
             anySearchFilters: anySearchFilters,
+            externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
             page: currentGitHubPage,
             perPage: 30,
             includeWebInAll: includeWebInAll()
@@ -331,6 +343,7 @@ final class SearchCenterViewModel {
             scope: scope,
             githubFilters: githubFilters,
             anySearchFilters: anySearchFilters,
+            externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
             page: currentGitHubPage,
             includeWebInAll: includeWebInAll()
         )

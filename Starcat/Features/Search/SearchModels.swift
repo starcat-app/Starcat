@@ -240,6 +240,11 @@ struct SearchRequest: Equatable, Hashable, Sendable {
     /// AnySearch 筛选条件。默认 `.empty` 让所有既有调用点零改动 —— 与未传时
     /// 的「全部走默认」行为完全一致。
     let anySearchFilters: AnySearchFilters
+    /// 本次 Web provider view 使用的外部搜索 Provider。
+    ///
+    /// `.web` scope 使用 SearchCenter 会话态 provider；`.all` scope 使用设置页默认
+    /// provider。默认 AnySearch 让现有测试和调用点保持稳定。
+    let externalSearchProvider: ExternalSearchProviderID
     let page: Int
     let perPage: Int
     let includeWebInAll: Bool
@@ -249,6 +254,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         scope: SearchScope = .all,
         githubFilters: GitHubSearchFilters = .empty,
         anySearchFilters: AnySearchFilters = .empty,
+        externalSearchProvider: ExternalSearchProviderID = .anySearch,
         page: Int = 1,
         perPage: Int = 30,
         includeWebInAll: Bool = false
@@ -257,6 +263,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         self.scope = scope
         self.githubFilters = githubFilters
         self.anySearchFilters = anySearchFilters
+        self.externalSearchProvider = externalSearchProvider
         self.page = max(1, page)
         self.perPage = min(max(1, perPage), 100)
         self.includeWebInAll = includeWebInAll

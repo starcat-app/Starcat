@@ -219,11 +219,11 @@ struct HomeView: View {
             coordinator: SearchCoordinator(providers: [
                 LocalKeywordSearchProvider(repository: repository, noteRepository: repoNoteRepository),
                 GitHubRepositorySearchProvider(client: githubAPIClient, noteRepository: repoNoteRepository),
-                AnySearchWebProvider(entitlementGate: entitlementGate)
+                ExternalSearchWebProvider()
             ]),
             historyRepository: searchHistoryRepository,
             includeWebInAll: {
-                AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
+                AppSettings.shared.externalSearchIncludeInAll
             },
             entitlementGate: entitlementGate,
             telemetryManager: telemetryManager

@@ -228,7 +228,7 @@ struct SearchCenterView: View {
         isFilterDrawerPresented && filtersAvailable
     }
 
-    /// 专属空态判定：.web scope + AnySearch 处于关闭态。
+    /// 专属空态判定：.web scope + 当前 External Search Provider 不可用。
     ///
     /// 限制条件：
     /// - 只看 `.web` scope —— `.all` scope 下 AnySearch 只是可选聚合项之一，
@@ -237,8 +237,9 @@ struct SearchCenterView: View {
     ///   没有暴露「当前是否启用 AnySearch」的状态，且本判定属于 UI 分流决策，
     ///   不属于业务状态——VM 不应承载。SearchCenterView 在 MainActor 读取安全。
     /// - 不需要再判 `candidates.isEmpty`：调用方已经走过那条分支作为前置条件。
-    private var isAnySearchDisabledEmpty: Bool {
-        viewModel.scope == .web && !AppSettings.shared.anySearchEnabled
+    private var isExternalSearchUnavailableEmpty: Bool {
+        guard viewModel.scope == .web else { return false }
+        return !isExternalSearchProviderUsable(viewModel.webSearchProvider)
     }
 
     /// 默认保持 Spotlight 紧凑 760pt；展开 Filters 后给右侧抽屉增加 250pt。
@@ -438,6 +439,8 @@ struct SearchCenterView: View {
                 Spacer()
             }
 
+            providerPicker
+
             Text(anySearchFiltersSummary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -469,6 +472,40 @@ struct SearchCenterView: View {
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private var providerPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(ExternalSearchProviderID.allCases) { provider in
+                Button {
+                    Task { await viewModel.changeWebSearchProvider(provider) }
+                } label: {
+                    Text(provider.displayName)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            viewModel.webSearchProvider == provider
+                                ? Color.accentColor.opacity(0.22)
+                                : Color.secondary.opacity(0.10),
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(isExternalSearchProviderUsable(provider)
+                    ? Text("Use \(provider.displayName)")
+                    : Text("\(provider.displayName) requires configuration in Settings"))
+            }
+        }
+    }
+
+    private func isExternalSearchProviderUsable(_ provider: ExternalSearchProviderID) -> Bool {
+        let providerSettings = AppSettings.shared.externalSearchSettings(for: provider)
+        guard providerSettings.isEnabled else { return false }
+        if provider == .anySearch, providerSettings.anonymousMode { return true }
+        return providerSettings.hasVerifiedCredential && AppSettings.shared.externalSearchAPIKey(for: provider)?.isEmpty == false
+    }
+
     @ViewBuilder
     private var resultContent: some View {
         if viewModel.lastSubmittedQuery.isEmpty {
@@ -482,7 +519,7 @@ struct SearchCenterView: View {
                 Text(String(format: String.l10n("search.searching"), viewModel.lastSubmittedQuery))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if isAnySearchDisabledEmpty {
+        } else if isExternalSearchUnavailableEmpty {
             // 专属空态：.web scope + AnySearch 未启用。
             // 通用 "search.empty.title" 走的 errorMessages 拼接会带 "web:" 前缀
             // ("web: AnySearch 未启用"),且不可点击。这里走专属文案 + Button 一键启用，
@@ -490,19 +527,20 @@ struct SearchCenterView: View {
             // 只在 .web scope 触发：.all scope 下 AnySearch 仅是可选聚合项之一，
             // 用这条提示会误导（空态可能源自 GitHub/本地失败）。
             ContentUnavailableView {
-                Text("search.empty.anySearchDisabled.title")
+                Text("\(viewModel.webSearchProvider.displayName) requires configuration")
             } description: {
-                // 故意留空：标题已经表达核心信息，按钮文案承担"下一步"指引，
-                // 再加一行描述反而稀释点击焦点。
+                Text("Enable the provider and verify its API Key in Settings.")
             } actions: {
-                Button("search.empty.anySearchDisabled.action") {
-                    AppSettings.shared.anySearchEnabled = true
-                    // 重跑搜索：翻开关后当前 query 即可搜，submit() 内部会
-                    // 走 coordinator.search → AnySearchWebProvider 此时 enabled
-                    // 已为 true，会真正发起 HTTP 请求。
-                    Task { await viewModel.submit() }
+                if viewModel.webSearchProvider == .anySearch,
+                   AppSettings.shared.externalSearchSettings(for: .anySearch).anonymousMode {
+                    Button("search.empty.anySearchDisabled.action") {
+                        var providerSettings = AppSettings.shared.externalSearchSettings(for: .anySearch)
+                        providerSettings.isEnabled = true
+                        AppSettings.shared.setExternalSearchSettings(providerSettings, for: .anySearch)
+                        Task { await viewModel.submit() }
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.candidates.isEmpty {

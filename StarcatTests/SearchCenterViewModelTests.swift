@@ -100,6 +100,46 @@ struct SearchCenterViewModelTests {
         #expect(recorder.count == 1)
     }
 
+    @Test("Web tab 使用会话级 External Search Provider")
+    func webScopeUsesSessionExternalSearchProvider() async throws {
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let provider = CapturingWebSearchProvider()
+        let coordinator = SearchCoordinator(providers: [provider])
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
+
+        viewModel.query = "swift"
+        viewModel.scope = .web
+        viewModel.webSearchProvider = .exa
+        await viewModel.submit()
+
+        #expect(provider.lastRequest?.externalSearchProvider == .exa)
+    }
+
+    @Test("All scope 使用设置页默认 External Search Provider")
+    func allScopeUsesDefaultExternalSearchProvider() async throws {
+        let oldDefault = AppSettings.shared.externalSearchDefaultProvider
+        AppSettings.shared.externalSearchDefaultProvider = .braveLLMContext
+        defer { AppSettings.shared.externalSearchDefaultProvider = oldDefault }
+
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let provider = CapturingWebSearchProvider()
+        let coordinator = SearchCoordinator(providers: [provider])
+        let viewModel = SearchCenterViewModel(
+            coordinator: coordinator,
+            historyRepository: history,
+            includeWebInAll: { true }
+        )
+
+        viewModel.query = "swift"
+        viewModel.scope = .all
+        viewModel.webSearchProvider = .exa
+        await viewModel.submit()
+
+        #expect(provider.lastRequest?.externalSearchProvider == .braveLLMContext)
+    }
+
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
@@ -187,5 +227,15 @@ private struct SearchCenterPagingStubProvider: SearchProvider {
             totalCount: 2,
             hasNextPage: false
         )
+    }
+}
+
+private final class CapturingWebSearchProvider: SearchProvider, @unchecked Sendable {
+    let source: SearchSource = .web
+    var lastRequest: SearchRequest?
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        lastRequest = request
+        return .empty
     }
 }
