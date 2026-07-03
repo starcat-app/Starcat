@@ -134,6 +134,9 @@ struct HomeView: View {
     /// Discovery API 当前选中的完整 repo 数据，驱动右侧详情。
     @State private var selectedDiscoveryRepo: DiscoveryRepoDTO?
 
+    /// Explore Weekly 左侧语言筛选。nil 表示 `All Languages`,传入 WeeklyContentView 时转为空字符串。
+    @State private var selectedWeeklyLanguage: String?
+
     /// Manage 页面记住上次选择的分类（language / tag / allStars / untagged）。
     /// 切换到 Trending 再回来时恢复，避免用户丢失浏览上下文。
     @State private var savedManageSelection: SidebarItem = .allStars
@@ -766,6 +769,7 @@ struct HomeView: View {
             selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
             selectedDiscoveryTopic: $selectedDiscoveryTopic,
             selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+            selectedWeeklyLanguage: $selectedWeeklyLanguage,
             selectedActivityCategory: $selectedActivityCategory,
             showTagManagement: $showTagManagement,
             showReleaseTimeline: $showReleaseTimeline,
@@ -798,6 +802,7 @@ struct HomeView: View {
             selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
             selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
             selectedDiscoveryRepo: $selectedDiscoveryRepo,
+            selectedWeeklyLanguage: $selectedWeeklyLanguage,
             selectedActivityCategory: $selectedActivityCategory,
             selectedActivityItem: $selectedActivityItem,
             showsAgentToolbarEntry: showsAgentToolbarEntry,

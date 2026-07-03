@@ -32,13 +32,14 @@ private struct GitHubStarListEditorItem: Identifiable {
 /// 探索页也复用同一机制，而不是在 row 内手写浅蓝背景。这个 enum 只描述“哪个探索行
 /// 应被系统高亮”，真正的业务筛选状态仍保留在 `selectedExploreMode` /
 /// `selectedDiscoveryTopic` / `selectedDiscoveryPlatform` / `selectedDiscoveryLanguage`
-/// 等现有 binding 中，避免把视觉选中态改成新的数据源。
+/// / `selectedWeeklyLanguage` 等现有 binding 中，避免把视觉选中态改成新的数据源。
 private enum ExploreSidebarSelection: Hashable {
     case mode(ExploreMode)
     case topic(String?)
     case platform(String?)
     case language(String?)
     case trendingLanguage(TrendingLanguage)
+    case weeklyLanguage(String?)
 }
 
 struct SidebarView: View {
@@ -85,6 +86,7 @@ struct SidebarView: View {
     @Binding var selectedDiscoveryLanguage: String?
     @Binding var selectedDiscoveryTopic: String?
     @Binding var selectedDiscoveryPlatform: String?
+    @Binding var selectedWeeklyLanguage: String?
     @Binding var selectedActivityCategory: ActivityCategory
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
@@ -435,7 +437,7 @@ struct SidebarView: View {
         case .trending:
             return .trendingLanguage(selectedTrendingLanguage)
         case .weekly:
-            return .mode(.weekly)
+            return .weeklyLanguage(selectedWeeklyLanguage)
         }
     }
 
@@ -454,6 +456,8 @@ struct SidebarView: View {
                 && selectedDiscoveryLanguage == key
         case .trendingLanguage(let language):
             return selectedExploreMode == .trending && selectedTrendingLanguage == language
+        case .weeklyLanguage(let key):
+            return selectedExploreMode == .weekly && selectedWeeklyLanguage == key
         }
     }
 
@@ -473,6 +477,9 @@ struct SidebarView: View {
         case .trendingLanguage(let language):
             selectedExploreMode = .trending
             selectedTrendingLanguage = language
+        case .weeklyLanguage(let key):
+            selectedExploreMode = .weekly
+            selectedWeeklyLanguage = key
         }
     }
 
@@ -616,7 +623,7 @@ struct SidebarView: View {
         case .trending:
             trendingSidebarContent
         case .weekly:
-            EmptyView()
+            weeklyLanguageSidebarContent
         }
     }
 
@@ -683,6 +690,22 @@ struct SidebarView: View {
             }
         } header: {
             trendingLanguageSectionHeader
+        }
+    }
+
+    @ViewBuilder
+    private var weeklyLanguageSidebarContent: some View {
+        Section {
+            weeklyLanguageRow(nil)
+
+            if trendingLanguagesExpanded {
+                ForEach(dependencies.weeklyLanguageStore.displayList, id: \.key) { aggregate in
+                    weeklyLanguageRow(aggregate)
+                        .transition(Self.disclosureRowTransition)
+                }
+            }
+        } header: {
+            weeklyLanguageSectionHeader
         }
     }
 
@@ -1109,6 +1132,35 @@ struct SidebarView: View {
         .help(disclosureHelp(isExpanded: trendingLanguagesExpanded))
     }
 
+    private var weeklyLanguageSectionHeader: some View {
+        Button {
+            withAnimation(disclosureAnimation) {
+                trendingLanguagesExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("sidebar.languages")
+                    .font(interfaceScale.font(size: 13))
+
+                Spacer(minLength: 8)
+
+                Text(dependencies.weeklyLanguageStore.displayList.count.formatted())
+                    .font(interfaceScale.font(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: trendingLanguagesExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(disclosureHelp(isExpanded: trendingLanguagesExpanded))
+    }
+
     private func disclosureHelp(isExpanded: Bool) -> Text {
         isExpanded ? Text("sidebar.collapse") : Text("sidebar.expand")
     }
@@ -1326,6 +1378,53 @@ struct SidebarView: View {
             trendingLanguageIcon(language)
         }
         .tag(ExploreSidebarSelection.trendingLanguage(language))
+    }
+
+    /// Weekly 语言行。nil 表示 `All Languages`,具体语言来自 WeeklyLanguageStore 聚合结果。
+    @ViewBuilder
+    private func weeklyLanguageRow(_ aggregate: TrendingLanguageAggregateDTO?) -> some View {
+        let key = aggregate?.key
+        Label {
+            HStack(spacing: 4) {
+                if let aggregate {
+                    Text(verbatim: aggregate.label)
+                        .lineLimit(1)
+                } else {
+                    Text("trending.allLanguages")
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                if let aggregate, aggregate.count > 0 {
+                    Text(aggregate.count.formatted())
+                        .font(interfaceScale.font(size: 11))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                } else if aggregate == nil, let total = dependencies.weeklySelectionService.total {
+                    Text(total.formatted())
+                        .font(interfaceScale.font(size: 11))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        } icon: {
+            weeklyLanguageIcon(aggregate)
+        }
+        .tag(ExploreSidebarSelection.weeklyLanguage(key))
+    }
+
+    @ViewBuilder
+    private func weeklyLanguageIcon(_ aggregate: TrendingLanguageAggregateDTO?) -> some View {
+        if let aggregate {
+            if aggregate.key == TrendingLanguage.uncategorizedKey {
+                UncategorizedLanguageIcon(size: 14)
+            } else {
+                LanguageIconView(language: aggregate.key, size: 14)
+            }
+        } else {
+            AllLanguagesIcon(size: 14)
+        }
     }
 
     @ViewBuilder

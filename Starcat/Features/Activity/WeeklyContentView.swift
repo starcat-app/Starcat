@@ -44,11 +44,13 @@ import AppKit
 
 // MARK: - View
 
-/// Activity 页 weekly 分类的内容视图。
+/// Explore Weekly 分类的内容视图。
 struct WeeklyContentView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
+
+    @Binding var selectedLanguage: String?
 
     @State private var viewModel: WeeklyContentViewModel?
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
@@ -67,12 +69,18 @@ struct WeeklyContentView: View {
         }
         .task {
             let model = ensureViewModel()
+            syncExternalLanguage(to: model)
             await reloadLibraryStateMap()
             await model.loadInitialIfNeeded()
             applyWeeklyDetailSelectionPolicy(from: model.items)
         }
         .task {
             await observeLibraryStateChanges()
+        }
+        .task(id: selectedLanguage ?? "") {
+            guard let viewModel else { return }
+            syncExternalLanguage(to: viewModel)
+            applyWeeklyDetailSelectionPolicy(from: viewModel.items)
         }
     }
 
@@ -103,6 +111,7 @@ struct WeeklyContentView: View {
         }
         .task {
             await viewModel.loadLanguagesIfNeeded()
+            syncBindingLanguage(from: viewModel)
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
         }
         .onChange(of: viewModel.itemsRevision) { _, _ in
@@ -116,7 +125,7 @@ struct WeeklyContentView: View {
 
     // MARK: - Filter Bar
 
-    /// 顶部筛选栏：来源 / 收录强度 / 状态 / 热度 / 推送时间 / 排序 + 语言下拉。
+    /// 顶部筛选栏：来源 / 收录强度 / 状态 / 热度 / 推送时间 / 排序。
     ///
     /// 期号筛选目前没有用 picker 暴露——后端 `/issues` 还在补，列表也不强需要；
     /// 后续要做时增加一个 Menu 即可，结构上已经在 ViewModel 留了 `selectedIssue`。
@@ -225,20 +234,6 @@ struct WeeklyContentView: View {
                 }
             }
             .fixedSize()
-
-            // 自定义语言下拉（替代受 NSMenu 限制无法显示彩色图标的 Picker）。
-            // 详见 Starcat/Shared/Components/LanguagePickerMenu.swift 文件头注释。
-            LanguagePickerMenu(
-                selection: Binding(
-                    get: { viewModel.selectedLanguage },
-                    set: { language in
-                        clearWeeklyDetailSelectionIfChanging(language != viewModel.selectedLanguage)
-                        viewModel.changeLanguage(to: language)
-                    }
-                ),
-                aggregates: viewModel.languageAggregates,
-                labelPrefix: "weekly.filter.language"
-            )
 
             Spacer()
 
@@ -384,6 +379,20 @@ struct WeeklyContentView: View {
         )
         viewModel = model
         return model
+    }
+
+    private func syncExternalLanguage(to viewModel: WeeklyContentViewModel) {
+        let language = selectedLanguage ?? ""
+        guard language != viewModel.selectedLanguage else { return }
+        clearWeeklyDetailSelection()
+        viewModel.changeLanguage(to: language)
+    }
+
+    private func syncBindingLanguage(from viewModel: WeeklyContentViewModel) {
+        let normalized = viewModel.selectedLanguage.isEmpty ? nil : viewModel.selectedLanguage
+        if selectedLanguage != normalized {
+            selectedLanguage = normalized
+        }
     }
 
     private func open(_ url: URL) {

@@ -69,6 +69,7 @@ struct RepoListView: View {
     @Binding var selectedDiscoveryPlatform: String?
     @Binding var selectedDiscoveryRepoID: Int64?
     @Binding var selectedDiscoveryRepo: DiscoveryRepoDTO?
+    @Binding var selectedWeeklyLanguage: String?
     /// Activity 页当前分类。
     @Binding var selectedActivityCategory: ActivityCategory
     /// Activity 页当前选中项，驱动右侧详情。
@@ -948,6 +949,7 @@ struct RepoListView: View {
                     selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
                     selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
                     selectedDiscoveryRepo: $selectedDiscoveryRepo,
+                    selectedWeeklyLanguage: $selectedWeeklyLanguage,
                     onRepoCountChange: { trendingRepoCount = $0 }
                 )
             } else if selectedPage == .activity {

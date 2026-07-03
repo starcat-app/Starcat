@@ -26,6 +26,7 @@ struct ExploreView: View {
     @Binding var selectedDiscoveryPlatform: String?
     @Binding var selectedDiscoveryRepoID: Int64?
     @Binding var selectedDiscoveryRepo: DiscoveryRepoDTO?
+    @Binding var selectedWeeklyLanguage: String?
 
     let onRepoCountChange: (Int) -> Void
 
@@ -38,7 +39,7 @@ struct ExploreView: View {
             case .trending:
                 trendingContent
             case .weekly:
-                WeeklyContentView()
+                WeeklyContentView(selectedLanguage: $selectedWeeklyLanguage)
             case .discover, .popular, .newReleases:
                 ExploreDiscoveryListView(
                     viewModel: discoveryViewModel,
