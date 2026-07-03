@@ -432,9 +432,9 @@ struct RepoAIWindowContentView: View {
                                     contextDegradationBanner(reason)
                                 }
 
-                                // Y9.3（2026-06-14 dong4j 反馈）：AnySearch 外部上下文降级 banner。
+                                // Y9.3（2026-06-14 dong4j 反馈）：External Search 外部上下文降级 banner。
                                 // 与代码上下文降级 banner 并行存在但相互正交，两路可同时显示。
-                                // 用户开了 AnySearch + AI 子开关后，若上游 502 / 网络异常 / Key 失效 /
+                                // 用户开了 External Context 后，若上游 502 / 网络异常 / Key 失效 /
                                 // 配额用完 / 限流 / 能力未启用，本 banner 给出对应分类的提示文案，避免
                                 // 静默降级让用户疑惑"我都开了为什么没注入"。
                                 if let reason = vm.externalContextDegradationReason {
@@ -907,10 +907,10 @@ struct RepoAIWindowContentView: View {
             return true
         }
 
-        let currentExternalAllowed = AnySearchContextProvider.allowsExternalContext(
+        let currentExternalAllowed = ExternalSearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
-            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
-            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+            enabled: settings.externalContextEnabled,
+            allowPrivate: settings.externalSearchAllowPrivateRepos
         )
         if snap.externalContextAllowed != currentExternalAllowed {
             return true
@@ -1890,7 +1890,7 @@ struct RepoAIWindowContentView: View {
         )
     }
 
-    /// Y9.3（2026-06-14 dong4j 反馈）：AnySearch 外部上下文降级 banner。
+    /// Y9.3（2026-06-14 dong4j 反馈）：External Search 外部上下文降级 banner。
     ///
     /// 与 contextDegradationBanner 共享 Y9.2 玻璃态适配同款视觉（黄色 info 系），
     /// 与 errorBanner 区分（红色错误 ≠ 黄色信息）。两路 banner 可同时显示，给用户
@@ -1928,15 +1928,15 @@ struct RepoAIWindowContentView: View {
     ///      - 摘要：`vm.insight?.summaryMarkdown` 非空（说明用户至少生成过一次）；
     ///      - 代码：`settings.aiRepoContextEnabled == true` 且 contextMetadata 实际有
     ///        （上次确实 pack 成功 / 还在缓存里）；
-    ///      - 外网：settings 当前允许 AnySearch（双开关 AND + 私仓门控）且
+    ///      - 外网：settings 当前允许 External Context（开关 + 私仓门控）且
     ///        `vm.insight?.externalContextMarkdown` 有缓存。
     ///   3. **三者都为 false**：完全不显示（README-only 是默认状态，无需占位）。
     ///
     /// 为什么混用「settings 当前值」+「cachedInsight 实际有否」：
     ///   - settings 反映"用户当前意图"（即将翻译成 system prompt 的开关）；
     ///   - cachedInsight 反映"对话路径实际能拿到的物料"（决议 B=b2，对话不重新拉
-    ///     AnySearch HTTP，只读缓存）。
-    ///   - 仅看 settings 会误报（关了 anySearch 但缓存里还有 markdown：实际不会用，
+    ///     外部搜索 HTTP，只读缓存）。
+    ///   - 仅看 settings 会误报（关了 External Context 但缓存里还有 markdown：实际不会用，
     ///     状态行不该说带）；仅看缓存会漏报（用户开了代码开关但还没生成新摘要：
     ///     下条对话就会带 Code XML，状态行该说带）。
     ///
@@ -1984,10 +1984,10 @@ struct RepoAIWindowContentView: View {
     private func summarizedStatusRow(vm: RepoAIInsightViewModel) -> some View {
         let hasSummary = (vm.insight?.summaryMarkdown?.isEmpty == false)
         let hasCode = settings.aiRepoContextEnabled && vm.insight?.contextMetadata != nil
-        let externalAllowed = AnySearchContextProvider.allowsExternalContext(
+        let externalAllowed = ExternalSearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
-            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
-            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+            enabled: settings.externalContextEnabled,
+            allowPrivate: settings.externalSearchAllowPrivateRepos
         )
         let hasExternal = externalAllowed && (vm.insight?.externalContextMarkdown?.isEmpty == false)
 

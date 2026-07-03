@@ -47,19 +47,19 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
     /// UI 层判定 banner 是否显示。
     var contextDegradationReason: ContextDegradationReason?
 
-    /// Y9.3：外部网页上下文（AnySearch）降级原因（nil = 拉到了 / 用户没开 / 守卫拦截）。
+    /// Y9.3：外部网页上下文（External Search）降级原因（nil = 拉到了 / 用户没开 / 守卫拦截）。
     ///
     /// 与 `contextDegradationReason` 并行存在但相互正交：
     ///   - `contextDegradationReason`：代码上下文（RepoContextPacker）失败原因；
-    ///   - `externalContextDegradationReason`：外部网页上下文（AnySearch）失败原因；
+    ///   - `externalContextDegradationReason`：外部网页上下文（External Search）失败原因；
     ///   - 两者可同时非 nil（两路 banner 同时显示）。
     ///
     /// 关键约束：
-    ///   - **守卫拦截不算降级**：用户没开 anySearchEnabled / aiExternalContextEnabled / 私仓不允许时，
+    ///   - **守卫拦截不算降级**：用户没开 External Context / 私仓不允许时，
     ///     `collect` 直接返回 nil，不进 catch 路径，本字段保持 nil；
-    ///   - **0 结果不算降级**：HTTP 200 但业务零结果时（unique.isEmpty），那是 AnySearch 没数据，
+    ///   - **0 结果不算降级**：HTTP 200 但业务零结果时（unique.isEmpty），那是 Provider 没数据，
     ///     不是错误，本字段保持 nil；
-    ///   - **真错误才填**：AnySearchError / URLError / 兜底统一过 ExternalContextDegradationReason.classify
+    ///   - **真错误才填**：ExternalSearchError / URLError / 兜底统一过 ExternalContextDegradationReason.classify
     ///     映射到具体 case，UI banner 显示对应文案。
     var externalContextDegradationReason: ExternalContextDegradationReason?
 }
@@ -73,9 +73,9 @@ final class RepoAIInsightService {
     ///
     /// `text` 字段保留是为了让 `Self.hash(text)` 作为缓存 key 输入——
     /// 它是 `metadata + "\n" + readme 块 + (可选) "\n\n" + codeContext` 的拼接快照，
-    /// 但**不再直接喂给 prompt**（prompt 走拆段占位符注入）。新增的 externalContext
-    /// 当 generateInsight 拿到 AnySearch 结果时会被合并进 hash 输入（详见
-    /// `summarySource` 局部闭包），保证外部材料一变就让缓存失效。
+    /// 但**不再直接喂给 prompt**（prompt 走拆段占位符注入）。外部搜索上下文只写入
+    /// `externalContext` 字段给摘要 prompt 使用，不参与 `hash`，避免外部搜索结果的时效性
+    /// 反复击穿本地 AI 摘要缓存。
     private struct Source {
         let text: String
         let hash: String
@@ -93,10 +93,9 @@ final class RepoAIInsightService {
         /// （不是 nil，让占位符直接渲染空段不出现 `{codeContext}` 字面量）。
         let codeContext: String
 
-        /// Summary `{externalContext}` 的渲染源——AnySearch 生成的外部检索 markdown
-        /// （已含 `<external_context trust="untrusted">` XML 包裹 + 警告语，详见
-        /// `AnySearchContextProvider`）。无外部上下文 / 用户关了开关 / 私仓不允许时
-        /// 为空字符串。Tags 任务不消费此字段——标签推荐不需要外部检索结果做风格参考。
+        /// Summary `{externalContext}` 的渲染源——外部搜索服务生成的检索 markdown。
+        /// 无外部上下文 / 用户关了开关 / 私仓不允许时为空字符串。Tags 任务不消费此字段——
+        /// 标签推荐不需要外部检索结果做风格参考。
         let externalContext: String
 
         /// Y2：从 RepoContextPacker 拿到的元信息（命中缓存或新生成都填充）。
@@ -132,12 +131,12 @@ final class RepoAIInsightService {
     private let readmeRepository: ReadmeRepository
     private let settings: AppSettings
     private let keychain: any KeychainManaging
-    private let externalContextProvider: AnySearchContextProvider
+    private let externalContextProvider: ExternalSearchContextProvider
     private let entitlementGate: EntitlementGate?
 
     /// X4（2026-06-13）：注入 RepoContextPacker 的代码上下文。
     ///
-    /// 设计原则与 `externalContextProvider`（AnySearch）镜像：
+    /// 设计原则与 `externalContextProvider`（External Search）镜像：
     ///   - `Optional`：传 nil 时完全跳过代码上下文路径（单测 / 老调用方）；
     ///   - **失败降级**：provider 内部已经做了"任何错误 → 返回 nil"的兜底，service 不再 catch；
     ///   - **影响缓存**：context xml 被拼到 `Source.text` 末尾，自动让 `Source.hash` 变化，
@@ -168,7 +167,7 @@ final class RepoAIInsightService {
         self.readmeRepository = readmeRepository
         self.settings = settings
         self.keychain = keychain
-        self.externalContextProvider = AnySearchContextProvider(settings: settings)
+        self.externalContextProvider = ExternalSearchContextProvider(settings: settings)
         self.repoAIContextProvider = repoAIContextProvider
         self.entitlementGate = entitlementGate
         self.onSummaryGenerated = onSummaryGenerated
@@ -289,7 +288,7 @@ final class RepoAIInsightService {
                 resolvedExternalContext = try await externalContextProvider.collect(for: repo)
             } catch {
                 // 外部搜索是补充能力，失败不能阻断本地 README 摘要。
-                AppLog.ai.error("AnySearch external context skipped: \(error.localizedDescription, privacy: .public)")
+                AppLog.ai.error("External Search context skipped: \(error.localizedDescription, privacy: .public)")
                 resolvedExternalContext = nil
                 externalDegradationReason = ExternalContextDegradationReason.classify(error)
             }
@@ -308,19 +307,18 @@ final class RepoAIInsightService {
         // 保证两条入口（单仓 AI 摘要 / 批量 AI 整理）信号源不漂移；详见 `AITagHints` 注释。
 
         // 两者都需要时并发跑；任一关闭则串行 / 短路，避免无意义 AI 调用。
-        // Summary 走 `summarySource`（含 AnySearch 外部材料），Tags 走 `(source, hints)`。
+        // Summary 走 `summarySource`（含 External Search 外部材料），Tags 走 `(source, hints)`。
         //
         // 2026-06-14 v4 拆段重构：旧实现把 ext.markdown 拼到 `source.text` 末尾，依赖
         // Summary prompt 的单一 `{context}` 占位符替换吞下整段。新实现把 `externalContext`
         // 升级为一等字段，由 generateSummary 通过独立 `{externalContext}` 占位符渲染；
-        // `text` 字段仍合并 ext.markdown 仅为了 hash 计算——任何 ext 变化都让缓存失效，
-        // 与 v3 行为等价。
+        // `hash` 保持为 repo/readme/code context 的语义快照；外部搜索结果只进入
+        // `{externalContext}`，否则同一个仓库会因为搜索服务返回的时效性内容反复失效。
         let summarySource: Source = {
             guard let context = resolvedExternalContext else { return source }
-            let hashInput = source.text + "\n" + context.markdown
             return Source(
-                text: hashInput,
-                hash: Self.hash(hashInput),
+                text: source.text,
+                hash: source.hash,
                 metadata: source.metadata,
                 readme: source.readme,
                 codeContext: source.codeContext,
@@ -376,12 +374,12 @@ final class RepoAIInsightService {
         // 保留旧字段的同时把新摘要正文写进 summaryMarkdown，UI 优先读该字段。
         insight.summaryMarkdown = summaryText
 
-        // Y9（2026-06-14，决议 B=b2）：把 AnySearch 拉来的整段 markdown 回填到 insight。
+        // Y9（2026-06-14，决议 B=b2）：把 External Search 拉来的整段 markdown 回填到 insight。
         //
         // 设计要点：
         //   - 直接存 `resolvedExternalContext?.markdown`（已含 <external_context> XML 包裹 +
         //     防 prompt-injection 提示 + 6 条 snippet），不做任何二次处理；
-        //   - 用户关了 anySearch / external context / 私仓不允许 → resolvedExternalContext 为 nil →
+        //   - 用户关了 External Context / 私仓不允许 → resolvedExternalContext 为 nil →
         //     此处赋 nil，对话路径读到 nil 时静默不拼，与"用户意图"一致；
         //   - 与 `summaryText` 末尾追加的"## 外部参考来源"链接列表不冲突——前者给摘要面板渲染
         //     展示用，后者给对话 system prompt 注入用，两份数据来源同一次 collect 调用。
@@ -394,14 +392,14 @@ final class RepoAIInsightService {
         // 自动豁免，规避 Y9 初版"老缓存每次都误报"的 bug（dong4j 2026-06-14 反馈）。
         //
         // externalContextAllowed 存 effective 结果（双开关 AND + 私仓门控的最终值），
-        // 与 chatStream 的 AnySearchContextProvider.allowsExternalContext(...) 同款判定，
+        // 与 chatStream 的 ExternalSearchContextProvider.allowsExternalContext(...) 同款判定，
         // 避免后续 UI 层重复计算 3 个开关的组合。
         insight.generationContextSettings = GenerationContextSettings(
             codeContextEnabled: settings.aiRepoContextEnabled,
-            externalContextAllowed: AnySearchContextProvider.allowsExternalContext(
+            externalContextAllowed: ExternalSearchContextProvider.allowsExternalContext(
                 repoIsPrivate: repo.isPrivate,
-                enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
-                allowPrivate: settings.aiExternalContextAllowPrivateRepos
+                enabled: settings.externalContextEnabled,
+                allowPrivate: settings.externalSearchAllowPrivateRepos
             )
         )
 
@@ -432,7 +430,7 @@ final class RepoAIInsightService {
             // 注：summarySource 从 source 派生但不改 contextDegradationReason，
             // 这里直接读最原始 source 的 reason 即可。
             contextDegradationReason: source.contextDegradationReason,
-            // Y9.3：透传 anysearch 降级原因，UI 层渲染独立 banner。
+            // Y9.3：透传 External Search 降级原因，UI 层渲染独立 banner。
             externalContextDegradationReason: externalDegradationReason
         )
     }
@@ -459,9 +457,9 @@ final class RepoAIInsightService {
     /// system prompt 在 README + (可选) Code XML 之外，按当前 settings 决定是否额外注入：
     ///   - **AI 摘要正文**（包括 markdown）：从 `loadCachedInsight` 读，没缓存就为空字符串；
     ///     喂给 prompt 模板的 `{summary}` 占位符，渲染为 `## AI Summary` 段；
-    ///   - **AnySearch 外部材料**：从 `cachedInsight.externalContextMarkdown` 读，
-    ///     **零额外 HTTP**（决议 B=b2，对话路径不重复调 AnySearch API 烧配额）；
-    ///     需 settings 当前允许（anySearch+externalContext+私仓门控）才注入；
+    ///   - **External Search 外部材料**：从 `cachedInsight.externalContextMarkdown` 读，
+    ///     **零额外 HTTP**（决议 B=b2，对话路径不重复调第三方搜索 API 烧配额）；
+    ///     需 settings 当前允许（External Context + 私仓门控）才注入；
     ///   - **代码上下文 XML**：由 `makeSource` 内部根据 `aiRepoContextEnabled` 决定，
     ///     与摘要路径完全对称，无需额外参数。
     ///
@@ -498,7 +496,7 @@ final class RepoAIInsightService {
         let source = try await makeSource(for: repo)
 
         // Y9：复用同一份 source 做缓存比对（避免 makeSource 被调两次造成重复网络 IO）。
-        // 缓存命中 = 摘要 + AnySearch markdown 都从 `ai_summaries.summary_json` 直接拿到。
+        // 缓存命中 = 摘要 + External Search markdown 都从 `ai_summaries.summary_json` 直接拿到。
         // try? 故意吞错：缓存读失败（比如 SQLite 临时锁）不应阻塞对话主流程。
         let cached = try? await loadCachedInsight(source: source, repo: repo)
 
@@ -568,10 +566,10 @@ final class RepoAIInsightService {
         wikiLinks: [WikiLink],
         codeFlowPageURL: URL?
     ) -> String {
-        let externalAllowed = AnySearchContextProvider.allowsExternalContext(
+        let externalAllowed = ExternalSearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
-            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
-            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+            enabled: settings.externalContextEnabled,
+            allowPrivate: settings.externalSearchAllowPrivateRepos
         )
         // 私仓门控不通过时，把 externalContext 强制清空（即便 cached 里有也不注入）。
         let externalContext = externalAllowed
@@ -812,8 +810,10 @@ final class RepoAIInsightService {
         let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
         let tagsModel = settings.aiTagsTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
         let external: String = {
-            guard settings.anySearchEnabled && settings.aiExternalContextEnabled else { return "off" }
-            return settings.aiExternalContextAllowPrivateRepos ? "on-private" : "on-public"
+            guard settings.externalContextEnabled else { return "off" }
+            let privacy = settings.externalSearchAllowPrivateRepos ? "private" : "public"
+            let aggregate = settings.aggregateExternalContextSearchEnabled && settings.isProUser ? "aggregate" : "single"
+            return "\(aggregate)-\(settings.externalContextProviderSelection.rawValue)-\(settings.externalSearchDefaultProvider.rawValue)-\(privacy)"
         }()
         return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
