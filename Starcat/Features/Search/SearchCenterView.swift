@@ -692,22 +692,6 @@ struct SearchCenterView: View {
                     isSelected: isSelected,
                     showStarredCheckmark: true
                 )
-                // Search Center 的 ❤️ 是当前结果行的直接操作入口；头像左上角仍只做
-                // 状态角标，保持“角标不可点击、trailing action 可点击”的交互边界。
-                .padding(.trailing, 40)
-                .overlay(alignment: .trailing) {
-                    if dependencies.authSession.state.isAuthenticated {
-                        LibraryToggleButton(
-                            isSaved: repo.card.isInLibrary,
-                            isWorking: libraryOperationRepoID == repo.displayRepo?.id
-                        ) {
-                            Task {
-                                await handleLibraryToggleTapped(repo)
-                            }
-                        }
-                        .padding(.trailing, 10)
-                    }
-                }
             case .reference(let reference):
                 // 复用 RepoRowSurface 三态透明度（default / hover / selected）+
                 // 圆角 + 左侧 accent bar，让网页卡片与 UnifiedRepoRow 视觉骨架对等。
@@ -1051,15 +1035,15 @@ struct SearchCenterView: View {
         30
     }
 
-    private func handleLibraryToggleTapped(_ candidate: RepositoryCandidate) async {
+    private func handleLibraryToggleTapped(_ candidate: RepositoryCandidate) async -> Bool? {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
-            return
+            return nil
         }
-        guard libraryOperationRepoID == nil else { return }
+        guard libraryOperationRepoID == nil else { return nil }
         guard let repo = candidate.displayRepo, repo.id > 0 else {
             libraryToast = "library.action.failed"
-            return
+            return nil
         }
 
         libraryOperationRepoID = repo.id
@@ -1078,11 +1062,11 @@ struct SearchCenterView: View {
                 )
                 pendingUsingRemovalCandidate = candidate
                 isConfirmingUsingLibraryRemoval = true
-                return
+                return true
             }
-            await setLibraryState(.outsideLibrary, for: candidate, downgradeUsingStatus: false)
+            return await setLibraryState(.outsideLibrary, for: candidate, downgradeUsingStatus: false)
         } else {
-            await setLibraryState(.inLibrary, for: candidate, downgradeUsingStatus: false)
+            return await setLibraryState(.inLibrary, for: candidate, downgradeUsingStatus: false)
         }
     }
 
@@ -1090,14 +1074,14 @@ struct SearchCenterView: View {
         _ targetState: LibraryState,
         for candidate: RepositoryCandidate,
         downgradeUsingStatus: Bool
-    ) async {
+    ) async -> Bool? {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
-            return
+            return nil
         }
         guard let repo = candidate.displayRepo, repo.id > 0 else {
             libraryToast = "library.action.failed"
-            return
+            return nil
         }
 
         libraryOperationRepoID = repo.id
@@ -1130,9 +1114,11 @@ struct SearchCenterView: View {
             await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
             libraryToast = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
+            return targetState == .inLibrary
         } catch {
             AppLog.database.error("Search Center library toggle failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             libraryToast = "library.action.failed"
+            return nil
         }
     }
 
@@ -2040,7 +2026,7 @@ private struct SearchRemoteRepoDetailView: View {
     let onOpenInGitHub: () -> Void
     /// 复制仓库 HTML URL（走宿主回调，宿主可叠加 toast / 日志）。
     let onCopyURL: () -> Void
-    let onToggleLibrary: () async -> Void
+    let onToggleLibrary: () async -> Bool?
     let isLibraryWorking: Bool
 
     @Environment(\.dismiss) private var dismiss
@@ -2069,6 +2055,9 @@ private struct SearchRemoteRepoDetailView: View {
     /// 搜索详情不是本地 Repo 详情页，打开 sheet 时拿到的 `isStarred` 是一次性快照。
     /// Star/Unstar 成功后用本地覆盖值驱动按钮状态，避免用户需要关掉弹窗再打开才看到变化。
     @State private var starredOverride: Bool?
+    /// Search Center 的候选卡同样是一次性快照；知识库状态写入成功后用本地覆盖值
+    /// 驱动 ❤️ 空心/实心，避免必须关闭再打开详情卡才能看到变化。
+    @State private var libraryOverride: Bool?
     /// 防止连续点击 Star chip 叠加两次 GitHub 写操作。
     @State private var isStarToggleInFlight = false
 
@@ -2100,6 +2089,10 @@ private struct SearchRemoteRepoDetailView: View {
 
     private var effectiveIsStarred: Bool {
         starredOverride ?? isStarred
+    }
+
+    private var effectiveIsInLibrary: Bool {
+        libraryOverride ?? candidate.card.isInLibrary
     }
 
     var body: some View {
@@ -2562,29 +2555,29 @@ private struct SearchRemoteRepoDetailView: View {
         HStack(spacing: 8) {
             SearchDetailActionChip(
                 systemImage: effectiveIsStarred ? "star.fill" : "star",
-                titleKey: effectiveIsStarred ? "search.detail.action.unstar" : "search.detail.action.star",
+                titleKey: nil,
                 helpKey: effectiveIsStarred ? "search.detail.action.unstar" : "search.detail.action.star",
                 semanticColor: .actionStar,
                 action: toggleStar
             )
             SearchDetailActionChip(
-                systemImage: candidate.card.isInLibrary ? "heart.fill" : "heart",
-                titleKey: candidate.card.isInLibrary ? "library.action.remove" : "library.action.add",
-                helpKey: candidate.card.isInLibrary ? "library.action.remove" : "library.action.add",
+                systemImage: effectiveIsInLibrary ? "heart.fill" : "heart",
+                titleKey: nil,
+                helpKey: effectiveIsInLibrary ? "library.action.remove" : "library.action.add",
                 semanticColor: .actionLibrary,
                 isWorking: isLibraryWorking,
                 action: toggleLibrary
             )
             SearchDetailActionChip(
                 systemImage: "sparkles",
-                titleKey: "search.detail.action.askAI",
+                titleKey: nil,
                 helpKey: "search.detail.action.askAI",
                 semanticColor: .actionAI,
                 action: onOpenAI
             )
             SearchDetailActionChip(
                 systemImage: "arrow.up.right.square",
-                titleKey: "search.detail.action.openOnGitHub",
+                titleKey: nil,
                 helpKey: "search.detail.action.openOnGitHub",
                 semanticColor: .actionGitHub,
                 action: onOpenInGitHub
@@ -2611,7 +2604,9 @@ private struct SearchRemoteRepoDetailView: View {
 
     private func toggleLibrary() {
         Task {
-            await onToggleLibrary()
+            if let next = await onToggleLibrary() {
+                libraryOverride = next
+            }
         }
     }
 

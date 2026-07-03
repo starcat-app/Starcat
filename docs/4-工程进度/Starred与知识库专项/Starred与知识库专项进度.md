@@ -151,8 +151,8 @@
 - [x] Browser Plugin GitHub 页面展示空心/实心 ❤️ 知识库状态。
 - [x] Browser Plugin 支持直接加入/移出知识库,逻辑与详情页一致。
 - [x] Search Center 搜索结果展示入库状态。
-- [x] Search Center 可操作 ❤️ 放在 trailing action 区或详情/预览动作区,logo 角标不可点击。
-- [x] Search Center 搜索结果支持直接加入/移出知识库。
+- [x] Search Center 搜索结果只展示入库状态,不在结果行右侧提供 ❤️ 操作。
+- [x] Search Center 详情底部支持直接加入/移出知识库。
 - [x] Search Center 直接移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
 - [x] 新增本机服务写 library state 的 action/route。
 - [x] Browser Plugin 操作失败时显示插件内 toast 并回滚 ❤️ 状态。
@@ -302,9 +302,9 @@
 ### 11.5 Search Center / Browser Plugin
 
 - [x] Search Center 搜索结果显示入库状态。
-- [x] Search Center 搜索结果可以直接加入知识库。
-- [x] Search Center 搜索结果可以直接移出知识库。
-- [x] Search Center 可操作 ❤️ 位于 trailing action 区或详情/预览动作区,logo 角标不可点击。
+- [x] Search Center 详情底部可以直接加入知识库。
+- [x] Search Center 详情底部可以直接移出知识库。
+- [x] Search Center 结果行只展示入库状态,不在 trailing 区展示可操作 ❤️。
 - [x] Search Center 移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
 - [x] Browser Plugin GitHub 页面显示空心/实心 ❤️。
 - [x] Browser Plugin 可加入/移出知识库,不会自动 GitHub star/unstar。
@@ -392,8 +392,17 @@
 - [x] 事件处理后刷新 Sidebar 计数,保证后续入口复用同一刷新链。
 - [x] 补齐回归单测: 先进入空知识库列表,再通过入库事件自动显示新增 repo。
 
+### 12.3 Search Center 结果与详情按钮优化
+
+- [x] 全局搜索结果列表移除右侧可操作 ❤️,只保留 repo 卡片自身的已入库状态展示。
+- [x] GitHub 搜索结果详情底部主操作改为 icon-only,不再显示 Star / 知识库 / AI / GitHub 文字。
+- [x] GitHub 搜索结果详情底部 Star 图标按状态显示 `star.fill` / `star`。
+- [x] GitHub 搜索结果详情底部知识库图标按状态显示 `heart.fill` / `heart`。
+- [x] 知识库 toggle 成功后用本地状态驱动详情底部 ❤️ 立即切换,不需要关闭后重开。
+
 ## 13. 变更记录
 
+- 2026-07-03: 优化 Search Center 结果行与详情底部 Star/知识库图标。
 - 2026-07-03: 修复入库后 Sidebar 知识库列表旧缓存不刷新的问题。
 - 2026-07-03: 完成 Sidebar 知识库基础分类入口与列表范围。
 - 2026-07-03: 补充 Sidebar 知识库基础分类优化&FIX 进度。
