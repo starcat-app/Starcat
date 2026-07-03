@@ -15,9 +15,9 @@ struct IntegrationSettingsTab: View {
     @State private var storage = CodeFlowStorage.shared
     @State private var codebaseMemoryStorage = CodebaseMemoryStorage.shared
     @State private var actionError: String?
-    @State private var anySearchAPIKey: String = ""
-    @State private var showAnySearchAPIKey: Bool = false
-    @State private var anySearchAPIKeyTestState: AnySearchAPIKeyTestState = .idle
+    @State private var externalSearchAPIKeys: [ExternalSearchProviderID: String] = [:]
+    @State private var visibleExternalSearchAPIKeys: Set<ExternalSearchProviderID> = []
+    @State private var externalSearchAPIKeyTestStates: [ExternalSearchProviderID: ExternalSearchAPIKeyTestState] = [:]
     @State private var pluginConfiguration = CompanionConfiguration.shared
     @State private var isHoveringCopyToken = false
     @State private var isHoveringResetToken = false
@@ -157,7 +157,7 @@ struct IntegrationSettingsTab: View {
         .formStyle(.grouped)
         .task { storage.reload() }
         .task { codebaseMemoryStorage.reload() }
-        .task { anySearchAPIKey = settings.anySearchAPIKey() ?? "" }
+        .task { loadExternalSearchAPIKeys() }
         .task {
             if pluginConfiguration.isEnabled {
                 CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
@@ -409,125 +409,279 @@ struct IntegrationSettingsTab: View {
 
     private var anySearchSection: some View {
         @Bindable var settings = settings
-        return Section("settings.anySearch.title") {
-            Toggle("settings.anySearch.enabled", isOn: $settings.anySearchEnabled)
-            Toggle("settings.anySearch.anonymous", isOn: $settings.anySearchAnonymousMode)
-                .disabled(!settings.anySearchEnabled)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("settings.anySearch.apiKey")
-                    .font(.callout.weight(.medium))
-
-                HStack(spacing: 8) {
-                    Group {
-                        if showAnySearchAPIKey {
-                            TextField("", text: $anySearchAPIKey, prompt: Text("settings.anySearch.apiKey.placeholder"))
-                        } else {
-                            SecureField("", text: $anySearchAPIKey, prompt: Text("settings.anySearch.apiKey.placeholder"))
+        return Group {
+            Section("External Search") {
+                Toggle("Include external web results in All", isOn: $settings.externalSearchIncludeInAll)
+                Toggle("Use external web context in AI features", isOn: $settings.externalContextEnabled)
+                Toggle(isOn: aggregateExternalContextBinding) {
+                    HStack(spacing: 6) {
+                        Text("Aggregate external context search")
+                        if !settings.isProUser {
+                            Text("Pro")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.16)))
                         }
                     }
-                    .labelsHidden()
-                    .accessibilityLabel(Text("settings.anySearch.apiKey"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
-                    .onChange(of: anySearchAPIKey) { _, _ in
-                        anySearchAPIKeyTestState = .idle
-                    }
+                }
+                .disabled(!settings.isProUser)
 
-                    Button {
-                        showAnySearchAPIKey.toggle()
-                    } label: {
-                        Image(systemName: showAnySearchAPIKey ? "eye.slash" : "eye")
-                            .frame(width: 18)
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(Text(showAnySearchAPIKey
-                        ? LocalizedStringKey("settings.anySearch.apiKey.hide")
-                        : LocalizedStringKey("settings.anySearch.apiKey.show")))
+                Toggle("Allow external context for private repositories", isOn: $settings.externalSearchAllowPrivateRepos)
+                    .disabled(!settings.externalContextEnabled)
 
-                    Button {
-                        testAnySearchAPIKey()
-                    } label: {
-                        if anySearchAPIKeyTestState == .testing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("settings.anySearch.apiKey.test")
-                        }
+                Picker("Default search provider", selection: $settings.externalSearchDefaultProvider) {
+                    ForEach(ExternalSearchProviderID.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(
-                        anySearchAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                            anySearchAPIKeyTestState == .testing
-                    )
+                }
+                Picker("External context provider", selection: $settings.externalContextProviderSelection) {
+                    Text("Automatic").tag(ExternalContextProviderSelection.automatic)
+                    ForEach(ExternalSearchProviderID.allCases) { provider in
+                        Text(provider.displayName).tag(ExternalContextProviderSelection.provider(provider))
+                    }
                 }
 
-                anySearchAPIKeyTestFeedback
-
-                Text(settings.anySearchAnonymousMode
-                    ? LocalizedStringKey("settings.anySearch.apiKey.anonymousDescription")
-                    : LocalizedStringKey("settings.anySearch.apiKey.bearerDescription"))
+                Text("Aggregate search is only used for AI context. It may send up to four provider requests, increase waiting time, and consume third-party quota. The Web tab still uses one selected provider.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Toggle("settings.anySearch.includeWebInAll", isOn: $settings.searchIncludeWebInAll)
-                .disabled(!settings.anySearchEnabled)
-            Toggle("settings.anySearch.aiContext", isOn: $settings.aiExternalContextEnabled)
-                .disabled(!settings.anySearchEnabled)
-            Toggle("settings.anySearch.allowPrivateContext", isOn: $settings.aiExternalContextAllowPrivateRepos)
-                .disabled(!settings.aiExternalContextEnabled)
-
-            Text("settings.anySearch.privacyDescription")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            ForEach(ExternalSearchProviderID.allCases) { provider in
+                externalSearchProviderSection(provider)
+            }
         }
     }
 
-    /// 使用输入框中的未保存 Key 强制发起一次 Bearer 请求，避免匿名模式成功造成
-    /// “Key 有效”的假阳性。探测成功后才持久化，失败时保留已有 Key 不变。
-    private func testAnySearchAPIKey() {
-        let candidate = anySearchAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func externalSearchProviderSection(_ provider: ExternalSearchProviderID) -> some View {
+        Section(provider.displayName) {
+            Toggle(isOn: providerEnabledBinding(provider)) {
+                Text("Enable \(provider.displayName)")
+            }
+            .disabled(!canToggleProviderOn(provider))
+
+            if provider == .anySearch {
+                Toggle("Anonymous mode (do not send API Key)", isOn: providerAnonymousBinding(provider))
+                    .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("API Key")
+                    .font(.callout.weight(.medium))
+
+                HStack(spacing: 8) {
+                    Group {
+                        if visibleExternalSearchAPIKeys.contains(provider) {
+                            TextField("", text: apiKeyBinding(provider), prompt: Text("Enter \(provider.displayName) API Key"))
+                        } else {
+                            SecureField("", text: apiKeyBinding(provider), prompt: Text("Enter \(provider.displayName) API Key"))
+                        }
+                    }
+                    .labelsHidden()
+                    .accessibilityLabel(Text("\(provider.displayName) API Key"))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
+
+                    Button {
+                        toggleAPIKeyVisibility(provider)
+                    } label: {
+                        Image(systemName: visibleExternalSearchAPIKeys.contains(provider) ? "eye.slash" : "eye")
+                            .frame(width: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(visibleExternalSearchAPIKeys.contains(provider) ? "Hide API Key" : "Show API Key")
+
+                    Button {
+                        testExternalSearchAPIKey(provider)
+                    } label: {
+                        if externalSearchAPIKeyTestStates[provider] == .testing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Test")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
+                }
+
+                externalSearchAPIKeyTestFeedback(provider)
+
+                Text(providerDescription(provider))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var aggregateExternalContextBinding: Binding<Bool> {
+        Binding(
+            get: { settings.aggregateExternalContextSearchEnabled },
+            set: { settings.aggregateExternalContextSearchEnabled = $0 }
+        )
+    }
+
+    private func providerEnabledBinding(_ provider: ExternalSearchProviderID) -> Binding<Bool> {
+        Binding(
+            get: { settings.externalSearchSettings(for: provider).isEnabled },
+            set: { newValue in
+                var providerSettings = settings.externalSearchSettings(for: provider)
+                guard !newValue || canToggleProviderOn(provider) else { return }
+                providerSettings.isEnabled = newValue
+                settings.setExternalSearchSettings(providerSettings, for: provider)
+            }
+        )
+    }
+
+    private func providerAnonymousBinding(_ provider: ExternalSearchProviderID) -> Binding<Bool> {
+        Binding(
+            get: { settings.externalSearchSettings(for: provider).anonymousMode },
+            set: { newValue in
+                var providerSettings = settings.externalSearchSettings(for: provider)
+                providerSettings.anonymousMode = newValue
+                settings.setExternalSearchSettings(providerSettings, for: provider)
+            }
+        )
+    }
+
+    private func apiKeyBinding(_ provider: ExternalSearchProviderID) -> Binding<String> {
+        Binding(
+            get: { externalSearchAPIKeys[provider] ?? "" },
+            set: { newValue in
+                externalSearchAPIKeys[provider] = newValue
+                externalSearchAPIKeyTestStates[provider] = .idle
+                if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    settings.setExternalSearchAPIKey(nil, for: provider)
+                } else {
+                    settings.clearExternalSearchCredentialVerification(for: provider)
+                }
+            }
+        )
+    }
+
+    private func canToggleProviderOn(_ provider: ExternalSearchProviderID) -> Bool {
+        let providerSettings = settings.externalSearchSettings(for: provider)
+        if provider == .anySearch, providerSettings.anonymousMode { return true }
+        return providerSettings.hasVerifiedCredential && settings.externalSearchAPIKey(for: provider)?.isEmpty == false
+    }
+
+    private func apiKeyDraft(for provider: ExternalSearchProviderID) -> String {
+        (externalSearchAPIKeys[provider] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func providerDescription(_ provider: ExternalSearchProviderID) -> String {
+        if provider == .anySearch, settings.externalSearchSettings(for: provider).anonymousMode {
+            return "Anonymous requests do not send an Authorization header. Testing an API Key always uses bearer mode."
+        }
+        return "The key is stored securely on this Mac. Testing uses the query \"who is dong4j\" and may consume one provider search request."
+    }
+
+    private func toggleAPIKeyVisibility(_ provider: ExternalSearchProviderID) {
+        if visibleExternalSearchAPIKeys.contains(provider) {
+            visibleExternalSearchAPIKeys.remove(provider)
+        } else {
+            visibleExternalSearchAPIKeys.insert(provider)
+        }
+    }
+
+    private func loadExternalSearchAPIKeys() {
+        externalSearchAPIKeys = Dictionary(uniqueKeysWithValues: ExternalSearchProviderID.allCases.map { provider in
+            (provider, settings.externalSearchAPIKey(for: provider) ?? "")
+        })
+    }
+
+    /// 使用输入框中的未保存 Key 发起真实 credential test。探测成功后才持久化；
+    /// 失败时不保存候选 Key，也不自动启用 Provider。
+    private func testExternalSearchAPIKey(_ provider: ExternalSearchProviderID) {
+        let candidate = apiKeyDraft(for: provider)
         guard !candidate.isEmpty else { return }
 
-        anySearchAPIKeyTestState = .testing
+        externalSearchAPIKeyTestStates[provider] = .testing
         Task {
             do {
-                let client = AnySearchClient(apiKey: candidate, anonymous: false)
-                _ = try await client.search(AnySearchRequest(query: "ping", maxResults: 1))
-                settings.setAnySearchAPIKey(candidate)
-                guard settings.anySearchAPIKey() == candidate else {
-                    anySearchAPIKeyTestState = .saveFailed
+                let searchProvider = credentialTestProvider(provider, apiKey: candidate)
+                _ = try await searchProvider.search(ExternalSearchRequest(
+                    query: "who is dong4j",
+                    purpose: .credentialTest,
+                    maxResults: 1
+                ))
+                settings.setExternalSearchAPIKey(candidate, for: provider)
+                settings.markExternalSearchCredentialVerified(for: provider)
+                guard settings.externalSearchAPIKey(for: provider) == candidate else {
+                    externalSearchAPIKeyTestStates[provider] = .saveFailed
                     return
                 }
-                anySearchAPIKey = candidate
-                anySearchAPIKeyTestState = .succeeded
+                externalSearchAPIKeys[provider] = candidate
+                externalSearchAPIKeyTestStates[provider] = .succeeded
             } catch {
-                anySearchAPIKeyTestState = .failed(error.localizedDescription)
+                settings.clearExternalSearchCredentialVerification(for: provider)
+                externalSearchAPIKeyTestStates[provider] = .failed(
+                    friendlyExternalSearchErrorMessage(error),
+                    technicalExternalSearchErrorDetails(error)
+                )
             }
         }
     }
 
     @ViewBuilder
-    private var anySearchAPIKeyTestFeedback: some View {
-        switch anySearchAPIKeyTestState {
+    private func externalSearchAPIKeyTestFeedback(_ provider: ExternalSearchProviderID) -> some View {
+        switch externalSearchAPIKeyTestStates[provider] ?? .idle {
         case .idle, .testing:
             EmptyView()
         case .succeeded:
-            Label("settings.anySearch.apiKey.testSucceeded", systemImage: "checkmark.circle.fill")
+            Label("API Key is valid and has been saved.", systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.green)
         case .saveFailed:
-            Label("settings.anySearch.apiKey.saveFailed", systemImage: "xmark.circle.fill")
+            Label("API Key is valid, but it could not be saved.", systemImage: "xmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.red)
-        case .failed(let message):
-            Label(message, systemImage: "xmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .textSelection(.enabled)
+        case .failed(let message, let details):
+            VStack(alignment: .leading, spacing: 4) {
+                Label(message, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                if let details {
+                    DisclosureGroup("Technical details") {
+                        Text(details)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .font(.caption)
+                }
+            }
         }
+    }
+
+    private func credentialTestProvider(
+        _ provider: ExternalSearchProviderID,
+        apiKey: String
+    ) -> any ExternalSearchProvider {
+        switch provider {
+        case .anySearch:
+            return AnySearchExternalSearchProvider(apiKey: apiKey, anonymous: false, isEnabled: true)
+        case .tavily:
+            return TavilySearchProvider(apiKey: apiKey, isEnabled: true)
+        case .exa:
+            return ExaSearchProvider(apiKey: apiKey, isEnabled: true)
+        case .braveLLMContext:
+            return BraveLLMContextSearchProvider(apiKey: apiKey, isEnabled: true)
+        }
+    }
+
+    private func friendlyExternalSearchErrorMessage(_ error: Error) -> String {
+        if let external = error as? ExternalSearchError {
+            return external.friendlyMessage
+        }
+        return error.localizedDescription
+    }
+
+    private func technicalExternalSearchErrorDetails(_ error: Error) -> String? {
+        guard let external = error as? ExternalSearchError else { return nil }
+        return "provider=\(external.providerID.rawValue)\nmessage=\(external.localizedDescription)"
     }
 
     private func stat(titleKey: LocalizedStringKey, value: String) -> some View {
@@ -610,12 +764,12 @@ struct IntegrationSettingsTab: View {
 
 }
 
-private enum AnySearchAPIKeyTestState: Equatable {
+private enum ExternalSearchAPIKeyTestState: Equatable {
     case idle
     case testing
     case succeeded
     case saveFailed
-    case failed(String)
+    case failed(String, String?)
 }
 
 #Preview {
