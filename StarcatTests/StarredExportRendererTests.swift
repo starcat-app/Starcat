@@ -82,7 +82,17 @@ final class StarredExportRendererTests: XCTestCase {
             notes: [1: "Private note for Vapor."],
             statuses: [1: .using, 2: .read],
             libraryUpdatedAt: [1: "2026-07-03T01:23:45Z", 2: "2026-07-02T00:00:00Z"],
-            readmeExcerpts: [1: "# Vapor cached README excerpt"],
+            readmeExcerpts: [
+                1: """
+                # Vapor cached README excerpt
+
+                [Docs](https://vapor.codes)
+
+                ```swift
+                let app = Application()
+                ```
+                """
+            ],
             healthSnapshots: [1: RepoHealthSnapshot(
                 repoId: 1,
                 overallScore: 86,
@@ -222,8 +232,11 @@ final class StarredExportRendererTests: XCTestCase {
         XCTAssertTrue(html.contains("<dt>Library updated</dt><dd>2026-07-03T01:23:45Z</dd>"), "应包含 library_updated_at")
         XCTAssertTrue(html.contains("Private note for Vapor."), "应默认导出 notes")
         XCTAssertTrue(html.contains("Cached summary."), "应导出已有 AI 摘要缓存")
-        XCTAssertTrue(html.contains("# Vapor cached README excerpt"), "应展示已有 README 缓存摘要")
-        XCTAssertTrue(html.contains("Grade A · Score 86"), "应展示已有 Repo Health 缓存")
+        XCTAssertTrue(html.contains("<h1>Vapor cached README excerpt</h1>"), "README Markdown 标题应渲染为 HTML")
+        XCTAssertTrue(html.contains("<a href=\"https://vapor.codes\" target=\"_blank\" rel=\"noopener noreferrer\">Docs</a>"), "README Markdown 链接应渲染为 HTML")
+        XCTAssertTrue(html.contains("<pre><code class=\"lang-swift\">let app = Application()</code></pre>"), "README Markdown 代码块应渲染为 HTML")
+        XCTAssertFalse(html.contains("<p># Vapor cached README excerpt"), "README Markdown 不应作为纯文本段落输出")
+        XCTAssertTrue(html.contains("Grade A · Score 86.0"), "应展示已有 Repo Health 缓存并格式化分数")
         XCTAssertTrue(html.contains("Score 8.6 · Status success"), "应展示已有 OpenSSF 缓存")
     }
 

@@ -403,8 +403,16 @@
 - [x] GitHub 搜索结果详情底部打开 GitHub 操作改用 GitHub 品牌图标。
 - [x] 知识库 toggle 成功后用本地状态驱动详情底部 ❤️ 立即切换,不需要关闭后重开。
 
+### 12.4 知识库 HTML 导出渲染修复
+
+- [x] 知识库 HTML 导出的 Notes / Cached AI Summary / Cached README Excerpt 使用安全 Markdown 渲染,不再把 Markdown 原样当纯文本显示。
+- [x] 知识库 HTML 导出补齐 Markdown 样式,支持标题、链接、列表、代码块、行内代码与分隔线。
+- [x] 知识库 HTML 导出 Repo Health / OpenSSF 数字展示格式化到 1 位小数。
+- [x] 补齐回归单测覆盖 README Markdown 标题、链接、代码块渲染与 XSS 转义。
+
 ## 13. 变更记录
 
+- 2026-07-03: 修复知识库 HTML 导出 Markdown 未渲染的问题。
 - 2026-07-03: Search Center 来源图标增加内容安全边界。
 - 2026-07-03: Search Center 全部 Tab 增加卡片内来源图标。
 - 2026-07-03: Search Center 详情打开 GitHub 操作改用品牌图标。

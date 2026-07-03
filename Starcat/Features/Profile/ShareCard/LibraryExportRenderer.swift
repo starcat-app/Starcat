@@ -335,16 +335,16 @@ enum LibraryHTMLRenderer {
             ? "<span class=\"muted\">No tags</span>"
             : tags.map { "<span class=\"tag\">\(htmlEscape($0))</span>" }.joined()
         let notesHTML = (notes?.isEmpty == false)
-            ? "<section class=\"block\"><h3>Notes</h3><p>\(htmlEscape(notes!))</p></section>"
+            ? markdownBlock(title: "Notes", markdown: notes!)
             : ""
         let aiHTML = (aiSummary?.isEmpty == false)
-            ? "<section class=\"block\"><h3>Cached AI Summary</h3><p>\(htmlEscape(aiSummary!))</p></section>"
+            ? markdownBlock(title: "Cached AI Summary", markdown: aiSummary!)
             : ""
         let readmeHTML = (readme?.isEmpty == false)
-            ? "<section class=\"block\"><h3>Cached README Excerpt</h3><p>\(htmlEscape(readme!))</p></section>"
+            ? markdownBlock(title: "Cached README Excerpt", markdown: readme!)
             : ""
         let healthHTML = health.map {
-            "<section class=\"block\"><h3>Cached Repo Health</h3><p>Grade \((htmlEscape($0.grade))) · Score \($0.overallScore)</p></section>"
+            "<section class=\"block\"><h3>Cached Repo Health</h3><p>Grade \(htmlEscape($0.grade)) · Score \(String(format: "%.1f", $0.overallScore))</p></section>"
         } ?? ""
         let openSSFHTML = openSSF.map { record -> String in
             let scoreText = record.aggregateScore.map { String(format: "%.1f", $0) } ?? "unavailable"
@@ -375,6 +375,186 @@ enum LibraryHTMLRenderer {
           \(openSSFHTML)
         </article>
         """
+    }
+
+    private static func markdownBlock(title: String, markdown: String) -> String {
+        """
+        <section class="block">
+          <h3>\(htmlEscape(title))</h3>
+          <div class="markdown-body">\(renderMarkdown(markdown))</div>
+        </section>
+        """
+    }
+
+    /// 知识库 HTML 是离线单文件导出，不能依赖运行时 WebView 或外部 JS 库。
+    /// 这里采用和 Starred HTML 同口径的安全子集：先 escape 原文，再只恢复明确支持的
+    /// Markdown 结构，避免用户笔记/README 片段里的 HTML 形成可执行内容。
+    private static func renderMarkdown(_ markdown: String) -> String {
+        let lines = markdown.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        var output: [String] = []
+        var index = 0
+
+        while index < lines.count {
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.isEmpty {
+                index += 1
+                continue
+            }
+
+            if let language = fencedCodeLanguage(trimmed) {
+                var buffer: [String] = []
+                index += 1
+                while index < lines.count,
+                      !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                    buffer.append(lines[index])
+                    index += 1
+                }
+                if index < lines.count { index += 1 }
+                output.append("<pre><code class=\"lang-\(htmlEscape(language))\">\(htmlEscape(buffer.joined(separator: "\n")))</code></pre>")
+                continue
+            }
+
+            if let heading = headingHTML(for: trimmed) {
+                output.append(heading)
+                index += 1
+                continue
+            }
+
+            if isHorizontalRule(trimmed) {
+                output.append("<hr>")
+                index += 1
+                continue
+            }
+
+            if unorderedListItem(trimmed) != nil {
+                var items: [String] = []
+                while index < lines.count,
+                      let item = unorderedListItem(lines[index].trimmingCharacters(in: .whitespaces)) {
+                    items.append("<li>\(processInlineMarkdown(item))</li>")
+                    index += 1
+                }
+                output.append("<ul>\(items.joined())</ul>")
+                continue
+            }
+
+            if orderedListItem(trimmed) != nil {
+                var items: [String] = []
+                while index < lines.count,
+                      let item = orderedListItem(lines[index].trimmingCharacters(in: .whitespaces)) {
+                    items.append("<li>\(processInlineMarkdown(item))</li>")
+                    index += 1
+                }
+                output.append("<ol>\(items.joined())</ol>")
+                continue
+            }
+
+            var paragraph = [trimmed]
+            index += 1
+            while index < lines.count {
+                let next = lines[index].trimmingCharacters(in: .whitespaces)
+                if next.isEmpty
+                    || fencedCodeLanguage(next) != nil
+                    || headingHTML(for: next) != nil
+                    || isHorizontalRule(next)
+                    || unorderedListItem(next) != nil
+                    || orderedListItem(next) != nil {
+                    break
+                }
+                paragraph.append(next)
+                index += 1
+            }
+            output.append("<p>\(processInlineMarkdown(paragraph.joined(separator: " ")))</p>")
+        }
+
+        return output.joined(separator: "\n")
+    }
+
+    private static func fencedCodeLanguage(_ line: String) -> String? {
+        guard line.hasPrefix("```") else { return nil }
+        return String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func headingHTML(for line: String) -> String? {
+        guard line.hasPrefix("#") else { return nil }
+        let markerCount = line.prefix(while: { $0 == "#" }).count
+        guard (1...6).contains(markerCount),
+              line.dropFirst(markerCount).first == " " else {
+            return nil
+        }
+        let title = line.dropFirst(markerCount).trimmingCharacters(in: .whitespaces)
+        return "<h\(markerCount)>\(processInlineMarkdown(title))</h\(markerCount)>"
+    }
+
+    private static func isHorizontalRule(_ line: String) -> Bool {
+        line == "---" || line == "***" || line == "___"
+    }
+
+    private static func unorderedListItem(_ line: String) -> String? {
+        guard line.count > 2 else { return nil }
+        if line.hasPrefix("- ") || line.hasPrefix("* ") {
+            return String(line.dropFirst(2))
+        }
+        return nil
+    }
+
+    private static func orderedListItem(_ line: String) -> String? {
+        guard let dotIndex = line.firstIndex(of: ".") else { return nil }
+        let prefix = line[..<dotIndex]
+        let afterDot = line.index(after: dotIndex)
+        guard !prefix.isEmpty,
+              prefix.allSatisfy(\.isNumber),
+              afterDot < line.endIndex,
+              line[afterDot] == " " else {
+            return nil
+        }
+        return String(line[line.index(after: afterDot)...])
+    }
+
+    private static func processInlineMarkdown(_ raw: String) -> String {
+        var value = htmlEscape(raw)
+        value = replaceRegex(#"`([^`\n]+)`"#, in: value) { match in
+            "<code>\(match[1])</code>"
+        }
+        value = replaceRegex(#"\*\*([^*\n]+)\*\*"#, in: value) { match in
+            "<strong>\(match[1])</strong>"
+        }
+        value = replaceRegex(#"(^|[^*])\*([^*\n]+)\*(?!\*)"#, in: value) { match in
+            "\(match[1])<em>\(match[2])</em>"
+        }
+        value = replaceRegex(#"\[([^\]]+)\]\(([^)\s]+)\)"#, in: value) { match in
+            let text = match[1]
+            let url = match[2]
+            guard url.range(of: #"^(https?:|mailto:)"#, options: [.regularExpression, .caseInsensitive]) != nil else {
+                return text
+            }
+            return "<a href=\"\(url)\" target=\"_blank\" rel=\"noopener noreferrer\">\(text)</a>"
+        }
+        return value
+    }
+
+    private static func replaceRegex(
+        _ pattern: String,
+        in input: String,
+        transform: ([String]) -> String
+    ) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return input }
+        let nsInput = input as NSString
+        let matches = regex.matches(in: input, range: NSRange(location: 0, length: nsInput.length))
+        var result = input
+        for match in matches.reversed() {
+            var captures: [String] = []
+            for rangeIndex in 0..<match.numberOfRanges {
+                let range = match.range(at: rangeIndex)
+                captures.append(range.location == NSNotFound ? "" : nsInput.substring(with: range))
+            }
+            let replacement = transform(captures)
+            if let range = Range(match.range, in: result) {
+                result.replaceSubrange(range, with: replacement)
+            }
+        }
+        return result
     }
 
     private static func stylesheet() -> String {
@@ -408,7 +588,23 @@ enum LibraryHTMLRenderer {
         dd { margin: 0; color: #f0f6fc; font-size: 13px; overflow-wrap: anywhere; }
         .block { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.08); }
         .block h3 { margin: 0 0 8px; font-size: 13px; color: #7ee787; }
-        .block p { margin: 0; white-space: pre-wrap; color: #c9d1d9; line-height: 1.5; }
+        .block p { margin: 0; color: #c9d1d9; line-height: 1.5; }
+        .markdown-body { color: #c9d1d9; overflow-wrap: anywhere; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 14px 0 8px; color: #f0f6fc; line-height: 1.3; }
+        .markdown-body h1 { font-size: 18px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,.08); }
+        .markdown-body h2 { font-size: 16px; }
+        .markdown-body h3 { font-size: 14px; color: #f0f6fc; }
+        .markdown-body p { margin: 8px 0; white-space: normal; }
+        .markdown-body ul, .markdown-body ol { margin: 8px 0; padding-left: 20px; }
+        .markdown-body li { margin: 3px 0; }
+        .markdown-body a { color: #58a6ff; text-decoration: none; }
+        .markdown-body a:hover { text-decoration: underline; }
+        .markdown-body strong { color: #f0f6fc; font-weight: 700; }
+        .markdown-body em { color: #c9d1d9; }
+        .markdown-body code { padding: 2px 5px; border-radius: 5px; background: rgba(110,118,129,.18); color: #f0f6fc; font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace; font-size: .88em; }
+        .markdown-body pre { margin: 10px 0; padding: 12px; overflow-x: auto; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); background: rgba(13,17,23,.72); }
+        .markdown-body pre code { padding: 0; border-radius: 0; background: transparent; }
+        .markdown-body hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); margin: 12px 0; }
         .muted { color: #8b949e; font-size: 12px; }
         @media (max-width: 760px) { .shell { width: min(100vw - 28px, 1120px); padding-top: 24px; } .hero { align-items: flex-start; } h1 { font-size: 28px; } .overview { grid-template-columns: 1fr; } .wide { grid-column: auto; } .facts { grid-template-columns: 1fr; } }
         """
