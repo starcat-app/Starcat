@@ -57,6 +57,9 @@ enum SidebarItem: Hashable, Identifiable {
     case trending
     case allStars
     case untagged
+    /// Starcat 私有知识库基础分类。它和 Smart Collections 的系统集合共享查询语义，
+    /// 但放在 Sidebar 主导航里，作为“全部仓库 / 未分类”同级的快速入口。
+    case library
     case allLanguages
     case smartCollectionsHome
     case smartCollection(SmartCollectionKind)
@@ -76,6 +79,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "section.trending"
         case .allStars:                return "section.all"
         case .untagged:                return "section.untagged"
+        case .library:                 return "section.library"
         case .allLanguages:            return "language.all"
         case .smartCollectionsHome:    return "smartCollections.home"
         case .smartCollection(let kind): return "smartCollections.\(kind.rawValue)"
@@ -93,6 +97,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
+        case .library:                 return "sidebar.library"
         case .allLanguages:            return "trending.allLanguages"
         case .smartCollectionsHome:    return "smartCollections.title"
         case .smartCollection(let kind): return kind.titleKey
@@ -114,6 +119,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
+        case .library:                 return "sidebar.library"
         case .allLanguages:            return "trending.allLanguages"
         case .smartCollectionsHome:    return "smartCollections.title"
         case .smartCollection(let kind): return "smartCollections.\(kind.rawValue).title"
@@ -131,6 +137,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "safari"
         case .allStars:                return "star.fill"
         case .untagged:                return "tag.slash"
+        case .library:                 return "heart.fill"
         case .allLanguages:            return "globe"
         case .smartCollectionsHome:    return "line.3.horizontal.decrease.circle"
         case .smartCollection(let kind): return kind.systemImage
@@ -192,6 +199,7 @@ extension SidebarItem {
         switch self {
         case .trending, .allStars: return "allStars"
         case .untagged:            return "untagged"
+        case .library:             return "library"
         case .allLanguages:        return "allLanguages"
         case .smartCollectionsHome: return "smartCollectionsHome"
         case .smartCollection(let kind): return "smartCollection:\(kind.rawValue)"
@@ -210,6 +218,8 @@ extension SidebarItem {
     init(persistedRawValue raw: String) {
         if raw == "untagged" {
             self = .untagged
+        } else if raw == "library" {
+            self = .library
         } else if raw == "allLanguages" {
             self = .allLanguages
         } else if raw == "smartCollectionsHome" {

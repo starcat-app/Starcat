@@ -357,6 +357,12 @@ final class HomeViewModel {
     /// 未打标签数（Sidebar "未分类" 行计数）。D-04：`private(set)` 收敛。
     private(set) var untaggedCount: Int = 0
 
+    /// Starcat 私有知识库数量（Sidebar "知识库" 行计数）。
+    ///
+    /// 口径固定为当前账号下 `libraryState == .inLibrary` 的 repo 总数，不叠加中栏
+    /// 搜索、标签、语言或状态过滤；这样它和 "全部仓库 / 未分类" 一样表达基础分类规模。
+    private(set) var libraryCount: Int = 0
+
     /// Languages 聚合（Sidebar Languages 组）。D-04：`private(set)` 收敛。
     private(set) var languageStats: [LanguageStat] = []
 
@@ -554,7 +560,7 @@ final class HomeViewModel {
     func applyLibraryStateChange(repoId: Int64, state: LibraryState) {
         guard libraryStateMap[repoId] != state else { return }
         libraryStateMap[repoId] = state
-        guard libraryFilter != .all || selection == .smartCollection(.library) else { return }
+        guard libraryFilter != .all || selection == .library || selection == .smartCollection(.library) else { return }
         reloadOrApplyCurrentManageView()
     }
 
@@ -757,6 +763,7 @@ final class HomeViewModel {
 
         totalCount = 0
         untaggedCount = 0
+        libraryCount = 0
         languageStats = []
         tags = []
         tagCounts = [:]
@@ -823,6 +830,7 @@ final class HomeViewModel {
         do {
             async let total = repository.starredCount()
             async let untagged = repository.fetchUntagged().count
+            async let library = repository.fetchListCount(scope: .library, filters: .empty)
             async let langs = repository.languageStats()
             async let knowledgeLangs = repository.knowledgeLanguageStats()
             async let tagsResult = tagRepository.fetchAll()
@@ -838,6 +846,7 @@ final class HomeViewModel {
 
             self.totalCount = try await total
             self.untaggedCount = try await untagged
+            self.libraryCount = try await library
             self.languageStats = try await langs
             self.knowledgeLanguageStats = try await knowledgeLangs
             self.tags = try await tagsResult
@@ -1042,7 +1051,7 @@ final class HomeViewModel {
         case .userSmartCollection:
             guard let activeScope = activeUserSmartCollectionRule?.scope else { return nil }
             scope = activeScope
-        case .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
+        case .library, .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
             return nil
         }
 
@@ -1118,6 +1127,8 @@ final class HomeViewModel {
             return .allStars
         case .untagged:
             return .untagged
+        case .library:
+            return .library
         case .language(let language):
             return .language(language)
         case .tag(let tagID):
@@ -1260,7 +1271,7 @@ final class HomeViewModel {
         // 用户后续可显式切到 .language(...) 形成 AND 组合。
         if !next.isEmpty {
             switch selection {
-            case .untagged, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
+            case .untagged, .library, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
                 selection = .allStars
             case .allStars, .allLanguages, .language, .trending:
                 break
@@ -1434,6 +1445,8 @@ final class HomeViewModel {
                             repos = try await self.repository.fetchAllStarred()
                         case .untagged:
                             repos = try await self.repository.fetchUntagged()
+                        case .library:
+                            repos = try await self.repository.fetchKnowledgeRepos()
                         case .smartCollectionsHome:
                             repos = []
                         case .smartCollection(let kind):
@@ -1831,6 +1844,8 @@ final class HomeViewModel {
                         return try await self.repository.fetchAllStarred()
                     case .untagged:
                         return try await self.repository.fetchUntagged()
+                    case .library:
+                        return try await self.repository.fetchKnowledgeRepos()
                     case .smartCollectionsHome:
                         return nil
                     case .smartCollection(let kind):
@@ -2216,23 +2231,25 @@ extension SidebarItem {
         case .trending:
             return [.allStars, .untagged]
         case .allStars:
-            return [.untagged, .smartCollectionsHome]
+            return [.untagged, .library, .smartCollectionsHome]
         case .allLanguages:
-            return [.allStars, .untagged]
+            return [.allStars, .untagged, .library]
         case .untagged:
-            return [.allStars]
+            return [.allStars, .library]
+        case .library:
+            return [.allStars, .untagged]
         case .smartCollectionsHome:
-            return [.allStars, .untagged]
+            return [.allStars, .untagged, .library]
         case .smartCollection:
-            return [.smartCollectionsHome, .allStars]
+            return [.smartCollectionsHome, .allStars, .library]
         case .userSmartCollection:
-            return [.smartCollectionsHome, .allStars]
+            return [.smartCollectionsHome, .allStars, .library]
         case .language:
-            return [.allStars, .untagged]
+            return [.allStars, .untagged, .library]
         case .tag:
-            return [.allStars, .untagged]
+            return [.allStars, .untagged, .library]
         case .githubStarList, .githubStarListUngrouped:
-            return [.allStars, .untagged]
+            return [.allStars, .untagged, .library]
         }
     }
 }

@@ -11104,6 +11104,40 @@
         }
       }
     },
+    "empty.library.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the heart button in a repo detail view to add it to your library."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击仓库详情中的心形按钮,将仓库加入知识库。"
+          }
+        }
+      }
+    },
+    "empty.library.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library is empty"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库为空"
+          }
+        }
+      }
+    },
     "empty.searchPlaceholder" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -32464,6 +32498,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未分类"
+          }
+        }
+      }
+    },
+    "sidebar.library" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库"
           }
         }
       }

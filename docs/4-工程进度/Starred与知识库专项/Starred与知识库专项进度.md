@@ -368,24 +368,25 @@
 
 ## 12. 优化&FIX 进度
 
-> 状态: 待实现
+> 状态: 已实现
 
 ### 12.1 Sidebar 知识库基础分类
 
-- [ ] 在星标模块 Sidebar 中新增“知识库”基础分类入口,位置固定在“未分类”下方。
-- [ ] “知识库”点击后直接显示 repo list,交互与“全部仓库 / 未分类”一致,不进入 Smart Collections 面板。
-- [ ] “知识库”列表只按 `libraryState == .inLibrary` 过滤,包含已 star 已入库 repo 与未 star 已入库 repo。
-- [ ] “知识库”入口右侧显示当前账号下已入库 repo 总数,不受当前搜索、tag、language、status 等中栏过滤影响。
-- [ ] “知识库”入口参与上次星标模块选择恢复,用户下次进入星标模块时可恢复到知识库列表。
-- [ ] “知识库”列表沿用当前 Manage 列表排序、搜索、tag/status/language/filter 行为,只新增基础范围过滤。
-- [ ] “知识库”图标复用现有入库提示语义,使用 `heart.fill`,不单独染红。
-- [ ] “知识库”空状态使用独立文案: 标题“知识库为空”,说明“点击仓库详情中的心形按钮,将仓库加入知识库。”
-- [ ] 补齐 Sidebar 知识库入口相关 i18n 文案。
-- [ ] 补齐必要单测,至少覆盖 SidebarItem 持久化、知识库列表过滤和知识库计数。
-- [ ] 完成后运行 `rtk jq empty Starcat/Resources/Localizable.xcstrings` 与相关 `xcodebuild` 验证。
+- [x] 在星标模块 Sidebar 中新增“知识库”基础分类入口,位置固定在“未分类”下方。
+- [x] “知识库”点击后直接显示 repo list,交互与“全部仓库 / 未分类”一致,不进入 Smart Collections 面板。
+- [x] “知识库”列表只按 `libraryState == .inLibrary` 过滤,包含已 star 已入库 repo 与未 star 已入库 repo。
+- [x] “知识库”入口右侧显示当前账号下已入库 repo 总数,不受当前搜索、tag、language、status 等中栏过滤影响。
+- [x] “知识库”入口参与上次星标模块选择恢复,用户下次进入星标模块时可恢复到知识库列表。
+- [x] “知识库”列表沿用当前 Manage 列表排序、搜索、tag/status/language/filter 行为,只新增基础范围过滤。
+- [x] “知识库”图标复用现有入库提示语义,使用 `heart.fill`,不单独染红。
+- [x] “知识库”空状态使用独立文案: 标题“知识库为空”,说明“点击仓库详情中的心形按钮,将仓库加入知识库。”
+- [x] 补齐 Sidebar 知识库入口相关 i18n 文案。
+- [x] 补齐必要单测,至少覆盖 SidebarItem 持久化、知识库列表过滤和知识库计数。
+- [x] 完成后运行 `rtk jq empty Starcat/Resources/Localizable.xcstrings` 与相关 `xcodebuild` 验证。
 
 ## 13. 变更记录
 
+- 2026-07-03: 完成 Sidebar 知识库基础分类入口与列表范围。
 - 2026-07-03: 补充 Sidebar 知识库基础分类优化&FIX 进度。
 - 2026-07-03: PR-2 增加不可访问状态承载与知识库集合标记。
 - 2026-07-03: PR-1 回填不做范围与本地权限边界。

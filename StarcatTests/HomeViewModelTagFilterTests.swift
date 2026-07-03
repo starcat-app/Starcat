@@ -81,11 +81,16 @@ struct HomeViewModelTagFilterTests {
         let t = SidebarItem.tag("swift")
         let l = SidebarItem.language("swift")
         let all = SidebarItem.allLanguages
+        let library = SidebarItem.library
         #expect(t.id != l.id)
         #expect(all.id != l.id)
+        #expect(library.id != all.id)
         #expect(t.id == "tag.swift")
         #expect(l.id == "language.swift")
         #expect(all.id == "language.all")
+        #expect(library.id == "section.library")
+        #expect(library.systemImage == "heart.fill")
         #expect(SidebarItem(persistedRawValue: all.persistedRawValue) == all)
+        #expect(SidebarItem(persistedRawValue: library.persistedRawValue) == library)
     }
 }

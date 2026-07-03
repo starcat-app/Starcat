@@ -1480,7 +1480,7 @@ struct HomeView: View {
         case .trending:
             // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
             return false
-        case .allStars, .untagged, .allLanguages, .smartCollectionsHome, .smartCollection:
+        case .allStars, .untagged, .library, .allLanguages, .smartCollectionsHome, .smartCollection:
             return true
         case .userSmartCollection(let id):
             return viewModel.userSmartCollections.contains { $0.id == id }

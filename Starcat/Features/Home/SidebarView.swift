@@ -420,6 +420,7 @@ struct SidebarView: View {
             Section("sidebar.mainNavigation") {
                 row(.allStars, count: viewModel.totalCount)
                 row(.untagged, count: viewModel.untaggedCount)
+                row(.library, count: viewModel.libraryCount)
                 row(.smartCollectionsHome, count: SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count)
                 // HOM-47：Release 时间线入口（独立 sheet 承载，避免与三栏导航 selection 冲突）
                 releaseTimelineRow

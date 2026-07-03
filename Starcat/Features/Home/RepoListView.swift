@@ -1602,6 +1602,8 @@ struct RepoListView: View {
             return String.l10n("trending.allLanguages")
         case .untagged:
             return String.l10n("sidebar.untagged")
+        case .library:
+            return String.l10n("sidebar.library")
         case .smartCollectionsHome:
             return String.l10n("smartCollections.title")
         case .smartCollection(let kind):
@@ -1630,6 +1632,7 @@ struct RepoListView: View {
         case .allStars:  return "star"
         case .allLanguages: return "globe"
         case .untagged:  return "tag.slash"
+        case .library:   return "heart.fill"
         case .smartCollectionsHome: return "line.3.horizontal.decrease.circle"
         case .smartCollection: return "tray"
         case .userSmartCollection: return "line.3.horizontal.decrease.circle"
@@ -1647,6 +1650,7 @@ struct RepoListView: View {
         case .allStars:        return "empty.noStars"
         case .allLanguages:    return "empty.noStars"
         case .untagged:        return "empty.allTagged"
+        case .library:         return "empty.library.title"
         case .smartCollectionsHome: return "smartCollections.empty.title"
         case .smartCollection: return "smartCollections.empty.collection"
         case .userSmartCollection: return "smartCollections.empty.collection"
@@ -1664,6 +1668,7 @@ struct RepoListView: View {
         case .allStars:        return "empty.syncPrompt"
         case .allLanguages:    return "empty.syncPrompt"
         case .untagged:        return "empty.untaggedHint"
+        case .library:         return "empty.library.subtitle"
         case .smartCollectionsHome: return "smartCollections.empty.subtitle"
         case .smartCollection: return "smartCollections.empty.collectionSubtitle"
         case .userSmartCollection: return "smartCollections.empty.collectionSubtitle"

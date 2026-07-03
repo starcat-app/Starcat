@@ -219,6 +219,29 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [2, 1])
     }
 
+    @Test("Sidebar 知识库基础分类直接展示已入库 repo")
+    func sidebarLibrarySelectionUsesLibraryScope() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/starred-library", stars: 5, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(
+            db,
+            id: 2,
+            fullName: "o/library-only",
+            stars: 8,
+            starredAt: "2026-05-02T00:00:00Z",
+            isStarred: false
+        )
+        try await insertRepo(db, id: 3, fullName: "o/starred-outside", stars: 13, starredAt: "2026-05-03T00:00:00Z")
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 2, state: .inLibrary)
+
+        vm.selection = .library
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(Set(vm.items.map(\.id)) == [1, 2])
+        #expect(vm.visibleRepoTotalCount == 2)
+    }
+
     @Test("D2: 过滤掉当前选中行 → selectedRepoID 自动清空")
     func filterClearsSelectionWhenItemHidden() async throws {
         let (vm, db, _) = try makeSUT()
