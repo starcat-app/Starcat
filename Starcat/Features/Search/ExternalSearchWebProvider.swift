@@ -16,9 +16,20 @@ struct ExternalSearchWebProvider: SearchProvider {
     let source: SearchSource = .web
 
     private let counter: AnySearchUsageCounter
+    private let diskCache: DiskExternalSearchCache?
 
-    init(counter: AnySearchUsageCounter = AnySearchUsageCounter()) {
+    init(
+        counter: AnySearchUsageCounter = AnySearchUsageCounter(),
+        diskCache: DiskExternalSearchCache? = nil
+    ) {
         self.counter = counter
+        if let diskCache {
+            self.diskCache = diskCache
+        } else if Thread.isMainThread {
+            self.diskCache = MainActor.assumeIsolated { DiskExternalSearchCache.shared }
+        } else {
+            self.diskCache = nil
+        }
     }
 
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
@@ -40,8 +51,23 @@ struct ExternalSearchWebProvider: SearchProvider {
             maxResults: request.anySearchFilters.maxResults,
             anySearchFilters: providerID == .anySearch ? request.anySearchFilters : nil
         )
+        if let cached = try? await diskCache?.loadGlobal(provider: providerID, request: externalRequest) {
+            let used = await counter.increment()
+            return makePage(from: cached, providerID: providerID, sessionUsed: used)
+        }
         let response = try await provider.search(externalRequest)
         let used = await counter.increment()
+        if !response.hits.isEmpty {
+            try? await diskCache?.saveGlobal(provider: providerID, request: externalRequest, response: response)
+        }
+        return makePage(from: response, providerID: providerID, sessionUsed: used)
+    }
+
+    private func makePage(
+        from response: ExternalSearchResponse,
+        providerID: ExternalSearchProviderID,
+        sessionUsed: Int
+    ) -> SearchProviderPage {
         let references = response.hits.map { hit in
             ReferenceCandidate(
                 normalizedURL: AnySearchClient.normalize(hit.url) ?? hit.url,
@@ -61,7 +87,7 @@ struct ExternalSearchWebProvider: SearchProvider {
                 totalResults: response.metadata.totalResults ?? references.count,
                 searchTimeMs: response.metadata.searchTimeMs,
                 rateLimit: nil
-            ).withSessionUsedIfNeeded(used)
+            ).withSessionUsedIfNeeded(sessionUsed)
         )
     }
 
