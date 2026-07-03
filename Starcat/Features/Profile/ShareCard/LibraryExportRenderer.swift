@@ -22,6 +22,9 @@ struct LibraryExportSupplements {
     var notes: [Int64: String]
     var statuses: [Int64: RepoStatus]
     var libraryUpdatedAt: [Int64: String]
+    var readmeExcerpts: [Int64: String]
+    var healthSnapshots: [Int64: RepoHealthSnapshot]
+    var openSSFScores: [Int64: OpenSSFScoreRecord]
     var avatarDataURI: String?
     var ownerAvatars: [String: String]
 
@@ -31,6 +34,9 @@ struct LibraryExportSupplements {
         notes: [:],
         statuses: [:],
         libraryUpdatedAt: [:],
+        readmeExcerpts: [:],
+        healthSnapshots: [:],
+        openSSFScores: [:],
         avatarDataURI: nil,
         ownerAvatars: [:]
     )
@@ -138,6 +144,28 @@ enum LibraryMarkdownRenderer {
                 lines.append("#### Cached AI Summary")
                 lines.append("")
                 lines.append(escape(aiSummary))
+            }
+            if let readme = supplements.readmeExcerpts[repo.id] {
+                lines.append("")
+                lines.append("#### Cached README Excerpt")
+                lines.append("")
+                lines.append(escape(readme))
+            }
+            if let health = supplements.healthSnapshots[repo.id] {
+                lines.append("")
+                lines.append("#### Cached Repo Health")
+                lines.append("")
+                lines.append("- Grade: \(escape(health.grade))")
+                lines.append("- Score: \(health.overallScore)")
+            }
+            if let score = supplements.openSSFScores[repo.id] {
+                lines.append("")
+                lines.append("#### Cached OpenSSF Scorecard")
+                lines.append("")
+                if let aggregate = score.aggregateScore {
+                    lines.append("- Score: \(String(format: "%.1f", aggregate))")
+                }
+                lines.append("- Status: \(escape(score.fetchStatus.rawValue))")
             }
             lines.append("")
             lines.append("---")
@@ -292,6 +320,9 @@ enum LibraryHTMLRenderer {
         let tags = supplements.repoTags[repo.id, default: []]
         let notes = supplements.notes[repo.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let aiSummary = supplements.aiSummaries[repo.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let readme = supplements.readmeExcerpts[repo.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let health = supplements.healthSnapshots[repo.id]
+        let openSSF = supplements.openSSFScores[repo.id]
         let ownerAvatar = supplements.ownerAvatars[repo.owner]
         let logo: String
         if let ownerAvatar {
@@ -309,6 +340,16 @@ enum LibraryHTMLRenderer {
         let aiHTML = (aiSummary?.isEmpty == false)
             ? "<section class=\"block\"><h3>Cached AI Summary</h3><p>\(htmlEscape(aiSummary!))</p></section>"
             : ""
+        let readmeHTML = (readme?.isEmpty == false)
+            ? "<section class=\"block\"><h3>Cached README Excerpt</h3><p>\(htmlEscape(readme!))</p></section>"
+            : ""
+        let healthHTML = health.map {
+            "<section class=\"block\"><h3>Cached Repo Health</h3><p>Grade \((htmlEscape($0.grade))) · Score \($0.overallScore)</p></section>"
+        } ?? ""
+        let openSSFHTML = openSSF.map { record -> String in
+            let scoreText = record.aggregateScore.map { String(format: "%.1f", $0) } ?? "unavailable"
+            return "<section class=\"block\"><h3>Cached OpenSSF Scorecard</h3><p>Score \(scoreText) · Status \(htmlEscape(record.fetchStatus.rawValue))</p></section>"
+        } ?? ""
 
         return """
         <article class="repo-card">
@@ -329,6 +370,9 @@ enum LibraryHTMLRenderer {
           <div class="tags">\(tagHTML)</div>
           \(notesHTML)
           \(aiHTML)
+          \(readmeHTML)
+          \(healthHTML)
+          \(openSSFHTML)
         </article>
         """
     }

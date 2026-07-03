@@ -82,6 +82,27 @@ final class StarredExportRendererTests: XCTestCase {
             notes: [1: "Private note for Vapor."],
             statuses: [1: .using, 2: .read],
             libraryUpdatedAt: [1: "2026-07-03T01:23:45Z", 2: "2026-07-02T00:00:00Z"],
+            readmeExcerpts: [1: "# Vapor cached README excerpt"],
+            healthSnapshots: [1: RepoHealthSnapshot(
+                repoId: 1,
+                overallScore: 86,
+                grade: "A",
+                maintenanceScore: 80,
+                popularityScore: 90,
+                qualityScore: 88,
+                securityScore: 85,
+                payloadJSON: "{}",
+                computedAt: "2026-07-03T01:23:45Z",
+                staleAfter: "2026-07-04T01:23:45Z",
+                fetchStatus: .success,
+                lastError: nil
+            )],
+            openSSFScores: [1: .success(
+                repoId: 1,
+                payload: OpenSSFScorePayload(date: "2026-07-03", score: 8.6, checks: []),
+                rawData: Data(#"{"score":8.6}"#.utf8),
+                fetchedAt: Date(timeIntervalSince1970: 1_800_000_000)
+            )],
             avatarDataURI: nil,
             ownerAvatars: [:]
         )
@@ -144,6 +165,9 @@ final class StarredExportRendererTests: XCTestCase {
         XCTAssertTrue(md.contains("`server`"), "应包含标签")
         XCTAssertTrue(md.contains("Private note for Vapor."), "应默认导出 notes")
         XCTAssertTrue(md.contains("Cached summary."), "应导出已有 AI 摘要缓存")
+        XCTAssertTrue(md.contains("# Vapor cached README excerpt"), "应展示已有 README 缓存摘要")
+        XCTAssertTrue(md.contains("Grade: A"), "应展示已有 Repo Health 缓存")
+        XCTAssertTrue(md.contains("Score: 8.6"), "应展示已有 OpenSSF 缓存")
     }
 
     // MARK: - HTML
@@ -198,6 +222,9 @@ final class StarredExportRendererTests: XCTestCase {
         XCTAssertTrue(html.contains("<dt>Library updated</dt><dd>2026-07-03T01:23:45Z</dd>"), "应包含 library_updated_at")
         XCTAssertTrue(html.contains("Private note for Vapor."), "应默认导出 notes")
         XCTAssertTrue(html.contains("Cached summary."), "应导出已有 AI 摘要缓存")
+        XCTAssertTrue(html.contains("# Vapor cached README excerpt"), "应展示已有 README 缓存摘要")
+        XCTAssertTrue(html.contains("Grade A · Score 86"), "应展示已有 Repo Health 缓存")
+        XCTAssertTrue(html.contains("Score 8.6 · Status success"), "应展示已有 OpenSSF 缓存")
     }
 
     func testLibraryHTMLEscapesUserContent() {
@@ -218,6 +245,9 @@ final class StarredExportRendererTests: XCTestCase {
             notes: [100: "<script>alert(1)</script>"],
             statuses: [100: .read],
             libraryUpdatedAt: [100: "2026-07-03T01:23:45Z"],
+            readmeExcerpts: [:],
+            healthSnapshots: [:],
+            openSSFScores: [:],
             avatarDataURI: nil,
             ownerAvatars: [:]
         )

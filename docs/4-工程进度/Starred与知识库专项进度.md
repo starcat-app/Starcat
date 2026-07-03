@@ -204,7 +204,7 @@
 - [x] 知识库导出 repo 条目包含 owner/name、description、language、status、tags、notes、是否 starred、library_updated_at。
 - [x] 知识库 HTML/Markdown 导出默认包含 notes,不提供额外开关。
 - [x] 知识库导出与现有 Starred 导出一致: 有摘要就导出,没有摘要不临时生成。
-- [ ] 知识库导出可展示 README 摘要、Repo Health、OpenSSF 缓存信息,但不为导出触发 README 拉取、AI 摘要、Health 或 OpenSSF 刷新。
+- [x] 知识库导出可展示 README 摘要、Repo Health、OpenSSF 缓存信息,但不为导出触发 README 拉取、AI 摘要、Health 或 OpenSSF 刷新。
 - [x] 知识库为空时,点击“导出 知识库 到 HTML/Markdown”不生成空文件。
 - [x] 知识库为空时显示 toast: “知识库为空,暂无可导出的 repo”。
 - [x] Starred 导出现有空状态行为不因本专项改变。
@@ -367,6 +367,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-9 知识库导出补充 README/Health/OpenSSF 本地缓存展示。
 - 2026-07-03: PR-9 补 README 权限失败冷却与移出知识库缓存保留测试。
 - 2026-07-03: PR-9 ShareCard 增加 Starred/知识库 HTML 与 Markdown 文件导出。
 - 2026-07-03: PR-9 手动 embedding 刷新覆盖 starred 与知识库并集。

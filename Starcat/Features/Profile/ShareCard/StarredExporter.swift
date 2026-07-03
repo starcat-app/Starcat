@@ -184,11 +184,15 @@ enum StarredExporter {
         async let tagAssignmentsTask = (try? await dependencies.repoTagRepository.fetchAllTagAssignments()) ?? [:]
         async let avatarTask = AvatarCacheLoader.loadAsDataURI(urlString: user.avatarUrl)
         async let ownerAvatarsTask = AvatarCacheLoader.loadOwnerAvatars(owners: ownerSet)
+        async let healthSnapshotsTask = (try? await dependencies.repoHealthRepository.snapshots(for: repos.map(\.id))) ?? [:]
+        async let openSSFRecordsTask = (try? await dependencies.openSSFScoreRepository.records(for: repos.map(\.id))) ?? [:]
 
         let aiRecords = await aiRecordsTask
         let tagAssignments = await tagAssignmentsTask
         let avatarDataURI = await avatarTask
         let ownerAvatars = await ownerAvatarsTask
+        let healthSnapshots = await healthSnapshotsTask
+        let openSSFRecords = await openSSFRecordsTask
 
         var aiSummaries: [Int64: String] = [:]
         for (repoId, record) in aiRecords {
@@ -205,6 +209,7 @@ enum StarredExporter {
         var notes: [Int64: String] = [:]
         var statuses: [Int64: RepoStatus] = [:]
         var libraryUpdatedAt: [Int64: String] = [:]
+        var readmeExcerpts: [Int64: String] = [:]
         for repo in repos {
             guard let note = try? await dependencies.repoNoteRepository.find(repoId: repo.id) else { continue }
             statuses[repo.id] = RepoStatus.parse(note.status)
@@ -215,6 +220,12 @@ enum StarredExporter {
                 libraryUpdatedAt[repo.id] = updatedAt
             }
         }
+        for repo in repos {
+            if let content = try? await dependencies.readmeRepository.findContent(repoId: repo.id),
+               let excerpt = readmeExcerpt(from: content) {
+                readmeExcerpts[repo.id] = excerpt
+            }
+        }
 
         return LibraryExportSupplements(
             aiSummaries: aiSummaries,
@@ -222,9 +233,26 @@ enum StarredExporter {
             notes: notes,
             statuses: statuses,
             libraryUpdatedAt: libraryUpdatedAt,
+            readmeExcerpts: readmeExcerpts,
+            healthSnapshots: healthSnapshots,
+            openSSFScores: openSSFRecords,
             avatarDataURI: avatarDataURI,
             ownerAvatars: ownerAvatars
         )
+    }
+
+    /// 从本地 README Markdown 缓存里截取导出摘要。只做纯文本压缩，不访问网络。
+    nonisolated private static func readmeExcerpt(from markdown: String, maxLength: Int = 600) -> String? {
+        let collapsed = markdown
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return nil }
+        if collapsed.count <= maxLength { return collapsed }
+        let index = collapsed.index(collapsed.startIndex, offsetBy: maxLength)
+        return String(collapsed[..<index]) + "..."
     }
 
     /// 从 `AISummaryRecord.summaryJson` 解出可展示的 markdown 文本。
