@@ -31,6 +31,13 @@ enum SmartCollectionSystemRuleSummary {
         case .library:
             return [String.l10n("library.state.inLibrary")]
 
+        case .outsideLibraryStars:
+            return [
+                String.l10n("smartCollections.systemRule.matchAll"),
+                String.l10n("smartCollections.rule.scope.allStars"),
+                String.l10n("smartCollections.systemRule.outsideLibraryStars.notInLibrary"),
+            ]
+
         case .needsReview:
             return [
                 String.l10n("smartCollections.systemRule.matchAny"),

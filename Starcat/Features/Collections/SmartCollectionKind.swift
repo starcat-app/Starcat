@@ -13,6 +13,7 @@ import SwiftUI
 
 enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable {
     case library
+    case outsideLibraryStars
     case needsReview
     case unmaintained
     case highValue
@@ -22,9 +23,23 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
 
     var id: String { rawValue }
 
+    /// 是否能近似转换成用户自定义规则模板。
+    ///
+    /// 知识库 / 未入库 Stars 依赖 `repo_notes.library_state`，当前用户规则模型没有 library
+    /// predicate，不能生成可编辑模板，否则会误导用户以为保存后仍是同一规则。
+    var supportsUserRuleTemplate: Bool {
+        switch self {
+        case .library, .outsideLibraryStars:
+            return false
+        case .needsReview, .unmaintained, .highValue, .noTags, .using, .recentlyActive:
+            return true
+        }
+    }
+
     var titleKey: LocalizedStringKey {
         switch self {
         case .library: return "smartCollections.library.title"
+        case .outsideLibraryStars: return "smartCollections.outsideLibraryStars.title"
         case .needsReview: return "smartCollections.needsReview.title"
         case .unmaintained: return "smartCollections.unmaintained.title"
         case .highValue: return "smartCollections.highValue.title"
@@ -37,6 +52,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
     var subtitleKey: LocalizedStringKey {
         switch self {
         case .library: return "smartCollections.library.subtitle"
+        case .outsideLibraryStars: return "smartCollections.outsideLibraryStars.subtitle"
         case .needsReview: return "smartCollections.needsReview.subtitle"
         case .unmaintained: return "smartCollections.unmaintained.subtitle"
         case .highValue: return "smartCollections.highValue.subtitle"
@@ -49,6 +65,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
     var systemImage: String {
         switch self {
         case .library: return "heart.fill"
+        case .outsideLibraryStars: return "tray"
         case .needsReview: return "exclamationmark.magnifyingglass"
         case .unmaintained: return "clock.badge.exclamationmark"
         case .highValue: return "star.circle.fill"
@@ -61,6 +78,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
     var tint: Color {
         switch self {
         case .library: return .pink
+        case .outsideLibraryStars: return .orange
         case .needsReview: return .orange
         case .unmaintained: return .red
         case .highValue: return .green

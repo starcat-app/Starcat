@@ -34219,6 +34219,40 @@
         }
       }
     },
+    "smartCollections.refresh" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh smart collection counts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新智能集合数量"
+          }
+        }
+      }
+    },
+    "smartCollections.system.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built-in collections"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内置集合"
+          }
+        }
+      }
+    },
     "smartCollections.recentlyActive.subtitle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35545,6 +35579,23 @@
         }
       }
     },
+    "smartCollections.systemRule.outsideLibraryStars.notInLibrary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not in Starcat Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未加入 Starcat 知识库"
+          }
+        }
+      }
+    },
     "smartCollections.systemRule.unmaintained.archived" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35745,6 +35796,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "知识库"
+          }
+        }
+      }
+    },
+    "smartCollections.outsideLibraryStars.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub starred repos that have not been added to your Starcat library."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已 Star 但尚未加入 Starcat 知识库的仓库。"
+          }
+        }
+      }
+    },
+    "smartCollections.outsideLibraryStars.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unfiled Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未入库 Stars"
           }
         }
       }

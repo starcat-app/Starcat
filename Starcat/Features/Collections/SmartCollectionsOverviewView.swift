@@ -27,6 +27,8 @@ struct SmartCollectionsOverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                systemCollectionsHeader
+
                 LazyVGrid(
                     columns: [GridItem(.flexible(), alignment: .top), GridItem(.flexible(), alignment: .top)],
                     alignment: .leading,
@@ -76,6 +78,11 @@ struct SmartCollectionsOverviewView: View {
             await viewModel.refreshSidebar()
             await reloadAllCounts()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoLibraryStateDidChange)) { _ in
+            // 入库/移出会影响「知识库」「未入库 Stars」等系统集合数量；只监听真实数据变更，
+            // 不再跟随 selection/itemsRevision，避免点击集合卡片时全量重算。
+            Task { await reloadAllCounts() }
+        }
         .sheet(item: $editTarget) { collection in
             SmartCollectionRuleEditorSheet(
                 mode: .edit(collection),
@@ -103,6 +110,25 @@ struct SmartCollectionsOverviewView: View {
         }
     }
 
+    /// 内置集合标题行。数量重算不再跟随 selection/repo list 重载，避免点击集合卡片时全量刷新 counts。
+    private var systemCollectionsHeader: some View {
+        HStack(spacing: 8) {
+            Text("smartCollections.system.title")
+                .font(.headline)
+
+            Spacer(minLength: 8)
+
+            SyncIconButton(
+                isRefreshing: isLoadingSystemCounts || isLoadingUserCounts,
+                disabled: isLoadingSystemCounts || isLoadingUserCounts,
+                tooltip: String.l10n("smartCollections.refresh")
+            ) {
+                Task { await reloadAllCounts() }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
     private func systemCollectionCard(_ kind: SmartCollectionKind) -> some View {
         let isSelected = viewModel.selection == .smartCollection(kind)
 
@@ -121,8 +147,8 @@ struct SmartCollectionsOverviewView: View {
 
                 systemCountLabel(for: kind)
 
-                // 知识库是系统入库边界，不提供“另存为自定义规则”，避免用户误以为它是普通规则集合。
-                if kind != .library {
+                // library_state 相关集合当前无法转换成用户规则模板，避免保存后规则语义漂移。
+                if kind.supportsUserRuleTemplate {
                     Button {
                         createFromTemplateKind = kind
                     } label: {
@@ -145,10 +171,10 @@ struct SmartCollectionsOverviewView: View {
             Text(kind.subtitleKey)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
         }
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
         .padding(12)
         .background((isSelected ? kind.tint.opacity(0.18) : kind.cardBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .leading) {
@@ -171,19 +197,7 @@ struct SmartCollectionsOverviewView: View {
 
     @ViewBuilder
     private func systemCountLabel(for kind: SmartCollectionKind) -> some View {
-        if isLoadingSystemCounts {
-            ProgressView()
-                .controlSize(.mini)
-        } else {
-            Text(verbatim: "\(systemCounts[kind] ?? 0)")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-                .foregroundStyle(kind.tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .fixedSize(horizontal: true, vertical: false)
-        }
+        collectionCountLabel(systemCounts[kind] ?? 0, tint: kind.tint)
     }
 
     private func userCollectionCard(_ collection: UserSmartCollection) -> some View {
@@ -202,19 +216,7 @@ struct SmartCollectionsOverviewView: View {
 
                 Spacer(minLength: 4)
 
-                if isLoadingUserCounts {
-                    ProgressView()
-                        .controlSize(.mini)
-                } else {
-                    Text(verbatim: "\(userCounts[collection.id] ?? 0)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
-                        .foregroundStyle(Color.accentColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
+                collectionCountLabel(userCounts[collection.id] ?? 0, tint: Color.accentColor)
             }
 
             Text(collection.name)
@@ -248,6 +250,20 @@ struct SmartCollectionsOverviewView: View {
             viewModel.selectSidebar(.userSmartCollection(collection.id))
         }
         .pressableHover()
+    }
+
+    /// 数量刷新时保留旧数字，只在新结果落地时更新；右上角刷新按钮负责表达刷新状态。
+    private func collectionCountLabel(_ count: Int, tint: Color) -> some View {
+        Text(verbatim: "\(count)")
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .monospacedDigit()
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .fixedSize(horizontal: true, vertical: false)
+            .contentTransition(.numericText())
+            .animation(.easeInOut(duration: 0.18), value: count)
     }
 
     /// 用户集合卡片操作：编辑规则 / 删除（重命名在规则编辑器内一并完成）。
@@ -297,8 +313,17 @@ struct SmartCollectionsOverviewView: View {
             for kind in SmartCollectionKind.allCases {
                 if kind == .library {
                     nextSystem[kind] = try await dependencies.repoRepository.knowledgeCount()
+                } else if kind == .outsideLibraryStars {
+                    let libraryStateMap = try await dependencies.repoNoteRepository.fetchAllLibraryStateMap()
+                    nextSystem[kind] = repos.filter { repo in
+                        (libraryStateMap[repo.id] ?? .outsideLibrary) != .inLibrary
+                    }.count
                 } else if kind == .noTags {
                     nextSystem[kind] = try await dependencies.repoRepository.fetchUntagged().count
+                } else if kind == .using {
+                    // 与右侧详情列表的 `.smartCollection(.using)` 同源：正在使用是 repo_notes
+                    // 的用户状态，不是 repo metadata；直接用状态仓库避免总览和列表口径漂移。
+                    nextSystem[kind] = try await dependencies.repoNoteRepository.fetchRepos(byStatus: .using).count
                 } else {
                     nextSystem[kind] = repos.filter { repo in
                         HomeViewModel.matchesSmartCollection(
@@ -310,10 +335,14 @@ struct SmartCollectionsOverviewView: View {
                     }.count
                 }
             }
-            systemCounts = nextSystem
+            withAnimation(.easeInOut(duration: 0.18)) {
+                systemCounts = nextSystem
+            }
         } catch {
             AppLog.database.warning("Smart Collections system counts load failed: \(error.localizedDescription, privacy: .public)")
-            systemCounts = [:]
+            withAnimation(.easeInOut(duration: 0.18)) {
+                systemCounts = [:]
+            }
         }
     }
 
@@ -334,7 +363,9 @@ struct SmartCollectionsOverviewView: View {
                 nextUser[collection.id] = 0
             }
         }
-        userCounts = nextUser
+        withAnimation(.easeInOut(duration: 0.18)) {
+            userCounts = nextUser
+        }
     }
 
     private func delete(_ collection: UserSmartCollection) async {

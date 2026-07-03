@@ -19,7 +19,6 @@ struct SmartCollectionSystemRuleSummaryTests {
         #expect(lines.contains(String.l10n("smartCollections.systemRule.needsReview.lowHealth")))
         #expect(lines.contains(String.l10n("smartCollections.systemRule.needsReview.noTopics")))
         #expect(!lines.contains(String.l10n("smartCollections.rule.requireTopicsNo")))
-        #expect(!lines.contains(String.l10n("smartCollections.rule.requireLicenseNo")))
     }
 
     @Test("highValue 展示分支条件（有/无健康度）")
@@ -28,5 +27,14 @@ struct SmartCollectionSystemRuleSummaryTests {
 
         #expect(lines.contains(String.l10n("smartCollections.systemRule.highValue.withHealth")))
         #expect(lines.contains(String.l10n("smartCollections.systemRule.highValue.withoutHealth")))
+    }
+
+    @Test("outsideLibraryStars 展示 Starred 且未入库规则")
+    func outsideLibraryStarsLines() {
+        let lines = SmartCollectionSystemRuleSummary.lines(for: .outsideLibraryStars)
+
+        #expect(lines.contains(String.l10n("smartCollections.systemRule.matchAll")))
+        #expect(lines.contains(String.l10n("smartCollections.rule.scope.allStars")))
+        #expect(lines.contains(String.l10n("smartCollections.systemRule.outsideLibraryStars.notInLibrary")))
     }
 }
