@@ -599,26 +599,17 @@ struct IntegrationSettingsTab: View {
 
         externalSearchAPIKeyTestStates[provider] = .testing
         Task {
-            do {
-                let searchProvider = credentialTestProvider(provider, apiKey: candidate)
-                _ = try await searchProvider.search(ExternalSearchRequest(
-                    query: "who is dong4j",
-                    purpose: .credentialTest,
-                    maxResults: 1
-                ))
-                settings.setExternalSearchAPIKey(candidate, for: provider)
-                settings.markExternalSearchCredentialVerified(for: provider)
-                guard settings.externalSearchAPIKey(for: provider) == candidate else {
-                    externalSearchAPIKeyTestStates[provider] = .saveFailed
-                    return
-                }
+            let tester = ExternalSearchCredentialTester(settings: settings)
+            switch await tester.test(provider: provider, candidateKey: candidate) {
+            case .succeeded:
                 externalSearchAPIKeys[provider] = candidate
                 externalSearchAPIKeyTestStates[provider] = .succeeded
-            } catch {
-                settings.clearExternalSearchCredentialVerification(for: provider)
+            case .saveFailed:
+                externalSearchAPIKeyTestStates[provider] = .saveFailed
+            case .failed(let failure):
                 externalSearchAPIKeyTestStates[provider] = .failed(
-                    friendlyExternalSearchErrorMessage(error),
-                    technicalExternalSearchErrorDetails(error)
+                    failure.friendlyMessage,
+                    failure.technicalDetails
                 )
             }
         }
@@ -654,34 +645,6 @@ struct IntegrationSettingsTab: View {
                 }
             }
         }
-    }
-
-    private func credentialTestProvider(
-        _ provider: ExternalSearchProviderID,
-        apiKey: String
-    ) -> any ExternalSearchProvider {
-        switch provider {
-        case .anySearch:
-            return AnySearchExternalSearchProvider(apiKey: apiKey, anonymous: false, isEnabled: true)
-        case .tavily:
-            return TavilySearchProvider(apiKey: apiKey, isEnabled: true)
-        case .exa:
-            return ExaSearchProvider(apiKey: apiKey, isEnabled: true)
-        case .braveLLMContext:
-            return BraveLLMContextSearchProvider(apiKey: apiKey, isEnabled: true)
-        }
-    }
-
-    private func friendlyExternalSearchErrorMessage(_ error: Error) -> String {
-        if let external = error as? ExternalSearchError {
-            return external.friendlyMessage
-        }
-        return error.localizedDescription
-    }
-
-    private func technicalExternalSearchErrorDetails(_ error: Error) -> String? {
-        guard let external = error as? ExternalSearchError else { return nil }
-        return "provider=\(external.providerID.rawValue)\nmessage=\(external.localizedDescription)"
     }
 
     private func stat(titleKey: LocalizedStringKey, value: String) -> some View {
