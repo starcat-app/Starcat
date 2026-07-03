@@ -10,7 +10,16 @@
 
 import Foundation
 
-/// Starred 列表导出格式。
+/// 文件导出的数据范围。
+///
+/// Starred 与知识库是两个产品语义，导出文件名和保存面板文案必须显式区分，避免把
+/// Starcat 私有知识库伪装成 GitHub Starred。
+enum RepositoryExportScope {
+    case starred
+    case library
+}
+
+/// 仓库列表导出格式。
 /// 当前支持 Markdown 单文件、HTML 单页面两种形态——都是"打开就能看，不依赖额外工具"的产物，
 /// 便于用户存档 / 上传到 Gist / 上传到自己的博客。
 enum StarredExportFormat {
@@ -26,13 +35,20 @@ enum StarredExportFormat {
     }
 
     /// 默认保存文件名（不含路径）。
-    /// 命名规范：`starcat-{login}-starred-{yyyyMMdd}.{ext}`；卡片图导出为 `{login}-card.png`。
-    func defaultFileName(userLogin: String) -> String {
+    /// 命名规范按产品方案固定为 `starcat-starred-YYYY-MM-DD` / `starcat-library-YYYY-MM-DD`。
+    func defaultFileName(scope: RepositoryExportScope) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd"
+        formatter.dateFormat = "yyyy-MM-dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
         let stamp = formatter.string(from: Date())
-        return "starcat-\(userLogin)-starred-\(stamp).\(fileExtension)"
+        let scopeSlug: String
+        switch scope {
+        case .starred:
+            scopeSlug = "starred"
+        case .library:
+            scopeSlug = "library"
+        }
+        return "starcat-\(scopeSlug)-\(stamp).\(fileExtension)"
     }
 
     /// 显示名（用于反馈文案、log）。

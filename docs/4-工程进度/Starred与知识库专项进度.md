@@ -189,42 +189,43 @@
 - [ ] Health / OpenSSF 后台任务运行中加入知识库不抢占当前批次,下一轮 poller 或 warmup retry 补齐。
 - [x] embedding 覆盖 starred 与知识库并集,只清理同时不在两者中的 repo。
 - [ ] 移出知识库不删除已有 README / Repo Health / OpenSSF 缓存。
-- [ ] ShareCard 文件导出入口文案从“导出 Starred”改为“导出到文件”。
-- [ ] ShareCard 文件导出下拉包含“导出 Starred 到 HTML.”。
-- [ ] ShareCard 文件导出下拉包含“导出 Starred 到 Markdown.”。
-- [ ] ShareCard 文件导出下拉包含“导出 知识库 到 HTML.”。
-- [ ] ShareCard 文件导出下拉包含“导出 知识库 到 Markdown.”。
-- [ ] Starred 文件导出继续只导出 GitHub starred repo。
-- [ ] 知识库文件导出只导出 `libraryState == .inLibrary` 的 repo,并包含未 star 已入库 repo。
-- [ ] 知识库文件导出排序沿用知识库集合排序。
-- [ ] 知识库 HTML 导出重新设计格式,不复用 Starred 模板只改标题。
-- [ ] 知识库 Markdown 导出重新设计格式,不复用 Starred 模板只改标题。
-- [ ] 知识库 HTML/Markdown 的标题、页头、基础排版参考现有 Starred 导出模板。
-- [ ] 知识库导出格式包含总数、主要语言、状态分布和导出时间。
-- [ ] 知识库导出 repo 条目包含 owner/name、description、language、status、tags、notes、是否 starred、library_updated_at。
-- [ ] 知识库 HTML/Markdown 导出默认包含 notes,不提供额外开关。
-- [ ] 知识库导出与现有 Starred 导出一致: 有摘要就导出,没有摘要不临时生成。
+- [x] ShareCard 文件导出入口文案从“导出 Starred”改为“导出到文件”。
+- [x] ShareCard 文件导出下拉包含“导出 Starred 到 HTML.”。
+- [x] ShareCard 文件导出下拉包含“导出 Starred 到 Markdown.”。
+- [x] ShareCard 文件导出下拉包含“导出 知识库 到 HTML.”。
+- [x] ShareCard 文件导出下拉包含“导出 知识库 到 Markdown.”。
+- [x] Starred 文件导出继续只导出 GitHub starred repo。
+- [x] 知识库文件导出只导出 `libraryState == .inLibrary` 的 repo,并包含未 star 已入库 repo。
+- [x] 知识库文件导出排序沿用知识库集合排序。
+- [x] 知识库 HTML 导出重新设计格式,不复用 Starred 模板只改标题。
+- [x] 知识库 Markdown 导出重新设计格式,不复用 Starred 模板只改标题。
+- [x] 知识库 HTML/Markdown 的标题、页头、基础排版参考现有 Starred 导出模板。
+- [x] 知识库导出格式包含总数、主要语言、状态分布和导出时间。
+- [x] 知识库导出 repo 条目包含 owner/name、description、language、status、tags、notes、是否 starred、library_updated_at。
+- [x] 知识库 HTML/Markdown 导出默认包含 notes,不提供额外开关。
+- [x] 知识库导出与现有 Starred 导出一致: 有摘要就导出,没有摘要不临时生成。
 - [ ] 知识库导出可展示 README 摘要、Repo Health、OpenSSF 缓存信息,但不为导出触发 README 拉取、AI 摘要、Health 或 OpenSSF 刷新。
-- [ ] 知识库为空时,点击“导出 知识库 到 HTML/Markdown”不生成空文件。
-- [ ] 知识库为空时显示 toast: “知识库为空,暂无可导出的 repo”。
-- [ ] Starred 导出现有空状态行为不因本专项改变。
-- [ ] ShareCard/Profile 知识库文件导出始终导出全量知识库。
-- [ ] ShareCard/Profile 知识库文件导出不跟随 Smart Collections 当前筛选条件。
-- [ ] Starred HTML 默认文件名为 `starcat-starred-YYYY-MM-DD.html`。
-- [ ] Starred Markdown 默认文件名为 `starcat-starred-YYYY-MM-DD.md`。
-- [ ] 知识库 HTML 默认文件名为 `starcat-library-YYYY-MM-DD.html`。
-- [ ] 知识库 Markdown 默认文件名为 `starcat-library-YYYY-MM-DD.md`。
-- [ ] ShareCard 文件导出文案不能把知识库导出伪装成 GitHub Starred。
+- [x] 知识库为空时,点击“导出 知识库 到 HTML/Markdown”不生成空文件。
+- [x] 知识库为空时显示 toast: “知识库为空,暂无可导出的 repo”。
+- [x] Starred 导出现有空状态行为不因本专项改变。
+- [x] ShareCard/Profile 知识库文件导出始终导出全量知识库。
+- [x] ShareCard/Profile 知识库文件导出不跟随 Smart Collections 当前筛选条件。
+- [x] Starred HTML 默认文件名为 `starcat-starred-YYYY-MM-DD.html`。
+- [x] Starred Markdown 默认文件名为 `starcat-starred-YYYY-MM-DD.md`。
+- [x] 知识库 HTML 默认文件名为 `starcat-library-YYYY-MM-DD.html`。
+- [x] 知识库 Markdown 默认文件名为 `starcat-library-YYYY-MM-DD.md`。
+- [x] ShareCard 文件导出文案不能把知识库导出伪装成 GitHub Starred。
 
 ## 10. 验证记录
 
-- [ ] `rtk xcodegen generate`
+- [x] `rtk xcodegen generate`
 - [x] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoNoteRepositoryTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/ReadmePrefetchServiceTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticIndexingTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/StarredExportRendererTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
 - [x] `rtk git diff --check`
@@ -365,6 +366,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-9 ShareCard 增加 Starred/知识库 HTML 与 Markdown 文件导出。
 - 2026-07-03: PR-9 手动 embedding 刷新覆盖 starred 与知识库并集。
 - 2026-07-03: PR-9 README 预拉候选与 coverage 覆盖 starred 与知识库并集。
 - 2026-07-03: PR-1 回填知识库时间戳与多账号隔离测试,JSON 导入导出延期。

@@ -30565,6 +30565,70 @@
         }
       }
     },
+    "sharecard.action.export.library.html" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Library to HTML"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 知识库 到 HTML"
+          }
+        }
+      }
+    },
+    "sharecard.action.export.library.markdown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Library to Markdown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 知识库 到 Markdown"
+          }
+        }
+      }
+    },
+    "sharecard.action.export.starred.html" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Starred to HTML"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 Starred 到 HTML"
+          }
+        }
+      }
+    },
+    "sharecard.action.export.starred.markdown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Starred to Markdown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 Starred 到 Markdown"
+          }
+        }
+      }
+    },
     "sharecard.action.exportStarred" : {
       "localizations" : {
         "en" : {
@@ -30577,6 +30641,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导出 Starred"
+          }
+        }
+      }
+    },
+    "sharecard.action.exportToFile" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export to File"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出到文件"
           }
         }
       }
@@ -30964,6 +31044,22 @@
         }
       }
     },
+    "sharecard.export.loading.fetchingLibrary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading Library…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取知识库…"
+          }
+        }
+      }
+    },
     "sharecard.export.loading.html" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -30998,6 +31094,38 @@
         }
       }
     },
+    "sharecard.exportLibrary.savePanel.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a location to save your Starcat library export."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择知识库导出文件的保存位置。"
+          }
+        }
+      }
+    },
+    "sharecard.exportLibrary.savePanel.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Starcat Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出知识库"
+          }
+        }
+      }
+    },
     "sharecard.exportStarred.savePanel.message" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -31028,6 +31156,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导出 Starred 仓库"
+          }
+        }
+      }
+    },
+    "sharecard.feedback.exportLibraryEmpty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Starcat library is empty. There are no repos to export yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库为空,暂无可导出的 repo"
           }
         }
       }

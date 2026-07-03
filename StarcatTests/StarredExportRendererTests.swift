@@ -75,6 +75,18 @@ final class StarredExportRendererTests: XCTestCase {
         ]
     }
 
+    private func makeLibrarySupplements() -> LibraryExportSupplements {
+        LibraryExportSupplements(
+            aiSummaries: [1: "## Vapor\n\nCached summary."],
+            repoTags: [1: ["server", "swift"]],
+            notes: [1: "Private note for Vapor."],
+            statuses: [1: .using, 2: .read],
+            libraryUpdatedAt: [1: "2026-07-03T01:23:45Z", 2: "2026-07-02T00:00:00Z"],
+            avatarDataURI: nil,
+            ownerAvatars: [:]
+        )
+    }
+
     // MARK: - Markdown
 
     func testMarkdownContainsTitleAndOverviewAndLanguageSections() {
@@ -114,6 +126,26 @@ final class StarredExportRendererTests: XCTestCase {
         XCTAssertTrue(md.contains("\\|"), "管道字符应被转义为 \\|")
     }
 
+    // MARK: - Library Markdown
+
+    func testLibraryMarkdownContainsKnowledgeFields() {
+        let repos = makeRepos()
+        let md = LibraryMarkdownRenderer.render(
+            repos: repos,
+            user: makeUser(),
+            supplements: makeLibrarySupplements()
+        )
+
+        XCTAssertTrue(md.contains("# Starcat Knowledge Library"), "应包含知识库专属标题")
+        XCTAssertTrue(md.contains("not your GitHub Starred list"), "应明确不是 Starred 导出")
+        XCTAssertTrue(md.contains("- Status: Using"), "应包含 repo 状态")
+        XCTAssertTrue(md.contains("- GitHub starred: yes"), "应包含是否 starred")
+        XCTAssertTrue(md.contains("- Library updated: `2026-07-03T01:23:45Z`"), "应包含 library_updated_at")
+        XCTAssertTrue(md.contains("`server`"), "应包含标签")
+        XCTAssertTrue(md.contains("Private note for Vapor."), "应默认导出 notes")
+        XCTAssertTrue(md.contains("Cached summary."), "应导出已有 AI 摘要缓存")
+    }
+
     // MARK: - HTML
 
     func testHTMLContainsAllRequiredSections() {
@@ -147,6 +179,55 @@ final class StarredExportRendererTests: XCTestCase {
         // 关键安全断言：原始 `</script>` 不能在 inline JSON 里以未转义形态出现
         // （会提前关闭 <script id="starred-data">）
         XCTAssertFalse(html.contains("</script><script>alert"), "脚本注入应被转义")
+    }
+
+    // MARK: - Library HTML
+
+    func testLibraryHTMLContainsKnowledgeFields() {
+        let html = LibraryHTMLRenderer.render(
+            repos: makeRepos(),
+            user: makeUser(),
+            supplements: makeLibrarySupplements()
+        )
+
+        XCTAssertTrue(html.hasPrefix("<!DOCTYPE html>"), "应是合法 HTML5 文档")
+        XCTAssertTrue(html.contains("Starcat Knowledge Library"), "应包含知识库标题")
+        XCTAssertTrue(html.contains("not your GitHub Starred list"), "应明确不是 Starred 导出")
+        XCTAssertTrue(html.contains("<dt>Status</dt><dd>Using</dd>"), "应包含 status")
+        XCTAssertTrue(html.contains("<dt>GitHub starred</dt><dd>Yes</dd>"), "应包含是否 starred")
+        XCTAssertTrue(html.contains("<dt>Library updated</dt><dd>2026-07-03T01:23:45Z</dd>"), "应包含 library_updated_at")
+        XCTAssertTrue(html.contains("Private note for Vapor."), "应默认导出 notes")
+        XCTAssertTrue(html.contains("Cached summary."), "应导出已有 AI 摘要缓存")
+    }
+
+    func testLibraryHTMLEscapesUserContent() {
+        let evilRepo = Repo(
+            id: 100, owner: "evil", name: "xss", fullName: "evil/xss",
+            description: "<img onerror=alert(1)>",
+            language: "Swift",
+            starsCount: 1, forksCount: 0, watchersCount: 0,
+            topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://github.com/evil/xss",
+            cloneUrl: nil, sshUrl: nil,
+            isPrivate: false, isFork: false, isArchived: false, isStarred: false,
+            pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil, cachedAt: nil
+        )
+        let supplements = LibraryExportSupplements(
+            aiSummaries: [:],
+            repoTags: [100: ["<tag>"]],
+            notes: [100: "<script>alert(1)</script>"],
+            statuses: [100: .read],
+            libraryUpdatedAt: [100: "2026-07-03T01:23:45Z"],
+            avatarDataURI: nil,
+            ownerAvatars: [:]
+        )
+
+        let html = LibraryHTMLRenderer.render(repos: [evilRepo], user: makeUser(), supplements: supplements)
+
+        XCTAssertFalse(html.contains("<img onerror=alert(1)>"), "description 必须转义")
+        XCTAssertFalse(html.contains("<script>alert(1)</script>"), "notes 必须转义")
+        XCTAssertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"))
+        XCTAssertTrue(html.contains("&lt;tag&gt;"))
     }
 
     func testHTMLEscapesHeroFields() {
@@ -297,11 +378,13 @@ final class StarredExportRendererTests: XCTestCase {
 
     // MARK: - Format helpers
 
-    func testDefaultFileNameContainsLoginAndDate() {
-        let name = StarredExportFormat.markdown.defaultFileName(userLogin: "dong4j")
-        XCTAssertTrue(name.hasPrefix("starcat-dong4j-starred-"))
-        XCTAssertTrue(name.hasSuffix(".md"))
-        let htmlName = StarredExportFormat.html.defaultFileName(userLogin: "dong4j")
-        XCTAssertTrue(htmlName.hasSuffix(".html"))
+    func testDefaultFileNameUsesScopeAndDate() {
+        let starredMarkdownName = StarredExportFormat.markdown.defaultFileName(scope: .starred)
+        XCTAssertTrue(starredMarkdownName.hasPrefix("starcat-starred-"))
+        XCTAssertTrue(starredMarkdownName.hasSuffix(".md"))
+
+        let libraryHTMLName = StarredExportFormat.html.defaultFileName(scope: .library)
+        XCTAssertTrue(libraryHTMLName.hasPrefix("starcat-library-"))
+        XCTAssertTrue(libraryHTMLName.hasSuffix(".html"))
     }
 }

@@ -2,7 +2,7 @@
 //  StarredExporter.swift
 //  Starcat
 //
-//  HOM-174：把本地 starred repo 列表导出为 Markdown / HTML 单文件的协调层。
+//  HOM-174 / PR-9：把本地 repo 集合导出为 Markdown / HTML 单文件的协调层。
 //
 //  职责：
 //  - 拉取 `[Repo]`（调用方提供，避免本工具绑死 Repository 类型）
@@ -27,18 +27,19 @@ import UniformTypeIdentifiers
 @MainActor
 enum StarredExporter {
 
-    /// 导出 starred 列表为指定格式的单文件。
+    /// 导出 repo 列表为指定格式的单文件。
     ///
     /// 流程：
     /// 1. **HTML 专属**：并发拉 AI 摘要 / 标签 / 头像 base64，组装 supplements
     /// 2. 渲染：format → 选 renderer → 拼字符串
-    /// 3. 弹 NSSavePanel：默认文件名按 `StarredExportFormat.defaultFileName(userLogin:)`
+    /// 3. 弹 NSSavePanel：默认文件名按 scope 区分 starred / library
     /// 4. 写文件（UTF-8）；写入失败 / 用户取消时返回 nil
     ///
     /// - Parameters:
-    ///   - repos: 已 star 的 repos（调用方负责过滤 isStarred）
+    ///   - repos: 待导出的 repos（调用方负责按 scope 过滤）
     ///   - user: 当前登录用户，用于文档头部 hero 段
     ///   - format: 输出格式
+    ///   - scope: 导出范围；决定 renderer、保存面板文案和默认文件名。
     ///   - dependencies: 用于拉 AI 摘要 / 标签 / 头像（HTML 路径需要）。
     ///     nil 时跳过 supplements（适用于 markdown 或脱离 app 上下文的测试场景）。
     /// - Returns: 写入成功的 URL；用户取消、渲染为空、写入失败均返回 nil
@@ -46,14 +47,15 @@ enum StarredExporter {
         repos: [Repo],
         user: GitHubUserDTO,
         format: StarredExportFormat,
+        scope: RepositoryExportScope = .starred,
         dependencies: AppDependencies? = nil
     ) async -> URL? {
         // 1. 渲染
         let body: String
-        switch format {
-        case .markdown:
+        switch (scope, format) {
+        case (.starred, .markdown):
             body = StarredMarkdownRenderer.render(repos: repos, user: user)
-        case .html:
+        case (.starred, .html):
             let supplements: StarredHTMLRenderer.ExportSupplements
             if let dependencies {
                 supplements = await collectSupplements(repos: repos, user: user, dependencies: dependencies)
@@ -65,6 +67,22 @@ enum StarredExporter {
                 user: user,
                 supplements: supplements
             )
+        case (.library, .markdown):
+            let supplements: LibraryExportSupplements
+            if let dependencies {
+                supplements = await collectLibrarySupplements(repos: repos, user: user, dependencies: dependencies)
+            } else {
+                supplements = .empty
+            }
+            body = LibraryMarkdownRenderer.render(repos: repos, user: user, supplements: supplements)
+        case (.library, .html):
+            let supplements: LibraryExportSupplements
+            if let dependencies {
+                supplements = await collectLibrarySupplements(repos: repos, user: user, dependencies: dependencies)
+            } else {
+                supplements = .empty
+            }
+            body = LibraryHTMLRenderer.render(repos: repos, user: user, supplements: supplements)
         }
 
         guard !body.isEmpty else {
@@ -74,11 +92,11 @@ enum StarredExporter {
 
         // 2. 弹保存面板
         let panel = NSSavePanel()
-        panel.title = String.l10n("sharecard.exportStarred.savePanel.title")
-        panel.message = String.l10n("sharecard.exportStarred.savePanel.message")
+        panel.title = savePanelTitle(scope: scope)
+        panel.message = savePanelMessage(scope: scope)
         panel.allowedContentTypes = allowedContentTypes(for: format)
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = format.defaultFileName(userLogin: user.login)
+        panel.nameFieldStringValue = format.defaultFileName(scope: scope)
         panel.isExtensionHidden = false
 
         let response = panel.runModal()
@@ -89,7 +107,7 @@ enum StarredExporter {
         // 3. 落盘
         do {
             try body.write(to: url, atomically: true, encoding: .utf8)
-            AppLog.ui.info("Exported starred (\(format.displayName, privacy: .public)) -> \(url.path, privacy: .public)")
+            AppLog.ui.info("Exported \(scope.logName, privacy: .public) (\(format.displayName, privacy: .public)) -> \(url.path, privacy: .public)")
             return url
         } catch {
             AppLog.ui.error("StarredExporter write failed: \(error.localizedDescription, privacy: .public)")
@@ -151,6 +169,64 @@ enum StarredExporter {
         )
     }
 
+    /// 知识库导出专属 supplements。
+    ///
+    /// 关键约束：这里只读本地缓存 / 用户私有数据，不触发任何远程刷新。AI 摘要是已有记录就带上，
+    /// 没有则省略；私有笔记默认导出，符合 PR-9 对知识库归档的要求。
+    private static func collectLibrarySupplements(
+        repos: [Repo],
+        user: GitHubUserDTO,
+        dependencies: AppDependencies
+    ) async -> LibraryExportSupplements {
+        let ownerSet = Set(repos.map(\.owner))
+
+        async let aiRecordsTask = (try? await dependencies.aiSummaryRepository.fetchLatestPerRepo()) ?? [:]
+        async let tagAssignmentsTask = (try? await dependencies.repoTagRepository.fetchAllTagAssignments()) ?? [:]
+        async let avatarTask = AvatarCacheLoader.loadAsDataURI(urlString: user.avatarUrl)
+        async let ownerAvatarsTask = AvatarCacheLoader.loadOwnerAvatars(owners: ownerSet)
+
+        let aiRecords = await aiRecordsTask
+        let tagAssignments = await tagAssignmentsTask
+        let avatarDataURI = await avatarTask
+        let ownerAvatars = await ownerAvatarsTask
+
+        var aiSummaries: [Int64: String] = [:]
+        for (repoId, record) in aiRecords {
+            if let markdown = extractMarkdown(fromSummaryJSON: record.summaryJson), !markdown.isEmpty {
+                aiSummaries[repoId] = markdown
+            }
+        }
+
+        var repoTags: [Int64: [String]] = [:]
+        for (repoId, tags) in tagAssignments {
+            repoTags[repoId] = tags.map(\.name)
+        }
+
+        var notes: [Int64: String] = [:]
+        var statuses: [Int64: RepoStatus] = [:]
+        var libraryUpdatedAt: [Int64: String] = [:]
+        for repo in repos {
+            guard let note = try? await dependencies.repoNoteRepository.find(repoId: repo.id) else { continue }
+            statuses[repo.id] = RepoStatus.parse(note.status)
+            if let content = note.content?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
+                notes[repo.id] = content
+            }
+            if let updatedAt = note.libraryUpdatedAt?.trimmingCharacters(in: .whitespacesAndNewlines), !updatedAt.isEmpty {
+                libraryUpdatedAt[repo.id] = updatedAt
+            }
+        }
+
+        return LibraryExportSupplements(
+            aiSummaries: aiSummaries,
+            repoTags: repoTags,
+            notes: notes,
+            statuses: statuses,
+            libraryUpdatedAt: libraryUpdatedAt,
+            avatarDataURI: avatarDataURI,
+            ownerAvatars: ownerAvatars
+        )
+    }
+
     /// 从 `AISummaryRecord.summaryJson` 解出可展示的 markdown 文本。
     /// 优先级：summaryMarkdown → summary。两者都空返回 nil。
     nonisolated private static func extractMarkdown(fromSummaryJSON json: String) -> String? {
@@ -184,6 +260,33 @@ enum StarredExporter {
             return [UTType("net.daringfireball.markdown") ?? .plainText, .plainText]
         case .html:
             return [.html]
+        }
+    }
+
+    private static func savePanelTitle(scope: RepositoryExportScope) -> String {
+        switch scope {
+        case .starred:
+            return String.l10n("sharecard.exportStarred.savePanel.title")
+        case .library:
+            return String.l10n("sharecard.exportLibrary.savePanel.title")
+        }
+    }
+
+    private static func savePanelMessage(scope: RepositoryExportScope) -> String {
+        switch scope {
+        case .starred:
+            return String.l10n("sharecard.exportStarred.savePanel.message")
+        case .library:
+            return String.l10n("sharecard.exportLibrary.savePanel.message")
+        }
+    }
+}
+
+private extension RepositoryExportScope {
+    var logName: String {
+        switch self {
+        case .starred: return "starred"
+        case .library: return "library"
         }
     }
 }

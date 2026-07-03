@@ -90,7 +90,7 @@ struct ShareCardSheet: View {
     // 1.06 会撞到周围，opacity 0.7 让按钮"消失感"反而不像可点击。
     @State private var shareToXHovered: Bool = false
     @State private var saveImageHovered: Bool = false
-    @State private var exportStarredHovered: Bool = false
+    @State private var exportFileHovered: Bool = false
 
     /// 行动按钮 hover 反馈的动画时长（秒）。reduceMotion 模式下归零。
     /// 抽出来是为了三个按钮的 hover 动画时长保持一致。
@@ -588,10 +588,10 @@ struct ShareCardSheet: View {
             shareToXButton
                 .frame(width: 400)
 
-            // 第二行：保存 + 导出 Starred
+            // 第二行：保存 + 导出文件
             HStack(spacing: 10) {
                 saveImageButton
-                exportStarredButton
+                exportFileButton
             }
             .frame(width: 400)
         }
@@ -649,8 +649,8 @@ struct ShareCardSheet: View {
     /// 三个按钮统一圆角（pt）。8 与 macOS 系统 borderedProminent 默认圆角接近。
     private var actionButtonCornerRadius: CGFloat { 8 }
 
-    /// 导出 Starred 记录按钮（下拉菜单）。
-    /// HOM-174 新增：支持导出 Markdown 和 HTML 格式。
+    /// 导出文件按钮（下拉菜单）。
+    /// HOM-174 支持 Starred 导出；PR-9 在同一入口下追加知识库 HTML / Markdown 导出。
     ///
     /// **v8 调整（dong4j 2026-06-06 20:52）**：与 saveImageButton 同款重写为
     /// `Menu` + 自定义 label，表达"次行动"视觉层级。
@@ -660,30 +660,44 @@ struct ShareCardSheet: View {
     /// macOS 会把自定义 label 当成系统默认按钮重画，吃掉背景、边框和 hover。
     /// `.menuStyle(.button)` + `.buttonStyle(.plain)` 才会保留我们自己画的 label。
     @ViewBuilder
-    private var exportStarredButton: some View {
+    private var exportFileButton: some View {
         Menu {
             Button {
-                Task { await performExportStarred(format: .markdown) }
+                Task { await performExportRepositories(scope: .starred, format: .html) }
             } label: {
-                Label("sharecard.action.export.markdown", systemImage: "doc.text")
+                Label("sharecard.action.export.starred.html", systemImage: "doc.richtext")
             }
 
             Button {
-                Task { await performExportStarred(format: .html) }
+                Task { await performExportRepositories(scope: .starred, format: .markdown) }
             } label: {
-                Label("sharecard.action.export.html", systemImage: "doc.richtext")
+                Label("sharecard.action.export.starred.markdown", systemImage: "doc.text")
+            }
+
+            Divider()
+
+            Button {
+                Task { await performExportRepositories(scope: .library, format: .html) }
+            } label: {
+                Label("sharecard.action.export.library.html", systemImage: "heart.text.square")
+            }
+
+            Button {
+                Task { await performExportRepositories(scope: .library, format: .markdown) }
+            } label: {
+                Label("sharecard.action.export.library.markdown", systemImage: "heart")
             }
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: actionButtonCornerRadius)
-                    .fill(Color.primary.opacity(exportStarredHovered ? 0.08 : 0.055))
+                    .fill(Color.primary.opacity(exportFileHovered ? 0.08 : 0.055))
                 RoundedRectangle(cornerRadius: actionButtonCornerRadius)
-                    .stroke(Color.secondary.opacity(exportStarredHovered ? 0.5 : 0.3), lineWidth: 0.5)
+                    .stroke(Color.secondary.opacity(exportFileHovered ? 0.5 : 0.3), lineWidth: 0.5)
 
                 HStack(spacing: 6) {
                     Image(systemName: "square.and.arrow.up.on.square")
                         .font(.system(size: 13, weight: .medium))
-                    Text("sharecard.action.exportStarred")
+                    Text("sharecard.action.exportToFile")
                         .font(.system(size: 13, weight: .medium))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
@@ -705,7 +719,7 @@ struct ShareCardSheet: View {
         .disabled(isExporting)
         .onHover { hovering in
             withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
-                exportStarredHovered = hovering
+                exportFileHovered = hovering
             }
         }
     }
@@ -850,23 +864,25 @@ struct ShareCardSheet: View {
         }
     }
 
-    /// 执行导出 Starred 记录。
-    /// HOM-174 新增：支持 Markdown 和 HTML 两种格式。
+    /// 执行仓库文件导出。
+    /// HOM-174 支持 Starred；PR-9 增加知识库导出，二者共用保存面板与反馈机制。
     ///
     /// 流程：
-    /// 1. fetch 全部 isStarred = true 的 repos（按 starred_at desc）
+    /// 1. 按 scope fetch repos（Starred 只取 GitHub starred；Library 取 `libraryState == .inLibrary`）
     /// 2. 走 `StarredExporter.export` 渲染 + NSSavePanel + 写文件
     /// 3. 成功 → 显示反馈；失败 / 用户取消 → 沉默（不打扰）
     ///
     /// 失败原因（DB 读异常）映射为 `sharecard.feedback.exportFailed` 提示，
     /// 而不是 alert——分享卡 sheet 体验上沿用 toast-like feedback。
     @MainActor
-    private func performExportStarred(format: StarredExportFormat) async {
+    private func performExportRepositories(scope: RepositoryExportScope, format: StarredExportFormat) async {
         isExporting = true
         // HOM-174 v4：进度文案分阶段更新，给用户清晰的"App 在做什么"反馈。
         // 阶段一：fetching → 阶段二：渲染（HTML 含拉摘要/标签/头像，最耗时；
         // markdown 渲染瞬时）。defer 兜底确保任何返回路径都清掉 overlay。
-        exportProgressMessage = String.l10n("sharecard.export.loading.fetching")
+        exportProgressMessage = String.l10n(scope == .library
+            ? "sharecard.export.loading.fetchingLibrary"
+            : "sharecard.export.loading.fetching")
         defer {
             isExporting = false
             exportProgressMessage = nil
@@ -874,15 +890,17 @@ struct ShareCardSheet: View {
 
         let repos: [Repo]
         do {
-            repos = try await dependencies.repoRepository.fetchAllStarred()
+            repos = try await fetchExportRepos(scope: scope)
         } catch {
-            AppLog.ui.error("performExportStarred: fetchAllStarred failed: \(error.localizedDescription, privacy: .public)")
+            AppLog.ui.error("performExportRepositories: fetch repos failed: \(error.localizedDescription, privacy: .public)")
             showFeedback(String.l10n("sharecard.feedback.exportFailed"))
             return
         }
 
         guard !repos.isEmpty else {
-            showFeedback(String.l10n("sharecard.feedback.exportEmpty"))
+            showFeedback(String.l10n(scope == .library
+                ? "sharecard.feedback.exportLibraryEmpty"
+                : "sharecard.feedback.exportEmpty"))
             return
         }
 
@@ -896,11 +914,21 @@ struct ShareCardSheet: View {
             repos: repos,
             user: user,
             format: format,
+            scope: scope,
             dependencies: dependencies
         ) {
             showFeedback(String(format: String.l10n("sharecard.feedback.exported"), url.lastPathComponent))
         }
         // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
+    }
+
+    private func fetchExportRepos(scope: RepositoryExportScope) async throws -> [Repo] {
+        switch scope {
+        case .starred:
+            return try await dependencies.repoRepository.fetchAllStarred()
+        case .library:
+            return try await dependencies.repoRepository.fetchKnowledgeRepos()
+        }
     }
 
     // MARK: - 导出进度 pill（HOM-174 v4，dong4j 反馈后改 inline）
