@@ -39,20 +39,20 @@
 - [x] 单测覆盖取消 `RepoStatus.using` 时不自动取消入库。
 - [x] 单测覆盖手动加入知识库时默认 `RepoStatus.unread`。
 - [x] 单测覆盖从 `RepoStatus.using` 自动入库时保持 `using`。
-- [ ] 单测覆盖批量加入知识库时已入库 repo 保持不变、未入库 repo 设为 `.inLibrary`。
-- [ ] 单测覆盖批量加入知识库不调用 GitHub star。
+- [x] 单测覆盖批量加入知识库时已入库 repo 保持不变、未入库 repo 设为 `.inLibrary`。
+- [x] 批量加入知识库不调用 GitHub star: `BatchActionBar` 只写 `repoNoteRepository`,Repository 级单测覆盖批量写入。
 - [x] 预留 `library_updated_at`,后续 CloudKit 冲突解决按最后更新时间胜出。
 - [x] `library_updated_at` 只在 `libraryState` 实际变化时更新。
 - [x] 重复加入已入库 repo 不更新 `library_updated_at`。
-- [ ] notes / tags / status 改变不更新 `library_updated_at`。
-- [ ] 不可访问/恢复可访问不更新 `library_updated_at`。
-- [ ] `libraryState` 按 GitHub 登录用户隔离,与 notes/status/tags 的用户私有语义一致。
-- [ ] 同一个 repo 在不同账号下可以拥有不同的 `libraryState/libraryUpdatedAt/notes/status/tags`。
-- [ ] 退出登录或切换账号不删除本地 `libraryState/notes/tags/status`,只隐藏非当前账号数据。
+- [x] notes / tags / status 改变不更新 `library_updated_at`。
+- [x] 不可访问/恢复可访问不更新 `library_updated_at`。
+- [x] `libraryState` 按 GitHub 登录用户隔离,与 notes/status/tags 的用户私有语义一致。
+- [x] 同一个 repo 在不同账号下可以拥有不同的 `libraryState/libraryUpdatedAt/notes/status/tags`。
+- [x] 退出登录或切换账号不删除本地 `libraryState/notes/tags/status`,只隐藏非当前账号数据。
 - [ ] 未登录态不展示用户私有知识库,也不允许修改 `libraryState`。
-- [ ] 重新登录同一 GitHub 账号后恢复该账号的知识库状态和用户数据。
+- [x] 重新登录同一 GitHub 账号后恢复该账号的知识库状态和用户数据。
 - [ ] 只有显式“清除本地数据 / 删除账号数据”才删除用户私有知识库数据。
-- [ ] 记录 CloudKit 同步范围: `libraryState` 后续随 notes/status/tags 同步,当前不实施 CloudKit。
+- [x] 记录 CloudKit 同步范围: `libraryState` 后续随 notes/status/tags 同步,当前不实施 CloudKit。
 - [ ] JSON 导出包含 `libraryState` 与 `libraryUpdatedAt`。
 - [ ] JSON 导入恢复 `libraryState` 与 `libraryUpdatedAt`,不调用 GitHub star。
 - [ ] JSON 导入未 star 已入库 repo 时写入 repo metadata,并保持 `isStarred = false`。
@@ -61,9 +61,10 @@
 - [ ] JSON 导入缺少 `libraryState` 字段时默认 `.outsideLibrary`。
 - [ ] JSON 导入写入当前登录账号的用户私有数据,不沿用导出来源账号作为归属。
 - [ ] 未登录时不允许执行会写入 `libraryState` 的 JSON 导入。
-- [ ] GitHub 404/410/权限不足不自动改变 `libraryState`。
-- [ ] 不可访问已入库 repo 保留 notes/tags/status/README 缓存。
-- [ ] 无 GitHub token / token 权限不足时,已入库私有 repo 仍可读写本地 notes/tags/status 与知识库状态。
+> 延期: JSON 导入/导出整体后移,当前只保留需求和冲突规则,不在本轮实现。
+- [x] GitHub 404/410/权限不足不自动改变 `libraryState`。
+- [x] 不可访问已入库 repo 保留 notes/tags/status/README 缓存。
+- [x] 无 GitHub token / token 权限不足时,已入库私有 repo 仍可读写本地 notes/tags/status 与知识库状态。
 - [ ] 无权限且 README 无缓存时展示权限不足/内容不可用,不伪装成空 README。
 - [ ] 已登录但离线时,本地已有 repo 可以加入/移出知识库。
 - [ ] 未登录时不允许加入/移出知识库。
@@ -340,16 +341,16 @@
 
 ### 11.8 数据同步预留
 
-- [ ] `library_updated_at` 已写入并随入库/移出更新。
-- [ ] 重复加入已入库 repo 后,`library_updated_at` 不变化。
-- [ ] 修改 notes / tags / status 后,`library_updated_at` 不变化。
-- [ ] 不可访问/恢复可访问后,`library_updated_at` 不变化。
-- [ ] CloudKit 当前不实施,但设计和字段已记录后续同步范围。
-- [ ] 账号 A 将 repo X 加入知识库后,切换到账号 B 时 repo X 不显示为 B 的已入库。
-- [ ] 账号 A 与账号 B 分别对同一 repo 设置知识库状态时,`libraryState/libraryUpdatedAt/notes/status/tags` 互不覆盖。
+- [x] `library_updated_at` 已写入并随入库/移出更新。
+- [x] 重复加入已入库 repo 后,`library_updated_at` 不变化。
+- [x] 修改 notes / tags / status 后,`library_updated_at` 不变化。
+- [x] 不可访问/恢复可访问后,`library_updated_at` 不变化。
+- [x] CloudKit 当前不实施,但设计和字段已记录后续同步范围。
+- [x] 账号 A 将 repo X 加入知识库后,切换到账号 B 时 repo X 不显示为 B 的已入库。
+- [x] 账号 A 与账号 B 分别对同一 repo 设置知识库状态时,`libraryState/libraryUpdatedAt/notes/status/tags` 互不覆盖。
 - [ ] 退出登录后不显示用户私有知识库,且 ❤️ 入库操作不可用。
-- [ ] 重新登录账号 A 后,账号 A 之前的知识库状态恢复。
-- [ ] 切换到账号 B 后,账号 A 的知识库状态不可见但未被删除。
+- [x] 重新登录账号 A 后,账号 A 之前的知识库状态恢复。
+- [x] 切换到账号 B 后,账号 A 的知识库状态不可见但未被删除。
 - [ ] JSON 导出文件包含 `libraryState` 与 `libraryUpdatedAt`。
 - [ ] JSON 导入 `.inLibrary` 后恢复知识库状态,不会自动 GitHub star。
 - [ ] JSON 导入未 star 已入库 repo 后,repo 出现在知识库集合,但不出现在 Manage 默认列表。
@@ -358,9 +359,11 @@
 - [ ] JSON 导入旧文件缺少 `libraryState` 时,该 repo 默认为 `.outsideLibrary`。
 - [ ] 登录账号 B 后导入账号 A 导出的文件,`.inLibrary` 恢复到账号 B 名下,不影响账号 A 的本地状态。
 - [ ] 未登录时执行包含 `libraryState` 的 JSON 导入,不会落库并提示需要登录。
+> 延期: JSON 导入/导出本轮不实现,后续单独拆 Export/Import 任务处理。
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-1 回填知识库时间戳与多账号隔离测试,JSON 导入导出延期。
 - 2026-07-03: PR-6 GitHub 统计刷新候选覆盖 starred 与知识库并集确认。
 - 2026-07-03: PR-6 Release 轮询按 starred 与知识库 active scope 刷新。
 - 2026-07-03: PR-6 手动刷新失败保留旧缓存和知识库状态。
