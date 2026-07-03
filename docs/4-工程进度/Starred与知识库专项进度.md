@@ -227,8 +227,8 @@
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticIndexingTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/StarredExportRendererTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/OpenSSFScoreRepositoryTests -only-testing:StarcatTests/RepoHealthRepositoryTests -only-testing:StarcatTests/LibraryStateCacheRetentionTests test`
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
 - [x] `rtk git diff --check`
 
 ## 11. 人工验证流程
@@ -367,6 +367,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-9 补齐 SemanticSearch focused test 与 macOS build 验证。
 - 2026-07-03: PR-9 知识库导出补充 README/Health/OpenSSF 本地缓存展示。
 - 2026-07-03: PR-9 补 README 权限失败冷却与移出知识库缓存保留测试。
 - 2026-07-03: PR-9 ShareCard 增加 Starred/知识库 HTML 与 Markdown 文件导出。
