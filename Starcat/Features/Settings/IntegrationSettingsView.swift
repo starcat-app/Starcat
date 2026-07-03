@@ -445,16 +445,20 @@ struct IntegrationSettingsTab: View {
                 Text("settings.externalSearch.aggregate.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
 
-            ForEach(ExternalSearchProviderID.allCases) { provider in
-                externalSearchProviderSection(provider)
+                ForEach(ExternalSearchProviderID.allCases) { provider in
+                    Divider()
+                    externalSearchProviderGroup(provider)
+                }
             }
         }
     }
 
-    private func externalSearchProviderSection(_ provider: ExternalSearchProviderID) -> some View {
-        Section(provider.displayName) {
+    private func externalSearchProviderGroup(_ provider: ExternalSearchProviderID) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(provider.displayName)
+                .font(.headline)
+
             Toggle(isOn: providerEnabledBinding(provider)) {
                 Text(String(format: String.l10n("settings.externalSearch.provider.enableFormat"), provider.displayName))
             }
@@ -516,9 +520,9 @@ struct IntegrationSettingsTab: View {
 
                 externalSearchAPIKeyTestFeedback(provider)
 
-                Text(providerDescription(provider))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Text(providerDescription(provider))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }
