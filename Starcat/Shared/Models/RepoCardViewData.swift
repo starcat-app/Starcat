@@ -138,6 +138,39 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     let healthBadge: RepoHealthBadgeData?
 }
 
+extension RepoCardViewData {
+
+    /// 返回只替换知识库状态的新卡片数据。
+    ///
+    /// `RepoCardViewData` 是不可变值类型，Search Center 在用户点击 ❤️ 后需要
+    /// 只刷新 `isInLibrary`，不能顺手重建其它 badge / score / readStatus 信号。
+    func withLibraryState(_ state: LibraryState) -> RepoCardViewData {
+        RepoCardViewData(
+            ghRepoId: ghRepoId,
+            fullName: fullName,
+            owner: owner,
+            repo: repo,
+            avatarURL: avatarURL,
+            description: description,
+            language: language,
+            starsCount: starsCount,
+            forksCount: forksCount,
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: isPrivate,
+            isStarred: isStarred,
+            isInLibrary: state == .inLibrary,
+            badge: badge,
+            weeklySources: weeklySources,
+            weeklySourceLabel: weeklySourceLabel,
+            inlineMetadata: inlineMetadata,
+            readStatus: readStatus,
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
+        )
+    }
+}
+
 struct RepoCardInlineMetadata: Hashable, Sendable {
     let systemImage: String
     let text: String

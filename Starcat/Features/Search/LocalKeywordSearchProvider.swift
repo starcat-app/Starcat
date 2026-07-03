@@ -14,9 +14,14 @@ struct LocalKeywordSearchProvider: SearchProvider {
     let source: SearchSource = .localKeyword
 
     private let repository: any RepoRepositoryProtocol
+    private let noteRepository: (any RepoNoteRepositoryProtocol)?
 
-    init(repository: any RepoRepositoryProtocol) {
+    init(
+        repository: any RepoRepositoryProtocol,
+        noteRepository: (any RepoNoteRepositoryProtocol)? = nil
+    ) {
         self.repository = repository
+        self.noteRepository = noteRepository
     }
 
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
@@ -25,10 +30,11 @@ struct LocalKeywordSearchProvider: SearchProvider {
         }
 
         let repos = try await repository.searchFTS(query: request.query)
+        let libraryStateMap = try await noteRepository?.fetchLibraryStateMap(repoIds: repos.map(\.id)) ?? [:]
         let candidates = repos.map { repo in
             RepositoryCandidate(
                 identity: RepoIdentity(ghRepoID: repo.id, owner: repo.owner, name: repo.name),
-                card: repo.asCardData(),
+                card: repo.asCardData(isInLibrary: libraryStateMap[repo.id] == .inLibrary),
                 sources: [.localKeyword],
                 localRepo: repo,
                 remoteRepo: nil,

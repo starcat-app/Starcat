@@ -11,13 +11,16 @@ struct GitHubRepositorySearchProvider: SearchProvider {
     let source: SearchSource = .github
 
     private let client: any GitHubAPIClientProtocol
+    private let noteRepository: (any RepoNoteRepositoryProtocol)?
     private let cache: SearchSessionCache<SearchProviderPage>
 
     init(
         client: any GitHubAPIClientProtocol,
+        noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
         cache: SearchSessionCache<SearchProviderPage> = SearchSessionCache(ttl: 300)
     ) {
         self.client = client
+        self.noteRepository = noteRepository
         self.cache = cache
     }
 
@@ -25,7 +28,9 @@ struct GitHubRepositorySearchProvider: SearchProvider {
         guard request.scope == .all || request.scope == .github else { return .empty }
         let query = GitHubRepositorySearchQuery(text: request.query, filters: request.githubFilters)
         let key = cacheKey(query: query, request: request)
-        if let cached = await cache.value(for: key) { return cached }
+        if let cached = await cache.value(for: key) {
+            return try await pageByApplyingLibraryState(cached)
+        }
 
         let response = try await client.searchRepositories(
             query: query,
@@ -65,10 +70,31 @@ struct GitHubRepositorySearchProvider: SearchProvider {
             hasNextPage: request.page * request.perPage < cappedTotal
         )
         await cache.insert(page, for: key)
-        return page
+        return try await pageByApplyingLibraryState(page)
     }
 
     private func cacheKey(query: GitHubRepositorySearchQuery, request: SearchRequest) -> String {
         "\(query.encodedQuery)|\(request.githubFilters.sort.rawValue)|\(request.githubFilters.order.rawValue)|\(request.page)|\(request.perPage)"
+    }
+
+    private func pageByApplyingLibraryState(_ page: SearchProviderPage) async throws -> SearchProviderPage {
+        guard let noteRepository else { return page }
+        let libraryStateMap = try await noteRepository.fetchLibraryStateMap(
+            repoIds: page.repositories.compactMap(\.identity.ghRepoID)
+        )
+        let repositories = page.repositories.map { candidate in
+            var updated = candidate
+            updated.card = candidate.card.withLibraryState(
+                libraryStateMap[candidate.card.ghRepoId] ?? .outsideLibrary
+            )
+            return updated
+        }
+        return SearchProviderPage(
+            repositories: repositories,
+            references: page.references,
+            totalCount: page.totalCount,
+            hasNextPage: page.hasNextPage,
+            webMetadata: page.webMetadata
+        )
     }
 }

@@ -70,6 +70,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var receivedEventsHandler: ((_ username: String, _ perPage: Int, _ ifNoneMatch: String?) async throws -> APIResponse<[GitHubEventDTO]>)?
     /// 2026-06-17 Activity 公告与关注 PR-3：security-advisories mock handler。
     var securityAdvisoriesHandler: ((_ owner: String, _ repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]>)?
+    /// Search Center GitHub 搜索 mock handler。默认不设，避免老测试误用假空结果。
+    var searchRepositoriesHandler: ((_ query: GitHubRepositorySearchQuery, _ page: Int, _ perPage: Int) async throws -> APIResponse<GitHubRepositorySearchDTO>)?
 
     // MARK: - 调用记录（供断言用）
     //
@@ -217,6 +219,17 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.securityAdvisoriesHandler 未设置")
         }
         return try await handler(owner, repo)
+    }
+
+    func searchRepositories(
+        query: GitHubRepositorySearchQuery,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepositorySearchDTO> {
+        guard let handler = searchRepositoriesHandler else {
+            fatalError("MockGitHubAPIClient.searchRepositoriesHandler 未设置")
+        }
+        return try await handler(query, page, perPage)
     }
 }
 

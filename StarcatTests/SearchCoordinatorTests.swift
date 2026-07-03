@@ -82,6 +82,30 @@ struct SearchCoordinatorTests {
         #expect(result[0].card.description == "local")
     }
 
+    @Test("原地更新 Repo 知识库状态")
+    func updateRepositoryLibraryStateRefreshesLoadedCandidate() async {
+        let repo = Self.makeRepo(id: 42, owner: "OpenAI", name: "Codex")
+        let provider = StubSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: repo, source: .github)],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [provider])
+
+        await coordinator.search(SearchRequest(query: "codex", scope: .github))
+        coordinator.updateRepositoryLibraryState(
+            identity: RepoIdentity(ghRepoID: 42, owner: "openai", name: "codex"),
+            state: .inLibrary,
+            persistedRepo: repo
+        )
+
+        #expect(coordinator.repositories.first?.card.isInLibrary == true)
+        #expect(coordinator.repositories.first?.localRepo?.id == 42)
+    }
+
     @Test("空 query 清空结果和状态")
     func emptyQueryResets() async {
         let provider = StubSearchProvider(source: .localKeyword) { _ in .empty }

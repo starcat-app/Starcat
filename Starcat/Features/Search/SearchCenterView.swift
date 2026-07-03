@@ -21,6 +21,7 @@ struct SearchCenterView: View {
     let isGitHubAuthenticated: Bool
 
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
@@ -45,6 +46,12 @@ struct SearchCenterView: View {
     @State private var minStarsDraft = ""
     /// Web「结果数」输入草稿；点「应用筛选」时写入 `anySearchFilters.maxResults`。
     @State private var maxResultsDraft = ""
+    /// Search Center 行内 ❤️ 操作中的 repo。用 repo id 控制单按钮 loading，避免
+    /// 点击一个结果时把整张搜索列表都置灰。
+    @State private var libraryOperationRepoID: Int64?
+    @State private var pendingUsingRemovalCandidate: RepositoryCandidate?
+    @State private var isConfirmingUsingLibraryRemoval = false
+    @State private var libraryToast: String?
 
     var body: some View {
         ZStack {
@@ -127,7 +134,11 @@ struct SearchCenterView: View {
                     if let repo = candidate.displayRepo { onOpenAI(repo) }
                 },
                 onOpenInGitHub: { onOpenURL(candidate) },
-                onCopyURL: { onCopyURL(candidate) }
+                onCopyURL: { onCopyURL(candidate) },
+                onToggleLibrary: {
+                    await handleLibraryToggleTapped(candidate)
+                },
+                isLibraryWorking: libraryOperationRepoID == candidate.displayRepo?.id
             )
             .appSheetRootEnvironment(dependencies)
         }
@@ -162,6 +173,29 @@ struct SearchCenterView: View {
                 isFilterDrawerPresented = false
             }
         }
+        .confirmationDialog(
+            "library.removeUsing.confirmTitle",
+            isPresented: $isConfirmingUsingLibraryRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("library.removeUsing.confirmAction", role: .destructive) {
+                if let candidate = pendingUsingRemovalCandidate {
+                    Task {
+                        await setLibraryState(
+                            .outsideLibrary,
+                            for: candidate,
+                            downgradeUsingStatus: true
+                        )
+                    }
+                }
+            }
+            Button("general.cancel", role: .cancel) {
+                pendingUsingRemovalCandidate = nil
+            }
+        } message: {
+            Text("library.removeUsing.confirmMessage")
+        }
+        .toast(message: $libraryToast, icon: libraryToastIcon)
     }
 
     /// 浮层内部的分隔线。
@@ -653,6 +687,20 @@ struct SearchCenterView: View {
                     isSelected: isSelected,
                     showStarredCheckmark: true
                 )
+                // Search Center 的 ❤️ 是当前结果行的直接操作入口；头像左上角仍只做
+                // 状态角标，保持“角标不可点击、trailing action 可点击”的交互边界。
+                .padding(.trailing, 40)
+                .overlay(alignment: .trailing) {
+                    LibraryToggleButton(
+                        isSaved: repo.card.isInLibrary,
+                        isWorking: libraryOperationRepoID == repo.displayRepo?.id
+                    ) {
+                        Task {
+                            await handleLibraryToggleTapped(repo)
+                        }
+                    }
+                    .padding(.trailing, 10)
+                }
             case .reference(let reference):
                 // 复用 RepoRowSurface 三态透明度（default / hover / selected）+
                 // 圆角 + 左侧 accent bar，让网页卡片与 UnifiedRepoRow 视觉骨架对等。
@@ -979,6 +1027,95 @@ struct SearchCenterView: View {
             } catch {
                 AppLog.network.error("Search context menu star toggle failed: \(error.localizedDescription, privacy: .public)")
             }
+        }
+    }
+
+    private var libraryToastIcon: String {
+        libraryToast == "library.action.failed" ? "exclamationmark.triangle.fill" : "heart.fill"
+    }
+
+    private func handleLibraryToggleTapped(_ candidate: RepositoryCandidate) async {
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        guard libraryOperationRepoID == nil else { return }
+        guard let repo = candidate.displayRepo, repo.id > 0 else {
+            libraryToast = "library.action.failed"
+            return
+        }
+
+        libraryOperationRepoID = repo.id
+        defer { libraryOperationRepoID = nil }
+
+        let currentState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id))
+            ?? (candidate.card.isInLibrary ? .inLibrary : .outsideLibrary)
+        if currentState == .inLibrary {
+            let status = (try? await dependencies.repoNoteRepository.find(repoId: repo.id))
+                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repo.id)
+            guard status != .using else {
+                viewModel.updateRepositoryLibraryState(
+                    identity: candidate.identity,
+                    state: currentState,
+                    persistedRepo: candidate.localRepo
+                )
+                pendingUsingRemovalCandidate = candidate
+                isConfirmingUsingLibraryRemoval = true
+                return
+            }
+            await setLibraryState(.outsideLibrary, for: candidate, downgradeUsingStatus: false)
+        } else {
+            await setLibraryState(.inLibrary, for: candidate, downgradeUsingStatus: false)
+        }
+    }
+
+    private func setLibraryState(
+        _ targetState: LibraryState,
+        for candidate: RepositoryCandidate,
+        downgradeUsingStatus: Bool
+    ) async {
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        guard let repo = candidate.displayRepo, repo.id > 0 else {
+            libraryToast = "library.action.failed"
+            return
+        }
+
+        libraryOperationRepoID = repo.id
+        defer {
+            libraryOperationRepoID = nil
+            pendingUsingRemovalCandidate = nil
+        }
+
+        do {
+            let persistedRepo: Repo?
+            if targetState == .inLibrary {
+                persistedRepo = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(
+                    repo: repo,
+                    syncedAt: Date()
+                )
+            } else {
+                persistedRepo = candidate.localRepo
+            }
+            try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: targetState)
+            if downgradeUsingStatus {
+                try await dependencies.repoNoteRepository.updateStatus(repoId: repo.id, status: .read)
+            }
+
+            viewModel.updateRepositoryLibraryState(
+                identity: candidate.identity,
+                state: targetState,
+                persistedRepo: persistedRepo
+            )
+            homeViewModel.applyLibraryStateChange(repoId: repo.id, state: targetState)
+            await homeViewModel.refreshSidebar()
+            await homeViewModel.reloadItems(forceRefresh: true)
+            libraryToast = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
+        } catch {
+            AppLog.database.error("Search Center library toggle failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            libraryToast = "library.action.failed"
         }
     }
 
@@ -1791,6 +1928,7 @@ private struct SearchDetailActionChip: View {
     let helpKey: LocalizedStringKey
     /// 语义色；有值时图标 / 文字 / 底色同族着色。
     var semanticColor: StatSemanticColor? = nil
+    var isWorking = false
     let action: () -> Void
 
     @State private var isHovered = false
@@ -1817,6 +1955,7 @@ private struct SearchDetailActionChip: View {
             .background(chipBackground, in: Capsule())
             .contentShape(Capsule())
         }
+        .disabled(isWorking)
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(helpKey)
@@ -1828,8 +1967,16 @@ private struct SearchDetailActionChip: View {
     }
 
     private var chipIcon: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 11, weight: .semibold))
+        Group {
+            if isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 11, height: 11)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+        }
     }
 
     private var foregroundColor: Color {
@@ -1876,6 +2023,8 @@ private struct SearchRemoteRepoDetailView: View {
     let onOpenInGitHub: () -> Void
     /// 复制仓库 HTML URL（走宿主回调，宿主可叠加 toast / 日志）。
     let onCopyURL: () -> Void
+    let onToggleLibrary: () async -> Void
+    let isLibraryWorking: Bool
 
     @Environment(\.dismiss) private var dismiss
     /// SEARCH-RICH 2026-06-14：Wiki 集成需要 `dependencies.wikiAPI`。
@@ -2402,6 +2551,14 @@ private struct SearchRemoteRepoDetailView: View {
                 action: toggleStar
             )
             SearchDetailActionChip(
+                systemImage: candidate.card.isInLibrary ? "heart.fill" : "heart",
+                titleKey: candidate.card.isInLibrary ? "library.action.remove" : "library.action.add",
+                helpKey: candidate.card.isInLibrary ? "library.action.remove" : "library.action.add",
+                semanticColor: .actionLibrary,
+                isWorking: isLibraryWorking,
+                action: toggleLibrary
+            )
+            SearchDetailActionChip(
                 systemImage: "sparkles",
                 titleKey: "search.detail.action.askAI",
                 helpKey: "search.detail.action.askAI",
@@ -2432,6 +2589,12 @@ private struct SearchRemoteRepoDetailView: View {
             } catch {
                 AppLog.network.error("Search detail star toggle failed: \(error.localizedDescription, privacy: .public)")
             }
+        }
+    }
+
+    private func toggleLibrary() {
+        Task {
+            await onToggleLibrary()
         }
     }
 

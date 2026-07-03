@@ -217,8 +217,8 @@ struct HomeView: View {
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
         _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
             coordinator: SearchCoordinator(providers: [
-                LocalKeywordSearchProvider(repository: repository),
-                GitHubRepositorySearchProvider(client: githubAPIClient),
+                LocalKeywordSearchProvider(repository: repository, noteRepository: repoNoteRepository),
+                GitHubRepositorySearchProvider(client: githubAPIClient, noteRepository: repoNoteRepository),
                 AnySearchWebProvider(entitlementGate: entitlementGate)
             ]),
             historyRepository: searchHistoryRepository,

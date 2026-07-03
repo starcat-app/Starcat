@@ -149,10 +149,10 @@
 - [x] repo-context DTO 增加 library state。
 - [x] Browser Plugin GitHub 页面展示空心/实心 ❤️ 知识库状态。
 - [x] Browser Plugin 支持直接加入/移出知识库,逻辑与详情页一致。
-- [ ] Search Center 搜索结果展示入库状态。
-- [ ] Search Center 可操作 ❤️ 放在 trailing action 区或详情/预览动作区,logo 角标不可点击。
-- [ ] Search Center 搜索结果支持直接加入/移出知识库。
-- [ ] Search Center 直接移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
+- [x] Search Center 搜索结果展示入库状态。
+- [x] Search Center 可操作 ❤️ 放在 trailing action 区或详情/预览动作区,logo 角标不可点击。
+- [x] Search Center 搜索结果支持直接加入/移出知识库。
+- [x] Search Center 直接移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
 - [x] 新增本机服务写 library state 的 action/route。
 - [x] Browser Plugin 操作失败时显示插件内 toast 并回滚 ❤️ 状态。
 - [x] Notes 写入允许已入库未 star repo。
@@ -295,11 +295,11 @@
 
 ### 11.5 Search Center / Browser Plugin
 
-- [ ] Search Center 搜索结果显示入库状态。
-- [ ] Search Center 搜索结果可以直接加入知识库。
-- [ ] Search Center 搜索结果可以直接移出知识库。
-- [ ] Search Center 可操作 ❤️ 位于 trailing action 区或详情/预览动作区,logo 角标不可点击。
-- [ ] Search Center 移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
+- [x] Search Center 搜索结果显示入库状态。
+- [x] Search Center 搜索结果可以直接加入知识库。
+- [x] Search Center 搜索结果可以直接移出知识库。
+- [x] Search Center 可操作 ❤️ 位于 trailing action 区或详情/预览动作区,logo 角标不可点击。
+- [x] Search Center 移出 `using` repo 时弹同样的二次确认,非 `using` repo 直接移出。
 - [x] Browser Plugin GitHub 页面显示空心/实心 ❤️。
 - [x] Browser Plugin 可加入/移出知识库,不会自动 GitHub star/unstar。
 - [x] Browser Plugin 操作失败时显示插件内 toast,并回滚 ❤️ 状态。

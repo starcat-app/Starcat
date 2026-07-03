@@ -290,6 +290,18 @@ final class SearchCenterViewModel {
         clampSelection()
     }
 
+    func updateRepositoryLibraryState(
+        identity: RepoIdentity,
+        state: LibraryState,
+        persistedRepo: Repo?
+    ) {
+        coordinator.updateRepositoryLibraryState(
+            identity: identity,
+            state: state,
+            persistedRepo: persistedRepo
+        )
+    }
+
     func moveSelection(by offset: Int) {
         guard !candidates.isEmpty else { return }
         // 首次按方向键时（selectedIndex == nil）一律跳到第 0 项，让用户的注意力

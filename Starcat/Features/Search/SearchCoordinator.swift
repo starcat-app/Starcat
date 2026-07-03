@@ -83,6 +83,31 @@ final class SearchCoordinator {
         statuses[source] ?? .idle
     }
 
+    /// 用户在 Search Center 里直接修改知识库状态后，原地刷新已加载候选。
+    ///
+    /// Coordinator 仍只负责结果集合的内存合并；真正的数据库写入由 View 层经
+    /// `AppDependencies` 完成。这里按 repo id / fullName 双路匹配，保持与
+    /// `mergeRepositories` 一致，避免 GitHub 搜索结果和本地 FTS 结果身份来源不同
+    /// 时刷新不到同一张卡。
+    func updateRepositoryLibraryState(
+        identity: RepoIdentity,
+        state: LibraryState,
+        persistedRepo: Repo?
+    ) {
+        repositories = repositories.map { candidate in
+            guard Self.isSameRepository(candidate.identity, identity) else { return candidate }
+            var updated = candidate
+            updated.card = candidate.card.withLibraryState(state)
+            if let persistedRepo {
+                updated.localRepo = persistedRepo
+                if updated.remoteRepo == nil {
+                    updated.remoteRepo = persistedRepo
+                }
+            }
+            return updated
+        }
+    }
+
     /// 只追加单一来源的下一页。分页不能复用 `search`，因为后者会清空已有本地与远端
     /// 结果；这里仍递增 generation，保证快速连续点击时旧页不会迟到写回。
     func loadMore(_ request: SearchRequest, source: SearchSource) async {
@@ -176,6 +201,13 @@ final class SearchCoordinator {
             merged[matchIndex] = current
         }
         return merged
+    }
+
+    private static func isSameRepository(_ lhs: RepoIdentity, _ rhs: RepoIdentity) -> Bool {
+        if let lhsID = lhs.ghRepoID, let rhsID = rhs.ghRepoID, lhsID == rhsID {
+            return true
+        }
+        return lhs.normalizedFullName == rhs.normalizedFullName
     }
 
     static func mergeReferences(

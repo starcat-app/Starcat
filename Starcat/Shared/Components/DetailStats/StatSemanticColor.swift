@@ -38,6 +38,7 @@ enum StatSemanticColor {
     case wikiZread
     case wikiCodeWiki
     case actionStar
+    case actionLibrary
     case actionAI
     case actionGitHub
 
@@ -45,6 +46,7 @@ enum StatSemanticColor {
     private var lightHex: UInt32 {
         switch self {
         case .star, .actionStar: return 0xD97706
+        case .actionLibrary: return 0xE11D48
         case .fork: return 0x2563EB
         case .watchers: return 0x7C3AED
         case .issues: return 0xDC2626
@@ -62,6 +64,7 @@ enum StatSemanticColor {
     private var darkHex: UInt32 {
         switch self {
         case .star, .actionStar: return 0xFBBF24
+        case .actionLibrary: return 0xFB7185
         case .fork: return 0x60A5FA
         case .watchers: return 0xA78BFA
         case .issues: return 0xF87171
