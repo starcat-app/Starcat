@@ -129,7 +129,7 @@ struct SmartCollectionRuleEditorSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    ForEach(SmartCollectionKind.allCases) { kind in
+                                    ForEach(SmartCollectionKind.allCases.filter(\.supportsUserRuleTemplate)) { kind in
                                         Button {
                                             applyPreset(kind)
                                         } label: {

@@ -16,7 +16,7 @@ extension SmartCollectionRule {
     static func template(for kind: SmartCollectionKind) -> SmartCollectionRule {
         var rule = baseline
         switch kind {
-        case .library:
+        case .library, .outsideLibraryStars:
             break
         case .needsReview:
             rule.healthScoreMax = 59
@@ -43,6 +43,7 @@ extension SmartCollectionRule {
     static func defaultName(for kind: SmartCollectionKind) -> String {
         switch kind {
         case .library: return String.l10n("smartCollections.library.title")
+        case .outsideLibraryStars: return String.l10n("smartCollections.outsideLibraryStars.title")
         case .needsReview: return String.l10n("smartCollections.needsReview.title")
         case .unmaintained: return String.l10n("smartCollections.unmaintained.title")
         case .highValue: return String.l10n("smartCollections.highValue.title")

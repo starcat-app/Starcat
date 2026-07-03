@@ -1097,6 +1097,17 @@ final class HomeViewModel {
         return rule
     }
 
+    /// 内置集合「未入库 Stars」：GitHub 已 star，但尚未加入 Starcat 知识库。
+    ///
+    /// `repo_notes` 没有行时按 `.outsideLibrary` 处理，和全局 library filter 的语义一致。
+    private func fetchOutsideLibraryStars() async throws -> [Repo] {
+        let repos = try await repository.fetchAllStarred()
+        let libraryStateMap = try await repoNoteRepository.fetchAllLibraryStateMap()
+        return repos.filter { repo in
+            (libraryStateMap[repo.id] ?? .outsideLibrary) != .inLibrary
+        }
+    }
+
     /// 当前 selection 是否可走数据库分页主路径。
     ///
     /// 第一阶段只覆盖最常用且语义直接映射到 SQL 的 Manage 分类。用户智能集合、内置
@@ -1426,6 +1437,8 @@ final class HomeViewModel {
                         case .smartCollection(let kind):
                             if kind == .library {
                                 repos = try await self.repository.fetchKnowledgeRepos()
+                            } else if kind == .outsideLibraryStars {
+                                repos = try await self.fetchOutsideLibraryStars()
                             } else if kind == .noTags {
                                 repos = try await self.repository.fetchUntagged()
                             } else if kind == .using {
@@ -1821,6 +1834,8 @@ final class HomeViewModel {
                     case .smartCollection(let kind):
                         if kind == .library {
                             return try await self.repository.fetchKnowledgeRepos()
+                        } else if kind == .outsideLibraryStars {
+                            return try await self.fetchOutsideLibraryStars()
                         } else if kind == .noTags {
                             return try await self.repository.fetchUntagged()
                         } else if kind == .using {
@@ -2148,6 +2163,8 @@ final class HomeViewModel {
     ) -> Bool {
         switch kind {
         case .library:
+            return false
+        case .outsideLibraryStars:
             return false
         case .needsReview:
             return repo.isArchived

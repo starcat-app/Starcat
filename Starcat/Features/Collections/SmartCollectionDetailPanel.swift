@@ -364,12 +364,14 @@ struct SmartCollectionDetailPanel: View {
 
 private struct SmartCollectionRepoCard: View {
     private static let sectionSpacing: CGFloat = 6
-    private static let chipRowHeight: CGFloat = 18
     private static let chipRowSpacing: CGFloat = 4
 
     let item: SmartCollectionCardItem
 
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(HomeViewModel.self) private var viewModel
     @Environment(\.locale) private var locale
+    @State private var isAddingToLibrary = false
 
     private var repo: Repo { item.repo }
     private var status: RepoStatus { item.status }
@@ -462,24 +464,31 @@ private struct SmartCollectionRepoCard: View {
 
     @ViewBuilder
     private var topicAndTagArea: some View {
-        let topicChips = repo.topicsArray.prefix(3).map { topic in
-            SmartCollectionInfoChip(text: topic, systemImage: "number", tint: .secondary)
-        }
         let tagChips = userTags.prefix(3).map { tag in
             SmartCollectionInfoChip(
                 text: tag.name,
+                helpText: tag.name,
                 systemImage: tag.icon ?? "tag",
                 tint: Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor
             )
         }
 
-        if !topicChips.isEmpty || !tagChips.isEmpty {
+        if !repo.topicsArray.isEmpty || !tagChips.isEmpty {
             VStack(alignment: .leading, spacing: Self.chipRowSpacing) {
-                if !topicChips.isEmpty {
-                    chipRow(topicChips)
+                if !repo.topicsArray.isEmpty {
+                    SmartCollectionMeasuredChipRow(
+                        chips: repo.topicsArray.map { topic in
+                            SmartCollectionInfoChip(
+                                text: topic,
+                                helpText: topic,
+                                systemImage: "number",
+                                tint: .secondary
+                            )
+                        }
+                    )
                 }
                 if !tagChips.isEmpty {
-                    chipRow(tagChips)
+                    SmartCollectionMeasuredChipRow(chips: tagChips)
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
@@ -505,9 +514,41 @@ private struct SmartCollectionRepoCard: View {
                 )
             }
             Spacer(minLength: 0)
+            if collectionKind == .outsideLibraryStars {
+                addToLibraryButton
+            }
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// 未入库 Stars 专属操作：复用详情页 ❤️ 视觉；成功写入后刷新当前集合，让卡片从列表消失。
+    private var addToLibraryButton: some View {
+        LibraryToggleButton(isSaved: false, isWorking: isAddingToLibrary) {
+            Task { await addToLibrary() }
+        }
+    }
+
+    private func addToLibrary() async {
+        guard !isAddingToLibrary else { return }
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        guard repo.id > 0 else { return }
+
+        isAddingToLibrary = true
+        defer { isAddingToLibrary = false }
+
+        do {
+            _ = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(repo: repo, syncedAt: Date())
+            try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: .inLibrary)
+            viewModel.applyLibraryStateChange(repoId: repo.id, state: .inLibrary)
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
+        } catch {
+            AppLog.database.error("Smart Collection add to library failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// 「维护停滞」集合命中原因：归档走 archivebox + 已归档文案，久未更新走 clock + 集合标题。
@@ -566,23 +607,6 @@ private struct SmartCollectionRepoCard: View {
         }
     }
 
-    /// topic / 标签 chip 行：列宽由 Masonry 列约束，行末裁剪，不用 GeometryReader（避免布局死循环）。
-    private func chipRow(_ chips: [SmartCollectionInfoChip]) -> some View {
-        HStack(spacing: 6) {
-            ForEach(chips) { chip in
-                SmartCollectionCompactInfoChip(
-                    systemImage: chip.systemImage,
-                    text: chip.text,
-                    tint: chip.tint
-                )
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Self.chipRowHeight, alignment: .leading)
-        .clipped()
-    }
-
     private func healthDimensionStrip(_ snapshot: RepoHealthSnapshot) -> some View {
         HStack(spacing: 4) {
             healthDot(snapshot.maintenanceScore, color: .blue)
@@ -608,14 +632,108 @@ private struct SmartCollectionRepoCard: View {
 private struct SmartCollectionInfoChip: Identifiable {
     var id: String { "\(systemImage)|\(text)" }
     let text: String
+    let helpText: String
     let systemImage: String
     let tint: Color
+}
+
+/// chip 行需要按真实像素宽度裁剪：字符数不能代表 chip 宽度，必须把字体、图标和 padding 一起算进去。
+private struct SmartCollectionMeasuredChipRow: View {
+    private static let rowHeight: CGFloat = 18
+    private static let chipSpacing: CGFloat = 6
+    private static let chipIconWidth: CGFloat = 8
+    private static let chipTextSpacing: CGFloat = 3
+    private static let chipHorizontalPadding: CGFloat = 14
+    private static let overflowText = "..."
+
+    let chips: [SmartCollectionInfoChip]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let visibleChips = Self.visibleChips(
+                chips: chips,
+                availableWidth: proxy.size.width
+            )
+
+            HStack(spacing: Self.chipSpacing) {
+                ForEach(visibleChips) { chip in
+                    SmartCollectionCompactInfoChip(
+                        systemImage: chip.systemImage,
+                        text: chip.text,
+                        helpText: chip.helpText,
+                        tint: chip.tint
+                    )
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: Self.rowHeight)
+        .clipped()
+    }
+
+    /// 从左到右贪心填充 chip，并为未展示的剩余 chip 预留一个 `...` chip。
+    private static func visibleChips(chips: [SmartCollectionInfoChip], availableWidth: CGFloat) -> [SmartCollectionInfoChip] {
+        guard availableWidth > 0 else { return [] }
+
+        var visible: [SmartCollectionInfoChip] = []
+        var usedWidth: CGFloat = 0
+        let overflowWidth = chipWidth(text: overflowText)
+
+        for index in chips.indices {
+            let chip = chips[index]
+            let currentWidth = chipWidth(text: chip.text)
+            let leadingSpacing = visible.isEmpty ? 0 : chipSpacing
+            let hasRemainingChips = index < chips.index(before: chips.endIndex)
+            let overflowReserve = hasRemainingChips ? chipSpacing + overflowWidth : 0
+
+            if usedWidth + leadingSpacing + currentWidth + overflowReserve <= availableWidth {
+                usedWidth += leadingSpacing + currentWidth
+                visible.append(chip)
+            } else {
+                let omittedText = chips[index...].map(\.helpText).joined(separator: ", ")
+                appendOverflowChipIfPossible(
+                    to: &visible,
+                    usedWidth: usedWidth,
+                    availableWidth: availableWidth,
+                    overflowWidth: overflowWidth,
+                    helpText: omittedText
+                )
+                break
+            }
+        }
+
+        return visible
+    }
+
+    private static func appendOverflowChipIfPossible(
+        to chips: inout [SmartCollectionInfoChip],
+        usedWidth: CGFloat,
+        availableWidth: CGFloat,
+        overflowWidth: CGFloat,
+        helpText: String
+    ) {
+        let leadingSpacing = chips.isEmpty ? 0 : chipSpacing
+        guard usedWidth + leadingSpacing + overflowWidth <= availableWidth else { return }
+        chips.append(overflowChip(helpText: helpText))
+    }
+
+    private static func overflowChip(helpText: String) -> SmartCollectionInfoChip {
+        SmartCollectionInfoChip(text: overflowText, helpText: helpText, systemImage: "ellipsis", tint: .secondary)
+    }
+
+    private static func chipWidth(text: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        return chipIconWidth + chipTextSpacing + textWidth + chipHorizontalPadding
+    }
 }
 
 /// 右栏集合卡片专用 chip。列宽由 Masonry 约束，过长文案在胶囊内截断，行容器 `.clipped()` 防溢出。
 private struct SmartCollectionCompactInfoChip: View {
     let systemImage: String
     let text: String
+    let helpText: String
     let tint: Color
 
     var body: some View {
@@ -634,6 +752,7 @@ private struct SmartCollectionCompactInfoChip: View {
         .background(tint.opacity(0.12), in: Capsule())
         .fixedSize(horizontal: true, vertical: false)
         .clipped()
+        .help(helpText)
     }
 }
 

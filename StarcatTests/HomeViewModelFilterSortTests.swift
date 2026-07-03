@@ -336,6 +336,40 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [1])
     }
 
+    @Test("Smart Collections: 未入库 Stars 仅展示已 star 且未加入知识库的 repo")
+    func smartCollectionOutsideLibraryStars() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(
+            db,
+            id: 1,
+            fullName: "o/starred-library",
+            stars: 0,
+            starredAt: "2026-05-03T00:00:00Z"
+        )
+        try await insertRepo(
+            db,
+            id: 2,
+            fullName: "o/starred-outside",
+            stars: 0,
+            starredAt: "2026-05-02T00:00:00Z"
+        )
+        try await insertRepo(
+            db,
+            id: 3,
+            fullName: "o/library-only",
+            stars: 0,
+            starredAt: "2026-05-01T00:00:00Z",
+            isStarred: false
+        )
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 3, state: .inLibrary)
+
+        vm.selectSidebar(.smartCollection(.outsideLibraryStars))
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(vm.items.map(\.id) == [2])
+    }
+
     @Test("PR-5: 知识库集合内搜索使用 knowledge FTS 范围")
     func librarySearchUsesKnowledgeFTSScope() async throws {
         let (vm, db, noteRepo) = try makeSUT()
