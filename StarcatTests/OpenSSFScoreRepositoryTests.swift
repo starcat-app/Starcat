@@ -344,3 +344,69 @@ struct RepoHealthRepositoryTests {
         #expect(repos.map(\.id) == [2, 3, 4])
     }
 }
+
+@Suite("Library state cache retention")
+struct LibraryStateCacheRetentionTests {
+
+    @Test("移出知识库不删除 README / Repo Health / OpenSSF 缓存")
+    func removingFromLibraryKeepsLocalCaches() async throws {
+        let db = try InMemoryDatabaseManager()
+        try await seedRepo(db, id: 90, fullName: "alice/cache-retained")
+
+        let noteRepository = GRDBRepoNoteRepository(database: db)
+        let readmeRepository = ReadmeRepository(database: db)
+        let healthRepository = GRDBRepoHealthRepository(database: db)
+        let openSSFRepository = GRDBOpenSSFScoreRepository(database: db)
+
+        try await noteRepository.updateLibraryState(repoId: 90, state: .inLibrary)
+        try await readmeRepository.upsert(Readme(
+            repoId: 90,
+            renderedHtml: "<h1>cached</h1>",
+            etag: "\"html\"",
+            lastModified: nil,
+            cachedAt: "2026-07-03T00:00:00Z",
+            size: 15
+        ))
+        try await readmeRepository.upsertContent(repoId: 90, content: "# cached", at: Date(timeIntervalSince1970: 1_800_000_000))
+        try await healthRepository.upsert(RepoHealthSnapshot(
+            repoId: 90,
+            overallScore: 82,
+            grade: "B",
+            maintenanceScore: 80,
+            popularityScore: 75,
+            qualityScore: 88,
+            securityScore: 85,
+            payloadJSON: "{}",
+            computedAt: "2026-07-03T00:00:00Z",
+            staleAfter: "2026-07-04T00:00:00Z",
+            fetchStatus: .success,
+            lastError: nil
+        ))
+        try await openSSFRepository.upsert(.success(
+            repoId: 90,
+            payload: OpenSSFScorePayload(date: "2026-07-03", score: 8.2, checks: []),
+            rawData: Data(#"{"score":8.2}"#.utf8),
+            fetchedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        ))
+
+        try await noteRepository.updateLibraryState(repoId: 90, state: .outsideLibrary)
+
+        #expect(try await readmeRepository.find(repoId: 90)?.renderedHtml == "<h1>cached</h1>")
+        #expect(try await readmeRepository.findContent(repoId: 90) == "# cached")
+        #expect(try await healthRepository.snapshot(for: 90)?.overallScore == 82)
+        #expect(try await openSSFRepository.record(for: 90)?.aggregateScore == 8.2)
+    }
+
+    private func seedRepo(_ db: any DatabaseManaging, id: Int64, fullName: String) async throws {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, is_starred, starred_at, cached_at)
+                VALUES (?, ?, ?, ?, ?, 0, NULL, '2026-07-03T00:00:00Z')
+                """,
+                arguments: [id, parts[0], parts[1], fullName, "https://github.com/\(fullName)"]
+            )
+        }
+    }
+}

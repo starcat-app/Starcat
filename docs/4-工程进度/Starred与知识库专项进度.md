@@ -183,12 +183,12 @@
 - [x] OpenSSF stale 候选查询覆盖 starred 与知识库并集。
 - [x] OpenSSF coverage total / fetched total 使用 starred 与知识库并集口径。
 - [x] Initial warmup Health/OpenSSF 的 complete / pause 判断使用同一 active scope,避免 total 与候选范围不一致导致永久重试。
-- [ ] README / Repo Health / OpenSSF 后台任务跳过或降频处理不可访问 repo,避免反复失败。
-- [ ] README / Repo Health / OpenSSF 后台任务对无 token / token 权限不足的私有 repo 不反复远程刷新。
-- [ ] Health / OpenSSF 后台任务运行中取消入库不强行中断已开始请求,下一批候选自然排除。
-- [ ] Health / OpenSSF 后台任务运行中加入知识库不抢占当前批次,下一轮 poller 或 warmup retry 补齐。
+- [x] README / Repo Health / OpenSSF 后台任务跳过或降频处理不可访问 repo,避免反复失败。
+- [x] README / Repo Health / OpenSSF 后台任务对无 token / token 权限不足的私有 repo 不反复远程刷新。
+- [x] Health / OpenSSF 后台任务运行中取消入库不强行中断已开始请求,下一批候选自然排除。
+- [x] Health / OpenSSF 后台任务运行中加入知识库不抢占当前批次,下一轮 poller 或 warmup retry 补齐。
 - [x] embedding 覆盖 starred 与知识库并集,只清理同时不在两者中的 repo。
-- [ ] 移出知识库不删除已有 README / Repo Health / OpenSSF 缓存。
+- [x] 移出知识库不删除已有 README / Repo Health / OpenSSF 缓存。
 - [x] ShareCard 文件导出入口文案从“导出 Starred”改为“导出到文件”。
 - [x] ShareCard 文件导出下拉包含“导出 Starred 到 HTML.”。
 - [x] ShareCard 文件导出下拉包含“导出 Starred 到 Markdown.”。
@@ -226,6 +226,7 @@
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/ReadmePrefetchServiceTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticIndexingTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/StarredExportRendererTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/OpenSSFScoreRepositoryTests -only-testing:StarcatTests/RepoHealthRepositoryTests -only-testing:StarcatTests/LibraryStateCacheRetentionTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
 - [x] `rtk git diff --check`
@@ -366,6 +367,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-9 补 README 权限失败冷却与移出知识库缓存保留测试。
 - 2026-07-03: PR-9 ShareCard 增加 Starred/知识库 HTML 与 Markdown 文件导出。
 - 2026-07-03: PR-9 手动 embedding 刷新覆盖 starred 与知识库并集。
 - 2026-07-03: PR-9 README 预拉候选与 coverage 覆盖 starred 与知识库并集。

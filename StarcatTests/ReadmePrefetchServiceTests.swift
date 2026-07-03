@@ -102,6 +102,28 @@ struct ReadmePrefetchServiceTests {
         #expect(state?.nextRetryAt != nil)
     }
 
+    @Test("Unauthorized 写入 retry 冷却并停止本轮")
+    func unauthorizedCoolsDownAndStopsBatch() async throws {
+        let sut = try await makeSUT()
+        try await sut.db.insertRepoFixture(id: 11, owner: "alice", name: "private", starredAt: "2026-05-31T00:00:00Z")
+        try await sut.db.insertRepoFixture(id: 12, owner: "alice", name: "later", starredAt: "2026-05-30T00:00:00Z")
+
+        sut.api.readmeHTMLHandler = { _, _, _, _ in
+            throw NetworkError.unauthorized
+        }
+
+        let processed = await sut.service.runBatch(limit: 2, delayBetweenRepos: 0)
+
+        #expect(processed == 1)
+        #expect(sut.api.readmeHTMLCalls.count == 1)
+        #expect(sut.api.readmeMarkdownCalls.isEmpty)
+        let state = try await sut.prefetchRepository.state(repoId: 11)
+        #expect(state?.htmlStatus == .failed)
+        #expect(state?.markdownStatus == .skipped)
+        #expect(state?.lastErrorKind == "unauthorized")
+        #expect(state?.nextRetryAt != nil)
+    }
+
     @Test("候选查询失败进入安全重试状态且不保留 SQL 文本")
     func candidateQueryFailureUsesSafeRetryState() async throws {
         let sut = try await makeSUT()
