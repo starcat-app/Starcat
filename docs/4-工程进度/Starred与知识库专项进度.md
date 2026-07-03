@@ -165,9 +165,9 @@
 - [ ] Watchers / Forks / Issues 等 GitHub 统计刷新候选覆盖 starred 与知识库并集。
 - [ ] GitHub 统计刷新遇到 token 权限不足、私有或不可访问 repo 时跳过或降频。
 - [ ] GitHub 统计刷新失败不改变 `libraryState`,也不自动移出知识库。
-- [ ] 单 repo 手动 README 刷新允许已入库未 star repo。
-- [ ] 单 repo 手动 Repo Health 刷新允许已入库未 star repo。
-- [ ] 单 repo 手动 OpenSSF 刷新允许已入库未 star repo。
+- [x] 单 repo 手动 README 刷新允许已入库未 star repo。
+- [x] 单 repo 手动 Repo Health 刷新允许已入库未 star repo。
+- [x] 单 repo 手动 OpenSSF 刷新允许已入库未 star repo。
 - [ ] 单 repo 手动 README / Repo Health / OpenSSF 刷新失败时保留旧缓存,不改变 `libraryState`,不自动移出知识库。
 - [ ] open/codeflow/codebase action 允许已入库未 star repo。
 - [ ] GitHub star/unstar、远程刷新、私有 GitHub 内容拉取仍按 GitHub 状态、token 与权限分层。
@@ -365,6 +365,7 @@
 - 2026-07-02: PR-5 第三批 MCP search/semantic/resources 支持范围参数。
 - 2026-07-02: PR-5 第二批 Home 搜索候选与 FTS 按当前范围对齐。
 - 2026-07-02: PR-5 第一批 SemanticIndexBuilder 支持 starred/knowledge/all 范围。
+- 2026-07-03: PR-6 单仓 README/Health/OpenSSF 手动刷新放开已入库未 star repo。
 - 2026-07-03: PR-6 Repo Health/OpenSSF 后台统计候选覆盖知识库并集。
 - 2026-07-02: PR-6 第四批 Browser Plugin 接入知识库心形状态与写入。
 - 2026-07-02: PR-6 第三批新增 Companion library-state 写入 route。

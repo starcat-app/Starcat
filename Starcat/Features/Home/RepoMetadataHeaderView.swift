@@ -790,10 +790,14 @@ private struct RepoHealthInlineBadge: View {
 
 private extension Repo {
     /// Repo Health 是 `repo_health_snapshots -> repos.id` 的派生缓存，只有本地
-    /// `repos` 表已有行的 starred repo 才能写入。`cachedAt == nil` 的 repo 可能是
-    /// Trending / Weekly / backend hint 构造的 ephemeral 展示对象，不能拿来建快照。
+    /// `repos` 表已有持久化行的 repo 才能写入。
+    ///
+    /// 不能再用 `isStarred` 当作本地缓存 backing 的代理：已加入知识库但未 star 的 repo
+    /// 同样会先写入 `repos` metadata，并且应该允许手动刷新 Repo Health / OpenSSF。
+    /// `cachedAt == nil` 的 repo 仍可能是 Trending / Weekly / backend hint 构造的
+    /// ephemeral 展示对象，不能拿来建快照。
     var hasLocalHealthCacheBacking: Bool {
-        isStarred && id > 0 && cachedAt != nil
+        id > 0 && cachedAt != nil
     }
 }
 
