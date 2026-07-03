@@ -115,9 +115,9 @@ enum TrendingSortOption: String, CaseIterable, Identifiable {
         case .createdAsc:
             return "calendar"
         case .nameAsc:
-            return "textformat.abc"
+            return "a.square"
         case .nameDesc:
-            return "textformat.abc.dottedunderline"
+            return "z.square"
         case .risingTrend:
             return "chart.line.uptrend.xyaxis"
         }

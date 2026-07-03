@@ -29347,13 +29347,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Updated (Earliest First)"
+            "value" : "Oldest Updated"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新时间(最早优先)"
+            "value" : "最早更新"
           }
         }
       }
@@ -29364,13 +29364,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Updated (Recent First)"
+            "value" : "Recently Updated"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新时间(最近优先)"
+            "value" : "最近更新"
           }
         }
       }

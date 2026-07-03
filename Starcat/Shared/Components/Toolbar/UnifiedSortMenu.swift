@@ -197,9 +197,9 @@ final class WeeklySortDriver: ListSortDriver {
         case .createdAsc:
             return "calendar"
         case .nameAsc:
-            return "textformat.abc"
+            return "a.square"
         case .nameDesc:
-            return "textformat.abc.dottedunderline"
+            return "z.square"
         }
     }
 }

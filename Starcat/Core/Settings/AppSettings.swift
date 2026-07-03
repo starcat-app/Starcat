@@ -169,8 +169,8 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         switch self {
         case .starredAtDesc:                return "sparkles"
         case .starredAtAsc:                 return "star"
-        case .nameAsc:                      return "textformat.abc"
-        case .nameDesc:                     return "textformat.abc.dottedunderline"
+        case .nameAsc:                      return "a.square"
+        case .nameDesc:                     return "z.square"
         case .starsDesc:                    return "star.fill"
         case .starsAsc:                     return "star"
         case .updatedDesc, .updatedAsc:     return "clock.arrow.circlepath"

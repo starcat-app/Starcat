@@ -129,9 +129,9 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
         case .created, .createdAscending:
             return self == .created ? "calendar.badge.plus" : "calendar"
         case .nameAsc:
-            return "textformat.abc"
+            return "a.square"
         case .nameDesc:
-            return "textformat.abc.dottedunderline"
+            return "z.square"
         }
     }
 

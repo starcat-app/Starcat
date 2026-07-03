@@ -274,8 +274,8 @@ struct WeeklyContentView: View {
         case .updatedDesc, .updatedAsc: return "clock.arrow.circlepath"
         case .createdDesc: return "calendar.badge.plus"
         case .createdAsc: return "calendar"
-        case .nameAsc: return "textformat.abc"
-        case .nameDesc: return "textformat.abc.dottedunderline"
+        case .nameAsc: return "a.square"
+        case .nameDesc: return "z.square"
         }
     }
 
