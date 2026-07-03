@@ -486,7 +486,10 @@ struct RepoListView: View {
             )
         }()
 
-        return PageToolbarSpec(trailingPrimary: trailing)
+        return PageToolbarSpec(
+            trailingPrimary: trailing,
+            searchField: AnyView(smartSearchField())
+        )
     }
 
     /// Explore 的 Discovery 子模块 toolbar spec。
@@ -516,7 +519,10 @@ struct RepoListView: View {
             )
         }
 
-        return PageToolbarSpec(trailingPrimary: trailing)
+        return PageToolbarSpec(
+            trailingPrimary: trailing,
+            searchField: AnyView(smartSearchField())
+        )
     }
 
     /// Activity 页面 toolbar spec（W12 PR-4）：
@@ -589,7 +595,10 @@ struct RepoListView: View {
             }
         )
 
-        return PageToolbarSpec(trailingPrimary: trailing)
+        return PageToolbarSpec(
+            trailingPrimary: trailing,
+            searchField: AnyView(smartSearchField())
+        )
     }
 
     /// Manage 页面 toolbar：filter / multiSelect / external / clone / search。
