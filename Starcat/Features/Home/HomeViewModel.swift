@@ -422,6 +422,10 @@ final class HomeViewModel {
     /// 普通列表仍走既有排序路径，避免每次切分类都额外查 repo_health_snapshots。
     private var healthSortSnapshots: [Int64: RepoHealthSnapshot] = [:]
 
+    /// OpenSSF 排序用的本地分数缓存，只在用户选择 OpenSSF 排序时读取。
+    /// 与 Health 一样延迟加载，避免普通列表切换时额外查 open_ssf_scores。
+    private var openSSFSortScores: [Int64: Double] = [:]
+
     // MARK: - 多选模式
     //
     // W12 toolbar PR-5（2026-06-12）：原 W4 A5 的 `isMultiSelectMode` / `multiSelectedRepoIDs`
@@ -849,6 +853,7 @@ final class HomeViewModel {
             let task = Task { [weak self] in
                 guard let self else { return }
                 await self.refreshHealthSortSnapshotsIfNeeded(for: self.rawItems)
+                await self.refreshOpenSSFSortScoresIfNeeded(for: self.rawItems)
                 guard !Task.isCancelled else { return }
                 self.applyView()
             }
@@ -1394,6 +1399,8 @@ final class HomeViewModel {
             // 有缓存：立即用缓存数据填充 UI，同时后台刷新
             if sortOption == .healthScoreDesc {
                 await refreshHealthSortSnapshotsIfNeeded(for: cached!.rawItems)
+            } else if sortOption == .openSSFScoreDesc {
+                await refreshOpenSSFSortScoresIfNeeded(for: cached!.rawItems)
             }
             loadFromCache(cached!)
             if !forceRefresh && !cached!.isExpired {
@@ -1575,6 +1582,7 @@ final class HomeViewModel {
                 let fetched = result.repos
                 self.semanticHitMap = result.semanticHitMap
                 await self.refreshHealthSortSnapshotsIfNeeded(for: fetched)
+                await self.refreshOpenSSFSortScoresIfNeeded(for: fetched)
                 // 更新缓存（无论 UI 是否需要重渲染，都用最新数据替换 cache entry，
                 // 让下次切回这个分类时拿到 freshest 数据）
                 if shouldUseListCache {
@@ -2088,6 +2096,8 @@ final class HomeViewModel {
         if !isSemanticSearching && !userCollectionSemanticSearch {
             if sortOption == .healthScoreDesc {
                 view.sort(by: healthScoreComparator)
+            } else if sortOption == .openSSFScoreDesc {
+                view.sort(by: openSSFScoreComparator)
             } else {
                 view.sort(by: sortOption.comparator)
             }
@@ -2114,9 +2124,48 @@ final class HomeViewModel {
         }
     }
 
+    private func refreshOpenSSFSortScoresIfNeeded(for repos: [Repo]) async {
+        guard sortOption == .openSSFScoreDesc else { return }
+        guard let openSSFScoreRepository else {
+            openSSFSortScores = [:]
+            return
+        }
+        let ids = repos.map(\.id)
+        guard !ids.isEmpty else {
+            openSSFSortScores = [:]
+            return
+        }
+        do {
+            let records = try await openSSFScoreRepository.records(for: ids)
+            openSSFSortScores = records.compactMapValues { record in
+                guard record.fetchStatus == .success else { return nil }
+                return record.aggregateScore
+            }
+        } catch {
+            AppLog.database.warning("OpenSSF sort score load failed: \(error.localizedDescription, privacy: .public)")
+            openSSFSortScores = [:]
+        }
+    }
+
     private func healthScoreComparator(_ a: Repo, _ b: Repo) -> Bool {
         let av = healthSortSnapshots[a.id]?.overallScore
         let bv = healthSortSnapshots[b.id]?.overallScore
+        switch (av, bv) {
+        case let (aScore?, bScore?):
+            if aScore != bScore { return aScore > bScore }
+            return RepoSortOption.starredAtDesc.comparator(a, b)
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return RepoSortOption.starredAtDesc.comparator(a, b)
+        }
+    }
+
+    private func openSSFScoreComparator(_ a: Repo, _ b: Repo) -> Bool {
+        let av = openSSFSortScores[a.id]
+        let bv = openSSFSortScores[b.id]
         switch (av, bv) {
         case let (aScore?, bScore?):
             if aScore != bScore { return aScore > bScore }

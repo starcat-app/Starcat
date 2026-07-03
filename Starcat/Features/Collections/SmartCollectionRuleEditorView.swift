@@ -219,7 +219,7 @@ struct SmartCollectionRuleEditorSheet: View {
                             Text("list.sort").lineLimit(1)
                         } control: {
                             Picker("", selection: $draft.sortRaw) {
-                                ForEach(RepoSortOption.allCases) { option in
+                                ForEach(RepoSortOption.manageOptions) { option in
                                     Text(option.displayName).tag(option.rawValue)
                                 }
                             }

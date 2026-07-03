@@ -198,7 +198,7 @@ struct WeeklyAPISourceFilterTests {
         _ = try await api.fetchRepos(query: WeeklyFeedQuery(
             source: .zread,
             language: "Swift",
-            sort: .stars,
+            sort: .starsDesc,
             page: 2,
             pageSize: 10
         ))
@@ -211,6 +211,7 @@ struct WeeklyAPISourceFilterTests {
         #expect(query["source"] == "zread")
         #expect(query["lang"] == "Swift")
         #expect(query["sort"] == "stars")
+        #expect(query["order"] == "desc")
         #expect(query["page"] == "2")
         #expect(query["page_size"] == "10")
     }

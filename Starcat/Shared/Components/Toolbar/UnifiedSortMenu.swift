@@ -79,11 +79,15 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
     let options: [Option]
     let displayName: (Option) -> LocalizedStringKey
     let systemImage: (Option) -> String
+    var dividerBefore: (Option) -> Bool = { _ in false }
 
     var body: some View {
         Menu {
             Picker("list.sort", selection: $selection) {
                 ForEach(options) { opt in
+                    if dividerBefore(opt) {
+                        Divider()
+                    }
                     Label {
                         Text(displayName(opt))
                     } icon: {
@@ -134,7 +138,7 @@ final class ManageSortDriver: ListSortDriver {
     }
 
     var availableOptions: [RepoSortOption] {
-        Array(RepoSortOption.allCases)
+        RepoSortOption.manageOptions
     }
 
     func displayName(for option: RepoSortOption) -> LocalizedStringKey {
@@ -169,17 +173,33 @@ final class WeeklySortDriver: ListSortDriver {
 
     func displayName(for option: WeeklyFeedSort) -> LocalizedStringKey {
         switch option {
-        case .latestEventAt: return "weekly.sort.latestEvent"
-        case .stars:         return "weekly.sort.starsDesc"
-        case .pushedAt:      return "weekly.sort.pushedAt"
+        case .defaultOrder: return "weekly.sort.default"
+        case .starsDesc:    return "weekly.sort.starsDesc"
+        case .starsAsc:     return "weekly.sort.starsAsc"
+        case .updatedDesc:  return "weekly.sort.updatedDesc"
+        case .updatedAsc:   return "weekly.sort.updatedAsc"
+        case .createdDesc:  return "weekly.sort.createdDesc"
+        case .createdAsc:   return "weekly.sort.createdAsc"
+        case .nameAsc:      return "weekly.sort.nameAsc"
+        case .nameDesc:     return "weekly.sort.nameDesc"
         }
     }
 
     func systemImage(for option: WeeklyFeedSort) -> String {
         switch option {
-        case .latestEventAt: return "clock"
-        case .stars:         return "star.fill"
-        case .pushedAt:      return "clock.arrow.circlepath"
+        case .defaultOrder: return "sparkles"
+        case .starsDesc:    return "star.fill"
+        case .starsAsc:     return "star"
+        case .updatedDesc, .updatedAsc:
+            return "clock.arrow.circlepath"
+        case .createdDesc:
+            return "calendar.badge.plus"
+        case .createdAsc:
+            return "calendar"
+        case .nameAsc:
+            return "textformat.abc"
+        case .nameDesc:
+            return "textformat.abc.dottedunderline"
         }
     }
 }

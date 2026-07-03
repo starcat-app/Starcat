@@ -517,7 +517,7 @@ struct WeeklyFeedQuery: Equatable, Sendable {
     init(
         source: WeeklySourceFilter = .all,
         language: String? = nil,
-        sort: WeeklyFeedSort = .latestEventAt,
+        sort: WeeklyFeedSort = .defaultOrder,
         order: WeeklyFeedOrder = .desc,
         page: Int = 1,
         pageSize: Int = WeeklyAPI.defaultPageSize
@@ -532,11 +532,42 @@ struct WeeklyFeedQuery: Equatable, Sendable {
 }
 
 enum WeeklyFeedSort: String, CaseIterable, Identifiable, Sendable {
-    case latestEventAt = "latest_event_at"
-    case stars
-    case pushedAt = "pushed_at"
+    case defaultOrder
+    case starsDesc
+    case starsAsc
+    case updatedDesc
+    case updatedAsc
+    case createdDesc
+    case createdAsc
+    case nameAsc
+    case nameDesc
 
     var id: String { rawValue }
+
+    /// weekly-api 仍接收字段名 + order 两个参数；UI 枚举表达完整排序项。
+    var apiSortKey: String {
+        switch self {
+        case .defaultOrder:
+            return "latest_event_at"
+        case .starsDesc, .starsAsc:
+            return "stars"
+        case .updatedDesc, .updatedAsc:
+            return "updated_at"
+        case .createdDesc, .createdAsc:
+            return "created_at"
+        case .nameAsc, .nameDesc:
+            return "name"
+        }
+    }
+
+    var apiOrder: WeeklyFeedOrder {
+        switch self {
+        case .starsAsc, .updatedAsc, .createdAsc, .nameAsc:
+            return .asc
+        case .defaultOrder, .starsDesc, .updatedDesc, .createdDesc, .nameDesc:
+            return .desc
+        }
+    }
 }
 
 enum WeeklyFeedOrder: String, Sendable {

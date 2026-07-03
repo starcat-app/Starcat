@@ -521,9 +521,9 @@ struct WeeklyBulkRepositoryTests {
         viewModel.changePushedRecency(to: .days90)
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/good"])
-        #expect(viewModel.selectedSort == .pushedAt)
+        #expect(viewModel.selectedSort == .defaultOrder)
         #expect(viewModel.filterSummaryTitle.contains("5"))
         #expect(viewModel.filterSummaryTitle.contains("1"))
-        #expect(!viewModel.filterSummaryTitle.contains(WeeklyFeedSort.pushedAt.localizedTitle))
+        #expect(!viewModel.filterSummaryTitle.contains(WeeklyFeedSort.defaultOrder.localizedTitle))
     }
 }

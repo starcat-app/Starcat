@@ -56,22 +56,32 @@ enum TrendingSortOption: String, CaseIterable, Identifiable {
     case recommended
     case starsDesc
     case starsAsc
-    case nameAsc
-    case nameDesc
     case updatedDesc
     case updatedAsc
+    case createdDesc
+    case createdAsc
+    case nameAsc
+    case nameDesc
+    case risingTrend
 
     var id: String { rawValue }
+
+    var isTrendingSpecificSort: Bool {
+        self == .risingTrend
+    }
 
     var localizedTitle: String {
         switch self {
         case .recommended: return String.l10n("trending.sort.recommended")
         case .starsDesc: return String.l10n("trending.sort.starsDesc")
         case .starsAsc: return String.l10n("trending.sort.starsAsc")
-        case .nameAsc: return String.l10n("trending.sort.nameAsc")
-        case .nameDesc: return String.l10n("trending.sort.nameDesc")
         case .updatedDesc: return String.l10n("trending.sort.updatedDesc")
         case .updatedAsc: return String.l10n("trending.sort.updatedAsc")
+        case .createdDesc: return String.l10n("trending.sort.createdDesc")
+        case .createdAsc: return String.l10n("trending.sort.createdAsc")
+        case .nameAsc: return String.l10n("trending.sort.nameAsc")
+        case .nameDesc: return String.l10n("trending.sort.nameDesc")
+        case .risingTrend: return String.l10n("trending.sort.risingTrend")
         }
     }
 
@@ -80,23 +90,36 @@ enum TrendingSortOption: String, CaseIterable, Identifiable {
         case .recommended: return "trending.sort.recommended"
         case .starsDesc: return "trending.sort.starsDesc"
         case .starsAsc: return "trending.sort.starsAsc"
-        case .nameAsc: return "trending.sort.nameAsc"
-        case .nameDesc: return "trending.sort.nameDesc"
         case .updatedDesc: return "trending.sort.updatedDesc"
         case .updatedAsc: return "trending.sort.updatedAsc"
+        case .createdDesc: return "trending.sort.createdDesc"
+        case .createdAsc: return "trending.sort.createdAsc"
+        case .nameAsc: return "trending.sort.nameAsc"
+        case .nameDesc: return "trending.sort.nameDesc"
+        case .risingTrend: return "trending.sort.risingTrend"
         }
     }
 
     var systemImage: String {
         switch self {
         case .recommended:
-            return "chart.line.uptrend.xyaxis"
-        case .starsDesc, .starsAsc:
+            return "sparkles"
+        case .starsDesc:
             return "star.fill"
-        case .nameAsc, .nameDesc:
-            return "textformat"
+        case .starsAsc:
+            return "star"
         case .updatedDesc, .updatedAsc:
             return "clock.arrow.circlepath"
+        case .createdDesc:
+            return "calendar.badge.plus"
+        case .createdAsc:
+            return "calendar"
+        case .nameAsc:
+            return "textformat.abc"
+        case .nameDesc:
+            return "textformat.abc.dottedunderline"
+        case .risingTrend:
+            return "chart.line.uptrend.xyaxis"
         }
     }
 }
@@ -519,6 +542,20 @@ final class TrendingViewModel {
             return repos.sorted { trendingDate($0.updatedAt) > trendingDate($1.updatedAt) }
         case .updatedAsc:
             return repos.sorted { trendingDate($0.updatedAt) < trendingDate($1.updatedAt) }
+        case .createdDesc:
+            return repos.sorted { trendingDate($0.createdAt) > trendingDate($1.createdAt) }
+        case .createdAsc:
+            return repos.sorted { trendingDate($0.createdAt) < trendingDate($1.createdAt) }
+        case .risingTrend:
+            return repos.sorted {
+                if $0.starsInPeriod != $1.starsInPeriod {
+                    return $0.starsInPeriod > $1.starsInPeriod
+                }
+                if $0.starsCount != $1.starsCount {
+                    return $0.starsCount > $1.starsCount
+                }
+                return $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending
+            }
         }
     }
 

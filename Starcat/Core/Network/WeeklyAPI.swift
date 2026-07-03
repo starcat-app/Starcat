@@ -281,8 +281,8 @@ actor WeeklyAPI {
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "page", value: String(query.page)),
             URLQueryItem(name: "page_size", value: String(query.pageSize)),
-            URLQueryItem(name: "sort", value: query.sort.rawValue),
-            URLQueryItem(name: "order", value: query.order.rawValue)
+            URLQueryItem(name: "sort", value: query.sort.apiSortKey),
+            URLQueryItem(name: "order", value: query.sort.apiOrder.rawValue)
         ]
         if let language = query.language, !language.isEmpty {
             queryItems.append(URLQueryItem(name: "lang", value: language))

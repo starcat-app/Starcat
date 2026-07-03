@@ -1029,9 +1029,10 @@ struct RepoListView: View {
         HStack(spacing: 10) {
             UnifiedSortMenu(
                 selection: sortOption,
-                options: Array(RepoSortOption.allCases),
+                options: RepoSortOption.manageOptions,
                 displayName: { $0.displayName },
-                systemImage: { $0.systemImage }
+                systemImage: { $0.systemImage },
+                dividerBefore: { $0.isManageSpecificSort && $0 == RepoSortOption.manageOptions.first(where: \.isManageSpecificSort) }
             )
 
             Spacer()

@@ -702,6 +702,8 @@ struct GRDBRepoRepository {
 
         if sort == .healthScoreDesc {
             joins.append("LEFT JOIN repo_health_snapshots h_sort ON h_sort.repo_id = r.id")
+        } else if sort == .openSSFScoreDesc {
+            joins.append("LEFT JOIN open_ssf_scores ossf_sort ON ossf_sort.repo_id = r.id AND ossf_sort.fetch_status = 'success'")
         }
 
         let orderBy: String
@@ -726,8 +728,14 @@ struct GRDBRepoRepository {
             orderBy = "r.pushed_at DESC, r.id DESC"
         case .updatedAsc:
             orderBy = "r.pushed_at IS NULL ASC, r.pushed_at ASC, r.id ASC"
+        case .createdDesc:
+            orderBy = "r.created_at DESC, r.id DESC"
+        case .createdAsc:
+            orderBy = "r.created_at IS NULL ASC, r.created_at ASC, r.id ASC"
         case .healthScoreDesc:
             orderBy = "h_sort.repo_id IS NULL ASC, h_sort.overall_score DESC, r.starred_at DESC, r.id DESC"
+        case .openSSFScoreDesc:
+            orderBy = "ossf_sort.aggregate_score IS NULL ASC, ossf_sort.aggregate_score DESC, r.starred_at DESC, r.id DESC"
         }
 
         var sql = """

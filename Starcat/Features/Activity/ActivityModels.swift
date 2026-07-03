@@ -128,12 +128,7 @@ enum ActivityTimeSort: String, CaseIterable, Identifiable, Sendable {
     }
 
     var systemImage: String {
-        switch self {
-        case .newestFirst:
-            return "arrow.down"
-        case .oldestFirst:
-            return "arrow.up"
-        }
+        "clock"
     }
 }
 

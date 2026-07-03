@@ -95,10 +95,38 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
     case updatedDesc
     /// 最早 push 在前。
     case updatedAsc
+    /// 创建时间新→旧。
+    case createdDesc
+    /// 创建时间旧→新。
+    case createdAsc
     /// 健康分高→低；无健康分的仓库排到末尾。
     case healthScoreDesc
+    /// OpenSSF Scorecard 高→低；无 OpenSSF 分数的仓库排到末尾。
+    case openSSFScoreDesc
 
     var id: String { rawValue }
+
+    /// Manage 列表实际展示的排序项。
+    ///
+    /// `starredAtDesc` 继续作为"默认"内部语义：星标列表默认按最近 star 排序，但不再把
+    /// "最近星标/最早星标"暴露成独立产品概念。特有排序统一放在通用排序之后。
+    static let manageOptions: [RepoSortOption] = [
+        .starredAtDesc,
+        .starsDesc,
+        .starsAsc,
+        .updatedDesc,
+        .updatedAsc,
+        .createdDesc,
+        .createdAsc,
+        .nameAsc,
+        .nameDesc,
+        .healthScoreDesc,
+        .openSSFScoreDesc
+    ]
+
+    var isManageSpecificSort: Bool {
+        self == .healthScoreDesc || self == .openSSFScoreDesc
+    }
 
     /// 本地化显示名（Picker 菜单项用 `Text(verbatim:)` 渲染，走 `String.l10n`）。
     var localizedTitle: String {
@@ -111,7 +139,10 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         case .starsAsc:      return String.l10n("settings.sort.starsAsc")
         case .updatedDesc:   return String.l10n("settings.sort.updatedDesc")
         case .updatedAsc:    return String.l10n("settings.sort.updatedAsc")
+        case .createdDesc:   return String.l10n("settings.sort.createdDesc")
+        case .createdAsc:    return String.l10n("settings.sort.createdAsc")
         case .healthScoreDesc: return String.l10n("settings.sort.healthScoreDesc")
+        case .openSSFScoreDesc: return String.l10n("settings.sort.openSSFScoreDesc")
         }
     }
 
@@ -126,18 +157,27 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         case .starsAsc:      return "settings.sort.starsAsc"
         case .updatedDesc:   return "settings.sort.updatedDesc"
         case .updatedAsc:    return "settings.sort.updatedAsc"
+        case .createdDesc:   return "settings.sort.createdDesc"
+        case .createdAsc:    return "settings.sort.createdAsc"
         case .healthScoreDesc: return "settings.sort.healthScoreDesc"
+        case .openSSFScoreDesc: return "settings.sort.openSSFScoreDesc"
         }
     }
 
     /// SF Symbol，用于 Menu Label 视觉提示。
     var systemImage: String {
         switch self {
-        case .starredAtDesc, .starredAtAsc: return "star"
-        case .nameAsc, .nameDesc:           return "textformat"
-        case .starsDesc, .starsAsc:         return "star.fill"
+        case .starredAtDesc:                return "sparkles"
+        case .starredAtAsc:                 return "star"
+        case .nameAsc:                      return "textformat.abc"
+        case .nameDesc:                     return "textformat.abc.dottedunderline"
+        case .starsDesc:                    return "star.fill"
+        case .starsAsc:                     return "star"
         case .updatedDesc, .updatedAsc:     return "clock.arrow.circlepath"
-        case .healthScoreDesc:              return "gauge.with.dots.needle.67percent"
+        case .createdDesc:                  return "calendar.badge.plus"
+        case .createdAsc:                   return "calendar"
+        case .healthScoreDesc:              return "heart.text.square"
+        case .openSSFScoreDesc:             return "checkmark.shield"
         }
     }
 
@@ -172,8 +212,18 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
             let av = a.pushedAt ?? "\u{FFFD}"
             let bv = b.pushedAt ?? "\u{FFFD}"
             return av < bv
+        case .createdDesc:
+            return (a.createdAt ?? "") > (b.createdAt ?? "")
+        case .createdAsc:
+            let av = a.createdAt ?? "\u{FFFD}"
+            let bv = b.createdAt ?? "\u{FFFD}"
+            return av < bv
         case .healthScoreDesc:
             // Health 排序依赖 repo_health_snapshots，纯 Repo comparator 拿不到分数。
+            // 真正排序由 HomeViewModel / RepoRepository SQL 处理；这里给调用方一个稳定 fallback。
+            return RepoSortOption.starredAtDesc.comparator(a, b)
+        case .openSSFScoreDesc:
+            // OpenSSF 排序依赖 open_ssf_scores，纯 Repo comparator 拿不到分数。
             // 真正排序由 HomeViewModel / RepoRepository SQL 处理；这里给调用方一个稳定 fallback。
             return RepoSortOption.starredAtDesc.comparator(a, b)
         }

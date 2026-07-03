@@ -254,17 +254,28 @@ struct WeeklyContentView: View {
 
     private func weeklySortTitle(_ sort: WeeklyFeedSort) -> LocalizedStringKey {
         switch sort {
-        case .latestEventAt: return "weekly.sort.latestEvent"
-        case .stars: return "weekly.sort.starsDesc"
-        case .pushedAt: return "weekly.sort.pushedAt"
+        case .defaultOrder: return "weekly.sort.default"
+        case .starsDesc: return "weekly.sort.starsDesc"
+        case .starsAsc: return "weekly.sort.starsAsc"
+        case .updatedDesc: return "weekly.sort.updatedDesc"
+        case .updatedAsc: return "weekly.sort.updatedAsc"
+        case .createdDesc: return "weekly.sort.createdDesc"
+        case .createdAsc: return "weekly.sort.createdAsc"
+        case .nameAsc: return "weekly.sort.nameAsc"
+        case .nameDesc: return "weekly.sort.nameDesc"
         }
     }
 
     private func weeklySortIcon(_ sort: WeeklyFeedSort) -> String {
         switch sort {
-        case .latestEventAt: return "clock"
-        case .stars: return "star.fill"
-        case .pushedAt: return "clock.arrow.circlepath"
+        case .defaultOrder: return "sparkles"
+        case .starsDesc: return "star.fill"
+        case .starsAsc: return "star"
+        case .updatedDesc, .updatedAsc: return "clock.arrow.circlepath"
+        case .createdDesc: return "calendar.badge.plus"
+        case .createdAsc: return "calendar"
+        case .nameAsc: return "textformat.abc"
+        case .nameDesc: return "textformat.abc.dottedunderline"
         }
     }
 
@@ -602,7 +613,7 @@ final class WeeklyContentViewModel {
     /// 最近 push 时间窗筛选当前值。
     private(set) var selectedPushedRecency: WeeklyPushedRecencyFilter = .all
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
-    private(set) var selectedSort: WeeklyFeedSort = .latestEventAt
+    private(set) var selectedSort: WeeklyFeedSort = .defaultOrder
     private(set) var selectedLanguage: String = ""
 
     var filterSummaryTitle: String {
@@ -855,11 +866,6 @@ final class WeeklyContentViewModel {
     func changePushedRecency(to newValue: WeeklyPushedRecencyFilter) {
         guard newValue != selectedPushedRecency else { return }
         selectedPushedRecency = newValue
-        if newValue != .all, selectedSort == .latestEventAt {
-            // 用户选择 push 时间窗时，继续按“最近收录”排序会让第一屏变化很弱；
-            // 只在默认排序下自动切到 pushed_at，保留用户主动选过的 stars 排序。
-            selectedSort = .pushedAt
-        }
         reapplyFilters()
     }
 
@@ -1017,26 +1023,65 @@ final class WeeklyContentViewModel {
     /// 后切 sort 的视觉结果会与 .remote 模式不一致。
     private static func makeLocalSorter(_ sort: WeeklyFeedSort) -> (WeeklyFeedItem, WeeklyFeedItem) -> Bool {
         switch sort {
-        case .latestEventAt:
+        case .defaultOrder:
             return { lhs, rhs in
                 if lhs.latestEventAt != rhs.latestEventAt {
                     return lhs.latestEventAt > rhs.latestEventAt
                 }
                 return lhs.ghRepoId > rhs.ghRepoId
             }
-        case .stars:
+        case .starsDesc:
             return { lhs, rhs in
                 if lhs.stars != rhs.stars {
                     return lhs.stars > rhs.stars
                 }
                 return lhs.ghRepoId > rhs.ghRepoId
             }
-        case .pushedAt:
-            // pushedAt 是 ISO8601 字符串，同格式下字典序与时间序等价。空字符串作 "最远过去"。
+        case .starsAsc:
             return { lhs, rhs in
-                let l = lhs.card.pushedAt ?? ""
-                let r = rhs.card.pushedAt ?? ""
+                if lhs.stars != rhs.stars {
+                    return lhs.stars < rhs.stars
+                }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .updatedDesc:
+            return { lhs, rhs in
+                let l = lhs.card.updatedAt ?? ""
+                let r = rhs.card.updatedAt ?? ""
                 if l != r { return l > r }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .updatedAsc:
+            return { lhs, rhs in
+                let l = lhs.card.updatedAt ?? "\u{FFFD}"
+                let r = rhs.card.updatedAt ?? "\u{FFFD}"
+                if l != r { return l < r }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .createdDesc:
+            return { lhs, rhs in
+                let l = lhs.card.createdAt ?? ""
+                let r = rhs.card.createdAt ?? ""
+                if l != r { return l > r }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .createdAsc:
+            return { lhs, rhs in
+                let l = lhs.card.createdAt ?? "\u{FFFD}"
+                let r = rhs.card.createdAt ?? "\u{FFFD}"
+                if l != r { return l < r }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .nameAsc:
+            return { lhs, rhs in
+                let compare = lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName)
+                if compare != .orderedSame { return compare == .orderedAscending }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .nameDesc:
+            return { lhs, rhs in
+                let compare = lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName)
+                if compare != .orderedSame { return compare == .orderedDescending }
                 return lhs.ghRepoId > rhs.ghRepoId
             }
         }
@@ -1055,12 +1100,24 @@ final class WeeklyContentViewModel {
 extension WeeklyFeedSort {
     var localizedTitle: String {
         switch self {
-        case .latestEventAt:
-            return String.l10n("weekly.sort.latestEvent")
-        case .stars:
+        case .defaultOrder:
+            return String.l10n("weekly.sort.default")
+        case .starsDesc:
             return String.l10n("weekly.sort.starsDesc")
-        case .pushedAt:
-            return String.l10n("weekly.sort.pushedAt")
+        case .starsAsc:
+            return String.l10n("weekly.sort.starsAsc")
+        case .updatedDesc:
+            return String.l10n("weekly.sort.updatedDesc")
+        case .updatedAsc:
+            return String.l10n("weekly.sort.updatedAsc")
+        case .createdDesc:
+            return String.l10n("weekly.sort.createdDesc")
+        case .createdAsc:
+            return String.l10n("weekly.sort.createdAsc")
+        case .nameAsc:
+            return String.l10n("weekly.sort.nameAsc")
+        case .nameDesc:
+            return String.l10n("weekly.sort.nameDesc")
         }
     }
 }

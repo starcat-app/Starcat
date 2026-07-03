@@ -160,7 +160,10 @@ private struct ExploreDiscoveryListView: View {
                 selection: sortBinding,
                 options: ExploreSortOption.options(for: mode),
                 displayName: { $0.titleKey },
-                systemImage: { $0.systemImage }
+                systemImage: { $0.systemImage },
+                dividerBefore: { option in
+                    option == ExploreSortOption.options(for: mode).first(where: \.isModeSpecificSort)
+                }
             )
 
             Spacer()

@@ -114,20 +114,36 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
-        case .recommended, .popular:
+        case .recommended, .popular, .release:
             return "sparkles"
-        case .stars, .starsAscending:
+        case .stars:
             return "star.fill"
+        case .starsAscending:
+            return "star"
         case .activity:
             return "flame"
-        case .release, .releaseDate, .releaseDateAscending:
+        case .releaseDate, .releaseDateAscending:
             return "tag"
         case .updated, .updatedAscending:
             return "clock.arrow.circlepath"
         case .created, .createdAscending:
-            return "calendar"
-        case .nameAsc, .nameDesc:
-            return "textformat"
+            return self == .created ? "calendar.badge.plus" : "calendar"
+        case .nameAsc:
+            return "textformat.abc"
+        case .nameDesc:
+            return "textformat.abc.dottedunderline"
+        }
+    }
+
+    var isModeSpecificSort: Bool {
+        switch self {
+        case .releaseDate:
+            return true
+        case .activity, .releaseDateAscending:
+            return true
+        case .recommended, .popular, .release, .stars, .starsAscending,
+             .updated, .updatedAscending, .created, .createdAscending, .nameAsc, .nameDesc:
+            return false
         }
     }
 
@@ -168,7 +184,7 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
         case .popular:
             return commonOptions(defaultOption: .popular)
         case .newReleases:
-            return [.release, .releaseDate, .releaseDateAscending] + commonOptions(defaultOption: nil)
+            return commonOptions(defaultOption: .release) + [.releaseDate]
         case .trending, .weekly:
             return []
         }
@@ -176,14 +192,14 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
 
     private static func commonOptions(defaultOption: ExploreSortOption?) -> [ExploreSortOption] {
         let common: [ExploreSortOption] = [
-            .nameAsc,
-            .nameDesc,
             .stars,
             .starsAscending,
             .updated,
             .updatedAscending,
             .created,
-            .createdAscending
+            .createdAscending,
+            .nameAsc,
+            .nameDesc
         ]
         if let defaultOption {
             return [defaultOption] + common
