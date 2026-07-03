@@ -651,6 +651,14 @@ final class AppSettings {
         didSet { persist(key: Keys.lastActivityCategory, value: lastActivityCategoryRaw) }
     }
 
+    /// 按 GitHub 账号隔离的列表偏好原始值。
+    ///
+    /// 这里只保存 `login:key -> rawValue` 字符串,不直接引用 Home / Explore / Weekly
+    /// 的 Feature enum,避免 Core/Settings 反向依赖功能层类型。
+    var listPreferenceValues: [String: String] {
+        didSet { persistJSON(key: Keys.listPreferenceValues, value: listPreferenceValues) }
+    }
+
     /// 切换列表分类后是否自动打开当前列表第一条详情。
     ///
     /// 默认 false：切分类只更新中栏列表，详情由用户显式点击触发，避免列表加载后继续加载详情。
@@ -1274,6 +1282,12 @@ final class AppSettings {
         // 上次 Activity 分类：缺失则空串，由 ActivityCategory 解码时回落 all
         self.lastActivityCategoryRaw = defaults.string(forKey: Keys.lastActivityCategory) ?? ""
 
+        self.listPreferenceValues = Self.decodeJSON(
+            [String: String].self,
+            key: Keys.listPreferenceValues,
+            defaults: defaults
+        ) ?? [:]
+
         self.openFirstDetailOnCategoryChange = defaults.object(
             forKey: Keys.openFirstDetailOnCategoryChange
         ) as? Bool ?? false
@@ -1502,6 +1516,7 @@ final class AppSettings {
         repoLanguageFilter = .all
         lastManageSelectionRaw = ""
         lastActivityCategoryRaw = ""
+        listPreferenceValues = [:]
         openFirstDetailOnCategoryChange = false
 
         let provider = AIServiceProvider.openAICompatible
@@ -1564,6 +1579,42 @@ final class AppSettings {
         readmePrefetchEnabled = true
         aiSemanticSearchScoreThreshold = 0.75
         customServiceURLs = [:]
+    }
+
+    func listPreferenceValue(for key: String, login: String?) -> String? {
+        guard let scopedKey = scopedListPreferenceKey(key, login: login) else { return nil }
+        let raw = listPreferenceValues[scopedKey]
+        return raw?.isEmpty == true ? nil : raw
+    }
+
+    func setListPreferenceValue(_ value: String?, for key: String, login: String?) {
+        guard let scopedKey = scopedListPreferenceKey(key, login: login) else { return }
+        var copy = listPreferenceValues
+        if let value, !value.isEmpty {
+            copy[scopedKey] = value
+        } else {
+            copy.removeValue(forKey: scopedKey)
+        }
+        listPreferenceValues = copy
+    }
+
+    func resetListPreferences(login: String?) {
+        guard let login = normalizedListPreferenceLogin(login) else { return }
+        let prefix = "\(login):"
+        listPreferenceValues = listPreferenceValues.filter { !$0.key.hasPrefix(prefix) }
+    }
+
+    private func scopedListPreferenceKey(_ key: String, login: String?) -> String? {
+        guard let login = normalizedListPreferenceLogin(login) else { return nil }
+        return "\(login):\(key)"
+    }
+
+    private func normalizedListPreferenceLogin(_ login: String?) -> String? {
+        guard let login = login?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !login.isEmpty else {
+            return nil
+        }
+        return login.lowercased()
     }
 
     // MARK: - 内部
@@ -1761,6 +1812,7 @@ final class AppSettings {
         static let repoLanguageFilter = "settings.repoLanguageFilter"
         static let lastManageSelection = "settings.lastManageSelection"
         static let lastActivityCategory = "settings.lastActivityCategory"
+        static let listPreferenceValues = "settings.listPreferences.values.v1"
         static let openFirstDetailOnCategoryChange = "settings.detail.openFirstOnCategoryChange.v1"
         static let aiProvider = "settings.ai.provider"
         static let aiBaseURL = "settings.ai.baseURL"
@@ -1832,6 +1884,7 @@ final class AppSettings {
             repoLanguageFilter,
             lastManageSelection,
             lastActivityCategory,
+            listPreferenceValues,
             openFirstDetailOnCategoryChange,
             aiProvider,
             aiBaseURL,

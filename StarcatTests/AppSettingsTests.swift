@@ -140,6 +140,27 @@ struct AppSettingsTests {
         #expect(s2.lastActivityCategoryRaw == "release")
     }
 
+    @Test("列表偏好: 按 GitHub 账号隔离并可重置当前账号")
+    func listPreferencesAreScopedByAccountAndResetCurrentAccountOnly() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+
+        s1.setListPreferenceValue("Swift", for: "explore.weekly.language", login: "Dong4J")
+        s1.setListPreferenceValue("Python", for: "explore.weekly.language", login: "octocat")
+        s1.setListPreferenceValue("weekly", for: "explore.mode", login: "Dong4J")
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.listPreferenceValue(for: "explore.weekly.language", login: "dong4j") == "Swift")
+        #expect(s2.listPreferenceValue(for: "explore.weekly.language", login: "octocat") == "Python")
+        #expect(s2.listPreferenceValue(for: "explore.mode", login: "dong4j") == "weekly")
+
+        s2.resetListPreferences(login: "dong4j")
+
+        #expect(s2.listPreferenceValue(for: "explore.weekly.language", login: "dong4j") == nil)
+        #expect(s2.listPreferenceValue(for: "explore.mode", login: "dong4j") == nil)
+        #expect(s2.listPreferenceValue(for: "explore.weekly.language", login: "octocat") == "Python")
+    }
+
     // MARK: - 快捷键偏好
 
     @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K，常规搜索为 Command+F")
