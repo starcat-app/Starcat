@@ -122,18 +122,24 @@ struct UnifiedRepoRow: View {
     /// 渲染条件是 `showStarredCheckmark && card.isStarred` 双条件 AND——
     /// `card.isStarred` 仍由调用方派生(Manage 读 self,Trending/Weekly 走 registry)。
     let showStarredCheckmark: Bool
+
+    /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
+    /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
+    let trailingReservedWidth: CGFloat
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     init(
         card: RepoCardViewData,
         isSelected: Bool = false,
         semanticHit: SemanticSearchHit? = nil,
-        showStarredCheckmark: Bool = false
+        showStarredCheckmark: Bool = false,
+        trailingReservedWidth: CGFloat = 0
     ) {
         self.card = card
         self.isSelected = isSelected
         self.semanticHit = semanticHit
         self.showStarredCheckmark = showStarredCheckmark
+        self.trailingReservedWidth = trailingReservedWidth
     }
 
     var body: some View {
@@ -253,6 +259,7 @@ struct UnifiedRepoRow: View {
                         }
                     }
                 }
+                .padding(.trailing, trailingReservedWidth)
 
                 Spacer(minLength: 0)
             }

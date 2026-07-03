@@ -687,13 +687,15 @@ struct SearchCenterView: View {
         Group {
             switch candidate {
             case .repository(let repo):
+                let source = repositorySourceIndicator(for: repo)
                 rowWithSourceIndicator(
-                    source: repositorySourceIndicator(for: repo)
+                    source: source
                 ) {
                     UnifiedRepoRow(
                         card: repo.card,
                         isSelected: isSelected,
-                        showStarredCheckmark: true
+                        showStarredCheckmark: true,
+                        trailingReservedWidth: sourceIndicatorTrailingReserve(for: source)
                     )
                 }
             case .reference(let reference):
@@ -703,64 +705,65 @@ struct SearchCenterView: View {
                 // 背景蓝同源；hover 反馈不再单独叠加，全部走 RepoRowSurface 内置逻辑。
                 rowWithSourceIndicator(source: .web) {
                     RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
-                    HStack(alignment: .top, spacing: 12) {
-                        // 左侧 32pt 容器 + 内嵌 18pt favicon。
-                        // 容器 cornerRadius 6 / favicon cornerRadius 4 与 UnifiedRepoRow
-                        // 头像（圆形）形成"圆形=Repo / 圆角矩形=Web"的形状区分。
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.blue.opacity(0.10))
-                                .frame(width: 32, height: 32)
-                            RemoteFavicon(host: reference.domain, size: 18)
-                        }
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            // 标题独占一行：原"网页"chip 删除（dong4j 2026-06-13 反馈：
-                            // 每个网页卡片都挂同一个 chip，信息密度 0；scope 切到 .web
-                            // 时所有卡片都是网页，更冗余）。需要"类目"信号时由左侧 favicon
-                            // + 左侧蓝色 accent bar 自然传达。
-                            Text(reference.title)
-                                .font(.system(size: 13, weight: .semibold))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if let snippet = reference.snippet, !snippet.isEmpty {
-                                // dong4j 2026-06-13 反馈：浅色主题下 .secondary 在
-                                // `.regularMaterial` 浮层背景上对比度严重不足；改用
-                                // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
-                                // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
-                                Text(snippet)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.primary.opacity(0.85))
-                                    .lineLimit(2)
+                        HStack(alignment: .top, spacing: 12) {
+                            // 左侧 32pt 容器 + 内嵌 18pt favicon。
+                            // 容器 cornerRadius 6 / favicon cornerRadius 4 与 UnifiedRepoRow
+                            // 头像（圆形）形成"圆形=Repo / 圆角矩形=Web"的形状区分。
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.blue.opacity(0.10))
+                                    .frame(width: 32, height: 32)
+                                RemoteFavicon(host: reference.domain, size: 18)
                             }
-                            // 第三行：domain · path 首段（如 "github.com · zeka-stack"），
-                            // 让用户在不展开 URL 的情况下就能看出"是哪个 owner / org / 路径"。
-                            // 首段为空（裸域名结果）时仅显示 domain，不显示分隔符。
-                            //
-                            // dong4j 2026-06-13 反馈：原 .tertiary 在浅色 material 上
-                            // 几乎不可见；改用 .secondary 上提一档对比度。仍比 snippet 弱，
-                            // 维持"标题 > snippet > 元信息"三档视觉权重。
-                            HStack(spacing: 5) {
-                                Text(reference.domain)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                // 标题独占一行：原"网页"chip 删除（dong4j 2026-06-13 反馈：
+                                // 每个网页卡片都挂同一个 chip，信息密度 0；scope 切到 .web
+                                // 时所有卡片都是网页，更冗余）。需要"类目"信号时由左侧 favicon
+                                // + 左侧蓝色 accent bar 自然传达。
+                                Text(reference.title)
+                                    .font(.system(size: 13, weight: .semibold))
                                     .lineLimit(1)
-                                if let firstPath = Self.firstPathSegment(of: reference.originalURL) {
-                                    Text("·")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                    Text(firstPath)
+                                    .truncationMode(.tail)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                if let snippet = reference.snippet, !snippet.isEmpty {
+                                    // dong4j 2026-06-13 反馈：浅色主题下 .secondary 在
+                                    // `.regularMaterial` 浮层背景上对比度严重不足；改用
+                                    // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
+                                    // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
+                                    Text(snippet)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.primary.opacity(0.85))
+                                        .lineLimit(2)
+                                }
+                                // 第三行：domain · path 首段（如 "github.com · zeka-stack"），
+                                // 让用户在不展开 URL 的情况下就能看出"是哪个 owner / org / 路径"。
+                                // 首段为空（裸域名结果）时仅显示 domain，不显示分隔符。
+                                //
+                                // dong4j 2026-06-13 反馈：原 .tertiary 在浅色 material 上
+                                // 几乎不可见；改用 .secondary 上提一档对比度。仍比 snippet 弱，
+                                // 维持"标题 > snippet > 元信息"三档视觉权重。
+                                HStack(spacing: 5) {
+                                    Text(reference.domain)
                                         .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
-                                        .truncationMode(.middle)
+                                    if let firstPath = Self.firstPathSegment(of: reference.originalURL) {
+                                        Text("·")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                        Text(firstPath)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
                                 }
                             }
+                            .padding(.trailing, sourceIndicatorTrailingReserve(for: .web))
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
                     }
-                }
                 }
             }
         }
@@ -785,6 +788,10 @@ struct SearchCenterView: View {
         } else {
             content()
         }
+    }
+
+    private func sourceIndicatorTrailingReserve(for source: SearchResultSourceIndicator?) -> CGFloat {
+        viewModel.scope == .all && source != nil ? 34 : 0
     }
 
     /// 同一 repo 可能同时命中本地与 GitHub。优先显示「本地」，因为它已经是用户库内对象；
