@@ -2064,7 +2064,7 @@ struct RepoAIWindowContentView: View {
                     if hasExternal {
                         contextStatusPill(
                             icon: "globe",
-                            label: "ai.assistant.chat.contextStatus.external",
+                            label: externalContextStatusLabel(vm: vm),
                             tint: .green
                         )
                     }
@@ -2120,6 +2120,42 @@ struct RepoAIWindowContentView: View {
                 .fill(tint.opacity(0.15))
         }
         .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func contextStatusPill(
+        icon: String,
+        label: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(verbatim: label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(tint.opacity(0.15))
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func externalContextStatusLabel(vm: RepoAIInsightViewModel) -> String {
+        guard let sources = vm.insight?.externalContextSources, !sources.isEmpty else {
+            return "External context"
+        }
+        let providers = Set(sources.map(\.provider))
+        if settings.aggregateExternalContextSearchEnabled && settings.isProUser {
+            return "External context: \(providers.count)/\(ExternalSearchProviderID.allCases.count) providers used"
+        }
+        if providers.count == 1, let provider = providers.first {
+            return "External context: \(provider.displayName)"
+        }
+        return "External context: \(providers.count) providers used"
     }
 
     /// Y9.2 玻璃态主题适配：与 errorBanner 同款风格——背景 0.12 → 0.18 + strokeBorder。

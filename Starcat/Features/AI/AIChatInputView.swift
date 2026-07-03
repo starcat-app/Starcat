@@ -163,18 +163,21 @@ struct AIChatInputView: View {
     /// 两个 Toggle：
     ///   1. **代码上下文** → `aiRepoContextEnabled`（默认 ON）
     ///      影响 RepoContextPacker 是否被调用 + Code XML 是否进 AI prompt。
-    ///   2. **外部材料 (AnySearch)** → `aiExternalContextEnabled`（默认 OFF）
-    ///      影响 AnySearch markdown 是否注入摘要 / 对话 prompt。
-    ///      当 `anySearchEnabled = false` 时整项 disabled，菜单内追加 caption 引导
-    ///      用户去 Settings 启用 AnySearch（带 API Key 配置成本，不在此快捷翻转）。
+    ///   2. **外部材料 (External Search)** → `externalContextEnabled`（默认 OFF）
+    ///      影响 External Search markdown 是否注入摘要 / 对话 prompt。
+    ///      当没有任何可用 Provider 时整项 disabled，菜单内追加 caption 引导用户去
+    ///      Settings 配置 Provider（带 API Key 配置成本，不在此快捷翻转）。
     ///
-    /// 私仓开关 `aiExternalContextAllowPrivateRepos` 不进本菜单——它是边界条件，
+    /// 私仓开关 `externalSearchAllowPrivateRepos` 不进本菜单——它是边界条件，
     /// 不是日常切换的诉求。
     ///
     /// Settings 字段同时被 Settings 页面用同一份绑定方式编辑，本菜单与 Settings 页面
     /// 双向同步无需额外通信（@Observable didSet 自然驱动 UI 刷新）。
     @ViewBuilder
     private func contextMenu(settings: Bindable<AppSettings>) -> some View {
+        let hasUsableExternalSearchProvider = ExternalSearchRegistry(settings: settings.wrappedValue)
+            .usableProviderIDs()
+            .isEmpty == false
         Menu {
             Toggle(isOn: settings.aiRepoContextEnabled) {
                 Label(
@@ -183,17 +186,17 @@ struct AIChatInputView: View {
                 )
             }
 
-            Toggle(isOn: settings.aiExternalContextEnabled) {
+            Toggle(isOn: settings.externalContextEnabled) {
                 Label(
                     "ai.assistant.input.contextMenu.anySearch",
                     systemImage: "globe"
                 )
             }
-            .disabled(!settings.wrappedValue.anySearchEnabled)
+            .disabled(!hasUsableExternalSearchProvider)
 
-            // AnySearch 总开关关闭时追加 caption 引导用户：菜单里的 Text 在 macOS
+            // 没有可用 Provider 时追加 caption 引导用户：菜单里的 Text 在 macOS
             // SwiftUI 上以 secondary 字色 + 较小字号呈现，刚好作为"为什么禁用"的提示。
-            if !settings.wrappedValue.anySearchEnabled {
+            if !hasUsableExternalSearchProvider {
                 Divider()
                 Text("ai.assistant.input.contextMenu.anySearch.disabledHint")
             }
