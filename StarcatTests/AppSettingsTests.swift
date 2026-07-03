@@ -49,6 +49,10 @@ struct AppSettingsTests {
         settings.repoSortOption = .starsDesc
         settings.hideArchived = true
         settings.interestedLanguages = ["Swift", "Go"]
+        settings.globalFilterLanguages = ["Swift"]
+        settings.wikiAvailabilityFilter = .available
+        settings.healthAvailabilityFilter = .available
+        settings.openSSFAvailabilityFilter = .missing
         settings.aiProvider = .ollama
         settings.aiBaseURL = "http://localhost:11434/v1"
         settings.aiChatModel = "llama3.2"
@@ -74,6 +78,10 @@ struct AppSettingsTests {
         #expect(settings.repoSortOption == .starredAtDesc)
         #expect(settings.hideArchived == false)
         #expect(settings.interestedLanguages.isEmpty)
+        #expect(settings.globalFilterLanguages.isEmpty)
+        #expect(settings.wikiAvailabilityFilter == .unknown)
+        #expect(settings.healthAvailabilityFilter == .unknown)
+        #expect(settings.openSSFAvailabilityFilter == .unknown)
         #expect(settings.aiProvider == .openAICompatible)
         #expect(settings.aiBaseURL == "https://api.openai.com/v1")
         #expect(settings.aiChatModel == "gpt-4o-mini")
@@ -172,6 +180,23 @@ struct AppSettingsTests {
 
         let restored = AppSettings(defaults: defaults)
         #expect(restored.interestedLanguages == ["Go", "swift", "TypeScript"])
+    }
+
+    @Test("全局筛选: 语言与信号状态可持久化")
+    func globalFilterStatePersists() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+
+        settings.globalFilterLanguages = AppSettings.normalizedLanguageList(["TypeScript", "Swift"])
+        settings.wikiAvailabilityFilter = .available
+        settings.healthAvailabilityFilter = .missing
+        settings.openSSFAvailabilityFilter = .available
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.globalFilterLanguages == ["Swift", "TypeScript"])
+        #expect(restored.wikiAvailabilityFilter == .available)
+        #expect(restored.healthAvailabilityFilter == .missing)
+        #expect(restored.openSSFAvailabilityFilter == .available)
     }
 
     @Test("列表偏好: 重置不清其它本地设置")

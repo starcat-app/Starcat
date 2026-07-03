@@ -691,6 +691,26 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.interestedLanguages, value: Self.normalizedLanguageList(interestedLanguages)) }
     }
 
+    /// toolbar 全局语言筛选当前选中的语言。空数组表示不过滤语言。
+    var globalFilterLanguages: [String] {
+        didSet { persistJSON(key: Keys.globalFilterLanguages, value: Self.normalizedLanguageList(globalFilterLanguages)) }
+    }
+
+    /// toolbar 全局 Wiki 状态筛选。
+    var wikiAvailabilityFilter: RepoSignalAvailabilityFilter {
+        didSet { persist(key: Keys.wikiAvailabilityFilter, value: wikiAvailabilityFilter.rawValue) }
+    }
+
+    /// toolbar 全局 Health 分数状态筛选。
+    var healthAvailabilityFilter: RepoSignalAvailabilityFilter {
+        didSet { persist(key: Keys.healthAvailabilityFilter, value: healthAvailabilityFilter.rawValue) }
+    }
+
+    /// toolbar 全局 OpenSSF 分数状态筛选。
+    var openSSFAvailabilityFilter: RepoSignalAvailabilityFilter {
+        didSet { persist(key: Keys.openSSFAvailabilityFilter, value: openSSFAvailabilityFilter.rawValue) }
+    }
+
     /// 用户在 Manage 页最后选中的分类，用于跨启动恢复。
     ///
     /// 为什么存字符串而非 `SidebarItem`：
@@ -1340,6 +1360,17 @@ final class AppSettings {
             key: Keys.interestedLanguages,
             defaults: defaults
         ).map(Self.normalizedLanguageList) ?? []
+        self.globalFilterLanguages = Self.decodeJSON(
+            [String].self,
+            key: Keys.globalFilterLanguages,
+            defaults: defaults
+        ).map(Self.normalizedLanguageList) ?? []
+        self.wikiAvailabilityFilter = defaults.string(forKey: Keys.wikiAvailabilityFilter)
+            .flatMap(RepoSignalAvailabilityFilter.init(rawValue:)) ?? .unknown
+        self.healthAvailabilityFilter = defaults.string(forKey: Keys.healthAvailabilityFilter)
+            .flatMap(RepoSignalAvailabilityFilter.init(rawValue:)) ?? .unknown
+        self.openSSFAvailabilityFilter = defaults.string(forKey: Keys.openSSFAvailabilityFilter)
+            .flatMap(RepoSignalAvailabilityFilter.init(rawValue:)) ?? .unknown
 
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
@@ -1580,6 +1611,10 @@ final class AppSettings {
         libraryFilter = .all
         repoLanguageFilter = .all
         interestedLanguages = []
+        globalFilterLanguages = []
+        wikiAvailabilityFilter = .unknown
+        healthAvailabilityFilter = .unknown
+        openSSFAvailabilityFilter = .unknown
         lastManageSelectionRaw = ""
         lastActivityCategoryRaw = ""
         listPreferenceValues = [:]
@@ -1891,6 +1926,10 @@ final class AppSettings {
         static let libraryFilter = "settings.libraryFilter"
         static let repoLanguageFilter = "settings.repoLanguageFilter"
         static let interestedLanguages = "settings.filters.interestedLanguages.v1"
+        static let globalFilterLanguages = "settings.filters.global.languages.v1"
+        static let wikiAvailabilityFilter = "settings.filters.global.wikiAvailability.v1"
+        static let healthAvailabilityFilter = "settings.filters.global.healthAvailability.v1"
+        static let openSSFAvailabilityFilter = "settings.filters.global.openSSFAvailability.v1"
         static let lastManageSelection = "settings.lastManageSelection"
         static let lastActivityCategory = "settings.lastActivityCategory"
         static let listPreferenceValues = "settings.listPreferences.values.v1"
@@ -1964,6 +2003,10 @@ final class AppSettings {
             libraryFilter,
             repoLanguageFilter,
             interestedLanguages,
+            globalFilterLanguages,
+            wikiAvailabilityFilter,
+            healthAvailabilityFilter,
+            openSSFAvailabilityFilter,
             lastManageSelection,
             lastActivityCategory,
             listPreferenceValues,

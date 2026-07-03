@@ -1293,6 +1293,18 @@ struct HomeView: View {
         if viewModel.repoLanguageFilter != settings.repoLanguageFilter {
             viewModel.repoLanguageFilter = settings.repoLanguageFilter
         }
+        if viewModel.globalFilterLanguages != settings.globalFilterLanguages {
+            viewModel.globalFilterLanguages = settings.globalFilterLanguages
+        }
+        if viewModel.wikiAvailabilityFilter != settings.wikiAvailabilityFilter {
+            viewModel.wikiAvailabilityFilter = settings.wikiAvailabilityFilter
+        }
+        if viewModel.healthAvailabilityFilter != settings.healthAvailabilityFilter {
+            viewModel.healthAvailabilityFilter = settings.healthAvailabilityFilter
+        }
+        if viewModel.openSSFAvailabilityFilter != settings.openSSFAvailabilityFilter {
+            viewModel.openSSFAvailabilityFilter = settings.openSSFAvailabilityFilter
+        }
         if viewModel.smartSearchMode != settings.smartSearchMode {
             viewModel.smartSearchMode = settings.smartSearchMode
         }
@@ -1578,6 +1590,10 @@ struct HomeView: View {
         settings.statusFilter = nil
         settings.libraryFilter = .all
         settings.repoLanguageFilter = .all
+        settings.globalFilterLanguages = []
+        settings.wikiAvailabilityFilter = .unknown
+        settings.healthAvailabilityFilter = .unknown
+        settings.openSSFAvailabilityFilter = .unknown
         settings.lastManageSelectionRaw = ""
         settings.lastActivityCategoryRaw = ""
 

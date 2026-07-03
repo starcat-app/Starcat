@@ -93,6 +93,16 @@ enum RepoLanguageFilter: Equatable, Hashable, Codable, Sendable {
     }
 }
 
+/// 全局“是否存在某类信号”的三态筛选。
+///
+/// `.unknown` 表示不筛选；`.available` 只保留已确认存在信号的 repo；`.missing`
+/// 只保留已确认不存在信号的 repo。调用方不能把“尚未探测”当成 missing。
+enum RepoSignalAvailabilityFilter: String, CaseIterable, Codable, Sendable {
+    case unknown
+    case available
+    case missing
+}
+
 /// Manage 列表的可下推过滤条件。
 ///
 /// `selectedTagIDs` 语义与 HomeViewModel 保持一致：命中任意一个标签即可保留（OR）。
@@ -103,6 +113,10 @@ struct RepoListFilters: Equatable, Sendable {
     var status: RepoStatus?
     var library: RepoLibraryFilter
     var language: RepoLanguageFilter
+    var selectedLanguages: Set<String>
+    var wikiAvailability: RepoSignalAvailabilityFilter
+    var healthAvailability: RepoSignalAvailabilityFilter
+    var openSSFAvailability: RepoSignalAvailabilityFilter
     var selectedTagIDs: Set<String>
 
     init(
@@ -111,6 +125,10 @@ struct RepoListFilters: Equatable, Sendable {
         status: RepoStatus?,
         library: RepoLibraryFilter = .all,
         language: RepoLanguageFilter = .all,
+        selectedLanguages: Set<String> = [],
+        wikiAvailability: RepoSignalAvailabilityFilter = .unknown,
+        healthAvailability: RepoSignalAvailabilityFilter = .unknown,
+        openSSFAvailability: RepoSignalAvailabilityFilter = .unknown,
         selectedTagIDs: Set<String>
     ) {
         self.hideArchived = hideArchived
@@ -118,6 +136,10 @@ struct RepoListFilters: Equatable, Sendable {
         self.status = status
         self.library = library
         self.language = language
+        self.selectedLanguages = selectedLanguages
+        self.wikiAvailability = wikiAvailability
+        self.healthAvailability = healthAvailability
+        self.openSSFAvailability = openSSFAvailability
         self.selectedTagIDs = selectedTagIDs
     }
 
@@ -127,6 +149,10 @@ struct RepoListFilters: Equatable, Sendable {
         status: nil,
         library: .all,
         language: .all,
+        selectedLanguages: [],
+        wikiAvailability: .unknown,
+        healthAvailability: .unknown,
+        openSSFAvailability: .unknown,
         selectedTagIDs: []
     )
 }

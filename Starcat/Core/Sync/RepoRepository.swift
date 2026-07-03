@@ -649,6 +649,11 @@ struct GRDBRepoRepository {
                 whereClauses.append("r.language IS NULL")
             }
         }
+        if !filters.selectedLanguages.isEmpty {
+            let placeholders = Array(repeating: "?", count: filters.selectedLanguages.count).joined(separator: ", ")
+            whereClauses.append("r.language IN (\(placeholders))")
+            args.append(contentsOf: filters.selectedLanguages.sorted())
+        }
         if let status = filters.status {
             if status == .unread {
                 whereClauses.append("""
@@ -684,6 +689,48 @@ struct GRDBRepoRepository {
                     SELECT 1 FROM repo_notes rn_library
                     WHERE rn_library.repo_id = r.id
                       AND rn_library.library_state = 'in_library'
+                )
+                """)
+        }
+        switch filters.healthAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_health_snapshots h_filter
+                    WHERE h_filter.repo_id = r.id
+                      AND h_filter.fetch_status != 'failed'
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_health_snapshots h_filter
+                    WHERE h_filter.repo_id = r.id
+                      AND h_filter.fetch_status != 'failed'
+                )
+                """)
+        }
+        switch filters.openSSFAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM open_ssf_scores ossf_filter
+                    WHERE ossf_filter.repo_id = r.id
+                      AND ossf_filter.fetch_status = 'success'
+                      AND ossf_filter.aggregate_score IS NOT NULL
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM open_ssf_scores ossf_filter
+                    WHERE ossf_filter.repo_id = r.id
+                      AND ossf_filter.fetch_status = 'success'
+                      AND ossf_filter.aggregate_score IS NOT NULL
                 )
                 """)
         }

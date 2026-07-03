@@ -644,10 +644,6 @@ struct RepoListView: View {
     private func makeManageToolbarSpec() -> PageToolbarSpec {
         // @Bindable 让 `$vm.statusFilter` 等可派生 Binding，传给下游 picker / toggle。
         @Bindable var vm = viewModel
-        let languageOptions = viewModel.selection == .smartCollection(.library)
-            ? viewModel.knowledgeLanguageStats
-            : viewModel.languageStats
-
         let filterItems: [FilterMenuItem] = [
             .content(id: "status", view: AnyView(
                 Picker("list.filter.status", selection: $vm.statusFilter) {
@@ -674,23 +670,44 @@ struct RepoListView: View {
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
-                Picker("list.filter.language", selection: $vm.repoLanguageFilter) {
-                    Label("general.all", systemImage: "tray.full").tag(RepoLanguageFilter.all)
-                    ForEach(languageOptions) { stat in
-                        Label {
-                            Text(stat.displayName)
-                        } icon: {
-                            Image(systemName: languageFilterIcon(for: stat))
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("list.filter.language", systemImage: "globe")
+                    if settings.interestedLanguages.isEmpty {
+                        Text("settings.filters.interestedLanguages.empty")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(settings.interestedLanguages, id: \.self) { language in
+                            Toggle(isOn: globalLanguageBinding(for: language)) {
+                                Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
+                            }
                         }
-                        .tag(stat.language.isEmpty
-                            ? RepoLanguageFilter.uncategorized
-                            : RepoLanguageFilter.language(stat.language)
-                        )
                     }
                 }
-                .pickerStyle(.inline)
             )),
             .divider(id: "after-language"),
+            .content(id: "wikiAvailability", view: AnyView(
+                availabilityPicker(
+                    title: "list.filter.wikiAvailability",
+                    icon: "doc.text.magnifyingglass",
+                    selection: $vm.wikiAvailabilityFilter
+                )
+            )),
+            .content(id: "healthAvailability", view: AnyView(
+                availabilityPicker(
+                    title: "list.filter.healthAvailability",
+                    icon: "heart.text.square",
+                    selection: $vm.healthAvailabilityFilter
+                )
+            )),
+            .content(id: "openSSFAvailability", view: AnyView(
+                availabilityPicker(
+                    title: "list.filter.openSSFAvailability",
+                    icon: "checkmark.shield",
+                    selection: $vm.openSSFAvailabilityFilter
+                )
+            )),
+            .divider(id: "after-signal-availability"),
             .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
             .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
         ]
@@ -737,6 +754,18 @@ struct RepoListView: View {
                 }
                 .onChange(of: viewModel.repoLanguageFilter) { _, newValue in
                     settings.repoLanguageFilter = newValue
+                }
+                .onChange(of: viewModel.globalFilterLanguages) { _, newValue in
+                    settings.globalFilterLanguages = AppSettings.normalizedLanguageList(newValue)
+                }
+                .onChange(of: viewModel.wikiAvailabilityFilter) { _, newValue in
+                    settings.wikiAvailabilityFilter = newValue
+                }
+                .onChange(of: viewModel.healthAvailabilityFilter) { _, newValue in
+                    settings.healthAvailabilityFilter = newValue
+                }
+                .onChange(of: viewModel.openSSFAvailabilityFilter) { _, newValue in
+                    settings.openSSFAvailabilityFilter = newValue
                 }
 
                 // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
@@ -1765,6 +1794,59 @@ struct RepoListView: View {
         case .all: return "tray.full"
         case .inLibrary: return "heart.fill"
         case .outsideLibrary: return "heart"
+        }
+    }
+
+    private func globalLanguageBinding(for language: String) -> Binding<Bool> {
+        Binding(
+            get: {
+                viewModel.globalFilterLanguages.contains {
+                    $0.caseInsensitiveCompare(language) == .orderedSame
+                }
+            },
+            set: { isOn in
+                if isOn {
+                    viewModel.globalFilterLanguages = AppSettings.normalizedLanguageList(
+                        viewModel.globalFilterLanguages + [language]
+                    )
+                } else {
+                    viewModel.globalFilterLanguages = viewModel.globalFilterLanguages.filter {
+                        $0.caseInsensitiveCompare(language) != .orderedSame
+                    }
+                }
+            }
+        )
+    }
+
+    private func availabilityPicker(
+        title: LocalizedStringKey,
+        icon: String,
+        selection: Binding<RepoSignalAvailabilityFilter>
+    ) -> some View {
+        Picker(selection: selection) {
+            ForEach(RepoSignalAvailabilityFilter.allCases, id: \.self) { filter in
+                Label(availabilityFilterTitle(for: filter), systemImage: availabilityFilterIcon(for: filter, fallback: icon))
+                    .tag(filter)
+            }
+        } label: {
+            Label(title, systemImage: icon)
+        }
+        .pickerStyle(.inline)
+    }
+
+    private func availabilityFilterTitle(for filter: RepoSignalAvailabilityFilter) -> LocalizedStringKey {
+        switch filter {
+        case .unknown: return "general.all"
+        case .available: return "list.filter.availability.available"
+        case .missing: return "list.filter.availability.missing"
+        }
+    }
+
+    private func availabilityFilterIcon(for filter: RepoSignalAvailabilityFilter, fallback: String) -> String {
+        switch filter {
+        case .unknown: return "tray.full"
+        case .available: return fallback
+        case .missing: return "nosign"
         }
     }
 

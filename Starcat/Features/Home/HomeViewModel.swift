@@ -418,11 +418,11 @@ final class HomeViewModel {
     /// - 与现有 `statusMap` 走的"全表加载到字典 + applyView 过滤"路径完全一致
     private var repoTagsMap: [Int64: Set<String>] = [:]
 
-    /// Health 排序用的本地快照缓存，只在用户选择 health 排序时读取。
-    /// 普通列表仍走既有排序路径，避免每次切分类都额外查 repo_health_snapshots。
+    /// Health 排序 / 筛选用的本地快照缓存，只在用户启用相关控制时读取。
+    /// 普通列表仍走既有路径，避免每次切分类都额外查 repo_health_snapshots。
     private var healthSortSnapshots: [Int64: RepoHealthSnapshot] = [:]
 
-    /// OpenSSF 排序用的本地分数缓存，只在用户选择 OpenSSF 排序时读取。
+    /// OpenSSF 排序 / 筛选用的本地分数缓存，只在用户启用相关控制时读取。
     /// 与 Health 一样延迟加载，避免普通列表切换时额外查 open_ssf_scores。
     private var openSSFSortScores: [Int64: Double] = [:]
 
@@ -499,6 +499,42 @@ final class HomeViewModel {
     var repoLanguageFilter: RepoLanguageFilter = .all {
         didSet {
             guard oldValue != repoLanguageFilter else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// toolbar 全局语言筛选，多选为空表示不过滤。
+    var globalFilterLanguages: [String] = [] {
+        didSet {
+            guard oldValue != globalFilterLanguages else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// toolbar 全局 Wiki 状态筛选。
+    var wikiAvailabilityFilter: RepoSignalAvailabilityFilter = .unknown {
+        didSet {
+            guard oldValue != wikiAvailabilityFilter else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// toolbar 全局 Health 分数状态筛选。
+    var healthAvailabilityFilter: RepoSignalAvailabilityFilter = .unknown {
+        didSet {
+            guard oldValue != healthAvailabilityFilter else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// toolbar 全局 OpenSSF 分数状态筛选。
+    var openSSFAvailabilityFilter: RepoSignalAvailabilityFilter = .unknown {
+        didSet {
+            guard oldValue != openSSFAvailabilityFilter else { return }
             guard !isHydratingManageFilters else { return }
             reloadOrApplyCurrentManageView()
         }
@@ -654,6 +690,10 @@ final class HomeViewModel {
             || statusFilter != nil
             || libraryFilter != .all
             || repoLanguageFilter != .all
+            || !globalFilterLanguages.isEmpty
+            || wikiAvailabilityFilter != .unknown
+            || healthAvailabilityFilter != .unknown
+            || openSSFAvailabilityFilter != .unknown
     }
 
     // MARK: - 依赖
@@ -1165,6 +1205,10 @@ final class HomeViewModel {
     /// 第一阶段只覆盖最常用且语义直接映射到 SQL 的 Manage 分类。用户智能集合、内置
     /// High Value/Needs Review 等仍依赖额外上下文，继续走旧的全量派生路径。
     private func currentRepoListScopeForDatabasePaging() -> RepoListScope? {
+        // Wiki 状态目前来自磁盘 JSON 缓存，不在 SQLite repos 查询里。启用该筛选时先走
+        // 内存路径，保证“有/无 Wiki”语义正确；后续若落库索引再恢复分页下推。
+        guard wikiAvailabilityFilter == .unknown else { return nil }
+
         switch selection {
         case .allStars, .allLanguages:
             return .allStars
@@ -1194,6 +1238,10 @@ final class HomeViewModel {
             status: statusFilter,
             library: libraryFilter,
             language: repoLanguageFilter,
+            selectedLanguages: Set(globalFilterLanguages),
+            wikiAvailability: wikiAvailabilityFilter,
+            healthAvailability: healthAvailabilityFilter,
+            openSSFAvailability: openSSFAvailabilityFilter,
             selectedTagIDs: selectedTagIds
         )
     }
@@ -2071,6 +2119,7 @@ final class HomeViewModel {
                 }
             }
         }
+        applyGlobalRepoFilters(to: &view)
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。
         //
         // 仅 isSemanticSearching 时启用：FTS / 普通分类列表的 semanticHitMap 始终为空，
@@ -2105,8 +2154,55 @@ final class HomeViewModel {
         return view
     }
 
+    private func applyGlobalRepoFilters(to repos: inout [Repo]) {
+        let selectedLanguages = Set(globalFilterLanguages)
+        if !selectedLanguages.isEmpty {
+            repos.removeAll { repo in
+                guard let language = repo.language else { return true }
+                return !selectedLanguages.contains(language)
+            }
+        }
+        applySignalAvailabilityFilters(to: &repos)
+    }
+
+    private func applySignalAvailabilityFilters(to repos: inout [Repo]) {
+        if wikiAvailabilityFilter != .unknown {
+            repos.removeAll { repo in
+                !matchesWikiAvailability(repo)
+            }
+        }
+        if healthAvailabilityFilter != .unknown {
+            repos.removeAll { repo in
+                !matchesAvailability(healthSortSnapshots[repo.id] != nil, filter: healthAvailabilityFilter)
+            }
+        }
+        if openSSFAvailabilityFilter != .unknown {
+            repos.removeAll { repo in
+                !matchesAvailability(openSSFSortScores[repo.id] != nil, filter: openSSFAvailabilityFilter)
+            }
+        }
+    }
+
+    private func matchesWikiAvailability(_ repo: Repo) -> Bool {
+        guard let snapshot = DiskWikiCache.shared.load(owner: repo.owner, repo: repo.name) else {
+            return wikiAvailabilityFilter == .unknown
+        }
+        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: wikiAvailabilityFilter)
+    }
+
+    private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
+        switch filter {
+        case .unknown:
+            return true
+        case .available:
+            return available
+        case .missing:
+            return !available
+        }
+    }
+
     private func refreshHealthSortSnapshotsIfNeeded(for repos: [Repo]) async {
-        guard sortOption == .healthScoreDesc else { return }
+        guard sortOption == .healthScoreDesc || healthAvailabilityFilter != .unknown else { return }
         guard let repoHealthRepository else {
             healthSortSnapshots = [:]
             return
@@ -2125,7 +2221,7 @@ final class HomeViewModel {
     }
 
     private func refreshOpenSSFSortScoresIfNeeded(for repos: [Repo]) async {
-        guard sortOption == .openSSFScoreDesc else { return }
+        guard sortOption == .openSSFScoreDesc || openSSFAvailabilityFilter != .unknown else { return }
         guard let openSSFScoreRepository else {
             openSSFSortScores = [:]
             return
