@@ -22886,13 +22886,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Available placeholders for the Chat task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives reply language and the auto-translated fallback sentence when context is insufficient.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {summary} — cached AI summary markdown for this repository (empty when no summary has been generated yet)\n• {externalContext} — external web search markdown from AnySearch (empty when disabled or unavailable)\n\nNote: the Chat task does not use the User Prompt template — user messages go directly to the model through the conversation messages array. The User Prompt field is unused.\n\nDelete a placeholder from the System Prompt to skip injecting that data; restore by clicking the reset button."
+            "value" : "Available placeholders for the Chat task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives reply language and the auto-translated fallback sentence when context is insufficient.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {summary} — cached AI summary markdown for this repository (empty when no summary has been generated yet)\n• {externalContext} — external web search markdown from External Search (empty when disabled or unavailable)\n\nNote: the Chat task does not use the User Prompt template — user messages go directly to the model through the conversation messages array. The User Prompt field is unused.\n\nDelete a placeholder from the System Prompt to skip injecting that data; restore by clicking the reset button."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chat 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和上下文不足时的兜底句自然翻译。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {summary} —— 该仓库的缓存 AI 摘要 markdown（未生成过摘要时为空）\n• {externalContext} —— AnySearch 生成的外部网页检索 markdown（关闭或拉取失败时为空）\n\n说明：Chat 任务不使用 User Prompt 模板——用户消息直接通过对话 messages 数组传给模型。User Prompt 一栏不会被使用。\n\n从 System Prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
+            "value" : "Chat 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和上下文不足时的兜底句自然翻译。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {summary} —— 该仓库的缓存 AI 摘要 markdown（未生成过摘要时为空）\n• {externalContext} —— External Search 生成的外部网页检索 markdown（关闭或拉取失败时为空）\n\n说明：Chat 任务不使用 User Prompt 模板——用户消息直接通过对话 messages 数组传给模型。User Prompt 一栏不会被使用。\n\n从 System Prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
           }
         }
       }
@@ -22920,13 +22920,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Available placeholders for the Summary task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives both body language and section titles.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {externalContext} — external web search markdown from AnySearch (wrapped in <external_context trust=\"untrusted\">; empty when disabled or unavailable)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
+            "value" : "Available placeholders for the Summary task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives both body language and section titles.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {externalContext} — external web search markdown from External Search (wrapped in <external_context trust=\"untrusted\">; empty when disabled or unavailable)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Summary 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和章节标题语言。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {externalContext} —— AnySearch 生成的外部网页检索 markdown（已含 <external_context trust=\"untrusted\"> 包裹；关闭或拉取失败时为空）\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
+            "value" : "Summary 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和章节标题语言。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {externalContext} —— External Search 生成的外部网页检索 markdown（已含 <external_context trust=\"untrusted\"> 包裹；关闭或拉取失败时为空）\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
           }
         }
       }
@@ -23941,13 +23941,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use external web context in AI summaries"
+            "value" : "Use external web context in AI features"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 摘要使用外部网页上下文"
+            "value" : "AI 功能使用外部网页上下文"
           }
         }
       }
@@ -24008,13 +24008,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The key is stored securely, but anonymous requests do not send an Authorization header."
+            "value" : "Anonymous requests do not send an Authorization header. Testing an API Key always uses bearer mode."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Key 会加密保存，但匿名模式下请求不会发送 Authorization。"
+            "value" : "匿名请求不会发送 Authorization header。测试 API Key 时始终使用 bearer 模式。"
           }
         }
       }
@@ -24025,13 +24025,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The key is stored securely on this Mac and sent as a Bearer token."
+            "value" : "The key is stored securely on this Mac. Testing may consume one provider search request."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Key 加密保存在本机，请求时作为 Bearer Token 发送。"
+            "value" : "Key 安全保存在本机。测试可能消耗一次 Provider 搜索请求。"
           }
         }
       }
@@ -24058,13 +24058,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter AnySearch API Key"
+            "value" : "Enter Provider API Key"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入 AnySearch API Key"
+            "value" : "输入 Provider API Key"
           }
         }
       }
@@ -24176,13 +24176,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enable AnySearch web search"
+            "value" : "Enable External Search provider"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启用 AnySearch 网页搜索"
+            "value" : "启用 External Search Provider"
           }
         }
       }
@@ -24193,13 +24193,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Include web results in All"
+            "value" : "Include external web results in All"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在“全部”范围中包含网页结果"
+            "value" : "在“全部”范围中包含外部网页结果"
           }
         }
       }

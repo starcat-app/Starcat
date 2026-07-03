@@ -673,7 +673,7 @@ enum AIDefaultPrompts {
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
     /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（关闭或拉取失败时为空字符串）；
     /// - `{summary}`：**repo 级**缓存命中的 AI 摘要 markdown（未生成过摘要时为空字符串）；
-    /// - `{externalContext}`：AnySearch 生成的外部网页检索 markdown（关闭或拉取失败时为空字符串）；
+    /// - `{externalContext}`：External Search 生成的外部网页检索 markdown（关闭或拉取失败时为空字符串）；
     /// - `{previousSessionCarryOver}`：**session 级**承接摘要（仅当本 session 由「上下文溢出
     ///   → 新建并承接」诞生时非空）。**与 `{summary}` 的语义差异**：summary 是 repo 维度
     ///   一次性 AI 分析输出，carryOver 是上一对话末尾 6 条 user/assistant turn 的 markdown
