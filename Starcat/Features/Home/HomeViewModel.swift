@@ -1746,9 +1746,10 @@ final class HomeViewModel {
         semanticHitMap[repoID]
     }
 
-    /// 手动刷新全部 starred repo 的语义索引。
+    /// 手动刷新 active repo 的语义索引。
     ///
     /// 入口放在列表 toolbar；适合用户刚切换 embedding model 或大量同步后主动更新。
+    /// active scope 固定为 starred 与知识库并集，避免未 star 但已入库的 repo 永远没有 embedding。
     func refreshSemanticIndex() async {
         guard let semanticSearchService else {
             loadError = SemanticSearchError.missingAPIKey.localizedDescription
@@ -1757,7 +1758,7 @@ final class HomeViewModel {
         isSemanticIndexing = true
         defer { isSemanticIndexing = false }
         do {
-            let repos = try await repository.fetchAllStarred()
+            let repos = try await fetchSearchCandidates(scope: .all)
             try await semanticSearchService.refreshIndex(for: repos)
             if isSemanticSearching {
                 await reloadItems(forceRefresh: true)

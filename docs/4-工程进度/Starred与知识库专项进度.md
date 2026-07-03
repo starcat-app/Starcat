@@ -187,7 +187,7 @@
 - [ ] README / Repo Health / OpenSSF 后台任务对无 token / token 权限不足的私有 repo 不反复远程刷新。
 - [ ] Health / OpenSSF 后台任务运行中取消入库不强行中断已开始请求,下一批候选自然排除。
 - [ ] Health / OpenSSF 后台任务运行中加入知识库不抢占当前批次,下一轮 poller 或 warmup retry 补齐。
-- [ ] embedding 覆盖 starred 与知识库并集,只清理同时不在两者中的 repo。
+- [x] embedding 覆盖 starred 与知识库并集,只清理同时不在两者中的 repo。
 - [ ] 移出知识库不删除已有 README / Repo Health / OpenSSF 缓存。
 - [ ] ShareCard 文件导出入口文案从“导出 Starred”改为“导出到文件”。
 - [ ] ShareCard 文件导出下拉包含“导出 Starred 到 HTML.”。
@@ -224,6 +224,7 @@
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/ReadmePrefetchServiceTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticIndexingTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
 - [x] `rtk git diff --check`
@@ -364,6 +365,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-9 手动 embedding 刷新覆盖 starred 与知识库并集。
 - 2026-07-03: PR-9 README 预拉候选与 coverage 覆盖 starred 与知识库并集。
 - 2026-07-03: PR-1 回填知识库时间戳与多账号隔离测试,JSON 导入导出延期。
 - 2026-07-03: PR-6 GitHub 统计刷新候选覆盖 starred 与知识库并集确认。
