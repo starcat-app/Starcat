@@ -91,7 +91,7 @@ RAG 应复用语义搜索和 AI 调用链,但产品上不是“搜索增强”,�
 3. 右侧是证据 Inspector: 展示本轮引用到的 repo、README/notes/summary chunk、相似度、来源。
 4. 引用 chip 可点击打开 repo 详情。
 5. 当知识库为空或索引不足时,引导用户去知识库集合或设置页补索引。
-6. 当问题明确涉及 issues、版本、PR、维护活跃度等现场信息时,可显示“GitHub 临时上下文”并对候选 repo 拉取本轮数据。
+6. 当问题明确涉及 issues、版本、PR、维护活跃度等现场信息时,MVP 先提示需要 GitHub 临时上下文但当前版本暂未启用,后续再对候选 repo 拉取本轮数据。
 7. 输入框支持 `@repo`、模型切换下拉、附件和 GitHub 链接识别,让用户能直接指定上下文。
 
 典型问题:
@@ -125,7 +125,7 @@ Starcat 目前不存储 repo issues,也不打算把 issues 作为长期本地数
 
 - 本地 RAG 索引仍只来自知识库 repo 的 README、notes、AI summary、repo metadata。
 - issues / releases / PR 不进入 chunk 索引,不生成 embedding,不写入 CloudKit。
-- 只有当用户问题明确需要这类信息时,才对本轮候选 repo 临时拉取。
+- MVP 只识别并提示这类需求,不实际拉取;后续 PR 再对本轮候选 repo 临时拉取。
 - 远程数据只补充候选 repo,不能绕过知识库边界变成 GitHub 全网搜索。
 - 如果 GitHub rate limit、无权限或网络失败,回答应明确说明该部分不可用,并继续基于本地知识库资料回答。
 

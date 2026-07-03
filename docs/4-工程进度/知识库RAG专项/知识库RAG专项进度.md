@@ -40,18 +40,21 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - Local Hybrid Retriever: SQLite FTS5 keyword + local vector + fusion。
 - Generator + citation parser。
 - Debug gate 下的知识库问答工作台。
+- 工作台内历史 rail、新建会话、继续会话。
+- 本地保存完整 RAG 会话历史: 用户问题、模型回答、使用模型、时间戳、citation metadata。
 - Command Composer 基础 `@repo` mention、多 repo 对比、context chip 删除。
 - 输入框模型下拉,支持本轮切换模型但不修改全局设置。
 - Evidence Inspector 展示 chunk、section parent、命中方式 keyword / vector / hybrid。
+- issues / releases / PR 类问题只提示“需要 GitHub 临时上下文,当前版本暂未启用”,不实际拉取。
 
 ### 3.2 MVP 后置
 
 以下能力不阻塞第一版问答闭环,放到 MVP 稳定后:
 
-- GitHub issues / PR / releases 远程临时上下文。
-- issues / releases 远程上下文确认流程。
+- GitHub issues / PR / releases 远程临时上下文真实拉取。
+- 真实远程上下文启用后的确认/删除流程。
 - 附件 / 图片真实解析和 vision 调用。
-- RAG 会话历史、复制/导出回答。
+- 复制/导出回答。
 - Settings 中完整 RAG Backend / Provider 配置 UI。
 - toolbar / 知识库页正式入口。
 
@@ -232,6 +235,8 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 
 ## 8. PR-5: Remote Ephemeral Context Provider [MVP 后置]
 
+> MVP 只识别 issues / releases / PR 意图并提示当前版本未启用,不实际拉取远程数据。真实 provider、TTL cache、降级 block 和远程上下文 Inspector 放本 PR。
+
 - [ ] 新增 `KnowledgeRAGRemoteContextProvider`。
 - [ ] 定义 `RAGRemoteContextRequest`。
 - [ ] 定义 `RAGRemoteContextResource`: github_issues / github_pull_requests / github_releases / github_contributors / github_commit_activity / github_security_advisories。
@@ -293,7 +298,7 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 
 ## 10. PR-7: 知识库问答工作台 UI [MVP 必做 / 部分后置]
 
-> MVP 只做 Debug gate 入口、基础工作台、`@repo` mention、context chips、输入框模型下拉、streaming answer、citation 与 Evidence Inspector。toolbar 正式入口、附件真实解析、远程上下文确认流程、完整 model/attachment 能力矩阵后置。
+> MVP 只做 Debug gate 入口、基础工作台、历史 rail、`@repo` mention、context chips、输入框模型下拉、streaming answer、citation 与 Evidence Inspector。toolbar 正式入口、附件真实解析、远程上下文确认流程、完整 model/attachment 能力矩阵后置。
 
 - [ ] 新增 `KnowledgeRAGWorkspaceView`。
 - [ ] 新增 `KnowledgeRAGWorkspaceViewModel`。
@@ -304,6 +309,9 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] Debug 菜单增加 RAG workspace 入口显示开关。
 - [ ] toolbar 增加“知识库问答”入口,默认按 Debug gate 控制。
 - [ ] Smart Collections -> 知识库页增加打开“知识库问答”的动作。
+- [ ] 工作台左侧展示历史 rail。
+- [ ] 历史 rail 支持新建会话。
+- [ ] 历史 rail 支持继续已有会话。
 - [ ] 工作台顶部展示范围: 知识库。
 - [ ] 工作台顶部展示知识库 repo 数。
 - [ ] 工作台顶部展示 RAG 索引覆盖率。
@@ -318,6 +326,8 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] 本轮模型切换不修改全局 Settings。
 - [ ] 模型选择器标注缺 API key / 不支持 vision / 不支持附件等不可用原因。
 - [ ] Planner 提议 issues / releases 远程上下文时,Query Plan chips 展示可删除确认 chip。
+- [ ] MVP 中 Planner 提议 issues / releases 远程上下文时,UI 显示“当前版本暂未启用”。
+- [ ] MVP 中回答明确说明未包含实时 issues / releases / PR 数据。
 - [ ] 删除远程上下文确认 chip 后,本轮跳过对应 remote request。
 - [ ] 附件 chip 展示文件名、类型、大小和是否会发送给模型。
 - [ ] 图片附件遇到不支持 vision 的模型时阻断发送。
@@ -351,15 +361,18 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] 用户取消时 UI 停止 streaming 并保持已有输出。
 - [ ] UI 文案补齐 i18n。
 
-## 11. PR-8: 历史、Storage 与设置入口 [MVP 后置]
+## 11. PR-8: 历史、Storage 与设置入口 [MVP 必做 / 部分后置]
 
-> MVP 只需要当前会话内状态和索引状态提示。完整会话历史、导出、Storage 清理、外部 provider 配置 UI 都放后置。
+> MVP 必须保存完整本地会话历史,但不保存完整 chunk 内容快照。复制/导出回答、外部 provider 配置 UI 可以后置。
 
 - [ ] 新增 `rag_conversations` / `rag_messages` / `rag_message_citations`。
 - [ ] 新增 `RAGConversationStore`。
 - [ ] 支持新建会话。
 - [ ] 支持会话历史列表。
 - [ ] 支持本地保存 cited chunk ids。
+- [ ] citation 保存 repo id / chunk id / source / section title / score / hit kind。
+- [ ] citation 不保存完整 chunk content snapshot。
+- [ ] chunk 被清理后,历史 citation 显示“引用片段已清理或需要重建索引”。
 - [ ] 支持复制回答 markdown。
 - [ ] 支持导出回答 markdown。
 - [ ] Settings -> AI 展示 RAG 索引状态。
@@ -445,8 +458,9 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] 输入 `@` 能弹出知识库 repo list。
 - [ ] 选择两个 `@repo` 后提问对比,回答只围绕这两个 repo。
 - [ ] 删除 repo chip 后重新提问,不再限制到该 repo。
-- [ ] 提问涉及 issues 时,Planner 提议 GitHub Issues 临时上下文并显示确认 chip。
-- [ ] 删除 GitHub Issues 确认 chip 后,本轮不拉取 issues。
+- [ ] 提问涉及 issues 时,Planner 识别 GitHub Issues 临时上下文需求。
+- [ ] MVP 中 issues 类问题显示“当前版本暂未启用 GitHub 临时上下文”。
+- [ ] MVP 中回答明确说明未包含实时 issues / releases / PR 数据。
 - [ ] 精确关键词问题能通过 keyword 命中召回。
 - [ ] 语义描述问题能通过 vector 命中召回。
 - [ ] Evidence Inspector 展示 keyword / vector / hybrid 命中方式。
@@ -474,6 +488,7 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 ### 15.5 远程临时上下文
 
 - [ ] 提问“这些项目最近有没有集中反馈的问题”时,Query Plan chips 显示 GitHub Issues 临时上下文。
+- [ ] 真实远程上下文启用后,用户删除 GitHub Issues 确认 chip 时本轮不拉取 issues。
 - [ ] 远程上下文只对已入库候选 repo 拉取。
 - [ ] 右侧 Inspector 展示 issues resource / fetchedAt / source URL。
 - [ ] 断网或 rate limit 时,回答说明 GitHub Issues 暂不可用,并继续基于本地知识库回答。

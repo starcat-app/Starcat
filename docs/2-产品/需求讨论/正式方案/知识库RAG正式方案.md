@@ -74,7 +74,7 @@ RAG 默认只使用 `knowledge`。原因是 RAG 不是“找候选”,而是“�
 
 ### 3.4 远程临时上下文
 
-第一版不做通用联网 web RAG,但允许对本轮候选 repo 拉取受控的远程临时上下文。
+第一版不做通用联网 web RAG。MVP 只识别 issues / releases / PR 等远程临时上下文需求并提示当前版本暂未启用;后续 PR 再允许对本轮候选 repo 拉取受控的远程临时上下文。
 
 适用场景:
 
@@ -88,7 +88,7 @@ RAG 默认只使用 `knowledge`。原因是 RAG 不是“找候选”,而是“�
 约束:
 
 - 必须先由知识库范围筛出候选 repo。
-- 只对候选 repo 拉取 issues / releases / PR 等数据。
+- MVP 不实际拉取 issues / releases / PR;启用后也只能对候选 repo 拉取。
 - 远程数据不进入 `rag_chunks`,不生成 embedding,不进入 CloudKit。
 - 失败时降级为“仅基于本地知识库回答”,不能让整轮问答失败。
 
@@ -287,19 +287,24 @@ RAG 回答默认包含:
 
 RAG 会话历史只保存在本地。
 
+MVP 需要保存完整问答历史,但 citation 不保存完整 chunk 内容快照。
+
 建议保存:
 
 - 用户问题。
 - 模型回答。
 - cited repo ids。
 - cited chunk ids。
+- citation source / section title / score / hit kind。
 - 使用模型。
 - 创建时间。
 - 当前知识库范围 snapshot hash。
 
 不进入 CloudKit 第一版同步。
 
-远程临时上下文不作为会话长期资料保存。第一版最多保存本轮回答中可审计的 source URL、resource、fetchedAt 和降级状态;不保存完整 issues body 作为历史知识资产。
+引用片段内容不做快照保存。历史回看时优先读取当前 `rag_chunks` 内容;如果 chunk 已被清理,显示“引用片段已清理或需要重建索引”。
+
+远程临时上下文不作为会话长期资料保存。真实远程上下文启用后,最多保存本轮回答中可审计的 source URL、resource、fetchedAt 和降级状态;不保存完整 issues body 作为历史知识资产。
 
 用户在 Command Composer 上传的图片和附件也只属于本轮临时上下文。除非后续另做“导入知识库”功能,否则附件不进入 RAG 索引、repo notes、AI summary 或 CloudKit。
 
@@ -358,7 +363,7 @@ RAG 属于 Pro 能力,因为它需要:
 - 构建 RAG chunk 索引会调用 embedding API。
 - 每次提问会调用 chat 模型。
 - 默认检索在本地执行;启用 Meilisearch / Qdrant 后,检索请求和必要 payload 会发送到用户配置的自托管服务。
-- 如果问题需要 issues / releases / PR,会调用 GitHub API 拉取本轮候选 repo 的临时上下文。
+- MVP 中如果问题需要 issues / releases / PR,只提示该能力暂未启用;后续启用后才会调用 GitHub API 拉取本轮候选 repo 的临时上下文。
 - 如果用户上传图片或附件,会随本轮请求发送给所选模型;不支持 vision/附件的模型需要在发送前阻断。
 - 如果知识库很大,首次索引耗时较长。
 
@@ -388,11 +393,11 @@ UI 不应夸大费用估算,只给用户可理解的提示:
 
 1. 数据与索引: 新增 chunk-level RAG 索引,默认只覆盖知识库。
 2. Retriever: FTS + vector hybrid retrieval,输出 chunk citations 和命中方式。
-3. Remote Context: 对候选 repo 拉取 issues / releases / PR 等远程临时上下文。
+3. Remote Context: MVP 先识别并提示,后续对候选 repo 拉取 issues / releases / PR 等远程临时上下文。
 4. Generator: RAG prompt、streaming 回答、引用解析。
 5. Command Composer: `@repo`、模型下拉、附件 chip、GitHub 链接识别。
 6. Workspace: 独立覆盖式知识库问答 UI。
-7. 历史与导出: 本地会话历史、复制/导出 markdown。
+7. 历史与导出: MVP 保存本地会话历史,复制/导出 markdown 后置。
 8. 质量增强: Meilisearch / Qdrant provider、reranker、证据过滤、Agent 联动。
 
 ## 13. 成功标准

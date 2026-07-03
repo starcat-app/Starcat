@@ -208,7 +208,7 @@ section parent 负责补上下文
 
 ### 4.3 RAG 会话表
 
-第一版可以先不做复杂历史。如果做历史,建议:
+MVP 需要保存完整本地 RAG 会话历史,但 citation 不保存完整 chunk 内容快照。
 
 ```sql
 CREATE TABLE rag_conversations (
@@ -234,13 +234,21 @@ CREATE TABLE rag_message_citations (
     message_id      TEXT NOT NULL REFERENCES rag_messages(id) ON DELETE CASCADE,
     chunk_id        INTEGER NOT NULL REFERENCES rag_chunks(id) ON DELETE CASCADE,
     repo_id         INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    source          TEXT NOT NULL,
+    section_title   TEXT NOT NULL DEFAULT '',
     rank            INTEGER NOT NULL,
     score           REAL NOT NULL,
-    quote           TEXT NOT NULL DEFAULT ''
+    hit_kind        TEXT NOT NULL DEFAULT 'hybrid'
 );
 ```
 
-会话历史第一版只本地存储,不进 CloudKit。
+存储规则:
+
+- 保存完整问答历史: 用户问题、模型回答、使用模型、createdAt / updatedAt。
+- 保存 citation metadata: repo id、chunk id、source、section/title、score、命中方式。
+- 不保存完整 chunk content snapshot。
+- 如果 chunk 后续被清理,历史里显示“引用片段已清理或需要重建索引”。
+- 会话历史只本地存储,不进 CloudKit。
 
 ## 5. Chunk 构建
 
@@ -1535,6 +1543,8 @@ Starcat 不负责默认安装、启动、升级这些服务。用户自行部署
 
 远程临时上下文用于回答“本地索引不适合长期保存,但本轮问题确实需要”的信息。典型例子是 GitHub issues: Starcat 不存储 issues,也不把 issues 做成 RAG chunk,但用户问“最近有没有集中反馈的问题”时,issues 可以作为临时上下文给 LLM。
 
+MVP 阶段不实际拉取 issues / releases / PR。Planner 可以识别这类意图,UI 提示“该问题需要 GitHub 临时上下文,当前版本暂未启用”,Generator 只能基于本地 README / notes / summary / metadata 回答,并说明未包含实时 issues / releases / PR 数据。真实远程拉取从 PR-5 开始实现。
+
 边界:
 
 - 不进入 `rag_chunks`。
@@ -2235,8 +2245,8 @@ Settings -> Storage 建议增加:
 
 实施优先级:
 
-- MVP 必做: PR-1、PR-2、PR-3 基础 planner、PR-4、PR-6、PR-7 基础工作台。
-- MVP 后置: PR-5、PR-8、PR-7 中附件真实解析和远程上下文确认流程。
+- MVP 必做: PR-1、PR-2、PR-3 基础 planner、PR-4、PR-6、PR-7 基础工作台、PR-8 基础历史存储。
+- MVP 后置: PR-5、PR-7 中附件真实解析和远程上下文确认流程、PR-8 中导出与高级 Storage polish。
 - 高级增强: PR-9、PR-10。
 
 ### PR-1: DB 与 chunk repository [MVP 必做]
@@ -2274,6 +2284,7 @@ Settings -> Storage 建议增加:
 
 ### PR-5: Remote Ephemeral Context [MVP 后置]
 
+- MVP 只提示需要 GitHub 临时上下文但当前版本暂未启用,不实际拉取远程数据。
 - 新增 `KnowledgeRAGRemoteContextProvider`。
 - 支持 GitHub issues / PR / releases 的第一批 provider。
 - Provider 只接收 top `RepoContextBundle`,不访问全量知识库。
@@ -2307,9 +2318,12 @@ Settings -> Storage 建议增加:
 - 展示 Remote Context 区域和远程降级原因。
 - citation chip 打开 repo。
 
-### PR-8: 历史、Storage 与 polish [MVP 后置]
+### PR-8: 历史、Storage 与 polish [MVP 必做 / 部分后置]
 
 - 本地会话历史。
+- 保存完整问答历史和 citation metadata。
+- citation 不保存完整 chunk content snapshot。
+- chunk 清理后历史 citation 展示“引用片段已清理或需要重建索引”。
 - 复制/导出回答。
 - Settings 增加 RAG Backend / Provider 配置。
 - Storage 清理入口。
