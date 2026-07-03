@@ -45,6 +45,7 @@ struct ActivityView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var authSession
 
     /// 2026-06-16:`RelativeDateTimeFormatter` 默认走系统 locale,需显式注入跟随
     /// LocaleStore 切换。这里读 SwiftUI `\.locale`,父级已挂 `appLocaleEnvironment()`。
@@ -244,18 +245,12 @@ struct ActivityView: View {
     /// 本地聚合分类顶部栏：时间排序 + 刷新时间 + 刷新按钮（公告 / 关注额外清空）。
     private func activityFilterBar(_ viewModel: ActivityViewModel) -> some View {
         HStack(spacing: 10) {
-            Picker(selection: Binding(
-                get: { viewModel.timeSort(for: selectedCategory) },
-                set: { viewModel.changeTimeSort(to: $0) }
-            )) {
-                ForEach(ActivityTimeSort.allCases) { sort in
-                    Text(verbatim: sort.localizedTitle).tag(sort)
-                }
-            } label: {
-                Text("activity.filter.sort")
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+            UnifiedSortMenu(
+                selection: activitySortBinding(viewModel),
+                options: Array(ActivityTimeSort.allCases),
+                displayName: { $0.titleKey },
+                systemImage: { $0.systemImage }
+            )
 
             Spacer()
 
@@ -288,6 +283,42 @@ struct ActivityView: View {
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 6)
+        .onAppear {
+            restoreTimeSortPreferenceIfNeeded(viewModel)
+        }
+        .onChange(of: selectedCategory) { _, _ in
+            restoreTimeSortPreferenceIfNeeded(viewModel)
+        }
+    }
+
+    private var activitySortPreferenceKey: String {
+        "activity.\(selectedCategory.persistedRawValue).sort"
+    }
+
+    private func activitySortBinding(_ viewModel: ActivityViewModel) -> Binding<ActivityTimeSort> {
+        Binding(
+            get: { viewModel.timeSort(for: selectedCategory) },
+            set: { sort in
+                viewModel.changeTimeSort(to: sort)
+                settings.setListPreferenceValue(
+                    sort.rawValue,
+                    for: activitySortPreferenceKey,
+                    login: authSession.state.user?.login
+                )
+            }
+        )
+    }
+
+    private func restoreTimeSortPreferenceIfNeeded(_ viewModel: ActivityViewModel) {
+        guard selectedCategory.showsActivityFilterBar,
+              let raw = settings.listPreferenceValue(
+                for: activitySortPreferenceKey,
+                login: authSession.state.user?.login
+              ),
+              let sort = ActivityTimeSort(rawValue: raw),
+              viewModel.timeSort(for: selectedCategory) != sort
+        else { return }
+        viewModel.changeTimeSort(to: sort)
     }
 
     /// 按 `item.kind` 派发到 `UnifiedRepoRow`（repo-backed kind）或 `ActivityRowView`
@@ -423,8 +454,6 @@ struct ActivityView: View {
             libraryStateMap[repoId] = LibraryState.parse(raw)
         }
     }
-
-    @Environment(AuthSession.self) private var authSession
 
     private func ensureViewModel() -> ActivityViewModel {
         if let viewModel {

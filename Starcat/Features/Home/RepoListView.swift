@@ -1027,15 +1027,12 @@ struct RepoListView: View {
     /// Manage 列表顶栏：当前分类内排序 + 同步于 + Stars 同步按钮（对齐 Weekly / Activity）。
     private func manageFilterBar(sortOption: Binding<RepoSortOption>) -> some View {
         HStack(spacing: 10) {
-            Picker(selection: sortOption) {
-                ForEach(RepoSortOption.allCases) { option in
-                    Text(verbatim: option.localizedTitle).tag(option)
-                }
-            } label: {
-                Text("list.sort")
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+            UnifiedSortMenu(
+                selection: sortOption,
+                options: Array(RepoSortOption.allCases),
+                displayName: { $0.displayName },
+                systemImage: { $0.systemImage }
+            )
 
             Spacer()
 

@@ -117,6 +117,24 @@ enum ActivityTimeSort: String, CaseIterable, Identifiable, Sendable {
             return String.l10n("activity.sort.oldest")
         }
     }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .newestFirst:
+            return "activity.sort.newest"
+        case .oldestFirst:
+            return "activity.sort.oldest"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .newestFirst:
+            return "arrow.down"
+        case .oldestFirst:
+            return "arrow.up"
+        }
+    }
 }
 
 extension ActivityCategory {

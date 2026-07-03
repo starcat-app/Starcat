@@ -94,9 +94,19 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
             }
             .pickerStyle(.inline)
         } label: {
-            ToolbarIcon("arrow.up.arrow.down")
-                .accessibilityLabel("list.sort")
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .foregroundStyle(.secondary)
+                Text("list.sort")
+                Text(displayName(selection))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("list.sort")
         }
+        .fixedSize()
         .help("list.sortHint")
     }
 }

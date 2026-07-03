@@ -101,6 +101,7 @@ struct TrendingView: View {
             //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
             //   - 缓存空 → 必拉
             // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
+            restoreSortPreferenceIfNeeded()
             await viewModel.reload(cachePolicy: .respectTTL)
             applyTrendingDetailSelectionPolicy()
             reportRepoCount()
@@ -264,34 +265,36 @@ struct TrendingView: View {
     }
 
     private var trendingSortMenu: some View {
-        Menu {
-            Section("trending.sort.title") {
-                ForEach(TrendingSortOption.allCases) { sort in
-                    Button {
-                        clearTrendingDetailSelectionIfChanging(sort != viewModel.selectedSort)
-                        viewModel.selectedSort = sort
-                        applyTrendingDetailSelectionPolicy()
-                    } label: {
-                        filterMenuRow(
-                            title: sort.localizedTitle,
-                            isSelected: sort == viewModel.selectedSort
-                        )
-                    }
-                }
+        UnifiedSortMenu(
+            selection: trendingSortBinding,
+            options: Array(TrendingSortOption.allCases),
+            displayName: { $0.titleKey },
+            systemImage: { $0.systemImage }
+        )
+    }
+
+    private var trendingSortBinding: Binding<TrendingSortOption> {
+        Binding(
+            get: { viewModel.selectedSort },
+            set: { sort in
+                clearTrendingDetailSelectionIfChanging(sort != viewModel.selectedSort)
+                viewModel.selectedSort = sort
+                settings.setListPreferenceValue(
+                    sort.rawValue,
+                    for: "trending.sort",
+                    login: authSession.state.user?.login
+                )
+                applyTrendingDetailSelectionPolicy()
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(.secondary)
-                Text("trending.sort.title")
-                Text(verbatim: viewModel.selectedSort.localizedTitle)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .fixedSize()
+        )
+    }
+
+    private func restoreSortPreferenceIfNeeded() {
+        guard let raw = settings.listPreferenceValue(for: "trending.sort", login: authSession.state.user?.login),
+              let sort = TrendingSortOption(rawValue: raw),
+              viewModel.selectedSort != sort
+        else { return }
+        viewModel.selectedSort = sort
     }
 
     @ViewBuilder

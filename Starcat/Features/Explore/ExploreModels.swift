@@ -112,6 +112,25 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    var systemImage: String {
+        switch self {
+        case .recommended, .popular:
+            return "sparkles"
+        case .stars, .starsAscending:
+            return "star.fill"
+        case .activity:
+            return "flame"
+        case .release, .releaseDate, .releaseDateAscending:
+            return "tag"
+        case .updated, .updatedAscending:
+            return "clock.arrow.circlepath"
+        case .created, .createdAscending:
+            return "calendar"
+        case .nameAsc, .nameDesc:
+            return "textformat"
+        }
+    }
+
     /// 传给 starcat-discovery-api 的 query 值。nil 表示使用后端默认排序。
     var apiValue: String? {
         switch self {

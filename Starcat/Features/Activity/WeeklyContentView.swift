@@ -48,6 +48,7 @@ import AppKit
 struct WeeklyContentView: View {
 
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
     @Environment(AppSettings.self) private var settings
 
     @Binding var selectedLanguage: String?
@@ -69,6 +70,7 @@ struct WeeklyContentView: View {
         }
         .task {
             let model = ensureViewModel()
+            restoreSortPreferenceIfNeeded(model)
             syncExternalLanguage(to: model)
             await reloadLibraryStateMap()
             await model.loadInitialIfNeeded()
@@ -222,7 +224,12 @@ struct WeeklyContentView: View {
             }
             .fixedSize()
 
-            weeklySortMenu(viewModel)
+            UnifiedSortMenu(
+                selection: weeklySortBinding(viewModel),
+                options: Array(WeeklyFeedSort.allCases),
+                displayName: weeklySortTitle,
+                systemImage: weeklySortIcon
+            )
 
             Spacer()
 
@@ -230,34 +237,46 @@ struct WeeklyContentView: View {
         }
     }
 
-    private func weeklySortMenu(_ viewModel: WeeklyContentViewModel) -> some View {
-        Menu {
-            Section("weekly.filter.sort") {
-                ForEach(WeeklyFeedSort.allCases) { sort in
-                    Button {
-                        clearWeeklyDetailSelectionIfChanging(sort != viewModel.selectedSort)
-                        viewModel.changeSort(to: sort)
-                    } label: {
-                        filterMenuRow(
-                            title: sort.localizedTitle,
-                            isSelected: sort == viewModel.selectedSort
-                        )
-                    }
-                }
+    private func weeklySortBinding(_ viewModel: WeeklyContentViewModel) -> Binding<WeeklyFeedSort> {
+        Binding(
+            get: { viewModel.selectedSort },
+            set: { sort in
+                clearWeeklyDetailSelectionIfChanging(sort != viewModel.selectedSort)
+                viewModel.changeSort(to: sort)
+                settings.setListPreferenceValue(
+                    sort.rawValue,
+                    for: "explore.weekly.sort",
+                    login: authSession.state.user?.login
+                )
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(.secondary)
-                Text("weekly.filter.sort")
-                Text(verbatim: viewModel.selectedSort.localizedTitle)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        )
+    }
+
+    private func weeklySortTitle(_ sort: WeeklyFeedSort) -> LocalizedStringKey {
+        switch sort {
+        case .latestEventAt: return "weekly.sort.latestEvent"
+        case .stars: return "weekly.sort.starsDesc"
+        case .pushedAt: return "weekly.sort.pushedAt"
         }
-        .fixedSize()
+    }
+
+    private func weeklySortIcon(_ sort: WeeklyFeedSort) -> String {
+        switch sort {
+        case .latestEventAt: return "clock"
+        case .stars: return "star.fill"
+        case .pushedAt: return "clock.arrow.circlepath"
+        }
+    }
+
+    private func restoreSortPreferenceIfNeeded(_ viewModel: WeeklyContentViewModel) {
+        guard let raw = settings.listPreferenceValue(
+            for: "explore.weekly.sort",
+            login: authSession.state.user?.login
+        ),
+              let sort = WeeklyFeedSort(rawValue: raw),
+              sort != viewModel.selectedSort
+        else { return }
+        viewModel.changeSort(to: sort)
     }
 
     @ViewBuilder

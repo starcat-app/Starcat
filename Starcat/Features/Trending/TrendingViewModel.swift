@@ -74,6 +74,31 @@ enum TrendingSortOption: String, CaseIterable, Identifiable {
         case .updatedAsc: return String.l10n("trending.sort.updatedAsc")
         }
     }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .recommended: return "trending.sort.recommended"
+        case .starsDesc: return "trending.sort.starsDesc"
+        case .starsAsc: return "trending.sort.starsAsc"
+        case .nameAsc: return "trending.sort.nameAsc"
+        case .nameDesc: return "trending.sort.nameDesc"
+        case .updatedDesc: return "trending.sort.updatedDesc"
+        case .updatedAsc: return "trending.sort.updatedAsc"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .recommended:
+            return "chart.line.uptrend.xyaxis"
+        case .starsDesc, .starsAsc:
+            return "star.fill"
+        case .nameAsc, .nameDesc:
+            return "textformat"
+        case .updatedDesc, .updatedAsc:
+            return "clock.arrow.circlepath"
+        }
+    }
 }
 
 @MainActor

@@ -110,6 +110,7 @@ private struct ExploreDiscoveryListView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
@@ -124,6 +125,7 @@ private struct ExploreDiscoveryListView: View {
                 .animation(contentAnimation, value: contentStateID)
         }
         .task(id: queryIdentity) {
+            restoreSortPreferenceIfNeeded()
             selectedRepoID = nil
             selectedRepo = nil
             await reloadLibraryStateMap()
@@ -154,31 +156,12 @@ private struct ExploreDiscoveryListView: View {
 
     private var filterBar: some View {
         HStack(spacing: 10) {
-            Menu {
-                Section("explore.sort.title") {
-                    ForEach(ExploreSortOption.options(for: mode)) { option in
-                        Button {
-                            sortBinding.wrappedValue = option
-                        } label: {
-                            filterMenuRow(
-                                title: option.titleKey,
-                                isSelected: option == currentSort
-                            )
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(.secondary)
-                    Text("explore.sort.title")
-                    Text(currentSort.titleKey)
-                    Image(systemName: "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .fixedSize()
+            UnifiedSortMenu(
+                selection: sortBinding,
+                options: ExploreSortOption.options(for: mode),
+                displayName: { $0.titleKey },
+                systemImage: { $0.systemImage }
+            )
 
             Spacer()
 
@@ -213,24 +196,41 @@ private struct ExploreDiscoveryListView: View {
         .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
     }
 
-    @ViewBuilder
-    private func filterMenuRow(title: LocalizedStringKey, isSelected: Bool) -> some View {
-        if isSelected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Text(title)
-        }
-    }
-
     private var sortBinding: Binding<ExploreSortOption> {
         Binding(
             get: { currentSort },
-            set: { viewModel.sortOption = $0.normalized(for: mode) }
+            set: {
+                let normalized = $0.normalized(for: mode)
+                viewModel.sortOption = normalized
+                persistSortPreference(normalized)
+            }
         )
     }
 
     private var currentSort: ExploreSortOption {
         viewModel.sortOption.normalized(for: mode)
+    }
+
+    private var sortPreferenceKey: String {
+        "explore.\(mode.rawValue).sort"
+    }
+
+    private var currentLogin: String? {
+        authSession.state.user?.login
+    }
+
+    private func restoreSortPreferenceIfNeeded() {
+        guard let raw = settings.listPreferenceValue(for: sortPreferenceKey, login: currentLogin),
+              let saved = ExploreSortOption(rawValue: raw)
+        else { return }
+        let normalized = saved.normalized(for: mode)
+        if viewModel.sortOption != normalized {
+            viewModel.sortOption = normalized
+        }
+    }
+
+    private func persistSortPreference(_ sort: ExploreSortOption) {
+        settings.setListPreferenceValue(sort.rawValue, for: sortPreferenceKey, login: currentLogin)
     }
 
     @ViewBuilder
