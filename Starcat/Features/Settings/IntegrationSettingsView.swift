@@ -466,8 +466,16 @@ struct IntegrationSettingsTab: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("settings.externalSearch.apiKey")
-                    .font(.callout.weight(.medium))
+                HStack {
+                    Text("settings.externalSearch.apiKey")
+                        .font(.callout.weight(.medium))
+                    Spacer()
+                    Link(
+                        "settings.externalSearch.apiKey.get",
+                        destination: externalSearchAPIKeyURL(for: provider)
+                    )
+                    .font(.caption.weight(.medium))
+                }
 
                 HStack(spacing: 8) {
                     Group {
@@ -575,6 +583,23 @@ struct IntegrationSettingsTab: View {
             return String.l10n("settings.externalSearch.apiKey.anonymousDescription")
         }
         return String.l10n("settings.externalSearch.apiKey.testDescription")
+    }
+
+    /// 各 Provider 官方 API Key 管理入口。
+    ///
+    /// 这些 URL 来自对应服务的官方文档 / 控制台入口,集中维护是为了避免 UI 中散落
+    /// 字符串,后续服务方改 dashboard 路径时只需要更新这一处。
+    private func externalSearchAPIKeyURL(for provider: ExternalSearchProviderID) -> URL {
+        switch provider {
+        case .anySearch:
+            return URL(string: "https://anysearch.com/console/api-keys")!
+        case .tavily:
+            return URL(string: "https://app.tavily.com")!
+        case .exa:
+            return URL(string: "https://dashboard.exa.ai/api-keys")!
+        case .braveLLMContext:
+            return URL(string: "https://api-dashboard.search.brave.com")!
+        }
     }
 
     private func toggleAPIKeyVisibility(_ provider: ExternalSearchProviderID) {

@@ -24373,6 +24373,23 @@
         }
       }
     },
+    "settings.externalSearch.apiKey.get" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取 API Key"
+          }
+        }
+      }
+    },
     "settings.externalSearch.apiKey.hide" : {
       "extractionState" : "manual",
       "localizations" : {
