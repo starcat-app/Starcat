@@ -553,15 +553,38 @@ final class HomeViewModel {
         libraryStateMap[repoId] ?? .outsideLibrary
     }
 
-    /// 详情页 ❤️ 写入成功后的本地同步入口。
+    /// 知识库状态写入成功后的本地同步入口。
     ///
-    /// Repository 成功后才调用这里，避免乐观更新。若当前列表正在按知识库状态过滤，
-    /// 该 repo 可能需要立即进入/退出列表，因此触发一次当前列表重算或分页重查。
+    /// Repository 成功后才调用这里，避免乐观更新。知识库列表有 SWR 缓存，任何
+    /// libraryState 变化都必须先失效相关缓存；否则用户从其它页面加入知识库后再点
+    /// Sidebar「知识库」，会命中旧缓存，必须手动刷新才看到新卡片。
     func applyLibraryStateChange(repoId: Int64, state: LibraryState) {
-        guard libraryStateMap[repoId] != state else { return }
+        invalidateLibraryDerivedCaches()
+        let didChange = libraryStateMap[repoId] != state
         libraryStateMap[repoId] = state
-        guard libraryFilter != .all || selection == .library || selection == .smartCollection(.library) else { return }
+        guard didChange || selectionNeedsReloadAfterLibraryStateChange else { return }
+        guard selectionNeedsReloadAfterLibraryStateChange else { return }
         reloadOrApplyCurrentManageView()
+    }
+
+    /// 清理所有直接依赖 `libraryState == .inLibrary` 的列表缓存。
+    ///
+    /// `.library` 是 Sidebar 基础分类；`.smartCollection(.library)` 是原系统集合入口；
+    /// `.smartCollection(.outsideLibraryStars)` 的结果与入库状态相反，也必须同步失效。
+    private func invalidateLibraryDerivedCaches() {
+        listCache.removeValue(forKey: .library)
+        listCache.removeValue(forKey: .smartCollection(.library))
+        listCache.removeValue(forKey: .smartCollection(.outsideLibraryStars))
+    }
+
+    private var selectionNeedsReloadAfterLibraryStateChange: Bool {
+        if libraryFilter != .all { return true }
+        switch selection {
+        case .library, .smartCollection(.library), .smartCollection(.outsideLibraryStars):
+            return true
+        default:
+            return false
+        }
     }
 
     /// 详情页修改 status 后由 `NotificationCenter.repoStatusDidChange` 触发，
@@ -602,6 +625,21 @@ final class HomeViewModel {
                   let statusRaw = note.userInfo?["status"] as? String else { continue }
             let status = RepoStatus.parse(statusRaw)
             applyStatusChange(repoId: repoId, status: status)
+        }
+    }
+
+    /// 订阅 `.repoLibraryStateDidChange`，把所有入口的知识库状态变化收口到同一条刷新链。
+    ///
+    /// 事件由 Repository 在写库成功后发出；这里负责更新本地 map、失效知识库相关缓存、
+    /// 刷新 Sidebar 计数，并在当前列表受影响时重查当前页。
+    func observeRepoLibraryStateChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { continue }
+            applyLibraryStateChange(repoId: repoId, state: LibraryState.parse(raw))
+            await refreshSidebar()
         }
     }
 

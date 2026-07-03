@@ -496,6 +496,35 @@ struct HomeViewModelFilterSortTests {
         task.cancel()
     }
 
+    @Test("observeRepoLibraryStateChanges: 入库事件驱动知识库列表自动刷新")
+    func notificationDrivesLibraryListRefresh() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(
+            db,
+            id: 1,
+            fullName: "o/library-candidate",
+            stars: 0,
+            starredAt: "2026-05-01T00:00:00Z",
+            isStarred: false
+        )
+
+        vm.selection = .library
+        await vm.reloadItems(forceRefresh: true)
+        #expect(vm.items.isEmpty)
+        #expect(vm.libraryCount == 0)
+
+        let task = Task { await vm.observeRepoLibraryStateChanges() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+
+        try await pollUntil(timeout: 1.0) { vm.items.map(\.id) == [1] && vm.libraryCount == 1 }
+        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.libraryCount == 1)
+
+        task.cancel()
+    }
+
     // MARK: - 用户智能集合：countRepos 与列表 filter 一致
 
     @Test("用户智能集合含 healthScoreMin 时，列表条数与 countRepos 一致")

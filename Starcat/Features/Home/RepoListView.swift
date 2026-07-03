@@ -1305,6 +1305,11 @@ struct RepoListView: View {
             .task {
                 await viewModel.observeRepoStatusChanges()
             }
+            // 知识库状态也走事件：详情页 / Search Center / Browser Plugin / 批量入库
+            // 成功写库后统一通知这里，ViewModel 负责失效知识库列表缓存与刷新计数。
+            .task {
+                await viewModel.observeRepoLibraryStateChanges()
+            }
             .task(id: viewModel.items.map(\.id)) {
                 await reloadVisibleBadgeCaches(forceReload: false)
             }

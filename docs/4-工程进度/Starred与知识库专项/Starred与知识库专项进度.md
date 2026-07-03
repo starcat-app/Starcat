@@ -384,8 +384,17 @@
 - [x] 补齐必要单测,至少覆盖 SidebarItem 持久化、知识库列表过滤和知识库计数。
 - [x] 完成后运行 `rtk jq empty Starcat/Resources/Localizable.xcstrings` 与相关 `xcodebuild` 验证。
 
+### 12.2 知识库状态事件刷新
+
+- [x] `repoLibraryStateDidChange` 事件由 `HomeViewModel` 统一监听,不依赖各入口手动刷新知识库列表。
+- [x] 入库/移出后失效 `.library`、`Smart Collections -> 知识库` 与“未入库 Stars”相关缓存。
+- [x] 当前列表受知识库状态影响时异步重拉当前列表,避免 Sidebar 数量已变但卡片列表仍命中旧缓存。
+- [x] 事件处理后刷新 Sidebar 计数,保证后续入口复用同一刷新链。
+- [x] 补齐回归单测: 先进入空知识库列表,再通过入库事件自动显示新增 repo。
+
 ## 13. 变更记录
 
+- 2026-07-03: 修复入库后 Sidebar 知识库列表旧缓存不刷新的问题。
 - 2026-07-03: 完成 Sidebar 知识库基础分类入口与列表范围。
 - 2026-07-03: 补充 Sidebar 知识库基础分类优化&FIX 进度。
 - 2026-07-03: PR-2 增加不可访问状态承载与知识库集合标记。
