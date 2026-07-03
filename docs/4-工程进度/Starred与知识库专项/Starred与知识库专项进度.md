@@ -395,6 +395,7 @@
 ### 12.3 Search Center 结果与详情按钮优化
 
 - [x] 全局搜索结果列表移除右侧可操作 ❤️,只保留 repo 卡片自身的已入库状态展示。
+- [x] 全局搜索「全部」Tab 卡片内部右侧增加小型来源图标,本地/GitHub/网页单独 Tab 不重复展示。
 - [x] GitHub 搜索结果详情底部主操作改为 icon-only,不再显示 Star / 知识库 / AI / GitHub 文字。
 - [x] GitHub 搜索结果详情底部 Star 图标按状态显示 `star.fill` / `star`。
 - [x] GitHub 搜索结果详情底部知识库图标按状态显示 `heart.fill` / `heart`。
@@ -403,6 +404,7 @@
 
 ## 13. 变更记录
 
+- 2026-07-03: Search Center 全部 Tab 增加卡片内来源图标。
 - 2026-07-03: Search Center 详情打开 GitHub 操作改用品牌图标。
 - 2026-07-03: 优化 Search Center 结果行与详情底部 Star/知识库图标。
 - 2026-07-03: 修复入库后 Sidebar 知识库列表旧缓存不刷新的问题。

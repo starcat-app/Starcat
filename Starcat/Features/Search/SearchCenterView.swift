@@ -687,17 +687,22 @@ struct SearchCenterView: View {
         Group {
             switch candidate {
             case .repository(let repo):
-                UnifiedRepoRow(
-                    card: repo.card,
-                    isSelected: isSelected,
-                    showStarredCheckmark: true
-                )
+                rowWithSourceIndicator(
+                    source: repositorySourceIndicator(for: repo)
+                ) {
+                    UnifiedRepoRow(
+                        card: repo.card,
+                        isSelected: isSelected,
+                        showStarredCheckmark: true
+                    )
+                }
             case .reference(let reference):
                 // 复用 RepoRowSurface 三态透明度（default / hover / selected）+
                 // 圆角 + 左侧 accent bar，让网页卡片与 UnifiedRepoRow 视觉骨架对等。
                 // accentColor: .blue 是"Web 类目色"，与 WebSourceBadge / RemoteFavicon
                 // 背景蓝同源；hover 反馈不再单独叠加，全部走 RepoRowSurface 内置逻辑。
-                RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
+                rowWithSourceIndicator(source: .web) {
+                    RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
                     HStack(alignment: .top, spacing: 12) {
                         // 左侧 32pt 容器 + 内嵌 18pt favicon。
                         // 容器 cornerRadius 6 / favicon cornerRadius 4 与 UnifiedRepoRow
@@ -756,6 +761,7 @@ struct SearchCenterView: View {
                         Spacer(minLength: 0)
                     }
                 }
+                }
             }
         }
         // hit-test 用 Rectangle 而不是 RoundedRectangle：圆角四个角会成为 onHover 死区,
@@ -763,11 +769,98 @@ struct SearchCenterView: View {
         .contentShape(Rectangle())
     }
 
+    /// 「全部」Tab 会混排本地、GitHub、网页结果；只在此场景给卡片内部右侧补一个小来源图标。
+    /// 单独 Tab 已由顶部 scope 表达来源，继续显示会重复。
+    @ViewBuilder
+    private func rowWithSourceIndicator<Content: View>(
+        source: SearchResultSourceIndicator?,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if viewModel.scope == .all, let source {
+            content()
+                .overlay(alignment: .trailing) {
+                    SearchResultSourceIcon(source: source)
+                        .padding(.trailing, 12)
+                }
+        } else {
+            content()
+        }
+    }
+
+    /// 同一 repo 可能同时命中本地与 GitHub。优先显示「本地」，因为它已经是用户库内对象；
+    /// 纯远端候选才显示 GitHub，避免单卡出现多来源图标造成噪音。
+    private func repositorySourceIndicator(for candidate: RepositoryCandidate) -> SearchResultSourceIndicator? {
+        if candidate.sources.contains(.localKeyword) || candidate.sources.contains(.localSemantic) {
+            return .local
+        }
+        if candidate.sources.contains(.github) {
+            return .github
+        }
+        return nil
+    }
+
     /// URL 路径的首段（不含前导 `/`），用于 reference 卡片第三行展示。
     /// 裸域名（无 path 或 path == "/"）返回 nil。
     private static func firstPathSegment(of url: URL) -> String? {
         let segments = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
         return segments.first
+    }
+
+    private enum SearchResultSourceIndicator {
+        case local
+        case github
+        case web
+    }
+
+    private struct SearchResultSourceIcon: View {
+        let source: SearchResultSourceIndicator
+
+        var body: some View {
+            icon
+                .foregroundStyle(tint)
+                .frame(width: 12, height: 12)
+                .padding(4)
+                .background(tint.opacity(0.10), in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(tint.opacity(0.18), lineWidth: 0.5)
+                }
+                .help(helpText)
+                .accessibilityLabel(helpText)
+        }
+
+        @ViewBuilder
+        private var icon: some View {
+            switch source {
+            case .local:
+                Image(systemName: "internaldrive")
+                    .font(.system(size: 11, weight: .semibold))
+            case .github:
+                Image("github")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+            case .web:
+                Image(systemName: "globe")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+        }
+
+        private var tint: Color {
+            switch source {
+            case .local: return .secondary
+            case .github: return .primary
+            case .web: return .blue
+            }
+        }
+
+        private var helpText: Text {
+            switch source {
+            case .local: return Text("search.scope.local")
+            case .github: return Text(verbatim: "GitHub")
+            case .web: return Text("search.scope.web")
+            }
+        }
     }
 
     // MARK: - 搜索底部 footer（GitHub pagination + web metadata）
