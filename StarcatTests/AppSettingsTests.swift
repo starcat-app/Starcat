@@ -48,6 +48,7 @@ struct AppSettingsTests {
         settings.appearanceMode = .light
         settings.repoSortOption = .starsDesc
         settings.hideArchived = true
+        settings.interestedLanguages = ["Swift", "Go"]
         settings.aiProvider = .ollama
         settings.aiBaseURL = "http://localhost:11434/v1"
         settings.aiChatModel = "llama3.2"
@@ -72,6 +73,7 @@ struct AppSettingsTests {
         #expect(settings.appearanceMode == .dark)
         #expect(settings.repoSortOption == .starredAtDesc)
         #expect(settings.hideArchived == false)
+        #expect(settings.interestedLanguages.isEmpty)
         #expect(settings.aiProvider == .openAICompatible)
         #expect(settings.aiBaseURL == "https://api.openai.com/v1")
         #expect(settings.aiChatModel == "gpt-4o-mini")
@@ -161,6 +163,17 @@ struct AppSettingsTests {
         #expect(s2.listPreferenceValue(for: "explore.weekly.language", login: "octocat") == "Python")
     }
 
+    @Test("感兴趣语言: 去重排序并持久化")
+    func interestedLanguagesPersistNormalized() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+
+        settings.interestedLanguages = AppSettings.normalizedLanguageList([" swift ", "Go", "Swift", "TypeScript"])
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.interestedLanguages == ["Go", "swift", "TypeScript"])
+    }
+
     @Test("列表偏好: 重置不清其它本地设置")
     func resetListPreferencesKeepsUnrelatedLocalSettings() {
         let defaults = makeIsolatedDefaults()
@@ -171,6 +184,7 @@ struct AppSettingsTests {
         settings.mcpServicePort = 3939
         settings.repoSortOption = .starsDesc
         settings.lastManageSelectionRaw = "language:Swift"
+        settings.interestedLanguages = ["Swift", "Go"]
 
         settings.resetListPreferences(login: "dong4j")
 
@@ -179,6 +193,7 @@ struct AppSettingsTests {
         #expect(settings.mcpServicePort == 3939)
         #expect(settings.repoSortOption == .starsDesc)
         #expect(settings.lastManageSelectionRaw == "language:Swift")
+        #expect(settings.interestedLanguages == ["Swift", "Go"])
     }
 
     // MARK: - 快捷键偏好

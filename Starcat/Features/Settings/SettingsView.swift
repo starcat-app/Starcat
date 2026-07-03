@@ -283,6 +283,8 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
+
             // 快捷键偏好集中在 General，都是本机交互习惯，不属于 AI 模型配置。
             Section("settings.general.shortcuts") {
                 Toggle(isOn: $settings.aiChatRequiresCommandReturn) {
@@ -475,6 +477,176 @@ struct SettingsView: View {
         case .reserved:
             return "settings.general.shortcuts.error.reserved"
         }
+    }
+}
+
+/// 设置页里的“感兴趣语言”长期偏好。
+///
+/// 这里不读取任何列表数据：设置页负责维护候选池，toolbar 负责从候选池里做本次筛选。
+/// 常用语言按钮覆盖主流场景，手动输入保留 GitHub Linguist 里的冷门语言入口，避免把
+/// 800+ 语言全塞进设置页造成不可用的长列表。
+private struct InterestedLanguagesSettingsSection: View {
+
+    @Binding var languages: [String]
+    @State private var draftLanguage = ""
+
+    private let presets = [
+        "Swift", "Objective-C", "Kotlin", "Java",
+        "Go", "Rust", "Python", "TypeScript",
+        "JavaScript", "Vue", "Dart", "C++",
+        "C", "C#", "Ruby", "PHP"
+    ]
+
+    var body: some View {
+        Section("settings.filters.interestedLanguages.section") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("settings.filters.interestedLanguages.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(presets, id: \.self) { language in
+                        Toggle(isOn: binding(for: language)) {
+                            Text(language)
+                                .lineLimit(1)
+                        }
+                        .toggleStyle(.button)
+                        .controlSize(.small)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    TextField("settings.filters.interestedLanguages.add.placeholder", text: $draftLanguage)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(addDraftLanguage)
+
+                    Button {
+                        addDraftLanguage()
+                    } label: {
+                        Label("settings.filters.interestedLanguages.add", systemImage: "plus")
+                    }
+                    .disabled(normalizedDraft.isEmpty)
+                }
+
+                if languages.isEmpty {
+                    Text("settings.filters.interestedLanguages.empty")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    FlowTagList(tags: languages, removeAction: removeLanguage)
+                }
+            }
+        }
+    }
+
+    private var normalizedDraft: String {
+        draftLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func binding(for language: String) -> Binding<Bool> {
+        Binding(
+            get: { contains(language) },
+            set: { isOn in
+                if isOn {
+                    addLanguage(language)
+                } else {
+                    removeLanguage(language)
+                }
+            }
+        )
+    }
+
+    private func addDraftLanguage() {
+        let value = normalizedDraft
+        guard !value.isEmpty else { return }
+        addLanguage(value)
+        draftLanguage = ""
+    }
+
+    private func addLanguage(_ language: String) {
+        languages = AppSettings.normalizedLanguageList(languages + [language])
+    }
+
+    private func removeLanguage(_ language: String) {
+        languages = languages.filter { $0.caseInsensitiveCompare(language) != .orderedSame }
+    }
+
+    private func contains(_ language: String) -> Bool {
+        languages.contains { $0.caseInsensitiveCompare(language) == .orderedSame }
+    }
+}
+
+/// 简单的可换行 tag 列表。
+///
+/// macOS 设置窗口宽度固定，语言数量不可预估；这里使用自定义 Layout 避免 HStack
+/// 挤压或 ScrollView 嵌套，把用户已选语言稳定展示成多行 chip。
+private struct FlowTagList: View {
+    let tags: [String]
+    let removeAction: (String) -> Void
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(tags, id: \.self) { language in
+                HStack(spacing: 4) {
+                    Text(language)
+                        .font(.caption)
+                    Button {
+                        removeAction(language)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .accessibilityLabel(Text("settings.filters.interestedLanguages.remove"))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.quaternary, in: Capsule())
+            }
+        }
+    }
+}
+
+/// 设置页局部使用的轻量换行布局。
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        layout(in: proposal.replacingUnspecifiedDimensions().width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(in: bounds.width, subviews: subviews)
+        for (index, origin) in result.origins.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                proposal: .unspecified
+            )
+        }
+    }
+
+    private func layout(in width: CGFloat, subviews: Subviews) -> (origins: [CGPoint], size: CGSize) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        let maxWidth = max(width, 1)
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return (origins, CGSize(width: maxWidth, height: y + rowHeight))
     }
 }
 

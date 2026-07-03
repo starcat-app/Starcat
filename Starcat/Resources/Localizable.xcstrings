@@ -25851,6 +25851,102 @@
         }
       }
     },
+    "settings.filters.interestedLanguages.add" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加"
+          }
+        }
+      }
+    },
+    "settings.filters.interestedLanguages.add.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a language"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加语言"
+          }
+        }
+      }
+    },
+    "settings.filters.interestedLanguages.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only these languages appear in the global language filter. This does not filter lists by itself."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有这些语言会出现在全局语言筛选中；这里本身不会直接过滤列表。"
+          }
+        }
+      }
+    },
+    "settings.filters.interestedLanguages.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No interested languages configured."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有配置感兴趣语言。"
+          }
+        }
+      }
+    },
+    "settings.filters.interestedLanguages.remove" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove language"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除语言"
+          }
+        }
+      }
+    },
+    "settings.filters.interestedLanguages.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interested Languages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感兴趣语言"
+          }
+        }
+      }
+    },
     "settings.general.openFirstDetailOnCategoryChange.help" : {
       "localizations" : {
         "en" : {

@@ -682,6 +682,15 @@ final class AppSettings {
         didSet { persist(key: Keys.repoLanguageFilter, value: repoLanguageFilter.persistedRawValue) }
     }
 
+    /// 全局筛选菜单里的候选语言池。
+    ///
+    /// 这个偏好只决定 toolbar 语言筛选里展示哪些语言，不直接过滤列表。当前实际
+    /// 生效的语言筛选仍由列表偏好保存，方便“重置列表偏好”只清空本次列表控制状态，
+    /// 不清掉用户长期维护的兴趣语言集合。
+    var interestedLanguages: [String] {
+        didSet { persistJSON(key: Keys.interestedLanguages, value: Self.normalizedLanguageList(interestedLanguages)) }
+    }
+
     /// 用户在 Manage 页最后选中的分类，用于跨启动恢复。
     ///
     /// 为什么存字符串而非 `SidebarItem`：
@@ -1326,6 +1335,12 @@ final class AppSettings {
         let languageRaw = defaults.string(forKey: Keys.repoLanguageFilter)
         self.repoLanguageFilter = RepoLanguageFilter.parse(languageRaw)
 
+        self.interestedLanguages = Self.decodeJSON(
+            [String].self,
+            key: Keys.interestedLanguages,
+            defaults: defaults
+        ).map(Self.normalizedLanguageList) ?? []
+
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
 
@@ -1564,6 +1579,7 @@ final class AppSettings {
         statusFilter = nil
         libraryFilter = .all
         repoLanguageFilter = .all
+        interestedLanguages = []
         lastManageSelectionRaw = ""
         lastActivityCategoryRaw = ""
         listPreferenceValues = [:]
@@ -1665,6 +1681,20 @@ final class AppSettings {
             return nil
         }
         return login.lowercased()
+    }
+
+    static func normalizedLanguageList(_ languages: [String]) -> [String] {
+        var seen = Set<String>()
+        let unique = languages
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { language in
+                let key = language.lowercased()
+                guard !seen.contains(key) else { return false }
+                seen.insert(key)
+                return true
+            }
+        return unique.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     // MARK: - 内部
@@ -1860,6 +1890,7 @@ final class AppSettings {
         static let statusFilter = "settings.statusFilter"
         static let libraryFilter = "settings.libraryFilter"
         static let repoLanguageFilter = "settings.repoLanguageFilter"
+        static let interestedLanguages = "settings.filters.interestedLanguages.v1"
         static let lastManageSelection = "settings.lastManageSelection"
         static let lastActivityCategory = "settings.lastActivityCategory"
         static let listPreferenceValues = "settings.listPreferences.values.v1"
@@ -1932,6 +1963,7 @@ final class AppSettings {
             statusFilter,
             libraryFilter,
             repoLanguageFilter,
+            interestedLanguages,
             lastManageSelection,
             lastActivityCategory,
             listPreferenceValues,
