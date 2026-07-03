@@ -177,7 +177,7 @@
 
 ## 9. 预热 / embedding / 分享范围
 
-- [ ] README 预拉覆盖 starred 与知识库并集。
+- [x] README 预拉覆盖 starred 与知识库并集。
 - [x] Repo Health stale / missing 候选查询覆盖 starred 与知识库并集。
 - [x] Repo Health coverage total / snapshot total 使用 starred 与知识库并集口径。
 - [x] OpenSSF stale 候选查询覆盖 starred 与知识库并集。
@@ -223,6 +223,7 @@
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoNoteRepositoryTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelFilterSortTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/ReadmePrefetchServiceTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
 - [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
 - [x] `rtk git diff --check`
@@ -363,6 +364,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-9 README 预拉候选与 coverage 覆盖 starred 与知识库并集。
 - 2026-07-03: PR-1 回填知识库时间戳与多账号隔离测试,JSON 导入导出延期。
 - 2026-07-03: PR-6 GitHub 统计刷新候选覆盖 starred 与知识库并集确认。
 - 2026-07-03: PR-6 Release 轮询按 starred 与知识库 active scope 刷新。

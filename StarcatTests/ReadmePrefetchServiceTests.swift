@@ -152,6 +152,36 @@ struct ReadmePrefetchServiceTests {
         #expect(sut.service.total == 2)
     }
 
+    @Test("未 star 但已入库 repo 会进入 README 预拉候选和覆盖率统计")
+    func unstarredLibraryRepoIsPrefetchedAndCountedInCoverage() async throws {
+        let sut = try await makeSUT()
+        try await sut.db.insertRepoFixture(id: 9, owner: "alice", name: "starred")
+        try await sut.db.insertRepoFixture(id: 10, owner: "alice", name: "library-only")
+        try await sut.db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 10")
+        }
+        let noteRepository = GRDBRepoNoteRepository(database: sut.db)
+        try await noteRepository.updateLibraryState(repoId: 10, state: .inLibrary)
+
+        sut.api.readmeHTMLHandler = { _, repoName, _, _ in
+            BytesResponse.ok(data: Data("<h1>\(repoName)</h1>".utf8), etag: "\"html-\(repoName)\"")
+        }
+        sut.api.readmeMarkdownHandler = { _, repoName, _, _ in
+            BytesResponse.ok(data: Data("# \(repoName)".utf8), etag: "\"md-\(repoName)\"")
+        }
+
+        let processed = await sut.service.runBatch(limit: 10, delayBetweenRepos: 0)
+        let coverage = try await sut.prefetchRepository.coverageSummary()
+
+        #expect(processed == 2)
+        #expect(sut.api.readmeHTMLCalls.map(\.repo).sorted() == ["library-only", "starred"])
+        #expect(sut.api.readmeMarkdownCalls.map(\.repo).sorted() == ["library-only", "starred"])
+        #expect(try await sut.readmeRepository.find(repoId: 10)?.renderedHtml == "<h1>library-only</h1>")
+        #expect(try await sut.readmeRepository.findContent(repoId: 10) == "# library-only")
+        #expect(coverage.starredTotal == 2)
+        #expect(coverage.prefetchedTotal == 2)
+    }
+
     @Test("手动触发会绕过 retry 冷却处理剩余缺失仓库")
     func manualBatchBypassesRetryCooldown() async throws {
         let sut = try await makeSUT()

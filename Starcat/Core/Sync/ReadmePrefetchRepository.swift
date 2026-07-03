@@ -5,7 +5,7 @@
 //  README 后台预拉 Repository。
 //
 //  模块级说明：
-//  - 负责从 SQLite 中挑选需要预拉的 starred repo；
+//  - 负责从 SQLite 中挑选需要预拉的 active repo（starred 或已入库）；
 //  - 负责持久化 `readme_prefetch_states` 的调度状态；
 //  - 不发网络、不处理 UI 状态，保持与 `ReadmePrefetchService` 分层。
 //
@@ -13,8 +13,9 @@
 import Foundation
 import GRDB
 
-/// 当前 Star 仓库 README 预拉覆盖情况。
+/// 当前 active repo（starred 或已入库）的 README 预拉覆盖情况。
 struct ReadmePrefetchCoverageSummary: Equatable, Sendable {
+    /// 历史字段名沿用 starredTotal，当前语义已升级为 active scope total。
     let starredTotal: Int
     let prefetchedTotal: Int
 
@@ -37,13 +38,13 @@ struct ReadmePrefetchRepository: Sendable {
         self.database = database
     }
 
-    /// 取一批当前应处理的 starred repo。
+    /// 取一批当前应处理的 active repo。
     ///
     /// 排序策略：
     /// 1. 缺 HTML 的 repo 最优先，因为详情页秒开依赖它；
     /// 2. 已有 HTML 但缺 Markdown 的 repo 次之；
     /// 3. HTML 超过 soft TTL 的 repo 最后做条件刷新；
-    /// 4. 同级按最近 star 优先，符合用户近期打开概率更高的直觉。
+    /// 4. 同级按 starred_at / library_updated_at / cached_at 排序，保持与知识库集合口径一致。
     func fetchCandidates(
         now: Date,
         htmlStaleBefore: Date,
@@ -61,10 +62,11 @@ struct ReadmePrefetchRepository: Sendable {
                 sql: """
                 SELECT r.*
                 FROM repos r
+                LEFT JOIN repo_notes rn ON rn.repo_id = r.id
                 LEFT JOIN readmes rm ON rm.repo_id = r.id
                 LEFT JOIN readme_contents rc ON rc.repo_id = r.id
                 LEFT JOIN readme_prefetch_states ps ON ps.repo_id = r.id
-                WHERE r.is_starred = 1
+                WHERE (r.is_starred = 1 OR rn.library_state = 'in_library')
                   AND (? = 0 OR ps.next_retry_at IS NULL OR ps.next_retry_at <= ?)
                   AND (
                         rm.repo_id IS NULL
@@ -75,7 +77,8 @@ struct ReadmePrefetchRepository: Sendable {
                   CASE WHEN rm.repo_id IS NULL THEN 0 ELSE 1 END,
                   CASE WHEN rc.repo_id IS NULL THEN 0 ELSE 1 END,
                   rm.cached_at ASC,
-                  r.starred_at DESC
+                  COALESCE(r.starred_at, rn.library_updated_at, r.cached_at) DESC,
+                  r.id DESC
                 LIMIT ?
                 """,
                 arguments: [cooldownGate, nowISO, staleISO, safeLimit]
@@ -83,7 +86,7 @@ struct ReadmePrefetchRepository: Sendable {
         }
     }
 
-    /// 统计当前 Star 仓库中已被 README 预拉覆盖的数量。
+    /// 统计当前 active repo 中已被 README 预拉覆盖的数量。
     ///
     /// `fetchCandidates` 只回答“本轮还有谁需要处理”，无法区分“没有候选项”是因为全部完成、
     /// 暂无 Star，还是剩余仓库都在 retry 冷却中。设置页需要这个 summary 给出准确用户态状态。
@@ -106,10 +109,11 @@ struct ReadmePrefetchRepository: Sendable {
                         END
                     ), 0) AS prefetched_total
                 FROM repos r
+                LEFT JOIN repo_notes rn ON rn.repo_id = r.id
                 LEFT JOIN readmes rm ON rm.repo_id = r.id
                 LEFT JOIN readme_contents rc ON rc.repo_id = r.id
                 LEFT JOIN readme_prefetch_states ps ON ps.repo_id = r.id
-                WHERE r.is_starred = 1
+                WHERE r.is_starred = 1 OR rn.library_state = 'in_library'
                 """
             )
 
@@ -134,10 +138,11 @@ struct ReadmePrefetchRepository: Sendable {
                 sql: """
                 SELECT MIN(ps.next_retry_at) AS next_retry_at
                 FROM repos r
+                LEFT JOIN repo_notes rn ON rn.repo_id = r.id
                 LEFT JOIN readmes rm ON rm.repo_id = r.id
                 LEFT JOIN readme_contents rc ON rc.repo_id = r.id
                 LEFT JOIN readme_prefetch_states ps ON ps.repo_id = r.id
-                WHERE r.is_starred = 1
+                WHERE (r.is_starred = 1 OR rn.library_state = 'in_library')
                   AND ps.next_retry_at IS NOT NULL
                   AND ps.next_retry_at > ?
                   AND (
