@@ -312,6 +312,7 @@ struct HomeView: View {
                     isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) },
                     isGitHubAuthenticated: authSession.state.isAuthenticated
                 )
+                .environment(viewModel)
                 .zIndex(100)
             }
         }
