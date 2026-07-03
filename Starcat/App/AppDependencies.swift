@@ -1050,8 +1050,8 @@ final class AppDependencies {
         do { try await DiskReadmeTranslationCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: translation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
-        do { try await DiskAnySearchCache.shared.deleteEverything() }
-        catch { AppLog.general.warning("Factory reset: AnySearch cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        do { try await DiskExternalSearchCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: External Search cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskWikiCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Wiki cache cleanup failed: \(error.localizedDescription, privacy: .public)") }

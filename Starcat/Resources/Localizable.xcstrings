@@ -13691,13 +13691,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search"
+            "value" : "External Search"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索"
+            "value" : "外部搜索"
           }
         }
       }
@@ -28549,13 +28549,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch results cached on disk (global search 6h / AI summary external context 24h). Auto-evicted when exceeding 30 MB."
+            "value" : "External Search results cached on disk (global search 6h / AI external context 24h)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch 检索结果落地磁盘缓存（全局搜索 6 小时 / AI 摘要外部上下文 24 小时)。超过 30 MB 时自动淘汰。"
+            "value" : "External Search 检索结果落地磁盘缓存（全局搜索 6 小时 / AI 外部上下文 24 小时）。"
           }
         }
       }
@@ -29108,13 +29108,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear Search Cache"
+            "value" : "Clear External Search Cache"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除搜索缓存"
+            "value" : "清除外部搜索缓存"
           }
         }
       }
@@ -29142,13 +29142,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear all search cache?"
+            "value" : "Clear all External Search cache?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "确认清除全部搜索缓存？"
+            "value" : "确认清除全部外部搜索缓存？"
           }
         }
       }
@@ -29159,13 +29159,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All cached AnySearch results (global search + AI summary external context) will be removed. Subsequent searches and summaries will re-query the network and consume API quota."
+            "value" : "All cached External Search results (global search + AI external context) will be removed. Subsequent searches and summaries will re-query the network and consume API quota."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已缓存的所有 AnySearch 检索结果（全局搜索 + AI 摘要外部上下文）将被清空。下一次搜索 / 摘要会重新打网络,并消耗 API 配额。"
+            "value" : "已缓存的所有 External Search 检索结果（全局搜索 + AI 外部上下文）将被清空。下一次搜索 / 摘要会重新打网络,并消耗 API 配额。"
           }
         }
       }

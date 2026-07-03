@@ -649,9 +649,9 @@ private struct StorageSettingsTab: View {
     /// 失败极少；统一走 storageActionError。
     @State private var translationCache = DiskReadmeTranslationCache.shared
 
-    /// AnySearch 磁盘缓存：global + ai-summary 子目录合并清除（dong4j 拍板「合并清除」），
-    /// 用户心智是"清搜索缓存"而不是分别清两个子目录。
-    @State private var anySearchCache = DiskAnySearchCache.shared
+    /// External Search 磁盘缓存：global + AI External Context 子目录合并清除。
+    /// 用户心智是"清外部搜索缓存"而不是分别清 provider / 子目录。
+    @State private var externalSearchCache = DiskExternalSearchCache.shared
 
     /// Wiki 探测结果磁盘缓存（2026-06-15 v4.y）：DeepWiki / ZRead / CodeWiki 单仓查询
     /// 结果按 owner/repo 落盘。注入 AI Chat system prompt 的 `{starcatResources}` 段。
@@ -725,7 +725,7 @@ private struct StorageSettingsTab: View {
     private var isAllCachesEmpty: Bool {
         stats.totalBytes == 0
             && translationCache.itemCount == 0
-            && anySearchCache.itemCount == 0
+            && externalSearchCache.itemCount == 0
             && wikiCache.itemCount == 0
             && recommendationCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
@@ -831,8 +831,8 @@ private struct StorageSettingsTab: View {
                 )
                 usageRow(
                     titleKey: "settings.storage.anySearch",
-                    usageText: anySearchUsageText,
-                    isEmpty: anySearchCache.itemCount == 0,
+                    usageText: externalSearchUsageText,
+                    isEmpty: externalSearchCache.itemCount == 0,
                     action: .anySearch,
                     helpKey: "settings.storage.anySearch.help"
                 )
@@ -940,7 +940,7 @@ private struct StorageSettingsTab: View {
             codeFlowStorage.reload()
             codebaseMemoryStorage.reload()
             translationCache.reload()
-            anySearchCache.reload()
+            externalSearchCache.reload()
             chatHistoryStore.reload()
         }
         .confirmationDialog(
@@ -1123,7 +1123,7 @@ private struct StorageSettingsTab: View {
             do { try await translationCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
         case .anySearch:
-            do { try await anySearchCache.deleteEverything() }
+            do { try await externalSearchCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
         case .wiki:
             do { try wikiCache.deleteEverything() }
@@ -1149,7 +1149,7 @@ private struct StorageSettingsTab: View {
             // 后续若再失败则丢弃（避免连弹多个 alert，dong4j 反馈"重试一遍即可"）。
             do { try await translationCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
-            do { try await anySearchCache.deleteEverything() }
+            do { try await externalSearchCache.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -1196,7 +1196,7 @@ private struct StorageSettingsTab: View {
             try await dependencies.resetLocalAppData(for: target)
             stats = .empty
             translationCache.reload()
-            anySearchCache.reload()
+            externalSearchCache.reload()
             wikiCache.reload()
             recommendationCache.reload()
             chatHistoryStore.reload()
@@ -1300,15 +1300,15 @@ private struct StorageSettingsTab: View {
         )
     }
 
-    /// AnySearch 磁盘缓存用量行文案（global + ai-summary 合计）。
-    private var anySearchUsageText: String {
-        if anySearchCache.itemCount == 0 {
+    /// External Search 磁盘缓存用量行文案（global + AI External Context 合计）。
+    private var externalSearchUsageText: String {
+        if externalSearchCache.itemCount == 0 {
             return String.l10n("settings.storage.anySearch.empty")
         }
         return String(
             format: String.l10n("settings.storage.anySearchUsageFormat"),
-            anySearchCache.itemCount,
-            anySearchCache.totalBytes.formattedByteSize
+            externalSearchCache.itemCount,
+            externalSearchCache.totalBytes.formattedByteSize
         )
     }
 
