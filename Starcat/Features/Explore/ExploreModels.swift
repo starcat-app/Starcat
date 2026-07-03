@@ -184,7 +184,7 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
         case .popular:
             return commonOptions(defaultOption: .popular)
         case .newReleases:
-            return commonOptions(defaultOption: .release) + [.releaseDate]
+            return commonOptions(defaultOption: .release)
         case .trending, .weekly:
             return []
         }
