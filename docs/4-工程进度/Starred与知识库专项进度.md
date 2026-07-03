@@ -170,8 +170,8 @@
 - [x] 单 repo 手动 OpenSSF 刷新允许已入库未 star repo。
 - [ ] 单 repo 手动 README / Repo Health / OpenSSF 刷新失败时保留旧缓存,不改变 `libraryState`,不自动移出知识库。
 - [x] open/codeflow/codebase action 允许已入库未 star repo。
-- [ ] GitHub star/unstar、远程刷新、私有 GitHub 内容拉取仍按 GitHub 状态、token 与权限分层。
-- [ ] Star 操作仍保持独立。
+- [x] GitHub star/unstar、远程刷新、私有 GitHub 内容拉取仍按 GitHub 状态、token 与权限分层。
+- [x] Star 操作仍保持独立。
 - [x] 单测覆盖未 star 已入库 repo 的插件路径。
 
 ## 9. 预热 / embedding / 分享范围
@@ -291,7 +291,7 @@
 - [ ] 已登录但离线时,本地已有 repo 的 ❤️ 可以正常加入/移出知识库。
 - [ ] 未登录时,❤️ 入库操作不可用并给出登录提示。
 - [ ] unstar B 后,B 从 Manage 默认列表消失,但仍保留在知识库集合。
-- [ ] Star/unstar 不改变 `libraryState`。
+- [x] Star/unstar 不改变 `libraryState`。
 
 ### 11.5 Search Center / Browser Plugin
 
@@ -365,6 +365,7 @@
 - 2026-07-02: PR-5 第三批 MCP search/semantic/resources 支持范围参数。
 - 2026-07-02: PR-5 第二批 Home 搜索候选与 FTS 按当前范围对齐。
 - 2026-07-02: PR-5 第一批 SemanticIndexBuilder 支持 starred/knowledge/all 范围。
+- 2026-07-03: PR-6 补 Star/unstar 不改变 libraryState 测试。
 - 2026-07-03: PR-6 Companion open/codeflow/codebase action 放开已入库未 star repo。
 - 2026-07-03: PR-6 单仓 README/Health/OpenSSF 手动刷新放开已入库未 star repo。
 - 2026-07-03: PR-6 Repo Health/OpenSSF 后台统计候选覆盖知识库并集。

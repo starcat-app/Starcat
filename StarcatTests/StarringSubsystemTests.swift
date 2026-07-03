@@ -32,6 +32,7 @@ struct StarringSubsystemTests {
     ) throws -> (
         api: MockGitHubAPIClient,
         repo: GRDBRepoRepository,
+        note: GRDBRepoNoteRepository,
         registry: StarredRegistry,
         service: StarActionService,
         bootstrapper: StarredRegistryBootstrapper,
@@ -39,6 +40,7 @@ struct StarringSubsystemTests {
     ) {
         let db = try InMemoryDatabaseManager()
         let repo = GRDBRepoRepository(database: db)
+        let note = GRDBRepoNoteRepository(database: db)
         let api = MockGitHubAPIClient()
         let registry = StarredRegistry()
         let refresher = SpyHomeRefresher()
@@ -50,7 +52,7 @@ struct StarringSubsystemTests {
             homeRefresher: refresher
         )
         let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
-        return (api, repo, registry, service, bootstrapper, refresher)
+        return (api, repo, note, registry, service, bootstrapper, refresher)
     }
 
     /// 构造一个 GitHubRepoDTO（默认字段足够 upsert 不挂）。
@@ -135,7 +137,7 @@ struct StarringSubsystemTests {
 
     // MARK: - 3. StarActionService.unstar 保留私有数据
 
-    @Test("unstar: 调 markUnstarred + registry._remove + 保留 repos 行（不删笔记/标签关联）")
+    @Test("unstar: 调 markUnstarred + registry._remove + 保留 repos 行和 libraryState")
     func unstarPreservesPrivateData() async throws {
         let deps = try makeDeps()
         deps.api.starHandler = { _, _ in }
@@ -146,6 +148,7 @@ struct StarringSubsystemTests {
 
         // 先 star
         let saved = try await deps.service.star(owner: "alice", repo: "foo")
+        try await deps.note.updateLibraryState(repoId: saved.id, state: .inLibrary)
         #expect(deps.registry.contains(ghRepoId: 5555))
         #expect(try await deps.repo.starredCount() == 1)
 
@@ -160,6 +163,26 @@ struct StarringSubsystemTests {
         let stillThere = try await deps.repo.findById(5555)
         #expect(stillThere != nil)
         #expect(stillThere?.isStarred == false)
+        #expect(try await deps.note.fetchLibraryState(repoId: saved.id) == .inLibrary)
+    }
+
+    @Test("star: 已入库未 star repo 重新 star 后保留 libraryState")
+    func starPreservesLibraryStateForUnstarredLibraryRepo() async throws {
+        let deps = try makeDeps()
+        let dto = makeRepoDTO(id: 6666, owner: "alice", name: "bar")
+        let external = try await deps.repo.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: Date())
+        try await deps.note.updateLibraryState(repoId: external.id, state: .inLibrary)
+        #expect(external.isStarred == false)
+
+        deps.api.starHandler = { _, _ in }
+        deps.api.repoHandler = { owner, repo in
+            self.makeRepoDTO(id: 6666, owner: owner, name: repo)
+        }
+
+        let saved = try await deps.service.star(owner: "alice", repo: "bar")
+
+        #expect(saved.isStarred)
+        #expect(try await deps.note.fetchLibraryState(repoId: saved.id) == .inLibrary)
     }
 
     // MARK: - 4. Bootstrapper.reload
