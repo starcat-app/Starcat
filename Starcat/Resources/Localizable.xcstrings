@@ -11620,6 +11620,22 @@
         }
       }
     },
+    "explore.sort.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序"
+          }
+        }
+      }
+    },
     "explore.sort.activity" : {
       "localizations" : {
         "en" : {
@@ -38802,6 +38818,22 @@
         }
       }
     },
+    "trending.period.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Period"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "周期"
+          }
+        }
+      }
+    },
     "trending.period.daily" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -38865,6 +38897,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "为你推荐"
+          }
+        }
+      }
+    },
+    "trending.sort.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序"
           }
         }
       }

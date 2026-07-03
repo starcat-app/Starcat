@@ -212,13 +212,14 @@ struct TrendingView: View {
 
     // MARK: - Toolbar
 
-    /// 顶部筛选栏：排序 + 时间范围合并为一个下拉菜单。
+    /// 顶部控制栏：时间范围和排序拆开，避免把“今天 / 本周 / 本月”误归类为排序。
     ///
-    /// 约束：趋势的今日 / 本周 / 本月不再使用分段 tab，避免 Explore 下不同模式的中栏控件
-    /// 形态割裂；菜单结构对齐 Activity / Weekly 的筛选下拉。
+    /// 约束：周期仍然是趋势列表的数据范围，变化时要清空当前详情选择；排序只调整当前
+    /// 范围内的展示顺序，二者保持独立文案，给后续全局筛选重构留出清晰边界。
     private var toolbarView: some View {
         HStack(spacing: 10) {
-            trendingFilterMenu
+            trendingPeriodMenu
+            trendingSortMenu
 
             Spacer()
 
@@ -232,9 +233,9 @@ struct TrendingView: View {
         .padding(.bottom, 6)
     }
 
-    private var trendingFilterMenu: some View {
+    private var trendingPeriodMenu: some View {
         Menu {
-            Section("trending.filter.period") {
+            Section("trending.period.title") {
                 ForEach(TrendingPeriod.allCases) { period in
                     Button {
                         clearTrendingDetailSelectionIfChanging(period != viewModel.selectedPeriod)
@@ -247,8 +248,24 @@ struct TrendingView: View {
                     }
                 }
             }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .foregroundStyle(.secondary)
+                Text("trending.period.title")
+                Text(verbatim: viewModel.selectedPeriod.localizedDisplayName)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .fixedSize()
+    }
 
-            Section("trending.filter.sort") {
+    private var trendingSortMenu: some View {
+        Menu {
+            Section("trending.sort.title") {
                 ForEach(TrendingSortOption.allCases) { sort in
                     Button {
                         clearTrendingDetailSelectionIfChanging(sort != viewModel.selectedSort)
@@ -266,8 +283,8 @@ struct TrendingView: View {
             HStack(spacing: 6) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.secondary)
-                Text("trending.filter.title")
-                Text(verbatim: "\(viewModel.selectedPeriod.localizedDisplayName) · \(viewModel.selectedSort.localizedTitle)")
+                Text("trending.sort.title")
+                Text(verbatim: viewModel.selectedSort.localizedTitle)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.caption)

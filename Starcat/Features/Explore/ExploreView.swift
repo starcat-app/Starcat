@@ -149,7 +149,7 @@ private struct ExploreDiscoveryListView: View {
     private var filterBar: some View {
         HStack(spacing: 10) {
             Menu {
-                Section("explore.filter.sort") {
+                Section("explore.sort.title") {
                     ForEach(ExploreSortOption.options(for: mode)) { option in
                         Button {
                             sortBinding.wrappedValue = option
@@ -165,7 +165,7 @@ private struct ExploreDiscoveryListView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundStyle(.secondary)
-                    Text("explore.filter.title")
+                    Text("explore.sort.title")
                     Text(currentSort.titleKey)
                     Image(systemName: "chevron.down")
                         .font(.caption)
