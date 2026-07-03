@@ -37,6 +37,16 @@ import SwiftUI
 
 struct HomeView: View {
 
+    private enum ListPreferenceKey {
+        static let exploreMode = "explore.mode"
+        static let trendingLanguage = "explore.trending.language"
+        static let weeklyLanguage = "explore.weekly.language"
+
+        static func discoveryLanguage(_ mode: ExploreMode) -> String {
+            "explore.\(mode.rawValue).language"
+        }
+    }
+
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
     @Environment(AppSettings.self) private var settings
@@ -594,6 +604,20 @@ struct HomeView: View {
         .onChange(of: selectedActivityCategory) { _, newCategory in
             handleActivityCategoryChange(newCategory)
         }
+        .onChange(of: selectedExploreMode) { _, mode in
+            persistListPreference(mode.rawValue, key: ListPreferenceKey.exploreMode)
+            restoreExploreLanguagePreference(for: mode)
+        }
+        .onChange(of: selectedTrendingLanguage) { _, language in
+            persistListPreference(language.rawValue, key: ListPreferenceKey.trendingLanguage)
+        }
+        .onChange(of: selectedDiscoveryLanguage) { _, language in
+            guard selectedExploreMode == .popular || selectedExploreMode == .newReleases else { return }
+            persistListPreference(language, key: ListPreferenceKey.discoveryLanguage(selectedExploreMode))
+        }
+        .onChange(of: selectedWeeklyLanguage) { _, language in
+            persistListPreference(language, key: ListPreferenceKey.weeklyLanguage)
+        }
         )
     }
 
@@ -1033,7 +1057,7 @@ struct HomeView: View {
         case .trending:
             // 确保 selection 标记为 trending，并恢复上次的语言选择
             viewModel.selection = .trending
-            selectedTrendingLanguage = savedTrendingLanguage
+            restoreExploreLanguagePreference(for: selectedExploreMode)
         case .activity:
             selectedActivityCategory = savedActivityCategory
         }
@@ -1438,6 +1462,7 @@ struct HomeView: View {
         if isAccountSwitch {
             viewModel.resetAllStateForUserSwitch()
         }
+        restoreListPreferences(login: user.login)
 
         let wasAlreadyOnManage = selectedSidebarPage == .manage
         selectedSidebarPage = .manage
@@ -1463,6 +1488,42 @@ struct HomeView: View {
             } else {
                 syncManager.performFullSyncIfStale(userID: user.id)
             }
+        }
+    }
+
+    private var currentListPreferenceLogin: String? {
+        authSession.state.user?.login
+    }
+
+    private func persistListPreference(_ value: String?, key: String) {
+        settings.setListPreferenceValue(value, for: key, login: currentListPreferenceLogin)
+    }
+
+    private func restoreListPreferences(login: String) {
+        if let raw = settings.listPreferenceValue(for: ListPreferenceKey.exploreMode, login: login),
+           let mode = ExploreMode(rawValue: raw) {
+            selectedExploreMode = mode
+        } else {
+            selectedExploreMode = .discover
+        }
+        restoreExploreLanguagePreference(for: selectedExploreMode, login: login)
+    }
+
+    private func restoreExploreLanguagePreference(for mode: ExploreMode, login explicitLogin: String? = nil) {
+        let login = explicitLogin ?? currentListPreferenceLogin
+        switch mode {
+        case .trending:
+            let raw = settings.listPreferenceValue(for: ListPreferenceKey.trendingLanguage, login: login) ?? ""
+            selectedTrendingLanguage = TrendingLanguage(raw)
+        case .popular, .newReleases:
+            selectedDiscoveryLanguage = settings.listPreferenceValue(
+                for: ListPreferenceKey.discoveryLanguage(mode),
+                login: login
+            )
+        case .weekly:
+            selectedWeeklyLanguage = settings.listPreferenceValue(for: ListPreferenceKey.weeklyLanguage, login: login)
+        case .discover:
+            break
         }
     }
 
