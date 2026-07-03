@@ -209,6 +209,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         libraryToast == "library.action.failed" ? "exclamationmark.triangle.fill" : "heart.fill"
     }
 
+    private var libraryToastIconColor: Color? {
+        libraryToast == "library.action.added" ? .red : nil
+    }
+
+    /// README 底部 cache footer 占据状态栏位置，知识库成功提示需要上浮一段距离，
+    /// 避免胶囊压在状态栏视觉层级上。
+    private var libraryToastBottomPadding: CGFloat {
+        30
+    }
+
     init(
         repo: Repo,
         viewData: RepoDetailViewData,
@@ -300,7 +310,12 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         } message: {
             Text("library.removeUsing.confirmMessage")
         }
-        .toast(message: $libraryToast, icon: libraryToastIcon)
+        .toast(
+            message: $libraryToast,
+            icon: libraryToastIcon,
+            iconColor: libraryToastIconColor,
+            bottomPadding: libraryToastBottomPadding
+        )
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0

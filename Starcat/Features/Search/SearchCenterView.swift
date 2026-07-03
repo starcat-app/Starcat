@@ -195,7 +195,12 @@ struct SearchCenterView: View {
         } message: {
             Text("library.removeUsing.confirmMessage")
         }
-        .toast(message: $libraryToast, icon: libraryToastIcon)
+        .toast(
+            message: $libraryToast,
+            icon: libraryToastIcon,
+            iconColor: libraryToastIconColor,
+            bottomPadding: libraryToastBottomPadding
+        )
     }
 
     /// 浮层内部的分隔线。
@@ -1034,6 +1039,16 @@ struct SearchCenterView: View {
 
     private var libraryToastIcon: String {
         libraryToast == "library.action.failed" ? "exclamationmark.triangle.fill" : "heart.fill"
+    }
+
+    private var libraryToastIconColor: Color? {
+        libraryToast == "library.action.added" ? .red : nil
+    }
+
+    /// Search Center 也可能展示 README 底部状态栏，知识库 toast 统一上浮，
+    /// 保持与详情页的反馈位置一致。
+    private var libraryToastBottomPadding: CGFloat {
+        30
     }
 
     private func handleLibraryToggleTapped(_ candidate: RepositoryCandidate) async {

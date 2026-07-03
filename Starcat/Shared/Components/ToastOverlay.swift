@@ -24,6 +24,8 @@ private struct ToastModifier: ViewModifier {
     @Binding var message: String?
     let icon: String
     let duration: TimeInterval
+    let iconColor: Color?
+    let bottomPadding: CGFloat
 
     /// 2026-06-15:Toast 进出场 0.25s snappy 在「关闭应用内动画」时跳过,
     /// 直接显示/隐藏避免吸引视线。
@@ -34,6 +36,8 @@ private struct ToastModifier: ViewModifier {
             if let message {
                 HStack(spacing: 6) {
                     Image(systemName: icon)
+                        // 默认仍使用 `.primary`；只有调用方明确传入产品语义色时才覆盖。
+                        .foregroundStyle(iconColor ?? Color.primary)
                     Text(LocalizedStringKey(message))
                         .font(.system(size: 13, weight: .medium))
                 }
@@ -41,7 +45,7 @@ private struct ToastModifier: ViewModifier {
                 .padding(.vertical, 8)
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.15)))
-                .padding(.bottom, 16)
+                .padding(.bottom, bottomPadding)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .id(message) // 切换 message 重置动画
                 // task(id:) 跟随 message 重置；duration 后清空
@@ -64,7 +68,21 @@ extension View {
     ///   - message: 双向 binding；写非 nil 即弹出，duration 后自动归零
     ///   - icon: SF Symbol 名（默认 checkmark.circle.fill）
     ///   - duration: 自动消失时间（秒），默认 2.0
-    func toast(message: Binding<String?>, icon: String = "checkmark.circle.fill", duration: TimeInterval = 2.0) -> some View {
-        modifier(ToastModifier(message: message, icon: icon, duration: duration))
+    ///   - iconColor: 仅覆盖图标色；文案继续继承系统主色，保证可读性
+    ///   - bottomPadding: 底部浮动距离；详情页可避开 README 状态栏
+    func toast(
+        message: Binding<String?>,
+        icon: String = "checkmark.circle.fill",
+        duration: TimeInterval = 2.0,
+        iconColor: Color? = nil,
+        bottomPadding: CGFloat = 16
+    ) -> some View {
+        modifier(ToastModifier(
+            message: message,
+            icon: icon,
+            duration: duration,
+            iconColor: iconColor,
+            bottomPadding: bottomPadding
+        ))
     }
 }
