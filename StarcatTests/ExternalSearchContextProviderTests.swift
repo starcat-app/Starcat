@@ -30,6 +30,8 @@ struct ExternalSearchContextProviderTests {
 
         #expect(context?.markdown.contains(#"source="Exa""#) == true)
         #expect(Set(recorder.providerIDs) == Set([.exa]))
+        #expect(context?.sourceItems.first?.provider == .exa)
+        #expect(context?.sourceItems.first?.host == "example.com")
     }
 
     @Test("私有仓库只发送 fullName，不发送 description")

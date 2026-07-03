@@ -30,6 +30,7 @@ import os
 struct AIExternalContext: Codable, Equatable, Sendable {
     let markdown: String
     let sources: [URL]
+    var sourceItems: [AIExternalContextSource] = []
 }
 
 @MainActor

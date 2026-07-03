@@ -58,6 +58,7 @@ struct RepoAIInsightY9Tests {
         #expect(insight.summaryMarkdown == "## 摘要\n这是一个测试摘要")
         #expect(insight.contextMetadata == nil)
         #expect(insight.externalContextMarkdown == nil)
+        #expect(insight.externalContextSources == nil)
     }
 
     @Test("含 externalContextMarkdown 的 JSON 序列化往返一致")
@@ -76,6 +77,15 @@ struct RepoAIInsightY9Tests {
             generatedAt: "2026-06-14T00:00:00Z",
             contextMetadata: nil,
             externalContextMarkdown: "<external_context>linked</external_context>",
+            externalContextSources: [
+                AIExternalContextSource(
+                    title: "Doc",
+                    url: URL(string: "https://example.com/doc")!,
+                    host: "example.com",
+                    provider: .exa,
+                    fetchedAt: "2026-07-03T00:00:00Z"
+                )
+            ],
             generationContextSettings: nil
         )
 
@@ -83,6 +93,8 @@ struct RepoAIInsightY9Tests {
         let decoded = try JSONDecoder().decode(RepoAIInsight.self, from: data)
 
         #expect(decoded.externalContextMarkdown == "<external_context>linked</external_context>")
+        #expect(decoded.externalContextSources?.first?.provider == .exa)
+        #expect(decoded.externalContextSources?.first?.host == "example.com")
         #expect(decoded.summaryMarkdown == "## summary")
     }
 

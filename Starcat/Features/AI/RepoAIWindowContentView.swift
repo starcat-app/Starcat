@@ -855,6 +855,10 @@ struct RepoAIWindowContentView: View {
 
         RepoAISummaryMarkdownView(markdown: insight.summaryMarkdown ?? insight.summary)
 
+        if let sources = insight.externalContextSources, !sources.isEmpty {
+            externalContextSourcesBlock(sources)
+        }
+
         // R-01 §3.2.7 Step 8：未 star 时**不渲染**标签段（即便 insight.suggestedTags
         // 来自历史缓存有内容，也按窗口打开瞬间冻结的 star 状态决定，避免奇怪的"未
         // star 却能应用标签"逻辑漏洞）。已 star 才渲染，保持对历史摘要缓存兼容。
@@ -873,6 +877,42 @@ struct RepoAIWindowContentView: View {
         }
 
         footer(insight)
+    }
+
+    private func externalContextSourcesBlock(_ sources: [AIExternalContextSource]) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(sources) { source in
+                    Button {
+                        NSWorkspace.shared.open(source.url)
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "link")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 14)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(source.title)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                Text("\(source.host) · \(source.provider.displayName)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            Label("External Context Sources", systemImage: "globe")
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.top, 6)
     }
 
     /// Y9.1（2026-06-14）：判定当前展示的 insight 是否与"用户当前 settings 想要的物料"

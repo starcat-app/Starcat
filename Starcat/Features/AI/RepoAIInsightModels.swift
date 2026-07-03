@@ -59,6 +59,12 @@ struct RepoAIInsight: Codable, Equatable, Sendable {
     ///   - 两份数据来源同一次 collect 调用，无内容漂移风险。
     var externalContextMarkdown: String?
 
+    /// External Context Sources 的轻量元数据。
+    ///
+    /// 只保存 UI 展示所需的 title / URL / host / provider / fetchedAt，不保存
+    /// `extractedText` 或 snippet，避免把第三方网页正文长期塞进 AI 摘要缓存。
+    var externalContextSources: [AIExternalContextSource]? = nil
+
     /// Y9.1（2026-06-14）：摘要生成那一刻的"上下文配置快照"。
     ///
     /// **为什么需要这个字段**：
@@ -96,6 +102,16 @@ struct GenerationContextSettings: Codable, Equatable, Sendable {
     /// 生成时 AnySearch 外部材料**最终是否被允许**（双开关 AND + 私仓门控的 effective 结果）。
     /// 等价于 `AnySearchContextProvider.allowsExternalContext(...)` 在生成那一刻的返回值。
     var externalContextAllowed: Bool
+}
+
+struct AIExternalContextSource: Codable, Identifiable, Equatable, Sendable {
+    var title: String
+    var url: URL
+    var host: String
+    var provider: ExternalSearchProviderID
+    var fetchedAt: String
+
+    var id: String { "\(provider.rawValue):\(url.absoluteString)" }
 }
 
 /// Y2：UI footer 显示的代码上下文元信息（PackMetadata 的精简投影）。

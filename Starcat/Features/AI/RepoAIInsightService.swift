@@ -384,6 +384,7 @@ final class RepoAIInsightService {
         //   - 与 `summaryText` 末尾追加的"## 外部参考来源"链接列表不冲突——前者给摘要面板渲染
         //     展示用，后者给对话 system prompt 注入用，两份数据来源同一次 collect 调用。
         insight.externalContextMarkdown = resolvedExternalContext?.markdown
+        insight.externalContextSources = resolvedExternalContext?.sourceItems
 
         // Y9.1（2026-06-14）：把生成时的"上下文配置快照"写进 insight。
         //

@@ -184,6 +184,7 @@ final class ExternalSearchContextProvider {
         aggregate: Bool
     ) -> AIExternalContext? {
         guard !hits.isEmpty else { return nil }
+        let fetchedAt = ISO8601DateFormatter.shared.string(from: Date())
         let source = aggregate ? "Aggregate" : (providerID?.displayName ?? "External Search")
         let entries = hits.map { contextHit -> String in
             let hit = contextHit.hit
@@ -197,7 +198,16 @@ final class ExternalSearchContextProvider {
         \(entries.joined(separator: "\n"))
         </external_context>
         """
-        return AIExternalContext(markdown: markdown, sources: hits.map(\.hit.url))
+        let sourceItems = hits.map { contextHit in
+            AIExternalContextSource(
+                title: contextHit.hit.title,
+                url: contextHit.hit.url,
+                host: contextHit.hit.url.host ?? contextHit.providerID.displayName,
+                provider: contextHit.providerID,
+                fetchedAt: fetchedAt
+            )
+        }
+        return AIExternalContext(markdown: markdown, sources: hits.map(\.hit.url), sourceItems: sourceItems)
     }
 
     private func providerPriority(_ providerID: ExternalSearchProviderID) -> Int {
