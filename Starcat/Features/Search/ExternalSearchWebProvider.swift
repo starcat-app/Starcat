@@ -45,10 +45,14 @@ struct ExternalSearchWebProvider: SearchProvider {
         }
 
         let provider = registry.provider(for: providerID)
+        let filters = request.externalSearchFilters
         let externalRequest = ExternalSearchRequest(
             query: request.query,
             purpose: .globalSearch,
-            maxResults: request.anySearchFilters.maxResults,
+            maxResults: filters.clampedMaxResults(),
+            freshness: filters.freshness == .any ? nil : filters.freshness.rawValue,
+            includeDomains: filters.includeDomains.sorted(),
+            excludeDomains: filters.excludeDomains.sorted(),
             anySearchFilters: providerID == .anySearch ? request.anySearchFilters : nil
         )
         if let cached = try? await diskCache?.loadGlobal(provider: providerID, request: externalRequest) {

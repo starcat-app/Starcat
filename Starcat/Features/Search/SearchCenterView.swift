@@ -46,6 +46,10 @@ struct SearchCenterView: View {
     @State private var minStarsDraft = ""
     /// Web「结果数」输入草稿；点「应用筛选」时写入 `anySearchFilters.maxResults`。
     @State private var maxResultsDraft = ""
+    /// External Search 域名白名单输入草稿；逗号或空白分隔。
+    @State private var includeDomainsDraft = ""
+    /// External Search 域名黑名单输入草稿；逗号或空白分隔。
+    @State private var excludeDomainsDraft = ""
     /// Search Center 行内 ❤️ 操作中的 repo。用 repo id 控制单按钮 loading，避免
     /// 点击一个结果时把整张搜索列表都置灰。
     @State private var libraryOperationRepoID: Int64?
@@ -446,13 +450,8 @@ struct SearchCenterView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
-            anySearchDomainPicker(width: 222)
-            HStack(alignment: .bottom, spacing: 10) {
-                anySearchContentTypesField(width: 106)
-                anySearchZonePicker(width: 106)
-            }
             SearchFilterNumericField(
-                titleKey: "search.anysearch.maxResults",
+                titleKey: "search.web.maxResults",
                 placeholder: "10",
                 hintKey: "search.anysearch.maxResults.hint",
                 draft: $maxResultsDraft,
@@ -461,9 +460,28 @@ struct SearchCenterView: View {
                 maxDigitCount: 3,
                 allowsEmpty: false
             )
+            externalSearchFreshnessPicker(width: 222)
+            externalSearchDomainListField(
+                title: "Include domains",
+                placeholder: "docs.example.com, github.com",
+                text: $includeDomainsDraft
+            )
+            externalSearchDomainListField(
+                title: "Exclude domains",
+                placeholder: "example.com",
+                text: $excludeDomainsDraft
+            )
+
+            if viewModel.webSearchProvider == .anySearch {
+                anySearchDomainPicker(width: 222)
+                HStack(alignment: .bottom, spacing: 10) {
+                    anySearchContentTypesField(width: 106)
+                    anySearchZonePicker(width: 106)
+                }
+            }
 
             Button("search.github.filter.apply") {
-                guard commitMaxResultsDraft() else { return }
+                guard commitExternalSearchDrafts() else { return }
                 Task { await viewModel.applyAnySearchFilters() }
             }
             .buttonStyle(.borderedProminent)
@@ -1435,7 +1453,20 @@ struct SearchCenterView: View {
     /// 全默认时显示「自动（按 query 路由）」，让用户即便不展开也能确认状态。
     private var anySearchFiltersSummary: String {
         let f = viewModel.anySearchFilters
+        let external = viewModel.externalSearchFilters
         var parts: [String] = []
+        if external.maxResults != 10 {
+            parts.append(String(format: String.l10n("search.anysearch.summary.count"), external.maxResults))
+        }
+        if external.freshness != .any {
+            parts.append(external.freshness.rawValue)
+        }
+        if !external.includeDomains.isEmpty {
+            parts.append("include:\(external.includeDomains.sorted().joined(separator: ","))")
+        }
+        if !external.excludeDomains.isEmpty {
+            parts.append("exclude:\(external.excludeDomains.sorted().joined(separator: ","))")
+        }
         if let domain = f.domain { parts.append(domain) }
         if !f.contentTypes.isEmpty {
             let ordered = Self.allAnySearchContentTypes
@@ -1446,9 +1477,6 @@ struct SearchCenterView: View {
             parts.append(zone == .cn
                 ? String.l10n("search.anysearch.zone.cn")
                 : String.l10n("search.anysearch.zone.intl"))
-        }
-        if f.maxResults != 10 {
-            parts.append(String(format: String.l10n("search.anysearch.summary.count"), f.maxResults))
         }
         return parts.isEmpty
             ? String.l10n("search.anysearch.summary.auto")
@@ -1503,7 +1531,9 @@ struct SearchCenterView: View {
     /// 才代表要触发远端搜索。这样不会出现输入到一半就发请求或把非法值写进筛选条件。
     private func syncNumericFilterDrafts() {
         minStarsDraft = viewModel.githubFilters.minimumStars.map(String.init) ?? ""
-        maxResultsDraft = String(viewModel.anySearchFilters.maxResults)
+        maxResultsDraft = String(viewModel.externalSearchFilters.maxResults)
+        includeDomainsDraft = viewModel.externalSearchFilters.includeDomains.sorted().joined(separator: ", ")
+        excludeDomainsDraft = viewModel.externalSearchFilters.excludeDomains.sorted().joined(separator: ", ")
     }
 
     /// 提交 GitHub 最低 Stars。空值表示“不限制”；非空必须是正整数。
@@ -1526,8 +1556,8 @@ struct SearchCenterView: View {
         }
     }
 
-    /// 提交 Web 结果数。AnySearch API 上限是 100，UI 层先做一次正整数范围校验。
-    private func commitMaxResultsDraft() -> Bool {
+    /// 提交 Web 公共筛选。Provider API 上限不完全一致，Starcat 先统一钳制到 1...100。
+    private func commitExternalSearchDrafts() -> Bool {
         let validation = SearchFilterNumericField.validate(
             maxResultsDraft,
             minimum: 1,
@@ -1537,8 +1567,53 @@ struct SearchCenterView: View {
         guard case .ok = validation, let value = Int(maxResultsDraft) else {
             return false
         }
-        viewModel.anySearchFilters.maxResults = value
+        viewModel.externalSearchFilters.maxResults = value
+        viewModel.externalSearchFilters.includeDomains = Self.parseDomainList(includeDomainsDraft)
+        viewModel.externalSearchFilters.excludeDomains = Self.parseDomainList(excludeDomainsDraft)
         return true
+    }
+
+    private func externalSearchFreshnessPicker(width: CGFloat) -> some View {
+        githubPicker(titleKey: "Freshness", width: width) {
+            Picker("Freshness", selection: externalSearchFreshnessBinding) {
+                Text("Any time").tag(ExternalSearchFilters.Freshness.any)
+                Text("Past day").tag(ExternalSearchFilters.Freshness.day)
+                Text("Past week").tag(ExternalSearchFilters.Freshness.week)
+                Text("Past month").tag(ExternalSearchFilters.Freshness.month)
+                Text("Past year").tag(ExternalSearchFilters.Freshness.year)
+            }
+        }
+    }
+
+    private var externalSearchFreshnessBinding: Binding<ExternalSearchFilters.Freshness> {
+        Binding(
+            get: { viewModel.externalSearchFilters.freshness },
+            set: { viewModel.externalSearchFilters.freshness = $0 }
+        )
+    }
+
+    private func externalSearchDomainListField(
+        title: String,
+        placeholder: String,
+        text: Binding<String>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+        }
+    }
+
+    private static func parseDomainList(_ raw: String) -> Set<String> {
+        let separators = CharacterSet(charactersIn: ",， \n\t")
+        let values = raw
+            .components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        return Set(values)
     }
 }
 

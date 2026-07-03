@@ -233,6 +233,47 @@ struct AnySearchFilters: Equatable, Hashable, Codable, Sendable {
     }
 }
 
+/// External Search 的 Provider 无关筛选条件。
+///
+/// 这里只放四个可以跨 Provider 表达的公共字段；AnySearch 的 domain/contentTypes/zone
+/// 仍保留在 `AnySearchFilters` 中，避免把 AnySearch 专属枚举强行塞给 Tavily/Exa/Brave。
+/// 筛选值由 SearchCenter ViewModel 持有，属于会话状态，不写入 AppSettings。
+struct ExternalSearchFilters: Equatable, Hashable, Codable, Sendable {
+    enum Freshness: String, CaseIterable, Identifiable, Codable, Sendable {
+        case any
+        case day
+        case week
+        case month
+        case year
+
+        var id: String { rawValue }
+    }
+
+    /// 单次返回结果数。范围 1–100，默认 10。
+    var maxResults: Int = 10
+    /// 第一版只作为通用模型和 cache fingerprint；具体 provider 参数接入以后续官方文档为准。
+    var freshness: Freshness = .any
+    /// 域名白名单。空集合 = 不限制。
+    var includeDomains: Set<String> = []
+    /// 域名黑名单。空集合 = 不限制。
+    var excludeDomains: Set<String> = []
+
+    static let empty = ExternalSearchFilters()
+
+    var fingerprint: String {
+        [
+            "n=\(maxResults)",
+            "freshness=\(freshness.rawValue)",
+            "include=\(includeDomains.sorted().joined(separator: ","))",
+            "exclude=\(excludeDomains.sorted().joined(separator: ","))"
+        ].joined(separator: "|")
+    }
+
+    func clampedMaxResults() -> Int {
+        min(max(maxResults, 1), 100)
+    }
+}
+
 struct SearchRequest: Equatable, Hashable, Sendable {
     let query: String
     let scope: SearchScope
@@ -240,6 +281,8 @@ struct SearchRequest: Equatable, Hashable, Sendable {
     /// AnySearch 筛选条件。默认 `.empty` 让所有既有调用点零改动 —— 与未传时
     /// 的「全部走默认」行为完全一致。
     let anySearchFilters: AnySearchFilters
+    /// Provider 无关的 External Search 公共筛选条件。
+    let externalSearchFilters: ExternalSearchFilters
     /// 本次 Web provider view 使用的外部搜索 Provider。
     ///
     /// `.web` scope 使用 SearchCenter 会话态 provider；`.all` scope 使用设置页默认
@@ -254,6 +297,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         scope: SearchScope = .all,
         githubFilters: GitHubSearchFilters = .empty,
         anySearchFilters: AnySearchFilters = .empty,
+        externalSearchFilters: ExternalSearchFilters = .empty,
         externalSearchProvider: ExternalSearchProviderID = .anySearch,
         page: Int = 1,
         perPage: Int = 30,
@@ -263,6 +307,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         self.scope = scope
         self.githubFilters = githubFilters
         self.anySearchFilters = anySearchFilters
+        self.externalSearchFilters = externalSearchFilters
         self.externalSearchProvider = externalSearchProvider
         self.page = max(1, page)
         self.perPage = min(max(1, perPage), 100)

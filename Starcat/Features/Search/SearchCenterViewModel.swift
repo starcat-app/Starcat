@@ -32,9 +32,11 @@ final class SearchCenterViewModel {
     /// AnySearch 筛选条折叠状态。与 GitHub 筛选条对称（dong4j 2026-06-14 拍板：
     /// 持久化策略对齐 githubFilters —— 仅会话级，App 重启清零，不写 AppSettings）。
     var isAnySearchFiltersExpanded: Bool = false
-    /// AnySearch 筛选条件（domain / contentTypes / zone / maxResults）。
+    /// AnySearch 专属筛选条件（domain / contentTypes / zone）。
     /// 默认 `.empty` 表示「自动」，与未做本次改造前的行为完全一致。
     var anySearchFilters: AnySearchFilters = .empty
+    /// External Search 公共筛选条件。会话级保存，不写 AppSettings。
+    var externalSearchFilters: ExternalSearchFilters = .empty
     /// Web tab 当前 External Search Provider。会话级保存，App 重启回到设置页默认值。
     var webSearchProvider: ExternalSearchProviderID
     /// 当前搜索入口触发的 Pro 付费墙。只在用户明确进入网页搜索时弹出，避免 `.all`
@@ -293,6 +295,7 @@ final class SearchCenterViewModel {
             scope: scope,
             githubFilters: githubFilters,
             anySearchFilters: anySearchFilters,
+            externalSearchFilters: externalSearchFilters,
             externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
             page: currentGitHubPage,
             perPage: 30,
@@ -343,6 +346,7 @@ final class SearchCenterViewModel {
             scope: scope,
             githubFilters: githubFilters,
             anySearchFilters: anySearchFilters,
+            externalSearchFilters: externalSearchFilters,
             externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
             page: currentGitHubPage,
             includeWebInAll: includeWebInAll()

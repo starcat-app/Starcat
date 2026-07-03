@@ -116,6 +116,28 @@ struct SearchCenterViewModelTests {
         #expect(provider.lastRequest?.externalSearchProvider == .exa)
     }
 
+    @Test("Web tab 传递会话级 External Search 公共 filters")
+    func webScopePassesExternalSearchFilters() async throws {
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let provider = CapturingWebSearchProvider()
+        let coordinator = SearchCoordinator(providers: [provider])
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
+
+        viewModel.query = "swift"
+        viewModel.scope = .web
+        viewModel.externalSearchFilters.maxResults = 7
+        viewModel.externalSearchFilters.freshness = .week
+        viewModel.externalSearchFilters.includeDomains = ["docs.swift.org"]
+        viewModel.externalSearchFilters.excludeDomains = ["example.com"]
+        await viewModel.submit()
+
+        #expect(provider.lastRequest?.externalSearchFilters.maxResults == 7)
+        #expect(provider.lastRequest?.externalSearchFilters.freshness == .week)
+        #expect(provider.lastRequest?.externalSearchFilters.includeDomains == ["docs.swift.org"])
+        #expect(provider.lastRequest?.externalSearchFilters.excludeDomains == ["example.com"])
+    }
+
     @Test("All scope 使用设置页默认 External Search Provider")
     func allScopeUsesDefaultExternalSearchProvider() async throws {
         let oldDefault = AppSettings.shared.externalSearchDefaultProvider

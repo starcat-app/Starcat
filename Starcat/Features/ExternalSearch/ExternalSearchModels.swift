@@ -190,6 +190,7 @@ struct ExternalSearchRequest: Codable, Equatable, Sendable {
     var query: String
     var purpose: ExternalSearchPurpose
     var maxResults: Int
+    var freshness: String?
     var includeDomains: [String]
     var excludeDomains: [String]
     var anySearchFilters: AnySearchFilters?
@@ -198,6 +199,7 @@ struct ExternalSearchRequest: Codable, Equatable, Sendable {
         query: String,
         purpose: ExternalSearchPurpose,
         maxResults: Int = 10,
+        freshness: String? = nil,
         includeDomains: [String] = [],
         excludeDomains: [String] = [],
         anySearchFilters: AnySearchFilters? = nil
@@ -205,6 +207,7 @@ struct ExternalSearchRequest: Codable, Equatable, Sendable {
         self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         self.purpose = purpose
         self.maxResults = min(max(maxResults, 1), 100)
+        self.freshness = freshness
         self.includeDomains = includeDomains
         self.excludeDomains = excludeDomains
         self.anySearchFilters = anySearchFilters
