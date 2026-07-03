@@ -88,6 +88,22 @@ struct RepoNoteRepositoryTests {
         #expect(got.libraryUpdatedAt == before.libraryUpdatedAt)
     }
 
+    @Test("updateContent: 修改 notes 不更新 libraryUpdatedAt")
+    func updateContentDoesNotTouchLibraryUpdatedAt() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        let before = try #require(try await repo.find(repoId: 1))
+        let beforeUpdatedAt = try #require(before.libraryUpdatedAt)
+
+        try await repo.updateContent(repoId: 1, content: "只改笔记")
+
+        let after = try #require(try await repo.find(repoId: 1))
+        #expect(after.content == "只改笔记")
+        #expect(after.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(after.libraryUpdatedAt == beforeUpdatedAt)
+    }
+
     @Test("updateContent: nil 表示清空内容（status 保留）")
     func updateContentNil() async throws {
         let (repo, db) = try makeRepo()
@@ -145,6 +161,22 @@ struct RepoNoteRepositoryTests {
         #expect(readNote.status == RepoStatus.read.rawValue)
         #expect(readNote.libraryState == LibraryState.inLibrary.rawValue)
         #expect(readNote.libraryUpdatedAt == libraryUpdatedAt)
+    }
+
+    @Test("updateStatus: 非 using 状态变更不更新 libraryUpdatedAt")
+    func updateStatusDoesNotTouchLibraryUpdatedAtUnlessEnteringLibrary() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        let before = try #require(try await repo.find(repoId: 1))
+        let beforeUpdatedAt = try #require(before.libraryUpdatedAt)
+
+        try await repo.updateStatus(repoId: 1, status: .read)
+
+        let after = try #require(try await repo.find(repoId: 1))
+        #expect(after.status == RepoStatus.read.rawValue)
+        #expect(after.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(after.libraryUpdatedAt == beforeUpdatedAt)
     }
 
     // MARK: - LibraryState
@@ -205,6 +237,29 @@ struct RepoNoteRepositoryTests {
         let after = try #require(try await repo.find(repoId: 1))
         #expect(after.libraryState == LibraryState.inLibrary.rawValue)
         #expect(after.libraryUpdatedAt == beforeUpdatedAt)
+    }
+
+    @Test("updateLibraryState: 批量加入保持已入库 repo 时间戳，未入库 repo 设为 inLibrary")
+    func batchUpdateLibraryStatePreservesExistingRowsAndAddsMissingRows() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixtures(count: 3, idStart: 1)
+        try await repo.updateLibraryState(repoId: 1, state: .inLibrary)
+        let existing = try #require(try await repo.find(repoId: 1))
+        let existingUpdatedAt = try #require(existing.libraryUpdatedAt)
+
+        for repoId in [1, 2, 3] as [Int64] {
+            try await repo.updateLibraryState(repoId: repoId, state: .inLibrary)
+        }
+
+        let afterExisting = try #require(try await repo.find(repoId: 1))
+        let added2 = try #require(try await repo.find(repoId: 2))
+        let added3 = try #require(try await repo.find(repoId: 3))
+        #expect(afterExisting.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(afterExisting.libraryUpdatedAt == existingUpdatedAt)
+        #expect(added2.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(added3.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(added2.status == RepoStatus.unread.rawValue)
+        #expect(added3.status == RepoStatus.unread.rawValue)
     }
 
     @Test("fetchLibraryStateMap + counts: 批量返回入库状态")

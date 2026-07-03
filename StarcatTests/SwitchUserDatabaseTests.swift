@@ -110,6 +110,61 @@ struct SwitchUserDatabaseTests {
         #expect(aRepos.first?.id == 100)
     }
 
+    @Test("DatabaseManager: libraryState/notes/status 按账号隔离且切回可恢复")
+    @MainActor
+    func libraryStateAndPrivateDataAreIsolatedPerUser() async throws {
+        let tmpRoot = try Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpRoot) }
+
+        let db = try DatabaseManager(userId: 12345, basePathOverride: tmpRoot)
+        let repoA = Self.makeRepoRecord(id: 100, name: "shared_repo")
+        try await db.writer.write { conn in
+            var copy = repoA
+            try copy.save(conn)
+        }
+        var noteRepo = GRDBRepoNoteRepository(database: db)
+        try await noteRepo.updateLibraryState(repoId: 100, state: .inLibrary)
+        try await noteRepo.updateContent(repoId: 100, content: "A 的笔记")
+        try await noteRepo.updateStatus(repoId: 100, status: .using)
+        let noteA = try #require(try await noteRepo.find(repoId: 100))
+        let aLibraryUpdatedAt = try #require(noteA.libraryUpdatedAt)
+
+        try await db.reopen(userId: 67890)
+        noteRepo = GRDBRepoNoteRepository(database: db)
+        let repoB = Self.makeRepoRecord(id: 100, name: "shared_repo")
+        try await db.writer.write { conn in
+            var copy = repoB
+            try copy.save(conn)
+        }
+        #expect(try await noteRepo.fetchLibraryState(repoId: 100) == .outsideLibrary)
+        try await noteRepo.updateContent(repoId: 100, content: "B 的笔记")
+        try await noteRepo.updateStatus(repoId: 100, status: .read)
+        let noteB = try #require(try await noteRepo.find(repoId: 100))
+        #expect(noteB.libraryState == LibraryState.outsideLibrary.rawValue)
+        #expect(noteB.libraryUpdatedAt == nil)
+
+        try await db.reopen(userId: nil)
+        noteRepo = GRDBRepoNoteRepository(database: db)
+        #expect(try await noteRepo.find(repoId: 100) == nil)
+        #expect(try await noteRepo.fetchLibraryState(repoId: 100) == .outsideLibrary)
+
+        try await db.reopen(userId: 12345)
+        noteRepo = GRDBRepoNoteRepository(database: db)
+        let restoredA = try #require(try await noteRepo.find(repoId: 100))
+        #expect(restoredA.content == "A 的笔记")
+        #expect(restoredA.status == RepoStatus.using.rawValue)
+        #expect(restoredA.libraryState == LibraryState.inLibrary.rawValue)
+        #expect(restoredA.libraryUpdatedAt == aLibraryUpdatedAt)
+
+        try await db.reopen(userId: 67890)
+        noteRepo = GRDBRepoNoteRepository(database: db)
+        let restoredB = try #require(try await noteRepo.find(repoId: 100))
+        #expect(restoredB.content == "B 的笔记")
+        #expect(restoredB.status == RepoStatus.read.rawValue)
+        #expect(restoredB.libraryState == LibraryState.outsideLibrary.rawValue)
+        #expect(restoredB.libraryUpdatedAt == nil)
+    }
+
     // MARK: - Anonymous fallback
 
     @Test("DatabaseManager: userId=nil 走 _anonymous 目录，Migration 跑通可读写")
