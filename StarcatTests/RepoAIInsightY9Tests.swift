@@ -12,7 +12,7 @@
 //
 //  为什么不测 chatStream 整链路：链路依赖 OpenAIClient + Keychain + AISummaryRepository
 //  （SQLite），mock 工作量大且超出本次任务范围。把核心拼接逻辑抽成 internal static 纯函数
-//  后做单测，与现有项目"AnySearchClientTests 测 wire 路径 + AnySearchContextProviderTests
+//  后做单测，与现有项目"AnySearchClientTests 测 wire 路径 + ExternalSearchContextProviderTests
 //  测组装路径"的分层风格一致。
 //
 

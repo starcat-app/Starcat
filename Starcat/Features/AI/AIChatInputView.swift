@@ -24,12 +24,9 @@
 //  - 整体用 `.regularMaterial` 毛玻璃 + 1pt 描边 + 16pt 圆角，与 AI 窗口的
 //    `NSVisualEffectView(.popover)` 玻璃态背景层次区分，但不抢戏。
 //
-//  Y9（2026-06-14，决议 C=c3+disabled）：上下文快捷菜单暴露「代码上下文」/
-//  「外部材料 (AnySearch)」两个 Toggle 直接绑 settings 的 `aiRepoContextEnabled`
-//  / `aiExternalContextEnabled`。Settings 是 `@MainActor @Observable`，菜单与
-//  Settings 页面双向同步零 race。AnySearch Toggle 在 `anySearchEnabled = false`
-//  时 disabled + 副标题引导去 Settings 启用——避免在快捷菜单诱导用户配置 API Key
-//  这种带成本的能力（详见 grill-me 决议 C 节点）。
+//  上下文快捷菜单暴露「代码上下文」/「外部材料 (External Search)」两个 Toggle：
+//  代码上下文直接绑 `aiRepoContextEnabled`；外部材料绑 `externalContextEnabled`，
+//  并在没有可用 External Search Provider 时 disabled + 副标题引导去 Settings 配置。
 //
 //  卡顿修复（2026-06-15 12:47 已落地，本次重写延续）：
 //  - 输入草稿由非 Observable 的 `AIChatTextEditorState + NSTextView` 持有，**不放进

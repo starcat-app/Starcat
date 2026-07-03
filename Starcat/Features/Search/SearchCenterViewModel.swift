@@ -268,7 +268,7 @@ final class SearchCenterViewModel {
     }
 
     /// 应用 AnySearch 筛选条件。与 `applyGitHubFilters` 对称：触发 coordinator
-    /// 重跑当前 query，AnySearchWebProvider 内的 cache key 已把 filters fingerprint
+    /// 重跑当前 query，ExternalSearchWebProvider 内的 cache key 已把 filters fingerprint
     /// 纳入，新筛选不会复用旧结果。
     func applyAnySearchFilters() async {
         guard !lastSubmittedQuery.isEmpty else { return }

@@ -322,7 +322,7 @@ struct SearchProviderPage: Equatable, Sendable {
     let hasNextPage: Bool
     /// 网页搜索专属元信息（命中数 / 用时 / 限流）。
     ///
-    /// 仅 `AnySearchWebProvider` 会填值，其它 provider（local / github）传 nil。
+    /// 仅 `ExternalSearchWebProvider` 会填值，其它 provider（local / github）传 nil。
     /// 显式 default `nil` 让 GitHub / Local provider 调用点零改动。
     let webMetadata: WebSearchMetadata?
 
@@ -367,8 +367,8 @@ struct WebSearchMetadata: Equatable, Sendable {
 ///
 /// **重要语义说明（dong4j 2026-06-14）**：
 /// - `limit` 来源：API 响应头 `x-ratelimit-limit`，反映服务端真实窗口上限（匿名 10 / Bearer 20）。
-/// - `sessionUsed` 来源：**本地进程内计数**，由 provider 的 `AnySearchUsageCounter` 每次
-///   search 调用（含 cache hit）+1 累加而来；**不来自 API**。
+/// - `sessionUsed` 来源：旧 AnySearch 本地计数。External Search 第一版不再展示统一
+///   quota，字段保留给将来 provider 暴露稳定 quota header 时复用。
 /// - `resetAt` 来源：API 响应头 `x-ratelimit-reset`（Unix 秒戳）。
 ///
 /// **为什么不直接用 API 返回的 remaining**：实测匿名模式 `remaining` 恒为 8、Bearer 模式恒为 18，

@@ -47,7 +47,7 @@ struct AnySearchResponse: Codable, Equatable, Sendable {
     /// **持久化语义**：磁盘缓存写盘前需要把本字段清成 nil —— rateLimit 是"本次请求时刻"
     /// 的快照（remaining 是当时余量、resetAt 是当时定的下次重置时间），读出旧 cache 时
     /// 这些数字早已过期，再回填给 UI 会显示"剩余 -3 / 重置时间已过去 2 小时"等假数字。
-    /// 由 `DiskAnySearchCache` 在 save 路径上清空。
+    /// 由外部搜索磁盘缓存层在 save 路径上清空。
     let rateLimit: AnySearchRateLimit?
 }
 

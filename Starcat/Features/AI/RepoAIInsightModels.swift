@@ -16,6 +16,12 @@
 
 import Foundation
 
+struct AIExternalContext: Codable, Equatable, Sendable {
+    let markdown: String
+    let sources: [URL]
+    var sourceItems: [AIExternalContextSource] = []
+}
+
 struct RepoAIInsight: Codable, Equatable, Sendable {
     var oneLiner: String
     var summary: String
@@ -48,9 +54,9 @@ struct RepoAIInsight: Codable, Equatable, Sendable {
     ///   - **对话路径零 HTTP**（决议 B=b2）：`chatStream` 读 `cachedInsight` 时
     ///     一并拿到 markdown，免去重复调 AnySearch API 烧配额。
     ///
-    /// **内容形态**：直接存 `AnySearchContextProvider.collect()` 产出的整段
-    /// `<external_context trust="untrusted" source="AnySearch">...</external_context>`
-    /// 块（含防 prompt-injection 提示行 + 6 条 `- [title](url)\n  snippet` 列表）。
+    /// **内容形态**：直接存 `ExternalSearchContextProvider.collect()` 产出的整段
+    /// `<external_context source="Exa">...</external_context>` 或
+    /// `<external_context source="Aggregate">...</external_context>` 块。
     /// 长度上限：6 条 × 500 字 ≈ 3KB，对 SQLite TEXT 列无压力。
     ///
     /// **不与 summaryMarkdown 末尾的"## 外部参考来源"段冲突**：
@@ -83,8 +89,8 @@ struct RepoAIInsight: Codable, Equatable, Sendable {
     /// 避免出现"用户什么都没动但每次都提示设置已变更"的误报（dong4j 2026-06-14 反馈）。
     ///
     /// **存 effective 值而非原始 settings 字段**：
-    ///   - `aiExternalContextEnabled`、`anySearchEnabled`、`aiExternalContextAllowPrivateRepos`
-    ///     是 3 个相互制约的开关（双 AND + 私仓门控），存原始值会让"是否真的带了外网"
+    ///   - `externalContextEnabled`、`externalSearchAllowPrivateRepos`
+    ///     是相互制约的开关，存原始值会让"是否真的带了外网"
     ///     的判定散落到调用方；
     ///   - 直接存"effective allowed = true/false"，stale 判定就是两个 bool 比较，最干净。
     var generationContextSettings: GenerationContextSettings?
@@ -99,8 +105,8 @@ struct GenerationContextSettings: Codable, Equatable, Sendable {
     /// 生成时 `settings.aiRepoContextEnabled` 的值（用户当时是否想要代码上下文）。
     var codeContextEnabled: Bool
 
-    /// 生成时 AnySearch 外部材料**最终是否被允许**（双开关 AND + 私仓门控的 effective 结果）。
-    /// 等价于 `AnySearchContextProvider.allowsExternalContext(...)` 在生成那一刻的返回值。
+    /// 生成时 External Search 外部材料**最终是否被允许**（开关 + 私仓门控的 effective 结果）。
+    /// 等价于 `ExternalSearchContextProvider.allowsExternalContext(...)` 在生成那一刻的返回值。
     var externalContextAllowed: Bool
 }
 

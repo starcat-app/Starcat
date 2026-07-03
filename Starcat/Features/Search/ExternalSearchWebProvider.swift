@@ -15,14 +15,11 @@ import Foundation
 struct ExternalSearchWebProvider: SearchProvider {
     let source: SearchSource = .web
 
-    private let counter: AnySearchUsageCounter
     private let diskCache: DiskExternalSearchCache?
 
     init(
-        counter: AnySearchUsageCounter = AnySearchUsageCounter(),
         diskCache: DiskExternalSearchCache? = nil
     ) {
-        self.counter = counter
         if let diskCache {
             self.diskCache = diskCache
         } else if Thread.isMainThread {
@@ -56,21 +53,18 @@ struct ExternalSearchWebProvider: SearchProvider {
             anySearchFilters: providerID == .anySearch ? request.anySearchFilters : nil
         )
         if let cached = try? await diskCache?.loadGlobal(provider: providerID, request: externalRequest) {
-            let used = await counter.increment()
-            return makePage(from: cached, providerID: providerID, sessionUsed: used)
+            return makePage(from: cached, providerID: providerID)
         }
         let response = try await provider.search(externalRequest)
-        let used = await counter.increment()
         if !response.hits.isEmpty {
             try? await diskCache?.saveGlobal(provider: providerID, request: externalRequest, response: response)
         }
-        return makePage(from: response, providerID: providerID, sessionUsed: used)
+        return makePage(from: response, providerID: providerID)
     }
 
     private func makePage(
         from response: ExternalSearchResponse,
-        providerID: ExternalSearchProviderID,
-        sessionUsed: Int
+        providerID: ExternalSearchProviderID
     ) -> SearchProviderPage {
         let references = response.hits.map { hit in
             ReferenceCandidate(
@@ -91,7 +85,7 @@ struct ExternalSearchWebProvider: SearchProvider {
                 totalResults: response.metadata.totalResults ?? references.count,
                 searchTimeMs: response.metadata.searchTimeMs,
                 rateLimit: nil
-            ).withSessionUsedIfNeeded(sessionUsed)
+            )
         )
     }
 
@@ -107,18 +101,5 @@ struct ExternalSearchWebProvider: SearchProvider {
             return .missingAPIKey(provider: provider)
         }
         return .unverifiedCredential(provider: provider)
-    }
-}
-
-private extension WebSearchMetadata {
-    /// External Search 多数 Provider 不返回可用的统一 quota header。
-    /// 这里保留本地 sessionUsed 的计算入口，等后续某个 Provider 暴露稳定 quota 时可复用。
-    func withSessionUsedIfNeeded(_ used: Int) -> WebSearchMetadata {
-        guard let rateLimit else { return self }
-        return WebSearchMetadata(
-            totalResults: totalResults,
-            searchTimeMs: searchTimeMs,
-            rateLimit: WebRateLimit(limit: rateLimit.limit, sessionUsed: used, resetAt: rateLimit.resetAt)
-        )
     }
 }

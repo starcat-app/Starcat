@@ -480,37 +480,3 @@ struct WebRateLimitTests {
         #expect(!rl.isExhausted)
     }
 }
-
-@Suite("AnySearch Usage Counter", .serialized)
-struct AnySearchUsageCounterTests {
-
-    @Test("初始 count 为 0")
-    func initialCountIsZero() async {
-        let counter = AnySearchUsageCounter()
-        let count = await counter.count
-        #expect(count == 0)
-    }
-
-    @Test("increment 累加并返回新值")
-    func incrementAccumulates() async {
-        let counter = AnySearchUsageCounter()
-        let v1 = await counter.increment()
-        let v2 = await counter.increment()
-        let v3 = await counter.increment()
-        #expect(v1 == 1)
-        #expect(v2 == 2)
-        #expect(v3 == 3)
-        let finalCount = await counter.count
-        #expect(finalCount == 3)
-    }
-
-    @Test("reset 归零")
-    func resetToZero() async {
-        let counter = AnySearchUsageCounter()
-        _ = await counter.increment()
-        _ = await counter.increment()
-        await counter.reset()
-        let count = await counter.count
-        #expect(count == 0)
-    }
-}

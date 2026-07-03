@@ -783,23 +783,6 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.externalSearchProviderSettings, value: externalSearchProviderSettings) }
     }
 
-    /// AnySearch 总开关。关闭后 Web Provider 和 AI 外部上下文都不得发起请求。
-    var anySearchEnabled: Bool {
-        didSet { persistBool(key: Keys.anySearchEnabled, value: anySearchEnabled) }
-    }
-    var anySearchAnonymousMode: Bool {
-        didSet { persistBool(key: Keys.anySearchAnonymousMode, value: anySearchAnonymousMode) }
-    }
-    var searchIncludeWebInAll: Bool {
-        didSet { persistBool(key: Keys.searchIncludeWebInAll, value: searchIncludeWebInAll) }
-    }
-    var aiExternalContextEnabled: Bool {
-        didSet { persistBool(key: Keys.aiExternalContextEnabled, value: aiExternalContextEnabled) }
-    }
-    var aiExternalContextAllowPrivateRepos: Bool {
-        didSet { persistBool(key: Keys.aiExternalContextAllowPrivateRepos, value: aiExternalContextAllowPrivateRepos) }
-    }
-
     // MARK: - AI 代码上下文（2026-06-13 引入，RepoContextPacker 客户端接入阶段 X1）
     //
     // 3 个偏好字段对应 `docs/3-设计/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
@@ -808,7 +791,7 @@ final class AppSettings {
     //   3. aiRepoContextTier1MaxLines —— 关键文件保留行数（默认 80，范围 40-200，对应 `TierTruncation.tier1MaxLines`）
     //
     // 设计要点：
-    //   - 字段独立于 `aiExternalContextEnabled`（那个是 AnySearch Web 检索结果注入）；
+    //   - 字段独立于 `externalContextEnabled`（那个是 External Search 检索结果注入）；
     //     两个外部上下文源相互正交，用户可独立开关。
     //   - **不设「私有仓库」开关**：当前 Starcat 的 GitHub OAuth scope 是 `read:user` + `public_repo`，
     //     API 永远不会返回 isPrivate=true 的 repo（用户即便在 GitHub 上 star 了私有仓库，
@@ -1371,12 +1354,6 @@ final class AppSettings {
                 defaults: defaults
             )
         )
-        self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
-        self.anySearchAnonymousMode = defaults.object(forKey: Keys.anySearchAnonymousMode) as? Bool ?? true
-        self.searchIncludeWebInAll = defaults.object(forKey: Keys.searchIncludeWebInAll) as? Bool ?? false
-        self.aiExternalContextEnabled = defaults.object(forKey: Keys.aiExternalContextEnabled) as? Bool ?? false
-        self.aiExternalContextAllowPrivateRepos = defaults.object(forKey: Keys.aiExternalContextAllowPrivateRepos) as? Bool ?? false
-
         // 2026-06-13 RepoContextPacker 客户端接入（3 个字段）：
         // 总开关默认 true（P0 价值卖点）；token budget 默认 8000 / Tier 1 行数默认 80
         // 与 RepoContextPacker `PackInput.tokenBudget` / `TierTruncation.tier1MaxLines` 缺省值对齐。
@@ -1557,11 +1534,6 @@ final class AppSettings {
         externalContextProviderSelection = .automatic
         aggregateExternalContextSearchEnabled = false
         externalSearchProviderSettings = ExternalSearchProviderSettings.defaultsByProvider()
-        anySearchEnabled = false
-        anySearchAnonymousMode = true
-        searchIncludeWebInAll = false
-        aiExternalContextEnabled = false
-        aiExternalContextAllowPrivateRepos = false
         aiRepoContextEnabled = true
         aiRepoContextTokenBudget = 8_000
         aiRepoContextTier1MaxLines = 80
@@ -1660,24 +1632,6 @@ final class AppSettings {
             clearExternalSearchCredentialVerification(for: provider)
         } catch {
             AppLog.keychain.error("External Search API key update failed: provider=\(provider.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// AnySearch API Key 复用 service key 的独立命名空间，仍由加密凭据文件承载。
-    func anySearchAPIKey() -> String? {
-        try? keychain.loadServiceAPIKey(forService: "anysearch")
-    }
-
-    func setAnySearchAPIKey(_ value: String?) {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        do {
-            if trimmed.isEmpty {
-                try keychain.deleteServiceAPIKey(forService: "anysearch")
-            } else {
-                try keychain.storeServiceAPIKey(trimmed, forService: "anysearch")
-            }
-        } catch {
-            AppLog.keychain.error("AnySearch API key update failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1827,11 +1781,6 @@ final class AppSettings {
         static let externalContextProviderSelection = "settings.externalSearch.context.providerSelection.v1"
         static let aggregateExternalContextSearchEnabled = "settings.externalSearch.context.aggregate.enabled.v1"
         static let externalSearchProviderSettings = "settings.externalSearch.providerSettings.v1"
-        static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
-        static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"
-        static let searchIncludeWebInAll = "settings.search.web.includeInAll.v1"
-        static let aiExternalContextEnabled = "settings.ai.externalContext.enabled.v1"
-        static let aiExternalContextAllowPrivateRepos = "settings.ai.externalContext.allowPrivate.v1"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
@@ -1903,11 +1852,6 @@ final class AppSettings {
             externalContextProviderSelection,
             aggregateExternalContextSearchEnabled,
             externalSearchProviderSettings,
-            anySearchEnabled,
-            anySearchAnonymousMode,
-            searchIncludeWebInAll,
-            aiExternalContextEnabled,
-            aiExternalContextAllowPrivateRepos,
             snakeStyle,
             readmeTranslationLanguage,
             isProUser,

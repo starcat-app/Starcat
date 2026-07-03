@@ -369,8 +369,8 @@ enum AIDefaultPrompts {
     /// - `{metadata}`：repo 元数据（fullName / description / language / topics / stars / license 等）；
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
     /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
-    /// - `{externalContext}`：AnySearchContextProvider 生成的外部检索 markdown（带
-    ///   `<external_context trust="untrusted">` 包裹，无则空字符串）。
+    /// - `{externalContext}`：ExternalSearchContextProvider 生成的外部检索 markdown
+    ///   （无则空字符串）。
     ///
     /// **2026-06-14 v4.x 重构**（dong4j 拍板）：
     /// 1. 砍掉旧 v3 的硬编码 `Use Simplified Chinese`，统一走 `{outputLanguage}` i18n 派发；
@@ -387,9 +387,8 @@ enum AIDefaultPrompts {
     /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
     /// 占位符在 dict 中查不到时保留原文（让 LLM 看到字面量便于排错，不静默吞）。
     ///
-    /// **`{externalContext}` 的 trust 处理**：AnySearch 来自互联网，可能含恶意 prompt
-    /// injection；markdown 自带 `<external_context trust="untrusted">` 包裹和警告语
-    /// （详见 `AnySearchContextProvider.swift`），prompt 模板这一层不再重复声明。
+    /// **`{externalContext}` 的 trust 处理**：External Search 来自互联网，可能含恶意
+    /// prompt injection；prompt 模板这一层保留独立 section 边界，调用层只负责注入结果。
     static let summary = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's repository summary assistant, helping developers quickly understand a project and assess its value.
@@ -698,8 +697,8 @@ enum AIDefaultPrompts {
     /// 4. 加强 LLM 输出约束：禁 `<think>` / `<thinking>` / `<reasoning>` 推理痕迹 XML、
     ///    禁外层 ``` 围栏整篇包裹、内部代码必须 fenced + 标语言、显式禁开场白 / 收场套话；
     /// 5. 新增独有占位符 `{summary}`（chat 独有，其他任务没有），缓存命中的 AI 摘要作为参考；
-    /// 6. 新增独有占位符 `{externalContext}`，AnySearch 内容（已去掉 trust=untrusted 标记，
-    ///    详见 `AnySearchContextProvider` 注释）跟 README/metadata 平等参考。
+    /// 6. 新增独有占位符 `{externalContext}`，External Search 内容跟 README/metadata
+    ///    平等参考。
     ///
     /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
     /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。

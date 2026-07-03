@@ -16,7 +16,7 @@
 //    ③ 命中 → 调 `storage.touch(...)` 刷 lastAccessedAt → 直接返回旧 contextURL；
 //       不命中 → 调 `RepoContextPacker.pack(_:)`，packer 内部走 W8 改造的 storage 写盘路径。
 //
-//  失败降级原则（学习 `RepoAIInsightService.generateInsight:127-129` 的 AnySearchContextProvider 范本）：
+//  失败降级原则（学习 `RepoAIInsightService.generateInsight` 的 External Search 降级范本）：
 //    - `CancellationError` 透传：上层取消任务时本服务必须立刻停手；
 //    - 其它任意错误 → 返回 nil + AppLog.ai.warning(...)，让 AI 摘要静默降级为 README-only，
 //      **绝不让 Packer 错误阻断 AI 主流程**。

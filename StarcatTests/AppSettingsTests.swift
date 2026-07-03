@@ -52,7 +52,9 @@ struct AppSettingsTests {
         settings.aiBaseURL = "http://localhost:11434/v1"
         settings.aiChatModel = "llama3.2"
         settings.chatHistoryStorageKind = .sqlite
-        settings.anySearchEnabled = true
+        var anySearchSettings = settings.externalSearchSettings(for: .anySearch)
+        anySearchSettings.isEnabled = true
+        settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
         settings.hideDockIcon = true
         settings.mcpServiceEnabled = true
@@ -60,7 +62,7 @@ struct AppSettingsTests {
         settings.mcpAllowDestructiveWrites = true
         settings.setCustomURL("https://example.com", for: .trending)
         settings.setCustomAPIKey("service-key", for: .weekly)
-        settings.setAnySearchAPIKey("anysearch-key")
+        settings.setExternalSearchAPIKey("anysearch-key", for: .anySearch)
         settings.updateProEntitlementMirror(isPro: true)
         try keychain.storeGithubToken("github-token")
         try keychain.storeAIKey("ai-key")
@@ -74,7 +76,7 @@ struct AppSettingsTests {
         #expect(settings.aiBaseURL == "https://api.openai.com/v1")
         #expect(settings.aiChatModel == "gpt-4o-mini")
         #expect(settings.chatHistoryStorageKind == .jsonFiles)
-        #expect(settings.anySearchEnabled == false)
+        #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
         #expect(settings.hideDockIcon == false)
         #expect(settings.mcpServiceEnabled == false)
@@ -82,7 +84,7 @@ struct AppSettingsTests {
         #expect(settings.mcpAllowDestructiveWrites == false)
         #expect(settings.customServiceURL(for: .trending) == nil)
         #expect(settings.customServiceAPIKey(for: .weekly) == nil)
-        #expect(settings.anySearchAPIKey() == nil)
+        #expect(settings.externalSearchAPIKey(for: .anySearch) == nil)
         #expect(settings.isProUser == false)
         #expect(keychain.snapshot.isEmpty)
     }

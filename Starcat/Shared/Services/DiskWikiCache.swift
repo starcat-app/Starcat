@@ -13,7 +13,7 @@
 //      2) （未来）详情页 toolbar Wiki popover / 搜索详情卡片渲染时优先读 cache。
 //  - 暴露 `@Observable` 派生量给设置页存储 Tab 渲染「Wiki 探测缓存 X 项 · Y KB」+ 清除按钮。
 //
-//  关键设计（与 `DiskAnySearchCache` 的差异 / 已踩过的坑）：
+//  关键设计（与搜索类磁盘缓存的差异 / 已踩过的坑）：
 //    1. **TTL 写进 snapshot 自身**：不像 AnySearch cache 用文件 mtime + 全局 TTL 常量
 //       判过期，本 cache 在 snapshot JSON 里直接存 `nextProbeAt`，read 时只看
 //       `now < nextProbeAt` 就够了。这样**双 TTL**（已收录 30 天 / 任一未收录 3 天）
@@ -222,7 +222,7 @@ final class DiskWikiCache {
 
     // MARK: - 重扫盘：刷新 totalBytes / itemCount
 
-    /// 扫盘更新派生量。**只读统计，不删任何文件**（与 `DiskAnySearchCache.reload` 同款语义）。
+    /// 扫盘更新派生量。**只读统计，不删任何文件**（与搜索缓存 reload 同款语义）。
     func reload() {
         var total: Int64 = 0
         var count: Int = 0
