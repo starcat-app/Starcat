@@ -29,6 +29,7 @@ struct ReleaseMonitorTests {
         let releaseRepo: GRDBReleaseRepository
         let subRepo: GRDBReleaseSubscriptionRepository
         let repoRepo: GRDBRepoRepository
+        let noteRepo: GRDBRepoNoteRepository
         let db: any DatabaseManaging
     }
 
@@ -39,11 +40,13 @@ struct ReleaseMonitorTests {
         let releaseRepo = GRDBReleaseRepository(database: db)
         let subRepo = GRDBReleaseSubscriptionRepository(database: db)
         let repoRepo = GRDBRepoRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
         let monitor = ReleaseMonitor(
             apiClient: mock,
             subscriptionRepo: subRepo,
             releaseRepo: releaseRepo,
             repoRepo: repoRepo,
+            repoNoteRepo: noteRepo,
             perPage: 10
         )
         return Stack(
@@ -52,6 +55,7 @@ struct ReleaseMonitorTests {
             releaseRepo: releaseRepo,
             subRepo: subRepo,
             repoRepo: repoRepo,
+            noteRepo: noteRepo,
             db: db
         )
     }
@@ -192,6 +196,52 @@ struct ReleaseMonitorTests {
         // repo 2 走完整流程
         #expect(report.newReleasesByRepo[2] == 2)
         #expect(s.mock.releasesCalls.count == 2)
+    }
+
+    @Test("未 star 但已入库：Release 订阅仍进入刷新和通知候选")
+    @MainActor
+    func unstarredLibraryRepoStillScanned() async throws {
+        let s = try makeStack()
+        try await s.db.insertRepoFixture(id: 42)
+        try await s.db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 42")
+        }
+        try await s.noteRepo.updateLibraryState(repoId: 42, state: .inLibrary)
+        try await s.subRepo.subscribe(repoId: 42, primingReleaseId: 1, primingTagName: "v1")
+
+        s.mock.releasesHandler = { _, _, _ in
+            self.okResponse(self.makeDTOs(ids: [2, 1]))
+        }
+
+        let report = await s.monitor.runOnce()
+        #expect(report.newReleasesByRepo[42] == 1)
+        #expect(report.notifications.count == 1)
+        #expect(s.mock.releasesCalls.count == 1)
+    }
+
+    @Test("未 star 且未入库：保留订阅关系但跳过 GitHub Release 拉取")
+    @MainActor
+    func unstarredOutsideLibrarySubscriptionSkipped() async throws {
+        let s = try makeStack()
+        try await s.db.insertRepoFixture(id: 42)
+        try await s.db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 42")
+        }
+        try await s.subRepo.subscribe(repoId: 42, primingReleaseId: 1, primingTagName: "v1")
+
+        s.mock.releasesHandler = { _, _, _ in
+            Issue.record("离开 active scope 的订阅不应调用 GitHub Releases API")
+            return self.okResponse(self.makeDTOs(ids: [2, 1]))
+        }
+
+        let report = await s.monitor.runOnce()
+        let subscription = try #require(try await s.subRepo.find(repoId: 42))
+        #expect(report.hasNewReleases == false)
+        #expect(report.notifications.isEmpty)
+        #expect(report.perRepoErrors.isEmpty)
+        #expect(s.mock.releasesCalls.isEmpty)
+        #expect(subscription.isSubscribed == true)
+        #expect(subscription.lastPolledAt == nil)
     }
 
     @Test("订阅指向不存在的 repo：跳过本次，不抛错")

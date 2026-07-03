@@ -107,8 +107,8 @@
 - [x] 非 `using` 的已入库 repo 移出知识库不弹确认。
 - [x] 设置 `RepoStatus.using` 自动入库时给轻量 toast,不弹确认。
 - [x] 移出知识库只更新 `libraryState`,不删除 notes/tags/status/Releases 订阅关系/repo metadata。
-- [ ] 移出知识库后,若 repo 同时不在 starred 与知识库,release 轮询不再自动刷新它。
-- [ ] 重新 star 或重新入库后,保留的 Releases 订阅关系重新进入自动刷新候选。
+- [x] 移出知识库后,若 repo 同时不在 starred 与知识库,release 轮询不再自动刷新它。
+- [x] 重新 star 或重新入库后,保留的 Releases 订阅关系重新进入自动刷新候选。
 - [x] 多选菜单支持批量加入知识库。
 - [x] 批量加入知识库跳过或保持已入库 repo。
 - [x] 第一版不提供批量移出知识库。
@@ -161,7 +161,7 @@
 - [x] notes / tags / status 的本地写入前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
 - [x] Releases 订阅入口允许已入库未 star repo。
 - [x] Releases 订阅本地关系前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
-- [ ] Release 列表拉取和通知刷新仍按 GitHub token、权限和 repo 可访问性降级。
+- [x] Release 列表拉取和通知刷新仍按 GitHub token、权限和 repo 可访问性降级。
 - [ ] Watchers / Forks / Issues 等 GitHub 统计刷新候选覆盖 starred 与知识库并集。
 - [ ] GitHub 统计刷新遇到 token 权限不足、私有或不可访问 repo 时跳过或降频。
 - [ ] GitHub 统计刷新失败不改变 `libraryState`,也不自动移出知识库。
@@ -323,7 +323,7 @@
 - [ ] README / Repo Health / OpenSSF 后台任务不会对无 token / token 权限不足的私有 repo 反复远程刷新。
 - [ ] 移出知识库后,若 repo 仍 starred,embedding 保留。
 - [ ] 移出知识库后,若 repo 同时不在 starred 与知识库,只是不再属于 active scope,不立即删除缓存。
-- [ ] 移出知识库后,若 repo 同时不在 starred 与知识库,release 轮询不再自动刷新它,但订阅关系仍保留。
+- [x] 移出知识库后,若 repo 同时不在 starred 与知识库,release 轮询不再自动刷新它,但订阅关系仍保留。
 - [ ] ShareCard 文件导出入口显示“导出到文件”。
 - [ ] ShareCard 文件导出四个下拉项与方案文案一致。
 - [ ] Starred HTML/Markdown 导出不包含未 star 已入库 repo。
@@ -361,6 +361,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-6 Release 轮询按 starred 与知识库 active scope 刷新。
 - 2026-07-02: PR-5 第四批语义搜索 UI 增加 starred/knowledge/all 范围筛选。
 - 2026-07-02: PR-5 第三批 MCP search/semantic/resources 支持范围参数。
 - 2026-07-02: PR-5 第二批 Home 搜索候选与 FTS 按当前范围对齐。

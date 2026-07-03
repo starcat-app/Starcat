@@ -58,6 +58,7 @@ actor ReleaseMonitor {
     private let subscriptionRepo: any ReleaseSubscriptionRepositoryProtocol
     private let releaseRepo: any ReleaseRepositoryProtocol
     private let repoRepo: any RepoRepositoryProtocol
+    private let repoNoteRepo: any RepoNoteRepositoryProtocol
 
     /// 单 repo 默认每页拉取条数。GitHub 限制 max 100；这里取满第一页，保证发行版聚合
     /// 详情页能拿到尽可能完整的近期历史，同时仍避免无限翻页消耗 GitHub rate limit。
@@ -68,12 +69,14 @@ actor ReleaseMonitor {
         subscriptionRepo: any ReleaseSubscriptionRepositoryProtocol,
         releaseRepo: any ReleaseRepositoryProtocol,
         repoRepo: any RepoRepositoryProtocol,
+        repoNoteRepo: any RepoNoteRepositoryProtocol,
         perPage: Int = 100
     ) {
         self.apiClient = apiClient
         self.subscriptionRepo = subscriptionRepo
         self.releaseRepo = releaseRepo
         self.repoRepo = repoRepo
+        self.repoNoteRepo = repoNoteRepo
         self.perPage = perPage
     }
 
@@ -131,6 +134,13 @@ actor ReleaseMonitor {
     private func scanRepo(_ subscription: ReleaseSubscription) async throws -> RepoScanResult {
         guard let repo = try await repoRepo.findById(subscription.repoId) else {
             // 数据已不一致（订阅指向的 repo 行被删了）—— 跳过本次，不抛错避免打断整体巡检
+            return RepoScanResult(newCount: 0, notifications: [])
+        }
+
+        let libraryState = try await repoNoteRepo.fetchLibraryState(repoId: repo.id)
+        guard repo.isStarred || libraryState == .inLibrary else {
+            // 订阅关系是用户偏好，不能因为 repo 暂时离开 active scope 就删除。
+            // 跳过 API 拉取即可；重新 star 或重新入库后，下一轮会自然恢复刷新和通知。
             return RepoScanResult(newCount: 0, notifications: [])
         }
 

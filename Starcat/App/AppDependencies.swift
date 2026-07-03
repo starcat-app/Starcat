@@ -799,7 +799,8 @@ final class AppDependencies {
             apiClient: api,
             subscriptionRepo: releaseSubRepo,
             releaseRepo: releaseRecordRepo,
-            repoRepo: repo
+            repoRepo: repo,
+            repoNoteRepo: self.repoNoteRepository
         )
         self.releaseMonitor = monitor
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
