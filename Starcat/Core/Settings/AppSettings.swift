@@ -742,6 +742,47 @@ final class AppSettings {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
     }
 
+    /// `.all` scope 是否附带外部 Web 结果。
+    var externalSearchIncludeInAll: Bool {
+        didSet { persistBool(key: Keys.externalSearchIncludeInAll, value: externalSearchIncludeInAll) }
+    }
+
+    /// AI 功能是否允许拉取外部 Web 上下文。
+    var externalContextEnabled: Bool {
+        didSet { persistBool(key: Keys.externalContextEnabled, value: externalContextEnabled) }
+    }
+
+    /// 私有仓库是否允许使用外部上下文。
+    ///
+    /// 即使开启，External Context 也只能发送 repo full name，不能发送 README、notes、
+    /// tags 或代码上下文；具体边界由 `ExternalSearchContextProvider` 执行。
+    var externalSearchAllowPrivateRepos: Bool {
+        didSet { persistBool(key: Keys.externalSearchAllowPrivateRepos, value: externalSearchAllowPrivateRepos) }
+    }
+
+    /// SearchCenter Web tab 初始 Provider 与 `.all` scope 使用的默认 Provider。
+    var externalSearchDefaultProvider: ExternalSearchProviderID {
+        didSet { persist(key: Keys.externalSearchDefaultProvider, value: externalSearchDefaultProvider.rawValue) }
+    }
+
+    /// AI External Context 的单 Provider / Automatic 选择。
+    var externalContextProviderSelection: ExternalContextProviderSelection {
+        didSet { persist(key: Keys.externalContextProviderSelection, value: externalContextProviderSelection.rawValue) }
+    }
+
+    /// AI External Context 聚合搜索偏好。
+    ///
+    /// 该值可被非 Pro 用户保存；真正发请求前仍由运行时 Pro gate 判断，避免订阅过期时
+    /// 悄悄改写用户偏好。
+    var aggregateExternalContextSearchEnabled: Bool {
+        didSet { persistBool(key: Keys.aggregateExternalContextSearchEnabled, value: aggregateExternalContextSearchEnabled) }
+    }
+
+    /// 各 Provider 的本机开关、匿名模式、默认结果数和凭据验证标记。
+    var externalSearchProviderSettings: [ExternalSearchProviderID: ExternalSearchProviderSettings] {
+        didSet { persistJSON(key: Keys.externalSearchProviderSettings, value: externalSearchProviderSettings) }
+    }
+
     /// AnySearch 总开关。关闭后 Web Provider 和 AI 外部上下文都不得发起请求。
     var anySearchEnabled: Bool {
         didSet { persistBool(key: Keys.anySearchEnabled, value: anySearchEnabled) }
@@ -1311,6 +1352,25 @@ final class AppSettings {
         self.chatHistoryStorageKind = chatHistoryStorageRaw.flatMap(ChatHistoryStorageKind.init(rawValue:)) ?? .jsonFiles
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
+        self.externalSearchIncludeInAll = defaults.object(forKey: Keys.externalSearchIncludeInAll) as? Bool ?? false
+        self.externalContextEnabled = defaults.object(forKey: Keys.externalContextEnabled) as? Bool ?? false
+        self.externalSearchAllowPrivateRepos = defaults.object(forKey: Keys.externalSearchAllowPrivateRepos) as? Bool ?? false
+        let externalDefaultProviderRaw = defaults.string(forKey: Keys.externalSearchDefaultProvider)
+        self.externalSearchDefaultProvider = externalDefaultProviderRaw
+            .flatMap(ExternalSearchProviderID.init(rawValue:)) ?? .anySearch
+        let externalContextSelectionRaw = defaults.string(forKey: Keys.externalContextProviderSelection)
+        self.externalContextProviderSelection = externalContextSelectionRaw
+            .flatMap(ExternalContextProviderSelection.init(rawValue:)) ?? .automatic
+        self.aggregateExternalContextSearchEnabled = defaults.object(
+            forKey: Keys.aggregateExternalContextSearchEnabled
+        ) as? Bool ?? false
+        self.externalSearchProviderSettings = Self.normalizedExternalSearchProviderSettings(
+            Self.decodeJSON(
+                [ExternalSearchProviderID: ExternalSearchProviderSettings].self,
+                key: Keys.externalSearchProviderSettings,
+                defaults: defaults
+            )
+        )
         self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
         self.anySearchAnonymousMode = defaults.object(forKey: Keys.anySearchAnonymousMode) as? Bool ?? true
         self.searchIncludeWebInAll = defaults.object(forKey: Keys.searchIncludeWebInAll) as? Bool ?? false
@@ -1490,6 +1550,13 @@ final class AppSettings {
 
         chatHistoryStorageKind = .jsonFiles
         smartSearchMode = .keyword
+        externalSearchIncludeInAll = false
+        externalContextEnabled = false
+        externalSearchAllowPrivateRepos = false
+        externalSearchDefaultProvider = .anySearch
+        externalContextProviderSelection = .automatic
+        aggregateExternalContextSearchEnabled = false
+        externalSearchProviderSettings = ExternalSearchProviderSettings.defaultsByProvider()
         anySearchEnabled = false
         anySearchAnonymousMode = true
         searchIncludeWebInAll = false
@@ -1548,6 +1615,54 @@ final class AppSettings {
         }
     }
 
+    func externalSearchSettings(for provider: ExternalSearchProviderID) -> ExternalSearchProviderSettings {
+        externalSearchProviderSettings[provider] ?? ExternalSearchProviderSettings.defaultSettings(for: provider)
+    }
+
+    func setExternalSearchSettings(
+        _ settings: ExternalSearchProviderSettings,
+        for provider: ExternalSearchProviderID
+    ) {
+        var next = externalSearchProviderSettings
+        next[provider] = settings
+        externalSearchProviderSettings = Self.normalizedExternalSearchProviderSettings(next)
+    }
+
+    func markExternalSearchCredentialVerified(
+        for provider: ExternalSearchProviderID,
+        at date: Date = Date()
+    ) {
+        var settings = externalSearchSettings(for: provider)
+        settings.credentialVerifiedAt = date
+        settings.isEnabled = true
+        setExternalSearchSettings(settings, for: provider)
+    }
+
+    func clearExternalSearchCredentialVerification(for provider: ExternalSearchProviderID) {
+        var settings = externalSearchSettings(for: provider)
+        settings.credentialVerifiedAt = nil
+        setExternalSearchSettings(settings, for: provider)
+    }
+
+    func externalSearchAPIKey(for provider: ExternalSearchProviderID) -> String? {
+        try? keychain.loadServiceAPIKey(forService: provider.keychainServiceID)
+    }
+
+    func setExternalSearchAPIKey(_ value: String?, for provider: ExternalSearchProviderID) {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        do {
+            if trimmed.isEmpty {
+                try keychain.deleteServiceAPIKey(forService: provider.keychainServiceID)
+            } else {
+                try keychain.storeServiceAPIKey(trimmed, forService: provider.keychainServiceID)
+            }
+            // Key 内容变化后，旧的 verified marker 已不再可信，必须重新 Test。
+            clearExternalSearchCredentialVerification(for: provider)
+        } catch {
+            AppLog.keychain.error("External Search API key update failed: provider=\(provider.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// AnySearch API Key 复用 service key 的独立命名空间，仍由加密凭据文件承载。
     func anySearchAPIKey() -> String? {
         try? keychain.loadServiceAPIKey(forService: "anysearch")
@@ -1564,6 +1679,16 @@ final class AppSettings {
         } catch {
             AppLog.keychain.error("AnySearch API key update failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private static func normalizedExternalSearchProviderSettings(
+        _ value: [ExternalSearchProviderID: ExternalSearchProviderSettings]?
+    ) -> [ExternalSearchProviderID: ExternalSearchProviderSettings] {
+        var settings = value ?? [:]
+        for provider in ExternalSearchProviderID.allCases where settings[provider] == nil {
+            settings[provider] = ExternalSearchProviderSettings.defaultSettings(for: provider)
+        }
+        return settings
     }
 
     private static func decodeJSON<T: Decodable>(
@@ -1695,6 +1820,13 @@ final class AppSettings {
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
         static let smartSearchMode = "settings.search.mode"
+        static let externalSearchIncludeInAll = "settings.externalSearch.includeInAll.v1"
+        static let externalContextEnabled = "settings.externalSearch.context.enabled.v1"
+        static let externalSearchAllowPrivateRepos = "settings.externalSearch.context.allowPrivate.v1"
+        static let externalSearchDefaultProvider = "settings.externalSearch.defaultProvider.v1"
+        static let externalContextProviderSelection = "settings.externalSearch.context.providerSelection.v1"
+        static let aggregateExternalContextSearchEnabled = "settings.externalSearch.context.aggregate.enabled.v1"
+        static let externalSearchProviderSettings = "settings.externalSearch.providerSettings.v1"
         static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
         static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"
         static let searchIncludeWebInAll = "settings.search.web.includeInAll.v1"
@@ -1764,6 +1896,13 @@ final class AppSettings {
             aiChatTask,
             chatHistoryStorageKind,
             smartSearchMode,
+            externalSearchIncludeInAll,
+            externalContextEnabled,
+            externalSearchAllowPrivateRepos,
+            externalSearchDefaultProvider,
+            externalContextProviderSelection,
+            aggregateExternalContextSearchEnabled,
+            externalSearchProviderSettings,
             anySearchEnabled,
             anySearchAnonymousMode,
             searchIncludeWebInAll,
