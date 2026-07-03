@@ -100,6 +100,57 @@ struct ExternalSearchContextProviderTests {
         #expect(Set(recorder.providerIDs) == Set([.exa, .tavily]))
     }
 
+    @Test("External Context cache key 包含 query fingerprint")
+    func queryFingerprintCacheMissesWhenRepoQueryChanges() async throws {
+        let settings = makeSettings()
+        enable(.exa, settings: settings)
+        settings.externalContextProviderSelection = .exa
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ExternalSearchContextProviderTests.\(UUID().uuidString)", isDirectory: true)
+        let cache = DiskExternalSearchCache(rootOverride: root)
+        let recorder = ProviderCallRecorder()
+        let contextProvider = ExternalSearchContextProvider(
+            settings: settings,
+            diskCache: cache,
+            providerFactory: { providerID in StubExternalSearchProvider(providerID: providerID, recorder: recorder) }
+        )
+
+        _ = try await contextProvider.collect(for: makeRepo(description: "first description"))
+        _ = try await contextProvider.collect(for: makeRepo(description: "first description"))
+        _ = try await contextProvider.collect(for: makeRepo(description: "second description"))
+
+        #expect(recorder.queries.count == 4)
+    }
+
+    @Test("聚合模式按 Provider 优先级去重并限制最多 8 条")
+    func aggregateDeduplicatesAndBudgetsResults() async throws {
+        let settings = makeSettings()
+        for provider in ExternalSearchProviderID.allCases {
+            enable(provider, settings: settings)
+        }
+        settings.aggregateExternalContextSearchEnabled = true
+        settings.updateProEntitlementMirror(isPro: true)
+        let recorder = ProviderCallRecorder()
+        let contextProvider = ExternalSearchContextProvider(
+            settings: settings,
+            diskCache: nil,
+            providerFactory: { providerID in
+                StubExternalSearchProvider(
+                    providerID: providerID,
+                    recorder: recorder,
+                    hits: Self.makeHits(for: providerID)
+                )
+            }
+        )
+
+        let context = try await contextProvider.collect(for: makeRepo())
+
+        #expect(context?.sourceItems.count == 8)
+        #expect(context?.sourceItems.first?.provider == .exa)
+        #expect(context?.sourceItems.filter { $0.url.absoluteString == "https://example.com/duplicate" }.count == 1)
+        #expect(context?.markdown.contains("preferred full text") == true)
+    }
+
     private func makeSettings() -> AppSettings {
         let suite = "ExternalSearchContextProviderTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -150,6 +201,33 @@ struct ExternalSearchContextProviderTests {
             cachedAt: nil
         )
     }
+
+    private nonisolated static func makeHits(for providerID: ExternalSearchProviderID) -> [ExternalSearchHit] {
+        let uniqueCount = (providerID == .exa || providerID == .tavily) ? 2 : 4
+        var hits: [ExternalSearchHit] = (0..<uniqueCount).map { index in
+            ExternalSearchHit(
+                title: "\(providerID.displayName) \(index)",
+                url: URL(string: "https://example.com/\(providerID.rawValue)/\(index)")!,
+                snippet: "snippet \(index)",
+                extractedText: "text \(index)"
+            )
+        }
+        hits.append(ExternalSearchHit(
+            title: "Duplicate without text",
+            url: URL(string: "https://example.com/duplicate")!,
+            snippet: "duplicate snippet",
+            extractedText: nil
+        ))
+        if providerID == .tavily {
+            hits.append(ExternalSearchHit(
+                title: "Duplicate with text",
+                url: URL(string: "https://example.com/duplicate")!,
+                snippet: "duplicate snippet",
+                extractedText: "preferred full text"
+            ))
+        }
+        return hits
+    }
 }
 
 private final class ProviderCallRecorder: @unchecked Sendable {
@@ -172,6 +250,7 @@ private struct StubExternalSearchProvider: ExternalSearchProvider {
     let providerID: ExternalSearchProviderID
     let recorder: ProviderCallRecorder
     var error: Error?
+    var hits: [ExternalSearchHit]?
 
     var id: ExternalSearchProviderID { providerID }
     var capabilities: ExternalSearchCapabilities { .capabilities(for: providerID) }
@@ -180,7 +259,7 @@ private struct StubExternalSearchProvider: ExternalSearchProvider {
         recorder.record(providerID: providerID, query: request.query)
         if let error { throw error }
         return ExternalSearchResponse(
-            hits: [
+            hits: hits ?? [
                 ExternalSearchHit(
                     title: providerID.displayName,
                     url: URL(string: "https://example.com/\(providerID.rawValue)")!,
