@@ -2,18 +2,18 @@
 //  ExternalContextDegradationReason.swift
 //  Starcat
 //
-//  Y9.3（2026-06-14 dong4j 反馈）：摘要生成时 AnySearch 外部上下文为什么没拉到的分类原因。
+//  Y9.3（2026-06-14 dong4j 反馈）：摘要生成时 External Search 外部上下文为什么没拉到的分类原因。
 //
-//  设计目标：用户开启了 AnySearch 总开关 + AI 子开关后，预期摘要里有外部参考来源；
+//  设计目标：用户开启了 External Context 后，预期摘要里有外部参考来源；
 //  但当上游服务挂了 / API Key 失效 / 配额用完时，原方案是**静默降级**——摘要里没
 //  「## 外部参考来源」段，状态行里没"外网"两字，但**没有任何 UI 反馈**告诉用户为什么。
-//  本 enum 把 catch 到的 AnySearchError / URLError / 其他错误分类到 7 个明确语义，
+//  本 enum 把 catch 到的 ExternalSearchError / AnySearchError / URLError / 其他错误分类到 7 个明确语义，
 //  让 UI 顶部 banner 像 Y4 代码上下文降级一样给出对应文案。
 //
 //  与 ContextDegradationReason 的区别：
 //    - Y4 ContextDegradationReason：**代码上下文**（RepoContextPacker / SharedSnapshot）
 //      失败的分类，5 case 都是"用户开了但下载/打包失败"路径；
-//    - 本 enum：**外部网页上下文**（AnySearch）失败的分类，7 case 覆盖上游 5xx /
+//    - 本 enum：**外部网页上下文**（External Search）失败的分类，7 case 覆盖上游 5xx /
 //      网络异常 / Key 失效 / 配额 / 限流 / 能力未启用 / 兜底；
 //    - 两者并行存在、相互正交，UI 可同时显示两条 banner 给用户全景。
 //
@@ -25,7 +25,7 @@
 
 import Foundation
 
-/// 外部网页上下文（AnySearch）被降级的原因（Y9.3）。
+/// 外部网页上下文（External Search）被降级的原因（Y9.3）。
 enum ExternalContextDegradationReason: Sendable, Equatable {
     /// 上游 5xx 临时错误：502 Bad Gateway / 503 Service Unavailable / 504 Gateway Timeout 等。
     /// 客户端按设计已重试 1 次仍失败。携带 statusCode 让 banner 文案可显示具体码号。
@@ -65,9 +65,25 @@ enum ExternalContextDegradationReason: Sendable, Equatable {
 
     /// 把任意 error 分类到 7 case 之一。
     ///
-    /// 优先级：AnySearchError typed case → URLError → 兜底 .unknown。
-    /// 不属于已知错误类型 → .unknown 兜底（语义上"AnySearch 出错但分类不到具体类型"）。
+    /// 优先级：ExternalSearchError → AnySearchError typed case → URLError → 兜底 .unknown。
+    /// 不属于已知错误类型 → .unknown 兜底（语义上"External Search 出错但分类不到具体类型"）。
     static func classify(_ error: Error) -> ExternalContextDegradationReason {
+        if let externalError = error as? ExternalSearchError {
+            switch externalError {
+            case .disabled, .missingAPIKey, .unverifiedCredential, .invalidResponse:
+                return .unknown
+            case .invalidCredential:
+                return .invalidAPIKey
+            case .paymentRequired:
+                return .quotaExhausted
+            case .rateLimited:
+                return .rateLimited
+            case .serviceUnavailable:
+                return .serviceUnavailable(statusCode: nil)
+            case .network:
+                return .networkUnavailable
+            }
+        }
         if let anyError = error as? AnySearchError {
             switch anyError {
             case .serviceUnavailable:

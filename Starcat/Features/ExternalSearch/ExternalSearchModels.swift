@@ -320,23 +320,23 @@ enum ExternalSearchError: LocalizedError, Equatable, Sendable {
     var friendlyMessage: String {
         switch self {
         case .disabled(let provider):
-            return "\(provider.displayName) is disabled."
+            return String(format: String.l10n("externalSearch.error.disabledFormat"), provider.displayName)
         case .missingAPIKey(let provider):
-            return "\(provider.displayName) requires an API key."
+            return String(format: String.l10n("externalSearch.error.missingAPIKeyFormat"), provider.displayName)
         case .unverifiedCredential(let provider):
-            return "Test the \(provider.displayName) API key before enabling this provider."
+            return String(format: String.l10n("externalSearch.error.unverifiedCredentialFormat"), provider.displayName)
         case .invalidCredential(let provider, _, _):
-            return "\(provider.displayName) API key is invalid or lacks permission."
+            return String(format: String.l10n("externalSearch.error.invalidCredentialFormat"), provider.displayName)
         case .paymentRequired(let provider, _, _):
-            return "\(provider.displayName) quota or plan is unavailable."
+            return String(format: String.l10n("externalSearch.error.paymentRequiredFormat"), provider.displayName)
         case .rateLimited(let provider, _, _):
-            return "\(provider.displayName) is rate limited. Try again later."
+            return String(format: String.l10n("externalSearch.error.rateLimitedFormat"), provider.displayName)
         case .serviceUnavailable(let provider, _, _):
-            return "\(provider.displayName) is temporarily unavailable."
+            return String(format: String.l10n("externalSearch.error.serviceUnavailableFormat"), provider.displayName)
         case .network(let provider, _):
-            return "Could not connect to \(provider.displayName). Check the network and try again."
+            return String(format: String.l10n("externalSearch.error.networkFormat"), provider.displayName)
         case .invalidResponse(let provider, _):
-            return "\(provider.displayName) returned an unreadable response."
+            return String(format: String.l10n("externalSearch.error.invalidResponseFormat"), provider.displayName)
         }
     }
 }

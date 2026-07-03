@@ -410,12 +410,12 @@ struct IntegrationSettingsTab: View {
     private var anySearchSection: some View {
         @Bindable var settings = settings
         return Group {
-            Section("External Search") {
-                Toggle("Include external web results in All", isOn: $settings.externalSearchIncludeInAll)
-                Toggle("Use external web context in AI features", isOn: $settings.externalContextEnabled)
+            Section("settings.externalSearch.section") {
+                Toggle("settings.externalSearch.includeWebInAll", isOn: $settings.externalSearchIncludeInAll)
+                Toggle("settings.externalSearch.aiContext", isOn: $settings.externalContextEnabled)
                 Toggle(isOn: aggregateExternalContextBinding) {
                     HStack(spacing: 6) {
-                        Text("Aggregate external context search")
+                        Text("settings.externalSearch.aggregate")
                         if !settings.isProUser {
                             Text("Pro")
                                 .font(.caption2.weight(.semibold))
@@ -427,22 +427,22 @@ struct IntegrationSettingsTab: View {
                 }
                 .disabled(!settings.isProUser)
 
-                Toggle("Allow external context for private repositories", isOn: $settings.externalSearchAllowPrivateRepos)
+                Toggle("settings.externalSearch.allowPrivateContext", isOn: $settings.externalSearchAllowPrivateRepos)
                     .disabled(!settings.externalContextEnabled)
 
-                Picker("Default search provider", selection: $settings.externalSearchDefaultProvider) {
+                Picker("settings.externalSearch.defaultProvider", selection: $settings.externalSearchDefaultProvider) {
                     ForEach(ExternalSearchProviderID.allCases) { provider in
                         Text(provider.displayName).tag(provider)
                     }
                 }
-                Picker("External context provider", selection: $settings.externalContextProviderSelection) {
-                    Text("Automatic").tag(ExternalContextProviderSelection.automatic)
+                Picker("settings.externalSearch.contextProvider", selection: $settings.externalContextProviderSelection) {
+                    Text("settings.externalSearch.contextProvider.automatic").tag(ExternalContextProviderSelection.automatic)
                     ForEach(ExternalSearchProviderID.allCases) { provider in
                         Text(provider.displayName).tag(ExternalContextProviderSelection.provider(provider))
                     }
                 }
 
-                Text("Aggregate search is only used for AI context. It may send up to four provider requests, increase waiting time, and consume third-party quota. The Web tab still uses one selected provider.")
+                Text("settings.externalSearch.aggregate.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -456,29 +456,29 @@ struct IntegrationSettingsTab: View {
     private func externalSearchProviderSection(_ provider: ExternalSearchProviderID) -> some View {
         Section(provider.displayName) {
             Toggle(isOn: providerEnabledBinding(provider)) {
-                Text("Enable \(provider.displayName)")
+                Text(String(format: String.l10n("settings.externalSearch.provider.enableFormat"), provider.displayName))
             }
             .disabled(!canToggleProviderOn(provider))
 
             if provider == .anySearch {
-                Toggle("Anonymous mode (do not send API Key)", isOn: providerAnonymousBinding(provider))
+                Toggle("settings.externalSearch.anonymous", isOn: providerAnonymousBinding(provider))
                     .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("API Key")
+                Text("settings.externalSearch.apiKey")
                     .font(.callout.weight(.medium))
 
                 HStack(spacing: 8) {
                     Group {
                         if visibleExternalSearchAPIKeys.contains(provider) {
-                            TextField("", text: apiKeyBinding(provider), prompt: Text("Enter \(provider.displayName) API Key"))
+                            TextField("", text: apiKeyBinding(provider), prompt: Text(String(format: String.l10n("settings.externalSearch.apiKey.placeholderFormat"), provider.displayName)))
                         } else {
-                            SecureField("", text: apiKeyBinding(provider), prompt: Text("Enter \(provider.displayName) API Key"))
+                            SecureField("", text: apiKeyBinding(provider), prompt: Text(String(format: String.l10n("settings.externalSearch.apiKey.placeholderFormat"), provider.displayName)))
                         }
                     }
                     .labelsHidden()
-                    .accessibilityLabel(Text("\(provider.displayName) API Key"))
+                    .accessibilityLabel(Text(String(format: String.l10n("settings.externalSearch.apiKey.accessibilityFormat"), provider.displayName)))
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: .infinity)
 
@@ -490,7 +490,7 @@ struct IntegrationSettingsTab: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .help(visibleExternalSearchAPIKeys.contains(provider) ? "Hide API Key" : "Show API Key")
+                    .help(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show")
 
                     Button {
                         testExternalSearchAPIKey(provider)
@@ -499,7 +499,7 @@ struct IntegrationSettingsTab: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            Text("Test")
+                            Text("settings.externalSearch.apiKey.test")
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -572,9 +572,9 @@ struct IntegrationSettingsTab: View {
 
     private func providerDescription(_ provider: ExternalSearchProviderID) -> String {
         if provider == .anySearch, settings.externalSearchSettings(for: provider).anonymousMode {
-            return "Anonymous requests do not send an Authorization header. Testing an API Key always uses bearer mode."
+            return String.l10n("settings.externalSearch.apiKey.anonymousDescription")
         }
-        return "The key is stored securely on this Mac. Testing uses the query \"who is dong4j\" and may consume one provider search request."
+        return String.l10n("settings.externalSearch.apiKey.testDescription")
     }
 
     private func toggleAPIKeyVisibility(_ provider: ExternalSearchProviderID) {
@@ -621,11 +621,11 @@ struct IntegrationSettingsTab: View {
         case .idle, .testing:
             EmptyView()
         case .succeeded:
-            Label("API Key is valid and has been saved.", systemImage: "checkmark.circle.fill")
+            Label("settings.externalSearch.apiKey.testSucceeded", systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.green)
         case .saveFailed:
-            Label("API Key is valid, but it could not be saved.", systemImage: "xmark.circle.fill")
+            Label("settings.externalSearch.apiKey.saveFailed", systemImage: "xmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.red)
         case .failed(let message, let details):
@@ -635,7 +635,7 @@ struct IntegrationSettingsTab: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
                 if let details {
-                    DisclosureGroup("Technical details") {
+                    DisclosureGroup("settings.externalSearch.apiKey.technicalDetails") {
                         Text(details)
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)

@@ -2030,8 +2030,9 @@ struct RepoAIWindowContentView: View {
             allowPrivate: settings.externalSearchAllowPrivateRepos
         )
         let hasExternal = externalAllowed && (vm.insight?.externalContextMarkdown?.isEmpty == false)
+        let hasExternalUnavailable = externalAllowed && vm.externalContextDegradationReason != nil && !hasExternal
 
-        if hasSummary || hasCode || hasExternal {
+        if hasSummary || hasCode || hasExternal || hasExternalUnavailable {
             HStack(spacing: 6) {
                 Image(systemName: "paperclip")
                     .foregroundStyle(.secondary)
@@ -2065,7 +2066,15 @@ struct RepoAIWindowContentView: View {
                         contextStatusPill(
                             icon: "globe",
                             label: externalContextStatusLabel(vm: vm),
-                            tint: .green
+                            tint: .green,
+                            help: externalContextStatusHelp(vm: vm)
+                        )
+                    } else if hasExternalUnavailable {
+                        contextStatusPill(
+                            icon: "globe.badge.exclamationmark",
+                            label: String.l10n("ai.assistant.chat.contextStatus.externalUnavailable"),
+                            tint: .orange,
+                            help: vm.externalContextDegradationReason.map { String.l10n($0.bannerMessageKey) }
                         )
                     }
                 }
@@ -2125,7 +2134,8 @@ struct RepoAIWindowContentView: View {
     private func contextStatusPill(
         icon: String,
         label: String,
-        tint: Color
+        tint: Color,
+        help: String? = nil
     ) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
@@ -2142,20 +2152,32 @@ struct RepoAIWindowContentView: View {
                 .fill(tint.opacity(0.15))
         }
         .fixedSize(horizontal: true, vertical: false)
+        .help(help ?? label)
     }
 
     private func externalContextStatusLabel(vm: RepoAIInsightViewModel) -> String {
         guard let sources = vm.insight?.externalContextSources, !sources.isEmpty else {
-            return "External context"
+            return String.l10n("ai.assistant.chat.contextStatus.external")
         }
         let providers = Set(sources.map(\.provider))
         if settings.aggregateExternalContextSearchEnabled && settings.isProUser {
-            return "External context: \(providers.count)/\(ExternalSearchProviderID.allCases.count) providers used"
+            return String(format: String.l10n("ai.assistant.chat.contextStatus.externalAggregateFormat"), providers.count, ExternalSearchProviderID.allCases.count)
         }
         if providers.count == 1, let provider = providers.first {
-            return "External context: \(provider.displayName)"
+            return String(format: String.l10n("ai.assistant.chat.contextStatus.externalProviderFormat"), provider.displayName)
         }
-        return "External context: \(providers.count) providers used"
+        return String(format: String.l10n("ai.assistant.chat.contextStatus.externalProvidersFormat"), providers.count)
+    }
+
+    private func externalContextStatusHelp(vm: RepoAIInsightViewModel) -> String {
+        guard let sources = vm.insight?.externalContextSources, !sources.isEmpty else {
+            return String.l10n("ai.assistant.chat.contextStatus.external")
+        }
+        let counts = Dictionary(grouping: sources, by: \.provider)
+            .map { provider, items in "\(provider.displayName): \(items.count)" }
+            .sorted()
+            .joined(separator: "\n")
+        return counts.isEmpty ? externalContextStatusLabel(vm: vm) : counts
     }
 
     /// Y9.2 玻璃态主题适配：与 errorBanner 同款风格——背景 0.12 → 0.18 + strokeBorder。

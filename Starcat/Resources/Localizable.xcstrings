@@ -4869,13 +4869,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch capability not enabled for this account – external references skipped"
+            "value" : "External Search provider capability not enabled – external context skipped"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch 当前账号未开通 code 域能力，本次未拉取外部参考"
+            "value" : "External Search Provider 当前未开通所需能力，本次未拉取外部上下文"
           }
         }
       }
@@ -4886,13 +4886,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch API key invalid – check Settings"
+            "value" : "External Search API key invalid – check Settings"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch API Key 无效，请在设置中检查"
+            "value" : "External Search API Key 无效，请在设置中检查"
           }
         }
       }
@@ -4920,13 +4920,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch quota exhausted – external references not fetched"
+            "value" : "External Search quota exhausted – external context not fetched"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch 配额已用完，本次未拉取外部参考"
+            "value" : "External Search 配额已用完，本次未拉取外部上下文"
           }
         }
       }
@@ -4937,13 +4937,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch rate limited – please retry shortly"
+            "value" : "External Search rate limited – please retry shortly"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch 请求过于频繁，请稍后再试"
+            "value" : "External Search 请求过于频繁，请稍后再试"
           }
         }
       }
@@ -4954,13 +4954,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch temporarily unavailable – external references not fetched"
+            "value" : "External Search temporarily unavailable – external context not fetched"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch 暂时不可用，本次未拉取外部参考"
+            "value" : "External Search 暂时不可用，本次未拉取外部上下文"
           }
         }
       }
@@ -4971,13 +4971,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch error – external references skipped"
+            "value" : "External Search unavailable – external context skipped"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AnySearch 暂不可用，本次未拉取外部参考"
+            "value" : "External Search 暂不可用，本次未拉取外部上下文"
           }
         }
       }
@@ -11958,6 +11958,159 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "同步完成后未打标的 Stars 会出现在这里"
+          }
+        }
+      }
+    },
+    "externalSearch.error.disabledFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is disabled."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 未启用。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.missingAPIKeyFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ requires an API key."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 需要 API Key。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.unverifiedCredentialFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test the %@ API key before enabling this provider."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先测试 %@ API Key，再启用该 Provider。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.invalidCredentialFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ API key is invalid or lacks permission."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ API Key 无效或权限不足。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.paymentRequiredFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ quota or plan is unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 额度或套餐不可用。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.rateLimitedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is rate limited. Try again later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 请求过于频繁，请稍后再试。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.serviceUnavailableFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is temporarily unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 暂时不可用。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.networkFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not connect to %@. Check the network and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 %@。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.invalidResponseFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ returned an unreadable response."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 返回了无法读取的响应。"
           }
         }
       }
@@ -24080,6 +24233,635 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AnySearch"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.aggregate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggregate external context search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聚合搜索"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.aggregate.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggregate search is only used for AI context. It may send up to four provider requests, increase waiting time, and consume third-party quota. The Web tab still uses one selected provider."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聚合搜索只用于 AI 外部上下文，可能同时请求最多 4 个 Provider，增加等待时间并消耗第三方额度。Web tab 仍只使用当前选中的单个 Provider。"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.aiContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use external web context in AI features"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 功能使用外部网页上下文"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.allowPrivateContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow external context for private repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许私有仓库使用外部上下文"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.anonymous" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymous mode (do not send API Key)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名模式（不发送 API Key）"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.accessibilityFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ API Key"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.anonymousDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymous requests do not send an Authorization header. Testing an API Key always uses bearer mode."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名请求不会发送 Authorization header。测试 API Key 时始终使用 bearer 模式。"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.hide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏 API Key"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.placeholderFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter %@ API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入 %@ API Key"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.saveFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key is valid, but it could not be saved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key 有效，但保存失败。"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.show" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 API Key"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.technicalDetails" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Technical details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "技术详情"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.test" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.testDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The key is stored securely on this Mac. Testing uses the query \"who is dong4j\" and may consume one provider search request."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key 安全保存在本机。测试会使用查询 “who is dong4j”，并可能消耗一次 Provider 搜索请求。"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.apiKey.testSucceeded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key is valid and has been saved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key 有效，已保存。"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.contextProvider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External context provider"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部上下文 Provider"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.contextProvider.automatic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.defaultProvider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default search provider"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认搜索 Provider"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.includeWebInAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include external web results in All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“全部”范围中包含外部网页结果"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.provider.enableFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用 %@"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External Search"
+          }
+        }
+      }
+    },
+    "search.web.excludeDomains" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exclude domains"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排除域名"
+          }
+        }
+      }
+    },
+    "search.web.freshness" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freshness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间范围"
+          }
+        }
+      }
+    },
+    "search.web.freshness.any" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不限时间"
+          }
+        }
+      }
+    },
+    "search.web.freshness.day" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Past day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去一天"
+          }
+        }
+      }
+    },
+    "search.web.freshness.month" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Past month"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去一月"
+          }
+        }
+      }
+    },
+    "search.web.freshness.week" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Past week"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去一周"
+          }
+        }
+      }
+    },
+    "search.web.freshness.year" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Past year"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去一年"
+          }
+        }
+      }
+    },
+    "search.web.includeDomains" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include domains"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含域名"
+          }
+        }
+      }
+    },
+    "search.web.provider.requiresConfigurationDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable the provider and verify its API Key in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在设置中启用该 Provider 并验证 API Key。"
+          }
+        }
+      }
+    },
+    "search.web.provider.requiresConfigurationFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ requires configuration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 需要配置"
+          }
+        }
+      }
+    },
+    "search.web.provider.useFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 %@"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.externalAggregateFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External context: %1$d/%2$d providers used"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部上下文：已使用 %1$d/%2$d 个 Provider"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.externalProviderFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External context: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部上下文：%@"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.externalProvidersFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External context: %d providers used"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部上下文：已使用 %d 个 Provider"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.externalUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External context unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部上下文不可用"
           }
         }
       }

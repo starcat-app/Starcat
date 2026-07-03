@@ -39,6 +39,7 @@
 | 34 | [StarcatCLI 与外部 MCP 桥接设计](34-StarcatCLI与外部MCP桥接设计.md) | stdio MCP adapter + CLI 入口,解决 Codex / 老式 client 不兼容 HTTP MCP 的兼容性问题 |
 | 35 | [GitHub Stars List 分组设计](35-GitHub-Stars-List分组设计.md) | GitHub Stars List 分组侧边栏入口 + OAuth 组织限制处理 |
 | 36 | [CodebaseMemory 集成设计](36-CodebaseMemory集成设计.md) | codebase-memory-mcp 二进制打包进 bundle + 持久解压 + POSIX 端口探测 + Process spawn UI 子进程 + 6 步状态机 + 设置页/Storage Tab 集成 + App Store 沙盒与签名策略 |
+| 37 | [外部搜索服务设计](37-外部搜索服务设计.md) | External Search Provider 抽象、设置页、SearchCenter Provider View、External Context 单 Provider / Pro 聚合与缓存策略 |
 
 ---
 
@@ -73,6 +74,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-03 | 新增 37 文档：External Search Provider 抽象、SearchCenter 单 Provider View、AI External Context 单 Provider / Pro 聚合、Provider 隔离缓存与本机凭据边界 |
 | 2026-06-29 | 新增 36 文档：CodebaseMemory 集成设计（二进制打包进 bundle + POSIX 端口探测 + Process spawn + 6 步状态机 + App Store 沙盒签名策略）；补登 34/35 索引 |
 | 2026-06-15 | 31 文档微调：BulkCache TTL 60s → 6h（多客户端并发 / 主动刷新风暴场景下减少反复 build；与 trending weekly 桶对齐；演进记录写入 §8） |
 | 2026-06-15 | 新增 31 文档：R-06 Trending / Weekly 多级缓存改造收尾记录（客户端 SQLite TTL + 后端内存缓存 + Weekly 渐进式 SWR 双轨制 + 3 个永久陷阱 + 关键决策一览） |

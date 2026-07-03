@@ -462,12 +462,12 @@ struct SearchCenterView: View {
             )
             externalSearchFreshnessPicker(width: 222)
             externalSearchDomainListField(
-                title: "Include domains",
+                titleKey: "search.web.includeDomains",
                 placeholder: "docs.example.com, github.com",
                 text: $includeDomainsDraft
             )
             externalSearchDomainListField(
-                title: "Exclude domains",
+                titleKey: "search.web.excludeDomains",
                 placeholder: "example.com",
                 text: $excludeDomainsDraft
             )
@@ -511,8 +511,8 @@ struct SearchCenterView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help(isExternalSearchProviderUsable(provider)
-                    ? Text("Use \(provider.displayName)")
-                    : Text("\(provider.displayName) requires configuration in Settings"))
+                    ? Text(String(format: String.l10n("search.web.provider.useFormat"), provider.displayName))
+                    : Text(String(format: String.l10n("search.web.provider.requiresConfigurationFormat"), provider.displayName)))
             }
         }
     }
@@ -545,9 +545,9 @@ struct SearchCenterView: View {
             // 只在 .web scope 触发：.all scope 下 AnySearch 仅是可选聚合项之一，
             // 用这条提示会误导（空态可能源自 GitHub/本地失败）。
             ContentUnavailableView {
-                Text("\(viewModel.webSearchProvider.displayName) requires configuration")
+                Text(String(format: String.l10n("search.web.provider.requiresConfigurationFormat"), viewModel.webSearchProvider.displayName))
             } description: {
-                Text("Enable the provider and verify its API Key in Settings.")
+                Text("search.web.provider.requiresConfigurationDescription")
             } actions: {
                 if viewModel.webSearchProvider == .anySearch,
                    AppSettings.shared.externalSearchSettings(for: .anySearch).anonymousMode {
@@ -1574,13 +1574,13 @@ struct SearchCenterView: View {
     }
 
     private func externalSearchFreshnessPicker(width: CGFloat) -> some View {
-        githubPicker(titleKey: "Freshness", width: width) {
-            Picker("Freshness", selection: externalSearchFreshnessBinding) {
-                Text("Any time").tag(ExternalSearchFilters.Freshness.any)
-                Text("Past day").tag(ExternalSearchFilters.Freshness.day)
-                Text("Past week").tag(ExternalSearchFilters.Freshness.week)
-                Text("Past month").tag(ExternalSearchFilters.Freshness.month)
-                Text("Past year").tag(ExternalSearchFilters.Freshness.year)
+        githubPicker(titleKey: "search.web.freshness", width: width) {
+            Picker("search.web.freshness", selection: externalSearchFreshnessBinding) {
+                Text("search.web.freshness.any").tag(ExternalSearchFilters.Freshness.any)
+                Text("search.web.freshness.day").tag(ExternalSearchFilters.Freshness.day)
+                Text("search.web.freshness.week").tag(ExternalSearchFilters.Freshness.week)
+                Text("search.web.freshness.month").tag(ExternalSearchFilters.Freshness.month)
+                Text("search.web.freshness.year").tag(ExternalSearchFilters.Freshness.year)
             }
         }
     }
@@ -1593,12 +1593,12 @@ struct SearchCenterView: View {
     }
 
     private func externalSearchDomainListField(
-        title: String,
+        titleKey: LocalizedStringKey,
         placeholder: String,
         text: Binding<String>
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
+            Text(titleKey)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             TextField(placeholder, text: text)
