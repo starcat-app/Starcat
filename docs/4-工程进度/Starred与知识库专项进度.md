@@ -177,11 +177,11 @@
 ## 9. 预热 / embedding / 分享范围
 
 - [ ] README 预拉覆盖 starred 与知识库并集。
-- [ ] Repo Health stale / missing 候选查询覆盖 starred 与知识库并集。
-- [ ] Repo Health coverage total / snapshot total 使用 starred 与知识库并集口径。
-- [ ] OpenSSF stale 候选查询覆盖 starred 与知识库并集。
-- [ ] OpenSSF coverage total / fetched total 使用 starred 与知识库并集口径。
-- [ ] Initial warmup Health/OpenSSF 的 complete / pause 判断使用同一 active scope,避免 total 与候选范围不一致导致永久重试。
+- [x] Repo Health stale / missing 候选查询覆盖 starred 与知识库并集。
+- [x] Repo Health coverage total / snapshot total 使用 starred 与知识库并集口径。
+- [x] OpenSSF stale 候选查询覆盖 starred 与知识库并集。
+- [x] OpenSSF coverage total / fetched total 使用 starred 与知识库并集口径。
+- [x] Initial warmup Health/OpenSSF 的 complete / pause 判断使用同一 active scope,避免 total 与候选范围不一致导致永久重试。
 - [ ] README / Repo Health / OpenSSF 后台任务跳过或降频处理不可访问 repo,避免反复失败。
 - [ ] README / Repo Health / OpenSSF 后台任务对无 token / token 权限不足的私有 repo 不反复远程刷新。
 - [ ] Health / OpenSSF 后台任务运行中取消入库不强行中断已开始请求,下一批候选自然排除。
@@ -315,8 +315,8 @@
 ### 11.7 预热 / 缓存 / 分享
 
 - [ ] README 预拉候选覆盖 starred 与知识库并集。
-- [ ] Repo Health 候选与 coverage total 都使用 starred 与知识库并集。
-- [ ] OpenSSF 候选与 coverage total 都使用 starred 与知识库并集。
+- [x] Repo Health 候选与 coverage total 都使用 starred 与知识库并集。
+- [x] OpenSSF 候选与 coverage total 都使用 starred 与知识库并集。
 - [ ] 移出知识库不删除已有 README / Repo Health / OpenSSF 缓存。
 - [ ] GitHub 404/410/权限不足不删除已有 README / Repo Health / OpenSSF 缓存。
 - [ ] README / Repo Health / OpenSSF 后台任务不会对不可访问 repo 反复失败重试。
@@ -365,6 +365,7 @@
 - 2026-07-02: PR-5 第三批 MCP search/semantic/resources 支持范围参数。
 - 2026-07-02: PR-5 第二批 Home 搜索候选与 FTS 按当前范围对齐。
 - 2026-07-02: PR-5 第一批 SemanticIndexBuilder 支持 starred/knowledge/all 范围。
+- 2026-07-03: PR-6 Repo Health/OpenSSF 后台统计候选覆盖知识库并集。
 - 2026-07-02: PR-6 第四批 Browser Plugin 接入知识库心形状态与写入。
 - 2026-07-02: PR-6 第三批新增 Companion library-state 写入 route。
 - 2026-07-02: PR-6 第二批 repo-context DTO 增加 library state。

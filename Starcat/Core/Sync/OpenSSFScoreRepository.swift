@@ -16,7 +16,7 @@ protocol OpenSSFScoreRepositoryProtocol: Sendable {
     func record(for repoId: Int64) async throws -> OpenSSFScoreRecord?
     func records(for repoIds: [Int64]) async throws -> [Int64: OpenSSFScoreRecord]
     func upsert(_ record: OpenSSFScoreRecord) async throws
-    func staleStarredRepos(now: Date, limit: Int) async throws -> [Repo]
+    func staleRefreshCandidateRepos(now: Date, limit: Int) async throws -> [Repo]
     func coverageSummary() async throws -> OpenSSFScoreCoverageSummary
 }
 
@@ -26,7 +26,7 @@ protocol OpenSSFScoreRepositoryProtocol: Sendable {
 /// 失败态也写入 fetched_at 并进入 TTL 冷却，所以这里把它视为“已尝试”，后续由 24h poller 兜底重试。
 struct OpenSSFScoreCoverageSummary: Equatable, Sendable {
     let fetchedTotal: Int
-    let starredTotal: Int
+    let candidateTotal: Int
 }
 
 struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
@@ -59,7 +59,7 @@ struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
         }
     }
 
-    func staleStarredRepos(now: Date, limit: Int) async throws -> [Repo] {
+    func staleRefreshCandidateRepos(now: Date, limit: Int) async throws -> [Repo] {
         let successCutoff = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(-OpenSSFScoreRefreshPolicy.successTTL))
         let notIndexedCutoff = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(-OpenSSFScoreRefreshPolicy.notIndexedTTL))
         let failureCutoff = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(-OpenSSFScoreRefreshPolicy.failureTTL))
@@ -71,14 +71,17 @@ struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
                 SELECT repos.*
                 FROM repos
                 LEFT JOIN open_ssf_scores s ON s.repo_id = repos.id
-                WHERE repos.is_starred = 1
+                LEFT JOIN repo_notes rn ON rn.repo_id = repos.id
+                WHERE (repos.is_starred = 1 OR rn.library_state = 'in_library')
                   AND (
                     s.repo_id IS NULL
                     OR (s.fetch_status = 'success' AND s.fetched_at <= ?)
                     OR (s.fetch_status = 'notIndexed' AND s.fetched_at <= ?)
                     OR (s.fetch_status IN ('networkError', 'parseError') AND s.fetched_at <= ?)
                   )
-                ORDER BY repos.starred_at DESC
+                ORDER BY
+                    CASE WHEN repos.is_starred = 1 THEN 0 ELSE 1 END,
+                    COALESCE(repos.starred_at, rn.library_updated_at, repos.cached_at) DESC
                 LIMIT ?
                 """,
                 arguments: [successCutoff, notIndexedCutoff, failureCutoff, limit]
@@ -88,9 +91,14 @@ struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
 
     func coverageSummary() async throws -> OpenSSFScoreCoverageSummary {
         try await database.writer.read { db in
-            let starredTotal = try Int.fetchOne(
+            let candidateTotal = try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM repos WHERE is_starred = 1"
+                sql: """
+                SELECT COUNT(*)
+                FROM repos
+                LEFT JOIN repo_notes rn ON rn.repo_id = repos.id
+                WHERE repos.is_starred = 1 OR rn.library_state = 'in_library'
+                """
             ) ?? 0
             let fetchedTotal = try Int.fetchOne(
                 db,
@@ -98,10 +106,11 @@ struct GRDBOpenSSFScoreRepository: OpenSSFScoreRepositoryProtocol, Sendable {
                 SELECT COUNT(*)
                 FROM repos r
                 INNER JOIN open_ssf_scores s ON s.repo_id = r.id
-                WHERE r.is_starred = 1
+                LEFT JOIN repo_notes rn ON rn.repo_id = r.id
+                WHERE r.is_starred = 1 OR rn.library_state = 'in_library'
                 """
             ) ?? 0
-            return OpenSSFScoreCoverageSummary(fetchedTotal: fetchedTotal, starredTotal: starredTotal)
+            return OpenSSFScoreCoverageSummary(fetchedTotal: fetchedTotal, candidateTotal: candidateTotal)
         }
     }
 }

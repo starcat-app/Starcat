@@ -92,7 +92,7 @@ final class RepoHealthPoller {
         refreshTotal = 0
         defer { isRefreshing = false }
 
-        let count = await service.refreshStaleStarredRepos(
+        let count = await service.refreshStaleCandidateRepos(
             limit: 100,
             delayBetweenRepos: Self.defaultDelayBetweenRepos,
             progress: { [weak self] processed, total in

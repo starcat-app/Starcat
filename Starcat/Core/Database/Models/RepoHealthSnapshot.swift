@@ -6,7 +6,7 @@
 //
 //  设计约束：
 //  - 健康度是派生缓存，不是用户数据；可以随 repo 缓存重建。
-//  - 第一版只服务已 star repo，repo 删除时通过外键 cascade 清理。
+//  - 第一版服务已 star 或已入库 repo，repo 删除时通过外键 cascade 清理。
 //  - payload_json 保存维度证据，UI 解释分数时不需要重新计算。
 //
 

@@ -16,17 +16,17 @@ protocol RepoHealthRepositoryProtocol: Sendable {
     func snapshot(for repoId: Int64) async throws -> RepoHealthSnapshot?
     func snapshots(for repoIds: [Int64]) async throws -> [Int64: RepoHealthSnapshot]
     func upsert(_ snapshot: RepoHealthSnapshot) async throws
-    func staleStarredRepos(now: Date, limit: Int) async throws -> [Repo]
-    func missingSnapshotStarredRepos(limit: Int) async throws -> [Repo]
+    func staleRefreshCandidateRepos(now: Date, limit: Int) async throws -> [Repo]
+    func missingSnapshotCandidateRepos(limit: Int) async throws -> [Repo]
     func coverageSummary() async throws -> RepoHealthCoverageSummary
 }
 
 struct RepoHealthCoverageSummary: Equatable, Sendable {
-    let starredTotal: Int
+    let candidateTotal: Int
     let snapshotTotal: Int
 
     var isAllCovered: Bool {
-        starredTotal > 0 && snapshotTotal >= starredTotal
+        candidateTotal > 0 && snapshotTotal >= candidateTotal
     }
 }
 
@@ -60,7 +60,7 @@ struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
         }
     }
 
-    func staleStarredRepos(now: Date, limit: Int) async throws -> [Repo] {
+    func staleRefreshCandidateRepos(now: Date, limit: Int) async throws -> [Repo] {
         let nowString = ISO8601DateFormatter.shared.string(from: now)
         return try await database.writer.read { db in
             try Repo.fetchAll(
@@ -69,9 +69,12 @@ struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
                 SELECT repos.*
                 FROM repos
                 LEFT JOIN repo_health_snapshots h ON h.repo_id = repos.id
-                WHERE repos.is_starred = 1
+                LEFT JOIN repo_notes rn ON rn.repo_id = repos.id
+                WHERE (repos.is_starred = 1 OR rn.library_state = 'in_library')
                   AND (h.repo_id IS NULL OR h.stale_after <= ?)
-                ORDER BY repos.starred_at DESC
+                ORDER BY
+                    CASE WHEN repos.is_starred = 1 THEN 0 ELSE 1 END,
+                    COALESCE(repos.starred_at, rn.library_updated_at, repos.cached_at) DESC
                 LIMIT ?
                 """,
                 arguments: [nowString, limit]
@@ -79,7 +82,7 @@ struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
         }
     }
 
-    func missingSnapshotStarredRepos(limit: Int) async throws -> [Repo] {
+    func missingSnapshotCandidateRepos(limit: Int) async throws -> [Repo] {
         let safeLimit = max(1, limit)
         return try await database.writer.read { db in
             try Repo.fetchAll(
@@ -88,9 +91,12 @@ struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
                 SELECT repos.*
                 FROM repos
                 LEFT JOIN repo_health_snapshots h ON h.repo_id = repos.id
-                WHERE repos.is_starred = 1
+                LEFT JOIN repo_notes rn ON rn.repo_id = repos.id
+                WHERE (repos.is_starred = 1 OR rn.library_state = 'in_library')
                   AND h.repo_id IS NULL
-                ORDER BY repos.starred_at DESC
+                ORDER BY
+                    CASE WHEN repos.is_starred = 1 THEN 0 ELSE 1 END,
+                    COALESCE(repos.starred_at, rn.library_updated_at, repos.cached_at) DESC
                 LIMIT ?
                 """,
                 arguments: [safeLimit]
@@ -104,16 +110,17 @@ struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
                 db,
                 sql: """
                 SELECT
-                    COUNT(*) AS starred_total,
+                    COUNT(*) AS candidate_total,
                     COALESCE(SUM(CASE WHEN h.repo_id IS NULL THEN 0 ELSE 1 END), 0) AS snapshot_total
                 FROM repos
                 LEFT JOIN repo_health_snapshots h ON h.repo_id = repos.id
-                WHERE repos.is_starred = 1
+                LEFT JOIN repo_notes rn ON rn.repo_id = repos.id
+                WHERE repos.is_starred = 1 OR rn.library_state = 'in_library'
                 """
             )
 
             return RepoHealthCoverageSummary(
-                starredTotal: row?["starred_total"] ?? 0,
+                candidateTotal: row?["candidate_total"] ?? 0,
                 snapshotTotal: row?["snapshot_total"] ?? 0
             )
         }

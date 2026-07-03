@@ -5,7 +5,7 @@
 //  OpenSSF Scorecard 后台刷新调度器。
 //
 //  只在登录态启动，登出停止。调度器本身不持有 UI 状态；单次任务委托给
-//  OpenSSFScoreService，后者按 starred repos + TTL + 限流决定实际请求集合。
+//  OpenSSFScoreService，后者按已 star / 已入库候选 + TTL + 限流决定实际请求集合。
 //
 
 import Foundation
@@ -82,7 +82,7 @@ final class OpenSSFScorePoller {
         refreshTotal = 0
         defer { isRefreshing = false }
 
-        let count = await service.refreshStaleStarredRepos(
+        let count = await service.refreshStaleCandidateRepos(
             limit: 100,
             progress: { [weak self] processed, total in
                 await MainActor.run {

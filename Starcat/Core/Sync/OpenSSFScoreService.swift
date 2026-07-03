@@ -6,7 +6,7 @@
 //
 //  设计约束：
 //  - 详情页无缓存时可以触发异步刷新，但调用方不应在主线程同步等待网络。
-//  - 后台批处理只处理 starred repos，并用限流器约束到最多 5 req/s。
+//  - 后台批处理只处理已 star 或已入库 repos，并用限流器约束到最多 5 req/s。
 //  - 同一 repo 的并发刷新复用一个 Task，避免详情页、手动刷新、后台任务同时打同一端点。
 //
 
@@ -108,13 +108,13 @@ actor OpenSSFScoreService {
     }
 
     @discardableResult
-    func refreshStaleStarredRepos(
+    func refreshStaleCandidateRepos(
         limit: Int = 100,
         progress: (@Sendable (_ processed: Int, _ total: Int) async -> Void)? = nil
     ) async -> Int {
         let candidates: [Repo]
         do {
-            candidates = try await repository.staleStarredRepos(now: Date(), limit: limit)
+            candidates = try await repository.staleRefreshCandidateRepos(now: Date(), limit: limit)
         } catch {
             AppLog.network.warning("OpenSSF stale repo query failed: \(error.localizedDescription, privacy: .public)")
             return 0

@@ -263,7 +263,7 @@ final class InitialRepoWarmupCoordinator {
                 return
             }
 
-            let refreshed = await repoHealthService.refreshMissingSnapshotStarredRepos(
+            let refreshed = await repoHealthService.refreshMissingSnapshotCandidateRepos(
                 limit: Self.defaultHealthBatchLimit,
                 delayBetweenRepos: Self.defaultHealthDelayBetweenRepos
             )
@@ -301,7 +301,7 @@ final class InitialRepoWarmupCoordinator {
                 return
             }
 
-            let refreshed = await openSSFScoreService.refreshStaleStarredRepos(
+            let refreshed = await openSSFScoreService.refreshStaleCandidateRepos(
                 limit: Self.defaultOpenSSFBatchLimit
             )
             await refreshOpenSSFCoverage()
@@ -427,7 +427,7 @@ final class InitialRepoWarmupCoordinator {
         do {
             let summary = try await openSSFScoreService.coverageSummary()
             openSSFCovered = summary.fetchedTotal
-            openSSFTotal = summary.starredTotal
+            openSSFTotal = summary.candidateTotal
         } catch {
             AppLog.general.warning("Initial warmup OpenSSF coverage refresh failed: \(error.localizedDescription, privacy: .public)")
             openSSFCovered = 0
@@ -473,7 +473,7 @@ final class InitialRepoWarmupCoordinator {
         var updated = record
         let summary = try await repoHealthService.coverageSummary()
         updated.healthCovered = summary.snapshotTotal
-        updated.healthTotal = summary.starredTotal
+        updated.healthTotal = summary.candidateTotal
         return updated
     }
 

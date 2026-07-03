@@ -89,13 +89,13 @@ actor RepoHealthService {
         return snapshot
     }
 
-    func refreshStaleStarredRepos(
+    func refreshStaleCandidateRepos(
         limit: Int,
         delayBetweenRepos: TimeInterval = 0,
         progress: (@Sendable (_ processed: Int, _ total: Int) async -> Void)? = nil
     ) async -> Int {
         do {
-            let repos = try await repository.staleStarredRepos(now: Date(), limit: limit)
+            let repos = try await repository.staleRefreshCandidateRepos(now: Date(), limit: limit)
             await progress?(0, repos.count)
             var refreshed = 0
             for (index, repo) in repos.enumerated() {
@@ -119,13 +119,13 @@ actor RepoHealthService {
         }
     }
 
-    /// 首次预热入口：只补齐还没有 Health 快照的 starred repo。
+    /// 首次预热入口：只补齐还没有 Health 快照的已 star 或已入库 repo。
     ///
-    /// 与 `refreshStaleStarredRepos` 分开，是为了让“新用户首次可用”不被 24h stale 刷新放大；
+    /// 与 `refreshStaleCandidateRepos` 分开，是为了让“新用户首次可用”不被 24h stale 刷新放大；
     /// 已有分数的过期重算仍交给周期性 poller，首次 warmup 只负责把空白 badge 尽快补上。
-    func refreshMissingSnapshotStarredRepos(limit: Int, delayBetweenRepos: TimeInterval = 0) async -> Int {
+    func refreshMissingSnapshotCandidateRepos(limit: Int, delayBetweenRepos: TimeInterval = 0) async -> Int {
         do {
-            let repos = try await repository.missingSnapshotStarredRepos(limit: limit)
+            let repos = try await repository.missingSnapshotCandidateRepos(limit: limit)
             var refreshed = 0
             for (index, repo) in repos.enumerated() {
                 guard !Task.isCancelled else { break }

@@ -22,7 +22,7 @@ struct OpenSSFScoreRepositoryTests {
         id: Int64,
         fullName: String,
         isStarred: Bool = true,
-        starredAt: String = "2026-06-16T00:00:00Z"
+        starredAt: String? = "2026-06-16T00:00:00Z"
     ) async throws {
         let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
         try await db.writer.write { db in
@@ -40,6 +40,21 @@ struct OpenSSFScoreRepositoryTests {
                     isStarred,
                     starredAt
                 ]
+            )
+        }
+    }
+
+    private func markInLibrary(_ db: any DatabaseManaging, repoId: Int64, updatedAt: String = "2026-06-16T00:30:00Z") async throws {
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repo_notes (repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at)
+                VALUES (?, NULL, 'unread', 'in_library', ?, 0, NULL)
+                ON CONFLICT(repo_id) DO UPDATE SET
+                    library_state = 'in_library',
+                    library_updated_at = excluded.library_updated_at
+                """,
+                arguments: [repoId, updatedAt]
             )
         }
     }
@@ -95,13 +110,15 @@ struct OpenSSFScoreRepositoryTests {
         #expect(records[3] == nil)
     }
 
-    @Test("coverageSummary: 统计已 star 且已有 OpenSSF 尝试记录的 repo")
-    func coverageSummaryCountsStarredRowsWithAnyFetchStatus() async throws {
+    @Test("coverageSummary: 统计已 star 或已入库且已有 OpenSSF 尝试记录的 repo")
+    func coverageSummaryCountsCandidateRowsWithAnyFetchStatus() async throws {
         let (repository, db) = try makeRepository()
         try await seedRepo(db, id: 1, fullName: "a/success")
         try await seedRepo(db, id: 2, fullName: "a/not-indexed")
         try await seedRepo(db, id: 3, fullName: "a/missing")
-        try await seedRepo(db, id: 4, fullName: "a/unstarred", isStarred: false)
+        try await seedRepo(db, id: 4, fullName: "a/library-only", isStarred: false)
+        try await seedRepo(db, id: 5, fullName: "a/external", isStarred: false)
+        try await markInLibrary(db, repoId: 4)
 
         try await repository.upsert(.success(
             repoId: 1,
@@ -124,12 +141,12 @@ struct OpenSSFScoreRepositoryTests {
 
         let summary = try await repository.coverageSummary()
 
-        #expect(summary.starredTotal == 3)
-        #expect(summary.fetchedTotal == 2)
+        #expect(summary.candidateTotal == 4)
+        #expect(summary.fetchedTotal == 3)
     }
 
-    @Test("staleStarredRepos: 只返回 starred 且已过 TTL 或无缓存的 repo")
-    func staleStarredReposRespectsTTLAndStarredFlag() async throws {
+    @Test("staleRefreshCandidateRepos: 返回已 star 或已入库且已过 TTL 或无缓存的 repo")
+    func staleRefreshCandidateReposRespectsTTLAndLibraryState() async throws {
         let (repository, db) = try makeRepository()
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let fresh = now.addingTimeInterval(-60)
@@ -141,6 +158,9 @@ struct OpenSSFScoreRepositoryTests {
         try await seedRepo(db, id: 3, fullName: "a/stale-failure", starredAt: "2026-06-16T02:00:00Z")
         try await seedRepo(db, id: 4, fullName: "a/missing-cache", starredAt: "2026-06-16T01:00:00Z")
         try await seedRepo(db, id: 5, fullName: "a/unstarred", isStarred: false, starredAt: "2026-06-16T05:00:00Z")
+        try await seedRepo(db, id: 6, fullName: "a/library-only", isStarred: false, starredAt: nil)
+        try await seedRepo(db, id: 7, fullName: "a/external", isStarred: false, starredAt: nil)
+        try await markInLibrary(db, repoId: 6, updatedAt: "2026-06-16T06:00:00Z")
 
         try await repository.upsert(.success(
             repoId: 1,
@@ -167,10 +187,10 @@ struct OpenSSFScoreRepositoryTests {
             fetchedAt: staleFailure
         ))
 
-        let repos = try await repository.staleStarredRepos(now: now, limit: 10)
+        let repos = try await repository.staleRefreshCandidateRepos(now: now, limit: 10)
         let ids = repos.map(\.id)
 
-        #expect(ids == [2, 3, 4])
+        #expect(ids == [2, 3, 4, 6])
     }
 
     @Test("RefreshPolicy: 不同状态使用不同 TTL")
@@ -200,5 +220,127 @@ struct OpenSSFScoreRepositoryTests {
         #expect(OpenSSFScoreRefreshPolicy.shouldRefresh(staleNotIndexed, now: now))
         #expect(OpenSSFScoreRefreshPolicy.shouldRefresh(freshFailure, now: now) == false)
         #expect(OpenSSFScoreRefreshPolicy.shouldRefresh(freshFailure, now: now, force: true))
+    }
+}
+
+@Suite("Repo Health Repository")
+struct RepoHealthRepositoryTests {
+    private func makeRepository() throws -> (GRDBRepoHealthRepository, any DatabaseManaging) {
+        let db = try InMemoryDatabaseManager()
+        return (GRDBRepoHealthRepository(database: db), db)
+    }
+
+    private func seedRepo(
+        _ db: any DatabaseManaging,
+        id: Int64,
+        fullName: String,
+        isStarred: Bool = true,
+        starredAt: String? = "2026-06-16T00:00:00Z"
+    ) async throws {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, is_starred, starred_at, cached_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, '2026-06-16T00:00:00Z')
+                """,
+                arguments: [
+                    id,
+                    parts[0],
+                    parts[1],
+                    fullName,
+                    "https://github.com/\(fullName)",
+                    isStarred,
+                    starredAt
+                ]
+            )
+        }
+    }
+
+    private func markInLibrary(_ db: any DatabaseManaging, repoId: Int64, updatedAt: String = "2026-06-16T00:30:00Z") async throws {
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repo_notes (repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at)
+                VALUES (?, NULL, 'unread', 'in_library', ?, 0, NULL)
+                ON CONFLICT(repo_id) DO UPDATE SET
+                    library_state = 'in_library',
+                    library_updated_at = excluded.library_updated_at
+                """,
+                arguments: [repoId, updatedAt]
+            )
+        }
+    }
+
+    private func makeSnapshot(repoId: Int64, staleAfter: String = "2026-06-17T00:00:00Z") -> RepoHealthSnapshot {
+        RepoHealthSnapshot(
+            repoId: repoId,
+            overallScore: 80,
+            grade: "B",
+            maintenanceScore: 80,
+            popularityScore: 80,
+            qualityScore: 80,
+            securityScore: 80,
+            payloadJSON: "{}",
+            computedAt: "2026-06-16T00:00:00Z",
+            staleAfter: staleAfter,
+            fetchStatus: .success,
+            lastError: nil
+        )
+    }
+
+    @Test("coverageSummary: 统计已 star 或已入库且已有 Health 快照的 repo")
+    func coverageSummaryCountsCandidateRowsWithSnapshots() async throws {
+        let (repository, db) = try makeRepository()
+        try await seedRepo(db, id: 1, fullName: "a/starred")
+        try await seedRepo(db, id: 2, fullName: "a/library-only", isStarred: false)
+        try await seedRepo(db, id: 3, fullName: "a/missing")
+        try await seedRepo(db, id: 4, fullName: "a/external", isStarred: false)
+        try await markInLibrary(db, repoId: 2)
+
+        try await repository.upsert(makeSnapshot(repoId: 1))
+        try await repository.upsert(makeSnapshot(repoId: 2))
+        try await repository.upsert(makeSnapshot(repoId: 4))
+
+        let summary = try await repository.coverageSummary()
+
+        #expect(summary.candidateTotal == 3)
+        #expect(summary.snapshotTotal == 2)
+        #expect(summary.isAllCovered == false)
+    }
+
+    @Test("missingSnapshotCandidateRepos: 返回未建快照的已 star 或已入库 repo")
+    func missingSnapshotCandidateReposUsesStarredOrLibraryState() async throws {
+        let (repository, db) = try makeRepository()
+        try await seedRepo(db, id: 1, fullName: "a/starred-ready", starredAt: "2026-06-16T04:00:00Z")
+        try await seedRepo(db, id: 2, fullName: "a/starred-missing", starredAt: "2026-06-16T03:00:00Z")
+        try await seedRepo(db, id: 3, fullName: "a/library-only", isStarred: false, starredAt: nil)
+        try await seedRepo(db, id: 4, fullName: "a/external", isStarred: false, starredAt: nil)
+        try await markInLibrary(db, repoId: 3, updatedAt: "2026-06-16T05:00:00Z")
+        try await repository.upsert(makeSnapshot(repoId: 1))
+
+        let repos = try await repository.missingSnapshotCandidateRepos(limit: 10)
+
+        #expect(repos.map(\.id) == [2, 3])
+    }
+
+    @Test("staleRefreshCandidateRepos: 返回快照过期或缺失的已 star / 已入库 repo")
+    func staleRefreshCandidateReposUsesStarredOrLibraryState() async throws {
+        let (repository, db) = try makeRepository()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        try await seedRepo(db, id: 1, fullName: "a/fresh", starredAt: "2026-06-16T04:00:00Z")
+        try await seedRepo(db, id: 2, fullName: "a/stale", starredAt: "2026-06-16T03:00:00Z")
+        try await seedRepo(db, id: 3, fullName: "a/missing", starredAt: "2026-06-16T02:00:00Z")
+        try await seedRepo(db, id: 4, fullName: "a/library-only", isStarred: false, starredAt: nil)
+        try await seedRepo(db, id: 5, fullName: "a/external", isStarred: false, starredAt: nil)
+        try await markInLibrary(db, repoId: 4, updatedAt: "2026-06-16T05:00:00Z")
+
+        try await repository.upsert(makeSnapshot(repoId: 1, staleAfter: "2027-06-16T00:00:00Z"))
+        try await repository.upsert(makeSnapshot(repoId: 2, staleAfter: "2026-06-16T00:00:00Z"))
+        try await repository.upsert(makeSnapshot(repoId: 5, staleAfter: "2026-06-16T00:00:00Z"))
+
+        let repos = try await repository.staleRefreshCandidateRepos(now: now, limit: 10)
+
+        #expect(repos.map(\.id) == [2, 3, 4])
     }
 }
