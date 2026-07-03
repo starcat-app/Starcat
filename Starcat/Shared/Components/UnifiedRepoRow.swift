@@ -288,9 +288,9 @@ struct UnifiedRepoRow: View {
         .overlay(alignment: .topLeading) {
             if card.isInLibrary {
                 Image(systemName: "heart.fill")
-                    .font(interfaceScale.font(size: 8, weight: .bold))
+                    .font(interfaceScale.font(size: 10, weight: .bold))
                     .foregroundStyle(Color.fromHex6(0xE11D48))
-                    .padding(3)
+                    .padding(2)
                     .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
                     .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
                     .offset(x: -2, y: -2)

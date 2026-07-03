@@ -26,6 +26,21 @@ private struct GitHubStarListEditorItem: Identifiable {
     let list: GitHubStarList?
 }
 
+/// 探索页左侧列表的系统选中项。
+///
+/// 星标模块依赖 `List(selection:) + .tag(...)` 让 macOS 绘制原生 sidebar 选中条；
+/// 探索页也复用同一机制，而不是在 row 内手写浅蓝背景。这个 enum 只描述“哪个探索行
+/// 应被系统高亮”，真正的业务筛选状态仍保留在 `selectedExploreMode` /
+/// `selectedDiscoveryTopic` / `selectedDiscoveryPlatform` / `selectedDiscoveryLanguage`
+/// 等现有 binding 中，避免把视觉选中态改成新的数据源。
+private enum ExploreSidebarSelection: Hashable {
+    case mode(ExploreMode)
+    case topic(String?)
+    case platform(String?)
+    case language(String?)
+    case trendingLanguage(TrendingLanguage)
+}
+
 struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
@@ -98,6 +113,12 @@ struct SidebarView: View {
     @State private var showAutoTidyPopover: Bool = false
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
+    /// 探索页当前由系统 `List(selection:)` 高亮的行。
+    ///
+    /// 探索页可能同时保留“当前模式”和“当前筛选项”两类业务状态；系统 sidebar 选中条
+    /// 应只有一条。因此这里记录用户最后点击的探索行，让视觉行为与星标模块一样走
+    /// 系统 selection，同时不强行清空已有筛选状态。
+    @State private var exploreListSelection: ExploreSidebarSelection?
 
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
@@ -382,6 +403,76 @@ struct SidebarView: View {
         .background(.bar)
     }
 
+    private var exploreSidebarSelectionBinding: Binding<ExploreSidebarSelection?> {
+        Binding {
+            if let exploreListSelection,
+               isExploreSelectionCurrent(exploreListSelection) {
+                return exploreListSelection
+            }
+            return defaultExploreSidebarSelection
+        } set: { newSelection in
+            guard let newSelection else { return }
+            exploreListSelection = newSelection
+            applyExploreSelection(newSelection)
+        }
+    }
+
+    private var defaultExploreSidebarSelection: ExploreSidebarSelection {
+        switch selectedExploreMode {
+        case .discover:
+            if let selectedDiscoveryTopic {
+                return .topic(selectedDiscoveryTopic)
+            }
+            if let selectedDiscoveryPlatform {
+                return .platform(selectedDiscoveryPlatform)
+            }
+            return .mode(.discover)
+        case .popular, .newReleases:
+            if let selectedDiscoveryLanguage {
+                return .language(selectedDiscoveryLanguage)
+            }
+            return .mode(selectedExploreMode)
+        case .trending:
+            return .trendingLanguage(selectedTrendingLanguage)
+        }
+    }
+
+    private func isExploreSelectionCurrent(_ selection: ExploreSidebarSelection) -> Bool {
+        switch selection {
+        case .mode(let mode):
+            return selectedExploreMode == mode
+        case .topic(let code):
+            return selectedExploreMode == .discover && selectedDiscoveryTopic == code
+        case .platform(let code):
+            return selectedExploreMode == .discover && selectedDiscoveryPlatform == code
+        case .language(let key):
+            return selectedExploreMode != .discover
+                && selectedExploreMode != .trending
+                && selectedDiscoveryLanguage == key
+        case .trendingLanguage(let language):
+            return selectedExploreMode == .trending && selectedTrendingLanguage == language
+        }
+    }
+
+    private func applyExploreSelection(_ selection: ExploreSidebarSelection) {
+        switch selection {
+        case .mode(let mode):
+            guard selectedExploreMode != mode else { return }
+            selectedExploreMode = mode
+        case .topic(let code):
+            selectedExploreMode = .discover
+            selectedDiscoveryTopic = code
+        case .platform(let code):
+            selectedExploreMode = .discover
+            selectedDiscoveryPlatform = code
+        case .language(let key):
+            selectedDiscoveryLanguage = key
+        case .trendingLanguage(let language):
+            selectedExploreMode = .trending
+            selectedTrendingLanguage = language
+        }
+    }
+
     @ViewBuilder
     private var sidebarList: some View {
         @Bindable var vm = viewModel
@@ -393,19 +484,11 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
         case .trending:
-            if selectedExploreMode == .trending {
-                List(selection: $selectedTrendingLanguage) {
-                    exploreModeSidebarContent
-                    exploreSidebarContent
-                }
-                .listStyle(.sidebar)
-            } else {
-                List {
-                    exploreModeSidebarContent
-                    exploreSidebarContent
-                }
-                .listStyle(.sidebar)
+            List(selection: exploreSidebarSelectionBinding) {
+                exploreModeSidebarContent
+                exploreSidebarContent
             }
+            .listStyle(.sidebar)
         case .activity:
             List(selection: $selectedActivityCategory) {
                 activitySidebarContent
@@ -499,13 +582,9 @@ struct SidebarView: View {
 
     private func exploreModeRow(_ mode: ExploreMode) -> some View {
         exploreSelectableRow(
-            isSelected: selectedExploreMode == mode,
-            action: {
-                guard selectedExploreMode != mode else { return }
-                selectedExploreMode = mode
-            },
+            selection: .mode(mode),
             icon: mode.systemImage,
-            iconColor: selectedExploreMode == mode ? .accentColor : .secondary,
+            iconColor: .secondary,
             count: exploreModeCount(mode)
         ) {
             Text(mode.titleKey)
@@ -1077,10 +1156,8 @@ struct SidebarView: View {
 
     private func exploreTopicRow(_ topic: DiscoveryTopicDTO?) -> some View {
         let code = topic?.code
-        let isSelected = selectedDiscoveryTopic == code
         return exploreSelectableRow(
-            isSelected: isSelected,
-            action: { selectedDiscoveryTopic = code },
+            selection: .topic(code),
             icon: exploreTopicSystemImage(for: code),
             iconColor: exploreTopicIconColor(for: code),
             count: dependencies.exploreCatalogStore.topicCount(for: code)
@@ -1140,10 +1217,8 @@ struct SidebarView: View {
 
     private func explorePlatformRow(_ platform: DiscoveryPlatformDTO?) -> some View {
         let code = platform?.code
-        let isSelected = selectedDiscoveryPlatform == code
         return exploreSelectableRow(
-            isSelected: isSelected,
-            action: { selectedDiscoveryPlatform = code },
+            selection: .platform(code),
             icon: platform?.systemName ?? "square.stack.3d.up",
             iconColor: .secondary,
             count: dependencies.exploreCatalogStore.platformCount(for: code)
@@ -1158,10 +1233,8 @@ struct SidebarView: View {
 
     private func exploreLanguageRow(_ language: DiscoveryLanguageDTO?) -> some View {
         let key = language?.key
-        let isSelected = selectedDiscoveryLanguage == key
         return exploreSelectableRow(
-            isSelected: isSelected,
-            action: { selectedDiscoveryLanguage = key },
+            selection: .language(key),
             icon: nil,
             iconColor: .secondary,
             count: dependencies.exploreCatalogStore.languageCount(for: key, mode: selectedExploreMode)
@@ -1181,44 +1254,34 @@ struct SidebarView: View {
     }
 
     private func exploreSelectableRow<Title: View>(
-        isSelected: Bool,
-        action: @escaping () -> Void,
+        selection: ExploreSidebarSelection,
         icon: String?,
         iconColor: Color,
         count: Int?,
         @ViewBuilder title: @escaping () -> Title
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                if let icon {
-                    Image(systemName: icon)
-                        .font(interfaceScale.font(size: 13, weight: .semibold))
-                        .foregroundStyle(iconColor)
-                        .frame(width: 16)
-                }
-
-                title()
-                    .lineLimit(1)
-
-                Spacer(minLength: 4)
-
-                if let count {
-                    Text(count.formatted())
-                        .font(interfaceScale.font(size: 11))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
+        HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 16)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-            .background(
-                isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-            )
+
+            title()
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            if let count {
+                Text(count.formatted())
+                    .font(interfaceScale.font(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .contentShape(Rectangle())
+        .tag(selection)
     }
 
     @ViewBuilder
@@ -1257,7 +1320,7 @@ struct SidebarView: View {
         } icon: {
             trendingLanguageIcon(language)
         }
-        .tag(language)
+        .tag(ExploreSidebarSelection.trendingLanguage(language))
     }
 
     @ViewBuilder
