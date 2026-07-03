@@ -578,7 +578,33 @@ struct CompanionLocalServerTests {
         #expect(recorder.value?.action == .generateSummary)
     }
 
-    @Test("POST /plugin/v1/actions/open 未 star repo 返回 403")
+    @Test("POST /plugin/v1/actions/open 已入库未 star repo 可打开 codebase")
+    func postActionOpenCodebaseForUnstarredLibraryRepo() async throws {
+        let recorder = CompanionActionRecorder()
+        let handler = CompanionActionHandler(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
+            lookupLibraryState: { _ in .inLibrary },
+            requestCodebase: { repo in
+                recorder.record(.codebase, repo: repo)
+            }
+        )
+        let server = try makeServer(actionHandler: handler)
+        let response = await server.handle(request("""
+        POST /plugin/v1/actions/open HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","action":"codebase"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"action\":\"codebase\""))
+        let event = recorder.value
+        #expect(event?.action == .codebase)
+        #expect(event?.repo.fullName == "apple/swift")
+    }
+
+    @Test("POST /plugin/v1/actions/open 未 star 且未入库 repo 返回 403")
     func postActionRejectsUnstarredRepo() async throws {
         let handler = CompanionActionHandler(
             lookupRepo: { _, _ in Self.makeRepo(isStarred: false) }

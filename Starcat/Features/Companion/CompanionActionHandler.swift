@@ -69,6 +69,7 @@ final class CompanionActionDispatcher {
 
 struct CompanionActionHandler {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
+    private let lookupLibraryState: @Sendable (Int64) async throws -> LibraryState
     private let requestOpenRepo: @MainActor @Sendable (Repo) -> Void
     private let requestGenerateSummary: @MainActor @Sendable (Repo) -> Void
     private let requestCodeFlow: @MainActor @Sendable (Repo) -> Void
@@ -77,12 +78,16 @@ struct CompanionActionHandler {
 
     init(
         repoRepository: any RepoRepositoryProtocol,
+        repoNoteRepository: any RepoNoteRepositoryProtocol,
         dispatcher: CompanionActionDispatcher,
         entitlementGate: EntitlementGate? = nil
     ) {
         self.init(
             lookupRepo: { owner, name in
                 try await repoRepository.findByOwnerName(owner: owner, name: name)
+            },
+            lookupLibraryState: { repoID in
+                try await repoNoteRepository.fetchLibraryState(repoId: repoID)
             },
             requestOpenRepo: { repo in
                 dispatcher.requestOpenRepo(repo)
@@ -106,6 +111,7 @@ struct CompanionActionHandler {
 
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
+        lookupLibraryState: @escaping @Sendable (Int64) async throws -> LibraryState = { _ in .outsideLibrary },
         requestOpenRepo: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestGenerateSummary: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestCodeFlow: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
@@ -113,6 +119,7 @@ struct CompanionActionHandler {
         isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
+        self.lookupLibraryState = lookupLibraryState
         self.requestOpenRepo = requestOpenRepo
         self.requestGenerateSummary = requestGenerateSummary
         self.requestCodeFlow = requestCodeFlow
@@ -124,7 +131,8 @@ struct CompanionActionHandler {
         guard let repo = try await lookupRepo(owner, name) else {
             throw CompanionActionError.repoNotFound
         }
-        guard repo.isStarred else {
+        let libraryState = try await lookupLibraryState(repo.id)
+        guard repo.isStarred || libraryState == .inLibrary else {
             throw CompanionActionError.repoNotStarred
         }
 

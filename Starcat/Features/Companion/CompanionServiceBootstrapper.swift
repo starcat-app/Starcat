@@ -60,6 +60,7 @@ enum CompanionServiceBootstrapper {
         )
         let actionHandler = CompanionActionHandler(
             repoRepository: dependencies.repoRepository,
+            repoNoteRepository: dependencies.repoNoteRepository,
             dispatcher: dependencies.companionActionDispatcher,
             entitlementGate: dependencies.entitlementGate
         )
