@@ -209,19 +209,6 @@ struct WeeklyContentView: View {
                     }
                 }
 
-                Section("weekly.filter.sort") {
-                    ForEach(WeeklyFeedSort.allCases) { sort in
-                        Button {
-                            clearWeeklyDetailSelectionIfChanging(sort != viewModel.selectedSort)
-                            viewModel.changeSort(to: sort)
-                        } label: {
-                            filterMenuRow(
-                                title: sort.localizedTitle,
-                                isSelected: sort == viewModel.selectedSort
-                            )
-                        }
-                    }
-                }
             } label: {
                 HStack(spacing: 6) {
                     Text("weekly.filter.title")
@@ -235,10 +222,42 @@ struct WeeklyContentView: View {
             }
             .fixedSize()
 
+            weeklySortMenu(viewModel)
+
             Spacer()
 
             refreshButton(viewModel)
         }
+    }
+
+    private func weeklySortMenu(_ viewModel: WeeklyContentViewModel) -> some View {
+        Menu {
+            Section("weekly.filter.sort") {
+                ForEach(WeeklyFeedSort.allCases) { sort in
+                    Button {
+                        clearWeeklyDetailSelectionIfChanging(sort != viewModel.selectedSort)
+                        viewModel.changeSort(to: sort)
+                    } label: {
+                        filterMenuRow(
+                            title: sort.localizedTitle,
+                            isSelected: sort == viewModel.selectedSort
+                        )
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+                Text("weekly.filter.sort")
+                Text(verbatim: viewModel.selectedSort.localizedTitle)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .fixedSize()
     }
 
     @ViewBuilder
@@ -569,11 +588,11 @@ final class WeeklyContentViewModel {
 
     var filterSummaryTitle: String {
         guard activeFilterCount > 0 else {
-            return selectedSort.localizedTitle
+            return String.l10n("general.all")
         }
         let filters = String(format: String.l10n("weekly.filter.summary.activeFormat"), activeFilterCount)
         let resultCount = String(format: String.l10n("weekly.filter.summary.resultCountFormat"), total)
-        return "\(filters) · \(resultCount) / \(selectedSort.localizedTitle)"
+        return "\(filters) · \(resultCount)"
     }
 
     private var activeFilterCount: Int {
