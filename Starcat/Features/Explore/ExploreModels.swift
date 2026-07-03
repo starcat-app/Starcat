@@ -6,7 +6,7 @@
 //
 //  设计约束：
 //  - `SidebarRootPage.trending` 暂时保留为内部路由，避免一次性改动历史入口和持久化；
-//  - ExploreMode 表达用户可见的二级模块：发现 / 趋势 / 热门 / 新发布；
+//  - ExploreMode 表达用户可见的二级模块：发现 / 趋势 / 热门 / 新发布 / 周刊；
 //  - sort 选项按模块收敛在这里，保证中栏筛选栏和 API query 不分叉。
 //
 
@@ -18,6 +18,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
     case trending
     case popular
     case newReleases
+    case weekly
 
     var id: String { rawValue }
 
@@ -27,6 +28,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
         case .trending: return "explore.mode.trending"
         case .popular: return "explore.mode.popular"
         case .newReleases: return "explore.mode.newReleases"
+        case .weekly: return "explore.mode.weekly"
         }
     }
 
@@ -36,6 +38,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
         case .trending: return String.l10n("explore.mode.trending")
         case .popular: return String.l10n("explore.mode.popular")
         case .newReleases: return String.l10n("explore.mode.newReleases")
+        case .weekly: return String.l10n("explore.mode.weekly")
         }
     }
 
@@ -45,11 +48,17 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
         case .trending: return "chart.line.uptrend.xyaxis"
         case .popular: return "flame"
         case .newReleases: return "shippingbox"
+        case .weekly: return "newspaper"
         }
     }
 
     var usesDiscoveryAPI: Bool {
-        self != .trending
+        switch self {
+        case .discover, .popular, .newReleases:
+            return true
+        case .trending, .weekly:
+            return false
+        }
     }
 
     /// Starcat 正式 discovery 服务只承载发现 / 热门 / 新发布。
@@ -60,6 +69,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
         case .trending: return nil
         case .popular: return .popular
         case .newReleases: return .newReleases
+        case .weekly: return nil
         }
     }
 }
@@ -140,7 +150,7 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
             return commonOptions(defaultOption: .popular)
         case .newReleases:
             return [.release, .releaseDate, .releaseDateAscending] + commonOptions(defaultOption: nil)
-        case .trending:
+        case .trending, .weekly:
             return []
         }
     }

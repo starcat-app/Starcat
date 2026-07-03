@@ -29,12 +29,6 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
     case repository
     case following
     case suggestion
-    /// MUL-176：阮一峰周刊（ruanyf/weekly）推荐 GitHub 项目聚合。
-    ///
-    /// 与其他分类不同，weekly 的数据源不是本地 Repo 缓存，而是独立的远端 REST API
-    /// （starcat-weekly-api）。因此 ActivityView 在选中此分类时会切换到
-    /// `WeeklyContentView`，不复用 ActivityViewModel 的本地聚合逻辑。
-    case weekly
 
     var id: String { rawValue }
 
@@ -47,7 +41,6 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "activity.category.repository"
         case .following:    return "activity.category.following"
         case .suggestion:   return "activity.category.suggestion"
-        case .weekly:       return "activity.category.weekly"
         }
     }
 
@@ -60,7 +53,6 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return String.l10n("activity.category.repository")
         case .following:    return String.l10n("activity.category.following")
         case .suggestion:   return String.l10n("activity.category.suggestion")
-        case .weekly:       return String.l10n("activity.category.weekly")
         }
     }
 
@@ -75,7 +67,6 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "#A97BFF" // Kotlin purple
         case .following:    return "#701516" // Ruby deep red
         case .suggestion:   return "#3178c6" // TypeScript blue
-        case .weekly:       return "#dea584" // Rust beige —— 与上面 7 色都不撞，且与"周刊"温和气质相符
         }
     }
 
@@ -93,7 +84,6 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "folder"
         case .following:    return "person.2"
         case .suggestion:   return "sparkles"
-        case .weekly:       return "newspaper"
         }
     }
 }
@@ -108,9 +98,9 @@ extension ActivityCategory {
     }
 }
 
-/// Activity 本地聚合分类共用的时间排序（对齐 Weekly `WeeklyFeedSort` 的 Picker 交互）。
+/// Activity 本地聚合分类共用的时间排序。
 ///
-/// 适用：全部 / 公告 / 发新版 / 星标 / 仓库 / 关注 / 建议（`.weekly` 走独立 ViewModel）。
+/// 适用：全部 / 公告 / 发新版 / 星标 / 仓库 / 关注 / 建议。
 enum ActivityTimeSort: String, CaseIterable, Identifiable, Sendable {
     /// 活动时间从新到旧（各分类默认）。
     case newestFirst
@@ -130,9 +120,9 @@ enum ActivityTimeSort: String, CaseIterable, Identifiable, Sendable {
 }
 
 extension ActivityCategory {
-    /// 本地聚合分类顶栏：排序 + 刷新（`.weekly` 由 `WeeklyContentView` 自管）。
+    /// 本地聚合分类顶栏：排序 + 刷新。
     var showsActivityFilterBar: Bool {
-        self != .weekly
+        true
     }
 
     /// 导航副标题的数量单位。
@@ -141,7 +131,7 @@ extension ActivityCategory {
     /// 全部分类也会混入公告、release 等活动项；只有纯仓库型分类用 repo count 文案。
     var usesRepositoryCountSubtitle: Bool {
         switch self {
-        case .star, .repository, .suggestion, .weekly:
+        case .star, .repository, .suggestion:
             return true
         case .all, .announcement, .release, .following:
             return false

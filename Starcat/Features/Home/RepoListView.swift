@@ -193,6 +193,11 @@ struct RepoListView: View {
                 let store = dependencies.trendingMultiSelectionStore
                 if store.isActive { store.exit() }
             }
+            if newMode != .weekly {
+                let store = dependencies.weeklyMultiSelectionStore
+                if store.isActive { store.exit() }
+                dependencies.weeklySelectionService.clearSelection()
+            }
         }
         .onChange(of: selectedActivityCategory) { _, newCategory in
             // activity 内切换 weekly ↔ 其它子分类时，旧分类对应的 store 也要清空。
@@ -354,17 +359,15 @@ struct RepoListView: View {
             if selectedExploreMode != .trending, trending.isActive {
                 trending.exit()
             }
+            if selectedExploreMode != .weekly, weekly.isActive {
+                weekly.exit()
+            }
             if manage.isActive { manage.exit() }
-            if weekly.isActive { weekly.exit() }
             if activity.isActive { activity.exit() }
         case .activity:
             if manage.isActive { manage.exit() }
             if trending.isActive { trending.exit() }
-            if activityCategory == .weekly {
-                if activity.isActive { activity.exit() }
-            } else {
-                if weekly.isActive { weekly.exit() }
-            }
+            if weekly.isActive { weekly.exit() }
         }
     }
 
@@ -372,13 +375,13 @@ struct RepoListView: View {
 
     /// 中栏 tint 取色优先级与 `SidebarHeaderView.sidebarTintColor` 对齐。
     ///
-    /// Activity weekly 走 `WeeklySelectionService` 真源（与 `HomeView.derivedActivityTintColor` 同款）。
+    /// Explore weekly 走 `WeeklySelectionService` 真源。
     private var listColumnTintColor: Color {
-        if selectedPage == .activity, selectedActivityCategory == .weekly,
+        if selectedPage == .trending, selectedExploreMode == .weekly,
            let project = dependencies.weeklySelectionService.selectedItem {
             return DetailHeroTintBackground.accentColor(
                 language: project.language,
-                fallback: ActivityCategory.weekly.iconColor
+                fallback: WeeklyVisualStyle.accentColor
             )
         }
         if let language = viewModel.selectedRepo?.language, !language.isEmpty {
@@ -417,14 +420,19 @@ struct RepoListView: View {
                 BatchActionBar()
             }
         case .trending:
-            let store = dependencies.trendingMultiSelectionStore
-            if selectedExploreMode == .trending, store.isActive {
-                RemoteBatchActionBar(store: store)
+            if selectedExploreMode == .trending {
+                let store = dependencies.trendingMultiSelectionStore
+                if store.isActive {
+                    RemoteBatchActionBar(store: store)
+                }
+            } else if selectedExploreMode == .weekly {
+                let store = dependencies.weeklyMultiSelectionStore
+                if store.isActive {
+                    RemoteBatchActionBar(store: store)
+                }
             }
         case .activity:
-            let store = (selectedActivityCategory == .weekly)
-                ? dependencies.weeklyMultiSelectionStore
-                : dependencies.activityMultiSelectionStore
+            let store = dependencies.activityMultiSelectionStore
             if store.isActive {
                 RemoteBatchActionBar(store: store)
             }
@@ -434,7 +442,14 @@ struct RepoListView: View {
     private var currentToolbarSpec: PageToolbarSpec {
         switch selectedPage {
         case .manage:    return makeManageToolbarSpec()
-        case .trending:  return selectedExploreMode == .trending ? makeTrendingToolbarSpec() : makeDiscoveryToolbarSpec()
+        case .trending:
+            if selectedExploreMode == .trending {
+                return makeTrendingToolbarSpec()
+            }
+            if selectedExploreMode == .weekly {
+                return makeWeeklyToolbarSpec()
+            }
+            return makeDiscoveryToolbarSpec()
         case .activity:  return makeActivityToolbarSpec()
         }
     }
@@ -525,63 +540,84 @@ struct RepoListView: View {
         )
     }
 
-    /// Activity 页面 toolbar spec（W12 PR-4）：
-    /// - leading 暂无（weekly 的 sort + language picker 仍在 WeeklyContentView 自绘）；
-    /// - trailing 注入：[wiki / external / clone / share] +「多选按钮」。
-    ///   - weekly 子分类：wiki/external/clone 派发 `weeklySelectionService.selectedItem`，多选用
-    ///     `weeklyMultiSelectionStore`；
-    ///   - 其它子分类：wiki/external/clone 派发 `selectedActivityItem?.repo`（announcement /
-    ///     following 这种 repo == nil 时不显示菜单），多选用 `activityMultiSelectionStore`。
-    /// - PR-4 followup：未登录态多选按钮 disable（同 trending 同款理由）。activity 其它子分类
-    ///   理论上只有登录态才会有 starred 数据，加守卫是防御性编程，不会有副作用。
+    /// Explore Weekly toolbar spec：
+    /// - 单选动作来自 `WeeklySelectionService.selectedItem`;
+    /// - 多选按钮驱动 `weeklyMultiSelectionStore`,与 `WeeklyContentView` 行点击逻辑同源。
     @MainActor
-    private func makeActivityToolbarSpec() -> PageToolbarSpec {
-        let isWeekly = (selectedActivityCategory == .weekly)
-        let store = isWeekly
-            ? dependencies.weeklyMultiSelectionStore
-            : dependencies.activityMultiSelectionStore
+    private func makeWeeklyToolbarSpec() -> PageToolbarSpec {
+        let store = dependencies.weeklyMultiSelectionStore
         let registry = dependencies.starredRegistry
         let isAuthed = authSession.state.isAuthenticated
 
         let selectionView: AnyView? = {
-            if isWeekly {
-                guard let item = dependencies.weeklySelectionService.selectedItem else { return nil }
-                let isStarred = registry.contains(ghRepoId: item.ghRepoId)
-                let sel = ToolbarRepoSelection.from(
-                    weekly: item,
-                    isStarred: isStarred
-                )
-                // Weekly card 已包含生成临时 Repo 所需的 GitHub 元数据。不可访问的历史
-                // 项目不展示 CodeFlow，避免用户进入后必然得到 zipball 404。
-                let actionRepo = item.card.toEphemeralRepo()
-                return AnyView(
-                    Group {
-                        selectedRepoToolbarActions(
-                            selection: sel,
-                            codeFlowRepo: item.isAvailable && !actionRepo.isPrivate ? actionRepo : nil,
-                            shareRepo: actionRepo,
-                            isShareAvailable: isStarred
-                        )
-                    }
-                )
-            } else {
-                guard let repo = selectedActivityItem?.repo else { return nil }
-                let isStarred = repo.isStarred || registry.contains(ghRepoId: repo.id)
-                let sel = ToolbarRepoSelection.from(
-                    repo: repo,
-                    isStarred: isStarred
-                )
-                return AnyView(
-                    Group {
-                        selectedRepoToolbarActions(
-                            selection: sel,
-                            codeFlowRepo: repo.isPrivate ? nil : repo,
-                            shareRepo: repo,
-                            isShareAvailable: isStarred
-                        )
-                    }
+            guard let item = dependencies.weeklySelectionService.selectedItem else { return nil }
+            let isStarred = registry.contains(ghRepoId: item.ghRepoId)
+            let sel = ToolbarRepoSelection.from(
+                weekly: item,
+                isStarred: isStarred
+            )
+            // Weekly card 已包含生成临时 Repo 所需的 GitHub 元数据。不可访问的历史
+            // 项目不展示 CodeFlow，避免用户进入后必然得到 zipball 404。
+            let actionRepo = item.card.toEphemeralRepo()
+            return AnyView(
+                Group {
+                    selectedRepoToolbarActions(
+                        selection: sel,
+                        codeFlowRepo: item.isAvailable && !actionRepo.isPrivate ? actionRepo : nil,
+                        shareRepo: actionRepo,
+                        isShareAvailable: isStarred
+                    )
+                }
+            )
+        }()
+
+        let trailing = AnyView(
+            Group {
+                selectionView
+                MultiSelectButton(
+                    isActive: store.isActive,
+                    action: { store.toggle() },
+                    isDisabled: !isAuthed
                 )
             }
+        )
+
+        return PageToolbarSpec(
+            trailingPrimary: trailing,
+            searchField: AnyView(smartSearchField())
+        )
+    }
+
+    /// Activity 页面 toolbar spec（W12 PR-4）：
+    /// - leading 暂无；
+    /// - trailing 注入：[wiki / external / clone / share] +「多选按钮」。
+    ///   wiki/external/clone 派发 `selectedActivityItem?.repo`（announcement /
+    ///   following 这种 repo == nil 时不显示菜单），多选用 `activityMultiSelectionStore`。
+    /// - PR-4 followup：未登录态多选按钮 disable（同 trending 同款理由）。activity 其它子分类
+    ///   理论上只有登录态才会有 starred 数据，加守卫是防御性编程，不会有副作用。
+    @MainActor
+    private func makeActivityToolbarSpec() -> PageToolbarSpec {
+        let store = dependencies.activityMultiSelectionStore
+        let registry = dependencies.starredRegistry
+        let isAuthed = authSession.state.isAuthenticated
+
+        let selectionView: AnyView? = {
+            guard let repo = selectedActivityItem?.repo else { return nil }
+            let isStarred = repo.isStarred || registry.contains(ghRepoId: repo.id)
+            let sel = ToolbarRepoSelection.from(
+                repo: repo,
+                isStarred: isStarred
+            )
+            return AnyView(
+                Group {
+                    selectedRepoToolbarActions(
+                        selection: sel,
+                        codeFlowRepo: repo.isPrivate ? nil : repo,
+                        shareRepo: repo,
+                        isShareAvailable: isStarred
+                    )
+                }
+            )
         }()
 
         let trailing = AnyView(
@@ -1107,13 +1143,16 @@ struct RepoListView: View {
     /// 仅 weekly ↔ 其它 数据源/根视图不同，保留 `"activity-weekly"` / `"activity-local"` 二分。
     private var contentStateKey: String {
         if selectedPage == .trending {
+            if selectedExploreMode == .weekly {
+                return "explore-weekly"
+            }
             if selectedExploreMode == .trending {
                 return "trending-\(selectedTrendingLanguage.id)"
             }
             return "explore-\(selectedExploreMode.id)"
         }
         if selectedPage == .activity {
-            return selectedActivityCategory == .weekly ? "activity-weekly" : "activity-local"
+            return "activity-local"
         }
         // W12 PR-5：多选状态迁到 manageMultiSelectionStore；状态签名用 store.isActive 派生。
         let mode = dependencies.manageMultiSelectionStore.isActive ? "multi" : "single"
@@ -1504,6 +1543,9 @@ struct RepoListView: View {
 
     private var navigationSubtitle: String {
         if selectedPage == .trending {
+            if selectedExploreMode == .weekly {
+                return repoCountSubtitle(dependencies.weeklySelectionService.total ?? 0)
+            }
             return repoCountSubtitle(trendingRepoCount)
         }
         if selectedPage == .activity {
@@ -1522,12 +1564,7 @@ struct RepoListView: View {
     }
 
     private var activityNavigationSubtitle: String {
-        let count: Int
-        if selectedActivityCategory == .weekly {
-            count = dependencies.weeklySelectionService.total ?? 0
-        } else {
-            count = activityItemCount
-        }
+        let count = activityItemCount
         if selectedActivityCategory.usesRepositoryCountSubtitle {
             return repoCountSubtitle(count)
         }

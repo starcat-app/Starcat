@@ -59,7 +59,6 @@ struct ActivityView: View {
     private let onItemCountChange: (Int) -> Void
 
     @State private var viewModel: ActivityViewModel?
-    @State private var weeklyTotalPrefetchTask: Task<Void, Never>?
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
@@ -76,11 +75,7 @@ struct ActivityView: View {
 
     var body: some View {
         Group {
-            // MUL-176：weekly 分类是远端分页数据，与本地聚合的其它分类完全不同源，
-            // 所以这里整体切到 `WeeklyContentView`，绕开 ActivityViewModel 的本地路径。
-            if selectedCategory == .weekly {
-                WeeklyContentView()
-            } else if let viewModel {
+            if let viewModel {
                 content(viewModel)
             } else {
                 ProgressView()
@@ -88,14 +83,7 @@ struct ActivityView: View {
             }
         }
         .task {
-            if selectedCategory != .weekly {
-                prefetchWeeklyTotalIfNeeded()
-            }
-            // 首次进入 Activity：全量 ensureLoaded。weekly 由 WeeklyContentView 自己加载。
-            guard selectedCategory != .weekly else {
-                onItemCountChange(0)
-                return
-            }
+            // 首次进入 Activity：全量 ensureLoaded。Weekly 已迁移到 Explore,Activity 只处理本地聚合分类。
             let model = ensureViewModel()
             await reloadLibraryStateMap()
             await model.ensureLoaded(category: selectedCategory)
@@ -106,13 +94,8 @@ struct ActivityView: View {
             await observeLibraryStateChanges()
         }
         .onChange(of: selectedCategory) { _, newCategory in
-            guard newCategory != .weekly else {
-                onItemCountChange(0)
-                return
-            }
             if viewModel == nil {
                 let model = ensureViewModel()
-                prefetchWeeklyTotalIfNeeded()
                 Task {
                     await model.ensureLoaded(category: newCategory)
                     applySelectionPolicy(from: model.items)
@@ -130,23 +113,18 @@ struct ActivityView: View {
                 return
             }
             viewModel.selectCategory(newCategory)
-            prefetchWeeklyTotalIfNeeded()
             reportItemCount(viewModel)
             scheduleSelectionPolicy(for: newCategory, viewModel: viewModel)
         }
-        .onChange(of: dependencies.weeklySelectionService.total) { _, total in
-            guard let total else { return }
-            dependencies.activityCategoryCountService.applyWeeklyTotal(total)
-        }
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
-            guard enabled, selectedCategory != .weekly, let viewModel else { return }
+            guard enabled, let viewModel else { return }
             applySelectionPolicy(from: viewModel.items)
         }
     }
 
     @ViewBuilder
     private func content(_ viewModel: ActivityViewModel) -> some View {
-        // 除 weekly 外所有分类：顶栏（排序 + 刷新）始终可见，空列表时也能刷新。
+        // Activity 本地分类：顶栏（排序 + 刷新）始终可见，空列表时也能刷新。
         categoryToolbarContent(viewModel)
     }
 
@@ -474,41 +452,6 @@ struct ActivityView: View {
         return model
     }
 
-    private func prefetchWeeklyTotalIfNeeded() {
-        let selectionService = dependencies.weeklySelectionService
-        let countService = dependencies.activityCategoryCountService
-        if let existingTotal = selectionService.total {
-            countService.applyWeeklyTotal(existingTotal)
-            return
-        }
-        guard weeklyTotalPrefetchTask == nil else { return }
-        countService.beginWeeklyTotalLoad()
-        let bulkRepository = dependencies.weeklyBulkRepository
-        let api = dependencies.weeklyAPI
-        weeklyTotalPrefetchTask = Task { @MainActor in
-            defer { weeklyTotalPrefetchTask = nil }
-            if let existingTotal = selectionService.total {
-                countService.applyWeeklyTotal(existingTotal)
-                return
-            }
-            if let cachedTotal = await bulkRepository.cachedTotal() {
-                selectionService.applyTotal(cachedTotal)
-                countService.applyWeeklyTotal(cachedTotal)
-                return
-            }
-            do {
-                let result = try await api.fetchRepos(query: WeeklyFeedQuery(page: 1, pageSize: 1))
-                selectionService.applyTotal(result.total)
-                countService.applyWeeklyTotal(result.total)
-            } catch {
-                countService.finishWeeklyTotalLoadWithoutValue()
-                AppLog.network.warning(
-                    "Weekly total prefetch failed: \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-    }
-
     private func clearSelectionIfMissing(from items: [ActivityItem]) {
         // 分类切换、刷新、清空 feed 只维护“旧详情是否仍属于当前列表”这个约束。
         // 不再默认选中第一条，避免列表加载后又触发详情页的额外加载。
@@ -536,7 +479,7 @@ struct ActivityView: View {
         // 让父层清空动作先完成，再按用户偏好自动打开当前分类第一条。
         Task { @MainActor in
             await Task.yield()
-            guard selectedCategory == category, category != .weekly else { return }
+            guard selectedCategory == category else { return }
             applySelectionPolicy(from: viewModel.items)
         }
     }

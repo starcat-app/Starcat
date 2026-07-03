@@ -173,35 +173,17 @@ struct ActivityViewModelTests {
         #expect(h.countService.count(for: .announcement) == 1)
         #expect(h.countService.count(for: .all) == 2)
         #expect(h.countService.count(for: .star) == 0)
-        #expect(h.countService.count(for: .weekly) == nil)
+        #expect(!ActivityCategory.allCases.contains { $0.rawValue == "weekly" })
     }
 
-    @Test("ActivityCategoryCountService: weekly 与本地分类同批对 Sidebar 可见")
-    func categoryCountServicePublishesWeeklyAndLocalCountsTogether() async throws {
+    @Test("ActivityCategoryCountService: 本地分类发布后立即对 Sidebar 可见")
+    func categoryCountServicePublishesLocalCountsImmediately() async throws {
         let service = ActivityCategoryCountService()
 
-        service.beginWeeklyTotalLoad()
         service.applyLocalCounts([.all: 2, .following: 1, .announcement: 1])
-        #expect(service.count(for: .all) == nil)
-        #expect(service.count(for: .weekly) == nil)
-
-        service.applyWeeklyTotal(2_984)
         #expect(service.count(for: .all) == 2)
         #expect(service.count(for: .following) == 1)
-        #expect(service.count(for: .weekly) == 2_984)
-    }
-
-    @Test("ActivityCategoryCountService: weekly 失败时放开本地分类显示")
-    func categoryCountServiceReleasesLocalCountsWhenWeeklyTotalFails() async throws {
-        let service = ActivityCategoryCountService()
-
-        service.beginWeeklyTotalLoad()
-        service.applyLocalCounts([.all: 2, .following: 1, .announcement: 1])
-        service.finishWeeklyTotalLoadWithoutValue()
-
-        #expect(service.count(for: .all) == 2)
-        #expect(service.count(for: .following) == 1)
-        #expect(service.count(for: .weekly) == nil)
+        #expect(service.count(for: .announcement) == 1)
     }
 
     // MARK: - SWR：TTL 内不走网络

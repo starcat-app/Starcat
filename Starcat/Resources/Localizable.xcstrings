@@ -11540,6 +11540,22 @@
         }
       }
     },
+    "explore.mode.weekly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "周刊"
+          }
+        }
+      }
+    },
     "explore.refresh.tooltip" : {
       "localizations" : {
         "en" : {

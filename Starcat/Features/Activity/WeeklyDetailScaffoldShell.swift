@@ -145,7 +145,7 @@ struct WeeklyDetailScaffoldShell: View {
                     url: sourceURL(for: item)
                 )
             ),
-            fallbackAccentColor: ActivityCategory.weekly.iconColor,
+            fallbackAccentColor: WeeklyVisualStyle.accentColor,
             // R-01 v1.5 / v2.0:tooltip 与 toggle 行为对齐,直接派生自 `repo.isStarred`。
             starHelpKey: starHelpKey(repo: repo),
             onStarTapped: { try await handleStarTapped(repo: repo) },

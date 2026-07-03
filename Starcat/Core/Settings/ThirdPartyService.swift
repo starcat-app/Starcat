@@ -106,7 +106,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
 
     /// 设置页行首 SF Symbol。
     /// 选取依据：与该服务在主 UI 的图标语义一致——trending 用 `flame`（"热"），
-    /// weekly 用 `newspaper`（与 ActivityCategory.weekly 同款），sharing 用
+    /// weekly 用 `newspaper`（与 Explore Weekly 同款），sharing 用
     /// `square.and.arrow.up`（macOS 标准分享语义）。
     var systemImage: String {
         switch self {
@@ -124,7 +124,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     var accentColorHex: String {
         switch self {
         case .trending: return "#F05138" // Swift orange-red：与 trending"火"语义一致
-        case .weekly:   return "#dea584" // Rust beige：与 ActivityCategory.weekly 完全一致
+        case .weekly:   return "#dea584" // Rust beige：与 Explore Weekly 视觉保持一致
         case .sharing:  return "#3178c6" // TypeScript blue：与"分享 / 公开链接"的"链接蓝"语义一致
         case .wiki:     return "#8B5CF6" // Violet：与知识库 / 文档入口区分现有三个服务
         case .recommend: return "#34D399" // Emerald：与"发现相似项目"的推荐语义区分现有服务

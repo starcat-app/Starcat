@@ -828,14 +828,11 @@ struct HomeView: View {
     @ViewBuilder
     private var detailColumn: some View {
         if selectedSidebarPage == .activity {
-            if selectedActivityCategory == .weekly {
-                // MUL-176 followup：weekly 分类右侧详情独立路由到 WeeklyDetailView，
-                // 不复用 ActivityDetailView——weekly 项目没有本地 Repo 缓存，且要展示
-                // 期号 / 周刊原文等专属字段（详情数据来自 WeeklySelectionService）。
-                WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
-            } else {
-                ActivityDetailView(item: selectedActivityItem)
-            }
+            ActivityDetailView(item: selectedActivityItem)
+        } else if selectedSidebarPage == .trending, selectedExploreMode == .weekly {
+            // Weekly 已迁移到 Explore,右栏仍复用原 WeeklyDetailView；详情选择继续由
+            // WeeklySelectionService 管理,不引入 ActivityItem 中间模型。
+            WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
         } else if selectedSidebarPage == .trending, selectedExploreMode != .trending {
             DiscoveryDetailView(item: selectedDiscoveryRepo)
         } else {
@@ -1329,14 +1326,14 @@ struct HomeView: View {
     /// Activity 页面顶部头像卡的 tint 色派生（**D-29 修订**, 2026-06-11）。
     ///
     /// 取色优先级（与 `SidebarHeaderView.sidebarTintColor` 第 3 档对齐 — Activity 页面 5 类详情）：
-    /// 1. **weekly 分类 + 已选中 weekly project**：
+    /// 1. **Explore Weekly + 已选中 weekly project**：
     ///    - 有语言 → `LanguageColor.color(for:)` 走 GitHub 语言色映射;
-    ///    - 无语言 → `ActivityCategory.weekly.iconColor` 兜底分类色。
+    ///    - 无语言 → `WeeklyVisualStyle.accentColor` 兜底分类色。
     /// 2. **其它分类**（公告 / 发布 / 关注 / 星标 / 仓库 / 建议）→ `selectedActivityItem?.accentColor`
     ///    （`ActivityItem.accentColor` 已在源头收口"语言色优先 / 分类色兜底"语义,详见
     ///    `ActivityModels.swift`）。
     ///
-    /// **D-29 修复点**：weekly 分类下没有 `selectedActivityItem`（weekly 选中走
+    /// **D-29 修复点**：weekly 下没有 `selectedActivityItem`（weekly 选中走
     /// `dependencies.weeklySelectionService.selectedProject` 真源,与 ActivityItem 模型解耦）,
     /// 此前 `currentActivityTintColor` 只透传 `selectedActivityItem?.accentColor` 永远 nil,
     /// 导致 sidebar 头像背景在 weekly 内切换 project 时不变(走系统 .accentColor 兜底)。
@@ -1347,12 +1344,12 @@ struct HomeView: View {
     /// 内被读取时 SwiftUI Observation 框架自动订阅 `selectedProject` 变化 → 重新计算 →
     /// SidebarHeaderView 收到新 tint → 头像背景平滑过渡。
     private var derivedActivityTintColor: Color? {
-        if selectedSidebarPage == .activity, selectedActivityCategory == .weekly,
+        if selectedSidebarPage == .trending, selectedExploreMode == .weekly,
            let project = dependencies.weeklySelectionService.selectedItem {
             if let language = project.language, !language.isEmpty {
                 return LanguageColor.color(for: language)
             }
-            return ActivityCategory.weekly.iconColor
+            return WeeklyVisualStyle.accentColor
         }
         return selectedActivityItem?.accentColor
     }

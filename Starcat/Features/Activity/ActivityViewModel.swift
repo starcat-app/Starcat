@@ -585,8 +585,6 @@ final class ActivityViewModel {
     /// 分类首屏快路径：LIMIT 读库 + 局部 snapshot，不等 `fetchAllStarred` 全表。
     private func primeCategoryCacheIfAvailable(for category: ActivityCategory) async {
         switch category {
-        case .weekly:
-            return
         case .announcement:
             await primeAnnouncementCacheIfAvailable()
         case .following:
@@ -900,7 +898,6 @@ final class ActivityViewModel {
     nonisolated static func categoryCounts(from source: [ActivityItem]) -> [ActivityCategory: Int] {
         var counts = Dictionary(
             uniqueKeysWithValues: ActivityCategory.allCases
-                .filter { $0 != .weekly }
                 .map { ($0, 0) }
         )
         for item in source {

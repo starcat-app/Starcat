@@ -201,7 +201,7 @@ final class ExploreDiscoveryViewModel {
                     return repo.language?.caseInsensitiveCompare(language) == .orderedSame
                 }
             }
-        case .trending:
+        case .trending, .weekly:
             break
         }
 
@@ -327,9 +327,9 @@ final class ExploreDiscoveryViewModel {
             return repo.popularityScore ?? repo.score ?? 0
         case .newReleases:
             return repo.releaseScore ?? repo.score ?? 0
-        case .trending:
-            // 趋势模式不应进入 ExploreDiscoveryViewModel；这里保留兜底只为防止未来误传
-            // 导致排序崩溃，正式 UI 仍由 TrendingView + starcat-trending-api 承载。
+        case .trending, .weekly:
+            // 趋势 / 周刊不应进入 ExploreDiscoveryViewModel；这里保留兜底只为防止未来误传
+            // 导致排序崩溃，正式 UI 分别由 TrendingView / WeeklyContentView 承载。
             return repo.trendingScore ?? repo.score ?? 0
         }
     }
@@ -349,7 +349,7 @@ final class ExploreDiscoveryViewModel {
             return snapshot.summary.mode(discoveryMode)?.total == 0
         case .discover:
             return true
-        case .trending:
+        case .trending, .weekly:
             return false
         }
     }
@@ -358,7 +358,7 @@ final class ExploreDiscoveryViewModel {
         switch mode {
         case .discover:
             return "discover"
-        case .trending:
+        case .trending, .weekly:
             return ""
         case .popular:
             return "popular"

@@ -55,7 +55,7 @@ struct SidebarView: View {
     /// 显示「AI 自动整理中 N/M」轻量行；点击 / hover 可查看 popover 详情。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
     /// Activity 分类计数徽章数据源。
-    /// `.weekly` 读远端分页 total；其它本地分类读 ActivityViewModel 已发布的内存统计，
+    /// Weekly 已迁移到 Explore,这里只读 ActivityViewModel 已发布的本地分类统计，
     /// 不在 sidebar 里主动触发任何加载。
     @Environment(AppDependencies.self) private var dependencies
 
@@ -434,6 +434,8 @@ struct SidebarView: View {
             return .mode(selectedExploreMode)
         case .trending:
             return .trendingLanguage(selectedTrendingLanguage)
+        case .weekly:
+            return .mode(.weekly)
         }
     }
 
@@ -448,6 +450,7 @@ struct SidebarView: View {
         case .language(let key):
             return selectedExploreMode != .discover
                 && selectedExploreMode != .trending
+                && selectedExploreMode != .weekly
                 && selectedDiscoveryLanguage == key
         case .trendingLanguage(let language):
             return selectedExploreMode == .trending && selectedTrendingLanguage == language
@@ -598,6 +601,8 @@ struct SidebarView: View {
             return total > 0 ? total : nil
         case .discover, .popular, .newReleases:
             return dependencies.exploreCatalogStore.total(for: mode)
+        case .weekly:
+            return dependencies.weeklySelectionService.total
         }
     }
 
@@ -610,6 +615,8 @@ struct SidebarView: View {
             exploreLanguageSidebarContent
         case .trending:
             trendingSidebarContent
+        case .weekly:
+            EmptyView()
         }
     }
 
@@ -683,8 +690,6 @@ struct SidebarView: View {
     private var activitySidebarContent: some View {
         Section {
             activityCategoryRow(.all)
-            // MUL-176：周刊紧跟「全部」常驻，不折叠进子列表（dong4j 2026-06-17 调整顺序）。
-            activityCategoryRow(.weekly)
 
             if activityCategoriesExpanded {
                 // disclosureRowTransition：与 Manage / Trending 同款"顶部滑入 + 淡入"。
@@ -727,9 +732,9 @@ struct SidebarView: View {
         .help(disclosureHelp(isExpanded: activityCategoriesExpanded))
     }
 
-    /// Activity 可折叠子分类（不含 `.all` / `.weekly`——二者常驻在 section 顶部）。
+    /// Activity 可折叠子分类（不含 `.all`——它常驻在 section 顶部）。
     private var activityLeafCategories: [ActivityCategory] {
-        ActivityCategory.allCases.filter { $0 != .all && $0 != .weekly }
+        ActivityCategory.allCases.filter { $0 != .all }
     }
 
     @ViewBuilder
