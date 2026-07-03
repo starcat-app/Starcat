@@ -230,6 +230,22 @@ struct GRDBRepoRepository {
         }
     }
 
+    func updateAccessState(repoId: Int64, state: RepoAccessState, reason: String?, checkedAt: Date) async throws {
+        let checkedAtISO = ISO8601DateFormatter.shared.string(from: checkedAt)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE repos
+                    SET access_state = ?,
+                        access_reason = ?,
+                        access_checked_at = ?
+                    WHERE id = ?
+                    """,
+                arguments: [state.rawValue, reason, checkedAtISO, repoId]
+            )
+        }
+    }
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数（is_starred = 1）。

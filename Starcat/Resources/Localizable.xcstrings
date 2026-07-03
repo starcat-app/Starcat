@@ -17073,6 +17073,22 @@
         }
       }
     },
+    "repo.access.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可访问"
+          }
+        }
+      }
+    },
     "repo.card.alreadyStarred" : {
 
     },

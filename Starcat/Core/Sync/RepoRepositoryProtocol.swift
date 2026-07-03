@@ -55,6 +55,9 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 避免“加入知识库”路径误写 GitHub Star 语义。
     func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo
 
+    /// 更新 repo 的远程访问状态。该状态只服务 UI 标记和后台降级，不改变 Star 或知识库归属。
+    func updateAccessState(repoId: Int64, state: RepoAccessState, reason: String?, checkedAt: Date) async throws
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数。

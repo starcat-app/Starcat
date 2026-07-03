@@ -169,6 +169,9 @@ enum DatabaseMigrations {
             t.column("is_fork", .boolean).notNull().defaults(to: false)
             t.column("is_archived", .boolean).notNull().defaults(to: false)
             t.column("is_starred", .boolean).notNull().defaults(to: true)
+            t.column("access_state", .text).notNull().defaults(to: "accessible")
+            t.column("access_reason", .text)
+            t.column("access_checked_at", .text)
 
             t.column("pushed_at", .text)
             t.column("created_at", .text)

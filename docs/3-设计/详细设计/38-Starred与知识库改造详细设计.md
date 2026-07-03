@@ -113,6 +113,7 @@
 - 未登录时不允许执行会写入 `libraryState` 的 JSON 导入;只读预览可以做,但不能落库。
 - GitHub repo 被删除、转私有、返回 404/410 或权限不足时,不得自动把 `libraryState` 改为 `.outsideLibrary`。知识库状态是用户私有关系,只能由用户动作、导入或后续 CloudKit 同步改变。
 - 不可访问 repo 需要保留 notes/tags/status/README 缓存,并在 UI 上显示不可访问/已失效状态。README / Health / OpenSSF 后台任务应跳过或降频处理这类 repo,避免反复失败。
+- 远程可访问性记录在 `repos.access_state/access_reason/access_checked_at`。它属于可重建 repo metadata,只服务 UI 标记与后台降级;不得放进 `repo_notes`,也不得影响 `library_state/library_updated_at`。
 - 已入库的私有 repo 或权限 repo 在没有 GitHub token / token 权限不足时,仍允许读取和编辑本地知识库关系、notes、tags、status。
 - README 渲染优先使用本地缓存;如果没有缓存且当前 token 无权访问,展示权限不足/内容不可用状态。
 - GitHub star/unstar、repo metadata refresh、README fetch、Health/OpenSSF 远程刷新、外部 GitHub 内容访问都必须走权限门控。

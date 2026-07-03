@@ -814,6 +814,7 @@ final class AppDependencies {
             repository: healthRepo,
             releaseRepository: releaseRecordRepo,
             openSSFRepository: openSSFRepo,
+            repoRepository: repo,
             apiClient: api
         )
         self.repoHealthService = healthService

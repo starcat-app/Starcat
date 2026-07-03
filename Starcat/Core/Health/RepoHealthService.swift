@@ -17,6 +17,7 @@ actor RepoHealthService {
     private let repository: any RepoHealthRepositoryProtocol
     private let releaseRepository: any ReleaseRepositoryProtocol
     private let openSSFRepository: any OpenSSFScoreRepositoryProtocol
+    private let repoRepository: any RepoRepositoryProtocol
     private let apiClient: any GitHubAPIClientProtocol
     private var inFlight: [Int64: Task<RepoHealthSnapshot, Error>] = [:]
 
@@ -24,11 +25,13 @@ actor RepoHealthService {
         repository: any RepoHealthRepositoryProtocol,
         releaseRepository: any ReleaseRepositoryProtocol,
         openSSFRepository: any OpenSSFScoreRepositoryProtocol,
+        repoRepository: any RepoRepositoryProtocol,
         apiClient: any GitHubAPIClientProtocol
     ) {
         self.repository = repository
         self.releaseRepository = releaseRepository
         self.openSSFRepository = openSSFRepository
+        self.repoRepository = repoRepository
         self.apiClient = apiClient
     }
 
@@ -208,6 +211,12 @@ actor RepoHealthService {
         do {
             let dto = try await apiClient.repo(owner: repo.owner, repo: repo.name)
             let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
+            try? await repoRepository.updateAccessState(
+                repoId: repo.id,
+                state: .accessible,
+                reason: nil,
+                checkedAt: Date()
+            )
             return GRDBRepoRepository.repoFromDTO(
                 dto,
                 starredAt: repo.starredAt,
@@ -215,9 +224,30 @@ actor RepoHealthService {
                 isStarred: repo.isStarred
             )
         } catch {
+            if Self.shouldMarkUnavailable(error) {
+                try? await repoRepository.updateAccessState(
+                    repoId: repo.id,
+                    state: .unavailable,
+                    reason: error.localizedDescription,
+                    checkedAt: Date()
+                )
+            }
             AppLog.general.warning("RepoHealth repo metadata refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return repo
         }
+    }
+
+    private nonisolated static func shouldMarkUnavailable(_ error: Error) -> Bool {
+        if case NetworkError.notFound = error {
+            return true
+        }
+        if case NetworkError.unauthorized = error {
+            return true
+        }
+        if case NetworkError.clientError(let statusCode, _) = error, statusCode == 403 || statusCode == 410 {
+            return true
+        }
+        return false
     }
 
     private static func dtoToAsset(_ dto: GitHubReleaseAssetDTO) -> ReleaseAsset {

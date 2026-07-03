@@ -14,6 +14,11 @@
 import Foundation
 import GRDB
 
+enum RepoAccessState: String, Codable, Sendable {
+    case accessible
+    case unavailable
+}
+
 /// 仓库元数据。
 ///
 /// 该结构 1:1 映射 `repos` 表，字段顺序与 schema 保持一致以便阅读。
@@ -59,6 +64,13 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     var isArchived: Bool
     /// 本地视角：用户当前是否仍 star 着该 repo。取消 star 后设为 false 而非删除（保留笔记/标签）。
     var isStarred: Bool
+
+    /// 本地记录的远程可访问性。该字段不参与知识库归属，只用于 UI 标记“已失效/不可访问”。
+    var accessState: RepoAccessState = .accessible
+    /// 最近一次判定不可访问的原因，保留原始错误摘要方便诊断。
+    var accessReason: String? = nil
+    /// 最近一次刷新访问状态的时间（ISO8601）。
+    var accessCheckedAt: String? = nil
 
     // MARK: - 时间字段（ISO8601）
 
@@ -119,6 +131,9 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
         case isFork = "is_fork"
         case isArchived = "is_archived"
         case isStarred = "is_starred"
+        case accessState = "access_state"
+        case accessReason = "access_reason"
+        case accessCheckedAt = "access_checked_at"
         case pushedAt = "pushed_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

@@ -84,7 +84,7 @@
 - [x] 知识库集合支持 tag / status / language / archived / fork 筛选。
 - [x] 知识库集合按 `COALESCE(starred_at, library_updated_at, cached_at) DESC` 排序。
 - [x] 未 star 已入库 repo 按 `library_updated_at DESC` 参与排序。
-- [ ] 知识库集合中不可访问 repo 仍显示,并标记为不可访问/已失效。
+- [x] 知识库集合中不可访问 repo 仍显示,并标记为不可访问/已失效。
 - [x] i18n 补齐知识库相关文案。
 - [x] 单测覆盖集合命中与计数。
 
@@ -228,6 +228,7 @@
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/StarredExportRendererTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/OpenSSFScoreRepositoryTests -only-testing:StarcatTests/RepoHealthRepositoryTests -only-testing:StarcatTests/LibraryStateCacheRetentionTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/SemanticSearchTests test`
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/DatabaseMigrationsV1Tests -only-testing:StarcatTests/RepoRepositoryTests -only-testing:StarcatTests/RepoHealthServiceTests test`
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
 - [x] `rtk git diff --check`
 
@@ -367,6 +368,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-2 增加不可访问状态承载与知识库集合标记。
 - 2026-07-03: PR-1 回填不做范围与本地权限边界。
 - 2026-07-03: PR-5 补齐三范围候选单测并回填单仓 AI 摘要。
 - 2026-07-03: PR-3 回填 Discovery 详情页知识库入口。

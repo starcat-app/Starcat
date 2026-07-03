@@ -126,6 +126,23 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("repos 应包含远程访问状态列")
+    func reposAccessStateColumnsCreated() throws {
+        let db = try makeDB()
+        try db.read { db in
+            let cols = try Row.fetchAll(db, sql: "PRAGMA table_info(repos)")
+            let names = cols.compactMap { $0["name"] as String? }
+
+            #expect(names.contains("access_state"))
+            #expect(names.contains("access_reason"))
+            #expect(names.contains("access_checked_at"))
+
+            let accessState = try #require(cols.first { ($0["name"] as String?) == "access_state" })
+            #expect(accessState["notnull"] as Int == 1)
+            #expect(accessState["dflt_value"] as String? == "'accessible'")
+        }
+    }
+
     @Test("插入 repo_notes 后 notes_fts 应可搜到，且 status 变化不重建索引")
     func notesFtsInsertAndStatusUpdate() throws {
         let db = try makeDB()

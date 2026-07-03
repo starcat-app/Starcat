@@ -333,6 +333,31 @@ struct RepoRepositoryTests {
         #expect(languageStats.first { $0.language == "Swift" }?.count == 2)
     }
 
+    @Test("访问状态标记不改变知识库归属")
+    func accessStateDoesNotRemoveLibraryRepo() async throws {
+        let (repo, db) = try makeRepo()
+        try await seedDataset(repo)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        try await noteRepo.updateLibraryState(repoId: 1, state: .inLibrary)
+
+        try await repo.updateAccessState(
+            repoId: 1,
+            state: .unavailable,
+            reason: "GitHub 404",
+            checkedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        let saved = try #require(try await repo.findById(1))
+        #expect(saved.accessState == .unavailable)
+        #expect(saved.accessReason == "GitHub 404")
+        #expect(saved.accessCheckedAt != nil)
+        #expect(try await noteRepo.fetchLibraryState(repoId: 1) == .inLibrary)
+
+        let knowledge = try await repo.fetchKnowledgeRepos()
+        #expect(knowledge.map(\.id).contains(1))
+        #expect(knowledge.first { $0.id == 1 }?.accessState == .unavailable)
+    }
+
     @Test("fetchRecentStarred 只返回最近 N 条且仍按 starred_at 倒序")
     func fetchRecentStarred_respectsLimit() async throws {
         let (repo, _) = try makeRepo()

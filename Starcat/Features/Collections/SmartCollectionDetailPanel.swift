@@ -497,6 +497,13 @@ private struct SmartCollectionRepoCard: View {
                 text: (repo.openIssuesCount ?? 0).formattedShort,
                 tint: .secondary
             )
+            if let accessIndicator {
+                MetaBadge(
+                    systemImage: accessIndicator.systemImage,
+                    text: accessIndicator.text,
+                    tint: .red
+                )
+            }
             if let unmaintainedIndicator {
                 MetaBadge(
                     systemImage: unmaintainedIndicator.systemImage,
@@ -508,6 +515,11 @@ private struct SmartCollectionRepoCard: View {
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var accessIndicator: (systemImage: String, text: String)? {
+        guard repo.accessState == .unavailable else { return nil }
+        return ("exclamationmark.octagon", String.l10n("repo.access.unavailable"))
     }
 
     /// 「维护停滞」集合命中原因：归档走 archivebox + 已归档文案，久未更新走 clock + 集合标题。
