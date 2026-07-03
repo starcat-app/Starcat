@@ -32,7 +32,7 @@
 | 25 | [Show HN 发现源设计](25-Show-HN发现源设计.md) | AI Discovery（Show HN 官方 API + LLM 单标签分类，Activity 第 8 个具体分类），v1.1 后端已实现，客户端待接入 |
 | 28 | [搜索增强最终方案](28-搜索增强最终方案.md) | 保留 Manage 快速过滤，新增 `⌘K` 全局搜索中心，聚合 Local / GitHub / AnySearch Web 并复用现有详情与动作体系 |
 | 29 | [关键词与全文检索设计](29-关键词与全文检索设计.md) | 双引擎落地实现：FTS5（repos_fts unicode61 + notes_fts trigram + BM25 排序）+ 向量语义（A 显示重标定 + B 字面 boost + C FTS hit 加权 + tier 1-4★）+ 示例走查 + 后期优化方向 |
-| 30 | [本地 RAG 设计](30-本地RAG设计.md) | 探索性方案 v0.1（P2 远期）：把 1810+ 已 star 仓库做成本地 RAG，三层架构（chunk-level retrieve + 可选 rerank + LLM 生成 + 引用 chip）、UI / UX 草案、功能列表与落地路线 |
+| 30 | [本地 RAG 设计](30-本地RAG设计.md) | 知识库 RAG 详细设计：默认只使用 `libraryState == .inLibrary` repo，新增 chunk-level RAG 索引、知识库问答工作台、citation chip 与 evidence inspector |
 | 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 24h / Weekly 12h）+ 后端内存缓存（trending 分桶 1h/6h/24h + ETag、weekly 6h + pre-gzip + bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote）、3 个永久陷阱、关键决策一览、4 个项目共 33 个新测试用例验证 |
 | 32 | [Manage 列表分页与首页边沿上屏](32-Manage列表分页与首页边沿上屏.md) | Manage 列表分页、首页边沿上屏与滚动体验调整 |
 | 33 | [OpenSSF Scorecard 安全评分设计](33-OpenSSF-Scorecard-安全评分设计.md) | 已 star 仓库 OpenSSF Scorecard 缓存、列表 full_name 行徽章、详情页雷达图、后台刷新、i18n 与测试边界 |
@@ -75,6 +75,7 @@
 | 日期 | 更新内容 |
 |------|---------|
 | 2026-07-03 | 新增 37 文档：External Search Provider 抽象、SearchCenter 单 Provider View、AI External Context 单 Provider / Pro 聚合、Provider 隔离缓存与本机凭据边界 |
+| 2026-07-03 | 重写 30 文档：本地 RAG 从“已 star 仓库问答”调整为“知识库问答”，补齐 chunk-level 索引、独立工作台、引用证据与实施切片 |
 | 2026-06-29 | 新增 36 文档：CodebaseMemory 集成设计（二进制打包进 bundle + POSIX 端口探测 + Process spawn + 6 步状态机 + App Store 沙盒签名策略）；补登 34/35 索引 |
 | 2026-06-15 | 31 文档微调：BulkCache TTL 60s → 6h（多客户端并发 / 主动刷新风暴场景下减少反复 build；与 trending weekly 桶对齐；演进记录写入 §8） |
 | 2026-06-15 | 新增 31 文档：R-06 Trending / Weekly 多级缓存改造收尾记录（客户端 SQLite TTL + 后端内存缓存 + Weekly 渐进式 SWR 双轨制 + 3 个永久陷阱 + 关键决策一览） |
