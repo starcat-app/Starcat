@@ -2,7 +2,7 @@
 //  WeeklyContentView.swift
 //  Starcat
 //
-//  Activity 页 `weekly` 分类的中栏视图 + ViewModel。
+//  Explore 页 `weekly` 分类的中栏视图 + ViewModel。
 //
 //  数据源：三源聚合周刊（ruanyf/weekly + ZRead + Hacker News）通过独立 Go 后端服务
 //  暴露的 REST API。
@@ -18,8 +18,8 @@
 //    因为 weekly 还要展示期号 / 周刊原文等专属字段。
 //  - 分页是"无限滚动"：到达列表底部时自动加载下一页；不放手动"加载更多"按钮，
 //    与 macOS 上 List 的自然滚动体验一致。
-//  - 列表顶部 toolbar 只保留"筛选 + 刷新"，移除了"x 项"文本——计数挪到 sidebar 的
-//    周刊分类右侧徽章（仿 manage Languages 计数样式），见 `WeeklySelectionService`。
+//  - 列表顶部 toolbar 保留"筛选 + 排序 + 刷新"；计数由 Explore sidebar 与中栏 subtitle
+//    读取 `WeeklySelectionService.total`，避免 Activity 再承担 Weekly total 合并职责。
 //
 //  R-06.4（2026-06-15）渐进式 SWR 双轨制：
 //  - **dataSource 双轨**：`.local`（缓存命中走本地 sort/filter/page）/ `.remote`
