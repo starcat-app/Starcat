@@ -49,7 +49,7 @@
 - [x] `libraryState` 按 GitHub 登录用户隔离,与 notes/status/tags 的用户私有语义一致。
 - [x] 同一个 repo 在不同账号下可以拥有不同的 `libraryState/libraryUpdatedAt/notes/status/tags`。
 - [x] 退出登录或切换账号不删除本地 `libraryState/notes/tags/status`,只隐藏非当前账号数据。
-- [ ] 未登录态不展示用户私有知识库,也不允许修改 `libraryState`。
+- [x] 未登录态不展示用户私有知识库,也不允许修改 `libraryState`。
 - [x] 重新登录同一 GitHub 账号后恢复该账号的知识库状态和用户数据。
 - [ ] 只有显式“清除本地数据 / 删除账号数据”才删除用户私有知识库数据。
 - [x] 记录 CloudKit 同步范围: `libraryState` 后续随 notes/status/tags 同步,当前不实施 CloudKit。
@@ -67,7 +67,7 @@
 - [x] 无 GitHub token / token 权限不足时,已入库私有 repo 仍可读写本地 notes/tags/status 与知识库状态。
 - [ ] 无权限且 README 无缓存时展示权限不足/内容不可用,不伪装成空 README。
 - [ ] 已登录但离线时,本地已有 repo 可以加入/移出知识库。
-- [ ] 未登录时不允许加入/移出知识库。
+- [x] 未登录时不允许加入/移出知识库。
 - [ ] 离线且未落库的外部 repo 不能直接加入知识库。
 
 ## 4. PR-2: Smart Collections 知识库集合
@@ -367,6 +367,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-1 隐藏未登录态知识库写入入口。
 - 2026-07-03: PR-9 补齐 SemanticSearch focused test 与 macOS build 验证。
 - 2026-07-03: PR-9 知识库导出补充 README/Health/OpenSSF 本地缓存展示。
 - 2026-07-03: PR-9 补 README 权限失败冷却与移出知识库缓存保留测试。

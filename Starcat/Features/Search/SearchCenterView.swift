@@ -691,15 +691,17 @@ struct SearchCenterView: View {
                 // 状态角标，保持“角标不可点击、trailing action 可点击”的交互边界。
                 .padding(.trailing, 40)
                 .overlay(alignment: .trailing) {
-                    LibraryToggleButton(
-                        isSaved: repo.card.isInLibrary,
-                        isWorking: libraryOperationRepoID == repo.displayRepo?.id
-                    ) {
-                        Task {
-                            await handleLibraryToggleTapped(repo)
+                    if dependencies.authSession.state.isAuthenticated {
+                        LibraryToggleButton(
+                            isSaved: repo.card.isInLibrary,
+                            isWorking: libraryOperationRepoID == repo.displayRepo?.id
+                        ) {
+                            Task {
+                                await handleLibraryToggleTapped(repo)
+                            }
                         }
+                        .padding(.trailing, 10)
                     }
-                    .padding(.trailing, 10)
                 }
             case .reference(let reference):
                 // 复用 RepoRowSurface 三态透明度（default / hover / selected）+

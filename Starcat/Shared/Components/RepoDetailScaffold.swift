@@ -550,18 +550,27 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     )
                 }
             }
-            LibraryToggleButton(
-                isSaved: isRepoSavedToLibrary(repo),
-                isWorking: isLibraryOperationInFlight
-            ) {
-                Task {
-                    await handleLibraryToggleTapped()
+            if canShowLibraryToggle(for: repo) {
+                LibraryToggleButton(
+                    isSaved: isRepoSavedToLibrary(repo),
+                    isWorking: isLibraryOperationInFlight
+                ) {
+                    Task {
+                        await handleLibraryToggleTapped()
+                    }
                 }
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
             }
         }
+    }
+
+    private func canShowLibraryToggle(for repo: Repo) -> Bool {
+        // 知识库是登录用户的私有状态；未登录时隐藏入口，避免把“点击后登录”
+        // 误读成可以匿名写入本地 libraryState。repo.id <= 0 的临时 repo 也不能入库，
+        // 因为写入前必须先有稳定 GitHub repo id 作为 repo_notes 主键。
+        dependencies.authSession.state.isAuthenticated && repo.id > 0
     }
 
     private func isRepoSavedToLibrary(_ repo: Repo) -> Bool {
