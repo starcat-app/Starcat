@@ -163,12 +163,12 @@
 - [x] Releases 订阅本地关系前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
 - [x] Release 列表拉取和通知刷新仍按 GitHub token、权限和 repo 可访问性降级。
 - [ ] Watchers / Forks / Issues 等 GitHub 统计刷新候选覆盖 starred 与知识库并集。
-- [ ] GitHub 统计刷新遇到 token 权限不足、私有或不可访问 repo 时跳过或降频。
-- [ ] GitHub 统计刷新失败不改变 `libraryState`,也不自动移出知识库。
+- [x] GitHub 统计刷新遇到 token 权限不足、私有或不可访问 repo 时跳过或降频。
+- [x] GitHub 统计刷新失败不改变 `libraryState`,也不自动移出知识库。
 - [x] 单 repo 手动 README 刷新允许已入库未 star repo。
 - [x] 单 repo 手动 Repo Health 刷新允许已入库未 star repo。
 - [x] 单 repo 手动 OpenSSF 刷新允许已入库未 star repo。
-- [ ] 单 repo 手动 README / Repo Health / OpenSSF 刷新失败时保留旧缓存,不改变 `libraryState`,不自动移出知识库。
+- [x] 单 repo 手动 README / Repo Health / OpenSSF 刷新失败时保留旧缓存,不改变 `libraryState`,不自动移出知识库。
 - [x] open/codeflow/codebase action 允许已入库未 star repo。
 - [x] GitHub star/unstar、远程刷新、私有 GitHub 内容拉取仍按 GitHub 状态、token 与权限分层。
 - [x] Star 操作仍保持独立。
@@ -362,6 +362,7 @@
 ## 12. 变更记录
 
 - 2026-07-03: PR-6 Release 轮询按 starred 与知识库 active scope 刷新。
+- 2026-07-03: PR-6 手动刷新失败保留旧缓存和知识库状态。
 - 2026-07-02: PR-5 第四批语义搜索 UI 增加 starred/knowledge/all 范围筛选。
 - 2026-07-02: PR-5 第三批 MCP search/semantic/resources 支持范围参数。
 - 2026-07-02: PR-5 第二批 Home 搜索候选与 FTS 按当前范围对齐。

@@ -53,6 +53,7 @@ actor OpenSSFScoreService {
         let task = Task<OpenSSFScoreRecord, Error> {
             try await rateLimiter.waitForTurn()
             let now = Date()
+            let existing = try await repository.record(for: repo.id)
             let record: OpenSSFScoreRecord
             do {
                 let response = try await api.fetch(owner: repo.owner, repo: repo.name)
@@ -79,6 +80,11 @@ actor OpenSSFScoreService {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                if let existing {
+                    // 单 repo 手动刷新不能因为一次网络/服务端/解析失败抹掉旧评分。
+                    // 没有旧缓存时才写 failure，让空白 repo 进入 24h 冷却，避免连续重打端点。
+                    return existing
+                }
                 record = .failure(
                     repoId: repo.id,
                     status: .networkError,
