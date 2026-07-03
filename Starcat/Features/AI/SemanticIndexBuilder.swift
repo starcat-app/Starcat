@@ -72,6 +72,17 @@ enum SemanticIndexScope: String, CaseIterable, Sendable {
         }
         return merged
     }
+
+    static func selectCandidates(scope: SemanticIndexScope, starred: [Repo], knowledge: [Repo]) -> [Repo] {
+        switch scope {
+        case .starred:
+            return starred
+        case .knowledge:
+            return knowledge
+        case .all:
+            return mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+        }
+    }
 }
 
 @MainActor
@@ -312,13 +323,15 @@ final class SemanticIndexBuilder {
     private func fetchRepos(scope: SemanticIndexScope) async throws -> [Repo] {
         switch scope {
         case .starred:
-            return try await repoRepository.fetchAllStarred()
+            let starred = try await repoRepository.fetchAllStarred()
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: [])
         case .knowledge:
-            return try await repoRepository.fetchKnowledgeRepos()
+            let knowledge = try await repoRepository.fetchKnowledgeRepos()
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: [], knowledge: knowledge)
         case .all:
             let starred = try await repoRepository.fetchAllStarred()
             let knowledge = try await repoRepository.fetchKnowledgeRepos()
-            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
         }
     }
 

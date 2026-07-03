@@ -1200,13 +1200,15 @@ final class HomeViewModel {
     private func fetchSearchCandidates(scope: SemanticIndexScope) async throws -> [Repo] {
         switch scope {
         case .starred:
-            return try await repository.fetchAllStarred()
+            let starred = try await repository.fetchAllStarred()
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: [])
         case .knowledge:
-            return try await repository.fetchKnowledgeRepos()
+            let knowledge = try await repository.fetchKnowledgeRepos()
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: [], knowledge: knowledge)
         case .all:
             let starred = try await repository.fetchAllStarred()
             let knowledge = try await repository.fetchKnowledgeRepos()
-            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
         }
     }
 
@@ -1219,7 +1221,7 @@ final class HomeViewModel {
         case .all:
             let starred = try await repository.searchFTS(query: query)
             let knowledge = try await repository.searchKnowledgeFTS(query: query)
-            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
         }
     }
 

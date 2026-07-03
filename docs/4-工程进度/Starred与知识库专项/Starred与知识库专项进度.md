@@ -93,7 +93,7 @@
 - [x] 新增 `LibraryToggleButton`。
 - [x] Manage 详情页动作区接入 ❤️。
 - [x] Trending 详情页动作区接入 ❤️。
-- [ ] Discovery 详情页动作区接入 ❤️。
+- [x] Discovery 详情页动作区接入 ❤️。
 - [x] Weekly / Activity 详情页动作区接入 ❤️。
 - [x] 点击加入成功有动画反馈。
 - [x] 失败有明确错误反馈且不改变本地状态。
@@ -142,8 +142,8 @@
 - [x] `StarcatMCPFacade.semanticSearch` 支持范围参数。
 - [x] `StarcatMCPFacade.resources` 支持 starred / knowledge / all recent repo。
 - [x] 搜索 / AI / MCP 的 knowledge 范围可作为使用知识库 repo 数据的入口。
-- [ ] 单仓库 AI 摘要仍允许未入库 repo 显式触发。
-- [ ] 单测覆盖 starred、knowledge、all 三种候选范围。
+- [x] 单仓库 AI 摘要仍允许未入库 repo 显式触发。
+- [x] 单测覆盖 starred、knowledge、all 三种候选范围。
 
 ## 8. PR-6: Companion / Browser Plugin / 外部来源
 
@@ -367,6 +367,8 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-5 补齐三范围候选单测并回填单仓 AI 摘要。
+- 2026-07-03: PR-3 回填 Discovery 详情页知识库入口。
 - 2026-07-03: PR-1 隐藏未登录态知识库写入入口。
 - 2026-07-03: PR-9 补齐 SemanticSearch focused test 与 macOS build 验证。
 - 2026-07-03: PR-9 知识库导出补充 README/Health/OpenSSF 本地缓存展示。

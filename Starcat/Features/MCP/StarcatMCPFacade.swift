@@ -108,7 +108,7 @@ final class StarcatMCPFacade {
     func resources() async throws -> [MCPResourceDescriptor] {
         let starred = try await repoRepository.fetchRecentStarred(limit: 20)
         let knowledge = Array((try await repoRepository.fetchKnowledgeRepos()).prefix(20))
-        let all = Array(SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge).prefix(20))
+        let all = Array(SemanticIndexScope.selectCandidates(scope: .all, starred: starred, knowledge: knowledge).prefix(20))
         var out = [
             MCPResourceDescriptor(
                 uri: "starcat://tags",
@@ -167,13 +167,15 @@ final class StarcatMCPFacade {
     private func fetchRepos(scope: SemanticIndexScope) async throws -> [Repo] {
         switch scope {
         case .starred:
-            return try await repoRepository.fetchAllStarred()
+            let starred = try await repoRepository.fetchAllStarred()
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: [])
         case .knowledge:
-            return try await repoRepository.fetchKnowledgeRepos()
+            let knowledge = try await repoRepository.fetchKnowledgeRepos()
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: [], knowledge: knowledge)
         case .all:
             let starred = try await repoRepository.fetchAllStarred()
             let knowledge = try await repoRepository.fetchKnowledgeRepos()
-            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
         }
     }
 
@@ -186,7 +188,7 @@ final class StarcatMCPFacade {
         case .all:
             let starred = try await repoRepository.searchFTS(query: query)
             let knowledge = try await repoRepository.searchKnowledgeFTS(query: query)
-            return SemanticIndexScope.mergeStarredAndKnowledge(starred: starred, knowledge: knowledge)
+            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
         }
     }
 

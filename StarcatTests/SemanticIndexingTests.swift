@@ -41,6 +41,26 @@ struct SemanticIndexScopeTests {
         #expect(merged.map(\.fullName) == ["owner/starred-a", "owner/overlap", "owner/library-only"])
     }
 
+    @Test("候选范围按 starred / knowledge / all 分派")
+    func selectsCandidatesByScope() {
+        let starred = [
+            makeRepo(id: 1, fullName: "owner/starred-a"),
+            makeRepo(id: 2, fullName: "owner/overlap")
+        ]
+        let knowledge = [
+            makeRepo(id: 2, fullName: "owner/overlap"),
+            makeRepo(id: 3, fullName: "owner/library-only")
+        ]
+
+        let starredOnly = SemanticIndexScope.selectCandidates(scope: .starred, starred: starred, knowledge: knowledge)
+        let knowledgeOnly = SemanticIndexScope.selectCandidates(scope: .knowledge, starred: starred, knowledge: knowledge)
+        let all = SemanticIndexScope.selectCandidates(scope: .all, starred: starred, knowledge: knowledge)
+
+        #expect(starredOnly.map(\.id) == [1, 2])
+        #expect(knowledgeOnly.map(\.id) == [2, 3])
+        #expect(all.map(\.id) == [1, 2, 3])
+    }
+
     private func makeRepo(id: Int64, fullName: String) -> Repo {
         let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
         return Repo(
