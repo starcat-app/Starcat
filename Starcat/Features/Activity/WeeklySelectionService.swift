@@ -2,20 +2,20 @@
 //  WeeklySelectionService.swift
 //  Starcat
 //
-//  Activity 页 weekly 分类与外围视图（Sidebar / HomeView detail pane）之间共享的
+//  Explore 页 weekly 分类与外围视图（Sidebar / HomeView detail pane）之间共享的
 //  小型 UI 状态总线。
 //
 //  为什么不走 binding 链路：
 //  - sidebar 上需要展示"周刊"分类右侧的项目总数（仿 manage Languages 计数徽章），
 //    总数只有 WeeklyContentViewModel 跑完 API 才知道；
 //  - HomeView 的右侧详情页需要根据当前 weekly 选中项渲染 WeeklyDetailView。
-//  这两条信息都跨越了 SidebarView / RepoListView / ActivityView / HomeView 多层视图，
+//  这两条信息都跨越了 SidebarView / RepoListView / ExploreView / HomeView 多层视图，
 //  逐层 binding 改动面太大；改成单个 @Observable 服务，谁需要就 @Environment 取。
 //
 //  关键约束：
 //  - 仅承载 UI 临时状态，不做持久化、不做网络请求；
 //  - 主线程隔离（`@MainActor`），所有写入都来自 SwiftUI 视图层；
-//  - 切换分类 / 退出 Activity 页时由调用方主动 `clearSelection()`，避免详情页停留陈旧数据。
+//  - 切换分类 / 退出 Explore Weekly 时由调用方主动 `clearSelection()`，避免详情页停留陈旧数据。
 //
 
 import Foundation
@@ -34,10 +34,10 @@ final class WeeklySelectionService {
     /// `nil` 表示"尚未拉取过"，sidebar 据此决定是否显示计数徽章。
     private(set) var total: Int?
 
-    /// Activity 页 weekly 分类中当前选中的聚合 feed 项。
+    /// Explore 页 weekly 分类中当前选中的聚合 feed 项。
     ///
     /// nil → 详情页显示空态；非 nil → HomeView 详情区路由到 `WeeklyDetailView`。
-    /// 用户切换非 weekly 分类、切走 Activity 页时，由调用方主动 `clearSelection`。
+    /// 用户切换非 weekly 分类、切走 Explore 页时，由调用方主动 `clearSelection`。
     private(set) var selectedItem: WeeklyFeedItem?
 
     /// WeeklyContentViewModel 拉到分页结果后写一次 total。

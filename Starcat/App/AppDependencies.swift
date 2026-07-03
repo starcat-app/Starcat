@@ -168,7 +168,7 @@ final class AppDependencies {
     // MARK: - MUL-176 Weekly（阮一峰周刊）
 
     /// 阮一峰周刊后端 API 客户端。
-    /// 独立 actor，无需 GitHub OAuth；Activity 页 `weekly` 分类直接消费。
+    /// 独立 actor，无需 GitHub OAuth；Explore 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
 
     /// Weekly UI 共享状态：sidebar 计数徽章 + HomeView 详情页路由共用。
