@@ -16272,6 +16272,22 @@
         }
       }
     },
+    "releases.action.requiresStarOrLibrary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star or add this repo to Knowledge Base before subscribing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先 Star 或加入知识库后才能订阅"
+          }
+        }
+      }
+    },
     "releases.action.unsubscribe" : {
       "localizations" : {
         "en" : {

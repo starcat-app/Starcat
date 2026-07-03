@@ -159,8 +159,8 @@
 - [x] Tags 写入允许已入库未 star repo。
 - [x] Status 写入允许已入库未 star repo。
 - [x] notes / tags / status 的本地写入前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
-- [ ] Releases 订阅入口允许已入库未 star repo。
-- [ ] Releases 订阅本地关系前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
+- [x] Releases 订阅入口允许已入库未 star repo。
+- [x] Releases 订阅本地关系前置条件从必须 starred 扩展为 `isStarred || libraryState == .inLibrary`。
 - [ ] Release 列表拉取和通知刷新仍按 GitHub token、权限和 repo 可访问性降级。
 - [ ] Watchers / Forks / Issues 等 GitHub 统计刷新候选覆盖 starred 与知识库并集。
 - [ ] GitHub 统计刷新遇到 token 权限不足、私有或不可访问 repo 时跳过或降频。

@@ -28,6 +28,13 @@
 
 import SwiftUI
 
+enum ReleaseSubscriptionEligibility {
+    /// Release 订阅会写入本地私有关系，只允许已 star 或已加入 Starcat 知识库的 repo。
+    static func canSubscribe(repo: Repo, libraryState: LibraryState) -> Bool {
+        repo.isStarred || libraryState == .inLibrary
+    }
+}
+
 /// 详情页 hero stats 行的「Releases 订阅」紧凑单元。
 ///
 /// 视觉规格与 `RepoStatItem` / `StarStatChipButton` 对齐(VStack center,14pt 主行 + 10pt 副行)：
@@ -62,6 +69,9 @@ struct RepoReleaseStatItem: View {
     @Environment(AuthSession.self) private var authSession
 
     @State private var viewModel: RepoReleaseSectionViewModel?
+    /// Release 订阅属于 Starcat 本地关系；未 star 的外部 repo 只有明确加入知识库后
+    /// 才能订阅，避免给纯临时 GitHub 预览结果写入本地私有关系。
+    @State private var libraryState: LibraryState = .outsideLibrary
 
     var body: some View {
         VStack(alignment: .center, spacing: 2) {
@@ -79,6 +89,7 @@ struct RepoReleaseStatItem: View {
                     notificationService: dependencies.releaseNotificationService
                 )
             }
+            libraryState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? .outsideLibrary
             await viewModel?.loadFor(repo: repo)
         }
         .sheet(item: releasePaywallBinding) { context in
@@ -113,6 +124,7 @@ struct RepoReleaseStatItem: View {
                 authSession.requestLoginSheet()
                 return
             }
+            guard canUseReleaseSubscription else { return }
             Task {
                 if subscribed {
                     await vm.unsubscribe(repoId: repo.id)
@@ -130,7 +142,7 @@ struct RepoReleaseStatItem: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
-        .disabled(viewModel?.isMutating == true)
+        .disabled(viewModel?.isMutating == true || !canUseReleaseSubscription)
     }
 
     /// isMutating 时显示 spinner(防双击同时给用户视觉反馈),否则显示订阅状态对应的铃铛图标。
@@ -178,6 +190,10 @@ struct RepoReleaseStatItem: View {
         viewModel?.subscription?.isSubscribed == true
     }
 
+    private var canUseReleaseSubscription: Bool {
+        ReleaseSubscriptionEligibility.canSubscribe(repo: repo, libraryState: libraryState)
+    }
+
     private var actionTitleKey: LocalizedStringKey {
         subscribed ? "releases.stat.subscribed" : "releases.action.subscribe"
     }
@@ -187,6 +203,9 @@ struct RepoReleaseStatItem: View {
     private var helpText: Text {
         if let err = viewModel?.errorMessage, !err.isEmpty {
             return Text(verbatim: err)
+        }
+        if !canUseReleaseSubscription {
+            return Text("releases.action.requiresStarOrLibrary")
         }
         return subscribed ? Text("releases.action.unsubscribe") : Text("releases.action.subscribe")
     }

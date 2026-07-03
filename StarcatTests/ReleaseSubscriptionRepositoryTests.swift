@@ -135,4 +135,49 @@ struct ReleaseSubscriptionRepositoryTests {
         #expect(active.map(\.repoId).sorted() == [1, 3])
         #expect(allRows.count == 3) // 行保留，仅 is_subscribed 切换
     }
+
+    @Test("Release 订阅资格: 已 star 或已入库才允许")
+    func releaseSubscriptionEligibility() {
+        #expect(ReleaseSubscriptionEligibility.canSubscribe(
+            repo: Self.repoFixture(isStarred: true),
+            libraryState: .outsideLibrary
+        ))
+        #expect(ReleaseSubscriptionEligibility.canSubscribe(
+            repo: Self.repoFixture(isStarred: false),
+            libraryState: .inLibrary
+        ))
+        #expect(!ReleaseSubscriptionEligibility.canSubscribe(
+            repo: Self.repoFixture(isStarred: false),
+            libraryState: .outsideLibrary
+        ))
+    }
+
+    private static func repoFixture(isStarred: Bool) -> Repo {
+        Repo(
+            id: 42,
+            owner: "octo",
+            name: "demo",
+            fullName: "octo/demo",
+            description: nil,
+            language: "Swift",
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/octo/demo",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: isStarred,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
+    }
 }
