@@ -57,6 +57,19 @@ struct MultiSelectionStoreTests {
         #expect(store.snapshots.isEmpty)
     }
 
+    @Test("Explore 子分类切换时调用 exit 可清理 Weekly 多选状态")
+    func exitClearsWeeklySelectionWhenExploreModeChanges() {
+        let store = MultiSelectionStore()
+        store.enter()
+        store.toggle(snap(42, "weekly", "project"))
+
+        store.exit()
+
+        #expect(store.isActive == false)
+        #expect(store.count == 0)
+        #expect(store.snapshots.isEmpty)
+    }
+
     @Test("toggle 切换 isActive")
     func toggleSwitchesActiveState() {
         let store = MultiSelectionStore()

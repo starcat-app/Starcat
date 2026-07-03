@@ -18,6 +18,17 @@ import Testing
 @MainActor
 struct ExploreDiscoveryViewModelTests {
 
+    @Test("ExploreMode: Weekly identity / title / discovery normalization")
+    func exploreModeWeeklyIdentity() {
+        #expect(ExploreMode(rawValue: "weekly") == .weekly)
+        #expect(ExploreMode.weekly.id == "weekly")
+        #expect(ExploreMode.weekly.localizedTitle == String.l10n("explore.mode.weekly"))
+        #expect(ExploreMode.weekly.systemImage == "newspaper")
+        #expect(ExploreMode.weekly.usesDiscoveryAPI == false)
+        #expect(ExploreMode.weekly.discoveryListMode == nil)
+        #expect(ExploreMode.allCases.contains(.weekly))
+    }
+
     @Test("热门列表基于 bulk 本地过滤语言和排序")
     func popularReloadFiltersAndSortsLocalBulk() async throws {
         let repository = FakeDiscoveryRepository()

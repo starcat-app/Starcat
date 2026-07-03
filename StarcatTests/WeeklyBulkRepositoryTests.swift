@@ -382,6 +382,73 @@ struct WeeklyBulkRepositoryTests {
     }
 
     @MainActor
+    @Test("WeeklyContentViewModel: 外部语言选择驱动本地列表筛选")
+    func localBulkFiltersByLanguageSelection() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/swift", "Swift", 300, "2026-06-15T10:00:00Z"),
+                    ("owner/go", "Go", 200, "2026-06-15T11:00:00Z"),
+                    ("owner/none", nil, 100, "2026-06-15T12:00:00Z")
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let viewModel = WeeklyContentViewModel(
+            api: api,
+            languageStore: WeeklyLanguageStore(api: api),
+            bulkRepository: repo
+        )
+
+        await viewModel.loadInitialIfNeeded()
+        #expect(viewModel.total == 3)
+
+        viewModel.changeLanguage(to: "Swift")
+        #expect(viewModel.total == 1)
+        #expect(viewModel.items.map(\.fullName) == ["owner/swift"])
+
+        viewModel.changeLanguage(to: TrendingLanguage.uncategorizedKey)
+        #expect(viewModel.total == 1)
+        #expect(viewModel.items.map(\.fullName) == ["owner/none"])
+    }
+
+    @MainActor
+    @Test("WeeklySelectionService: total 与 selected item 独立维护")
+    func selectionServiceKeepsTotalWhenSelectionClears() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [("owner/weekly", "Swift", 300, "2026-06-15T10:00:00Z")],
+                total: 1
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let viewModel = WeeklyContentViewModel(
+            api: api,
+            languageStore: WeeklyLanguageStore(api: api),
+            bulkRepository: repo
+        )
+        await viewModel.loadInitialIfNeeded()
+
+        let service = WeeklySelectionService()
+        service.applyTotal(viewModel.total)
+        let item = try #require(viewModel.items.first)
+        service.select(item)
+
+        #expect(service.total == 1)
+        #expect(service.selectedItem?.fullName == "owner/weekly")
+
+        service.clearSelection()
+        #expect(service.total == 1)
+        #expect(service.selectedItem == nil)
+    }
+
+    @MainActor
     @Test("WeeklyContentViewModel: 本地 bulk 模式组合筛选收录强度 / 状态 / 热度 / 推送时间")
     func localBulkFiltersByAdvancedCriteria() async throws {
         let recentPush = isoDaysAgo(10)
@@ -457,6 +524,6 @@ struct WeeklyBulkRepositoryTests {
         #expect(viewModel.selectedSort == .pushedAt)
         #expect(viewModel.filterSummaryTitle.contains("5"))
         #expect(viewModel.filterSummaryTitle.contains("1"))
-        #expect(viewModel.filterSummaryTitle.contains(WeeklyFeedSort.pushedAt.localizedTitle))
+        #expect(!viewModel.filterSummaryTitle.contains(WeeklyFeedSort.pushedAt.localizedTitle))
     }
 }

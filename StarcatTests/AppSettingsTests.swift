@@ -161,6 +161,26 @@ struct AppSettingsTests {
         #expect(s2.listPreferenceValue(for: "explore.weekly.language", login: "octocat") == "Python")
     }
 
+    @Test("列表偏好: 重置不清其它本地设置")
+    func resetListPreferencesKeepsUnrelatedLocalSettings() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+
+        settings.setListPreferenceValue("weekly", for: "explore.mode", login: "dong4j")
+        settings.externalSearchIncludeInAll = true
+        settings.mcpServicePort = 3939
+        settings.repoSortOption = .starsDesc
+        settings.lastManageSelectionRaw = "language:Swift"
+
+        settings.resetListPreferences(login: "dong4j")
+
+        #expect(settings.listPreferenceValue(for: "explore.mode", login: "dong4j") == nil)
+        #expect(settings.externalSearchIncludeInAll == true)
+        #expect(settings.mcpServicePort == 3939)
+        #expect(settings.repoSortOption == .starsDesc)
+        #expect(settings.lastManageSelectionRaw == "language:Swift")
+    }
+
     // MARK: - 快捷键偏好
 
     @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K，常规搜索为 Command+F")
