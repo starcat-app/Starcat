@@ -1490,9 +1490,9 @@ LLM 回答按 repo 组织,但 citation 仍指向 child chunk。这样既能回�
 UI 展示:
 
 - citation chip 主体显示 repo。
-- Inspector 中显示 matched child。
-- Inspector 同时显示所属 section parent。
-- Inspector 显示命中方式: keyword / vector / hybrid / rerank。
+- 右侧 Inspector 默认只显示“引用”面板,不做“证据 / 检索”tab。
+- 引用面板上方显示当前选中 citation 的 matched child、所属 section parent、source、score 和命中方式。
+- 引用面板下方显示本轮回答实际引用过的其它 citations;点击列表项后切换上方详情。
 
 这避免 citation 退化成“整个 repo 都算引用”,也避免答案只围绕碎片展开。
 
@@ -1840,8 +1840,8 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 | `RAGCommandComposerView` | 用户输入、repo mention、模型下拉、附件 |
 | `RAGMentionPicker` | `@` repo list / command list 弹层 |
 | `RAGContextChip` | 本轮上下文 chip,支持删除 |
-| `RAGEvidenceInspector` | citations、chunks、retrieval hits、remote context |
-| `RAGCitationChip` | 引用 chip,点击打开证据 |
+| `RAGEvidenceInspector` | 单一引用面板: 当前 citation 详情、chunk 预览、其它引用列表 |
+| `RAGCitationChip` | 引用 chip,点击后在右侧切换引用详情 |
 
 ### 11.4 状态
 
@@ -1884,14 +1884,17 @@ UI 必须覆盖:
 Citation chip 点击后的行为:
 
 1. 右侧 Inspector 展示 chunk。
-2. “打开详情”按钮关闭 RAG workspace 并选中对应 repo。
-3. 如果 repo 不在当前 Manage 列表,跳转到 Smart Collections -> 知识库并选中。
+2. “打开详情”按钮优先复用现有 repo 详情页新窗口能力。
+3. 如果 citation repo 本地已有记录,新开本地 repo 详情页窗口。
+4. 如果 citation repo 本地没有记录,使用系统浏览器打开 GitHub repo 页面。
 
-这要求 ViewModel 能把 repo id 交给 Home 层处理,不要在 RAG UI 内重新实现详情页。
+这要求 ViewModel 只负责分流和回调,不要在 RAG UI 内重新实现详情页。
 
 ### 11.6 Remote Context 展示
 
-当本轮使用 issues / releases / PR 等远程临时上下文时,Inspector 需要单独展示 Remote Context 区域:
+MVP 中右侧 Inspector 不单独提供 Remote Context tab。issues / releases / PR 只在 Query Plan chips 和回答正文中提示“当前版本暂未启用”,不展示真实远程数据。
+
+真实远程上下文启用后,如果本轮使用 issues / releases / PR 等远程临时上下文,引用详情内可以附带轻量 Remote Context 分组:
 
 - 标明 resource: GitHub Issues / Releases / Pull Requests 等。
 - 标明 fetchedAt 与“本轮临时获取”。
@@ -1991,8 +1994,9 @@ issues / releases / PR 等远程临时上下文由 Query Planner 根据自然语
 
 回答区展示 GitHub 链接时:
 
-- 如果链接对应 Starcat 已有 repo,点击优先打开 Starcat repo 详情。
-- 如果链接不是 Starcat 已有 repo,点击打开 GitHub。
+- 如果链接对应 Starcat 本地已有 repo,点击后复用现有能力新开本地 repo 详情页窗口。
+- 如果链接不是 Starcat 本地已有 repo,点击后打开 GitHub。
+- “打开详情”按钮与回答正文 / 中间结果中的 GitHub repo 链接使用同一套分流规则。
 - 对于已 star 未入库 repo,可以展示“加入知识库”动作,但 RAG 本轮回答不能自动修改 libraryState。
 
 #### 11.7.6 上下文 chip
@@ -2228,7 +2232,7 @@ Settings -> Storage 建议增加:
 - `needs_clarification` 展示追问,不执行检索。
 - `no_candidate_repos` / `no_index` / `no_evidence` 展示不同空状态。
 - retrieval -> remote context -> generation -> completed 状态流。
-- Remote Context 区域展示 fetchedAt / source URL / degradation。
+- MVP 不展示独立 Remote Context 区域;真实远程上下文启用后可在引用详情内展示 fetchedAt / source URL / degradation。
 - `@repo` mention 能生成 repo context chip。
 - 多个 `@repo` 默认形成 `explicitRepoMode = .only`。
 - 删除 repo context chip 后,执行上下文同步移除 repo id。
@@ -2237,7 +2241,7 @@ Settings -> Storage 建议增加:
 - 模型切换只影响本轮 request,不修改全局 Settings。
 - 图片附件遇到不支持 vision 的模型时阻断发送。
 - GitHub 链接已入库时转成 repo chip,未入库时不自动进入 RAG。
-- 回答区 GitHub 链接命中 Starcat 已有 repo 时打开内部详情,否则打开外部 GitHub。
+- 回答区 GitHub 链接命中 Starcat 本地已有 repo 时新开本地详情页窗口,否则打开外部 GitHub。
 - cancel 能停止 streaming。
 - citation 点击回调 repo id。
 
@@ -2313,9 +2317,9 @@ Settings -> Storage 建议增加:
 - 支持输入框模型下拉。
 - 支持 Planner 远程上下文确认 chips。
 - 支持附件 chip 的第一版 UI 和模型能力校验。
-- 支持 GitHub 链接识别: 已有 repo 打开内部详情,外部 repo 打开 GitHub。
-- 中间问答流 + 右侧 evidence inspector。
-- 展示 Remote Context 区域和远程降级原因。
+- 支持 GitHub 链接识别: 本地已有 repo 新开详情页窗口,外部 repo 打开 GitHub。
+- 中间问答流 + 右侧单一引用 Inspector。
+- MVP 不展示独立 Remote Context 区域;真实远程上下文启用后在引用详情内展示降级原因。
 - citation chip 打开 repo。
 
 ### PR-8: 历史、Storage 与 polish [MVP 必做 / 部分后置]

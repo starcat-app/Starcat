@@ -20,6 +20,8 @@ import TipKit
 extension Notification.Name {
     /// 顶部菜单触发全局搜索。HomeView 持有 SearchCenterViewModel，因此命令层只发意图。
     static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
+    /// Debug 菜单触发知识库 RAG 工作台。当前只打开 UI 原型，真实 RAG 后端后续再接。
+    static let starcatCommandOpenKnowledgeRAGWorkspace = Notification.Name("starcat.command.openKnowledgeRAGWorkspace")
 }
 
 @main
@@ -842,6 +844,11 @@ private enum ReleaseNotesLoader {
 						object: nil
 					)
 				}
+
+                Button("Open Knowledge RAG Workspace") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    NotificationCenter.default.post(name: .starcatCommandOpenKnowledgeRAGWorkspace, object: nil)
+                }
 
 				Divider()
 

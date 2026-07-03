@@ -88,6 +88,11 @@ struct HomeView: View {
     /// Agent 是一个长任务工作模式，不适合塞进 sheet；这里用主窗口覆盖层承载，
     /// 让后续所有内置 Agent 共用同一套步骤时间线和 Artifact 预览。
     @State private var showAgentWorkspace: Bool = false
+    /// 知识库 RAG 工作台覆盖主窗口显示状态。
+    ///
+    /// 当前阶段只承载纯 UI 原型和假数据交互，不接后端 RAG 服务；仍按最终覆盖式
+    /// workspace 形态挂载，避免后续从 sheet / 弹窗迁移。
+    @State private var showKnowledgeRAGWorkspace: Bool = false
     /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
     @State private var gettingStartedStore = GettingStartedProgressStore()
     /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
@@ -328,10 +333,26 @@ struct HomeView: View {
                 .zIndex(200)
             }
         }
+        .overlay {
+            if showKnowledgeRAGWorkspace {
+                KnowledgeRAGWorkspaceView {
+                    showKnowledgeRAGWorkspace = false
+                }
+                .ignoresSafeArea(.container, edges: .top)
+                .transition(.opacity)
+                .zIndex(210)
+            }
+        }
         // 弹出/关闭：纯淡入淡出，贴近 Spotlight / 命令面板；不再叠加 scale 弹入。
         .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showAgentWorkspace)
-        .preference(key: AgentWorkspaceActivePreferenceKey.self, value: showAgentWorkspace)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showKnowledgeRAGWorkspace)
+        .preference(key: AgentWorkspaceActivePreferenceKey.self, value: showAgentWorkspace || showKnowledgeRAGWorkspace)
+        .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenKnowledgeRAGWorkspace)) { _ in
+            showAgentWorkspace = false
+            searchCenterViewModel.dismiss()
+            showKnowledgeRAGWorkspace = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
             showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
             if !showsAgentToolbarEntry {

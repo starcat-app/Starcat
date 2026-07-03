@@ -44,7 +44,7 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - 本地保存完整 RAG 会话历史: 用户问题、模型回答、使用模型、时间戳、citation metadata。
 - Command Composer 基础 `@repo` mention、多 repo 对比、context chip 删除。
 - 输入框模型下拉,支持本轮切换模型但不修改全局设置。
-- Evidence Inspector 展示 chunk、section parent、命中方式 keyword / vector / hybrid。
+- 右侧只保留单一引用 Inspector,展示当前 citation 详情、chunk 预览、section parent 和其它引用列表。
 - issues / releases / PR 类问题只提示“需要 GitHub 临时上下文,当前版本暂未启用”,不实际拉取。
 
 ### 3.2 MVP 后置
@@ -344,16 +344,16 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] `no_evidence` 时展示“没找到足够相关内容”,可展示候选 repo 但标注证据不足。
 - [ ] 中间 Answer Surface 支持用户提问。
 - [ ] 中间 Answer Surface 支持 streaming markdown。
-- [ ] 右侧 Evidence Inspector 展示 citations。
-- [ ] 右侧 Evidence Inspector 展示 repo parent、section parent 与 matched child。
-- [ ] 右侧 Evidence Inspector 展示 chunk 原文、source、section、score。
-- [ ] 右侧 Evidence Inspector 展示 Remote Context 区域。
-- [ ] Remote Context 区域展示 resource / fetchedAt / query / source URL / 样本数量。
-- [ ] Remote Context 区域展示 rate limit / forbidden / timeout 等降级原因。
+- [ ] 右侧引用 Inspector 展示当前选中 citation 详情。
+- [ ] 右侧引用 Inspector 展示 matched child chunk 原文、source、section、score、hit kind。
+- [ ] 右侧引用 Inspector 展示 section parent 标题和其它引用列表。
+- [ ] MVP 不展示独立 Remote Context 区域。
+- [ ] 真实远程上下文启用后,引用详情内可展示 resource / fetchedAt / source URL / 降级原因。
 - [ ] Remote Context 不展示为已索引 chunk,不提供打开 chunk 动作。
 - [ ] `RAGCitationChip` 点击后定位右侧 evidence。
-- [ ] citation 的“打开详情”能关闭 workspace 并选中 repo。
-- [ ] 回答区 GitHub 链接命中 Starcat 已有 repo 时打开内部详情。
+- [ ] citation 的“打开详情”在本地已有 repo 时新开本地 repo 详情页窗口。
+- [ ] citation 的“打开详情”在本地没有 repo 时打开 GitHub repo 页面。
+- [ ] 回答区 GitHub 链接命中 Starcat 本地已有 repo 时新开本地详情页窗口。
 - [ ] 回答区 GitHub 链接未命中 Starcat repo 时打开外部 GitHub。
 - [ ] 知识库为空时展示引导。
 - [ ] RAG 索引缺失时展示构建索引引导。
@@ -463,7 +463,7 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] MVP 中回答明确说明未包含实时 issues / releases / PR 数据。
 - [ ] 精确关键词问题能通过 keyword 命中召回。
 - [ ] 语义描述问题能通过 vector 命中召回。
-- [ ] Evidence Inspector 展示 keyword / vector / hybrid 命中方式。
+- [ ] 引用 Inspector 展示 keyword / vector / hybrid 命中方式。
 - [ ] 本轮切换模型后,Settings 中全局模型不变化。
 - [ ] 上传不支持的附件时展示不可发送状态。
 - [ ] 粘贴已入库 GitHub repo 链接时转成 repo chip。
@@ -471,8 +471,9 @@ MVP 只做能闭环“知识库 repo 问答”的最小集合:
 - [ ] 回答引用 A / C 这类已入库 repo。
 - [ ] 回答不引用 B 这类已 star 未入库 repo。
 - [ ] 引用 chip 点击后右侧 evidence 定位到对应 chunk。
-- [ ] 点击“打开详情”能回到 repo 详情。
-- [ ] 回答中的 GitHub 链接命中已有 repo 时打开 Starcat 详情。
+- [ ] 点击“打开详情”时,本地已有 repo 新开本地详情页窗口。
+- [ ] 点击“打开详情”时,本地没有 repo 打开 GitHub repo 页面。
+- [ ] 回答中的 GitHub 链接命中已有 repo 时新开本地详情页窗口。
 - [ ] 回答中的外部 GitHub 链接打开浏览器。
 - [ ] 知识库资料不足时,回答明确说明不足。
 - [ ] 知识库为空时,不允许进入伪问答状态,而是展示引导。
