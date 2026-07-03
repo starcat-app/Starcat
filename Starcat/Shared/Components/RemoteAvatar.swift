@@ -150,7 +150,7 @@ struct UserAvatar: View {
                             .frame(width: size, height: size, alignment: .topTrailing)
                             // PRO 是 Starcat 身份标识，放在头像圆外右上角，和分享按钮处在同一水平线；
                             // 只向外偏移，不覆盖头像内容，避免和 GitHub status 的右下角语义冲突。
-                            .offset(x: 24, y: 0)
+                            .offset(x: 16, y: 0)
                     }
 
                     if let status, let emoji = status.displayEmoji {
