@@ -18,12 +18,12 @@
 
 ## 2. 不做范围
 
-- [ ] 不把 GitHub Star 自动等同于加入知识库。
-- [ ] 不把加入知识库自动等同于 GitHub Star。
-- [ ] 不用 `RepoStatus` 混装知识库状态。
-- [ ] 不机械替换所有 `starred` 调用点。
-- [ ] 不新增一级导航“知识库”,第一版放在 Smart Collections。
-- [ ] 不做 AI 自动入库或复杂评分模型。
+- [x] 不把 GitHub Star 自动等同于加入知识库。
+- [x] 不把加入知识库自动等同于 GitHub Star。
+- [x] 不用 `RepoStatus` 混装知识库状态。
+- [x] 不机械替换所有 `starred` 调用点。
+- [x] 不新增一级导航“知识库”,第一版放在 Smart Collections。
+- [x] 不做 AI 自动入库或复杂评分模型。
 
 ## 3. PR-1: 数据模型与 Repository
 
@@ -51,7 +51,7 @@
 - [x] 退出登录或切换账号不删除本地 `libraryState/notes/tags/status`,只隐藏非当前账号数据。
 - [x] 未登录态不展示用户私有知识库,也不允许修改 `libraryState`。
 - [x] 重新登录同一 GitHub 账号后恢复该账号的知识库状态和用户数据。
-- [ ] 只有显式“清除本地数据 / 删除账号数据”才删除用户私有知识库数据。
+- [x] 只有显式“清除本地数据 / 删除账号数据”才删除用户私有知识库数据。
 - [x] 记录 CloudKit 同步范围: `libraryState` 后续随 notes/status/tags 同步,当前不实施 CloudKit。
 - [ ] JSON 导出包含 `libraryState` 与 `libraryUpdatedAt`。
 - [ ] JSON 导入恢复 `libraryState` 与 `libraryUpdatedAt`,不调用 GitHub star。
@@ -65,8 +65,8 @@
 - [x] GitHub 404/410/权限不足不自动改变 `libraryState`。
 - [x] 不可访问已入库 repo 保留 notes/tags/status/README 缓存。
 - [x] 无 GitHub token / token 权限不足时,已入库私有 repo 仍可读写本地 notes/tags/status 与知识库状态。
-- [ ] 无权限且 README 无缓存时展示权限不足/内容不可用,不伪装成空 README。
-- [ ] 已登录但离线时,本地已有 repo 可以加入/移出知识库。
+- [x] 无权限且 README 无缓存时展示权限不足/内容不可用,不伪装成空 README。
+- [x] 已登录但离线时,本地已有 repo 可以加入/移出知识库。
 - [x] 未登录时不允许加入/移出知识库。
 - [ ] 离线且未落库的外部 repo 不能直接加入知识库。
 
@@ -367,6 +367,7 @@
 
 ## 12. 变更记录
 
+- 2026-07-03: PR-1 回填不做范围与本地权限边界。
 - 2026-07-03: PR-5 补齐三范围候选单测并回填单仓 AI 摘要。
 - 2026-07-03: PR-3 回填 Discovery 详情页知识库入口。
 - 2026-07-03: PR-1 隐藏未登录态知识库写入入口。
