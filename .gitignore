@@ -219,14 +219,6 @@ refer/
 # CodeGraph 运行时数据
 .codegraph/
 supports/
-!supports/
-supports/*
-!supports/extensions/
-supports/extensions/*
-!supports/extensions/starcat-chrome-plugin/
-!supports/extensions/starcat-chrome-plugin/**
-!supports/extensions/starcat-safari-plugin/
-!supports/extensions/starcat-safari-plugin/**
 
 # CodebaseMemory 内置二进制由脚本下载并移动到资源目录，不进入 Git 历史。
 Starcat/Resources/Codebase/codebase
