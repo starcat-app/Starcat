@@ -398,10 +398,12 @@
 - [x] GitHub 搜索结果详情底部主操作改为 icon-only,不再显示 Star / 知识库 / AI / GitHub 文字。
 - [x] GitHub 搜索结果详情底部 Star 图标按状态显示 `star.fill` / `star`。
 - [x] GitHub 搜索结果详情底部知识库图标按状态显示 `heart.fill` / `heart`。
+- [x] GitHub 搜索结果详情底部打开 GitHub 操作改用 GitHub 品牌图标。
 - [x] 知识库 toggle 成功后用本地状态驱动详情底部 ❤️ 立即切换,不需要关闭后重开。
 
 ## 13. 变更记录
 
+- 2026-07-03: Search Center 详情打开 GitHub 操作改用品牌图标。
 - 2026-07-03: 优化 Search Center 结果行与详情底部 Star/知识库图标。
 - 2026-07-03: 修复入库后 Sidebar 知识库列表旧缓存不刷新的问题。
 - 2026-07-03: 完成 Sidebar 知识库基础分类入口与列表范围。

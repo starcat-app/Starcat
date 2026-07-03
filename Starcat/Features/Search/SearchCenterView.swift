@@ -1926,6 +1926,8 @@ private struct SearchHistoryFlowLayout: Layout {
 /// 主操作（Star / Ask AI / GitHub）走 `semanticColor` 着色底；折叠菜单等中性操作保持灰底。
 private struct SearchDetailActionChip: View {
     let systemImage: String
+    /// GitHub 这类品牌图标不属于 SF Symbols；仅在需要品牌图形时传 asset 名称。
+    var assetImageName: String?
     /// 为 `nil` 时仅渲染图标（如 ··· 折叠菜单）。
     var titleKey: LocalizedStringKey?
     let helpKey: LocalizedStringKey
@@ -1976,8 +1978,16 @@ private struct SearchDetailActionChip: View {
                     .controlSize(.small)
                     .frame(width: 11, height: 11)
             } else {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
+                if let assetImageName {
+                    Image(assetImageName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                }
             }
         }
     }
@@ -2577,6 +2587,7 @@ private struct SearchRemoteRepoDetailView: View {
             )
             SearchDetailActionChip(
                 systemImage: "arrow.up.right.square",
+                assetImageName: "github",
                 titleKey: nil,
                 helpKey: "search.detail.action.openOnGitHub",
                 semanticColor: .actionGitHub,
