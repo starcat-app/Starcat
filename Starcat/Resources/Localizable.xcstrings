@@ -25921,13 +25921,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No interested languages configured."
+            "value" : "Use the + button on the right to add more interested languages."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "还没有配置感兴趣语言。"
+            "value" : "可通过右侧 + 添加更多感兴趣语言。"
           }
         }
       }
