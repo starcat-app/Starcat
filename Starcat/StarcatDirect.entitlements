@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Direct 版仍保持 sandbox，后续 Sparkle / License API 都在这个边界内工作。 -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- 出口网络：GitHub API、AI 代理、Sparkle appcast、Starcat License API。 -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- MCP Service：仅监听 127.0.0.1，供本机 Agent 通过 HTTP MCP 访问 Starcat 能力。 -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- 用户主动选择文件读写：JSON 导入导出场景。 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

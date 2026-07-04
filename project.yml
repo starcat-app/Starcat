@@ -170,6 +170,73 @@ targets:
         BUNDLE_LOADER: $(TEST_HOST)
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/Starcat.app/Contents/MacOS/Starcat
 
+  StarcatDirect:
+    type: application
+    platform: macOS
+    sources:
+      - path: Starcat
+        excludes:
+          - "**/.DS_Store"
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
+    settings:
+      base:
+        # Direct 使用独立 bundle id，保证官网 DMG 包与 App Store 包的审核和安装边界清楚。
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct
+        PRODUCT_NAME: Starcat
+        CODE_SIGN_ENTITLEMENTS: Starcat/StarcatDirect.entitlements
+        STARCAT_DISTRIBUTION: direct
+        INFOPLIST_KEY_CFBundleURLTypes: ""
+      configs:
+        Debug:
+          INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
+        Release:
+          INFOPLIST_KEY_LSMultipleInstancesProhibited: YES
+    info:
+      path: Starcat/Generated/Info.direct.generated.plist
+      properties:
+        STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.starcat.app.direct
+            CFBundleURLSchemes:
+              - starcat
+        STARCAT_PRODUCTION_API_KEY_TRENDING: $(STARCAT_PRODUCTION_API_KEY_TRENDING)
+        STARCAT_PRODUCTION_API_KEY_WEEKLY: $(STARCAT_PRODUCTION_API_KEY_WEEKLY)
+        STARCAT_PRODUCTION_API_KEY_SHARING: $(STARCAT_PRODUCTION_API_KEY_SHARING)
+        STARCAT_PRODUCTION_API_KEY_WIKI: $(STARCAT_PRODUCTION_API_KEY_WIKI)
+        STARCAT_PRODUCTION_API_KEY_RECOMMEND: $(STARCAT_PRODUCTION_API_KEY_RECOMMEND)
+        STARCAT_PRODUCTION_API_KEY_DISCOVERY: $(STARCAT_PRODUCTION_API_KEY_DISCOVERY)
+        STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
+        STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+    dependencies:
+      - package: GRDB
+      - package: KeychainAccess
+      - package: Kingfisher
+      - package: MarkdownUI
+      - package: OpenAI
+      - package: ConfettiSwiftUI
+      - package: ZIPFoundation
+      - package: MCPSwiftSDK
+        product: MCP
+      - package: Aptabase
+    postBuildScripts:
+      - name: "Copy Changelog Resource"
+        script: |
+          set -euo pipefail
+
+          mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          cp "${SRCROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+          cp "${SRCROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
+
 schemes:
   Starcat:
     build:
@@ -185,6 +252,19 @@ schemes:
       config: Debug
       targets:
         - StarcatTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+  StarcatDirect:
+    build:
+      targets:
+        StarcatDirect: all
+    run:
+      config: Debug
     profile:
       config: Release
     analyze:
