@@ -53,18 +53,19 @@ struct ExternalSearchWebProvider: SearchProvider {
             anySearchFilters: providerID == .anySearch ? request.anySearchFilters : nil
         )
         if let cached = try? await diskCache?.loadGlobal(provider: providerID, request: externalRequest) {
-            return makePage(from: cached, providerID: providerID)
+            return makePage(from: cached, providerID: providerID, requestedMaxResults: externalRequest.maxResults)
         }
         let response = try await provider.search(externalRequest)
         if !response.hits.isEmpty {
             try? await diskCache?.saveGlobal(provider: providerID, request: externalRequest, response: response)
         }
-        return makePage(from: response, providerID: providerID)
+        return makePage(from: response, providerID: providerID, requestedMaxResults: externalRequest.maxResults)
     }
 
     private func makePage(
         from response: ExternalSearchResponse,
-        providerID: ExternalSearchProviderID
+        providerID: ExternalSearchProviderID,
+        requestedMaxResults: Int
     ) -> SearchProviderPage {
         let references = response.hits.map { hit in
             ReferenceCandidate(
@@ -73,16 +74,20 @@ struct ExternalSearchWebProvider: SearchProvider {
                 title: hit.title,
                 snippet: hit.snippet ?? hit.extractedText,
                 domain: hit.url.host ?? providerID.displayName,
-                source: .web
+                source: .web,
+                providerID: providerID
             )
         }
+        let totalResults = max(response.metadata.totalResults ?? references.count, references.count)
+        let canRequestMore = references.count < 100
+            && (totalResults > references.count || references.count >= requestedMaxResults)
         return SearchProviderPage(
             repositories: [],
             references: references,
-            totalCount: response.metadata.totalResults ?? references.count,
-            hasNextPage: false,
+            totalCount: totalResults,
+            hasNextPage: canRequestMore,
             webMetadata: WebSearchMetadata(
-                totalResults: response.metadata.totalResults ?? references.count,
+                totalResults: totalResults,
                 searchTimeMs: response.metadata.searchTimeMs,
                 rateLimit: nil
             )

@@ -127,6 +127,25 @@ struct ReferenceCandidate: Identifiable, Hashable, Sendable {
     let snippet: String?
     let domain: String
     let source: SearchSource
+    let providerID: ExternalSearchProviderID?
+
+    init(
+        normalizedURL: URL,
+        originalURL: URL,
+        title: String,
+        snippet: String?,
+        domain: String,
+        source: SearchSource,
+        providerID: ExternalSearchProviderID? = nil
+    ) {
+        self.normalizedURL = normalizedURL
+        self.originalURL = originalURL
+        self.title = title
+        self.snippet = snippet
+        self.domain = domain
+        self.source = source
+        self.providerID = providerID
+    }
 }
 
 enum SearchCandidate: Identifiable, Hashable, Sendable {

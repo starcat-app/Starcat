@@ -496,11 +496,8 @@ struct SearchCenterView: View {
                 Button {
                     Task { await viewModel.changeWebSearchProvider(provider) }
                 } label: {
-                    Text(provider.displayName)
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                    ExternalSearchProviderIcon(provider: provider, size: 15)
+                        .frame(width: 34, height: 26)
                         .background(
                             viewModel.webSearchProvider == provider
                                 ? Color.accentColor.opacity(0.22)
@@ -510,6 +507,7 @@ struct SearchCenterView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .accessibilityLabel(Text(verbatim: provider.displayName))
                 .help(isExternalSearchProviderUsable(provider)
                     ? Text(String(format: String.l10n("search.web.provider.useFormat"), provider.displayName))
                     : Text(String(format: String.l10n("search.web.provider.requiresConfigurationFormat"), provider.displayName)))
@@ -623,6 +621,12 @@ struct SearchCenterView: View {
 
                 if shouldShowGitHubLoadMoreRow {
                     githubLoadMoreListRow
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                if shouldShowWebLoadMoreRow {
+                    webLoadMoreListRow
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
@@ -755,11 +759,12 @@ struct SearchCenterView: View {
                     )
                 }
             case .reference(let reference):
+                let source = reference.providerID.map(SearchResultSourceIndicator.externalProvider) ?? .web
                 // 复用 RepoRowSurface 三态透明度（default / hover / selected）+
                 // 圆角 + 左侧 accent bar，让网页卡片与 UnifiedRepoRow 视觉骨架对等。
                 // accentColor: .blue 是"Web 类目色"，与 WebSourceBadge / RemoteFavicon
                 // 背景蓝同源；hover 反馈不再单独叠加，全部走 RepoRowSurface 内置逻辑。
-                rowWithSourceIndicator(source: .web) {
+                rowWithSourceIndicator(source: source) {
                     RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
                         HStack(alignment: .top, spacing: 12) {
                             // 左侧 32pt 容器 + 内嵌 18pt favicon。
@@ -816,7 +821,7 @@ struct SearchCenterView: View {
                                     }
                                 }
                             }
-                            .padding(.trailing, sourceIndicatorTrailingReserve(for: .web))
+                            .padding(.trailing, sourceIndicatorTrailingReserve(for: source))
                             Spacer(minLength: 0)
                         }
                     }
@@ -828,14 +833,14 @@ struct SearchCenterView: View {
         .contentShape(Rectangle())
     }
 
-    /// 「全部」Tab 会混排本地、GitHub、网页结果；只在此场景给卡片内部右侧补一个小来源图标。
-    /// 单独 Tab 已由顶部 scope 表达来源，继续显示会重复。
+    /// 「全部」Tab 用右侧来源图标区分本地/GitHub/Web；Web Tab 也显示具体
+    /// External Search Provider，避免用户看不出当前结果来自哪个服务。
     @ViewBuilder
     private func rowWithSourceIndicator<Content: View>(
         source: SearchResultSourceIndicator?,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        if viewModel.scope == .all, let source {
+        if shouldShowSourceIndicator(source), let source {
             content()
                 .overlay(alignment: .trailing) {
                     SearchResultSourceIcon(source: source)
@@ -847,7 +852,21 @@ struct SearchCenterView: View {
     }
 
     private func sourceIndicatorTrailingReserve(for source: SearchResultSourceIndicator?) -> CGFloat {
-        viewModel.scope == .all && source != nil ? 34 : 0
+        shouldShowSourceIndicator(source) ? 34 : 0
+    }
+
+    private func shouldShowSourceIndicator(_ source: SearchResultSourceIndicator?) -> Bool {
+        guard let source else { return false }
+        if viewModel.scope == .all { return true }
+        if viewModel.scope == .web {
+            switch source {
+            case .web, .externalProvider(_):
+                return true
+            case .local, .github:
+                return false
+            }
+        }
+        return false
     }
 
     /// 同一 repo 可能同时命中本地与 GitHub。优先显示「本地」，因为它已经是用户库内对象；
@@ -873,6 +892,7 @@ struct SearchCenterView: View {
         case local
         case github
         case web
+        case externalProvider(ExternalSearchProviderID)
     }
 
     private struct SearchResultSourceIcon: View {
@@ -906,6 +926,8 @@ struct SearchCenterView: View {
             case .web:
                 Image(systemName: "globe")
                     .font(.system(size: 11, weight: .semibold))
+            case .externalProvider(let provider):
+                ExternalSearchProviderIcon(provider: provider, size: 12)
             }
         }
 
@@ -914,6 +936,8 @@ struct SearchCenterView: View {
             case .local: return .secondary
             case .github: return .primary
             case .web: return .blue
+            case .externalProvider(let provider):
+                return ExternalSearchProviderIcon.tint(for: provider)
             }
         }
 
@@ -922,6 +946,51 @@ struct SearchCenterView: View {
             case .local: return Text("search.scope.local")
             case .github: return Text(verbatim: "GitHub")
             case .web: return Text("search.scope.web")
+            case .externalProvider(let provider):
+                return Text(verbatim: provider.displayName)
+            }
+        }
+    }
+
+    private struct ExternalSearchProviderIcon: View {
+        let provider: ExternalSearchProviderID
+        let size: CGFloat
+
+        var body: some View {
+            icon
+                .foregroundStyle(Self.tint(for: provider))
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
+
+        @ViewBuilder
+        private var icon: some View {
+            switch provider {
+            case .anySearch:
+                Image(systemName: "asterisk")
+                    .font(.system(size: size, weight: .bold))
+            case .tavily:
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: size, weight: .semibold))
+            case .exa:
+                Image(systemName: "magnifyingglass.circle.fill")
+                    .font(.system(size: size, weight: .semibold))
+            case .braveLLMContext:
+                Image(systemName: "shield.fill")
+                    .font(.system(size: size, weight: .semibold))
+            }
+        }
+
+        static func tint(for provider: ExternalSearchProviderID) -> Color {
+            switch provider {
+            case .anySearch:
+                return .orange
+            case .tavily:
+                return .pink
+            case .exa:
+                return .purple
+            case .braveLLMContext:
+                return .orange
             }
         }
     }
@@ -937,14 +1006,39 @@ struct SearchCenterView: View {
             && (viewModel.canLoadMoreGitHub || viewModel.isLoadingGitHub)
     }
 
+    private var shouldShowWebLoadMoreRow: Bool {
+        viewModel.scope == .web
+            && !viewModel.lastSubmittedQuery.isEmpty
+            && !viewModel.candidates.isEmpty
+            && (viewModel.canLoadMoreWeb || viewModel.isLoadingWeb)
+    }
+
     private var githubLoadMoreListRow: some View {
+        loadMoreListRow(isLoading: viewModel.isLoadingGitHub) {
+            Task { await viewModel.loadMoreGitHub() }
+        }
+    }
+
+    private var webLoadMoreListRow: some View {
+        loadMoreListRow(isLoading: viewModel.isLoadingWeb) {
+            Task {
+                await viewModel.loadMoreWeb()
+                maxResultsDraft = String(viewModel.externalSearchFilters.maxResults)
+            }
+        }
+    }
+
+    private func loadMoreListRow(
+        isLoading: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         HStack {
             Spacer()
             Button {
-                Task { await viewModel.loadMoreGitHub() }
+                action()
             } label: {
                 HStack(spacing: 6) {
-                    if viewModel.isLoadingGitHub {
+                    if isLoading {
                         ProgressView()
                             .controlSize(.small)
                     }
@@ -952,16 +1046,16 @@ struct SearchCenterView: View {
                         .font(.system(size: 12, weight: .semibold))
                 }
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
                 .background(Color.secondary.opacity(0.10), in: Capsule())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .disabled(viewModel.isLoadingGitHub)
+            .disabled(isLoading)
             Spacer()
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
     }
 
     /// 浮层底部 footer。按 scope 分支渲染：

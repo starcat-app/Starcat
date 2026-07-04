@@ -138,6 +138,29 @@ struct SearchCenterViewModelTests {
         #expect(provider.lastRequest?.externalSearchFilters.excludeDomains == ["example.com"])
     }
 
+    @Test("Web tab 加载更多会增大 maxResults 并重跑 web source")
+    func loadMoreWebIncreasesMaxResults() async throws {
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let provider = WebLoadMoreStubProvider()
+        let coordinator = SearchCoordinator(providers: [provider])
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
+
+        viewModel.query = "swift"
+        viewModel.scope = .web
+        await viewModel.submit()
+
+        #expect(viewModel.externalSearchFilters.maxResults == 10)
+        #expect(viewModel.canLoadMoreWeb)
+        #expect(provider.maxResultsRequests == [10])
+
+        await viewModel.loadMoreWeb()
+
+        #expect(viewModel.externalSearchFilters.maxResults == 20)
+        #expect(provider.maxResultsRequests == [10, 20])
+        #expect(viewModel.candidates.count == 2)
+    }
+
     @Test("All scope 使用设置页默认 External Search Provider")
     func allScopeUsesDefaultExternalSearchProvider() async throws {
         let oldDefault = AppSettings.shared.externalSearchDefaultProvider
@@ -259,5 +282,31 @@ private final class CapturingWebSearchProvider: SearchProvider, @unchecked Senda
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
         lastRequest = request
         return .empty
+    }
+}
+
+private final class WebLoadMoreStubProvider: SearchProvider, @unchecked Sendable {
+    let source: SearchSource = .web
+    private(set) var maxResultsRequests: [Int] = []
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        maxResultsRequests.append(request.externalSearchFilters.maxResults)
+        let references = (0..<(request.externalSearchFilters.maxResults == 10 ? 1 : 2)).map { index in
+            ReferenceCandidate(
+                normalizedURL: URL(string: "https://example.com/\(index)")!,
+                originalURL: URL(string: "https://example.com/\(index)")!,
+                title: "Result \(index)",
+                snippet: nil,
+                domain: "example.com",
+                source: .web,
+                providerID: request.externalSearchProvider
+            )
+        }
+        return SearchProviderPage(
+            repositories: [],
+            references: references,
+            totalCount: 2,
+            hasNextPage: request.externalSearchFilters.maxResults == 10
+        )
     }
 }
