@@ -451,10 +451,20 @@ struct IntegrationSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ForEach(ExternalSearchProviderID.allCases) { provider in
+                externalSearchProviderList
+            }
+        }
+    }
+
+    private var externalSearchProviderList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(ExternalSearchProviderID.allCases.indices, id: \.self) { index in
+                let provider = ExternalSearchProviderID.allCases[index]
+                if index > 0 {
                     Divider()
-                    externalSearchProviderGroup(provider)
                 }
+                externalSearchProviderGroup(provider)
+                    .padding(.vertical, expandedExternalSearchProviders.contains(provider) ? 10 : 8)
             }
         }
     }
