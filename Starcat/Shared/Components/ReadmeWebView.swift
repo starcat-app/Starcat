@@ -76,6 +76,7 @@ struct ReadmeWebView: NSViewRepresentable {
     var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -135,21 +136,36 @@ struct ReadmeWebView: NSViewRepresentable {
     /// 放行紧接而来的那一次主框架导航，之后所有主框架导航全部 cancel
     /// （挡住右键菜单"重新加载"会把整页 GitHub 拉进来的副作用）。
     private func loadIfNeeded(into webView: WKWebView, context: Context) {
-        let key = ReadmeKey(fragment: htmlFragment, isDark: colorScheme == .dark)
+        let key = ReadmeKey(
+            fragment: htmlFragment,
+            isDark: colorScheme == .dark,
+            interfaceScale: interfaceScale
+        )
         guard context.coordinator.lastLoadedKey != key else { return }
         context.coordinator.lastLoadedKey = key
 
         // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
         // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
         // 不再在渲染线程跑 NSRegularExpression。
-        let fullHTML = Self.assembleDocument(fragment: htmlFragment, isDark: colorScheme == .dark)
+        let fullHTML = Self.assembleDocument(
+            fragment: htmlFragment,
+            isDark: colorScheme == .dark,
+            interfaceScale: interfaceScale
+        )
         context.coordinator.expectsInitialLoad = true
         webView.loadHTMLString(fullHTML, baseURL: baseURL)
     }
 
     /// 将 GitHub 的 HTML 片段包装为完整文档（带 GFM 主题 CSS）。
-    static func assembleDocument(fragment: String, isDark: Bool) -> String {
-        let css = ReadmeCSS.full
+    static func assembleDocument(
+        fragment: String,
+        isDark: Bool,
+        interfaceScale: InterfaceScale = .standard
+    ) -> String {
+        let css = ReadmeCSS.full + "\n" + ReadmeCSS.readingVariables(
+            bodyFontSize: readmeBodyFontSize(for: interfaceScale),
+            lineHeight: readmeLineHeight
+        )
         let bodyClass = isDark ? "markdown-body dark" : "markdown-body"
         return """
         <!DOCTYPE html>
@@ -165,6 +181,14 @@ struct ReadmeWebView: NSViewRepresentable {
         </body>
         </html>
         """
+    }
+
+    /// README 是长文阅读区，标准档比列表正文更偏阅读舒适；用户设置的界面倍率仍统一生效。
+    private static let standardReadmeBodyFontSize: CGFloat = 16
+    private static let readmeLineHeight: CGFloat = 1.62
+
+    private static func readmeBodyFontSize(for interfaceScale: InterfaceScale) -> CGFloat {
+        interfaceScale.scaled(standardReadmeBodyFontSize)
     }
 
     // MARK: - README 链接基地址
@@ -470,6 +494,7 @@ private extension NSView {
 struct ReadmeKey: Equatable {
     let fragment: String
     let isDark: Bool
+    let interfaceScale: InterfaceScale
 }
 
 // MARK: - GFM CSS
@@ -521,8 +546,8 @@ enum ReadmeCSS {
         background: transparent;
         color: var(--fg);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-        font-size: 14px;
-        line-height: 1.6;
+        font-size: var(--readme-body-font-size, 16px);
+        line-height: var(--readme-line-height, 1.62);
         -webkit-text-size-adjust: 100%;
         -webkit-font-smoothing: antialiased;
     }
@@ -680,4 +705,19 @@ enum ReadmeCSS {
         border-radius: 4px;
     }
     """
+
+    /// README 文档由 WebKit 渲染，不能直接套 SwiftUI `Font`；这里用 CSS variables
+    /// 把 Starcat 的 `InterfaceScale` 注入 GFM 样式，同时保留标题和代码块的 em 层级。
+    static func readingVariables(bodyFontSize: CGFloat, lineHeight: CGFloat) -> String {
+        """
+        :root {
+            --readme-body-font-size: \(cssPixels(bodyFontSize));
+            --readme-line-height: \(String(format: "%.2f", Double(lineHeight)));
+        }
+        """
+    }
+
+    private static func cssPixels(_ value: CGFloat) -> String {
+        String(format: "%.2fpx", Double(value))
+    }
 }

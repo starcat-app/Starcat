@@ -59,7 +59,7 @@ public struct LanguageBadge: View {
             // 颜色查表（上一行 LanguageColor.color）必须传 raw 名，
             // 文字显示走短名（"Jupyter Notebook" → "Jupyter"），详见 LanguageDisplayName。
             Text(LanguageDisplayName.shortened(for: language))
-                .font(interfaceScale.font(size: style == .full ? 11 : 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(style == .full ? .primary : .secondary)
                 .lineLimit(1)
         }
@@ -91,10 +91,10 @@ public struct StarsBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "star.fill")
-                .font(interfaceScale.font(size: style == .full ? 10 : 9))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.yellow)
             Text(count.formattedShort)
-                .font(interfaceScale.font(size: style == .full ? 11 : 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -142,12 +142,12 @@ public struct MetaBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: systemImage)
-                .font(interfaceScale.font(size: 9, weight: .medium))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
             if iconOnly {
                 EmptyView()
             } else {
                 Text(text)
-                    .font(interfaceScale.font(size: 10))
+                    .font(interfaceScale.font(.captionSmall))
                     .lineLimit(1)
             }
         }
@@ -212,10 +212,10 @@ public struct ArchivedBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "archivebox")
-                .font(interfaceScale.font(size: 9, weight: .medium))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
             if !iconOnly {
                 Text("repo.archived")
-                    .font(interfaceScale.font(size: 10))
+                    .font(interfaceScale.font(.captionSmall))
                     .lineLimit(1)
             }
         }
@@ -244,9 +244,9 @@ public struct RelativeDateBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "clock")
-                .font(interfaceScale.font(size: 9, weight: .medium))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
             Text(date, style: .relative)
-                .font(interfaceScale.font(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .lineLimit(1)
         }
         .foregroundStyle(.secondary)

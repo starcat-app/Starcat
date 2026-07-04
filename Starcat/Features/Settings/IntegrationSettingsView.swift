@@ -11,6 +11,7 @@ import SwiftUI
 
 struct IntegrationSettingsTab: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
     @State private var storage = CodeFlowStorage.shared
     @State private var codebaseMemoryStorage = CodebaseMemoryStorage.shared
@@ -250,6 +251,7 @@ struct IntegrationSettingsTab: View {
             browserPluginRepositoryIcon(assetName: assetName, isHovering: isHovering)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .help(Text(titleKey))
         .accessibilityLabel(Text(titleKey))
     }
@@ -361,7 +363,7 @@ struct IntegrationSettingsTab: View {
         isHovering: Bool
     ) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .medium))
+            .font(interfaceScale.font(.iconMedium, weight: .medium))
             .foregroundStyle(foregroundStyle)
             .frame(width: 36, height: 28)
             .background(

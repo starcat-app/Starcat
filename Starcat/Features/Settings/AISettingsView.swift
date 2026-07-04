@@ -1445,8 +1445,8 @@ struct AISettingsTab: View {
         }
     }
 
-    /// Tier 1 关键文件保留行数 Stepper 行。范围 40-200、步进 20。
-    /// 单 Stepper 占一行（与 aiIndexSection 的 ratioRow 同样的「标题 + 读数 + 控件」横向布局）。
+    /// Tier 1 关键文件保留行数输入行。范围 40-200。
+    /// 项目 UI 规范禁止 Stepper，所以这里使用数字 TextField，并在 binding setter 里钳制范围。
     ///
     /// HOM-203：右侧读数原本写成 `Text("ai.context...Format \(value)")`，被 SwiftUI
     /// 编译成 LocalizedStringKey `"ai.context...Format %@"`，xcstrings 中该带 `%@`
@@ -1466,13 +1466,14 @@ struct AISettingsTab: View {
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 60, alignment: .trailing)
-            Stepper(
+            TextField(
                 "",
                 value: repoContextTier1MaxLinesBinding,
-                in: 40...200,
-                step: 20
+                format: .number
             )
-            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .font(.callout.monospacedDigit())
+            .frame(width: 72)
             .disabled(!settings.aiRepoContextEnabled)
         }
     }
@@ -1641,12 +1642,13 @@ struct AISettingsTab: View {
         )
     }
 
-    /// Tier 1 行数 Int binding。Stepper 原生支持 Int，理论上可直接绑字段，但 AISettingsTab
-    /// 没用 `@Bindable var settings = settings`，照样要自定义 binding。
+    /// Tier 1 行数 Int binding。
+    ///
+    /// TextField 写入时统一钳制 40...200，避免用户输入越界值进入 UserDefaults。
     private var repoContextTier1MaxLinesBinding: Binding<Int> {
         Binding(
             get: { self.settings.aiRepoContextTier1MaxLines },
-            set: { self.settings.aiRepoContextTier1MaxLines = $0 }
+            set: { self.settings.aiRepoContextTier1MaxLines = min(max($0, 40), 200) }
         )
     }
 

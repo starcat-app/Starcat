@@ -106,10 +106,10 @@ struct StarStatChipButton: View {
                 iconOrSpinner
                 Text(count, format: .number)
                     .monospacedDigit()
-                    .font(interfaceScale.font(size: 14, weight: .medium))
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
             Text("repo.stars")
-                .font(interfaceScale.font(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
         .foregroundStyle(showErrorFlash ? Color.red : Color.primary)
@@ -128,11 +128,11 @@ struct StarStatChipButton: View {
         } else if isStarred {
             Image(systemName: "star.fill")
                 .foregroundStyle(.yellow)
-                .font(interfaceScale.font(size: 14))
+                .font(interfaceScale.font(.bodyEmphasis))
         } else {
             Image(systemName: "star")
                 .foregroundStyle(.secondary)
-                .font(interfaceScale.font(size: 14))
+                .font(interfaceScale.font(.bodyEmphasis))
         }
     }
 

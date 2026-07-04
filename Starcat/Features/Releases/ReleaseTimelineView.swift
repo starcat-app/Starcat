@@ -83,12 +83,12 @@ struct ReleaseTimelineView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .font(interfaceScale.font(size: 14, weight: .semibold))
+            .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
             // 标题是弹窗身份标识，不能在中英环境或大字号下被右侧工具压成两行。
             .layoutPriority(2)
             if let vm = viewModel, vm.unreadCount > 0 {
                 Text(verbatim: "\(vm.unreadCount)")
-                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.accentColor.opacity(0.18), in: Capsule())
                     .foregroundStyle(Color.accentColor)
@@ -106,7 +106,7 @@ struct ReleaseTimelineView: View {
                 Task { await viewModel?.markAllRead() }
             } label: {
                 Image(systemName: "checkmark.circle")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.iconSmall))
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
@@ -127,11 +127,11 @@ struct ReleaseTimelineView: View {
         HStack(spacing: 4) {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .foregroundStyle(.secondary)
-                .font(interfaceScale.font(size: 11))
+                .font(interfaceScale.font(.captionSmall))
             TextField("releases.assetFilter.placeholder", text: $assetFilter)
                 .textFieldStyle(.plain)
                 .frame(minWidth: 96, idealWidth: 150, maxWidth: 170)
-                .font(interfaceScale.font(size: 11))
+                .font(interfaceScale.font(.captionSmall))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -241,7 +241,7 @@ private struct ReleaseCheckNowButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(interfaceScale.font(size: 13))
+                .font(interfaceScale.font(.iconSmall))
                 .rotationEffect(.degrees(rotation))
                 .foregroundStyle(isChecking ? Color.accentColor : Color.secondary)
                 .frame(width: 22, height: 22)
@@ -432,18 +432,18 @@ private struct ReleaseTimelineRow: View {
 
                 // repo 名称：升到 body.semibold，比 tag / 时间这些副信息明显大一档
                 Text(verbatim: entry.repo.fullName)
-                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(.body, weight: .semibold))
                     .lineLimit(1)
 
                 // tag
                 Text(verbatim: entry.release.tagName)
-                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(.code, weight: .semibold))
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(.bar, in: Capsule())
 
                 if entry.release.isPrerelease {
                     Text("releases.row.prerelease")
-                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.orange.opacity(0.18), in: Capsule())
                         .foregroundStyle(Color.orange)
@@ -453,7 +453,7 @@ private struct ReleaseTimelineRow: View {
 
                 if let date = relativeDate(entry.release.publishedAt) {
                     Text(verbatim: date)
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                 }
 
@@ -461,7 +461,7 @@ private struct ReleaseTimelineRow: View {
                     onToggleRead(!entry.release.isRead)
                 } label: {
                     Image(systemName: entry.release.isRead ? "circle" : "checkmark.circle.fill")
-                        .font(interfaceScale.font(size: 12))
+                        .font(interfaceScale.font(.caption))
                         .foregroundStyle(entry.release.isRead ? .secondary : Color.accentColor)
                 }
                 .buttonStyle(.borderless)
@@ -474,7 +474,7 @@ private struct ReleaseTimelineRow: View {
                     }
                 } label: {
                     Image(systemName: "arrow.up.right.square")
-                        .font(interfaceScale.font(size: 12))
+                        .font(interfaceScale.font(.caption))
                 }
                 .buttonStyle(.borderless)
                 .focusEffectDisabled()
@@ -483,7 +483,7 @@ private struct ReleaseTimelineRow: View {
 
             if let title = entry.release.name, !title.isEmpty, title != entry.release.tagName {
                 Text(verbatim: title)
-                    .font(interfaceScale.font(size: 13, weight: .medium))
+                    .font(interfaceScale.font(.body, weight: .medium))
                     .foregroundStyle(.primary)
             }
 
@@ -509,7 +509,7 @@ private struct ReleaseTimelineRow: View {
             .help(isBodyExpanded ? Text("releases.row.collapseNotes") : Text("releases.row.expandNotes"))
             if isBodyExpanded {
                 Markdown(body)
-                    .font(interfaceScale.font(size: 12))
+                    .font(interfaceScale.font(.caption))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -537,7 +537,7 @@ private struct ReleaseTimelineRow: View {
                     )
                 } else {
                     Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
-                        .font(interfaceScale.font(size: 12, weight: .semibold))
+                        .font(interfaceScale.font(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
 
@@ -554,7 +554,7 @@ private struct ReleaseTimelineRow: View {
         } else if !assetFilter.isEmpty {
             // 用户在过滤但本条没匹配资产，给一个占位提示
             Text("releases.row.noMatchingAsset")
-                .font(interfaceScale.font(size: 11))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }
@@ -586,7 +586,7 @@ private struct ReleaseTimelineRow: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.right")
-                    .font(interfaceScale.font(size: 10, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .frame(width: 16, height: 16)
@@ -597,7 +597,7 @@ private struct ReleaseTimelineRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .font(interfaceScale.font(size: 12, weight: .semibold))
+            .font(interfaceScale.font(.caption, weight: .semibold))
             .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }

@@ -39,4 +39,22 @@ struct ReadmeWebViewTests {
         #expect(html.contains(".readme-image-preview"))
         #expect(html.contains("body.readme-js-ready .markdown-body img:not(.readme-image-loaded)"))
     }
+
+    @Test("README 正文字号接入界面倍率")
+    func assembleDocument_injectsReadableFontSizeFromInterfaceScale() {
+        let standardHTML = ReadmeWebView.assembleDocument(
+            fragment: "<p>Hello</p>",
+            isDark: false
+        )
+        let largeHTML = ReadmeWebView.assembleDocument(
+            fragment: "<p>Hello</p>",
+            isDark: false,
+            interfaceScale: .large
+        )
+
+        #expect(standardHTML.contains("--readme-body-font-size: 16.00px;"))
+        #expect(largeHTML.contains("--readme-body-font-size: 18.56px;"))
+        #expect(standardHTML.contains("font-size: var(--readme-body-font-size, 16px);"))
+        #expect(standardHTML.contains("line-height: var(--readme-line-height, 1.62);"))
+    }
 }

@@ -154,7 +154,7 @@ struct UnifiedRepoRow: View {
                     // fullName + 已 star ✓ 标记 + Fork 徽章
                     HStack(spacing: 4) {
                         Text(card.fullName)
-                            .font(interfaceScale.font(size: 13, weight: .semibold))
+                            .font(interfaceScale.font(.body, weight: .semibold))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .layoutPriority(1)
@@ -164,7 +164,7 @@ struct UnifiedRepoRow: View {
                             // v1.8 修订(2026-06-10):双条件 AND——Manage 不传 showStarredCheckmark
                             // 默认 false 即不显;Trending / Weekly 显式传 true,再由 card.isStarred 决定单 row。
                             Image(systemName: "checkmark.circle.fill")
-                                .font(interfaceScale.font(size: 11, weight: .semibold))
+                                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                                 .foregroundStyle(Color.green)
                                 .accessibilityLabel(Text("repo.card.alreadyStarred"))
                         }
@@ -210,7 +210,7 @@ struct UnifiedRepoRow: View {
 
                     if let description = card.description, !description.isEmpty {
                         Text(description)
-                            .font(interfaceScale.font(size: 12))
+                            .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -284,7 +284,7 @@ struct UnifiedRepoRow: View {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
             if case .activityKind(let category) = card.badge {
                 Image(systemName: category.systemImage)
-                    .font(interfaceScale.font(size: 8, weight: .bold))
+                    .font(interfaceScale.font(.captionSmall, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(3)
                     .background(Circle().fill(category.iconColor))
@@ -295,7 +295,7 @@ struct UnifiedRepoRow: View {
         .overlay(alignment: .topLeading) {
             if card.isInLibrary {
                 Image(systemName: "heart.fill")
-                    .font(interfaceScale.font(size: 10, weight: .bold))
+                    .font(interfaceScale.font(.captionSmall, weight: .bold))
                     .foregroundStyle(Color.fromHex6(0xE11D48))
                     .padding(2)
                     .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
@@ -314,9 +314,9 @@ struct UnifiedRepoRow: View {
         case .trendingChange(let change):
             HStack(spacing: 3) {
                 Image(systemName: change >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(interfaceScale.font(size: 9, weight: .bold))
+                    .font(interfaceScale.font(.captionSmall, weight: .bold))
                 Text("\(change >= 0 ? "+" : "")\(change.formattedShort)")
-                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(.code, weight: .semibold))
             }
             .foregroundStyle(change >= 0 ? Color.green : Color.red)
             .padding(.horizontal, 6)
@@ -336,9 +336,9 @@ struct UnifiedRepoRow: View {
             // 视觉行为同源问题，但 dong4j 本次未要求改 —— 留作后续。
             HStack(spacing: 4) {
                 Image(systemName: "newspaper")
-                    .font(interfaceScale.font(size: 10, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 Text("# \(number)")
-                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(.code, weight: .semibold))
             }
             .foregroundStyle(Self.weeklyChipTint)
             .padding(.horizontal, 6)
@@ -370,7 +370,7 @@ private struct WeeklySourceInlineBadge: View {
             }
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(interfaceScale.font(size: 10, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(.code, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -389,7 +389,7 @@ private struct WeeklySourceInlineBadge: View {
         switch source {
         case .unknown:
             Image(systemName: source.assetName)
-                .font(interfaceScale.font(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
                 .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
@@ -414,9 +414,9 @@ private struct RepoCardInlineMetadataBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: metadata.systemImage)
-                .font(interfaceScale.font(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
             Text(verbatim: metadata.text)
-                .font(interfaceScale.font(size: 10, weight: .semibold, design: .monospaced))
+                .font(interfaceScale.font(.code, weight: .semibold))
                 .lineLimit(1)
         }
         .foregroundStyle(.secondary)
@@ -456,9 +456,9 @@ struct SemanticScoreBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "sparkles")
-                .font(interfaceScale.font(size: 9, weight: .bold))
+                .font(interfaceScale.font(.captionSmall, weight: .bold))
             Text(scoreText)
-                .font(interfaceScale.font(size: 10, weight: .semibold, design: .monospaced))
+                .font(interfaceScale.font(.code, weight: .semibold))
         }
         .foregroundStyle(.purple)
         .padding(.horizontal, 6)
@@ -524,18 +524,14 @@ struct OpenSSFScoreBadge: View {
         return .red
     }
 
-    private var iconSize: CGFloat {
-        size == .compact ? 9 : 11
-    }
-
     private var textFont: Font {
-        interfaceScale.font(size: size == .compact ? 10 : 12)
+        interfaceScale.font(size == .compact ? .captionSmall : .caption)
     }
 
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "checkmark.shield.fill")
-                .font(interfaceScale.font(size: iconSize, weight: .semibold))
+                .font(interfaceScale.font(size == .compact ? .captionSmall : .caption, weight: .semibold))
                 .foregroundStyle(Self.iridescentForeground)
             Text(verbatim: score.formattedScore)
                 .font(textFont)
@@ -596,9 +592,9 @@ fileprivate struct RepoStatusChip: View {
             // 高亮 —— 这是用户主动标的"重点 repo"，应该比 unread 更突出。
             HStack(spacing: 3) {
                 Image(systemName: "bookmark.fill")
-                    .font(interfaceScale.font(size: 9, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 Text("repo.status.using")
-                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
             }
             .foregroundStyle(Color.accentColor)
             .padding(.horizontal, 6)
