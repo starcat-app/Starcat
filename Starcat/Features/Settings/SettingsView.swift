@@ -505,14 +505,9 @@ private struct InterestedLanguagesSettingsSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], alignment: .leading, spacing: 8) {
+                FlowLayout(spacing: 8) {
                     ForEach(presets, id: \.self) { language in
-                        Toggle(isOn: binding(for: language)) {
-                            Text(language)
-                                .lineLimit(1)
-                        }
-                        .toggleStyle(.button)
-                        .controlSize(.small)
+                        languagePresetChip(language)
                     }
                 }
 
@@ -557,6 +552,33 @@ private struct InterestedLanguagesSettingsSection: View {
         )
     }
 
+    private func languagePresetChip(_ language: String) -> some View {
+        Button {
+            if contains(language) {
+                removeLanguage(language)
+            } else {
+                addLanguage(language)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                LanguageIconView(language: language, size: 14)
+                Text(LanguageDisplayName.shortened(for: language))
+                    .font(.callout)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(presetChipBackground(for: language), in: Capsule())
+            .foregroundStyle(contains(language) ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    private func presetChipBackground(for language: String) -> Color {
+        contains(language) ? .accentColor : Color(nsColor: .controlBackgroundColor)
+    }
+
     private func addDraftLanguage() {
         let value = normalizedDraft
         guard !value.isEmpty else { return }
@@ -588,9 +610,11 @@ private struct FlowTagList: View {
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(tags, id: \.self) { language in
-                HStack(spacing: 4) {
-                    Text(language)
+                HStack(spacing: 6) {
+                    LanguageIconView(language: language, size: 13)
+                    Text(LanguageDisplayName.shortened(for: language))
                         .font(.caption)
+                        .lineLimit(1)
                     Button {
                         removeAction(language)
                     } label: {
