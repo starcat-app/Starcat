@@ -17,6 +17,7 @@ struct ProEntitlement: Equatable, Sendable {
     enum Source: String, Sendable {
         case none
         case storeKit
+        case directLicense
         case testEnvironment
         case debugOverride
     }

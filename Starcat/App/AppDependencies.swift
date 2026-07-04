@@ -43,6 +43,10 @@ final class AppDependencies {
     let telemetryManager: TelemetryManager
     /// StoreKit 2 订阅协调器。它是 Pro 权益的单一真相源。
     let subscriptionManager: SubscriptionManager
+    /// Direct 分发 License 授权管理器。当前不直接暴露支付网关细节。
+    let directLicenseManager: DirectLicenseManager
+    /// StoreKit + Direct License 的聚合权益真相源。
+    let proEntitlementProvider: CompositeProEntitlementProvider
     /// Direct 版 Sparkle 自动更新协调器。App Store 构建中保持 no-op。
     let directUpdateController: DirectUpdateController
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
@@ -496,9 +500,16 @@ final class AppDependencies {
         )
         let subscriptions = SubscriptionManager(settings: settings)
         self.subscriptionManager = subscriptions
+        let directLicenseManager = DirectLicenseManager()
+        self.directLicenseManager = directLicenseManager
+        let proEntitlementProvider = CompositeProEntitlementProvider(
+            settings: settings,
+            providers: [subscriptions, directLicenseManager]
+        )
+        self.proEntitlementProvider = proEntitlementProvider
         self.directUpdateController = DirectUpdateController()
         self.entitlementGate = EntitlementGate(
-            entitlementProvider: subscriptions,
+            entitlementProvider: proEntitlementProvider,
             userIDProvider: { [weak session] in
                 session?.state.user?.id
             }
@@ -987,6 +998,11 @@ final class AppDependencies {
                 await bootstrapper.reload()
             }
             subscriptions.onEntitlementDidChange = { [weak self] in
+                self?.proEntitlementProvider.reloadFromSources()
+                self?.mcpService.refreshForCurrentSettings()
+            }
+            directLicenseManager.onEntitlementDidChange = { [weak self] in
+                self?.proEntitlementProvider.reloadFromSources()
                 self?.mcpService.refreshForCurrentSettings()
             }
             self.mcpService.refreshForCurrentSettings()
