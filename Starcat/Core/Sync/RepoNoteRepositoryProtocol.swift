@@ -85,6 +85,11 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// - 只有状态实际变化时才更新 `library_updated_at`。
     func updateLibraryState(repoId: Int64, state: LibraryState) async throws
 
+    /// 确保 repo 在 `repos` 表中有一条基础行（INSERT OR IGNORE）。
+    ///
+    /// 探索模块的仓库可能尚未同步到本地，加入/移出知识库前需补占位行以通过 FK 约束。
+    func ensureRepoRowExists(repoId: Int64, owner: String, name: String) async throws
+
     /// 自动状态机：把 `unread` 提升为 `read`（README 加载完成后由 UI 层调用）。
     ///
     /// **语义保证（重要约束）**：

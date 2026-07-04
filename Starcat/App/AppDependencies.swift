@@ -351,6 +351,15 @@ final class AppDependencies {
     /// 仍按业务语义独立（前者打标签+Unstar，后者 Star+Unstar），不存在污染问题。
     let trendingMultiSelectionStore: MultiSelectionStore
 
+    /// 2026-07-05：探索 - 发现 多选 store。
+    let discoverMultiSelectionStore: MultiSelectionStore
+
+    /// 2026-07-05：探索 - 热门 多选 store。
+    let popularMultiSelectionStore: MultiSelectionStore
+
+    /// 2026-07-05：探索 - 新发布 多选 store。
+    let newReleasesMultiSelectionStore: MultiSelectionStore
+
     /// W12 toolbar 专项 PR-4：Weekly 多选 store。
     let weeklyMultiSelectionStore: MultiSelectionStore
 
@@ -922,8 +931,11 @@ final class AppDependencies {
             registry: registry
         )
 
-        // W12 PR-4：三个 page 的多选 store。各 page 独立持有，互不干扰。
+        // W12 PR-4：各 page 的多选 store。各 page 独立持有，互不干扰。
+        self.discoverMultiSelectionStore = MultiSelectionStore()
         self.trendingMultiSelectionStore = MultiSelectionStore()
+        self.popularMultiSelectionStore = MultiSelectionStore()
+        self.newReleasesMultiSelectionStore = MultiSelectionStore()
         self.weeklyMultiSelectionStore = MultiSelectionStore()
         self.activityMultiSelectionStore = MultiSelectionStore()
         self.manageMultiSelectionStore = MultiSelectionStore()

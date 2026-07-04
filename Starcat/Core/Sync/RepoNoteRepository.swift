@@ -263,6 +263,24 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         }
     }
 
+    /// 确保 repo 在 `repos` 表中至少有一条基础行，否则 `repo_notes` 的 FK 约束会拒绝写入。
+    ///
+    /// 探索模块（发现/趋势/热门/新发布）的仓库可能尚未同步到本地，加入知识库时先补一条
+    /// 占位行（owner/name 来自 SelectionSnapshot），后续 README 加载 / 详情页展开时会用
+    /// 远程数据覆写为完整字段。
+    func ensureRepoRowExists(repoId: Int64, owner: String, name: String) async throws {
+        let fullName = "\(owner)/\(name)"
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT OR IGNORE INTO repos (id, owner, name, full_name, html_url, stars_count, forks_count, watchers_count, is_private, is_fork, is_archived, is_starred)
+                VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0)
+                """,
+                arguments: [repoId, owner, name, fullName, "https://github.com/\(fullName)"]
+            )
+        }
+    }
+
     func updateLibraryState(repoId: Int64, state: LibraryState) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         try await database.writer.write { db in

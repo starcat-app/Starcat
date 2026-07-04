@@ -190,13 +190,11 @@ struct RepoListView: View {
             exitInactiveMultiSelectStores(for: newPage, activityCategory: selectedActivityCategory)
         }
         .onChange(of: selectedExploreMode) { _, newMode in
-            if newMode != .trending {
-                let store = dependencies.trendingMultiSelectionStore
+            let current = exploreMultiSelectionStore
+            for store in allExploreMultiSelectStores where store !== current {
                 if store.isActive { store.exit() }
             }
             if newMode != .weekly {
-                let store = dependencies.weeklyMultiSelectionStore
-                if store.isActive { store.exit() }
                 dependencies.weeklySelectionService.clearSelection()
             }
         }
@@ -335,40 +333,45 @@ struct RepoListView: View {
     /// Manage 库内 100% 已 star，登出会触发会话清空但不主动 exit manage store（manage 多选不依赖
     /// GitHub API token，本地操作如打标签仍可执行；如果用户登出后打 unstar 会被 StarActionService 拦）。
     private func exitAllRemoteStores() {
-        let trending = dependencies.trendingMultiSelectionStore
-        let weekly = dependencies.weeklyMultiSelectionStore
-        let activity = dependencies.activityMultiSelectionStore
-        if trending.isActive { trending.exit() }
-        if weekly.isActive { weekly.exit() }
-        if activity.isActive { activity.exit() }
+        for store in allExploreMultiSelectStores {
+            if store.isActive { store.exit() }
+        }
+    }
+
+    /// 探索模块全部子模式的多选 store 列表。
+    private var allExploreMultiSelectStores: [MultiSelectionStore] {
+        [
+            dependencies.discoverMultiSelectionStore,
+            dependencies.trendingMultiSelectionStore,
+            dependencies.popularMultiSelectionStore,
+            dependencies.newReleasesMultiSelectionStore,
+            dependencies.weeklyMultiSelectionStore,
+            dependencies.activityMultiSelectionStore,
+        ]
     }
 
     /// 把"非当前 page+分类"对应的多选 store 全部 exit。
     /// W12 PR-5：Manage 也走 store，切到 trending/activity 时把 manage store 一并 exit。
     private func exitInactiveMultiSelectStores(for page: SidebarRootPage, activityCategory: ActivityCategory) {
         let manage = dependencies.manageMultiSelectionStore
-        let trending = dependencies.trendingMultiSelectionStore
-        let weekly = dependencies.weeklyMultiSelectionStore
-        let activity = dependencies.activityMultiSelectionStore
+        let currentExplore = exploreMultiSelectionStore
 
         switch page {
         case .manage:
-            if trending.isActive { trending.exit() }
-            if weekly.isActive { weekly.exit() }
-            if activity.isActive { activity.exit() }
-        case .trending:
-            if selectedExploreMode != .trending, trending.isActive {
-                trending.exit()
+            for store in allExploreMultiSelectStores {
+                if store.isActive { store.exit() }
             }
-            if selectedExploreMode != .weekly, weekly.isActive {
-                weekly.exit()
+        case .trending:
+            // exit 非当前子模式的所有 explore stores
+            for store in allExploreMultiSelectStores where store !== currentExplore {
+                if store.isActive { store.exit() }
             }
             if manage.isActive { manage.exit() }
-            if activity.isActive { activity.exit() }
         case .activity:
             if manage.isActive { manage.exit() }
-            if trending.isActive { trending.exit() }
-            if weekly.isActive { weekly.exit() }
+            for store in allExploreMultiSelectStores where store !== dependencies.activityMultiSelectionStore {
+                if store.isActive { store.exit() }
+            }
         }
     }
 
@@ -410,8 +413,7 @@ struct RepoListView: View {
     ///   这样避免用户在非 Manage 页面看到一个 disabled 搜索框，却误以为当前页支持
     ///   本地 FTS5 / 向量搜索。
     /// W12 PR-4：根据当前 page 选择对应的多选 BatchActionBar 实现。
-    /// W12 PR-5：Manage 也走 MultiSelectionStore，但保留独立 BatchActionBar（暴露
-    /// 「打标签」+「Unstar」业务语义按钮，与 RemoteBatchActionBar 的「Star」+「Unstar」不同）。
+    /// 2026-07-05：探索模块全部子模式统一走 RemoteBatchActionBar（6 种操作）。
     @ViewBuilder
     private var currentBatchActionBar: some View {
         switch selectedPage {
@@ -421,22 +423,26 @@ struct RepoListView: View {
                 BatchActionBar()
             }
         case .trending:
-            if selectedExploreMode == .trending {
-                let store = dependencies.trendingMultiSelectionStore
-                if store.isActive {
-                    RemoteBatchActionBar(store: store)
-                }
-            } else if selectedExploreMode == .weekly {
-                let store = dependencies.weeklyMultiSelectionStore
-                if store.isActive {
-                    RemoteBatchActionBar(store: store)
-                }
+            let store = exploreMultiSelectionStore
+            if store.isActive {
+                RemoteBatchActionBar(store: store)
             }
         case .activity:
             let store = dependencies.activityMultiSelectionStore
             if store.isActive {
                 RemoteBatchActionBar(store: store)
             }
+        }
+    }
+
+    /// 根据当前 explore 子模式返回对应的 MultiSelectionStore。
+    private var exploreMultiSelectionStore: MultiSelectionStore {
+        switch selectedExploreMode {
+        case .discover:    return dependencies.discoverMultiSelectionStore
+        case .trending:    return dependencies.trendingMultiSelectionStore
+        case .popular:     return dependencies.popularMultiSelectionStore
+        case .newReleases: return dependencies.newReleasesMultiSelectionStore
+        case .weekly:      return dependencies.weeklyMultiSelectionStore
         }
     }
 
@@ -511,30 +517,41 @@ struct RepoListView: View {
 
     /// Explore 的 Discovery 子模块 toolbar spec。
     ///
-    /// 发现 / 热门 / 新发布列表项来自公共后端快照，首期不支持批量 star/unstar；
-    /// 选中单仓库时只暴露外链 / clone / 分享等与其它远端列表一致的安全动作。
+    /// 2026-07-05：发现 / 热门 / 新发布 已接入统一多选，支持全部 6 种批量操作。
     @MainActor
     private func makeDiscoveryToolbarSpec() -> PageToolbarSpec {
+        let store = exploreMultiSelectionStore
         let registry = dependencies.starredRegistry
+        let isAuthed = authSession.state.isAuthenticated
 
-        let trailing: AnyView? = selectedDiscoveryRepo.map { repo in
-            let isStarred = registry.contains(ghRepoId: repo.repoID)
-            let actionRepo = repo.toEphemeralRepo(isStarred: isStarred)
-            let selection = ToolbarRepoSelection.from(
-                repo: actionRepo,
-                isStarred: isStarred
-            )
-            return AnyView(
-                Group {
+        let trailing: AnyView? = {
+            let selectionView: AnyView? = selectedDiscoveryRepo.map { repo in
+                let isStarred = registry.contains(ghRepoId: repo.repoID)
+                let actionRepo = repo.toEphemeralRepo(isStarred: isStarred)
+                let selection = ToolbarRepoSelection.from(
+                    repo: actionRepo,
+                    isStarred: isStarred
+                )
+                return AnyView(
                     selectedRepoToolbarActions(
                         selection: selection,
                         codeFlowRepo: actionRepo.isPrivate ? nil : actionRepo,
                         shareRepo: actionRepo,
                         isShareAvailable: isStarred
                     )
+                )
+            }
+            return AnyView(
+                Group {
+                    selectionView
+                    MultiSelectButton(
+                        isActive: store.isActive,
+                        action: { store.toggle() },
+                        isDisabled: !isAuthed
+                    )
                 }
             )
-        }
+        }()
 
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),

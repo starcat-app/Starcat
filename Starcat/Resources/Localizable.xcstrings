@@ -7256,6 +7256,74 @@
         }
       }
     },
+    "batch.library.remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移出知识库"
+          }
+        }
+      }
+    },
+    "batch.library.remove.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove selected repos from Starcat Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将选中仓库移出知识库"
+          }
+        }
+      }
+    },
+    "batch.library.remove.processing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removing from Library..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在移出知识库..."
+          }
+        }
+      }
+    },
+    "batch.library.remove.summaryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library: removed %d / skipped %d / failed %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库：移出 %d / 跳过 %d / 失败 %d"
+          }
+        }
+      }
+    },
     "batch.addTagsFailed" : {
       "extractionState" : "stale",
       "localizations" : {

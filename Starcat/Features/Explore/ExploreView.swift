@@ -258,13 +258,33 @@ private struct ExploreDiscoveryListView: View {
         }
     }
 
+    /// 当前探索子模式对应的多选 store。
+    private var exploreStore: MultiSelectionStore {
+        switch mode {
+        case .discover:    return dependencies.discoverMultiSelectionStore
+        case .trending:    return dependencies.trendingMultiSelectionStore
+        case .popular:     return dependencies.popularMultiSelectionStore
+        case .newReleases: return dependencies.newReleasesMultiSelectionStore
+        case .weekly:      return dependencies.weeklyMultiSelectionStore
+        }
+    }
+
     private var repoList: some View {
-        List {
+        let store = exploreStore
+        return List {
             ForEach(indexedRepos) { item in
                 let repo = item.repo
                 Button {
-                    selectedRepoID = repo.repoID
-                    selectedRepo = repo
+                    if store.isActive {
+                        store.toggle(SelectionSnapshot(
+                            ghRepoId: repo.repoID,
+                            owner: repo.owner,
+                            name: repo.name
+                        ))
+                    } else {
+                        selectedRepoID = repo.repoID
+                        selectedRepo = repo
+                    }
                 } label: {
                     UnifiedRepoRow(
                         card: repo.asCardData(
@@ -272,7 +292,9 @@ private struct ExploreDiscoveryListView: View {
                             isInLibrary: isInLibrary(repo.repoID),
                             openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.repoID)
                         ),
-                        isSelected: selectedRepoID == repo.repoID,
+                        isSelected: store.isActive
+                            ? store.contains(ghRepoId: repo.repoID)
+                            : (selectedRepoID == repo.repoID),
                         showStarredCheckmark: true
                     )
                 }

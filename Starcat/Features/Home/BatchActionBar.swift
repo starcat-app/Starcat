@@ -41,6 +41,9 @@ struct BatchActionBar: View {
     /// 仅 > 5 条时弹；≤ 5 条直接 enqueue。
     @State private var showUnstarConfirm: Bool = false
 
+    /// 知识库分组：批量 star 二次确认 sheet（与 unstar 对称）。
+    @State private var showStarConfirm: Bool = false
+
     /// 完成摘要 toast（"成功 X / 跳过 Y / 失败 Z"）。
     /// 用本地 @State 缓存，避免 service.completionSummary 被立即清空时 toast 来不及显示。
     @State private var toastMessage: String?
@@ -48,6 +51,8 @@ struct BatchActionBar: View {
     @State private var isMovingGitHubStarLists: Bool = false
     /// 批量加入知识库是本地 repo_notes 写入，不进入 GitHub star/unstar 队列。
     @State private var isAddingToLibrary: Bool = false
+    /// 批量移出知识库（仅在「知识库」分组下出现）。
+    @State private var isRemovingFromLibrary: Bool = false
 
     /// W12 PR-5：抽出 store 引用，便于 idleContent 直接读 count / snapshots 不必每次走依赖链。
     private var store: MultiSelectionStore { dependencies.manageMultiSelectionStore }
@@ -58,6 +63,8 @@ struct BatchActionBar: View {
                 runningContent
             } else if isAddingToLibrary {
                 addingToLibraryContent
+            } else if isRemovingFromLibrary {
+                removingFromLibraryContent
             } else if isMovingGitHubStarLists {
                 movingGitHubStarListsContent
             } else {
@@ -100,6 +107,20 @@ struct BatchActionBar: View {
             )
             .appLocaleEnvironment()
         }
+        .sheet(isPresented: $showStarConfirm) {
+            let targets = starEligibleTargets()
+            BatchStarConfirmSheet(
+                action: .star,
+                targets: targets,
+                estimatedSkipped: estimatedSkipped(targets: targets, action: .star),
+                onConfirm: {
+                    showStarConfirm = false
+                    startBatchStar(targets: targets)
+                },
+                onCancel: { showStarConfirm = false }
+            )
+            .appLocaleEnvironment()
+        }
         // 监听 batchStarService.completionSummary：写一次后立即 consume，避免下次切换时残留。
         .onChange(of: dependencies.batchStarService.completionSummary) { _, newValue in
             guard let summary = newValue else { return }
@@ -129,37 +150,91 @@ struct BatchActionBar: View {
 
             // PR-5：「打标签」固定主显著度（borderedProminent）。Manage 库内 100% 已 star，
             // 打标签是最常用主操作，Unstar 是次操作（破坏性），固定主次符合预期。
+            // 2026-07-05：窗口较窄时文本省略，三按钮统一改为图标-only。
             Button {
                 showTagSheet = true
             } label: {
-                Label("batch.addTags", systemImage: "tag.fill")
+                Image(systemName: "tag.fill")
+                    .accessibilityLabel(Text("batch.addTags"))
             }
             .buttonStyle(.borderedProminent)
             .disabled(count == 0)
             .help(Text("batch.addTags.help"))
 
-            Button {
-                startBatchAddToLibrary()
-            } label: {
-                Label("batch.library.add", systemImage: "heart.fill")
+            // 知识库分组：仅「移出知识库」
+            if viewModel.selection == .library {
+                Button {
+                    startBatchRemoveFromLibrary()
+                } label: {
+                    Image(systemName: "heart.slash.fill")
+                        .accessibilityLabel(Text("batch.library.remove"))
+                }
+                .disabled(count == 0)
+                .help(Text("batch.library.remove.help"))
+                .tint(.red)
+            } else {
+                // 全部仓库 / 未分类：双按钮——加入 + 移出，各自智能过滤
+                Button {
+                    startBatchAddToLibrary()
+                } label: {
+                    Image(systemName: "heart.fill")
+                        .accessibilityLabel(Text("batch.library.add"))
+                }
+                .disabled(count == 0)
+                .help(Text("batch.library.add.help"))
+                .tint(.red)
+
+                Button {
+                    startBatchRemoveFromLibrary()
+                } label: {
+                    Image(systemName: "heart.slash.fill")
+                        .accessibilityLabel(Text("batch.library.remove"))
+                }
+                .disabled(count == 0)
+                .help(Text("batch.library.remove.help"))
+                .tint(.red)
             }
-            .disabled(count == 0)
-            .help(Text("batch.library.add.help"))
 
             if githubStarListBatchSource != nil {
                 githubStarListMoveMenu
             }
 
-            // W12 PR-3：批量取消 Star。Manage 库内 100% 已 star，无需额外二分判定。
-            // tint(.red) 保留：macOS HIG 破坏性操作标准着色，与详情页 Unstar 按钮一致。
-            Button {
-                handleBatchUnstarTap()
-            } label: {
-                Label("batch.unstar", systemImage: "star.slash.fill")
+            // 知识库分组：同时支持 star / unstar（因库内项目可能未 star）。
+            // 非知识库分组（Manage 全部/未分类等）：仅 unstar（全部已 star）。
+            if viewModel.selection == .library {
+                // 金色 star 图标 + 浅黄背景，与列表行 ⭐ 已 star 标识视觉一致
+                Button {
+                    handleBatchStarTapForLibrary()
+                } label: {
+                    Image(systemName: "star.fill")
+                        .accessibilityLabel(Text("batch.star"))
+                }
+                .disabled(count == 0)
+                .help(Text("batch.star.help"))
+                .tint(.yellow)
+
+                Button {
+                    handleBatchUnstarTapForLibrary()
+                } label: {
+                    Image(systemName: "star.slash.fill")
+                        .accessibilityLabel(Text("batch.unstar"))
+                }
+                .disabled(count == 0)
+                .help(Text("batch.unstar.help"))
+                .tint(.red)
+            } else {
+                // W12 PR-3：批量取消 Star。Manage 库内 100% 已 star，无需额外二分判定。
+                // tint(.red) 保留：macOS HIG 破坏性操作标准着色，与详情页 Unstar 按钮一致。
+                Button {
+                    handleBatchUnstarTap()
+                } label: {
+                    Image(systemName: "star.slash.fill")
+                        .accessibilityLabel(Text("batch.unstar"))
+                }
+                .disabled(count == 0)
+                .help(Text("batch.unstar.help"))
+                .tint(.red)
             }
-            .disabled(count == 0)
-            .help(Text("batch.unstar.help"))
-            .tint(.red)
 
             // PR-4 followup：退出按钮图标-only，accessibility + help tooltip 保留。Esc 快捷键不变。
             Button {
@@ -230,6 +305,19 @@ struct BatchActionBar: View {
         }
     }
 
+    private var removingFromLibraryContent: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text("batch.library.remove.processing")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+    }
+
     // MARK: - 业务路由
 
     /// 点击「批量取消 Star」：> 5 条走确认 sheet，否则直接 enqueue。
@@ -245,6 +333,46 @@ struct BatchActionBar: View {
 
     private func startBatchUnstar(targets: [BatchStarTarget]) {
         dependencies.batchStarService.enqueue(targets: targets, action: .unstar)
+    }
+
+    private func startBatchStar(targets: [BatchStarTarget]) {
+        dependencies.batchStarService.enqueue(targets: targets, action: .star)
+    }
+
+    // MARK: - 知识库分组：star / unstar（带 star 状态预过滤）
+
+    /// 知识库分组「Star」：仅处理未 star 的 repo，已 star 的自动跳过。
+    private func handleBatchStarTapForLibrary() {
+        let targets = starEligibleTargets()
+        guard !targets.isEmpty else { return }
+        if targets.count > 5 {
+            showStarConfirm = true
+        } else {
+            startBatchStar(targets: targets)
+        }
+    }
+
+    /// 知识库分组「Unstar」：仅处理已 star 的 repo，未 star 的自动跳过。
+    private func handleBatchUnstarTapForLibrary() {
+        let targets = unstarEligibleTargets()
+        guard !targets.isEmpty else { return }
+        if targets.count > 5 {
+            showUnstarConfirm = true
+        } else {
+            startBatchUnstar(targets: targets)
+        }
+    }
+
+    /// 选中项中尚未 star 的子集（知识库 star 按钮用）。
+    private func starEligibleTargets() -> [BatchStarTarget] {
+        let registry = dependencies.starredRegistry
+        return selectedTargets().filter { !registry.contains(ghRepoId: $0.ghRepoId) }
+    }
+
+    /// 选中项中已 star 的子集（知识库 unstar 按钮用）。
+    private func unstarEligibleTargets() -> [BatchStarTarget] {
+        let registry = dependencies.starredRegistry
+        return selectedTargets().filter { registry.contains(ghRepoId: $0.ghRepoId) }
     }
 
     private func startBatchAddToLibrary() {
@@ -275,6 +403,44 @@ struct BatchActionBar: View {
             toastMessage = String(
                 format: String.l10n("batch.library.add.summaryFormat"),
                 added,
+                skipped,
+                failed
+            )
+            store.exit()
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
+        }
+    }
+
+    /// 批量移出知识库（仅在「知识库」分组下可用）。
+    private func startBatchRemoveFromLibrary() {
+        let repoIDs = Array(store.snapshots.keys)
+        guard !repoIDs.isEmpty else { return }
+
+        isRemovingFromLibrary = true
+        Task {
+            var removed = 0
+            var skipped = 0
+            var failed = 0
+
+            for repoID in repoIDs {
+                do {
+                    let current = try await dependencies.repoNoteRepository.fetchLibraryState(repoId: repoID)
+                    guard current == .inLibrary else {
+                        skipped += 1
+                        continue
+                    }
+                    try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .outsideLibrary)
+                    removed += 1
+                } catch {
+                    failed += 1
+                }
+            }
+
+            isRemovingFromLibrary = false
+            toastMessage = String(
+                format: String.l10n("batch.library.remove.summaryFormat"),
+                removed,
                 skipped,
                 failed
             )
@@ -391,36 +557,33 @@ struct BatchActionBar: View {
 
 // MARK: - RemoteBatchActionBar
 
-/// Trending / Weekly / Activity 三个页面共用的批量操作底栏（W12 PR-4）。
+/// 探索模块（发现/趋势/热门/新发布/周刊）共用的批量操作底栏。
 ///
-/// 与 Manage 的 `BatchActionBar` 区别：
-/// - 数据源是 `MultiSelectionStore`（owner/name 快照），而非 `HomeViewModel.multiSelectedRepoIDs`；
-/// - 列表项**混合 star/unstar 状态**，因此同时暴露「批量 Star」+「批量取消 Star」两个按钮；
-/// - 没有「批量打标签」按钮（trending/weekly/activity 的列表项可能不在本地 DB，
-///   `batchAddTag` 需要 `repoIds: Set<Int64>` 但本地无 Repo 记录会插入失败）；
-/// - 主按钮显著度：先按"未 star 占比"判断主操作——多数未 star → Star 主按钮；
-///   多数已 star → Unstar 主按钮；持平时 Star 优先（鼓励发现新项目）。
+/// 2026-07-05 统一设计：与 Manage 的 `BatchActionBar` 图标和操作保持一致，
+/// 6 种批量操作全部可用——打标签 / 加入知识库 / 移出知识库 / Star / Unstar，
+/// 每种操作自带智能过滤（已 star / 已入库的自动跳过）。
 ///
-/// 执行中切换到进度态、cancel 按钮、完成 toast 与 Manage 版本完全一致，复用
-/// `BatchStarService` 的同一份状态机。
+/// 执行中切换到进度态、cancel 按钮、完成 toast 复用 `BatchStarService` 状态机。
 struct RemoteBatchActionBar: View {
 
-    /// 由调用方按页面注入（trending/weekly/activity 各自的实例）。
     let store: MultiSelectionStore
 
     @Environment(AppDependencies.self) private var dependencies
 
-    /// 二次确认 sheet。> 5 条时强制弹出。
+    @State private var isAddingToLibrary: Bool = false
+    @State private var isRemovingFromLibrary: Bool = false
     @State private var pendingAction: BatchStarService.Action?
     @State private var showConfirm: Bool = false
-
-    /// 完成摘要 toast（与 BatchActionBar 一致；本地缓存避免 service summary 被立刻 consume 后 toast 不出现）。
     @State private var toastMessage: String?
 
     var body: some View {
         Group {
             if dependencies.batchStarService.isRunning {
                 runningContent
+            } else if isAddingToLibrary {
+                addingToLibraryContent
+            } else if isRemovingFromLibrary {
+                removingFromLibraryContent
             } else {
                 idleContent
             }
@@ -452,17 +615,14 @@ struct RemoteBatchActionBar: View {
             guard let summary = newValue else { return }
             toastMessage = formatSummary(summary)
             dependencies.batchStarService.consumeSummary()
-            // 完成后退出多选，避免用户在 stale 选中态上再发起一次（registry 已变）。
             store.exit()
         }
     }
 
-    // MARK: - 默认态
+    // MARK: - 默认态（图标-only，与 Manage BatchActionBar 统一）
 
     private var idleContent: some View {
         let count = store.count
-        let starWeight = starButtonWeight()
-
         return HStack(spacing: 10) {
             Text(String(format: String.l10n("batch.selectedCountFormat"), count))
                 .font(.subheadline)
@@ -471,28 +631,51 @@ struct RemoteBatchActionBar: View {
 
             Spacer()
 
-            // 主按钮按"未 star 占比"决定显著度（plan §3.9）。
-            // borderedProminent vs bordered 是 macOS 上最直观的"主/次"差异。
+            // 加入知识库 — 仅处理未入库 repo
+            Button {
+                startBatchAddToLibrary()
+            } label: {
+                Image(systemName: "heart.fill")
+                    .accessibilityLabel(Text("batch.library.add"))
+            }
+            .disabled(count == 0)
+            .help(Text("batch.library.add.help"))
+            .tint(.red)
+
+            // 移出知识库 — 仅处理已入库 repo
+            Button {
+                startBatchRemoveFromLibrary()
+            } label: {
+                Image(systemName: "heart.slash.fill")
+                    .accessibilityLabel(Text("batch.library.remove"))
+            }
+            .disabled(count == 0)
+            .help(Text("batch.library.remove.help"))
+            .tint(.red)
+
+            // Star — 仅处理未 star repo，金色图标与列表 ⭐ 标识一致
             Button {
                 handleTap(action: .star)
             } label: {
-                Label("batch.star", systemImage: "star.fill")
+                Image(systemName: "star.fill")
+                    .accessibilityLabel(Text("batch.star"))
             }
             .disabled(count == 0)
             .help(Text("batch.star.help"))
-            .modifier(ProminentIf(active: starWeight == .star))
+            .tint(.yellow)
 
+            // Unstar — 仅处理已 star repo
             Button {
                 handleTap(action: .unstar)
             } label: {
-                Label("batch.unstar", systemImage: "star.slash.fill")
+                Image(systemName: "star.slash.fill")
+                    .accessibilityLabel(Text("batch.unstar"))
             }
             .disabled(count == 0)
             .help(Text("batch.unstar.help"))
             .tint(.red)
-            .modifier(ProminentIf(active: starWeight == .unstar))
 
-            // PR-4 followup：退出按钮改为图标-only，与 Manage 版本对齐。
+            // 退出多选
             Button {
                 store.exit()
             } label: {
@@ -535,7 +718,27 @@ struct RemoteBatchActionBar: View {
         }
     }
 
-    // MARK: - 业务路由
+    private var addingToLibraryContent: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text("batch.library.add.processing")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    private var removingFromLibraryContent: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text("batch.library.remove.processing")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    // MARK: - Star / Unstar 业务路由
 
     private func handleTap(action: BatchStarService.Action) {
         let targets = store.targets
@@ -553,23 +756,56 @@ struct RemoteBatchActionBar: View {
         dependencies.batchStarService.enqueue(targets: targets, action: action)
     }
 
-    // MARK: - 派生
+    // MARK: - 知识库批量操作
 
-    private enum StarWeight { case star, unstar, equal }
+    private func startBatchAddToLibrary() {
+        let snapshots = store.snapshots
+        guard !snapshots.isEmpty else { return }
 
-    /// 决定主按钮：选中项中未 star 占比 > 50% → Star 主按钮；否则 Unstar 主按钮；持平时偏向 Star。
-    private func starButtonWeight() -> StarWeight {
-        let registry = dependencies.starredRegistry
-        let total = store.count
-        guard total > 0 else { return .star }
-        let unstarred = store.snapshots.values.filter { !registry.contains(ghRepoId: $0.ghRepoId) }.count
-        let starred = total - unstarred
-        if unstarred > starred { return .star }
-        if starred > unstarred { return .unstar }
-        return .star
+        isAddingToLibrary = true
+        Task {
+            var added = 0; var skipped = 0; var failed = 0
+            for (repoID, snapshot) in snapshots {
+                do {
+                    // 探索模块的 repo 可能不在本地 DB，先补占位行以通过 FK 约束
+                    try await dependencies.repoNoteRepository.ensureRepoRowExists(
+                        repoId: repoID, owner: snapshot.owner, name: snapshot.name
+                    )
+                    let current = try await dependencies.repoNoteRepository.fetchLibraryState(repoId: repoID)
+                    guard current != .inLibrary else { skipped += 1; continue }
+                    try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .inLibrary)
+                    added += 1
+                } catch { failed += 1 }
+            }
+            isAddingToLibrary = false
+            toastMessage = String(format: String.l10n("batch.library.add.summaryFormat"), added, skipped, failed)
+            store.exit()
+        }
     }
 
-    /// 与 BatchActionBar 同源算法：当前 registry 已是目标态的视为跳过。
+    private func startBatchRemoveFromLibrary() {
+        let snapshots = store.snapshots
+        guard !snapshots.isEmpty else { return }
+
+        isRemovingFromLibrary = true
+        Task {
+            var removed = 0; var skipped = 0; var failed = 0
+            for (repoID, _) in snapshots {
+                do {
+                    let current = try await dependencies.repoNoteRepository.fetchLibraryState(repoId: repoID)
+                    guard current == .inLibrary else { skipped += 1; continue }
+                    try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .outsideLibrary)
+                    removed += 1
+                } catch { failed += 1 }
+            }
+            isRemovingFromLibrary = false
+            toastMessage = String(format: String.l10n("batch.library.remove.summaryFormat"), removed, skipped, failed)
+            store.exit()
+        }
+    }
+
+    // MARK: - 派生
+
     private func estimatedSkipped(targets: [BatchStarTarget], action: BatchStarService.Action) -> Int {
         let registry = dependencies.starredRegistry
         let expected: Bool = (action == .star)
@@ -588,19 +824,6 @@ struct RemoteBatchActionBar: View {
         )
     }
 }
-
-/// 按条件套 borderedProminent 的小 modifier；放外部避免 if/else 写两份 Button。
-private struct ProminentIf: ViewModifier {
-    let active: Bool
-    func body(content: Content) -> some View {
-        if active {
-            content.buttonStyle(.borderedProminent)
-        } else {
-            content
-        }
-    }
-}
-
 // MARK: - BatchTagSheet
 
 /// 批量打标签 sheet：选一个 tag → 应用到所有 selected repos。
