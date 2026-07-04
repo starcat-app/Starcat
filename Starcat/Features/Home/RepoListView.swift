@@ -190,19 +190,17 @@ struct RepoListView: View {
             exitInactiveMultiSelectStores(for: newPage, activityCategory: selectedActivityCategory)
         }
         .onChange(of: selectedExploreMode) { _, newMode in
-            let current = exploreMultiSelectionStore
-            for store in allExploreMultiSelectStores where store !== current {
-                if store.isActive { store.exit() }
+            // 探索模块切换子模式时保留多选开关状态，但清空选中项（不同列表 repo 不同）
+            let store = dependencies.exploreMultiSelectionStore
+            if store.isActive {
+                store.clearSelection()
             }
             if newMode != .weekly {
                 dependencies.weeklySelectionService.clearSelection()
             }
         }
-        .onChange(of: selectedActivityCategory) { _, newCategory in
-            // activity 内切换 weekly ↔ 其它子分类时，旧分类对应的 store 也要清空。
-            if selectedPage == .activity {
-                exitInactiveMultiSelectStores(for: .activity, activityCategory: newCategory)
-            }
+        .onChange(of: selectedActivityCategory) { _, _ in
+            // 活动模块不参与多选，无需清理 store
         }
         // PR-4 followup：登录态变化时（典型场景：登出 / token 失效），主动把所有远端 store
         // exit 掉。否则用户从「多选中」直接登出后，store.isActive 仍为 true，底部条会试图
@@ -215,6 +213,17 @@ struct RepoListView: View {
         // W12 PR-5 A2 路线：Manage filter/sort 变化触发 reloadItems → itemsRevision 自增 →
         // 此处调 store.retain(visibleIDs) 清理被隐藏的孤儿选中项（替代原 viewModel.applyView
         // 内的 formIntersection 块）。view 层主导 store 生命周期，避免 viewModel 持 store 引用。
+        .onChange(of: viewModel.selection) { _, newSelection in
+            // 切到智能集合 / 订阅发布等非列表分组时，退出多选
+            let store = dependencies.manageMultiSelectionStore
+            guard store.isActive else { return }
+            switch newSelection {
+            case .smartCollectionsHome, .smartCollection:
+                store.exit()
+            default:
+                break
+            }
+        }
         .onChange(of: viewModel.itemsRevision) { _, _ in
             let store = dependencies.manageMultiSelectionStore
             guard store.isActive else { return }
@@ -288,8 +297,7 @@ struct RepoListView: View {
             .navigationTitle(navigationTitle)
             .navigationSubtitle(navigationSubtitle)
             // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
-            // W12 PR-5：Manage 也走 MultiSelectionStore 但保留独立 BatchActionBar（业务语义差异：
-            // 「打标签」+「Unstar」vs RemoteBatchActionBar 的「Star」+「Unstar」）。
+            // W12 PR-5：统一 BatchActionBar(context:)，星标 / 探索共用同一组件。
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 currentBatchActionBar
             }
@@ -333,45 +341,22 @@ struct RepoListView: View {
     /// Manage 库内 100% 已 star，登出会触发会话清空但不主动 exit manage store（manage 多选不依赖
     /// GitHub API token，本地操作如打标签仍可执行；如果用户登出后打 unstar 会被 StarActionService 拦）。
     private func exitAllRemoteStores() {
-        for store in allExploreMultiSelectStores {
-            if store.isActive { store.exit() }
-        }
-    }
-
-    /// 探索模块全部子模式的多选 store 列表。
-    private var allExploreMultiSelectStores: [MultiSelectionStore] {
-        [
-            dependencies.discoverMultiSelectionStore,
-            dependencies.trendingMultiSelectionStore,
-            dependencies.popularMultiSelectionStore,
-            dependencies.newReleasesMultiSelectionStore,
-            dependencies.weeklyMultiSelectionStore,
-            dependencies.activityMultiSelectionStore,
-        ]
+        let explore = dependencies.exploreMultiSelectionStore
+        if explore.isActive { explore.exit() }
     }
 
     /// 把"非当前 page+分类"对应的多选 store 全部 exit。
-    /// W12 PR-5：Manage 也走 store，切到 trending/activity 时把 manage store 一并 exit。
     private func exitInactiveMultiSelectStores(for page: SidebarRootPage, activityCategory: ActivityCategory) {
         let manage = dependencies.manageMultiSelectionStore
-        let currentExplore = exploreMultiSelectionStore
+        let explore = dependencies.exploreMultiSelectionStore
 
         switch page {
         case .manage:
-            for store in allExploreMultiSelectStores {
-                if store.isActive { store.exit() }
-            }
+            if explore.isActive { explore.exit() }
         case .trending:
-            // exit 非当前子模式的所有 explore stores
-            for store in allExploreMultiSelectStores where store !== currentExplore {
-                if store.isActive { store.exit() }
-            }
             if manage.isActive { manage.exit() }
         case .activity:
-            if manage.isActive { manage.exit() }
-            for store in allExploreMultiSelectStores where store !== dependencies.activityMultiSelectionStore {
-                if store.isActive { store.exit() }
-            }
+            break
         }
     }
 
@@ -412,38 +397,28 @@ struct RepoListView: View {
     /// - Trending / Activity 隐藏本地搜索入口，只保留主窗口级 `⌘K` 全局搜索。
     ///   这样避免用户在非 Manage 页面看到一个 disabled 搜索框，却误以为当前页支持
     ///   本地 FTS5 / 向量搜索。
-    /// W12 PR-4：根据当前 page 选择对应的多选 BatchActionBar 实现。
-    /// 2026-07-05：探索模块全部子模式统一走 RemoteBatchActionBar（6 种操作）。
+    /// W12 PR-4：统一的批量操作底栏，星标 / 探索模块共用 BatchActionBar。
     @ViewBuilder
     private var currentBatchActionBar: some View {
         switch selectedPage {
         case .manage:
             let store = dependencies.manageMultiSelectionStore
             if store.isActive {
-                BatchActionBar()
+                BatchActionBar(context: .manage, store: store)
             }
         case .trending:
             let store = exploreMultiSelectionStore
             if store.isActive {
-                RemoteBatchActionBar(store: store)
+                BatchActionBar(context: .explore, store: store)
             }
         case .activity:
-            let store = dependencies.activityMultiSelectionStore
-            if store.isActive {
-                RemoteBatchActionBar(store: store)
-            }
+            EmptyView()
         }
     }
 
-    /// 根据当前 explore 子模式返回对应的 MultiSelectionStore。
+    /// 探索模块全局多选 store（5 个子模式共享同一实例）。
     private var exploreMultiSelectionStore: MultiSelectionStore {
-        switch selectedExploreMode {
-        case .discover:    return dependencies.discoverMultiSelectionStore
-        case .trending:    return dependencies.trendingMultiSelectionStore
-        case .popular:     return dependencies.popularMultiSelectionStore
-        case .newReleases: return dependencies.newReleasesMultiSelectionStore
-        case .weekly:      return dependencies.weeklyMultiSelectionStore
-        }
+        dependencies.exploreMultiSelectionStore
     }
 
     private var currentToolbarSpec: PageToolbarSpec {
@@ -611,16 +586,10 @@ struct RepoListView: View {
 
     /// Activity 页面 toolbar spec（W12 PR-4）：
     /// - leading 暂无；
-    /// - trailing 注入：[wiki / external / clone / share] +「多选按钮」。
-    ///   wiki/external/clone 派发 `selectedActivityItem?.repo`（announcement /
-    ///   following 这种 repo == nil 时不显示菜单），多选用 `activityMultiSelectionStore`。
-    /// - PR-4 followup：未登录态多选按钮 disable（同 trending 同款理由）。activity 其它子分类
-    ///   理论上只有登录态才会有 starred 数据，加守卫是防御性编程，不会有副作用。
+    /// 活动模块 toolbar spec。2026-07-05：已移除多选模式。
     @MainActor
     private func makeActivityToolbarSpec() -> PageToolbarSpec {
-        let store = dependencies.activityMultiSelectionStore
         let registry = dependencies.starredRegistry
-        let isAuthed = authSession.state.isAuthenticated
 
         let selectionView: AnyView? = {
             guard let repo = selectedActivityItem?.repo else { return nil }
@@ -641,20 +610,9 @@ struct RepoListView: View {
             )
         }()
 
-        let trailing = AnyView(
-            Group {
-                selectionView
-                MultiSelectButton(
-                    isActive: store.isActive,
-                    action: { store.toggle() },
-                    isDisabled: !isAuthed
-                )
-            }
-        )
-
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
-            trailingPrimary: trailing,
+            trailingPrimary: selectionView,
             searchField: AnyView(smartSearchField())
         )
     }

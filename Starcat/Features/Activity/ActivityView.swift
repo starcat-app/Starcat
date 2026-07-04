@@ -188,22 +188,13 @@ struct ActivityView: View {
     /// 活动列表主体（刷新已挪到顶栏 `activityFilterBar`）。
     @ViewBuilder
     private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
-        let multiStore = dependencies.activityMultiSelectionStore
         let visibleItems = globalFilteredItems(viewModel.items)
         List {
             ForEach(visibleItems) { item in
                 Button {
-                    if multiStore.isActive, let repo = item.repo {
-                        multiStore.toggle(SelectionSnapshot(
-                            ghRepoId: repo.id,
-                            owner: repo.owner,
-                            name: repo.name
-                        ))
-                    } else if !multiStore.isActive {
-                        selectedItem = item
-                    }
+                    selectedItem = item
                 } label: {
-                    rowContent(for: item, multiSelectActive: multiStore.isActive, multiStore: multiStore)
+                    rowContent(for: item)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -223,20 +214,6 @@ struct ActivityView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
-        .background {
-            Button {
-                let snapshots = visibleItems.compactMap { item -> SelectionSnapshot? in
-                    guard let repo = item.repo else { return nil }
-                    return SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
-                }
-                multiStore.selectAll(snapshots)
-            } label: {
-                EmptyView()
-            }
-            .keyboardShortcut("a", modifiers: .command)
-            .disabled(!multiStore.isActive)
-            .hidden()
-        }
         .task(id: viewModel.itemsRevision) {
             let repoIds = viewModel.items.compactMap { $0.repo?.id }
             await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
@@ -398,17 +375,8 @@ struct ActivityView: View {
     /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
     /// 因为 `RepoCardViewData` 必填 fullName / owner / repo / ghRepoId。
     @ViewBuilder
-    private func rowContent(for item: ActivityItem, multiSelectActive: Bool, multiStore: MultiSelectionStore) -> some View {
-        // W12 PR-4：多选模式下 row.isSelected 取自 multiStore；单选模式仍取 selectedItem。
-        // announcement / following（item.repo == nil）即使多选模式也只显示单选高亮兜底，
-        // 因为这类项无法 toggle 进 store。
-        let isMultiSelected: Bool = {
-            if multiSelectActive, let repo = item.repo {
-                return multiStore.contains(ghRepoId: repo.id)
-            }
-            return false
-        }()
-        let isSelected = multiSelectActive ? isMultiSelected : (selectedItem?.id == item.id)
+    private func rowContent(for item: ActivityItem) -> some View {
+        let isSelected = selectedItem?.id == item.id
 
         if let repo = item.repo, isUnifiedRowKind(item.kind) {
             // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）

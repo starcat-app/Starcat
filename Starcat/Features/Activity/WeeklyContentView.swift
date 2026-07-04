@@ -1068,7 +1068,10 @@ final class WeeklyContentViewModel {
         if bumpRevision {
             itemsRevision += 1
         }
-        selectionService?.applyTotal(filtered.count)
+        // Sidebar 徽章始终展示 Weekly 全量，不受语言 / source / 其他筛选影响。
+        // filtered.count = 当前筛选后的可见数量（如选中某语言可能只有 800），
+        // bulkAllItems.count = 后端 bulk 全量（可能是 3000+）。
+        selectionService?.applyTotal(bulkAllItems.count)
     }
 
     private func advanceLocalPage() {

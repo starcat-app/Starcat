@@ -258,15 +258,9 @@ private struct ExploreDiscoveryListView: View {
         }
     }
 
-    /// 当前探索子模式对应的多选 store。
+    /// 探索模块全局多选 store（5 个子模式共享）。
     private var exploreStore: MultiSelectionStore {
-        switch mode {
-        case .discover:    return dependencies.discoverMultiSelectionStore
-        case .trending:    return dependencies.trendingMultiSelectionStore
-        case .popular:     return dependencies.popularMultiSelectionStore
-        case .newReleases: return dependencies.newReleasesMultiSelectionStore
-        case .weekly:      return dependencies.weeklyMultiSelectionStore
-        }
+        dependencies.exploreMultiSelectionStore
     }
 
     private var repoList: some View {
@@ -333,6 +327,21 @@ private struct ExploreDiscoveryListView: View {
             )
             applySelectionPolicy()
             reportRepoCount()
+        }
+        .background {
+            let store = exploreStore
+            Button {
+                let visibleRepos = globalFilteredRepos(viewModel.repos)
+                let snapshots = visibleRepos.map {
+                    SelectionSnapshot(ghRepoId: $0.repoID, owner: $0.owner, name: $0.name)
+                }
+                store.selectAll(snapshots)
+            } label: {
+                EmptyView()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .disabled(!store.isActive)
+            .hidden()
         }
         .task(id: viewModel.reposRevision) {
             let repoIDs = viewModel.repos.map(\.repoID)

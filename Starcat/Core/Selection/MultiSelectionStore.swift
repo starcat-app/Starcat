@@ -105,6 +105,11 @@ final class MultiSelectionStore {
         snapshots.removeAll()
     }
 
+    /// 清空选中项但保留多选模式（切换子模块时用，下一列表的 repo 不同需重置选中）。
+    func clearSelection() {
+        snapshots.removeAll()
+    }
+
     /// toolbar「多选」按钮一键切换。
     func toggle() {
         if isActive { exit() } else { enter() }
