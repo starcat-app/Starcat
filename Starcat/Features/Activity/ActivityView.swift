@@ -189,8 +189,9 @@ struct ActivityView: View {
     @ViewBuilder
     private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
         let multiStore = dependencies.activityMultiSelectionStore
+        let visibleItems = globalFilteredItems(viewModel.items)
         List {
-            ForEach(viewModel.items) { item in
+            ForEach(visibleItems) { item in
                 Button {
                     if multiStore.isActive, let repo = item.repo {
                         multiStore.toggle(SelectionSnapshot(
@@ -224,7 +225,7 @@ struct ActivityView: View {
         .alternatingRowBackgrounds()
         .background {
             Button {
-                let snapshots = viewModel.items.compactMap { item -> SelectionSnapshot? in
+                let snapshots = visibleItems.compactMap { item -> SelectionSnapshot? in
                     guard let repo = item.repo else { return nil }
                     return SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
                 }
@@ -239,6 +240,70 @@ struct ActivityView: View {
         .task(id: viewModel.itemsRevision) {
             let repoIds = viewModel.items.compactMap { $0.repo?.id }
             await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
+            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIds)
+        }
+    }
+
+    private func globalFilteredItems(_ items: [ActivityItem]) -> [ActivityItem] {
+        items.filter { item in
+            guard let repo = item.repo else {
+                return !hasActiveGlobalRepoFilter
+            }
+            return matchesGlobalFilters(repo: repo)
+        }
+    }
+
+    private var hasActiveGlobalRepoFilter: Bool {
+        settings.hideArchived
+            || settings.hideForks
+            || settings.libraryFilter != .all
+            || !settings.globalFilterLanguages.isEmpty
+            || settings.wikiAvailabilityFilter != .unknown
+            || settings.healthAvailabilityFilter != .unknown
+            || settings.openSSFAvailabilityFilter != .unknown
+    }
+
+    private func matchesGlobalFilters(repo: Repo) -> Bool {
+        if settings.hideArchived, repo.isArchived { return false }
+        if settings.hideForks, repo.isFork { return false }
+        if !settings.globalFilterLanguages.isEmpty {
+            guard let language = repo.language else { return false }
+            let selected = settings.globalFilterLanguages.contains {
+                $0.caseInsensitiveCompare(language) == .orderedSame
+            }
+            guard selected else { return false }
+        }
+        switch settings.libraryFilter {
+        case .all:
+            break
+        case .inLibrary:
+            guard libraryStateMap[repo.id] == .inLibrary else { return false }
+        case .outsideLibrary:
+            guard libraryStateMap[repo.id] != .inLibrary else { return false }
+        }
+        if !matchesWikiFilter(owner: repo.owner, name: repo.name) { return false }
+        if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repo.id) != nil, filter: settings.healthAvailabilityFilter) {
+            return false
+        }
+        if !matchesAvailability(dependencies.openSSFScoreStore.record(for: repo.id)?.badgeData != nil, filter: settings.openSSFAvailabilityFilter) {
+            return false
+        }
+        return true
+    }
+
+    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+        guard settings.wikiAvailabilityFilter != .unknown else { return true }
+        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
+            return false
+        }
+        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+    }
+
+    private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
+        switch filter {
+        case .unknown: return true
+        case .available: return available
+        case .missing: return !available
         }
     }
 

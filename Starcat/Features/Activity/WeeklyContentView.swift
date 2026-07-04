@@ -322,8 +322,9 @@ struct WeeklyContentView: View {
         let registry = dependencies.starredRegistry
         // W12 PR-4：weekly 多选 store。多选模式下点击行 toggle 选中，否则进入详情。
         let multiStore = dependencies.weeklyMultiSelectionStore
+        let visibleItems = globalFilteredItems(viewModel.items)
         return List {
-            ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, project in
+            ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, project in
                 Button {
                     if multiStore.isActive {
                         multiStore.toggle(SelectionSnapshot(
@@ -412,7 +413,9 @@ struct WeeklyContentView: View {
             .hidden()
         }
         .task(id: viewModel.itemsRevision) {
-            await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.items.map(\.ghRepoId))
+            let repoIDs = viewModel.items.map(\.ghRepoId)
+            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
         }
     }
 
@@ -465,6 +468,70 @@ struct WeeklyContentView: View {
 
     private func isInLibrary(_ repoId: Int64) -> Bool {
         libraryStateMap[repoId] == .inLibrary
+    }
+
+    private func globalFilteredItems(_ items: [WeeklyFeedItem]) -> [WeeklyFeedItem] {
+        items.filter { item in
+            matchesGlobalFilters(
+                repoId: item.ghRepoId,
+                owner: item.owner,
+                name: item.name,
+                language: item.language,
+                isArchived: item.card.isArchived,
+                isFork: item.card.isFork
+            )
+        }
+    }
+
+    private func matchesGlobalFilters(
+        repoId: Int64,
+        owner: String,
+        name: String,
+        language: String?,
+        isArchived: Bool,
+        isFork: Bool
+    ) -> Bool {
+        if settings.hideArchived, isArchived { return false }
+        if settings.hideForks, isFork { return false }
+        if !settings.globalFilterLanguages.isEmpty {
+            guard let language else { return false }
+            let selected = settings.globalFilterLanguages.contains {
+                $0.caseInsensitiveCompare(language) == .orderedSame
+            }
+            guard selected else { return false }
+        }
+        switch settings.libraryFilter {
+        case .all:
+            break
+        case .inLibrary:
+            guard libraryStateMap[repoId] == .inLibrary else { return false }
+        case .outsideLibrary:
+            guard libraryStateMap[repoId] != .inLibrary else { return false }
+        }
+        if !matchesWikiFilter(owner: owner, name: name) { return false }
+        if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
+            return false
+        }
+        if !matchesAvailability(dependencies.openSSFScoreStore.record(for: repoId)?.badgeData != nil, filter: settings.openSSFAvailabilityFilter) {
+            return false
+        }
+        return true
+    }
+
+    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+        guard settings.wikiAvailabilityFilter != .unknown else { return true }
+        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
+            return false
+        }
+        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+    }
+
+    private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
+        switch filter {
+        case .unknown: return true
+        case .available: return available
+        case .missing: return !available
+        }
     }
 
     private func reloadLibraryStateMap() async {

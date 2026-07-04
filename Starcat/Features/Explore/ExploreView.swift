@@ -313,12 +313,80 @@ private struct ExploreDiscoveryListView: View {
             reportRepoCount()
         }
         .task(id: viewModel.reposRevision) {
-            await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.repos.map(\.repoID))
+            let repoIDs = viewModel.repos.map(\.repoID)
+            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
         }
     }
 
     private var indexedRepos: [IndexedDiscoveryRepo] {
-        viewModel.repos.enumerated().map { IndexedDiscoveryRepo(index: $0.offset, repo: $0.element) }
+        globalFilteredRepos(viewModel.repos)
+            .enumerated()
+            .map { IndexedDiscoveryRepo(index: $0.offset, repo: $0.element) }
+    }
+
+    private func globalFilteredRepos(_ repos: [DiscoveryRepoDTO]) -> [DiscoveryRepoDTO] {
+        repos.filter { repo in
+            matchesGlobalFilters(
+                repoId: repo.repoID,
+                owner: repo.owner,
+                name: repo.name,
+                language: repo.language,
+                isArchived: repo.isArchived,
+                isFork: repo.isFork
+            )
+        }
+    }
+
+    private func matchesGlobalFilters(
+        repoId: Int64,
+        owner: String,
+        name: String,
+        language: String?,
+        isArchived: Bool,
+        isFork: Bool
+    ) -> Bool {
+        if settings.hideArchived, isArchived { return false }
+        if settings.hideForks, isFork { return false }
+        if !settings.globalFilterLanguages.isEmpty {
+            guard let language else { return false }
+            let selected = settings.globalFilterLanguages.contains {
+                $0.caseInsensitiveCompare(language) == .orderedSame
+            }
+            guard selected else { return false }
+        }
+        switch settings.libraryFilter {
+        case .all:
+            break
+        case .inLibrary:
+            guard libraryStateMap[repoId] == .inLibrary else { return false }
+        case .outsideLibrary:
+            guard libraryStateMap[repoId] != .inLibrary else { return false }
+        }
+        if !matchesWikiFilter(owner: owner, name: name) { return false }
+        if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
+            return false
+        }
+        if !matchesAvailability(dependencies.openSSFScoreStore.record(for: repoId)?.badgeData != nil, filter: settings.openSSFAvailabilityFilter) {
+            return false
+        }
+        return true
+    }
+
+    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+        guard settings.wikiAvailabilityFilter != .unknown else { return true }
+        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
+            return false
+        }
+        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+    }
+
+    private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
+        switch filter {
+        case .unknown: return true
+        case .available: return available
+        case .missing: return !available
+        }
     }
 
     private func isInLibrary(_ repoId: Int64) -> Bool {
