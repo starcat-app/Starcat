@@ -53,17 +53,20 @@ struct UnifiedFilterMenu: View {
 
     let items: [FilterMenuItem]
     let isAnyFilterActive: Bool
+    let activeCount: Int
     let accessibilityLabel: LocalizedStringKey
     let helpKey: LocalizedStringKey
 
     init(
         items: [FilterMenuItem],
         isAnyFilterActive: Bool,
+        activeCount: Int = 0,
         accessibilityLabel: LocalizedStringKey = "list.filter.status",
         helpKey: LocalizedStringKey = "list.filter.hint"
     ) {
         self.items = items
         self.isAnyFilterActive = isAnyFilterActive
+        self.activeCount = activeCount
         self.accessibilityLabel = accessibilityLabel
         self.helpKey = helpKey
     }
@@ -95,28 +98,50 @@ struct UnifiedFilterMenu: View {
     private var filterIcon: some View {
         ZStack(alignment: .topTrailing) {
             ToolbarIcon(isAnyFilterActive ? "circle.grid.2x1.fill" : "circle.grid.2x1")
-                .foregroundStyle(.primary)
+                .foregroundStyle(isAnyFilterActive ? Color.accentColor : Color.primary)
                 .accessibilityLabel(accessibilityLabel)
 
             if isAnyFilterActive {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 6, height: 6)
-                    .offset(x: 2, y: -2)
+                activeBadge
+                    .offset(x: 5, y: -5)
             }
         }
-        .frame(width: 28, height: 24)
+        .frame(width: 32, height: 26)
         .background {
             if isAnyFilterActive {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                Capsule(style: .continuous)
                     .fill(Color.accentColor.opacity(0.16))
             }
         }
         .overlay {
             if isAnyFilterActive {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                Capsule(style: .continuous)
                     .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
             }
         }
+    }
+
+    private var activeBadge: some View {
+        Text(activeBadgeText)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(.white)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(minWidth: 12, minHeight: 12)
+            .padding(.horizontal, activeCount > 9 ? 2 : 0)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(Color.accentColor)
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1)
+            }
+    }
+
+    private var activeBadgeText: String {
+        let count = max(activeCount, 1)
+        return count > 9 ? "9+" : count.formatted()
     }
 }
