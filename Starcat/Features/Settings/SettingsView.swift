@@ -483,8 +483,8 @@ struct SettingsView: View {
 /// 设置页里的“感兴趣语言”长期偏好。
 ///
 /// 这里不读取任何列表数据：设置页负责维护候选池，toolbar 负责从候选池里做本次筛选。
-/// 常用语言按钮覆盖主流场景，手动输入保留 GitHub Linguist 里的冷门语言入口，避免把
-/// 800+ 语言全塞进设置页造成不可用的长列表。
+/// 常用语言按钮覆盖主流场景；搜索框只允许从 GitHub Linguist 语言目录点选添加，
+/// 避免任意字符串污染全局语言筛选候选池。
 private struct InterestedLanguagesSettingsSection: View {
 
     @Binding var languages: [String]
@@ -511,17 +511,12 @@ private struct InterestedLanguagesSettingsSection: View {
                     }
                 }
 
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     TextField("settings.filters.interestedLanguages.add.placeholder", text: $draftLanguage)
                         .textFieldStyle(.roundedBorder)
-                        .onSubmit(addDraftLanguage)
+                        .onSubmit(addExactDraftLanguageIfPossible)
 
-                    Button {
-                        addDraftLanguage()
-                    } label: {
-                        Label("settings.filters.interestedLanguages.add", systemImage: "plus")
-                    }
-                    .disabled(normalizedDraft.isEmpty)
+                    languageSearchResults
                 }
 
                 if languages.isEmpty {
@@ -537,6 +532,10 @@ private struct InterestedLanguagesSettingsSection: View {
 
     private var normalizedDraft: String {
         draftLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var searchResults: [String] {
+        LinguistLanguageCatalog.search(normalizedDraft)
     }
 
     private func binding(for language: String) -> Binding<Bool> {
@@ -579,10 +578,51 @@ private struct InterestedLanguagesSettingsSection: View {
         contains(language) ? .accentColor : Color(nsColor: .controlBackgroundColor)
     }
 
-    private func addDraftLanguage() {
-        let value = normalizedDraft
-        guard !value.isEmpty else { return }
-        addLanguage(value)
+    @ViewBuilder
+    private var languageSearchResults: some View {
+        if !normalizedDraft.isEmpty {
+            if searchResults.isEmpty {
+                Text("settings.filters.interestedLanguages.search.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                FlowLayout(spacing: 6) {
+                    ForEach(searchResults, id: \.self) { language in
+                        languageSearchResultChip(language)
+                    }
+                }
+            }
+        }
+    }
+
+    private func languageSearchResultChip(_ language: String) -> some View {
+        Button {
+            addLanguage(language)
+            draftLanguage = ""
+        } label: {
+            HStack(spacing: 6) {
+                LanguageIconView(language: language, size: 13)
+                Text(LanguageDisplayName.shortened(for: language))
+                    .font(.caption)
+                    .lineLimit(1)
+                if contains(language) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(.quaternary, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(contains(language))
+    }
+
+    private func addExactDraftLanguageIfPossible() {
+        guard let language = LinguistLanguageCatalog.canonicalName(for: normalizedDraft) else { return }
+        addLanguage(language)
         draftLanguage = ""
     }
 

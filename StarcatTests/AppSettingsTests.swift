@@ -27,6 +27,18 @@ struct AppSettingsTests {
     // 三个测试随之失效（之前为保签名稳定保留单 case 是「自留技术债」，现在所有
     // row / skeleton 视图直接用 card 密度）。
 
+    @Test("Linguist 语言目录: alias 映射到官方语言名")
+    func linguistCatalogCanonicalizesAliases() {
+        #expect(LinguistLanguageCatalog.canonicalName(for: "js") == "JavaScript")
+        #expect(LinguistLanguageCatalog.search("ts").contains("TypeScript"))
+    }
+
+    @Test("Linguist 语言目录: 非法输入不会产生候选")
+    func linguistCatalogRejectsUnknownLanguage() {
+        #expect(LinguistLanguageCatalog.canonicalName(for: "not-a-real-language") == nil)
+        #expect(LinguistLanguageCatalog.search("not-a-real-language").isEmpty)
+    }
+
     @Test("Pro: 默认非 Pro，设置后重新读取应保留")
     func proStatusPersists() {
         let defaults = makeIsolatedDefaults()

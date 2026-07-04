@@ -25932,6 +25932,22 @@
         }
       }
     },
+    "settings.filters.interestedLanguages.search.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No GitHub Linguist language found."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 GitHub Linguist 语言。"
+          }
+        }
+      }
+    },
     "settings.filters.interestedLanguages.remove" : {
       "localizations" : {
         "en" : {

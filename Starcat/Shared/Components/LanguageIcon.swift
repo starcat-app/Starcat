@@ -989,6 +989,65 @@ private let linguistLanguages: [String: LanguageMeta] = [
     "xBase": LanguageMeta(type: "programming", color: "#403a40", aliases: ["advpl", "clipper", "foxpro"]),
 ]
 
+/// GitHub Linguist 语言目录。
+///
+/// 设置页的“感兴趣语言”只能从这里选择，避免用户输入任意字符串后让全局语言筛选出现
+/// GitHub 不存在的语言名。这里复用 `LanguageIconResolver` 已经依赖的同一份
+/// `languages.yml` 元数据，不再维护第二套候选列表。
+enum LinguistLanguageCatalog {
+    static var allNames: [String] {
+        linguistLanguages.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    static func canonicalName(for input: String) -> String? {
+        let query = normalized(input)
+        guard !query.isEmpty else { return nil }
+        return linguistLanguages.first { name, meta in
+            normalized(name) == query || meta.aliases.contains { normalized($0) == query }
+        }?.key
+    }
+
+    static func search(_ input: String, limit: Int = 8) -> [String] {
+        let query = normalized(input)
+        guard !query.isEmpty else { return [] }
+
+        let ranked = linguistLanguages.compactMap { name, meta -> (name: String, rank: Int)? in
+            let languageName = normalized(name)
+            let aliases = meta.aliases.map(normalized)
+            let displayName = normalized(LanguageDisplayName.shortened(for: name))
+
+            if languageName == query || aliases.contains(query) {
+                return (name, 0)
+            }
+            if languageName.hasPrefix(query) || displayName.hasPrefix(query) {
+                return (name, 1)
+            }
+            if aliases.contains(where: { $0.hasPrefix(query) }) {
+                return (name, 2)
+            }
+            if languageName.contains(query) || displayName.contains(query) {
+                return (name, 3)
+            }
+            if aliases.contains(where: { $0.contains(query) }) {
+                return (name, 4)
+            }
+            return nil
+        }
+
+        return ranked
+            .sorted {
+                if $0.rank != $1.rank { return $0.rank < $1.rank }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            .prefix(limit)
+            .map(\.name)
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
 // MARK: - 语言图标解析器
 
 /// 语言图标解析器
