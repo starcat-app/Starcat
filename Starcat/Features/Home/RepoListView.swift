@@ -503,6 +503,7 @@ struct RepoListView: View {
         }()
 
         return PageToolbarSpec(
+            leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
@@ -536,6 +537,7 @@ struct RepoListView: View {
         }
 
         return PageToolbarSpec(
+            leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
@@ -584,6 +586,7 @@ struct RepoListView: View {
         )
 
         return PageToolbarSpec(
+            leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
@@ -633,6 +636,7 @@ struct RepoListView: View {
         )
 
         return PageToolbarSpec(
+            leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
@@ -802,6 +806,90 @@ struct RepoListView: View {
             trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
+    }
+
+    @MainActor
+    private func globalFilterMenu() -> some View {
+        @Bindable var vm = viewModel
+        let filterItems: [FilterMenuItem] = [
+            .content(id: "library", view: AnyView(
+                Picker("list.filter.library", selection: $vm.libraryFilter) {
+                    ForEach(RepoLibraryFilter.allCases, id: \.self) { filter in
+                        Label(filter.displayName, systemImage: libraryFilterIcon(for: filter))
+                            .tag(filter)
+                    }
+                }
+                .pickerStyle(.inline)
+            )),
+            .divider(id: "after-library"),
+            .content(id: "language", view: AnyView(
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("list.filter.language", systemImage: "globe")
+                    if settings.interestedLanguages.isEmpty {
+                        Text("settings.filters.interestedLanguages.empty")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(settings.interestedLanguages, id: \.self) { language in
+                            Toggle(isOn: globalLanguageBinding(for: language)) {
+                                Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
+                            }
+                        }
+                    }
+                }
+            )),
+            .divider(id: "after-language"),
+            .content(id: "wikiAvailability", view: AnyView(
+                availabilityPicker(
+                    title: "list.filter.wikiAvailability",
+                    icon: "doc.text.magnifyingglass",
+                    selection: $vm.wikiAvailabilityFilter
+                )
+            )),
+            .content(id: "healthAvailability", view: AnyView(
+                availabilityPicker(
+                    title: "list.filter.healthAvailability",
+                    icon: "heart.text.square",
+                    selection: $vm.healthAvailabilityFilter
+                )
+            )),
+            .content(id: "openSSFAvailability", view: AnyView(
+                availabilityPicker(
+                    title: "list.filter.openSSFAvailability",
+                    icon: "checkmark.shield",
+                    selection: $vm.openSSFAvailabilityFilter
+                )
+            )),
+            .divider(id: "after-signal-availability"),
+            .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
+            .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
+        ]
+
+        return UnifiedFilterMenu(
+            items: filterItems,
+            isAnyFilterActive: viewModel.hasActiveFilter
+        )
+        .onChange(of: viewModel.hideArchived) { _, newValue in
+            settings.hideArchived = newValue
+        }
+        .onChange(of: viewModel.hideForks) { _, newValue in
+            settings.hideForks = newValue
+        }
+        .onChange(of: viewModel.libraryFilter) { _, newValue in
+            settings.libraryFilter = newValue
+        }
+        .onChange(of: viewModel.globalFilterLanguages) { _, newValue in
+            settings.globalFilterLanguages = AppSettings.normalizedLanguageList(newValue)
+        }
+        .onChange(of: viewModel.wikiAvailabilityFilter) { _, newValue in
+            settings.wikiAvailabilityFilter = newValue
+        }
+        .onChange(of: viewModel.healthAvailabilityFilter) { _, newValue in
+            settings.healthAvailabilityFilter = newValue
+        }
+        .onChange(of: viewModel.openSSFAvailabilityFilter) { _, newValue in
+            settings.openSSFAvailabilityFilter = newValue
+        }
     }
 
     private var canOpenSmartCollectionEditor: Bool {
