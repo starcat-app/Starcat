@@ -126,7 +126,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 8) {
                     Text(repo.fullName)
-                        .font(interfaceScale.font(size: 22, weight: .semibold))
+                        .font(interfaceScale.font(.workspaceTitle))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .textSelection(.enabled)
@@ -201,10 +201,10 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         let topicText = topics.isEmpty ? "N/A" : topics.joined(separator: "  ·  ")
         HStack(spacing: 6) {
             Text("repoTopics.label")
-                .font(interfaceScale.font(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
             Text(topicText)
-                .font(interfaceScale.font(size: 11))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(topics.isEmpty ? Color.secondary : Color.blue)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -217,7 +217,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     private var descriptionSection: some View {
         if let desc = repo.description, !desc.isEmpty {
             Text(desc)
-                .font(interfaceScale.font(size: 13))
+                .font(interfaceScale.font(.body))
                 .textSelection(.enabled)
         }
     }
@@ -371,12 +371,12 @@ private struct RepoDetailHeaderSourceBadgeView: View {
                 }
             } else if let systemImage = badge.systemImage {
                 Image(systemName: systemImage)
-                    .font(interfaceScale.font(size: 9, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             if let label = badge.label, !label.isEmpty {
                 Text(label)
-                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(.code, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -401,7 +401,7 @@ private struct RepoDetailHeaderSourceBadgeView: View {
         switch source {
         case .unknown:
             Image(systemName: source.assetName)
-                .font(interfaceScale.font(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
@@ -460,9 +460,9 @@ struct RepoAIOpenButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
                 Text("AI")
-                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(.body, weight: .semibold))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -671,8 +671,8 @@ private struct RepoBadgeChip: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: systemImage).font(interfaceScale.font(size: 10))
-            Text(text).font(interfaceScale.font(size: 10))
+            Image(systemName: systemImage).font(interfaceScale.font(.captionSmall))
+            Text(text).font(interfaceScale.font(.captionSmall))
         }
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(tint.opacity(0.15), in: Capsule())
@@ -712,8 +712,8 @@ private struct OpenSSFInlineBadge: View {
     }
 
     private var fallbackBadge: some View {
-        Image(systemName: "checkmark.shield.fill")
-            .font(interfaceScale.font(size: 11, weight: .semibold))
+            Image(systemName: "checkmark.shield.fill")
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
             .foregroundStyle(OpenSSFScoreBadge.iridescentForeground)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -768,8 +768,8 @@ private struct RepoHealthInlineBadge: View {
     /// 详情页独有：Pro 用户即使没缓存也能看到入口，点了触发 Pro gate / 自动补算。
     /// 列表场景不需要这种"占位"——`asCardData(healthBadge: nil)` 直接不显示 row badge。
     private var fallbackBadge: some View {
-        Image(systemName: "gauge.with.dots.needle.67percent")
-            .font(interfaceScale.font(size: 11, weight: .semibold))
+            Image(systemName: "gauge.with.dots.needle.67percent")
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
             .foregroundStyle(Self.healthForeground)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -809,8 +809,8 @@ private struct RepoRawBadgeChip: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: systemImage).font(interfaceScale.font(size: 10))
-            Text(verbatim: text).font(interfaceScale.font(size: 10))
+            Image(systemName: systemImage).font(interfaceScale.font(.captionSmall))
+            Text(verbatim: text).font(interfaceScale.font(.captionSmall))
         }
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(tint.opacity(0.15), in: Capsule())
@@ -830,13 +830,13 @@ private struct RepoStatItem: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
-                    .font(interfaceScale.font(size: 14))
+                    .font(interfaceScale.font(.bodyEmphasis))
                 Text(value, format: .number)
                     .monospacedDigit()
-                    .font(interfaceScale.font(size: 14, weight: .medium))
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
             Text(label)
-                .font(interfaceScale.font(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }
@@ -859,14 +859,14 @@ private struct RepoDateStatItem: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
-                    .font(interfaceScale.font(size: 14))
+                    .font(interfaceScale.font(.bodyEmphasis))
                 Text(formattedDate)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .font(interfaceScale.font(size: 14, weight: .medium))
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
             Text(label)
-                .font(interfaceScale.font(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }

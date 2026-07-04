@@ -207,6 +207,11 @@ docs/
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/7-工具与脚本/Swift-学习索引.md` 对应条目
 - 详细开发规范见 `docs/` 各文档
 
+### UI 设计契约：DESIGN.md（强制，2026-07-04 起生效）
+
+> 单一入口：根目录 [`DESIGN.md`](DESIGN.md)
+> 任何新增或修改 UI 的任务，必须先读 `DESIGN.md`，再读相关 Swift 代码和 `docs/5-规范/*.md`。`DESIGN.md` 负责约束 Starcat 的整体视觉语言（主窗口三栏 / Agent 工作台 / 知识库 RAG 工作台），`docs/5-规范/*.md` 仍是具体强制规则来源。
+
 ### UI 颜色规范：适配明暗主题（强制，2026-06-14 起生效）
 
 > 单一信任源：[`docs/5-规范/UI-颜色规范.md`](docs/5-规范/UI-颜色规范.md)

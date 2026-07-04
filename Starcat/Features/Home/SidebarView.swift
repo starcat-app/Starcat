@@ -247,13 +247,13 @@ struct SidebarView: View {
                     // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
                     Text(String(format: String.l10n("sidebar.autoTidy.runningFormat"),
                                 autoTidyScheduler.autoTidyProgressText))
-                        .font(interfaceScale.font(size: 10))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 0)
                     Image(systemName: "info.circle")
-                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -285,13 +285,13 @@ struct SidebarView: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.purple)
                 Text("sidebar.autoTidy.popover.title")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
                 Spacer()
                 Button {
                     showAutoTidyPopover = false
                 } label: {
                     Image(systemName: "xmark")
-                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -305,7 +305,7 @@ struct SidebarView: View {
                 Text(String(format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
                             autoTidyScheduler.autoTidyFinishedCount,
                             autoTidyScheduler.autoTidyTotalCount))
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -360,10 +360,10 @@ struct SidebarView: View {
     ) -> some View {
         VStack(spacing: 2) {
             Text(verbatim: "\(count)")
-                .font(interfaceScale.font(size: 13, weight: .semibold).monospacedDigit())
+                .font(interfaceScale.font(.body, weight: .semibold).monospacedDigit())
                 .foregroundStyle(color)
             Text(title)
-                .font(interfaceScale.font(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -574,7 +574,7 @@ struct SidebarView: View {
         } else {
             Section {
                 Text("sidebar.loginPrompt")
-                    .font(interfaceScale.font(size: 12))
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             }
@@ -734,12 +734,12 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("activity.category.section")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
                 Text(activityLeafCategories.count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -785,7 +785,7 @@ struct SidebarView: View {
                 HStack(spacing: 4) {
                     Spacer(minLength: 0)
                     Text(count.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -830,10 +830,10 @@ struct SidebarView: View {
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: page.systemImage)
-                    .font(interfaceScale.font(size: 24, weight: .regular))
+                    .font(interfaceScale.font(.iconLarge, weight: .regular))
                     .frame(height: 28)
                 Text(page.titleKey)
-                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(.body, weight: .semibold))
                     .lineLimit(1)
             }
             .foregroundStyle(isSelected ? Color.accentColor : (needsLogin ? Color.primary.opacity(0.3) : Color.primary.opacity(0.75)))
@@ -868,7 +868,7 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("sidebar.tags")
-                        .font(interfaceScale.font(size: 13))
+                        .font(interfaceScale.font(.body))
                     Spacer(minLength: 8)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -885,7 +885,7 @@ struct SidebarView: View {
                     viewModel.clearSelectedTags()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(interfaceScale.font(size: 14, weight: .medium))
+                        .font(interfaceScale.font(.iconMedium, weight: .medium))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary)
                         .frame(width: 20, height: 20)
@@ -905,7 +905,7 @@ struct SidebarView: View {
                 // 与 SidebarHeaderView 的 ellipsis.circle.fill / square.and.arrow.up
                 // 保持同款"填充圆形 hierarchical"语言，加强 affordance 同时不喧宾夺主。
                 Image(systemName: "plus.circle.fill")
-                    .font(interfaceScale.font(size: 14, weight: .medium))
+                    .font(interfaceScale.font(.iconMedium, weight: .medium))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
@@ -938,7 +938,7 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("sidebar.githubStarLists")
-                        .font(interfaceScale.font(size: 13))
+                        .font(interfaceScale.font(.body))
                     Spacer(minLength: 8)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -959,7 +959,7 @@ struct SidebarView: View {
                 gitHubStarListEditorItem = GitHubStarListEditorItem(list: nil)
             } label: {
                 Image(systemName: "plus.circle.fill")
-                    .font(interfaceScale.font(size: 14, weight: .medium))
+                    .font(interfaceScale.font(.iconMedium, weight: .medium))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
@@ -992,12 +992,12 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("sidebar.languages")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
                 Text(viewModel.languageStats.count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -1021,12 +1021,12 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("explore.sidebar.categories")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
                 Text(dependencies.exploreCatalogStore.displayTopics.count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -1050,12 +1050,12 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("explore.sidebar.platforms")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
                 Text(dependencies.exploreCatalogStore.displayPlatforms.count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -1079,12 +1079,12 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("sidebar.languages")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
                 Text(dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode).count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -1108,7 +1108,7 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("sidebar.languages")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
@@ -1116,7 +1116,7 @@ struct SidebarView: View {
                 // 兜底状态下用 displayList.count（fallbackList 元素数）。两条路径都用 displayList，
                 // 与下方 ForEach 渲染数完全一致，避免 header 计数与列表行数对不上的撕裂感。
                 Text(dependencies.trendingLanguageStore.displayList.count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -1140,12 +1140,12 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("sidebar.languages")
-                    .font(interfaceScale.font(size: 13))
+                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
                 Text(dependencies.weeklyLanguageStore.displayList.count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -1167,7 +1167,7 @@ struct SidebarView: View {
 
     private func disclosureChevron(isExpanded: Bool) -> some View {
         Image(systemName: "chevron.right")
-            .font(interfaceScale.font(size: 11))
+            .font(interfaceScale.font(.captionSmall))
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
             // 2026-06-11：chevron 旋转与行展开/收起共用 disclosureSpring,保证转动节奏
@@ -1320,7 +1320,7 @@ struct SidebarView: View {
         HStack(spacing: 8) {
             if let icon {
                 Image(systemName: icon)
-                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
                     .foregroundStyle(iconColor)
                     .frame(width: 16)
             }
@@ -1332,7 +1332,7 @@ struct SidebarView: View {
 
             if let count {
                 Text(count.formatted())
-                    .font(interfaceScale.font(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -1369,7 +1369,7 @@ struct SidebarView: View {
 
                 if let count, count > 0 {
                     Text(count.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -1398,12 +1398,12 @@ struct SidebarView: View {
 
                 if let aggregate, aggregate.count > 0 {
                     Text(aggregate.count.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 } else if aggregate == nil, let total = dependencies.weeklySelectionService.total {
                     Text(total.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -1501,7 +1501,7 @@ struct SidebarView: View {
 
                     if let count {
                         Text(count.formatted())
-                            .font(interfaceScale.font(size: 11))
+                            .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                             .lineLimit(1)
@@ -1546,7 +1546,7 @@ struct SidebarView: View {
                         Spacer(minLength: 0)
 
                         Text(viewModel.releaseSubscriptionCount.formatted())
-                            .font(interfaceScale.font(size: 11))
+                            .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                             .lineLimit(1)
@@ -1581,7 +1581,7 @@ struct SidebarView: View {
                     gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
                 } label: {
                     Image(systemName: "square.and.pencil")
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -1596,7 +1596,7 @@ struct SidebarView: View {
                     Spacer(minLength: 0)
 
                     Text((viewModel.githubStarListCounts[list.id] ?? 0).formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -1637,7 +1637,7 @@ struct SidebarView: View {
                 HStack(spacing: 4) {
                     Spacer(minLength: 0)
                     Text(count.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -1679,7 +1679,7 @@ struct SidebarView: View {
                 HStack(spacing: 4) {
                     Spacer(minLength: 0)
                     Text(stat.count.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -1723,7 +1723,7 @@ struct SidebarView: View {
                 HStack(spacing: 4) {
                     Spacer(minLength: 0)
                     Text(viewModel.totalCount.formatted())
-                        .font(interfaceScale.font(size: 11))
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .lineLimit(1)

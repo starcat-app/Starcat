@@ -719,21 +719,16 @@ struct AgentWorkspaceView: View {
         case caption
         case caption2
 
-        /// macOS 桌面信息流的标准档字号基线。
-        ///
-        /// SwiftUI 的 `.font(.caption)` 这类语义字号不能直接乘倍率，所以 Agent 工作台
-        /// 先把少量会用到的字号收口到这里。后续主界面接入同一设置时，可以把这组
-        /// 基线提到共享 Typography，而不是每个页面各自猜一套数字。
-        var pointSize: CGFloat {
+        /// Maps local workspace roles onto the shared `DESIGN.md` typography tokens.
+        var typography: StarcatTypography {
             switch self {
-            case .title2:      return 22
-            case .title3:      return 20
-            case .headline:    return 13
-            case .subheadline: return 12
-            case .body:        return 13
-            case .callout:     return 12
-            case .caption:     return 11
-            case .caption2:    return 10
+            case .title2, .title3: return .workspaceTitle
+            case .headline:        return .panelTitle
+            case .subheadline:     return .rowTitle
+            case .body:            return .body
+            case .callout:         return .bodyEmphasis
+            case .caption:         return .caption
+            case .caption2:        return .captionSmall
             }
         }
     }
@@ -743,33 +738,11 @@ struct AgentWorkspaceView: View {
         weight: Font.Weight? = nil,
         design: Font.Design = .default
     ) -> Font {
-        Font.system(
-            size: role.pointSize * agentWorkspaceFontMultiplier,
-            weight: weight,
-            design: design
-        )
+        interfaceScale.font(role.typography, weight: weight, design: design)
     }
 
     private func agentIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        Font.system(size: size * agentWorkspaceFontMultiplier, weight: weight)
-    }
-
-    /// Agent 工作台比普通三栏界面更依赖长文本扫读，因此在同一全局档位下主动放大一档。
-    ///
-    /// 经验判断：三栏主界面的 repo row 主标题约 13pt，Agent 的步骤说明 / 工具输出大量
-    /// 使用 caption/subheadline；若完全沿用全局 standard，会显得比主界面更小。这里把
-    /// standard 映射到之前 large 的 1.16，让 Agent 默认可读，同时保留用户继续放大的空间。
-    private var agentWorkspaceFontMultiplier: CGFloat {
-        switch interfaceScale {
-        case .compact:
-            return 1.08
-        case .standard:
-            return 1.16
-        case .comfortable:
-            return 1.24
-        case .large:
-            return 1.32
-        }
+        interfaceScale.font(size: size, weight: weight)
     }
 
     private var statusText: String {

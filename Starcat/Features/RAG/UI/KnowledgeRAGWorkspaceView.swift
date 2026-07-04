@@ -776,14 +776,15 @@ struct KnowledgeRAGWorkspaceView: View {
         case caption
         case caption2
 
-        var pointSize: CGFloat {
+        /// Maps local workspace roles onto the shared `DESIGN.md` typography tokens.
+        var typography: StarcatTypography {
             switch self {
-            case .headline:    return 13
-            case .subheadline: return 12
-            case .body:        return 13
-            case .callout:     return 12
-            case .caption:     return 11
-            case .caption2:    return 10
+            case .headline:    return .panelTitle
+            case .subheadline: return .rowTitle
+            case .body:        return .body
+            case .callout:     return .bodyEmphasis
+            case .caption:     return .caption
+            case .caption2:    return .captionSmall
             }
         }
     }
@@ -793,31 +794,10 @@ struct KnowledgeRAGWorkspaceView: View {
         weight: Font.Weight? = nil,
         design: Font.Design = .default
     ) -> Font {
-        Font.system(
-            size: role.pointSize * ragWorkspaceFontMultiplier,
-            weight: weight,
-            design: design
-        )
+        interfaceScale.font(role.typography, weight: weight, design: design)
     }
 
     private func ragIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        Font.system(size: size * ragWorkspaceFontMultiplier, weight: weight)
-    }
-
-    /// RAG 工作台和 Agent 工作台同属长文本阅读 / 操作界面，不能直接沿用普通三栏列表倍率。
-    ///
-    /// 这里故意复用 Agent 工作台的倍率映射，保证两个工作台在同一字号设置下观感一致：
-    /// standard 从 1.00 提升到 1.16，避免回答正文、引用说明和工具状态比主界面更小。
-    private var ragWorkspaceFontMultiplier: CGFloat {
-        switch interfaceScale {
-        case .compact:
-            return 1.08
-        case .standard:
-            return 1.16
-        case .comfortable:
-            return 1.24
-        case .large:
-            return 1.32
-        }
+        interfaceScale.font(size: size, weight: weight)
     }
 }
