@@ -2,27 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Direct 版仍保持 sandbox，后续 Sparkle / License API 都在这个边界内工作。 -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-
-    <!-- 出口网络：GitHub API、AI 代理、Sparkle appcast、Starcat License API。 -->
-    <key>com.apple.security.network.client</key>
-    <true/>
-
-    <!-- MCP Service：仅监听 127.0.0.1，供本机 Agent 通过 HTTP MCP 访问 Starcat 能力。 -->
-    <key>com.apple.security.network.server</key>
-    <true/>
-
-    <!-- 用户主动选择文件读写：JSON 导入导出场景。 -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-
-    <!-- Sparkle 2 沙箱安装器 / 下载器通过 XPC 服务工作，需要按 bundle id 放行 mach lookup。 -->
-    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
-    <array>
-        <string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
-        <string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
-    </array>
+    <!--
+      Direct / 非 App Store 版按非沙箱应用运行。
+      这里保留独立 entitlements 文件，是为了让 App Store 与 Direct target 的签名边界清晰；
+      需要新增 Direct 专属能力时只改本文件，不影响 Starcat.entitlements。
+    -->
 </dict>
 </plist>

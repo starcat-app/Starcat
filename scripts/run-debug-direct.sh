@@ -8,8 +8,8 @@
 #
 # 关键约束：
 # - 非沙箱模式不等价于 App Store 行为；不要用它判断 security-scoped bookmark。
-# - 使用 Apple Development 签名并保留 StarcatDirect.entitlements，确保 Sparkle
-#   相关 sandbox mach lookup 等 Direct 配置能被本地验证。
+# - 使用 Apple Development 签名并保留 StarcatDirect.entitlements，确保 Direct
+#   签名边界和 App Store target 分离。
 # - 显式关闭 ENABLE_DEBUG_DYLIB，避免需要构建后 deep re-sign。
 
 set -euo pipefail

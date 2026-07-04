@@ -40,8 +40,8 @@
 
 - [x] Sparkle SPM 只接入 Direct target — `project.yml` — 2026-07-04
   > 实现：`Sparkle` 只在 `StarcatDirect.dependencies` 中声明，App Store 产物无 Sparkle framework。
-- [x] Direct entitlements 增加 Sparkle installer mach lookup — `Starcat/StarcatDirect.entitlements` — 2026-07-04
-  > 实现：增加 `$(PRODUCT_BUNDLE_IDENTIFIER)-spks/-spki` 沙箱 mach lookup 例外。
+- [x] Direct entitlements 与 App Store sandbox 分离 — `Starcat/StarcatDirect.entitlements` — 2026-07-04
+  > 实现：Direct 版使用独立 entitlement 文件且不启用 App Sandbox，App Store 版继续使用 `Starcat.entitlements`。
 - [x] Direct Info.plist 注入 `SUFeedURL` — `Starcat/Generated/Info.direct.generated.plist` — 2026-07-04
   > 实现：Direct appcast 指向 `https://starcat.ink/appcast.xml`。
 - [x] Direct Info.plist 注入 `SUPublicEDKey` — `Configs/Build.xcconfig` — 2026-07-04

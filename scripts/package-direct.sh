@@ -92,6 +92,11 @@ fi
 DIST_VALUE=$(/usr/libexec/PlistBuddy -c 'Print :STARCAT_DISTRIBUTION' "$APP_PATH/Contents/Info.plist")
 [ "$DIST_VALUE" = "direct" ] || fail "STARCAT_DISTRIBUTION 应为 direct，实际为 $DIST_VALUE"
 
+ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
+if grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
+  fail "Direct 包检测到 sandbox entitlement；Direct / 非 App Store 包必须按非沙箱运行"
+fi
+
 log "重新签名 Direct app"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}"
 if [ "$SIGN_IDENTITY" = "-" ]; then
