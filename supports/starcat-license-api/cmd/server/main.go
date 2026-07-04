@@ -37,9 +37,10 @@ func main() {
 	customerPortalURL := strings.TrimSpace(os.Getenv("CREEM_CUSTOMER_PORTAL_URL"))
 
 	licenseProvider := provider.NewCreemProvider(creemBaseURL, creemAPIKey, nil)
+	paymentProvider := provider.NewStaticPaymentProvider("creem", checkoutURL, customerPortalURL)
 	authMW := middleware.NewBearerAuth(apiKeys)
 	licenseHandler := handler.NewLicenseHandler(licenseProvider)
-	paymentHandler := handler.NewPaymentHandler(checkoutURL, customerPortalURL)
+	paymentHandler := handler.NewPaymentHandler(paymentProvider)
 	webhookHandler := handler.NewCreemWebhookHandler(webhookSecret)
 
 	mux := http.NewServeMux()
