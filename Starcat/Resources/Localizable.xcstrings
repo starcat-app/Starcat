@@ -13668,6 +13668,22 @@
         }
       }
     },
+    "list.filter.reset" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset All Filters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置全部筛选"
+          }
+        }
+      }
+    },
     "list.lastSyncedFormat" : {
       "extractionState" : "stale",
       "localizations" : {

@@ -59,17 +59,21 @@ struct UnifiedFilterMenu: View {
     let isAnyFilterActive: Bool
     let accessibilityLabel: LocalizedStringKey
     let helpKey: LocalizedStringKey
+    /// 可选的"重置筛选"回调；非 nil 且 `isAnyFilterActive == true` 时在菜单底部显示。
+    var onReset: (() -> Void)?
 
     init(
         items: [FilterMenuItem],
         isAnyFilterActive: Bool,
         accessibilityLabel: LocalizedStringKey = "list.filter.status",
-        helpKey: LocalizedStringKey = "list.filter.hint"
+        helpKey: LocalizedStringKey = "list.filter.hint",
+        onReset: (() -> Void)? = nil
     ) {
         self.items = items
         self.isAnyFilterActive = isAnyFilterActive
         self.accessibilityLabel = accessibilityLabel
         self.helpKey = helpKey
+        self.onReset = onReset
     }
 
     var body: some View {
@@ -81,25 +85,44 @@ struct UnifiedFilterMenu: View {
         .focusEffectDisabled()
         .help(isAnyFilterActive ? Text("list.filter.active") : Text(helpKey))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(items) { item in
-                    switch item {
-                    case .toggle(_, let label, let icon, let isOn):
-                        Toggle(isOn: isOn) {
-                            Label(label, systemImage: icon)
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(items) { item in
+                        switch item {
+                        case .toggle(_, let label, let icon, let isOn):
+                            Toggle(isOn: isOn) {
+                                Label(label, systemImage: icon)
+                            }
+
+                        case .content(_, let view):
+                            view
+
+                        case .divider:
+                            Divider()
                         }
-
-                    case .content(_, let view):
-                        view
-
-                    case .divider:
-                        Divider()
                     }
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+
+                if let onReset, isAnyFilterActive {
+                    Divider()
+                        .padding(.horizontal, 12)
+
+                    Button(role: .destructive) {
+                        isPresented = false
+                        onReset()
+                    } label: {
+                        Label("list.filter.reset", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
             }
             .frame(width: 260, alignment: .leading)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
             .appLocaleEnvironment()
         }
     }

@@ -696,6 +696,21 @@ final class HomeViewModel {
             || openSSFAvailabilityFilter != .unknown
     }
 
+    /// 重置所有全局筛选条件到默认值。
+    ///
+    /// 全局筛选工具栏「重置」按钮走这里。设置侧也同步清对应偏好。
+    func resetAllFilters() {
+        hideArchived = false
+        hideForks = false
+        statusFilter = nil
+        libraryFilter = .all
+        repoLanguageFilter = .all
+        globalFilterLanguages = []
+        wikiAvailabilityFilter = .unknown
+        healthAvailabilityFilter = .unknown
+        openSSFAvailabilityFilter = .unknown
+    }
+
     // MARK: - 依赖
 
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
