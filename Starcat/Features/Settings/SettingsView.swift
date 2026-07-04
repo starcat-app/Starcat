@@ -490,6 +490,7 @@ private struct InterestedLanguagesSettingsSection: View {
     @Binding var languages: [String]
     @State private var draftLanguage = ""
     @State private var showingLanguagePicker = false
+    @State private var isHoveringAddLanguage = false
 
     private let presets = [
         "Swift", "Objective-C", "Kotlin", "Java",
@@ -512,17 +513,24 @@ private struct InterestedLanguagesSettingsSection: View {
                     }
                 }
 
-                Button {
-                    draftLanguage = ""
-                    showingLanguagePicker = true
-                } label: {
-                    Label("settings.filters.interestedLanguages.add", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .popover(isPresented: $showingLanguagePicker, arrowEdge: .trailing) {
-                    languagePickerPopover
-                        .frame(width: 320)
-                        .padding(14)
+                HStack {
+                    Spacer()
+                    Button {
+                        draftLanguage = ""
+                        showingLanguagePicker = true
+                    } label: {
+                        addLanguageIcon
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(Text("settings.filters.interestedLanguages.add"))
+                    .accessibilityLabel(Text("settings.filters.interestedLanguages.add"))
+                    .onHover { isHoveringAddLanguage = $0 }
+                    .popover(isPresented: $showingLanguagePicker, arrowEdge: .trailing) {
+                        languagePickerPopover
+                            .frame(width: 360, height: 360)
+                            .padding(14)
+                    }
                 }
 
                 if languages.isEmpty {
@@ -584,31 +592,51 @@ private struct InterestedLanguagesSettingsSection: View {
         contains(language) ? .accentColor : Color(nsColor: .controlBackgroundColor)
     }
 
+    private var addLanguageIcon: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Color.secondary)
+            .frame(width: 36, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(isHoveringAddLanguage ? 0.14 : 0.10))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     private var languagePickerPopover: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             TextField("settings.filters.interestedLanguages.add.placeholder", text: $draftLanguage)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(addExactDraftLanguageIfPossible)
 
-            if normalizedDraft.isEmpty {
-                Text("settings.filters.interestedLanguages.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if searchResults.isEmpty {
-                Text("settings.filters.interestedLanguages.search.empty")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(searchResults, id: \.self) { language in
-                            languageSearchResultRow(language)
+            Group {
+                if normalizedDraft.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                        Text("settings.filters.interestedLanguages.add.placeholder")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if searchResults.isEmpty {
+                    Text("settings.filters.interestedLanguages.search.empty")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(searchResults, id: \.self) { language in
+                                languageSearchResultRow(language)
+                            }
                         }
                     }
                 }
-                .frame(maxHeight: 220)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
