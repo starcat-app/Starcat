@@ -630,6 +630,9 @@ final class AppSettings {
     /// MCP 默认监听端口（设置页可改，有效范围 1024...65535）。
     static let defaultMCPServicePort = 5555
 
+    /// README 阅读字号工具条允许的全局偏移范围，单位为 CSS px。
+    static let readmeFontSizeAdjustmentRange = -2...4
+
     // MARK: - 偏好项
 
     /// 应用外观主题(W4-5 D1,dong4j 2026-06-03 需求)。
@@ -646,6 +649,14 @@ final class AppSettings {
     /// 各页面需要逐步接入并验证布局，避免一次性全站缩放破坏三栏信息密度。
     var interfaceScale: InterfaceScale {
         didSet { persist(key: Keys.interfaceScale, value: interfaceScale.rawValue) }
+    }
+
+    /// README 渲染页的全局阅读字号偏移。
+    ///
+    /// 这是用户的阅读偏好，不绑定某个 repo。所有 `ReadmeWebView` 共享这个值，
+    /// 避免切换仓库或进入 Activity / Weekly 等复用渲染页后重复调整。
+    var readmeFontSizeAdjustment: Int {
+        didSet { defaults.set(readmeFontSizeAdjustment, forKey: Keys.readmeFontSizeAdjustment) }
     }
 
     /// 仓库列表排序（W4-4 D1）。默认 `.starredAtDesc`。
@@ -1333,6 +1344,9 @@ final class AppSettings {
 
         let interfaceScaleRaw = defaults.string(forKey: Keys.interfaceScale)
         self.interfaceScale = interfaceScaleRaw.flatMap(InterfaceScale.init(rawValue:)) ?? .standard
+        self.readmeFontSizeAdjustment = Self.clampedReadmeFontSizeAdjustment(
+            defaults.object(forKey: Keys.readmeFontSizeAdjustment) as? Int ?? 0
+        )
 
         // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删除，无需读取
         // settings.repoListDensity（旧持久化值在升级后会被 UserDefaults 自然忽略）。
@@ -1604,6 +1618,7 @@ final class AppSettings {
 
         appearanceMode = .dark
         interfaceScale = .standard
+        readmeFontSizeAdjustment = 0
         repoSortOption = .starredAtDesc
         hideArchived = false
         hideForks = false
@@ -1730,6 +1745,10 @@ final class AppSettings {
                 return true
             }
         return unique.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    static func clampedReadmeFontSizeAdjustment(_ value: Int) -> Int {
+        min(max(value, readmeFontSizeAdjustmentRange.lowerBound), readmeFontSizeAdjustmentRange.upperBound)
     }
 
     // MARK: - 内部
@@ -1918,6 +1937,7 @@ final class AppSettings {
     enum Keys {
         static let appearanceMode = "settings.appearanceMode"  // W4-5 D1
         static let interfaceScale = "settings.general.interfaceScale.v1"  // 2026-06-30
+        static let readmeFontSizeAdjustment = "settings.readme.fontSizeAdjustment.v1"
         // R-01 §3.1.1（2026-06-10 P1）：repoListDensity key 已删除（RepoListDensity 枚举随 P1 整体清零）
         static let repoSortOption = "settings.repoSortOption"
         static let hideArchived = "settings.hideArchived"
@@ -1996,6 +2016,7 @@ final class AppSettings {
         static let resettableKeys: [String] = [
             appearanceMode,
             interfaceScale,
+            readmeFontSizeAdjustment,
             repoSortOption,
             hideArchived,
             hideForks,

@@ -12,6 +12,7 @@ import Testing
 import Foundation
 @testable import Starcat
 
+@MainActor
 @Suite("ReadmeWebView")
 struct ReadmeWebViewTests {
 
@@ -51,9 +52,15 @@ struct ReadmeWebViewTests {
             isDark: false,
             interfaceScale: .large
         )
+        let adjustedHTML = ReadmeWebView.assembleDocument(
+            fragment: "<p>Hello</p>",
+            isDark: false,
+            readmeFontSizeAdjustment: 2
+        )
 
         #expect(standardHTML.contains("--readme-body-font-size: 16.00px;"))
         #expect(largeHTML.contains("--readme-body-font-size: 18.56px;"))
+        #expect(adjustedHTML.contains("--readme-body-font-size: 18.00px;"))
         #expect(standardHTML.contains("font-size: var(--readme-body-font-size, 16px);"))
         #expect(standardHTML.contains("line-height: var(--readme-line-height, 1.62);"))
     }

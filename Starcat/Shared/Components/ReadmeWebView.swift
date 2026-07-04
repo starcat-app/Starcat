@@ -56,7 +56,7 @@ import SwiftUI
 import WebKit
 import AppKit
 
-struct ReadmeWebView: NSViewRepresentable {
+struct ReadmeWebView: View {
 
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
     let htmlFragment: String
@@ -74,6 +74,112 @@ struct ReadmeWebView: NSViewRepresentable {
     /// 详情页需要在用户阅读时收起顶部元信息面板，所以这里把 scroll offset 与可滚动
     /// 余量一并透出；不把 WKWebView / NSScrollView 暴露给业务层。
     var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
+
+    @Environment(AppSettings.self) private var settings
+    @State private var scrollToTopRequestID = 0
+    @State private var isFontToolbarExpanded = false
+
+    var body: some View {
+        ReadmeWebContentView(
+            htmlFragment: htmlFragment,
+            baseURL: baseURL,
+            onScrollReportChange: handleScrollReport,
+            readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
+            scrollToTopRequestID: scrollToTopRequestID
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 工具条必须作为 overlay 贴边悬浮，不能参与 WebView 正文布局。
+        .overlay(alignment: .bottomTrailing) {
+            ReadmeFloatingToolbar(
+                fontSizeAdjustment: settings.readmeFontSizeAdjustment,
+                isExpanded: isFontToolbarExpanded,
+                toggleExpanded: toggleFontToolbar,
+                decreaseFontSize: decreaseFontSize,
+                resetFontSize: resetFontSize,
+                increaseFontSize: increaseFontSize
+            )
+            .padding(.trailing, 10)
+            .padding(.bottom, 54)
+        }
+        // 回到顶部是独立常驻操作，固定贴在 README 渲染区右下角。
+        .overlay(alignment: .bottomTrailing) {
+            ReadmeBackToTopButton(action: scrollToTop)
+                .padding(.trailing, 10)
+                .padding(.bottom, 14)
+        }
+    }
+
+    private func decreaseFontSize() {
+        settings.readmeFontSizeAdjustment = AppSettings.clampedReadmeFontSizeAdjustment(
+            settings.readmeFontSizeAdjustment - 1
+        )
+    }
+
+    private func resetFontSize() {
+        settings.readmeFontSizeAdjustment = 0
+    }
+
+    private func increaseFontSize() {
+        settings.readmeFontSizeAdjustment = AppSettings.clampedReadmeFontSizeAdjustment(
+            settings.readmeFontSizeAdjustment + 1
+        )
+    }
+
+    private func scrollToTop() {
+        scrollToTopRequestID &+= 1
+    }
+
+    private func toggleFontToolbar() {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isFontToolbarExpanded.toggle()
+        }
+    }
+
+    private func handleScrollReport(_ report: RepoDetailScrollReport) {
+        onScrollReportChange(report)
+        collapseToolbarForScroll()
+    }
+
+    private func collapseToolbarForScroll() {
+        guard isFontToolbarExpanded else { return }
+        withAnimation(.easeInOut(duration: 0.14)) {
+            isFontToolbarExpanded = false
+        }
+    }
+
+    // MARK: - README 链接基地址
+
+    /// 构造 README 相对链接使用的 GitHub 仓库内容目录。
+    ///
+    /// GitHub HTML 渲染 API 返回的 `href="docs/guide.md"` 需要相对于
+    /// `/blob/HEAD/` 解析。这里显式声明为目录 URL，关键是保留末尾 `/`；如果使用
+    /// `/blob/HEAD`，Foundation / WebKit 会把 `HEAD` 当作当前文件名并在解析时丢掉它。
+    static func repositoryContentBaseURL(from repositoryURL: URL) -> URL {
+        repositoryURL.appendingPathComponent("blob/HEAD", isDirectory: true)
+    }
+
+    /// 将 GitHub 的 HTML 片段包装为完整文档（带 GFM 主题 CSS）。
+    static func assembleDocument(
+        fragment: String,
+        isDark: Bool,
+        interfaceScale: InterfaceScale = .standard,
+        readmeFontSizeAdjustment: Int = 0
+    ) -> String {
+        ReadmeWebContentView.assembleDocument(
+            fragment: fragment,
+            isDark: isDark,
+            interfaceScale: interfaceScale,
+            readmeFontSizeAdjustment: readmeFontSizeAdjustment
+        )
+    }
+}
+
+private struct ReadmeWebContentView: NSViewRepresentable {
+    let htmlFragment: String
+    let baseURL: URL?
+    var onScrollReportChange: (RepoDetailScrollReport) -> Void
+    let readmeFontSizeAdjustment: Int
+    let scrollToTopRequestID: Int
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -109,6 +215,7 @@ struct ReadmeWebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
         loadIfNeeded(into: webView, context: context)
+        scrollToTopIfNeeded(in: webView, context: context)
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
@@ -130,40 +237,74 @@ struct ReadmeWebView: NSViewRepresentable {
         }
     }
 
-    /// 仅在 html 内容或主题变化时重新 loadHTML。
+    /// 仅在 html 内容或主题变化时重新 loadHTML；仅字号变化时走 JS 动态更新 CSS 变量。
     ///
     /// 调用 `loadHTMLString` 前会把 `expectsInitialLoad` 置 true，让 Coordinator
     /// 放行紧接而来的那一次主框架导航，之后所有主框架导航全部 cancel
     /// （挡住右键菜单"重新加载"会把整页 GitHub 拉进来的副作用）。
+    ///
+    /// 字号调整不触发 HTML 重载：重载会产生 scroll 事件 → `collapseToolbarForScroll()`
+    /// 把字号面板意外关闭，用户体验上无法连续调整。改为 `evaluateJavaScript` 直接写
+    /// `--readme-body-font-size` CSS 变量，无重载、无白闪、不触发 scroll。
     private func loadIfNeeded(into webView: WKWebView, context: Context) {
-        let key = ReadmeKey(
+        let contentKey = ReadmeKey(
             fragment: htmlFragment,
             isDark: colorScheme == .dark,
             interfaceScale: interfaceScale
         )
-        guard context.coordinator.lastLoadedKey != key else { return }
-        context.coordinator.lastLoadedKey = key
 
-        // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
-        // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
-        // 不再在渲染线程跑 NSRegularExpression。
-        let fullHTML = Self.assembleDocument(
-            fragment: htmlFragment,
-            isDark: colorScheme == .dark,
-            interfaceScale: interfaceScale
-        )
-        context.coordinator.expectsInitialLoad = true
-        webView.loadHTMLString(fullHTML, baseURL: baseURL)
+        // 内容或主题变化 → 完整重载 HTML（含初始字号）
+        if context.coordinator.lastLoadedKey != contentKey {
+            context.coordinator.lastLoadedKey = contentKey
+            context.coordinator.lastAppliedFontSizeAdjustment = readmeFontSizeAdjustment
+
+            // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
+            // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
+            // 不再在渲染线程跑 NSRegularExpression。
+            let fullHTML = Self.assembleDocument(
+                fragment: htmlFragment,
+                isDark: colorScheme == .dark,
+                interfaceScale: interfaceScale,
+                readmeFontSizeAdjustment: readmeFontSizeAdjustment
+            )
+            context.coordinator.expectsInitialLoad = true
+            webView.loadHTMLString(fullHTML, baseURL: baseURL)
+            return
+        }
+
+        // 仅字号变化 → JS 动态更新 CSS 变量，不重载 HTML，不触发 scroll 事件
+        if context.coordinator.lastAppliedFontSizeAdjustment != readmeFontSizeAdjustment {
+            context.coordinator.lastAppliedFontSizeAdjustment = readmeFontSizeAdjustment
+            let newFontSize = Self.readmeBodyFontSize(
+                for: interfaceScale,
+                adjustment: readmeFontSizeAdjustment
+            )
+            let cssPixels = String(format: "%.2fpx", Double(newFontSize))
+            webView.evaluateJavaScript(
+                "document.documentElement.style.setProperty('--readme-body-font-size', '\(cssPixels)');"
+            )
+        }
+    }
+
+    private func scrollToTopIfNeeded(in webView: WKWebView, context: Context) {
+        guard scrollToTopRequestID != context.coordinator.lastScrollToTopRequestID else { return }
+        context.coordinator.lastScrollToTopRequestID = scrollToTopRequestID
+        guard scrollToTopRequestID > 0 else { return }
+        webView.evaluateJavaScript("window.scrollTo({ top: 0, behavior: 'smooth' });")
     }
 
     /// 将 GitHub 的 HTML 片段包装为完整文档（带 GFM 主题 CSS）。
     static func assembleDocument(
         fragment: String,
         isDark: Bool,
-        interfaceScale: InterfaceScale = .standard
+        interfaceScale: InterfaceScale = .standard,
+        readmeFontSizeAdjustment: Int = 0
     ) -> String {
         let css = ReadmeCSS.full + "\n" + ReadmeCSS.readingVariables(
-            bodyFontSize: readmeBodyFontSize(for: interfaceScale),
+            bodyFontSize: readmeBodyFontSize(
+                for: interfaceScale,
+                adjustment: readmeFontSizeAdjustment
+            ),
             lineHeight: readmeLineHeight
         )
         let bodyClass = isDark ? "markdown-body dark" : "markdown-body"
@@ -187,19 +328,8 @@ struct ReadmeWebView: NSViewRepresentable {
     private static let standardReadmeBodyFontSize: CGFloat = 16
     private static let readmeLineHeight: CGFloat = 1.62
 
-    private static func readmeBodyFontSize(for interfaceScale: InterfaceScale) -> CGFloat {
-        interfaceScale.scaled(standardReadmeBodyFontSize)
-    }
-
-    // MARK: - README 链接基地址
-
-    /// 构造 README 相对链接使用的 GitHub 仓库内容目录。
-    ///
-    /// GitHub HTML 渲染 API 返回的 `href="docs/guide.md"` 需要相对于
-    /// `/blob/HEAD/` 解析。这里显式声明为目录 URL，关键是保留末尾 `/`；如果使用
-    /// `/blob/HEAD`，Foundation / WebKit 会把 `HEAD` 当作当前文件名并在解析时丢掉它。
-    static func repositoryContentBaseURL(from repositoryURL: URL) -> URL {
-        repositoryURL.appendingPathComponent("blob/HEAD", isDirectory: true)
+    private static func readmeBodyFontSize(for interfaceScale: InterfaceScale, adjustment: Int) -> CGFloat {
+        interfaceScale.scaled(standardReadmeBodyFontSize + CGFloat(AppSettings.clampedReadmeFontSizeAdjustment(adjustment)))
     }
 
     // MARK: - Coordinator
@@ -210,8 +340,16 @@ struct ReadmeWebView: NSViewRepresentable {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
+        var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         private weak var userContentController: WKUserContentController?
+
+        /// 上次已应用的 README 字号调整量。
+        ///
+        /// 用于在 `updateNSView` 时检测"仅字号变化"场景：如果内容 key 未变但字号变了，
+        /// 走 JS 动态更新 CSS 变量而非 `loadHTMLString` 重载，避免重载触发的 scroll 事件
+        /// 把字号面板意外关闭，同时消除白闪。
+        var lastAppliedFontSizeAdjustment: Int?
 
         /// 由 `loadIfNeeded` 在调用 `loadHTMLString` 前置 true，
         /// 用于放行紧接而来的那一次主框架导航；放行后立即置 false。
@@ -472,6 +610,131 @@ private enum ReadmeWebViewConstants {
     static let scrollMessageName = "readmeScroll"
 }
 
+private struct ReadmeFloatingToolbar: View {
+    let fontSizeAdjustment: Int
+    let isExpanded: Bool
+    let toggleExpanded: () -> Void
+    let decreaseFontSize: () -> Void
+    let resetFontSize: () -> Void
+    let increaseFontSize: () -> Void
+
+    /// 鼠标是否悬停在浮窗上。
+    ///
+    /// dong4j 2026-07-04：浮窗默认占用 README 阅读区右下角，长期 100% 不透明会与正文抢戏。
+    /// 在「hover / 展开 / 用户已调整过字号」三种状态下保持 100%，其余降到 45%，
+    /// 既不抢阅读视线，也保证在意这个工具的用户能稳定看到反馈。
+    @State private var isHovering = false
+
+    private var canDecrease: Bool {
+        fontSizeAdjustment > AppSettings.readmeFontSizeAdjustmentRange.lowerBound
+    }
+
+    private var canIncrease: Bool {
+        fontSizeAdjustment < AppSettings.readmeFontSizeAdjustmentRange.upperBound
+    }
+
+    private var isIdle: Bool {
+        !isHovering && !isExpanded && fontSizeAdjustment == 0
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            if isExpanded {
+                toolbarButton(
+                    systemImage: "minus",
+                    helpKey: "readme.toolbar.fontSmaller",
+                    isDisabled: !canDecrease,
+                    action: decreaseFontSize
+                )
+                toolbarButton(
+                    systemImage: "arrow.counterclockwise",
+                    helpKey: "readme.toolbar.fontReset",
+                    isDisabled: fontSizeAdjustment == 0,
+                    action: resetFontSize
+                )
+                toolbarButton(
+                    systemImage: "plus",
+                    helpKey: "readme.toolbar.fontLarger",
+                    isDisabled: !canIncrease,
+                    action: increaseFontSize
+                )
+                Divider()
+                    .frame(width: 16)
+                    .padding(.vertical, 1)
+                    .transition(.opacity)
+            }
+            toolbarButton(
+                systemImage: "gearshape",
+                helpKey: "readme.toolbar.fontMenu",
+                isDisabled: false,
+                isActive: isExpanded || fontSizeAdjustment != 0,
+                action: toggleExpanded
+            )
+        }
+        .padding(isExpanded ? 4 : 3)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: isExpanded ? 12 : 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: isExpanded ? 12 : 10, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.09), radius: 8, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.16), value: isExpanded)
+        // idle 变淡：避免常驻浮窗与 README 正文抢视线；hover / 展开 / 已调过字号 时保持不淡。
+        .opacity(isIdle ? 0.45 : 1.0)
+        .animation(.easeInOut(duration: 0.18), value: isHovering)
+        .onHover { isHovering = $0 }
+    }
+
+    private func toolbarButton(
+        systemImage: String,
+        helpKey: LocalizedStringKey,
+        isDisabled: Bool,
+        isActive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isDisabled ? Color.secondary.opacity(0.38) : Color.secondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isDisabled)
+        .help(helpKey)
+        .accessibilityLabel(Text(helpKey))
+    }
+}
+
+private struct ReadmeBackToTopButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.up.to.line")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 30, height: 30)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("readme.toolbar.backToTop")
+        .accessibilityLabel(Text("readme.toolbar.backToTop"))
+        .shadow(color: Color.black.opacity(0.09), radius: 8, x: 0, y: 4)
+    }
+}
+
 private extension NSView {
     /// 在 WebKit 这类内部视图层级里查找标准 AppKit 子视图。
     ///
@@ -491,6 +754,9 @@ private extension NSView {
 }
 
 /// 缓存键：HTML 片段 + 主题，用于 updateNSView 时判断是否需要重新 loadHTMLString。
+///
+/// 字号调整不在此键中：字号变化时通过 JS 动态更新 CSS 变量 `--readme-body-font-size`，
+/// 避免 `loadHTMLString` 重载触发 scroll 事件导致字号面板意外关闭。
 struct ReadmeKey: Equatable {
     let fragment: String
     let isDark: Bool

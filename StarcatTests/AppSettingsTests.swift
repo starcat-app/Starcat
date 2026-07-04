@@ -51,6 +51,21 @@ struct AppSettingsTests {
         #expect(s2.isProUser == true)
     }
 
+    @Test("README 字号偏移: 持久化并钳制范围")
+    func readmeFontSizeAdjustmentPersistsAndClamps() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+
+        s1.readmeFontSizeAdjustment = 3
+        #expect(AppSettings(defaults: defaults).readmeFontSizeAdjustment == 3)
+
+        defaults.set(99, forKey: AppSettings.Keys.readmeFontSizeAdjustment)
+        #expect(AppSettings(defaults: defaults).readmeFontSizeAdjustment == AppSettings.readmeFontSizeAdjustmentRange.upperBound)
+
+        defaults.set(-99, forKey: AppSettings.Keys.readmeFontSizeAdjustment)
+        #expect(AppSettings(defaults: defaults).readmeFontSizeAdjustment == AppSettings.readmeFontSizeAdjustmentRange.lowerBound)
+    }
+
     @Test("本机恢复出厂: 重置配置并清空本机凭据")
     func resetToDefaultsClearsLocalPreferencesAndCredentials() throws {
         let defaults = makeIsolatedDefaults()
@@ -58,6 +73,7 @@ struct AppSettingsTests {
         let settings = AppSettings(defaults: defaults, keychain: keychain)
 
         settings.appearanceMode = .light
+        settings.readmeFontSizeAdjustment = 3
         settings.repoSortOption = .starsDesc
         settings.hideArchived = true
         settings.interestedLanguages = ["Swift", "Go"]
@@ -87,6 +103,7 @@ struct AppSettingsTests {
         try settings.resetToDefaults()
 
         #expect(settings.appearanceMode == .dark)
+        #expect(settings.readmeFontSizeAdjustment == 0)
         #expect(settings.repoSortOption == .starredAtDesc)
         #expect(settings.hideArchived == false)
         #expect(settings.interestedLanguages.isEmpty)
