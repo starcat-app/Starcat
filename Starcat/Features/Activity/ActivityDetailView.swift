@@ -84,6 +84,7 @@ struct ActivityDetailView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     /// Watchers badge 按主题切换紫色(StatSemanticColor.watchers)。
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -128,7 +129,15 @@ struct ActivityDetailView: View {
             Divider()
             ReadmeWebView(
                 htmlFragment: item.announcement!.htmlBody!,
-                baseURL: URL(string: "https://github.blog/")
+                baseURL: URL(string: "https://github.blog/"),
+                onOpenInNewWindow: { [html = item.announcement!.htmlBody!, settings] in
+                    ReadmeWindowController.show(
+                        htmlFragment: html,
+                        baseURL: URL(string: "https://github.blog/"),
+                        title: item.title,
+                        settings: settings
+                    )
+                }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

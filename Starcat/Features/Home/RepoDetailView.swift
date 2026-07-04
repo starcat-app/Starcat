@@ -296,11 +296,16 @@ enum ReadmeContentScope: Equatable {
 struct ReadmeStateView: View {
 
     @Environment(ReadmeViewModel.self) private var readmeVM
+    @Environment(AppSettings.self) private var settings
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.openSettings) private var openSettings
 
     /// 相对时间 helper 需要显式 `\.locale`，否则 formatter 会回到系统语言。
     /// 已挂 `appLocaleEnvironment()` 的子树自动拿到正确值。
     @Environment(\.locale) private var locale
+
+    /// Toast 消息绑定（翻译错误 → 底部浮动提示）。
+    @State private var translationToast: String?
 
     let state: ReadmeViewModel.LoadState
     let contentScope: ReadmeContentScope
@@ -359,6 +364,25 @@ struct ReadmeStateView: View {
             reduceMotion ? nil : .easeOut(duration: ReadmeRevealTiming.contentRevealSeconds),
             value: showsReadmePlaceholder
         )
+        .toast(
+            message: $translationToast,
+            icon: "exclamationmark.triangle.fill",
+            iconColor: .orange,
+            bottomPadding: 30,
+            autoDismiss: false,
+            actionLabel: translationToastActionLabel,
+            onAction: translationToastOnAction
+        )
+        .onChange(of: translationControl?.translationVM.errorMessage) { _, newValue in
+            if let msg = newValue {
+                translationToast = msg
+            }
+        }
+        .onChange(of: translationToast) { _, newValue in
+            if newValue == nil {
+                translationControl?.translationVM.dismissError()
+            }
+        }
     }
 
     private var readmePlaceholderTransition: AnyTransition {
@@ -386,6 +410,19 @@ struct ReadmeStateView: View {
         }
     }
 
+    /// 用于"新窗口打开 README"的窗口标题。
+    ///
+    /// Manage 路径从翻译控件拿 `repo.fullName`；Trending 路径从 contentScope 拼。
+    private var readmeWindowTitle: String {
+        if let repo = translationControl?.repo {
+            return repo.fullName
+        }
+        if case .trending(let owner, let repo) = contentScope {
+            return "\(owner)/\(repo)"
+        }
+        return "README"
+    }
+
     private var isStateStaleForScope: Bool {
         switch contentScope {
         case .manage(let repoId):
@@ -400,6 +437,29 @@ struct ReadmeStateView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// 翻译错误 toast 操作按钮文案。仅 AI 配置类错误显示"前往设置"。
+    private var translationToastActionLabel: String? {
+        guard translationControl?.translationVM.translationErrorKind == .aiConfiguration else {
+            return nil
+        }
+        return "readme.translate.error.goToAISettings"
+    }
+
+    /// 翻译错误 toast 操作按钮回调：打开设置页并跳转到 AI 服务 tab。
+    private var translationToastOnAction: (() -> Void)? {
+        guard translationControl?.translationVM.translationErrorKind == .aiConfiguration else {
+            return nil
+        }
+        return { [openSettings] in
+            openSettings()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .starcatJumpToSettingsTab, object: "ai"
+                )
+            }
+        }
+    }
+
     @ViewBuilder
     private var resolvedReadmeContent: some View {
         switch state {
@@ -412,10 +472,19 @@ struct ReadmeStateView: View {
                 // `translatedHtml`。源 `html` 仍由翻译 VM 之外的逻辑保留——切回
                 // 原文不需要重新拉网络，只是 displayMode 切回 .showingOriginal。
                 let renderedHtml = translationControl?.activeHtml(originalHtml: html) ?? html
+                let windowTitle = readmeWindowTitle
                 ReadmeWebView(
                     htmlFragment: renderedHtml,
                     baseURL: baseURL,
-                    onScrollReportChange: onScrollReportChange
+                    onScrollReportChange: onScrollReportChange,
+                    onOpenInNewWindow: { [html = renderedHtml, baseURL, windowTitle, settings] in
+                        ReadmeWindowController.show(
+                            htmlFragment: html,
+                            baseURL: baseURL,
+                            title: windowTitle,
+                            settings: settings
+                        )
+                    }
                 )
                 .id(readmeWebViewIdentity)
                 // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
@@ -556,7 +625,7 @@ struct ReadmeTranslationControl {
 /// - 旁边的下拉菜单负责"选择目标语言"+"重新翻译"+"清除当前译文"，避免在 footer 里
 ///   堆出多个按钮抢空间。
 /// - 翻译进行中切换为 ProgressView + 禁用，复用与同列其它按钮（SyncIconButton）一致的视觉。
-/// - 错误条放在 footer 上方独立一行，避免压缩 footer 宽度；用户可主动 dismiss。
+/// - 错误不再内联到 footer，改为通过 toast 浮动提示（手动关闭 + AI 配置类错误可跳转设置）。
 struct ReadmeTranslationFooterButton: View {
 
     let control: ReadmeTranslationControl
@@ -587,24 +656,6 @@ struct ReadmeTranslationFooterButton: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if let message = translationVM.errorMessage {
-                Button {
-                    translationVM.dismissError()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                        Text(verbatim: message)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("readme.translate.error.dismiss")
-            }
-
             Button {
                 if translationVM.isTranslating {
                     // 翻译中点击 = 用户主动停止：调 VM.cancelTranslation 取消正在跑的

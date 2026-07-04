@@ -2,9 +2,30 @@
 //  RepoDetailWindowController.swift
 //  Starcat
 //
-//  推荐卡片点击开的「详情独立窗」AppKit 外壳。
+//  仓库详情完整独立窗。
 //
-//  设计要点：
+//  ─────────────────────────────────────────────────────────
+//  与 ReadmeWindowController 的视觉差异
+//  ─────────────────────────────────────────────────────────
+//
+//  RepoDetailWindowController：
+//  - 完整仓库详情页：hero（头像 + 全名 + badges）+ 元信息卡片
+//    + README + AI 助手入口 + 翻译 + 分享 + Pro Health 入口
+//  - 窗口标题 = 仓库全名（owner/repo）
+//  - 同 repo 点击复用窗口（singleton），不同 repo 可同时开多个
+//
+//  ReadmeWindowController：
+//  - 只有 README 正文 + 右下角浮动工具栏（字号调节 / 回到顶部）
+//  - 无 hero、无元信息卡片、无 AI、无翻译、无分享
+//  - 每次点击都开新窗口（不复用），方便对照阅读
+//
+//  一句话：RepoDetailWindow 是"围绕这个仓库做一切操作"的工作台；
+//         ReadmeWindow 是"只看 README"的阅读器。
+//
+//  ─────────────────────────────────────────────────────────
+//  设计要点
+//  ─────────────────────────────────────────────────────────
+//
 //  - 跟 `RepoAIWindowController` 同款 singleton map 模式（`repo.id → controller`）。
 //    同 repo 重复点击不重开，把已有窗带到前台；不同 repo 可同时开多个做对比。
 //  - NSWindow（非 NSPanel）—— detail 窗是「主内容载体」，需要 traffic light +

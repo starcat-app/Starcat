@@ -16151,6 +16151,22 @@
         }
       }
     },
+    "readme.toolbar.openInNewWindow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open README in new window"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在新窗口中打开 README"
+          }
+        }
+      }
+    },
     "readme.cachedAtFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -16314,6 +16330,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "点击关闭"
+          }
+        }
+      }
+    },
+    "readme.translate.error.goToAISettings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往设置"
           }
         }
       }

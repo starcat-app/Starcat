@@ -35,6 +35,15 @@ final class ReadmeTranslationViewModel {
         case showingTranslation(html: String, language: ReadmeTranslationLanguage, createdAt: Date)
     }
 
+    /// 翻译错误分类（驱动 toast 是否显示操作按钮）。
+    enum TranslationErrorKind {
+        case none
+        /// AI 配置缺失（provider / API Key 未配）→ 引导跳转设置页。
+        case aiConfiguration
+        /// 其他错误（网络、AI 服务异常、结构破坏等）→ 仅提供关闭。
+        case other
+    }
+
     /// 当前显示模式（驱动 UI 在原文 / 译文之间切换）。
     private(set) var displayMode: DisplayMode = .showingOriginal
 
@@ -52,6 +61,10 @@ final class ReadmeTranslationViewModel {
 
     /// 翻译错误消息（已本地化）。
     private(set) var errorMessage: String?
+
+    /// 当前错误的分类（驱动 toast 是否显示"前往设置"等操作按钮）。
+    private(set) var translationErrorKind: TranslationErrorKind = .none
+
     private(set) var paywallContext: ProPaywallContext?
 
     /// 缓存翻译与当前源 HTML 不再匹配时为 true，UI 提示"原 README 已更新，建议重新翻译"。
@@ -89,6 +102,7 @@ final class ReadmeTranslationViewModel {
     ) {
         currentTask?.cancel()
         errorMessage = nil
+        translationErrorKind = .none
         streamingHtml = nil
         displayMode = .showingOriginal
         cacheIsStale = false
@@ -197,6 +211,7 @@ final class ReadmeTranslationViewModel {
                     service: "AI"
                 )
                 self.errorMessage = friendly.message
+                self.translationErrorKind = self.classifyError(error)
                 friendly.record(category: "ai", operation: "readmeTranslation.start", service: "ai-provider")
             }
         }
@@ -219,9 +234,10 @@ final class ReadmeTranslationViewModel {
         }
     }
 
-    /// UI 显式清除当前错误（按 X 关闭错误条时调用）。
+    /// UI 显式清除当前错误（toast 关闭 / 手动 dismiss 时调用）。
     func dismissError() {
         errorMessage = nil
+        translationErrorKind = .none
     }
 
     func dismissPaywall() {
@@ -250,6 +266,7 @@ final class ReadmeTranslationViewModel {
         isTranslating = false
         streamingHtml = nil
         errorMessage = nil
+        translationErrorKind = .none
     }
 
     // MARK: - 内部实现
@@ -318,6 +335,7 @@ final class ReadmeTranslationViewModel {
             )
             errorMessage = friendly.message
             streamingHtml = nil
+            translationErrorKind = classifyError(error)
             AppLog.ai.error("README translation failed repo=\(repo.fullName, privacy: .public) language=\(targetLanguage.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
             friendly.record(
                 category: "ai",
@@ -325,6 +343,32 @@ final class ReadmeTranslationViewModel {
                 service: "ai-provider"
             )
         }
+    }
+
+    /// 将翻译错误分类为 `.aiConfiguration`（需跳转设置）或 `.other`。
+    ///
+    /// 与 `UserFacingError.mapReadmeTranslation` 保持同步的映射规则：
+    /// - `ReadmeTranslationError.missingProvider` / `.missingAPIKey` → aiConfiguration
+    /// - `AIClientError.missingAPIKey` / `.invalidBaseURL` → aiConfiguration
+    /// - 其余 → other
+    private func classifyError(_ error: Error) -> TranslationErrorKind {
+        if let rt = error as? ReadmeTranslationError {
+            switch rt {
+            case .missingProvider, .missingAPIKey:
+                return .aiConfiguration
+            case .emptySource, .structureBroken:
+                return .other
+            }
+        }
+        if let ai = error as? AIClientError {
+            switch ai {
+            case .missingAPIKey, .invalidBaseURL:
+                return .aiConfiguration
+            case .emptyResponse, .responseTruncated, .modelListRequestFailed:
+                return .other
+            }
+        }
+        return .other
     }
 
     private func presentPaywallIfNeeded(_ error: Error) {

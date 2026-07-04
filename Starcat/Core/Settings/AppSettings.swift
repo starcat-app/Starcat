@@ -534,11 +534,11 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     /// 比"Simplified Chinese / 简体中文"双语对照更短更清晰。
     var displayName: String {
         switch self {
-        case .simplifiedChinese:  return "简体中文"
-        case .traditionalChinese: return "繁體中文"
-        case .english:            return "English"
-        case .japanese:           return "日本語"
-        case .korean:             return "한국어"
+        case .simplifiedChinese:  return "🇨🇳 简体中文"
+        case .traditionalChinese: return "🇨🇳 繁體中文"
+        case .english:            return "🇺🇸 English"
+        case .japanese:           return "🇯🇵 日本語"
+        case .korean:             return "🇰🇷 한국어"
         }
     }
 

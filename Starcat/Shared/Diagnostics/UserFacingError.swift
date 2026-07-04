@@ -48,6 +48,9 @@ struct UserFacingError: Equatable, Sendable {
         if let ai = error as? AIClientError {
             return mapAI(ai, operation: operation, service: service)
         }
+        if let translation = error as? ReadmeTranslationError {
+            return mapReadmeTranslation(translation, operation: operation, service: service)
+        }
         if let database = error as? DatabaseError {
             return make(
                 kind: .localData,
@@ -192,6 +195,27 @@ struct UserFacingError: Equatable, Sendable {
         case .missingAPIKey, .invalidBaseURL:
             return make(kind: .aiConfiguration, operation: operation, service: service, diagnostic: error.localizedDescription)
         case .emptyResponse, .responseTruncated, .modelListRequestFailed:
+            return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
+        }
+    }
+
+    /// README 翻译专用错误 → 用户可读提示。
+    ///
+    /// 映射策略：
+    /// - `.missingProvider` / `.missingAPIKey` → `.aiConfiguration`：都是"设置页 AI 配置
+    ///   不完整"，用户去设置页补全 provider 或 API Key 即可；
+    /// - `.emptySource` / `.structureBroken` → `.aiProvider`：前者源 README 为空
+    ///   （正常路径已被按钮 disabled 挡住，极少触发），后者模型输出破坏了 HTML 结构，
+    ///   都属于"AI 服务端结果异常"，建议换模型或重试。
+    private static func mapReadmeTranslation(
+        _ error: ReadmeTranslationError,
+        operation: String,
+        service: String?
+    ) -> UserFacingError {
+        switch error {
+        case .missingProvider, .missingAPIKey:
+            return make(kind: .aiConfiguration, operation: operation, service: service, diagnostic: error.localizedDescription)
+        case .emptySource, .structureBroken:
             return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
         }
     }

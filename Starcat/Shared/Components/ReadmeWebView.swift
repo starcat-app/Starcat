@@ -75,6 +75,11 @@ struct ReadmeWebView: View {
     /// 余量一并透出；不把 WKWebView / NSScrollView 暴露给业务层。
     var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
 
+    /// 「在新窗口打开 README」回调。
+    ///
+    /// nil 时浮动工具栏不显示该按钮（独立窗口自身不提供此操作，避免无限套娃）。
+    var onOpenInNewWindow: (() -> Void)? = nil
+
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
     @State private var isFontToolbarExpanded = false
@@ -96,7 +101,8 @@ struct ReadmeWebView: View {
                 toggleExpanded: toggleFontToolbar,
                 decreaseFontSize: decreaseFontSize,
                 resetFontSize: resetFontSize,
-                increaseFontSize: increaseFontSize
+                increaseFontSize: increaseFontSize,
+                openInNewWindow: onOpenInNewWindow
             )
             .padding(.trailing, 10)
             .padding(.bottom, 54)
@@ -618,6 +624,9 @@ private struct ReadmeFloatingToolbar: View {
     let resetFontSize: () -> Void
     let increaseFontSize: () -> Void
 
+    /// 「在新窗口打开 README」回调。nil 时隐藏该按钮（独立窗口不提供此操作）。
+    let openInNewWindow: (() -> Void)?
+
     /// 鼠标是否悬停在浮窗上。
     ///
     /// dong4j 2026-07-04：浮窗默认占用 README 阅读区右下角，长期 100% 不透明会与正文抢戏。
@@ -662,6 +671,18 @@ private struct ReadmeFloatingToolbar: View {
                     .frame(width: 16)
                     .padding(.vertical, 1)
                     .transition(.opacity)
+                if let openInNewWindow {
+                    toolbarButton(
+                        systemImage: "macwindow.badge.plus",
+                        helpKey: "readme.toolbar.openInNewWindow",
+                        isDisabled: false,
+                        action: openInNewWindow
+                    )
+                    Divider()
+                        .frame(width: 16)
+                        .padding(.vertical, 1)
+                        .transition(.opacity)
+                }
             }
             toolbarButton(
                 systemImage: "gearshape",
