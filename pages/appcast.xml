@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Starcat Direct Updates</title>
+    <link>https://starcat.ink</link>
+    <description>Appcast feed for Starcat Direct builds.</description>
+    <language>zh-cn</language>
+    <lastBuildDate>Sat, 04 Jul 2026 00:00:00 +0800</lastBuildDate>
+    <!--
+      Initial empty feed.
+
+      Do not publish an update item until the Direct DMG has been signed,
+      notarized, uploaded, and signed with Sparkle's EdDSA key. A release item
+      must include the real download URL, bundle version, marketing version,
+      byte length, and sparkle:edSignature generated from the final archive.
+    -->
+  </channel>
+</rss>

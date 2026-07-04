@@ -3,7 +3,7 @@
 > 创建：2026-06-19  
 > 用途：在 App Store Connect 创建订阅优惠码，并在 Starcat 客户端兑换的完整 SOP  
 > 关联代码：`OfferCodeRedemptionSupport.swift`、`SubscriptionManager.handleOfferCodeRedemptionResult`、`ProSettingsTab`、`ProPaywallSheet`  
-> 前置阅读：`docs/2-产品/需求讨论/正式方案/StoreKit订阅上架方案.md`、`docs/2-产品/需求讨论/正式方案/Pro付费墙验证清单.md`
+> 前置阅读：`docs/2-产品/需求讨论/正式方案/支付对接正式方案.md`、`docs/2-产品/需求讨论/正式方案/Pro付费墙验证清单.md`
 
 ---
 
@@ -15,7 +15,7 @@
 | **谁验码** | **Apple**（App Store / StoreKit）；Starcat **不**维护自建优惠券 API |
 | **客户端入口** | SwiftUI `offerCodeRedemption` 系统兑换 sheet |
 | **Pro 生效** | 兑换成功后 `Transaction.updates` + `handleOfferCodeRedemptionResult` 刷新权益 |
-| **与 Promotional Offer 区别** | Offer Code = 发字符串码、App 外也可兑、**无需**服务器签名；见 `docs/2-产品/需求讨论/正式方案/StoreKit订阅上架方案.md` 讨论 |
+| **与 Promotional Offer 区别** | Offer Code = 发字符串码、App 外也可兑、**无需**服务器签名；见 `docs/2-产品/需求讨论/正式方案/支付对接正式方案.md` 讨论 |
 
 Starcat 内入口：
 
@@ -204,7 +204,7 @@ Starcat 内入口：
 
 | 文档 | 关系 |
 |------|------|
-| `docs/2-产品/需求讨论/正式方案/StoreKit订阅上架方案.md` | v1 SKU、Intro 试用、门控总览 |
+| `docs/2-产品/需求讨论/正式方案/支付对接正式方案.md` | v1 SKU、Intro 试用、门控总览 |
 | `docs/2-产品/需求讨论/正式方案/Pro付费墙验证清单.md` | Pro 功能人工验收 |
 | `docs/2-产品/需求讨论/正式方案/StoreKit订阅实施决策记录.md` | 为何 v1 不做 Server API 验签 |
 | [Apple — Set up subscription offer codes](https://developer.apple.com/help/app-store-connect/manage-subscriptions/set-up-subscription-offer-codes/) | Connect 官方帮助 |
