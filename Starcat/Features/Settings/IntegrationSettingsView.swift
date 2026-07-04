@@ -460,20 +460,21 @@ struct IntegrationSettingsTab: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(ExternalSearchProviderID.allCases.indices, id: \.self) { index in
                 let provider = ExternalSearchProviderID.allCases[index]
-                if index > 0 {
+                externalSearchProviderGroup(provider)
+                if index < ExternalSearchProviderID.allCases.count - 1 {
                     Divider()
                 }
-                externalSearchProviderGroup(provider)
-                    .padding(.vertical, expandedExternalSearchProviders.contains(provider) ? 10 : 8)
             }
         }
     }
 
     private func externalSearchProviderGroup(_ provider: ExternalSearchProviderID) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let isExpanded = expandedExternalSearchProviders.contains(provider)
+        return VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
             externalSearchProviderHeader(provider)
+                .frame(height: 54)
 
-            if expandedExternalSearchProviders.contains(provider) {
+            if isExpanded {
                 Toggle(isOn: providerEnabledBinding(provider)) {
                     Text(String(format: String.l10n("settings.externalSearch.provider.enableFormat"), provider.displayName))
                 }
@@ -535,6 +536,7 @@ struct IntegrationSettingsTab: View {
 
                     externalSearchAPIKeyTestFeedback(provider)
                 }
+                .padding(.bottom, 10)
             }
         }
     }
