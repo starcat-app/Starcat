@@ -46,8 +46,8 @@
 
 - [x] Starcat License API skeleton — `supports/starcat-license-api` — 2026-07-04
   > 实现：新增独立 Go 服务，提供 healthz、Direct license、checkout、customer portal 和 webhook 端点。
-- [x] `DirectPaymentProvider` 协议 — `supports/starcat-license-api/internal/handler/payment.go` — 2026-07-04
-  > 实现：首期用 provider-neutral URL 响应模型隔离支付入口，Creem URL 由环境变量配置。
+- [x] `DirectPaymentProvider` 协议 — `supports/starcat-license-api/internal/provider/payment.go` — 2026-07-04
+  > 实现：新增 `PaymentProvider` / `StaticPaymentProvider`，handler 只依赖 provider-neutral 接口，Creem URL 由环境变量配置。
 - [x] `DirectLicenseProvider` 协议 — `supports/starcat-license-api/internal/provider/provider.go` — 2026-07-04
   > 实现：定义 activate/validate/deactivate provider 接口。
 - [x] Creem test mode adapter — `supports/starcat-license-api/internal/provider/creem.go` — 2026-07-04
