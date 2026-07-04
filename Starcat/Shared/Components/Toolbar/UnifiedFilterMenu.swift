@@ -78,7 +78,6 @@ struct UnifiedFilterMenu: View {
         } label: {
             filterIcon
         }
-        .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(isAnyFilterActive ? Text("list.filter.active") : Text(helpKey))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
