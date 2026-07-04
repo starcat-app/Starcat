@@ -69,6 +69,7 @@ struct DirectLicenseSnapshotTests {
             status: .active,
             provider: .creem,
             productID: "starcat.pro.direct",
+            instanceID: "inst_123",
             licenseKeySuffix: "ABCD",
             expiresAt: nil,
             validatedAt: Date(timeIntervalSince1970: 10)
@@ -87,6 +88,7 @@ struct DirectLicenseSnapshotTests {
             status: .revoked,
             provider: .creem,
             productID: "starcat.pro.direct",
+            instanceID: "inst_123",
             licenseKeySuffix: "ABCD",
             expiresAt: nil,
             validatedAt: Date(timeIntervalSince1970: 10)

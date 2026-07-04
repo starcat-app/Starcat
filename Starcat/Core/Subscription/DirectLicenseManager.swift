@@ -57,9 +57,11 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     @discardableResult
-    func validateCurrentDevice() async -> Bool {
+    func validateCurrentDevice(licenseKey: String, instanceID: String) async -> Bool {
         await perform {
             try await api.validate(DirectLicenseValidationRequest(
+                licenseKey: licenseKey,
+                instanceID: instanceID,
                 deviceID: deviceIDProvider(),
                 appVersion: appVersionProvider()
             ))
@@ -67,9 +69,11 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     @discardableResult
-    func deactivateCurrentDevice() async -> Bool {
+    func deactivateCurrentDevice(licenseKey: String, instanceID: String) async -> Bool {
         await perform {
             try await api.deactivate(DirectLicenseDeactivationRequest(
+                licenseKey: licenseKey,
+                instanceID: instanceID,
                 deviceID: deviceIDProvider()
             ))
         }

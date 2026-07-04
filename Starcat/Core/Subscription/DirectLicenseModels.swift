@@ -31,6 +31,7 @@ struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
     var status: DirectLicenseStatus
     var provider: DirectLicenseProviderID
     var productID: String?
+    var instanceID: String?
     var licenseKeySuffix: String?
     var expiresAt: Date?
     var validatedAt: Date
@@ -53,10 +54,14 @@ struct DirectLicenseActivationRequest: Codable, Equatable, Sendable {
 }
 
 struct DirectLicenseValidationRequest: Codable, Equatable, Sendable {
+    var licenseKey: String
+    var instanceID: String
     var deviceID: String
     var appVersion: String
 }
 
 struct DirectLicenseDeactivationRequest: Codable, Equatable, Sendable {
+    var licenseKey: String
+    var instanceID: String
     var deviceID: String
 }
