@@ -24627,6 +24627,23 @@
         }
       }
     },
+    "settings.externalSearch.provider.enable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用"
+          }
+        }
+      }
+    },
     "settings.externalSearch.provider.enableFormat" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -476,7 +476,7 @@ struct IntegrationSettingsTab: View {
 
             if isExpanded {
                 Toggle(isOn: providerEnabledBinding(provider)) {
-                    Text(String(format: String.l10n("settings.externalSearch.provider.enableFormat"), provider.displayName))
+                    Text("settings.externalSearch.provider.enable")
                 }
                 .disabled(!canToggleProviderOn(provider))
 

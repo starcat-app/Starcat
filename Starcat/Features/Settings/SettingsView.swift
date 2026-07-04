@@ -496,7 +496,7 @@ private struct InterestedLanguagesSettingsSection: View {
         "C", "C#", "C++", "Dart",
         "Go", "HTML", "Java", "JavaScript",
         "Kotlin", "Objective-C", "PHP", "Python",
-        "Ruby", "Rust", "Swift", "TypeScript",
+        "Ruby", "Rust", "Shell", "Swift", "TypeScript",
         "Vue"
     ]
 
@@ -533,6 +533,8 @@ private struct InterestedLanguagesSettingsSection: View {
                             .padding(14)
                     }
                 }
+
+                Divider()
 
                 if customLanguages.isEmpty {
                     Text("settings.filters.interestedLanguages.empty")
