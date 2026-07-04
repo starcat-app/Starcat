@@ -696,24 +696,6 @@ final class HomeViewModel {
             || openSSFAvailabilityFilter != .unknown
     }
 
-    /// 派生：当前生效的过滤条件数量。
-    ///
-    /// 语言多选按“语言条件”算 1 项，而不是按选中的语言个数计算；这样 badge 表达的是
-    /// 有多少类条件在收窄列表，避免用户选择 5 门语言时误以为启用了 5 个独立筛选器。
-    var activeFilterCount: Int {
-        var count = 0
-        if hideArchived { count += 1 }
-        if hideForks { count += 1 }
-        if statusFilter != nil { count += 1 }
-        if libraryFilter != .all { count += 1 }
-        if repoLanguageFilter != .all { count += 1 }
-        if !globalFilterLanguages.isEmpty { count += 1 }
-        if wikiAvailabilityFilter != .unknown { count += 1 }
-        if healthAvailabilityFilter != .unknown { count += 1 }
-        if openSSFAvailabilityFilter != .unknown { count += 1 }
-        return count
-    }
-
     // MARK: - 依赖
 
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。

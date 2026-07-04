@@ -740,7 +740,6 @@ struct RepoListView: View {
                 UnifiedFilterMenu(
                     items: filterItems,
                     isAnyFilterActive: viewModel.hasActiveFilter,
-                    activeCount: viewModel.activeFilterCount,
                     accessibilityLabel: viewModel.statusFilter == nil
                         ? "list.filter.status"
                         : LocalizedStringKey(viewModel.statusFilter?.localizedDisplayName ?? "list.filter.status")
@@ -868,8 +867,7 @@ struct RepoListView: View {
 
         return UnifiedFilterMenu(
             items: filterItems,
-            isAnyFilterActive: viewModel.hasActiveFilter,
-            activeCount: viewModel.activeFilterCount
+            isAnyFilterActive: viewModel.hasActiveFilter
         )
         .onChange(of: viewModel.hideArchived) { _, newValue in
             settings.hideArchived = newValue

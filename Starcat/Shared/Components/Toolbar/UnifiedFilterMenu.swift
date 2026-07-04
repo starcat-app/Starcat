@@ -51,22 +51,21 @@ enum FilterMenuItem: Identifiable {
 /// `isAnyFilterActive` 决定漏斗图标的"激活态"渲染（实心 vs 空心）。
 struct UnifiedFilterMenu: View {
 
+    @Environment(\.colorScheme) private var colorScheme
+
     let items: [FilterMenuItem]
     let isAnyFilterActive: Bool
-    let activeCount: Int
     let accessibilityLabel: LocalizedStringKey
     let helpKey: LocalizedStringKey
 
     init(
         items: [FilterMenuItem],
         isAnyFilterActive: Bool,
-        activeCount: Int = 0,
         accessibilityLabel: LocalizedStringKey = "list.filter.status",
         helpKey: LocalizedStringKey = "list.filter.hint"
     ) {
         self.items = items
         self.isAnyFilterActive = isAnyFilterActive
-        self.activeCount = activeCount
         self.accessibilityLabel = accessibilityLabel
         self.helpKey = helpKey
     }
@@ -94,54 +93,35 @@ struct UnifiedFilterMenu: View {
     }
 
     /// 筛选激活态必须足够明显：仅把 symbol 从空心换成实心，在透明 toolbar 上不容易被注意到。
-    /// 这里用浅 accent 背景 + 描边 + 角标提示“当前列表被筛选”，但不改变 Menu 行为。
+    /// 这里只通过颜色与底色表达 active，不加数字 / 文案，避免 toolbar 信息过载。
     private var filterIcon: some View {
-        ZStack(alignment: .topTrailing) {
-            ToolbarIcon(isAnyFilterActive ? "circle.grid.2x1.fill" : "circle.grid.2x1")
-                .foregroundStyle(isAnyFilterActive ? Color.accentColor : Color.primary)
-                .accessibilityLabel(accessibilityLabel)
-
-            if isAnyFilterActive {
-                activeBadge
-                    .offset(x: 5, y: -5)
-            }
-        }
+        ToolbarIcon(isAnyFilterActive ? "circle.grid.2x1.fill" : "circle.grid.2x1")
+            .foregroundStyle(isAnyFilterActive ? activeIconColor : Color.primary)
+            .accessibilityLabel(accessibilityLabel)
         .frame(width: 32, height: 26)
         .background {
             if isAnyFilterActive {
                 Capsule(style: .continuous)
-                    .fill(Color.accentColor.opacity(0.16))
+                    .fill(activeBackgroundColor)
             }
         }
         .overlay {
             if isAnyFilterActive {
                 Capsule(style: .continuous)
-                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                    .stroke(activeBorderColor, lineWidth: 1)
             }
         }
     }
 
-    private var activeBadge: some View {
-        Text(activeBadgeText)
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundStyle(.white)
-            .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .frame(minWidth: 12, minHeight: 12)
-            .padding(.horizontal, activeCount > 9 ? 2 : 0)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(Color.accentColor)
-            }
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1)
-            }
+    private var activeIconColor: Color {
+        colorScheme == .dark ? Color.accentColor.opacity(0.95) : Color.accentColor
     }
 
-    private var activeBadgeText: String {
-        let count = max(activeCount, 1)
-        return count > 9 ? "9+" : count.formatted()
+    private var activeBackgroundColor: Color {
+        colorScheme == .dark ? Color.accentColor.opacity(0.24) : Color.accentColor.opacity(0.18)
+    }
+
+    private var activeBorderColor: Color {
+        colorScheme == .dark ? Color.accentColor.opacity(0.55) : Color.accentColor.opacity(0.45)
     }
 }
