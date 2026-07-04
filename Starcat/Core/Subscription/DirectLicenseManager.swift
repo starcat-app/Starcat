@@ -16,9 +16,11 @@ import Foundation
 @Observable
 final class DirectLicenseManager: ProEntitlementProviding {
     private let api: DirectLicenseAPI
+    private let store: DirectLicenseStore
     private let appVersionProvider: @MainActor () -> String
     private let deviceIDProvider: @MainActor () -> String
 
+    private(set) var storedCredential: DirectLicenseCredential?
     private(set) var entitlement: ProEntitlement = .inactive {
         didSet {
             if oldValue != entitlement {
@@ -34,12 +36,15 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
     init(
         api: DirectLicenseAPI = DirectLicenseAPI(),
+        store: DirectLicenseStore = DirectLicenseStore(),
         appVersionProvider: @escaping @MainActor () -> String = { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0" },
         deviceIDProvider: @escaping @MainActor () -> String = { AppConstants.bundleIdentifier }
     ) {
         self.api = api
+        self.store = store
         self.appVersionProvider = appVersionProvider
         self.deviceIDProvider = deviceIDProvider
+        self.storedCredential = try? store.loadCredential()
     }
 
     @discardableResult
@@ -47,21 +52,28 @@ final class DirectLicenseManager: ProEntitlementProviding {
         let trimmed = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        return await perform {
-            try await api.activate(DirectLicenseActivationRequest(
+        return await perform { [store] in
+            let snapshot = try await api.activate(DirectLicenseActivationRequest(
                 licenseKey: trimmed,
                 deviceID: deviceIDProvider(),
                 appVersion: appVersionProvider()
             ))
+            if snapshot.status.grantsPro, let instanceID = snapshot.instanceID {
+                let credential = DirectLicenseCredential(licenseKey: trimmed, instanceID: instanceID)
+                try store.storeCredential(credential)
+                storedCredential = credential
+            }
+            return snapshot
         }
     }
 
     @discardableResult
-    func validateCurrentDevice(licenseKey: String, instanceID: String) async -> Bool {
-        await perform {
+    func validateStoredLicense() async -> Bool {
+        guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
+        return await perform {
             try await api.validate(DirectLicenseValidationRequest(
-                licenseKey: licenseKey,
-                instanceID: instanceID,
+                licenseKey: credential.licenseKey,
+                instanceID: credential.instanceID,
                 deviceID: deviceIDProvider(),
                 appVersion: appVersionProvider()
             ))
@@ -69,14 +81,26 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     @discardableResult
-    func deactivateCurrentDevice(licenseKey: String, instanceID: String) async -> Bool {
-        await perform {
-            try await api.deactivate(DirectLicenseDeactivationRequest(
-                licenseKey: licenseKey,
-                instanceID: instanceID,
+    func deactivateStoredLicense() async -> Bool {
+        guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
+        let didRemainActive = await perform {
+            let snapshot = try await api.deactivate(DirectLicenseDeactivationRequest(
+                licenseKey: credential.licenseKey,
+                instanceID: credential.instanceID,
                 deviceID: deviceIDProvider()
             ))
+            try? store.deleteCredential()
+            storedCredential = nil
+            return snapshot
         }
+        return didRemainActive
+    }
+
+    func clearStoredCredential() {
+        try? store.deleteCredential()
+        storedCredential = nil
+        lastSnapshot = nil
+        entitlement = .inactive
     }
 
     private func perform(_ operation: () async throws -> DirectLicenseSnapshot) async -> Bool {

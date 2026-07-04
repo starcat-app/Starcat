@@ -163,6 +163,7 @@ struct StarcatApp: App {
                 .environment(dependencies.settings)
                 .environment(dependencies.telemetryManager)
                 .environment(dependencies.subscriptionManager)
+                .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
                 // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
                 .environment(dependencies.contributionService)
@@ -218,6 +219,7 @@ struct StarcatApp: App {
                 .environment(dependencies.settings)
                 .environment(dependencies.telemetryManager)
                 .environment(dependencies.subscriptionManager)
+                .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
                 // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，

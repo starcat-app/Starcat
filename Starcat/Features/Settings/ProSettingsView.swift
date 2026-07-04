@@ -18,18 +18,26 @@ struct ProSettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(SubscriptionManager.self) private var subscriptionManager
+    @Environment(DirectLicenseManager.self) private var directLicenseManager
     @Environment(\.openURL) private var openURL
 
     @State private var confettiTrigger: Int = 0
     @State private var showSuccessMessage: Bool = false
     @State private var isOfferCodeRedemptionPresented = false
+    @State private var directLicenseKey: String = ""
+
+    private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
 
     var body: some View {
         Form {
             heroSection
             benefitsSection
-            productSection
-            actionSection
+            if isDirectBuild {
+                directLicenseSection
+            } else {
+                productSection
+                actionSection
+            }
 
         }
         .formStyle(.grouped)
@@ -42,8 +50,12 @@ struct ProSettingsTab: View {
             }
         }
         .task {
-            await subscriptionManager.loadProducts()
-            await subscriptionManager.refreshEntitlements()
+            if isDirectBuild {
+                _ = await directLicenseManager.validateStoredLicense()
+            } else {
+                await subscriptionManager.loadProducts()
+                await subscriptionManager.refreshEntitlements()
+            }
         }
         .confettiCannon(
             trigger: $confettiTrigger,
@@ -120,10 +132,55 @@ struct ProSettingsTab: View {
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                if let error = directLicenseManager.lastErrorMessage, isDirectBuild {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.vertical, 2)
         } footer: {
             Text("settings.pro.status.footer")
+        }
+    }
+
+    private var directLicenseSection: some View {
+        Section {
+            SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
+                .textFieldStyle(.roundedBorder)
+
+            if let suffix = directLicenseManager.lastSnapshot?.licenseKeySuffix ?? directLicenseManager.storedCredential.map({ String($0.licenseKey.suffix(4)) }) {
+                Label {
+                    Text(String(format: String.l10n("settings.pro.direct.currentFormat"), suffix))
+                } icon: {
+                    Image(systemName: "key.fill")
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Spacer()
+                Button("settings.pro.direct.button.activate") {
+                    Task { await activateDirectLicense() }
+                }
+                .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("settings.pro.direct.button.validate") {
+                    Task { await validateDirectLicense() }
+                }
+                .disabled(directLicenseManager.isRequestInFlight || directLicenseManager.storedCredential == nil)
+
+                Button("settings.pro.direct.button.deactivate") {
+                    Task { await deactivateDirectLicense() }
+                }
+                .disabled(directLicenseManager.isRequestInFlight || directLicenseManager.storedCredential == nil)
+            }
+        } header: {
+            Text("settings.pro.direct.section")
+        } footer: {
+            Text("settings.pro.direct.footer")
         }
     }
 
@@ -241,6 +298,27 @@ struct ProSettingsTab: View {
     private func purchase(_ product: Product) async {
         let didActivate = await subscriptionManager.purchase(product)
         guard didActivate else { return }
+        showActivationSuccess()
+    }
+
+    private func activateDirectLicense() async {
+        let didActivate = await directLicenseManager.activate(licenseKey: directLicenseKey)
+        guard didActivate else { return }
+        directLicenseKey = ""
+        showActivationSuccess()
+    }
+
+    private func validateDirectLicense() async {
+        let didActivate = await directLicenseManager.validateStoredLicense()
+        guard didActivate else { return }
+        showActivationSuccess()
+    }
+
+    private func deactivateDirectLicense() async {
+        _ = await directLicenseManager.deactivateStoredLicense()
+    }
+
+    private func showActivationSuccess() {
         showSuccessMessage = true
         confettiTrigger += 1
 

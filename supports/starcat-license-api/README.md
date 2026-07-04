@@ -5,6 +5,8 @@ Starcat Direct 分发授权 API。客户端只调用本服务，本服务再对�
 ## Endpoints
 
 - `GET /healthz`
+- `POST /v1/direct/checkout`
+- `POST /v1/direct/customer-portal`
 - `POST /v1/direct/licenses/activate`
 - `POST /v1/direct/licenses/validate`
 - `POST /v1/direct/licenses/deactivate`
