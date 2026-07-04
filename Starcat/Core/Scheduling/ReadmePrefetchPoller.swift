@@ -24,6 +24,8 @@ final class ReadmePrefetchPoller {
     private let service: ReadmePrefetchService
     private var scheduler: NSBackgroundActivityScheduler?
     private var initialBatchTask: Task<Void, Never>?
+    private var activeRefreshTask: Task<Int, Never>?
+    private var refreshGeneration = 0
 
     private(set) var isRunning = false
     private(set) var isDraining = false
@@ -55,7 +57,7 @@ final class ReadmePrefetchPoller {
                     completion(.finished)
                     return
                 }
-                await self.performRefresh(respectRetryCooldown: true)
+                _ = await self.startRefreshTask(respectRetryCooldown: true)
                 completion(.finished)
             }
         }
@@ -70,6 +72,7 @@ final class ReadmePrefetchPoller {
         scheduler?.invalidate()
         scheduler = nil
         cancelScheduledInitialBatch()
+        cancelCurrentRun()
         isRunning = false
         service.markDisabled()
         AppLog.network.info("ReadmePrefetchPoller stopped")
@@ -89,7 +92,7 @@ final class ReadmePrefetchPoller {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
             nextRunAt = nil
-            await performRefresh(respectRetryCooldown: true)
+            _ = await startRefreshTask(respectRetryCooldown: true)
         }
         AppLog.network.info("ReadmePrefetchPoller initial batch scheduled after \(Int(delay), privacy: .public)s")
     }
@@ -97,7 +100,16 @@ final class ReadmePrefetchPoller {
     @discardableResult
     func runNow() async -> Int {
         cancelScheduledInitialBatch()
-        return await performRefresh(respectRetryCooldown: false)
+        return await startRefreshTask(respectRetryCooldown: false)
+    }
+
+    /// 只终止当前这一轮预拉 / 批间 drain，不关闭 README 预拉设置和后续系统调度。
+    func cancelCurrentRun() {
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        isDraining = false
+        nextRunAt = nil
+        AppLog.network.info("ReadmePrefetchPoller current run cancelled")
     }
 
     /// 连续跑 README 预拉小批次。
@@ -109,15 +121,35 @@ final class ReadmePrefetchPoller {
     /// - 批间短 sleep 给前台 UI / SQLite / GitHub API 留出喘息窗口；
     /// - `isDraining` 是 poller 级互斥，覆盖“批间等待”窗口，避免手动按钮和系统调度重复启动。
     @discardableResult
-    private func performRefresh(respectRetryCooldown: Bool) async -> Int {
-        nextRunAt = nil
-        guard !isDraining, !service.isRunning else {
+    private func startRefreshTask(respectRetryCooldown: Bool) async -> Int {
+        guard activeRefreshTask == nil, !isDraining, !service.isRunning else {
             AppLog.network.info("ReadmePrefetchPoller skipped because previous refresh is still running")
             return 0
         }
 
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let task = Task { @MainActor [weak self] in
+            await self?.performRefresh(respectRetryCooldown: respectRetryCooldown, generation: generation) ?? 0
+        }
+        activeRefreshTask = task
+
+        let count = await task.value
+        if refreshGeneration == generation {
+            activeRefreshTask = nil
+        }
+        return count
+    }
+
+    @discardableResult
+    private func performRefresh(respectRetryCooldown: Bool, generation: Int) async -> Int {
+        nextRunAt = nil
         isDraining = true
-        defer { isDraining = false }
+        defer {
+            if refreshGeneration == generation {
+                isDraining = false
+            }
+        }
 
         var accumulatedCount = 0
         var currentRespectRetryCooldown = respectRetryCooldown

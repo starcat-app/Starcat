@@ -7,7 +7,7 @@
 //  存在意义（W12 toolbar 专项 PR-1）：
 //  - Manage 的筛选项是 hideArchived / hideForks / statusFilter，Weekly 的筛选项是
 //    language picker，Trending 不接入。**字段差异太大不强行合并 model**，但 UI
-//    形态完全可以统一：「漏斗图标 + Picker + Toggle 混合的 Menu」。
+//    形态完全可以统一：「漏斗图标 + Picker + Toggle 混合的筛选浮层」。
 //  - 把 UI 容器抽出来，每个 page 自己组装 `FilterMenuItem` 数组传进来。
 //
 //  关键约束：
@@ -53,6 +53,8 @@ struct UnifiedFilterMenu: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var isPresented = false
+
     let items: [FilterMenuItem]
     let isAnyFilterActive: Bool
     let accessibilityLabel: LocalizedStringKey
@@ -71,25 +73,36 @@ struct UnifiedFilterMenu: View {
     }
 
     var body: some View {
-        Menu {
-            ForEach(items) { item in
-                switch item {
-                case .toggle(_, let label, let icon, let isOn):
-                    Toggle(isOn: isOn) {
-                        Label(label, systemImage: icon)
-                    }
-
-                case .content(_, let view):
-                    view
-
-                case .divider:
-                    Divider()
-                }
-            }
+        Button {
+            isPresented.toggle()
         } label: {
             filterIcon
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
         .help(isAnyFilterActive ? Text("list.filter.active") : Text(helpKey))
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(items) { item in
+                    switch item {
+                    case .toggle(_, let label, let icon, let isOn):
+                        Toggle(isOn: isOn) {
+                            Label(label, systemImage: icon)
+                        }
+
+                    case .content(_, let view):
+                        view
+
+                    case .divider:
+                        Divider()
+                    }
+                }
+            }
+            .frame(width: 260, alignment: .leading)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .appLocaleEnvironment()
+        }
     }
 
     /// 筛选激活态必须足够明显：仅把 symbol 从空心换成实心，在透明 toolbar 上不容易被注意到。

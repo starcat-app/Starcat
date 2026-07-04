@@ -133,9 +133,11 @@ actor OpenSSFScoreService {
             var iterator = candidates.makeIterator()
 
             func enqueueNext() {
+                guard !Task.isCancelled else { return }
                 guard let repo = iterator.next() else { return }
                 group.addTask { [weak self] in
                     guard let self else { return false }
+                    guard !Task.isCancelled else { return false }
                     do {
                         _ = try await self.refreshIfNeeded(repo: repo)
                         return true
@@ -150,6 +152,10 @@ actor OpenSSFScoreService {
                 enqueueNext()
             }
             while let ok = await group.next() {
+                guard !Task.isCancelled else {
+                    group.cancelAll()
+                    break
+                }
                 processed += 1
                 if ok { refreshed += 1 }
                 await progress?(processed, candidates.count)

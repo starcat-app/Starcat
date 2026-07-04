@@ -25,6 +25,8 @@ final class RepoHealthPoller {
     private let service: RepoHealthService
     private var scheduler: NSBackgroundActivityScheduler?
     private var initialRefreshTask: Task<Void, Never>?
+    private var activeRefreshTask: Task<Int, Never>?
+    private var refreshGeneration = 0
 
     private(set) var isRunning = false
     private(set) var isRefreshing = false
@@ -55,7 +57,7 @@ final class RepoHealthPoller {
                     completion(.finished)
                     return
                 }
-                await self.performRefresh()
+                _ = await self.runNow()
                 completion(.finished)
             }
         }
@@ -77,20 +79,49 @@ final class RepoHealthPoller {
 
     @discardableResult
     func runNow() async -> Int {
-        await performRefresh()
-        return lastRefreshCount
+        await startRefreshTask()
     }
 
-    private func performRefresh() async {
-        guard !isRefreshing else {
+    /// 只终止当前这一轮刷新；周期调度器仍保持启动，下一轮按原计划运行。
+    func cancelCurrentRefresh() {
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        isRefreshing = false
+        refreshProcessed = 0
+        refreshTotal = 0
+        AppLog.general.info("RepoHealthPoller current refresh cancelled")
+    }
+
+    @discardableResult
+    private func startRefreshTask() async -> Int {
+        guard activeRefreshTask == nil, !isRefreshing else {
             AppLog.general.info("RepoHealthPoller skipped because previous refresh is still running")
-            return
+            return 0
         }
 
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let task = Task { @MainActor [weak self] in
+            await self?.performRefresh(generation: generation) ?? 0
+        }
+        activeRefreshTask = task
+
+        let count = await task.value
+        if refreshGeneration == generation {
+            activeRefreshTask = nil
+        }
+        return count
+    }
+
+    private func performRefresh(generation: Int) async -> Int {
         isRefreshing = true
         refreshProcessed = 0
         refreshTotal = 0
-        defer { isRefreshing = false }
+        defer {
+            if refreshGeneration == generation {
+                isRefreshing = false
+            }
+        }
 
         let count = await service.refreshStaleCandidateRepos(
             limit: 100,
@@ -102,20 +133,22 @@ final class RepoHealthPoller {
                 }
             }
         )
+        guard !Task.isCancelled else { return 0 }
         lastRunAt = Date()
         lastRefreshCount = count
+        return count
     }
 
     /// 启动后补一次短延迟刷新，让状态面板能看到 Health 后台任务，不必等系统 1 小时调度窗口。
     ///
-    /// 仍然复用 `performRefresh()` 的 stale 候选查询和串行限速，不改变 Health 计算策略。
+    /// 仍然复用 `runNow()` 的 stale 候选查询和串行限速，不改变 Health 计算策略。
     private func scheduleInitialRefresh(after delay: TimeInterval) {
         guard delay >= 0 else { return }
         initialRefreshTask?.cancel()
         initialRefreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self, self.isRunning else { return }
-            await self.performRefresh()
+            _ = await self.runNow()
         }
     }
 }

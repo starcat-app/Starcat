@@ -61,7 +61,7 @@ struct AppStatusToolbarButton: View {
                 syncProgress: syncManager.progress,
                 readmePrefetchService: dependencies.readmePrefetchService,
                 readmePrefetchEnabled: settings.readmePrefetchEnabled,
-                readmePrefetchDraining: dependencies.readmePrefetchPoller.isDraining,
+                readmePrefetchPoller: dependencies.readmePrefetchPoller,
                 initialWarmupCoordinator: dependencies.initialWarmupCoordinator,
                 openSSFScorePoller: dependencies.openSSFScorePoller,
                 repoHealthPoller: dependencies.repoHealthPoller,
@@ -194,7 +194,7 @@ private struct AppStatusPanel: View {
     let syncProgress: SyncProgress?
     let readmePrefetchService: ReadmePrefetchService
     let readmePrefetchEnabled: Bool
-    let readmePrefetchDraining: Bool
+    let readmePrefetchPoller: ReadmePrefetchPoller
     let initialWarmupCoordinator: InitialRepoWarmupCoordinator
     let openSSFScorePoller: OpenSSFScorePoller
     let repoHealthPoller: RepoHealthPoller
@@ -211,6 +211,8 @@ private struct AppStatusPanel: View {
     let onOpenServices: () -> Void
     let onOpenMCP: () -> Void
     let onShowBatchAIPanel: (() -> Void)?
+
+    @State private var isTaskCancelHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -416,7 +418,7 @@ private struct AppStatusPanel: View {
 
     private var taskIcon: String {
         if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || batchService.failedCount > 0 { return "exclamationmark.triangle.fill" }
-        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || batchService.isRunning {
+        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchPoller.isDraining || batchService.isRunning {
             return "clock.arrow.circlepath"
         }
         if batchService.isPaused { return "pause.circle.fill" }
@@ -425,7 +427,7 @@ private struct AppStatusPanel: View {
 
     private var taskTint: Color {
         if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || readmePrefetchService.failures > 0 || batchService.failedCount > 0 { return .orange }
-        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
+        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchPoller.isDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
             return .accentColor
         }
         if initialWarmupCoordinator.isCompleted || isReadmePrefetchAllFetched { return .green }
@@ -463,9 +465,8 @@ private struct AppStatusPanel: View {
     @ViewBuilder
     private var taskAccessory: some View {
         HStack(spacing: 6) {
-            if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining {
-                ProgressView()
-                    .controlSize(.small)
+            if hasCancellableBackgroundTask {
+                cancellableTaskIndicator
             }
             if batchService.totalCount > 0 {
                 Button("toolbar.status.tasks.open") {
@@ -474,6 +475,59 @@ private struct AppStatusPanel: View {
                 .controlSize(.small)
                 .focusEffectDisabled()
             }
+        }
+    }
+
+    /// 状态面板只暴露“终止当前这一轮”的能力：
+    /// - 不关闭 README / OpenSSF / Health 的周期调度开关；
+    /// - 不回滚已经写入的缓存或 AI 结果；
+    /// - 对批量 AI 沿用现有 cancel 语义，当前 in-flight job 结束后停止继续取队列。
+    private var hasCancellableBackgroundTask: Bool {
+        initialWarmupCoordinator.isRunning
+            || openSSFScorePoller.isRefreshing
+            || repoHealthPoller.isRefreshing
+            || readmePrefetchService.isRunning
+            || readmePrefetchPoller.isDraining
+            || batchService.isRunning
+    }
+
+    private var cancellableTaskIndicator: some View {
+        Button {
+            cancelCurrentBackgroundTask()
+        } label: {
+            ZStack {
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(isTaskCancelHovered ? 0 : 1)
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.red)
+                    .opacity(isTaskCancelHovered ? 1 : 0)
+            }
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text("common.cancel"))
+        .onHover { isTaskCancelHovered = $0 }
+    }
+
+    private func cancelCurrentBackgroundTask() {
+        if initialWarmupCoordinator.isRunning {
+            initialWarmupCoordinator.cancel()
+        }
+        if openSSFScorePoller.isRefreshing {
+            openSSFScorePoller.cancelCurrentRefresh()
+        }
+        if repoHealthPoller.isRefreshing {
+            repoHealthPoller.cancelCurrentRefresh()
+        }
+        if readmePrefetchService.isRunning || readmePrefetchPoller.isDraining {
+            readmePrefetchPoller.cancelCurrentRun()
+        }
+        if batchService.isRunning {
+            batchService.cancel()
         }
     }
 

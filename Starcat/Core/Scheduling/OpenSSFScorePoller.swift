@@ -19,6 +19,8 @@ final class OpenSSFScorePoller {
 
     private let service: OpenSSFScoreService
     private var scheduler: NSBackgroundActivityScheduler?
+    private var activeRefreshTask: Task<Int, Never>?
+    private var refreshGeneration = 0
 
     private(set) var isRunning = false
     private(set) var isRefreshing = false
@@ -48,7 +50,7 @@ final class OpenSSFScorePoller {
                     completion(.finished)
                     return
                 }
-                await self.performRefresh()
+                _ = await self.runNow()
                 completion(.finished)
             }
         }
@@ -67,20 +69,49 @@ final class OpenSSFScorePoller {
 
     @discardableResult
     func runNow() async -> Int {
-        await performRefresh()
-        return lastRefreshCount
+        await startRefreshTask()
     }
 
-    private func performRefresh() async {
-        guard !isRefreshing else {
+    /// 只终止当前这一轮刷新，不影响 NSBackgroundActivityScheduler 后续周期调度。
+    func cancelCurrentRefresh() {
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        isRefreshing = false
+        refreshProcessed = 0
+        refreshTotal = 0
+        AppLog.general.info("OpenSSFScorePoller current refresh cancelled")
+    }
+
+    @discardableResult
+    private func startRefreshTask() async -> Int {
+        guard activeRefreshTask == nil, !isRefreshing else {
             AppLog.general.info("OpenSSFScorePoller skipped because previous refresh is still running")
-            return
+            return 0
         }
 
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let task = Task { @MainActor [weak self] in
+            await self?.performRefresh(generation: generation) ?? 0
+        }
+        activeRefreshTask = task
+
+        let count = await task.value
+        if refreshGeneration == generation {
+            activeRefreshTask = nil
+        }
+        return count
+    }
+
+    private func performRefresh(generation: Int) async -> Int {
         isRefreshing = true
         refreshProcessed = 0
         refreshTotal = 0
-        defer { isRefreshing = false }
+        defer {
+            if refreshGeneration == generation {
+                isRefreshing = false
+            }
+        }
 
         let count = await service.refreshStaleCandidateRepos(
             limit: 100,
@@ -91,7 +122,9 @@ final class OpenSSFScorePoller {
                 }
             }
         )
+        guard !Task.isCancelled else { return 0 }
         lastRunAt = Date()
         lastRefreshCount = count
+        return count
     }
 }
