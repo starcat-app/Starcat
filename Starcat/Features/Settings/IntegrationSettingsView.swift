@@ -17,6 +17,7 @@ struct IntegrationSettingsTab: View {
     @State private var actionError: String?
     @State private var externalSearchAPIKeys: [ExternalSearchProviderID: String] = [:]
     @State private var visibleExternalSearchAPIKeys: Set<ExternalSearchProviderID> = []
+    @State private var expandedExternalSearchProviders: Set<ExternalSearchProviderID> = []
     @State private var externalSearchAPIKeyTestStates: [ExternalSearchProviderID: ExternalSearchAPIKeyTestState] = [:]
     @State private var pluginConfiguration = CompanionConfiguration.shared
     @State private var isHoveringCopyToken = false
@@ -456,74 +457,104 @@ struct IntegrationSettingsTab: View {
 
     private func externalSearchProviderGroup(_ provider: ExternalSearchProviderID) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(provider.displayName)
-                .font(.headline)
+            externalSearchProviderHeader(provider)
 
-            Toggle(isOn: providerEnabledBinding(provider)) {
-                Text(String(format: String.l10n("settings.externalSearch.provider.enableFormat"), provider.displayName))
-            }
-            .disabled(!canToggleProviderOn(provider))
+            if expandedExternalSearchProviders.contains(provider) {
+                Toggle(isOn: providerEnabledBinding(provider)) {
+                    Text(String(format: String.l10n("settings.externalSearch.provider.enableFormat"), provider.displayName))
+                }
+                .disabled(!canToggleProviderOn(provider))
 
-            if provider == .anySearch {
-                Toggle("settings.externalSearch.anonymous", isOn: providerAnonymousBinding(provider))
-                    .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("settings.externalSearch.apiKey")
-                        .font(.callout.weight(.medium))
-                    Spacer()
-                    Link(
-                        "settings.externalSearch.apiKey.get",
-                        destination: externalSearchAPIKeyURL(for: provider)
-                    )
-                    .font(.caption.weight(.medium))
+                if provider == .anySearch {
+                    Toggle("settings.externalSearch.anonymous", isOn: providerAnonymousBinding(provider))
+                        .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
                 }
 
-                HStack(spacing: 8) {
-                    Group {
-                        if visibleExternalSearchAPIKeys.contains(provider) {
-                            TextField("", text: apiKeyBinding(provider), prompt: Text(String(format: String.l10n("settings.externalSearch.apiKey.placeholderFormat"), provider.displayName)))
-                        } else {
-                            SecureField("", text: apiKeyBinding(provider), prompt: Text(String(format: String.l10n("settings.externalSearch.apiKey.placeholderFormat"), provider.displayName)))
-                        }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("settings.externalSearch.apiKey")
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        Link(
+                            "settings.externalSearch.apiKey.get",
+                            destination: externalSearchAPIKeyURL(for: provider)
+                        )
+                        .font(.caption.weight(.medium))
                     }
-                    .labelsHidden()
-                    .accessibilityLabel(Text(String(format: String.l10n("settings.externalSearch.apiKey.accessibilityFormat"), provider.displayName)))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
 
-                    Button {
-                        toggleAPIKeyVisibility(provider)
-                    } label: {
-                        Image(systemName: visibleExternalSearchAPIKeys.contains(provider) ? "eye.slash" : "eye")
-                            .frame(width: 18)
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show")
-
-                    Button {
-                        testExternalSearchAPIKey(provider)
-                    } label: {
-                        if externalSearchAPIKeyTestStates[provider] == .testing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("settings.externalSearch.apiKey.test")
+                    HStack(spacing: 8) {
+                        Group {
+                            if visibleExternalSearchAPIKeys.contains(provider) {
+                                TextField("", text: apiKeyBinding(provider), prompt: Text(String(format: String.l10n("settings.externalSearch.apiKey.placeholderFormat"), provider.displayName)))
+                            } else {
+                                SecureField("", text: apiKeyBinding(provider), prompt: Text(String(format: String.l10n("settings.externalSearch.apiKey.placeholderFormat"), provider.displayName)))
+                            }
                         }
+                        .labelsHidden()
+                        .accessibilityLabel(Text(String(format: String.l10n("settings.externalSearch.apiKey.accessibilityFormat"), provider.displayName)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
+
+                        Button {
+                            toggleAPIKeyVisibility(provider)
+                        } label: {
+                            Image(systemName: visibleExternalSearchAPIKeys.contains(provider) ? "eye.slash" : "eye")
+                                .frame(width: 18)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show")
+
+                        Button {
+                            testExternalSearchAPIKey(provider)
+                        } label: {
+                            if externalSearchAPIKeyTestStates[provider] == .testing {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Text("settings.externalSearch.apiKey.test")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
+
+                    externalSearchAPIKeyTestFeedback(provider)
+
+                    Text(providerDescription(provider))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-
-                externalSearchAPIKeyTestFeedback(provider)
-
-            Text(providerDescription(provider))
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func externalSearchProviderHeader(_ provider: ExternalSearchProviderID) -> some View {
+        let isExpanded = expandedExternalSearchProviders.contains(provider)
+        return Button {
+            toggleExternalSearchProviderExpansion(provider)
+        } label: {
+            HStack(spacing: 8) {
+                Text(provider.displayName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    private func toggleExternalSearchProviderExpansion(_ provider: ExternalSearchProviderID) {
+        if expandedExternalSearchProviders.contains(provider) {
+            expandedExternalSearchProviders.remove(provider)
+        } else {
+            expandedExternalSearchProviders.insert(provider)
         }
     }
 
