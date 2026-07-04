@@ -533,12 +533,12 @@ private struct InterestedLanguagesSettingsSection: View {
                     }
                 }
 
-                if languages.isEmpty {
+                if customLanguages.isEmpty {
                     Text("settings.filters.interestedLanguages.empty")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    FlowTagList(tags: languages, removeAction: removeLanguage)
+                    FlowTagList(tags: customLanguages, removeAction: removeLanguage)
                 }
             }
         }
@@ -550,6 +550,12 @@ private struct InterestedLanguagesSettingsSection: View {
 
     private var searchResults: [String] {
         LinguistLanguageCatalog.search(normalizedDraft)
+    }
+
+    private var customLanguages: [String] {
+        languages.filter { language in
+            !isPresetLanguage(language)
+        }
     }
 
     private func binding(for language: String) -> Binding<Bool> {
@@ -642,8 +648,10 @@ private struct InterestedLanguagesSettingsSection: View {
 
     private func languageSearchResultRow(_ language: String) -> some View {
         Button {
-            addLanguage(language)
-            draftLanguage = ""
+            if !contains(language) {
+                addLanguage(language)
+            }
+            showingLanguagePicker = true
         } label: {
             HStack(spacing: 8) {
                 LanguageIconView(language: language, size: 16)
@@ -662,13 +670,12 @@ private struct InterestedLanguagesSettingsSection: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .disabled(contains(language))
     }
 
     private func addExactDraftLanguageIfPossible() {
         guard let language = LinguistLanguageCatalog.canonicalName(for: normalizedDraft) else { return }
         addLanguage(language)
-        draftLanguage = ""
+        showingLanguagePicker = true
     }
 
     private func addLanguage(_ language: String) {
@@ -681,6 +688,10 @@ private struct InterestedLanguagesSettingsSection: View {
 
     private func contains(_ language: String) -> Bool {
         languages.contains { $0.caseInsensitiveCompare(language) == .orderedSame }
+    }
+
+    private func isPresetLanguage(_ language: String) -> Bool {
+        presets.contains { $0.caseInsensitiveCompare(language) == .orderedSame }
     }
 }
 
