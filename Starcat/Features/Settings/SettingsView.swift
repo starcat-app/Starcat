@@ -649,7 +649,9 @@ private struct InterestedLanguagesSettingsSection: View {
 
     private func languageSearchResultRow(_ language: String) -> some View {
         Button {
-            if !contains(language) {
+            if contains(language) {
+                removeLanguage(language)
+            } else {
                 addLanguage(language)
             }
             showingLanguagePicker = true

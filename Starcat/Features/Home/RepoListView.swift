@@ -1915,7 +1915,10 @@ struct RepoListView: View {
             } else {
                 ForEach(settings.interestedLanguages, id: \.self) { language in
                     Toggle(isOn: globalLanguageBinding(for: language)) {
-                        Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
+                        HStack(spacing: 8) {
+                            LanguageIconView(language: language, size: 14)
+                            Text(LanguageDisplayName.shortened(for: language))
+                        }
                     }
                 }
             }
