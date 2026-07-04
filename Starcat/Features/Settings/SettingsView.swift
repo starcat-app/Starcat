@@ -529,7 +529,7 @@ private struct InterestedLanguagesSettingsSection: View {
                     .onHover { isHoveringAddLanguage = $0 }
                     .popover(isPresented: $showingLanguagePicker, arrowEdge: .trailing) {
                         languagePickerPopover
-                            .frame(width: 360, height: 360)
+                            .frame(width: 280, height: 300)
                             .padding(14)
                     }
                 }

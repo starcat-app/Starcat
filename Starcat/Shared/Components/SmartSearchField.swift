@@ -83,7 +83,7 @@ struct SmartSearchField: View {
     @FocusState private var isCollapsedIconFocused: Bool
 
     private let collapsedWidth: CGFloat = 42
-    private var expandedWidth: CGFloat { isSemantic ? 382 : 300 }
+    private let expandedWidth: CGFloat = 300
     private let height: CGFloat = 38
 
     private var isSemantic: Bool { mode == .semantic }
@@ -313,16 +313,14 @@ struct SmartSearchField: View {
             HStack(spacing: 4) {
                 Image(systemName: semanticScope.systemImage)
                     .font(.system(size: 12, weight: .semibold))
-                Text(semanticScope.shortTitleKey)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7, weight: .semibold))
                     .opacity(0.72)
             }
             .foregroundStyle(.purple)
-            .frame(width: 74, height: 26)
+            .frame(width: 42, height: 26)
             .contentShape(Capsule(style: .continuous))
+            .accessibilityLabel(Text(semanticScope.shortTitleKey))
         }
         .menuStyle(.borderlessButton)
         .focusEffectDisabled()

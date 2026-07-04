@@ -301,6 +301,9 @@ struct SearchCenterView: View {
                 .focusEffectDisabled()
             }
             Spacer()
+            if viewModel.isSearching {
+                ProgressView().controlSize(.small)
+            }
             if filtersAvailable {
                 Button {
                     isFilterDrawerPresented.toggle()
@@ -314,9 +317,6 @@ struct SearchCenterView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help("search.filters.toggle.help")
-            }
-            if viewModel.isSearching {
-                ProgressView().controlSize(.small)
             }
         }
         .padding(.horizontal, 16)
