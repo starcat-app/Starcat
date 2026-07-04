@@ -650,27 +650,11 @@ struct RepoListView: View {
         @Bindable var vm = viewModel
         let filterItems: [FilterMenuItem] = [
             .content(id: "status", view: AnyView(
-                Picker("list.filter.status", selection: $vm.statusFilter) {
-                    // 「全部」也挂图标避免下拉里出现"3 个 Label + 1 个裸 Text"的不对齐视觉。
-                    // `tray.full` 与下方 envelope.badge / envelope.open / checkmark.seal
-                    // 同邮件视觉系统，语义"收件箱全在这"。
-                    Label("general.all", systemImage: "tray.full").tag(RepoStatus?.none)
-                    ForEach(RepoStatus.allCases, id: \.self) { st in
-                        Label(st.displayName, systemImage: statusIcon(for: st))
-                            .tag(RepoStatus?.some(st))
-                    }
-                }
-                .pickerStyle(.inline)
+                statusFilterSection(selection: $vm.statusFilter)
             )),
             .divider(id: "after-status"),
             .content(id: "library", view: AnyView(
-                Picker("list.filter.library", selection: $vm.libraryFilter) {
-                    ForEach(RepoLibraryFilter.allCases, id: \.self) { filter in
-                        Label(filter.displayName, systemImage: libraryFilterIcon(for: filter))
-                            .tag(filter)
-                    }
-                }
-                .pickerStyle(.inline)
+                libraryFilterSection(selection: $vm.libraryFilter)
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
@@ -800,13 +784,7 @@ struct RepoListView: View {
         @Bindable var vm = viewModel
         let filterItems: [FilterMenuItem] = [
             .content(id: "library", view: AnyView(
-                Picker("list.filter.library", selection: $vm.libraryFilter) {
-                    ForEach(RepoLibraryFilter.allCases, id: \.self) { filter in
-                        Label(filter.displayName, systemImage: libraryFilterIcon(for: filter))
-                            .tag(filter)
-                    }
-                }
-                .pickerStyle(.inline)
+                libraryFilterSection(selection: $vm.libraryFilter)
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
@@ -1880,20 +1858,53 @@ struct RepoListView: View {
         )
     }
 
+    private func statusFilterSection(selection: Binding<RepoStatus?>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            filterSectionHeader(title: "list.filter.status", icon: "tray.full")
+
+            Picker(selection: selection) {
+                // 「全部」也挂图标避免下拉里出现"3 个 Label + 1 个裸 Text"的不对齐视觉。
+                // `tray.full` 与下方 envelope.badge / envelope.open / checkmark.seal
+                // 同邮件视觉系统，语义"收件箱全在这"。
+                Label("general.all", systemImage: "tray.full").tag(RepoStatus?.none)
+                ForEach(RepoStatus.allCases, id: \.self) { st in
+                    Label(st.displayName, systemImage: statusIcon(for: st))
+                        .tag(RepoStatus?.some(st))
+                }
+            } label: {
+                EmptyView()
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        }
+    }
+
+    private func libraryFilterSection(selection: Binding<RepoLibraryFilter>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            filterSectionHeader(title: "list.filter.library", icon: "heart.text.square")
+
+            Picker(selection: selection) {
+                ForEach(RepoLibraryFilter.allCases, id: \.self) { filter in
+                    Label(filter.displayName, systemImage: libraryFilterIcon(for: filter))
+                        .tag(filter)
+                }
+            } label: {
+                EmptyView()
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        }
+    }
+
     private func languageFilterSection() -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Label("list.filter.language", systemImage: "globe")
+            filterSectionHeader(title: "list.filter.language", icon: "globe")
 
-                Spacer(minLength: 12)
-
-                if !viewModel.globalFilterLanguages.isEmpty {
-                    Button("list.filter.language.clearSelection") {
-                        viewModel.globalFilterLanguages = []
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .focusEffectDisabled()
+            if !viewModel.globalFilterLanguages.isEmpty {
+                Button {
+                    viewModel.globalFilterLanguages = []
+                } label: {
+                    Label("list.filter.language.clearSelection", systemImage: "xmark.circle")
                 }
             }
 
@@ -1916,15 +1927,25 @@ struct RepoListView: View {
         icon: String,
         selection: Binding<RepoSignalAvailabilityFilter>
     ) -> some View {
-        Picker(selection: selection) {
-            ForEach(RepoSignalAvailabilityFilter.allCases, id: \.self) { filter in
-                Label(availabilityFilterTitle(for: filter), systemImage: availabilityFilterIcon(for: filter, fallback: icon))
-                    .tag(filter)
+        VStack(alignment: .leading, spacing: 4) {
+            filterSectionHeader(title: title, icon: icon)
+
+            Picker(selection: selection) {
+                ForEach(RepoSignalAvailabilityFilter.allCases, id: \.self) { filter in
+                    Label(availabilityFilterTitle(for: filter), systemImage: availabilityFilterIcon(for: filter, fallback: icon))
+                        .tag(filter)
+                }
+            } label: {
+                EmptyView()
             }
-        } label: {
-            Label(title, systemImage: icon)
+            .labelsHidden()
+            .pickerStyle(.inline)
         }
-        .pickerStyle(.inline)
+    }
+
+    private func filterSectionHeader(title: LocalizedStringKey, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .foregroundStyle(.secondary)
     }
 
     private func availabilityFilterTitle(for filter: RepoSignalAvailabilityFilter) -> LocalizedStringKey {
