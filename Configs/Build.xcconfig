@@ -49,6 +49,12 @@ STARCAT_OAUTH_CLIENT_SECRET =
 // 运行时代码只能读取该显式注入值，不允许按 receipt / bundle path 猜测渠道。
 STARCAT_DISTRIBUTION = appstore
 
+// MARK: - Sparkle（Direct 分发自动更新）
+
+// Sparkle EdDSA 公钥。默认留空表示 Direct 版暂不启动自动更新；
+// 正式发版前用 `sparkle generate_keys` 生成并写入 Secrets.xcconfig。
+STARCAT_SPARKLE_PUBLIC_ED_KEY =
+
 // MARK: - 引入私密配置（可选）
 //
 // `?` 让 include 在文件缺失时静默跳过；新 contributor / CI 不需要 Secrets.xcconfig 也能编译。

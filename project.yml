@@ -67,6 +67,9 @@ packages:
   Aptabase:
     url: https://github.com/aptabase/aptabase-swift
     from: "0.3.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.9.4"
 
 targets:
   Starcat:
@@ -209,6 +212,10 @@ targets:
         STARCAT_PRODUCTION_API_KEY_DISCOVERY: $(STARCAT_PRODUCTION_API_KEY_DISCOVERY)
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        SUFeedURL: https://starcat.ink/appcast.xml
+        SUPublicEDKey: $(STARCAT_SPARKLE_PUBLIC_ED_KEY)
+        SUEnableInstallerLauncherService: YES
+        SUVerifyUpdateBeforeExtraction: YES
     dependencies:
       - package: GRDB
       - package: KeychainAccess
@@ -220,6 +227,7 @@ targets:
       - package: MCPSwiftSDK
         product: MCP
       - package: Aptabase
+      - package: Sparkle
     postBuildScripts:
       - name: "Copy Changelog Resource"
         script: |

@@ -389,6 +389,13 @@ private struct StarcatAppCommands: Commands {
                 NotificationCenter.default.post(name: .starcatCommandOpenGlobalSearch, object: nil)
             }
 
+            if dependencies?.directUpdateController.isDirectBuild == true {
+                Button("commands.actions.checkForUpdates") {
+                    dependencies?.directUpdateController.checkForUpdates()
+                }
+                .disabled(dependencies?.directUpdateController.canCheckForUpdates != true)
+            }
+
             Button("diagnostics.export.button") {
                 exportDiagnostics()
             }

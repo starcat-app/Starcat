@@ -17,5 +17,12 @@
     <!-- 用户主动选择文件读写：JSON 导入导出场景。 -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+
+    <!-- Sparkle 2 沙箱安装器 / 下载器通过 XPC 服务工作，需要按 bundle id 放行 mach lookup。 -->
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+    </array>
 </dict>
 </plist>

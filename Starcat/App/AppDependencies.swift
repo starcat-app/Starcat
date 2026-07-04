@@ -43,6 +43,8 @@ final class AppDependencies {
     let telemetryManager: TelemetryManager
     /// StoreKit 2 订阅协调器。它是 Pro 权益的单一真相源。
     let subscriptionManager: SubscriptionManager
+    /// Direct 版 Sparkle 自动更新协调器。App Store 构建中保持 no-op。
+    let directUpdateController: DirectUpdateController
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
     let entitlementGate: EntitlementGate
     /// Chrome Companion 触发 App 内 UI 动作的 MainActor 事件总线。
@@ -494,6 +496,7 @@ final class AppDependencies {
         )
         let subscriptions = SubscriptionManager(settings: settings)
         self.subscriptionManager = subscriptions
+        self.directUpdateController = DirectUpdateController()
         self.entitlementGate = EntitlementGate(
             entitlementProvider: subscriptions,
             userIDProvider: { [weak session] in

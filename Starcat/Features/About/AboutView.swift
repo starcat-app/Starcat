@@ -905,6 +905,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2023 Sumbit Labs Ltd.",
             url: URL(string: "https://github.com/aptabase/aptabase-swift")
         ),
+        AboutDependency(
+            name: "Sparkle",
+            license: "MIT",
+            copyright: "Copyright (c) 2006-2026 Sparkle Project",
+            url: URL(string: "https://github.com/sparkle-project/Sparkle")
+        ),
 
         // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
 

@@ -5798,6 +5798,23 @@
         }
       }
     },
+    "commands.actions.checkForUpdates" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for Updates..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查更新..."
+          }
+        }
+      }
+    },
     "commands.actions.openGlobalSearch" : {
       "extractionState" : "manual",
       "localizations" : {
