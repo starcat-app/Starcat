@@ -179,9 +179,11 @@ struct ActivityView: View {
         }
         .onAppear {
             reportItemCount(viewModel)
+            syncGlobalFilteredCategoryCounts(viewModel)
         }
-        .onChange(of: viewModel.filteredItemTotalCount) { _, count in
-            onItemCountChange(count)
+        .task(id: countInvalidationIdentity(viewModel)) {
+            reportItemCount(viewModel)
+            syncGlobalFilteredCategoryCounts(viewModel)
         }
     }
 
@@ -251,6 +253,28 @@ struct ActivityView: View {
             }
             return matchesGlobalFilters(repo: repo)
         }
+    }
+
+    private var globalFilterIdentity: String {
+        [
+            settings.hideArchived ? "archived" : "",
+            settings.hideForks ? "forks" : "",
+            settings.libraryFilter.rawValue,
+            settings.globalFilterLanguages.joined(separator: ","),
+            settings.wikiAvailabilityFilter.rawValue,
+            settings.healthAvailabilityFilter.rawValue,
+            settings.openSSFAvailabilityFilter.rawValue
+        ].joined(separator: "|")
+    }
+
+    private func countInvalidationIdentity(_ viewModel: ActivityViewModel) -> String {
+        [
+            globalFilterIdentity,
+            String(viewModel.itemsRevision),
+            String(viewModel.filteredItemTotalCount),
+            String(dependencies.repoHealthStore.snapshots.count),
+            String(dependencies.openSSFScoreStore.records.count)
+        ].joined(separator: "|")
     }
 
     private var hasActiveGlobalRepoFilter: Bool {
@@ -579,7 +603,14 @@ struct ActivityView: View {
     }
 
     private func reportItemCount(_ viewModel: ActivityViewModel) {
-        onItemCountChange(viewModel.filteredItemTotalCount)
+        onItemCountChange(globalFilteredItems(viewModel.items).count)
+    }
+
+    private func syncGlobalFilteredCategoryCounts(_ viewModel: ActivityViewModel) {
+        let filtered = globalFilteredItems(viewModel.allItemsForSidebarCount)
+        dependencies.activityCategoryCountService.applyLocalCounts(
+            ActivityViewModel.categoryCounts(from: filtered)
+        )
     }
 
     private func relativeDate(_ date: Date) -> String {

@@ -146,11 +146,13 @@ private struct ExploreDiscoveryListView: View {
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
             applySelectionPolicy()
-            reportRepoCount()
         }
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled else { return }
             applySelectionPolicy()
+        }
+        .task(id: countInvalidationIdentity) {
+            reportRepoCount()
         }
     }
 
@@ -338,6 +340,28 @@ private struct ExploreDiscoveryListView: View {
         }
     }
 
+    private var globalFilterIdentity: String {
+        [
+            settings.hideArchived ? "archived" : "",
+            settings.hideForks ? "forks" : "",
+            settings.libraryFilter.rawValue,
+            settings.globalFilterLanguages.joined(separator: ","),
+            settings.wikiAvailabilityFilter.rawValue,
+            settings.healthAvailabilityFilter.rawValue,
+            settings.openSSFAvailabilityFilter.rawValue
+        ].joined(separator: "|")
+    }
+
+    private var countInvalidationIdentity: String {
+        [
+            globalFilterIdentity,
+            String(viewModel.reposRevision),
+            String(viewModel.repos.count),
+            String(dependencies.repoHealthStore.snapshots.count),
+            String(dependencies.openSSFScoreStore.records.count)
+        ].joined(separator: "|")
+    }
+
     private func matchesGlobalFilters(
         repoId: Int64,
         owner: String,
@@ -464,7 +488,7 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private func reportRepoCount() {
-        onRepoCountChange(viewModel.total)
+        onRepoCountChange(globalFilteredRepos(viewModel.repos).count)
     }
 }
 

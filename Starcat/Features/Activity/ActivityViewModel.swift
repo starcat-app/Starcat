@@ -148,6 +148,12 @@ final class ActivityViewModel {
     /// 切分类只对它做 `filter`，避免重复读库 + 全量 `makeItems`。
     private var allItems: [ActivityItem] = []
 
+    /// 给 View 层同步 sidebar 计数用的只读快照。
+    ///
+    /// Activity 的全局筛选依赖 View 层持有的 `AppDependencies`（Health/OpenSSF/Wiki 缓存），
+    /// ViewModel 不应反向依赖这些 UI 环境对象；因此这里仅暴露已聚合结果，不改变加载模型。
+    var allItemsForSidebarCount: [ActivityItem] { allItems }
+
     /// 当前分类 filter + sort 后的完整列表；`items` 是其分页切片。
     private var filteredItems: [ActivityItem] = []
     private var visiblePage: Int = 1
