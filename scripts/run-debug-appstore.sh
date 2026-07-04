@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run-debug.sh — 本地 Debug 构建并启动 Starcat（沙箱模式）。
+# run-debug-appstore.sh — 本地 Debug 构建并启动 Starcat（App Store / 沙箱模式）。
 #
 # 这个入口用于验证 App Store / sandbox 真实行为：UserDefaults、security-scoped
 # bookmark、Keychain、NSWorkspace 等都应和 Xcode Run 保持同一权限模型。
@@ -18,7 +18,7 @@ DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Sandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 
 # Personal Team 的 Team ID。后续如果换账号，可用环境变量覆盖：
-#   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug.sh
+#   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-appstore.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-6N2V7FYPJ8}"
 
 cd "$PROJECT_ROOT"
@@ -58,7 +58,7 @@ codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: sandbox"
 echo "    preferences: ~/Library/Containers/com.starcat.app/Data/Library/Preferences/com.starcat.app.plist"
 echo "    data: ~/Library/Containers/com.starcat.app/Data"
-echo "    app support: ~/Library/Containers/com.starcat.app/Data/Library/Application Support/Starcat"
+echo "    app support: ~/Library/Containers/com.starcat.app/Data/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
 
 open "$APP_PATH"

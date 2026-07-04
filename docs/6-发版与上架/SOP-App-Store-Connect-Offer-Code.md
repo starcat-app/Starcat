@@ -141,7 +141,7 @@ Starcat 内入口：
 
 1. Xcode → Scheme **Starcat** → Edit Scheme → Run → **Options**  
 2. **StoreKit Configuration** = `Products.storekit`  
-3. 运行 App（`scripts/run-debug.sh` 或 Xcode Run）  
+3. 运行 App（`scripts/run-debug-appstore.sh` 或 Xcode Run）  
 4. **Debug → StoreKit → Manage Transactions**  
 5. 使用 StoreKit 测试工具创建 / 复制 **Offer Code** 测试码（Xcode 15+ 支持在 StoreKit 配置里管理）  
 6. App 内 **设置 → Pro → 兑换优惠码**，输入测试码  

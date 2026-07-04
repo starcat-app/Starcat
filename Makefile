@@ -18,8 +18,8 @@
 # 而是 Containers/<bundle-id>/Data/... ——沙盒应用永远走 Container 视图。
 APP_SUPPORT := $(HOME)/Library/Containers/com.starcat.app/Data/Library/Application Support/com.starcat.app
 
-# 开发期 ad-hoc / 非沙盒 Debug App 的数据根。当前 `make run` 产物如果没有有效
-# sandbox entitlement，Foundation 的 `.applicationSupportDirectory` 会落到这里。
+# Direct / 非 App Store Debug App 的数据根。当前 App Support 子目录由
+# `AppConstants.bundleIdentifier` 决定，仍是 com.starcat.app。
 DEBUG_APP_SUPPORT := $(HOME)/Library/Application Support/com.starcat.app
 
 # 脚本入口参数。示例：
@@ -34,12 +34,13 @@ LINGUIST_ARGS ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-nginx
+.PHONY: help run-appstore run-direct test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-nginx
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
 	@echo ""
-	@echo "  make run                    执行 scripts/run-debug.sh（kill 旧进程 + xcodegen + Debug 构建 + 启动 App）"
+	@echo "  make run-appstore           执行 scripts/run-debug-appstore.sh（App Store / 沙盒 Debug）"
+	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
 	@echo "  make build-dmg VERSION=0.1.0 打包 Release DMG（调用 scripts/build-dmg.sh）"
 	@echo "  make release VERSION=v0.1.0  发版总入口：tag + DMG + push tag（调用 scripts/release.sh）"
@@ -51,7 +52,7 @@ help: ## 列出所有可用命令
 	@echo "  make reset-anysearch-cache  清空 AnySearch 离线缓存（global / ai-summary 子目录）"
 	@echo "  make reset-chat-cache       清空 AI 聊天历史（用户对话记录，不可恢复）"
 	@echo "  make reset-all              聚合：reset-db + reset-anysearch-cache（故意不含 chat-cache）"
-	@echo "  make show-data              在 Finder 中打开沙盒 / 非沙盒两个 App Support 目录"
+	@echo "  make show-data              在 Finder 中打开 App Store / Direct 两个 App Support 目录"
 	@echo "  make clean                  删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）"
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing / recommend / discovery）"
 	@echo "  make sync-fly-secrets              从 supports 各 API .env 并行同步 secrets 到 Fly.io"
@@ -60,11 +61,11 @@ help: ## 列出所有可用命令
 	@echo "  make deploy-nginx                上传 nginx 配置到 aliyun 并重载 nginx"
 	@echo ""
 
-run: ## 沙盒环境
-	@bash scripts/run-debug.sh
+run-appstore: ## App Store / 沙盒 Debug
+	@bash scripts/run-debug-appstore.sh
 
-run-nonsandbox: ## 非沙盒环境
-	@bash scripts/run-debug-nosandbox.sh
+run-direct: ## Direct / 非 App Store Debug
+	@bash scripts/run-debug-direct.sh
 
 test: ## 跑全量单测（先 xcodegen 同步项目，再 xcodebuild test）
 	@echo "⚠️  提醒：跑测前请先关闭 Xcode IDE（Cmd+Q），否则会与 xcodebuild 抢 testmanagerd 导致挂起。"
@@ -143,7 +144,7 @@ reset-all: reset-db reset-anysearch-cache reset-chat-cache ## 聚合 reset-db + 
 clean: ## 删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）
 	@echo "即将删除：$(CURDIR)/build"
 	@rm -rf build
-	@echo "已删除 build/，下次 make run 会重新跑 xcodegen + 全量构建。"
+	@echo "已删除 build/，下次 make run-appstore 或 make run-direct 会重新跑 xcodegen + 全量构建。"
 
 ## 启动 supports/ 目录下的后端服务总入口
 start-supports: ## 启动 supports/ 目录下的后端服务总入口
