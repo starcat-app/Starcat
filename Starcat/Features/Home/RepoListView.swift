@@ -1915,9 +1915,10 @@ struct RepoListView: View {
             } else {
                 ForEach(settings.interestedLanguages, id: \.self) { language in
                     Toggle(isOn: globalLanguageBinding(for: language)) {
-                        HStack(spacing: 8) {
-                            LanguageIconView(language: language, size: 14)
+                        Label {
                             Text(LanguageDisplayName.shortened(for: language))
+                        } icon: {
+                            FilterMenuLanguageIcon(language: language, size: 14)
                         }
                     }
                 }
@@ -2009,6 +2010,62 @@ struct RepoListView: View {
             openCodebaseMemory(for: request.repo)
         }
         dependencies.companionActionDispatcher.pendingRequest = nil
+    }
+}
+
+/// `Menu` 会桥到 `NSMenuItem`。直接把通用 `LanguageIconView` 放进 Toggle label 时，
+/// 部分 SVG asset 会被 AppKit 按原始矢量尺寸布局，导致图标撑爆菜单行。
+/// 这里先把 NSImage 点尺寸收口到菜单需要的大小，再用固定容器裁切兜底。
+private struct FilterMenuLanguageIcon: View {
+    let language: String
+    let size: CGFloat
+
+    var body: some View {
+        if UncategorizedLanguageKey.matches(language) {
+            UncategorizedLanguageIcon(size: size)
+                .frame(width: size, height: size)
+                .fixedSize()
+        } else {
+            resolvedIcon
+                .frame(width: size, height: size)
+                .clipped()
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private var resolvedIcon: some View {
+        let result = LanguageIconResolver.resolve(language: language)
+
+        switch result.type {
+        case .localSVG(let assetName):
+            if let image = resizedImage(named: assetName) {
+                Image(nsImage: image)
+                    .frame(width: size, height: size)
+            } else {
+                fallbackBadge(colorHex: nil)
+            }
+
+        case .badge(let colorHex, _):
+            fallbackBadge(colorHex: colorHex)
+        }
+    }
+
+    private func fallbackBadge(colorHex: String?) -> some View {
+        Circle()
+            .fill(colorHex.flatMap(Color.init(hex:)) ?? .gray)
+            .frame(width: size, height: size)
+    }
+
+    private func resizedImage(named assetName: String) -> NSImage? {
+        guard let base = NSImage(named: assetName) else { return nil }
+        guard let copy = base.copy() as? NSImage else {
+            base.size = NSSize(width: size, height: size)
+            return base
+        }
+        copy.size = NSSize(width: size, height: size)
+        copy.isTemplate = false
+        return copy
     }
 }
 
