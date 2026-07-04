@@ -196,7 +196,7 @@ Agent Workspace 已经承担多步骤任务:
 | `@repo` | 输入 `@` 弹出知识库 repo list | 指定一个或多个 repo 作为本轮候选上下文 |
 | 模型切换 | 输入框内模型下拉 | 本轮或当前会话切换模型,不改全局设置 |
 | 图片/附件 | 拖拽或点击上传 | 作为本轮临时上下文,不进入知识库索引 |
-| GitHub 链接 | 自动识别 repo 链接 | 已有 repo 打开 Starcat 详情,外部 repo 打开 GitHub |
+| GitHub 链接 | 自动识别 repo 链接 | 本地已有 repo 新开本地详情窗口,否则打开 GitHub |
 
 `@repo` 是最高优先级的易用性能力。用户输入:
 
@@ -251,24 +251,23 @@ RAG 回答默认包含:
 
 点击引用:
 
-- 右侧 Inspector 定位对应 chunk。
-- 可进一步打开 repo 详情。
+- 右侧 Inspector 切换到该引用详情,展示对应 chunk、section、来源、相似度和命中方式。
+- “打开详情”优先复用现有本地 repo 详情页新窗口;本地没有该 repo 时打开 GitHub repo 页面。
 
 ### 6.3 证据 Inspector
 
 右侧 Inspector 用于增强可信度,不是装饰面板。
 
-第一版 tabs:
+MVP 不做“证据 / 检索 / 远程上下文”等 tab。右侧只保留单一“引用”面板,避免把第一版做成调试工具。
 
-| Tab | 内容 |
-|---|---|
-| 引用 | 本轮回答引用过的 repo |
-| 证据 | chunk 原文、section、来源、相似度 |
-| 远程上下文 | 本轮临时拉取的 issues / releases / PR 与降级原因 |
-| 检索 | top-K 召回列表、FTS/向量命中原因 |
-| 历史 | 当前会话问题与回答 |
+引用面板结构:
 
-如果 UI 复杂度需要收敛,第一版只做“引用 + 证据”两个 tab;远程临时上下文可作为证据 tab 内的独立分组展示。
+1. 当前选中引用详情: repo、来源类型、section path、相似度或召回原因、命中方式。
+2. chunk 预览: 展示该 citation 绑定的 matched child 原文;必要时补充 section parent 标题。
+3. 其他引用列表: 展示本轮回答实际引用过的其它 repo / chunk,点击后切换上方详情。
+4. 操作: “打开详情”优先新开本地 repo 详情窗口;本地没有该 repo 时打开 GitHub。
+
+底层仍保留 `matchedChildren`、`sectionParents`、`hitKind`、`score` 等数据,但默认 UI 不单独展示 Retriever pipeline、keyword/vector/fusion 调试列表。后续如需要排障,可放 Debug gate 或日志,不进入普通用户界面。
 
 ## 7. 多轮对话
 
