@@ -75,7 +75,6 @@ struct WeeklyContentView: View {
             await reloadLibraryStateMap()
             await model.loadInitialIfNeeded()
             applyWeeklyDetailSelectionPolicy(from: model.items)
-            syncGlobalFilteredTotal(model)
         }
         .task {
             await observeLibraryStateChanges()
@@ -84,7 +83,6 @@ struct WeeklyContentView: View {
             guard let viewModel else { return }
             syncExternalLanguage(to: viewModel)
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
-            syncGlobalFilteredTotal(viewModel)
         }
     }
 
@@ -124,9 +122,6 @@ struct WeeklyContentView: View {
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled else { return }
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
-        }
-        .task(id: countInvalidationIdentity(viewModel)) {
-            syncGlobalFilteredTotal(viewModel)
         }
     }
 
@@ -486,32 +481,6 @@ struct WeeklyContentView: View {
                 isFork: item.card.isFork
             )
         }
-    }
-
-    private func syncGlobalFilteredTotal(_ viewModel: WeeklyContentViewModel) {
-        dependencies.weeklySelectionService.applyTotal(globalFilteredItems(viewModel.items).count)
-    }
-
-    private var globalFilterIdentity: String {
-        [
-            settings.hideArchived ? "archived" : "",
-            settings.hideForks ? "forks" : "",
-            settings.libraryFilter.rawValue,
-            settings.globalFilterLanguages.joined(separator: ","),
-            settings.wikiAvailabilityFilter.rawValue,
-            settings.healthAvailabilityFilter.rawValue,
-            settings.openSSFAvailabilityFilter.rawValue
-        ].joined(separator: "|")
-    }
-
-    private func countInvalidationIdentity(_ viewModel: WeeklyContentViewModel) -> String {
-        [
-            globalFilterIdentity,
-            String(viewModel.itemsRevision),
-            String(viewModel.items.count),
-            String(dependencies.repoHealthStore.snapshots.count),
-            String(dependencies.openSSFScoreStore.records.count)
-        ].joined(separator: "|")
     }
 
     private func matchesGlobalFilters(

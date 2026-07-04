@@ -75,58 +75,6 @@ struct TrendingView: View {
     }
 
     var body: some View {
-        trendingContentWithLifecycle
-            .environment(\.trendingViewModel, viewModel)
-    }
-
-    private var trendingContentWithLifecycle: some View {
-        trendingLayout
-            .task {
-                await loadInitialContent()
-            }
-            .task {
-                await observeLibraryStateChanges()
-            }
-            .onChange(of: homeViewModel.languageStats) { _, stats in
-                viewModel.updateLanguagePreferences(from: stats)
-            }
-            .onChange(of: selectedLanguage) { _, language in
-                clearTrendingDetailSelection()
-                viewModel.selectedLanguage = language
-            }
-            .onChange(of: viewModel.selectedPeriod) { _, _ in
-                clearTrendingDetailSelection()
-            }
-            .sheet(isPresented: $showLoginSheet) {
-                GithubAuthView()
-                    .appLocaleEnvironment()
-            }
-            .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
-                if isAuthenticated {
-                    showLoginSheet = false
-                }
-            }
-            // 选中 repo 变化时，同步更新 selectedTrendingRepo 供右侧详情页使用
-            .onChange(of: selectedRepoID) { _, newID in
-                if let id = newID {
-                    selectedTrendingRepo = viewModel.displayedRepos.first { $0.id == id }
-                } else {
-                    selectedTrendingRepo = nil
-                }
-            }
-            .onChange(of: viewModel.reposRevision) { _, _ in
-                applyTrendingDetailSelectionPolicy()
-            }
-            .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
-                guard enabled else { return }
-                applyTrendingDetailSelectionPolicy()
-            }
-            .task(id: countInvalidationIdentity) {
-                reportRepoCount()
-            }
-    }
-
-    private var trendingLayout: some View {
         VStack(spacing: 0) {
             // 顶部工具栏
             toolbarView
@@ -139,30 +87,70 @@ struct TrendingView: View {
                 .transition(contentTransition)
                 .animation(contentAnimation, value: contentAnimationID)
         }
-    }
-
-    private func loadInitialContent() async {
-        reportRepoCount()
-        await reloadLibraryStateMap()
-        viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
-        if viewModel.selectedLanguage != selectedLanguage {
-            viewModel.selectedLanguage = selectedLanguage
+        .task {
+            reportRepoCount()
+            await reloadLibraryStateMap()
+            viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
+            if viewModel.selectedLanguage != selectedLanguage {
+                viewModel.selectedLanguage = selectedLanguage
+            }
+            // 切换语言或页面时先清详情，避免新列表加载完成前右栏残留旧 repo。
+            clearTrendingDetailSelection()
+            // 首次进入页面：按 TTL 决定是否拉网络（R-06.1，2026-06-15）
+            //   - 缓存命中且 24h 内 → 不走网络（零打扰，避免"二次入场动画"）
+            //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
+            //   - 缓存空 → 必拉
+            // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
+            restoreSortPreferenceIfNeeded()
+            await viewModel.reload(cachePolicy: .respectTTL)
+            applyTrendingDetailSelectionPolicy()
+            reportRepoCount()
         }
-        // 切换语言或页面时先清详情，避免新列表加载完成前右栏残留旧 repo。
-        clearTrendingDetailSelection()
-        // 首次进入页面：按 TTL 决定是否拉网络（R-06.1，2026-06-15）
-        //   - 缓存命中且 24h 内 → 不走网络（零打扰，避免"二次入场动画"）
-        //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
-        //   - 缓存空 → 必拉
-        // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL。
-        restoreSortPreferenceIfNeeded()
-        await viewModel.reload(cachePolicy: .respectTTL)
-        applyTrendingDetailSelectionPolicy()
-        reportRepoCount()
+        .task {
+            await observeLibraryStateChanges()
+        }
+        .onChange(of: homeViewModel.languageStats) { _, stats in
+            viewModel.updateLanguagePreferences(from: stats)
+        }
+        .onChange(of: selectedLanguage) { _, language in
+            clearTrendingDetailSelection()
+            viewModel.selectedLanguage = language
+        }
+        .onChange(of: viewModel.selectedPeriod) { _, _ in
+            clearTrendingDetailSelection()
+        }
+        .sheet(isPresented: $showLoginSheet) {
+            GithubAuthView()
+                .appLocaleEnvironment()
+        }
+        .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
+            if isAuthenticated {
+                showLoginSheet = false
+            }
+        }
+        // 选中 repo 变化时，同步更新 selectedTrendingRepo 供右侧详情页使用
+        .onChange(of: selectedRepoID) { _, newID in
+            if let id = newID {
+                selectedTrendingRepo = viewModel.displayedRepos.first { $0.id == id }
+            } else {
+                selectedTrendingRepo = nil
+            }
+        }
+        .onChange(of: viewModel.repos.count) { _, count in
+            onRepoCountChange(count)
+        }
+        .onChange(of: viewModel.reposRevision) { _, _ in
+            applyTrendingDetailSelectionPolicy()
+        }
+        .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
+            guard enabled else { return }
+            applyTrendingDetailSelectionPolicy()
+        }
+        .environment(\.trendingViewModel, viewModel)
     }
 
     private func reportRepoCount() {
-        onRepoCountChange(globalFilteredRepos(viewModel.displayedRepos).count)
+        onRepoCountChange(viewModel.repos.count)
     }
 
     private func clearTrendingDetailSelection() {
@@ -425,28 +413,6 @@ struct TrendingView: View {
                 isFork: repo.isFork ?? false
             )
         }
-    }
-
-    private var globalFilterIdentity: String {
-        [
-            settings.hideArchived ? "archived" : "",
-            settings.hideForks ? "forks" : "",
-            settings.libraryFilter.rawValue,
-            settings.globalFilterLanguages.joined(separator: ","),
-            settings.wikiAvailabilityFilter.rawValue,
-            settings.healthAvailabilityFilter.rawValue,
-            settings.openSSFAvailabilityFilter.rawValue
-        ].joined(separator: "|")
-    }
-
-    private var countInvalidationIdentity: String {
-        [
-            globalFilterIdentity,
-            String(viewModel.reposRevision),
-            String(viewModel.repos.count),
-            String(dependencies.repoHealthStore.snapshots.count),
-            String(dependencies.openSSFScoreStore.records.count)
-        ].joined(separator: "|")
     }
 
     private func matchesGlobalFilters(
