@@ -13550,6 +13550,23 @@
         }
       }
     },
+    "list.filter.language.clearSelection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消选择"
+          }
+        }
+      }
+    },
     "list.filter.status" : {
       "localizations" : {
         "en" : {

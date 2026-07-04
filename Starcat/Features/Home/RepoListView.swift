@@ -674,20 +674,7 @@ struct RepoListView: View {
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("list.filter.language", systemImage: "globe")
-                    if settings.interestedLanguages.isEmpty {
-                        Text("settings.filters.interestedLanguages.empty")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(settings.interestedLanguages, id: \.self) { language in
-                            Toggle(isOn: globalLanguageBinding(for: language)) {
-                                Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
-                            }
-                        }
-                    }
-                }
+                languageFilterSection()
             )),
             .divider(id: "after-language"),
             .content(id: "wikiAvailability", view: AnyView(
@@ -823,20 +810,7 @@ struct RepoListView: View {
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("list.filter.language", systemImage: "globe")
-                    if settings.interestedLanguages.isEmpty {
-                        Text("settings.filters.interestedLanguages.empty")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(settings.interestedLanguages, id: \.self) { language in
-                            Toggle(isOn: globalLanguageBinding(for: language)) {
-                                Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
-                            }
-                        }
-                    }
-                }
+                languageFilterSection()
             )),
             .divider(id: "after-language"),
             .content(id: "wikiAvailability", view: AnyView(
@@ -1904,6 +1878,37 @@ struct RepoListView: View {
                 }
             }
         )
+    }
+
+    private func languageFilterSection() -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Label("list.filter.language", systemImage: "globe")
+
+                Spacer(minLength: 12)
+
+                if !viewModel.globalFilterLanguages.isEmpty {
+                    Button("list.filter.language.clearSelection") {
+                        viewModel.globalFilterLanguages = []
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .focusEffectDisabled()
+                }
+            }
+
+            if settings.interestedLanguages.isEmpty {
+                Text("settings.filters.interestedLanguages.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(settings.interestedLanguages, id: \.self) { language in
+                    Toggle(isOn: globalLanguageBinding(for: language)) {
+                        Label(language, systemImage: "chevron.left.forwardslash.chevron.right")
+                    }
+                }
+            }
+        }
     }
 
     private func availabilityPicker(
