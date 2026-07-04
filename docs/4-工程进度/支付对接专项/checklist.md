@@ -65,8 +65,8 @@
 
 ## 4. 验证
 
-- [x] App Store build 无外部支付 URL / license 文案 — `Starcat/Features/Settings/ProSettingsView.swift` — 2026-07-04
-  > 实现：App Store 渠道不渲染 Direct License section；后续审查继续做产物字符串抽检。
+- [x] App Store build 无外部支付 / license 入口 — `Starcat/Features/Settings/ProSettingsView.swift` — 2026-07-04
+  > 实现：App Store 渠道不渲染 Direct License section；共享本地化资源可包含未使用 Direct key，但业务入口不可达。
 - [x] Direct build 无 StoreKit 商品入口 — `Starcat/Features/Settings/ProSettingsView.swift` — 2026-07-04
   > 实现：Direct 渠道不加载 StoreKit products，也不展示恢复购买 / Offer Code / Apple 管理入口。
 - [x] Creem test mode license adapter 单测 — `supports/starcat-license-api/internal/provider/creem_test.go` — 2026-07-04
