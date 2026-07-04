@@ -118,6 +118,8 @@ targets:
         STARCAT_PRODUCTION_API_KEY_DISCOVERY: $(STARCAT_PRODUCTION_API_KEY_DISCOVERY)
         # 匿名产品事件后端。留空时遥测保持 no-op；用户开关关闭时也不会发送。
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
+        # 显式构建渠道。App Store build 默认 appstore；Direct build 后续覆盖为 direct。
+        STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
     dependencies:
       - package: GRDB
       - package: KeychainAccess

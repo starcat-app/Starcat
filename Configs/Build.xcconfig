@@ -43,6 +43,12 @@ STARCAT_APTABASE_APP_KEY =
 // Device Flow 和 PAT 不需要这个值。默认空 = Web Flow 退化为错误提示。
 STARCAT_OAUTH_CLIENT_SECRET =
 
+// MARK: - 分发渠道
+
+// 默认按 App Store 渠道构建。Direct target / 打包脚本会覆盖为 `direct`。
+// 运行时代码只能读取该显式注入值，不允许按 receipt / bundle path 猜测渠道。
+STARCAT_DISTRIBUTION = appstore
+
 // MARK: - 引入私密配置（可选）
 //
 // `?` 让 include 在文件缺失时静默跳过；新 contributor / CI 不需要 Secrets.xcconfig 也能编译。

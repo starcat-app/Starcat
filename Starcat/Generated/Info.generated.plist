@@ -31,6 +31,8 @@
 	<string>1</string>
 	<key>STARCAT_APTABASE_APP_KEY</key>
 	<string>$(STARCAT_APTABASE_APP_KEY)</string>
+	<key>STARCAT_DISTRIBUTION</key>
+	<string>$(STARCAT_DISTRIBUTION)</string>
 	<key>STARCAT_OAUTH_CLIENT_SECRET</key>
 	<string>$(STARCAT_OAUTH_CLIENT_SECRET)</string>
 	<key>STARCAT_PRODUCTION_API_KEY_DISCOVERY</key>
