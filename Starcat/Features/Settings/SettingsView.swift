@@ -493,10 +493,11 @@ private struct InterestedLanguagesSettingsSection: View {
     @State private var isHoveringAddLanguage = false
 
     private let presets = [
-        "Swift", "Objective-C", "Kotlin", "Java",
-        "Go", "Rust", "Python", "TypeScript",
-        "JavaScript", "Vue", "Dart", "C++",
-        "C", "C#", "Ruby", "PHP"
+        "C", "C#", "C++", "Dart",
+        "Go", "HTML", "Java", "JavaScript",
+        "Kotlin", "Objective-C", "PHP", "Python",
+        "Ruby", "Rust", "Swift", "TypeScript",
+        "Vue"
     ]
 
     var body: some View {
