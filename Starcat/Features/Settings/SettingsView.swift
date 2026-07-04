@@ -489,6 +489,7 @@ private struct InterestedLanguagesSettingsSection: View {
 
     @Binding var languages: [String]
     @State private var draftLanguage = ""
+    @State private var showingLanguagePicker = false
 
     private let presets = [
         "Swift", "Objective-C", "Kotlin", "Java",
@@ -511,12 +512,17 @@ private struct InterestedLanguagesSettingsSection: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("settings.filters.interestedLanguages.add.placeholder", text: $draftLanguage)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(addExactDraftLanguageIfPossible)
-
-                    languageSearchResults
+                Button {
+                    draftLanguage = ""
+                    showingLanguagePicker = true
+                } label: {
+                    Label("settings.filters.interestedLanguages.add", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .popover(isPresented: $showingLanguagePicker, arrowEdge: .trailing) {
+                    languagePickerPopover
+                        .frame(width: 320)
+                        .padding(14)
                 }
 
                 if languages.isEmpty {
@@ -578,42 +584,53 @@ private struct InterestedLanguagesSettingsSection: View {
         contains(language) ? .accentColor : Color(nsColor: .controlBackgroundColor)
     }
 
-    @ViewBuilder
-    private var languageSearchResults: some View {
-        if !normalizedDraft.isEmpty {
-            if searchResults.isEmpty {
+    private var languagePickerPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("settings.filters.interestedLanguages.add.placeholder", text: $draftLanguage)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(addExactDraftLanguageIfPossible)
+
+            if normalizedDraft.isEmpty {
+                Text("settings.filters.interestedLanguages.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if searchResults.isEmpty {
                 Text("settings.filters.interestedLanguages.search.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                FlowLayout(spacing: 6) {
-                    ForEach(searchResults, id: \.self) { language in
-                        languageSearchResultChip(language)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(searchResults, id: \.self) { language in
+                            languageSearchResultRow(language)
+                        }
                     }
                 }
+                .frame(maxHeight: 220)
             }
         }
     }
 
-    private func languageSearchResultChip(_ language: String) -> some View {
+    private func languageSearchResultRow(_ language: String) -> some View {
         Button {
             addLanguage(language)
             draftLanguage = ""
         } label: {
-            HStack(spacing: 6) {
-                LanguageIconView(language: language, size: 13)
+            HStack(spacing: 8) {
+                LanguageIconView(language: language, size: 16)
                 Text(LanguageDisplayName.shortened(for: language))
-                    .font(.caption)
                     .lineLimit(1)
+                Spacer(minLength: 8)
                 if contains(language) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(.quaternary, in: Capsule())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(contains(language) ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
