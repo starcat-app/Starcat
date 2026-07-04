@@ -8,12 +8,7 @@
 ## 1. 前置条件
 
 - 已有 Apple Developer ID Application 证书。
-- 已生成 Sparkle EdDSA key，并把公钥写入 `Configs/Secrets.xcconfig`：
-
-```xcconfig
-STARCAT_SPARKLE_PUBLIC_ED_KEY = <public-ed-key>
-```
-
+- 已生成 Sparkle EdDSA key，并把公钥写入 `Configs/Secrets.xcconfig`。
 - `pages/appcast.xml` 可部署到 `https://starcat.ink/appcast.xml`。
 - 公开发版前准备好 notarization 凭证：
 
@@ -23,7 +18,51 @@ export APPLE_TEAM_ID="XXXXXXXXXX"
 export APPLE_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 ```
 
-## 2. 本地生成 DMG
+## 2. 生成 Sparkle EdDSA key
+
+Sparkle 的更新包签名使用 EdDSA key pair。私钥由 `generate_keys` 写入本机 Keychain，公钥写入 Direct app 的 `SUPublicEDKey`。
+
+先找到 Xcode 拉下来的 Sparkle 工具：
+
+```bash
+find ~/Library/Developer/Xcode/DerivedData \
+  -path '*/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys' \
+  -type f \
+  | head -1
+```
+
+如果能找到路径，直接执行它：
+
+```bash
+"/Users/dong4j/Library/Developer/Xcode/DerivedData/.../SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys"
+```
+
+工具会输出 `SUPublicEDKey`。把这个值写入本地私密配置：
+
+```xcconfig
+STARCAT_SPARKLE_PUBLIC_ED_KEY = <SUPublicEDKey 输出值>
+```
+
+推荐写入 `Configs/Secrets.xcconfig`，不要写入 `Configs/Build.xcconfig`：
+
+```bash
+cp Configs/Secrets.xcconfig.template Configs/Secrets.xcconfig
+open -a TextEdit Configs/Secrets.xcconfig
+```
+
+`Configs/Secrets.xcconfig` 已被 `.gitignore` 排除，不应提交。私钥保存在 Keychain，丢失后旧版本 appcast / 更新包签名链路会受影响，需要妥善备份当前 Mac 的 Keychain。
+
+写入后重新构建 Direct 版：
+
+```bash
+make run-direct
+```
+
+菜单 `操作 -> 检查更新...` 应变为可点击。
+
+如果 `find` 找不到 `generate_keys`，先构建一次 Direct target 让 Xcode 解析 Sparkle package，或从 Sparkle GitHub Release 下载 `Sparkle-for-Swift-Package-Manager.zip` 后运行其中的 `bin/generate_keys`。
+
+## 3. 本地生成 DMG
 
 ```bash
 ./scripts/package-direct.sh 0.1.0
@@ -41,9 +80,10 @@ dist/direct/xcodebuild-direct.log
 
 - `STARCAT_DISTRIBUTION == direct`
 - Direct 包包含 `Sparkle.framework`
+- Direct 包不包含 `com.apple.security.app-sandbox`
 - DMG 生成后有 SHA256
 
-## 3. 正式公开发版
+## 4. 正式公开发版
 
 正式公开分发时启用 notarization：
 
@@ -57,7 +97,7 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 0.1.0
 2. `xcrun stapler staple`
 3. `spctl --assess --type open`
 
-## 4. 更新 appcast
+## 5. 更新 appcast
 
 把 DMG 放到 `dist/direct/downloads/` 后，可让脚本调用 Sparkle 的 `generate_appcast`：
 
@@ -78,7 +118,7 @@ pages/appcast.xml
 - `pages/appcast.xml` -> `https://starcat.ink/appcast.xml`
 - `dist/direct/downloads/Starcat-0.1.0-arm64.dmg` -> `https://starcat.ink/downloads/Starcat-0.1.0-arm64.dmg`
 
-## 5. Sparkle 验证
+## 6. Sparkle 验证
 
 首个公开版本建议先保持 `pages/appcast.xml` 为空 feed。第二个版本开始验证完整更新链路：
 
@@ -88,11 +128,20 @@ pages/appcast.xml
 4. 菜单 `操作 -> 检查更新...`。
 5. 确认 Sparkle 弹窗展示新版并可安装。
 
-## 6. 常见问题
+## 7. 常见问题
 
 ### 检查更新菜单是灰色
 
 通常是 `STARCAT_SPARKLE_PUBLIC_ED_KEY` 为空。Direct 版会展示菜单，但没有公钥时不会启动 Sparkle updater。
+
+可检查当前构建产物：
+
+```bash
+/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' \
+  build/DerivedData-NoSandbox/Build/Products/Debug/Starcat.app/Contents/Info.plist
+```
+
+如果输出为空，按第 2 节生成并写入 `Configs/Secrets.xcconfig` 后重新 `make run-direct`。
 
 ### Notarization 失败
 
