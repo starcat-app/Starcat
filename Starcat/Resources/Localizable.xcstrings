@@ -24531,13 +24531,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The key is stored securely on this Mac. Testing uses the query \"who is dong4j\" and may consume one provider search request."
+            "value" : "API keys are stored securely on this Mac. Testing may consume one provider search request."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Key 安全保存在本机。测试会使用查询 “who is dong4j”，并可能消耗一次 Provider 搜索请求。"
+            "value" : "API Key 安全保存在本机。测试可能消耗一次 Provider 搜索请求。"
           }
         }
       }

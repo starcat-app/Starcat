@@ -447,6 +447,10 @@ struct IntegrationSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Text("settings.externalSearch.apiKey.testDescription")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 ForEach(ExternalSearchProviderID.allCases) { provider in
                     Divider()
                     externalSearchProviderGroup(provider)
@@ -520,10 +524,6 @@ struct IntegrationSettingsTab: View {
                     }
 
                     externalSearchAPIKeyTestFeedback(provider)
-
-                    Text(providerDescription(provider))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -611,13 +611,6 @@ struct IntegrationSettingsTab: View {
 
     private func apiKeyDraft(for provider: ExternalSearchProviderID) -> String {
         (externalSearchAPIKeys[provider] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func providerDescription(_ provider: ExternalSearchProviderID) -> String {
-        if provider == .anySearch, settings.externalSearchSettings(for: provider).anonymousMode {
-            return String.l10n("settings.externalSearch.apiKey.anonymousDescription")
-        }
-        return String.l10n("settings.externalSearch.apiKey.testDescription")
     }
 
     /// 各 Provider 官方 API Key 管理入口。
