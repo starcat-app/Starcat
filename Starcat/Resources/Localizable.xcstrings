@@ -11283,6 +11283,40 @@
         }
       }
     },
+    "empty.loadingStars.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat is fetching your GitHub Stars. Repositories will appear as soon as the first page is saved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 正在拉取你的 GitHub Stars，首批仓库写入后会自动显示。"
+          }
+        }
+      }
+    },
+    "empty.loadingStars.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading Stars…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载 Stars…"
+          }
+        }
+      }
+    },
     "empty.library.subtitle": {
       "extractionState": "manual",
       "localizations": {
@@ -41321,6 +41355,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无周刊项目"
+          }
+        }
+      }
+    },
+    "weekly.loading.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat is reading the weekly feed and local cache."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 正在读取周刊 feed 和本地缓存。"
+          }
+        }
+      }
+    },
+    "weekly.loading.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading weekly projects…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载周刊项目…"
           }
         }
       }

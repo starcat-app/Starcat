@@ -116,6 +116,9 @@ private struct AboutBrandPanel: View {
                     .font(.callout)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(version.detailText)
             }
 
             Text("about.brand.slogan")
@@ -821,16 +824,25 @@ private struct AboutVersion {
         )
     }
 
-    /// 关于页展示用的完整 build 字符串：有 hash 拼 `<count>.<hash>`，没有就只显示 `<count>`。
-    /// 这样本地化字符串 `about.version.fullFormat`（仍是 `Version %@ (Build %@)`）无需修改，
-    /// 拼接逻辑全部收敛在 Swift 侧，便于以后加 `.dirty` 后缀等扩展时只动这一处。
+    /// 关于页左栏展示用 build 字符串。
+    ///
+    /// Direct 分发包为了 Sparkle 单调递增会把 `CFBundleVersion` 写成时间戳，这个值
+    /// 不适合塞进 218pt 左栏；有 git hash 时优先显示短 hash，完整 build 放到 help。
     var displayBuild: String {
+        if build.count > 8, let hash = gitHash, !hash.isEmpty {
+            return hash
+        }
         guard let hash = gitHash, !hash.isEmpty else { return build }
         return "\(build).\(hash)"
     }
 
     var fullText: String {
         String(format: String.l10n("about.version.fullFormat"), marketing, displayBuild)
+    }
+
+    var detailText: String {
+        guard let hash = gitHash, !hash.isEmpty else { return fullText }
+        return String(format: String.l10n("about.version.fullFormat"), marketing, "\(build).\(hash)")
     }
 }
 

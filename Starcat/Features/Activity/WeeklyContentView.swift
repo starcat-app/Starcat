@@ -97,8 +97,7 @@ struct WeeklyContentView: View {
             Divider()
 
             if viewModel.isLoading && viewModel.items.isEmpty {
-                RepoSkeletonListView(rowCount: 8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                loadingState(title: "weekly.loading.title", subtitle: "weekly.loading.subtitle")
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                 emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error) {
                     Task { await viewModel.reload() }
@@ -608,6 +607,22 @@ struct WeeklyContentView: View {
             .padding()
         }
     }
+
+    private func loadingState(title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
 }
 
 // R-01 v1.2 Phase B4（2026-06-10）：原 `WeeklyProjectRow` 已删除，
@@ -773,6 +788,9 @@ final class WeeklyContentViewModel {
     /// 3. 未命中 → fallback 走老分页 fetchRepos(page=1) 200ms 出图，并在后台 bulkSync 落盘。
     func loadInitialIfNeeded() async {
         guard items.isEmpty, !isLoading else { return }
+        // 创建 ViewModel 后首帧就会渲染 content；先进入 loading，避免远端周刊未返回前闪出空态。
+        isLoading = true
+        defer { isLoading = false }
 
         // Step 1: 尝试从本地缓存读
         if let cached = await bulkRepository.cachedBulk(), !cached.items.isEmpty {

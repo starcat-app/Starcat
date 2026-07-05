@@ -1087,6 +1087,8 @@ struct RepoListView: View {
                 } else if viewModel.isGitHubStarListSwitchLoading && viewModel.items.isEmpty {
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if shouldShowInitialStarsLoading {
+                    loadingState(title: "empty.loadingStars.title", subtitle: "empty.loadingStars.subtitle")
                 } else if viewModel.isLoading && viewModel.items.isEmpty {
                     RepoSkeletonListView(rowCount: 10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1846,6 +1848,19 @@ struct RepoListView: View {
 
     // MARK: - 空状态
 
+    /// 首次同步还没写入首批 repo 时，列表自身没有 `isLoading`，但全局同步已经在跑。
+    /// 这里把“真实加载中”挡在空态之前，避免误提示用户手动点击同步。
+    private var shouldShowInitialStarsLoading: Bool {
+        guard selectedPage == .manage, viewModel.items.isEmpty else { return false }
+        guard case .syncing = syncManager.state else { return false }
+        switch viewModel.selection {
+        case .allStars, .allLanguages, .githubStarListUngrouped:
+            return true
+        default:
+            return false
+        }
+    }
+
     private var emptyImage: String {
         if viewModel.isSearching { return "magnifyingglass" }
         switch viewModel.selection {
@@ -1918,6 +1933,22 @@ struct RepoListView: View {
             subtitleText: subtitleText,
             spacing: 12
         )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func loadingState(title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
