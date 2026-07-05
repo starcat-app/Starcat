@@ -43,7 +43,7 @@ struct BatchTagSheetViewModelTests {
         try await db.insertRepoFixture(id: 12)
         try await tagRepo.create(.fixture(id: "tg"))
 
-        let ok = await vm.apply(repoIds: [10, 11, 12], tagId: "tg")
+        let ok = await vm.apply(repoIds: [10, 11, 12], tagIds: ["tg"])
         #expect(ok == true)
 
         let count = try await rtRepo.repoCount(forTag: "tg")
@@ -58,7 +58,7 @@ struct BatchTagSheetViewModelTests {
         try await tagRepo.create(.fixture(id: "tg"))
         try await rtRepo.addTag(repoId: 1, tagId: "tg") // 1 已经有了
 
-        let ok = await vm.apply(repoIds: [1, 2], tagId: "tg")
+        let ok = await vm.apply(repoIds: [1, 2], tagIds: ["tg"])
         #expect(ok == true)
         let count = try await rtRepo.repoCount(forTag: "tg")
         #expect(count == 2)
@@ -68,7 +68,7 @@ struct BatchTagSheetViewModelTests {
     func applyEmptyRepoIds() async throws {
         let (vm, tagRepo, _, _) = try makeVM()
         try await tagRepo.create(.fixture(id: "tg"))
-        let ok = await vm.apply(repoIds: [], tagId: "tg")
+        let ok = await vm.apply(repoIds: [], tagIds: ["tg"])
         #expect(ok == true)
         #expect(vm.errorMessage == nil)
     }
