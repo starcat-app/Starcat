@@ -23,6 +23,7 @@ struct SearchCenterView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @FocusState private var isSearchFocused: Bool
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
     /// 新增需要展示 `remoteExtras`（disabled / isTemplate / score）以及 sort 模式
@@ -258,7 +259,7 @@ struct SearchCenterView: View {
                 .foregroundStyle(.secondary)
             TextField("search.searchField.placeholder", text: $viewModel.query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 18))
+                .font(interfaceScale.font(.iconLarge))
                 .focused($isSearchFocused)
                 .onSubmit { Task { await viewModel.submit() } }
 
@@ -292,7 +293,7 @@ struct SearchCenterView: View {
                     Task { await viewModel.changeScope(scope) }
                 } label: {
                     Text(scopeTitle(scope))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(interfaceScale.font(.captionStrong, weight: .semibold))
                         .padding(.horizontal, 13)
                         .padding(.vertical, 6)
                         .background(viewModel.scope == scope ? Color.accentColor.opacity(0.24) : .clear, in: Capsule())
@@ -331,7 +332,7 @@ struct SearchCenterView: View {
         isActive: Bool
     ) -> some View {
         Label(titleKey, systemImage: systemImage)
-            .font(.system(size: 12, weight: .semibold))
+            .font(interfaceScale.font(.captionStrong, weight: .semibold))
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -371,7 +372,7 @@ struct SearchCenterView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label("search.github.filterTitle", systemImage: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: isGitHubAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
@@ -379,12 +380,12 @@ struct SearchCenterView: View {
                     Text(isGitHubAuthenticated ? "search.github.signedIn" : "search.github.anonymous")
                         .foregroundStyle(.secondary)
                 }
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
             }
 
             if let summary = viewModel.githubResultSummary {
                 Text(summary)
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -439,14 +440,14 @@ struct SearchCenterView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label("search.web.filterTitle", systemImage: "globe")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
                 Spacer()
             }
 
             providerPicker
 
             Text(anySearchFiltersSummary)
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
@@ -645,7 +646,7 @@ struct SearchCenterView: View {
             .overlay(alignment: .bottomLeading) {
                 if let message = viewModel.errorMessages.first {
                     Label(message, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
+                        .font(interfaceScale.font(.caption))
                         .foregroundStyle(.orange)
                         .padding(10)
                         .background(.ultraThinMaterial, in: Capsule())
@@ -717,14 +718,14 @@ struct SearchCenterView: View {
     private var historyHeader: some View {
         HStack(spacing: 0) {
             Text("search.history.recent")
-                .font(.system(size: 12, weight: .semibold))
+                .font(interfaceScale.font(.captionStrong, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             Button {
                 showingClearHistoryAlert = true
             } label: {
                 Label("search.history.clearAll", systemImage: "trash")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -783,7 +784,7 @@ struct SearchCenterView: View {
                                 // 时所有卡片都是网页，更冗余）。需要"类目"信号时由左侧 favicon
                                 // + 左侧蓝色 accent bar 自然传达。
                                 Text(reference.title)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(interfaceScale.font(.body, weight: .semibold))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -793,7 +794,7 @@ struct SearchCenterView: View {
                                     // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
                                     // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
                                     Text(snippet)
-                                        .font(.system(size: 12))
+                                        .font(interfaceScale.font(.caption))
                                         .foregroundStyle(.primary.opacity(0.85))
                                         .lineLimit(2)
                                 }
@@ -806,15 +807,15 @@ struct SearchCenterView: View {
                                 // 维持"标题 > snippet > 元信息"三档视觉权重。
                                 HStack(spacing: 5) {
                                     Text(reference.domain)
-                                        .font(.system(size: 11))
+                                        .font(interfaceScale.font(.captionSmall))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                     if let firstPath = Self.firstPathSegment(of: reference.originalURL) {
                                         Text("·")
-                                            .font(.system(size: 11))
+                                            .font(interfaceScale.font(.captionSmall))
                                             .foregroundStyle(.secondary)
                                         Text(firstPath)
-                                            .font(.system(size: 11))
+                                            .font(interfaceScale.font(.captionSmall))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
@@ -1043,7 +1044,7 @@ struct SearchCenterView: View {
                             .controlSize(.small)
                     }
                     Text("search.github.loadMore")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(interfaceScale.font(.captionStrong, weight: .semibold))
                 }
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 10)
@@ -1116,13 +1117,13 @@ struct SearchCenterView: View {
     private func webOnlySummaryChip(totalResults: Int, timeMs: Int) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
             Text(String(
                 format: String.l10n("search.web.summaryFormat"),
                 totalResults,
                 Double(timeMs) / 1000.0
             ))
-            .font(.system(size: 11, weight: .medium))
+            .font(interfaceScale.font(.captionSmall, weight: .medium))
             .lineLimit(1)
         }
         .foregroundStyle(.primary.opacity(0.75))
@@ -1142,7 +1143,7 @@ struct SearchCenterView: View {
                 String.l10n(entry.labelKey),
                 entry.count
             ))
-            .font(.system(size: 11, weight: .medium).monospacedDigit())
+            .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
             .lineLimit(1)
         }
         .foregroundStyle(.primary.opacity(0.75))
@@ -1179,7 +1180,7 @@ struct SearchCenterView: View {
                 rateLimit.sessionUsed,
                 rateLimit.limit
             ))
-            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .font(interfaceScale.font(.captionSmall, weight: .semibold).monospacedDigit())
             .lineLimit(1)
         }
         .foregroundStyle(color)
@@ -1199,7 +1200,7 @@ struct SearchCenterView: View {
         return HStack(spacing: 4) {
             Circle().fill(Color.red).frame(width: 6, height: 6)
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .lineLimit(1)
         }
         .foregroundStyle(.red)
@@ -1441,8 +1442,7 @@ struct SearchCenterView: View {
 
     private func filterFieldLabel(_ titleKey: LocalizedStringKey) -> some View {
         Text(titleKey)
-            .font(.caption)
-            .fontWeight(.medium)
+            .font(interfaceScale.font(.caption, weight: .medium))
             .foregroundStyle(.secondary)
     }
 
@@ -1693,11 +1693,11 @@ struct SearchCenterView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(titleKey)
-                .font(.caption2.weight(.semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
             TextField(placeholder, text: text)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
+                .font(interfaceScale.font(.caption))
         }
     }
 
@@ -1728,17 +1728,17 @@ private struct SearchFilterNumericField: View {
     let allowsEmpty: Bool
 
     @State private var validation: SearchFilterNumericValidation = .empty
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(titleKey)
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(interfaceScale.font(.caption, weight: .medium))
                 .foregroundStyle(.secondary)
 
             TextField(placeholder, text: $draft)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, design: .monospaced))
+                .font(interfaceScale.font(.caption, design: .monospaced))
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
                 .onChange(of: draft) { _, newValue in
@@ -1757,7 +1757,7 @@ private struct SearchFilterNumericField: View {
                 }
 
             Text(verbatim: validation.hintText(defaultKey: hintKey, minimum: minimum, maximum: maximum))
-                .font(.caption2)
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(validation.isError ? .red : .secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1827,12 +1827,12 @@ private struct AnySearchContentTypesField: View {
     let width: CGFloat
 
     @State private var isPresented = false
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("search.anysearch.contentTypes")
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(interfaceScale.font(.caption, weight: .medium))
                 .foregroundStyle(.secondary)
 
             Button {
@@ -1854,13 +1854,13 @@ private struct AnySearchContentTypesField: View {
     private var fieldLabel: some View {
         HStack(spacing: 6) {
             Text(displayText)
-                .font(.system(size: 12))
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(contentTypes.isEmpty ? .secondary : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 4)
             Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8)
@@ -1949,6 +1949,7 @@ private struct GitHubDateFilterField: View {
     @Binding var date: Date?
 
     @State private var isPresented = false
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     /// 显示宽度与原 `.compact` DatePicker 持平（150pt），保证旧布局横向对齐
     /// 不发生跳变。两个并排的日期字段加起来 ~316pt，落在筛选行剩余空间内。
@@ -1965,8 +1966,7 @@ private struct GitHubDateFilterField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(titleKey)
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(interfaceScale.font(.caption, weight: .medium))
                 .foregroundStyle(.secondary)
 
             Button {
@@ -1991,15 +1991,15 @@ private struct GitHubDateFilterField: View {
     private var fieldLabel: some View {
         HStack(spacing: 6) {
             Image(systemName: "calendar")
-                .font(.system(size: 11))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
             Text(displayText)
-                .font(.system(size: 12))
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(date == nil ? .secondary : .primary)
                 .lineLimit(1)
             Spacer(minLength: 4)
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8)
@@ -2089,6 +2089,7 @@ private struct HistoryChip: View {
 
     /// 2026-06-15:hover scale + 删除按钮入场动画在「关闭应用内动画」时跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     /// 显示 useCount 角标的最低门槛。`< 3` 视为"偶尔搜过"，无需占据视觉注意力。
     /// 这是 dong4j 拍板的阈值，需要调整时改这一个常量即可。
@@ -2099,7 +2100,7 @@ private struct HistoryChip: View {
             Button(action: onUse) {
                 HStack(spacing: 4) {
                     Text(entry.query)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(interfaceScale.font(.caption, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
@@ -2111,7 +2112,7 @@ private struct HistoryChip: View {
                         // `Capsule.opacity(0.10)` 灰底 + light mode 下几乎不可见；
                         // 提升一档对比度，仍靠字号差（11 vs query 12）区分主次。
                         Text(verbatim: "·\(entry.useCount)")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(interfaceScale.font(.captionSmall, weight: .medium))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
@@ -2141,7 +2142,7 @@ private struct HistoryChip: View {
                     // 让 xmark 即使盖在下方 ·N 末尾也能一眼识别为独立按钮，不跟文字融合。
                     // controlBackgroundColor 是系统级控件背景，自动适配深浅主题。
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+                        .font(interfaceScale.font(.iconSmall))
                         .foregroundStyle(Color.red.opacity(0.7))
                         .background(
                             Circle()
@@ -2246,6 +2247,7 @@ private struct SearchDetailActionChip: View {
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Button(action: action) {
@@ -2254,7 +2256,7 @@ private struct SearchDetailActionChip: View {
                     HStack(spacing: 5) {
                         chipIcon
                         Text(titleKey)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(interfaceScale.font(.captionSmall, weight: .medium))
                             .lineLimit(1)
                     }
                 } else {
@@ -2293,7 +2295,7 @@ private struct SearchDetailActionChip: View {
                         .frame(width: 12, height: 12)
                 } else {
                     Image(systemName: systemImage)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 }
             }
         }
@@ -2357,6 +2359,7 @@ private struct SearchRemoteRepoDetailView: View {
     /// 父级 `.sheet { }` 闭包已挂 `appLocaleEnvironment()`,这里 `\.locale` 自动拿到正确值。
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     /// 搜索详情里的 CodeFlow sheet 也需要点击级 identity，避免 sheet-over-sheet
     /// 复用 presentation host 时沿用上一次 repo 的 `@State` ViewModel。
@@ -2431,13 +2434,13 @@ private struct SearchRemoteRepoDetailView: View {
             if let description = repo.description, !description.isEmpty {
                 // description 是用户内容，必须 verbatim。
                 Text(verbatim: description)
-                    .font(.system(size: 13))
+                    .font(interfaceScale.font(.body))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("search.detail.empty.description")
-                    .font(.system(size: 13))
+                    .font(interfaceScale.font(.body))
                     .foregroundStyle(.secondary)
                     .italic()
             }
@@ -2479,7 +2482,7 @@ private struct SearchRemoteRepoDetailView: View {
                 .font(.title2)
                 .foregroundStyle(.orange)
             Text("search.detail.empty.repoUnavailable")
-                .font(.callout)
+                .font(interfaceScale.font(.bodyEmphasis))
                 .foregroundStyle(.secondary)
             Button("search.detail.action.close") { dismiss() }
         }
@@ -2497,10 +2500,10 @@ private struct SearchRemoteRepoDetailView: View {
                 // owner / name 都是 GitHub 数据，必须 verbatim 防止 SwiftUI 误把
                 // 它们当本地化 key（例如 owner 叫 "share" 之类的常见 key 会撞）。
                 Text(verbatim: repo.owner)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(interfaceScale.font(.caption, weight: .medium))
                     .foregroundStyle(.secondary)
                 Text(verbatim: repo.name)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(interfaceScale.font(.iconLarge, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -2561,11 +2564,11 @@ private struct SearchRemoteRepoDetailView: View {
         let label = String(format: String.l10n("search.detail.score.format"), formatted)
         return Label {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .monospacedDigit()
         } icon: {
             Image(systemName: "bolt.fill")
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
         }
         .labelStyle(.titleAndIcon)
         .foregroundStyle(.orange)
@@ -2579,7 +2582,7 @@ private struct SearchRemoteRepoDetailView: View {
         // license 是 GitHub 返回的 SPDX id 或 license name（例如 "MIT" / "Apache-2.0"），
         // 是数据，不是 UI 文案，必须 verbatim。
         Text(verbatim: license)
-            .font(.system(size: 10, weight: .semibold))
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
@@ -2617,7 +2620,7 @@ private struct SearchRemoteRepoDetailView: View {
 
     private func stateBadge(textKey: LocalizedStringKey, color: Color) -> some View {
         Text(textKey)
-            .font(.system(size: 10, weight: .semibold))
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -2676,12 +2679,12 @@ private struct SearchRemoteRepoDetailView: View {
         let tint = iconColor.resolved(colorScheme: colorScheme)
         let item = Label {
             Text(verbatim: value)
-                .font(.system(size: 12, weight: .medium))
+                .font(interfaceScale.font(.caption, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         } icon: {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .medium))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
                 .foregroundStyle(tint)
         }
         .labelStyle(.titleAndIcon)
@@ -2702,24 +2705,24 @@ private struct SearchRemoteRepoDetailView: View {
 
         return HStack(spacing: 8) {
             Image(systemName: "clock")
-                .font(.system(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
 
             if let created = createdRelative {
                 Text(String(format: String.l10n("search.detail.time.created.format"), created))
-                    .font(.system(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
 
             if createdRelative != nil && pushedRelative != nil {
                 Text(verbatim: "·")
-                    .font(.system(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
 
             if let pushed = pushedRelative {
                 Text(String(format: String.l10n("search.detail.time.updated.format"), pushed))
-                    .font(.system(size: 11))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
 
@@ -2763,7 +2766,7 @@ private struct SearchRemoteRepoDetailView: View {
         SearchHistoryFlowLayout(spacing: 6) {
             ForEach(topics.prefix(8), id: \.self) { topic in
                 Text(verbatim: "#\(topic)")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -2786,7 +2789,7 @@ private struct SearchRemoteRepoDetailView: View {
         HStack(spacing: 8) {
             WikiEntryIcon(size: 11)
             Text("search.detail.wikis.label")
-                .font(.system(size: 11, weight: .medium))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
                 .foregroundStyle(.secondary)
 
             ForEach(links) { link in
@@ -2808,7 +2811,7 @@ private struct SearchRemoteRepoDetailView: View {
             HStack(spacing: 5) {
                 wikiSourceIcon(source: link.source)
                 Text(verbatim: link.title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium))
             }
             .foregroundStyle(tint)
             .padding(.horizontal, 7)
@@ -2839,7 +2842,7 @@ private struct SearchRemoteRepoDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         } else {
             Image(systemName: source.fallbackSFSymbol)
-                .font(.system(size: 10))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }
@@ -3101,6 +3104,7 @@ struct SearchOverflowActionRow: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Button(action: action) {
@@ -3110,7 +3114,7 @@ struct SearchOverflowActionRow: View {
                 Text(titleKey)
                 Spacer()
             }
-            .font(.system(size: 13))
+            .font(interfaceScale.font(.body))
             .foregroundStyle(isDisabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
             .padding(.horizontal, 10)
             .frame(height: 28)

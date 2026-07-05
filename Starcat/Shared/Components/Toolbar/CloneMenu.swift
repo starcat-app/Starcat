@@ -45,8 +45,8 @@ struct CloneMenu: View {
                 Label("clone.git", systemImage: "terminal")
             }
         } label: {
-            // 复制 clone URL：用系统标准 copy 图标，光学尺寸比 link / doc.on.clipboard / curlybraces 更稳。
-            ToolbarIcon("square.on.square")
+            // clone URL 的核心对象是“地址”，用系统 link 图标比复制方块更贴近语义。
+            ToolbarIcon("link")
                 .accessibilityLabel("clone.hint")
         }
         .help("clone.hint")

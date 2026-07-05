@@ -24,6 +24,7 @@ struct AIChatBubble: View {
     let message: ChatMessage
     let onEditUserMessage: (String) -> Void
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -45,7 +46,7 @@ struct AIChatBubble: View {
     /// 助手头像：sparkles + 紫蓝色背景，与窗口主入口的"AI"按钮视觉呼应。
     private var assistantAvatar: some View {
         Image(systemName: "sparkles")
-            .font(.system(size: 12, weight: .semibold))
+            .font(interfaceScale.font(.captionStrong, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 26, height: 26)
             .background(
@@ -63,7 +64,7 @@ struct AIChatBubble: View {
     private var userBubble: some View {
         VStack(alignment: .trailing, spacing: 4) {
             Text(message.content)
-                .font(.body)
+                .font(interfaceScale.font(.bodyEmphasis))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.leading)
                 .textSelection(.enabled)
@@ -95,7 +96,7 @@ struct AIChatBubble: View {
                 // 与"把历史问题回填到输入框重新编辑"的语义更贴合 —— pencil 更像
                 // "原地编辑",U-turn 更像"回到上一步重写"）。
                 Image(systemName: "arrow.uturn.backward")
-                    .font(.caption2)
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -117,7 +118,7 @@ struct AIChatBubble: View {
                 //   → 回退 medium weight,恢复 SF Symbol 默认 weight；保留 size 9 / frame 10×10
                 //   （字号、防抖 frame 都是用户自己确认过的尺寸,与"太细"无关）。
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.system(size: 9))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                     .frame(width: 10, height: 10)
@@ -159,7 +160,7 @@ struct AIChatBubble: View {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("ai.assistant.chat.thinking")
-                            .font(.caption)
+                            .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                     }
                 } else {
@@ -199,7 +200,7 @@ struct AIChatBubble: View {
     private var streamingIndicator: some View {
         HStack(spacing: 6) {
             Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .semibold))
+                .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
                 .foregroundStyle(.purple.opacity(0.85))
                 .symbolEffect(
                     .variableColor.iterative.dimInactiveLayers,
@@ -207,7 +208,7 @@ struct AIChatBubble: View {
                     isActive: !reduceMotion
                 )
             Text("ai.assistant.chat.generating")
-                .font(.caption2)
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }
@@ -227,7 +228,7 @@ struct AIChatBubble: View {
                 // 与 userFooter 复制按钮规格保持一致：size 9 默认 weight / frame 10×10。
                 // 详见 userFooter 注释（含 size 13 → 11 → 9 降档 + 13:42 weight 回退的反馈记录）。
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.system(size: 9))
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                     .frame(width: 10, height: 10)
@@ -239,7 +240,7 @@ struct AIChatBubble: View {
         // 2026-06-14 D-31 follow-up：.tertiary → .secondary。
         // 浅色主题下 .tertiary 时间戳几乎不可读，与 D-31 全局对比度修正对齐。
         Text(message.timestamp, style: .time)
-            .font(.caption2)
+            .font(interfaceScale.font(.captionSmall))
             .foregroundStyle(.secondary)
     }
 }
@@ -252,6 +253,7 @@ struct AIChatBubble: View {
 struct AIStreamingChatBubble: View {
     let snapshot: StreamingMarkdownSnapshot
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -261,7 +263,7 @@ struct AIStreamingChatBubble: View {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("ai.assistant.chat.thinking")
-                            .font(.caption)
+                            .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                     }
                 } else {
@@ -274,7 +276,7 @@ struct AIStreamingChatBubble: View {
                         // 尾部结构仍可能被下一个 token 改写（代码围栏、列表、强调等），
                         // 中间态用纯文本换取稳定帧率；完成后整条消息恢复完整 Markdown。
                         Text(snapshot.liveTail)
-                            .font(.body)
+                            .font(interfaceScale.font(.bodyEmphasis))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
@@ -289,7 +291,7 @@ struct AIStreamingChatBubble: View {
 
     private var assistantAvatar: some View {
         Image(systemName: "sparkles")
-            .font(.system(size: 12, weight: .semibold))
+            .font(interfaceScale.font(.captionStrong, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 26, height: 26)
             .background(
@@ -306,7 +308,7 @@ struct AIStreamingChatBubble: View {
     private var streamingIndicator: some View {
         HStack(spacing: 6) {
             Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .semibold))
+                .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
                 .foregroundStyle(.purple.opacity(0.85))
                 .symbolEffect(
                     .variableColor.iterative.dimInactiveLayers,
@@ -314,7 +316,7 @@ struct AIStreamingChatBubble: View {
                     isActive: !reduceMotion
                 )
             Text("ai.assistant.chat.generating")
-                .font(.caption2)
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }

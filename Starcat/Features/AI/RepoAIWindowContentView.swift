@@ -106,6 +106,7 @@ struct RepoAIWindowContentView: View {
     /// 0.2-0.3s 隐式动画在「关闭应用内动画」时全部跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
@@ -305,7 +306,7 @@ struct RepoAIWindowContentView: View {
     private var panelHeader: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .semibold))
+                .font(interfaceScale.font(.iconSmall, weight: .semibold))
                 .foregroundStyle(.purple)
 
             Text(
@@ -314,7 +315,7 @@ struct RepoAIWindowContentView: View {
                     repo.fullName
                 )
             )
-            .font(.headline)
+            .font(interfaceScale.font(.panelTitle, weight: .semibold))
             .lineLimit(1)
 
             Spacer(minLength: 12)
@@ -322,7 +323,7 @@ struct RepoAIWindowContentView: View {
             if let onOpenDetachedWindow {
                 Button(action: onOpenDetachedWindow) {
                     Image(systemName: "rectangle.on.rectangle")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(interfaceScale.font(.iconSmall, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
@@ -335,7 +336,7 @@ struct RepoAIWindowContentView: View {
             if let onInlineResizeTapped {
                 Button(action: onInlineResizeTapped) {
                     Image(systemName: isInlineMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(interfaceScale.font(.iconSmall, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
@@ -491,7 +492,7 @@ struct RepoAIWindowContentView: View {
             HStack {
                 ProgressView().controlSize(.small)
                 Text("ai.assistant.summary.initializing")
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -503,7 +504,7 @@ struct RepoAIWindowContentView: View {
     private func summaryHeader(vm: RepoAIInsightViewModel) -> some View {
         HStack(alignment: .center, spacing: 10) {
             Label("ai.assistant.summary.title", systemImage: "sparkles")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle, weight: .semibold))
                 .labelStyle(.titleAndIcon)
                 .foregroundStyle(.primary)
 
@@ -583,9 +584,9 @@ struct RepoAIWindowContentView: View {
     private func emptySummaryState(vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ai.assistant.summary.empty.title")
-                .font(.subheadline.weight(.semibold))
+                .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
             Text("ai.assistant.summary.empty.description")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
 
             // W4（2026-06-21）：后台 prep 进度 chip 行（持续展示，不藏）。
@@ -665,7 +666,7 @@ struct RepoAIWindowContentView: View {
                 prepStepChip(step: step, vm: vm)
                 if index < order.count - 1 {
                     Image(systemName: "circle.dotted")
-                        .font(.caption2)
+                        .font(interfaceScale.font(.captionSmall))
                         // 故意用 .tertiary + 低 opacity：纯装饰连接符，不承载语义信息。
                         .foregroundStyle(.tertiary)
                         .opacity(0.4)
@@ -683,7 +684,7 @@ struct RepoAIWindowContentView: View {
         HStack(spacing: 4) {
             prepStepIcon(step: step, state: state, vm: vm)
             Text(step.displayKey)
-                .font(.caption2)
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(prepStepTextColor(state: state))
         }
         .opacity(prepStepOpacity(state: state))
@@ -817,7 +818,7 @@ struct RepoAIWindowContentView: View {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
                 Text("ai.assistant.summary.streaming")
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
             RepoAISummaryMarkdownView(markdown: text)
@@ -835,11 +836,11 @@ struct RepoAIWindowContentView: View {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
                 Text("ai.assistant.summary.preparingContext")
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
             Text("ai.assistant.summary.preparingContext.caption")
-                .font(.caption2)
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
     }
@@ -892,11 +893,11 @@ struct RepoAIWindowContentView: View {
                                 .frame(width: 14)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(source.title)
-                                    .font(.caption.weight(.medium))
+                                    .font(interfaceScale.font(.caption, weight: .medium))
                                     .foregroundStyle(.primary)
                                     .lineLimit(2)
                                 Text("\(source.host) · \(source.provider.displayName)")
-                                    .font(.caption2)
+                                    .font(interfaceScale.font(.captionSmall))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -910,7 +911,7 @@ struct RepoAIWindowContentView: View {
             .padding(.top, 6)
         } label: {
             Label("External Context Sources", systemImage: "globe")
-                .font(.caption.weight(.semibold))
+                .font(interfaceScale.font(.caption, weight: .semibold))
         }
         .padding(.top, 6)
     }
@@ -975,13 +976,13 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.yellow)
             Text("ai.assistant.summary.staleSettings.message")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
             Spacer(minLength: 8)
             Button {
                 Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
             } label: {
                 Text("ai.assistant.summary.staleSettings.regenerate")
-                    .font(.caption.weight(.medium))
+                    .font(interfaceScale.font(.caption, weight: .medium))
             }
             .buttonStyle(.borderless)
             .focusEffectDisabled()
@@ -1014,7 +1015,7 @@ struct RepoAIWindowContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("ai.assistant.tags.title")
-                    .font(.subheadline.weight(.semibold))
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
                 Spacer()
                 Button("ai.assistant.tags.applyAll") {
                     Task { await vm.applyAllTags(repo: repo) }
@@ -1032,14 +1033,14 @@ struct RepoAIWindowContentView: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tag.name)
-                            .font(.body.weight(.medium))
+                            .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
                         Text(tag.reason)
-                            .font(.caption2)
+                            .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Text("\(Int((max(0, min(tag.confidence, 1)) * 100).rounded()))%")
-                        .font(.caption.monospacedDigit())
+                        .font(interfaceScale.font(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                     // tag.name / tag.reason 是后端 / 模型返回的原始字符串，无需本地化
                     // （内容本身就是 i18n-中立的、给当前用户语言生成的）。
@@ -1091,7 +1092,7 @@ struct RepoAIWindowContentView: View {
                 contextMetaFooterRow(meta)
             }
         }
-        .font(.caption2)
+        .font(interfaceScale.font(.captionSmall))
         .foregroundStyle(.secondary)
     }
 
@@ -1207,10 +1208,10 @@ struct RepoAIWindowContentView: View {
     private func chatSessionToolbar(chat: RepoAIChatViewModel) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 11, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(verbatim: displayTitle(for: chat))
-                .font(.caption.weight(.medium))
+                .font(interfaceScale.font(.caption, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -1221,7 +1222,7 @@ struct RepoAIWindowContentView: View {
                 chat.startNewSession()
             } label: {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
             }
@@ -1235,7 +1236,7 @@ struct RepoAIWindowContentView: View {
                 Task { await chat.refreshSessions(repo: repo) }
             } label: {
                 Image(systemName: "list.bullet.rectangle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
             }
@@ -1256,7 +1257,7 @@ struct RepoAIWindowContentView: View {
                 .disabled(chat.sessions.isEmpty)
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
@@ -1289,14 +1290,14 @@ struct RepoAIWindowContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("ai.assistant.chat.session.list.title")
-                    .font(.headline)
+                    .font(interfaceScale.font(.panelTitle, weight: .semibold))
                 Spacer()
                 Button {
                     chat.startNewSession()
                     isSessionListPresented = false
                 } label: {
                     Label("ai.assistant.chat.session.new", systemImage: "plus")
-                        .font(.caption.weight(.medium))
+                        .font(interfaceScale.font(.caption, weight: .medium))
                 }
                 .buttonStyle(.borderless)
                 .focusEffectDisabled()
@@ -1308,7 +1309,7 @@ struct RepoAIWindowContentView: View {
             Divider()
             if chat.sessions.isEmpty {
                 Text("ai.assistant.chat.session.list.empty")
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 28)
@@ -1333,19 +1334,19 @@ struct RepoAIWindowContentView: View {
         let isCurrent = summary.id == chat.currentSessionId
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 11))
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.5))
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: summary.title.isEmpty
                      ? String.l10n("ai.assistant.chat.session.untitled")
-                     : summary.title)
-                    .font(.caption.weight(.medium))
+                    : summary.title)
+                    .font(interfaceScale.font(.caption, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(verbatim: formattedSessionMeta(summary))
-                    .font(.caption2)
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
@@ -1353,7 +1354,7 @@ struct RepoAIWindowContentView: View {
                 Task { await chat.deleteSession(sessionId: summary.id, repo: repo) }
             } label: {
                 Image(systemName: "trash")
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -1569,8 +1570,8 @@ struct RepoAIWindowContentView: View {
                     }
                     Text(chat.isLoadingEarlierMessages
                          ? "ai.assistant.chat.history.loadingEarlier"
-                         : "ai.assistant.chat.history.loadEarlier")
-                        .font(.caption.weight(.medium))
+                        : "ai.assistant.chat.history.loadEarlier")
+                        .font(interfaceScale.font(.caption, weight: .medium))
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
@@ -1613,11 +1614,11 @@ struct RepoAIWindowContentView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("ai.assistant.chat.carryOver.title")
-                    .font(.caption.weight(.semibold))
+                    .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 Text(summaryText)
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(isExpanded ? nil : 3)
                     .textSelection(.enabled)
@@ -1632,9 +1633,9 @@ struct RepoAIWindowContentView: View {
                     }
                 } label: {
                     Text(isExpanded
-                         ? "ai.assistant.chat.carryOver.collapse"
+                        ? "ai.assistant.chat.carryOver.collapse"
                          : "ai.assistant.chat.carryOver.expand")
-                        .font(.caption2.weight(.medium))
+                        .font(interfaceScale.font(.captionSmall, weight: .medium))
                 }
                 .buttonStyle(.borderless)
                 .focusEffectDisabled()
@@ -1679,14 +1680,14 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
             Text("ai.assistant.chat.contextOverflow.message")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
             Spacer(minLength: 8)
             Button {
                 Task { await chat.startNewSessionAfterOverflow(repo: repo) }
             } label: {
                 Text("ai.assistant.chat.contextOverflow.newWithCarry")
-                    .font(.caption.weight(.medium))
+                    .font(interfaceScale.font(.caption, weight: .medium))
             }
             .buttonStyle(.borderless)
             .focusEffectDisabled()
@@ -1778,11 +1779,11 @@ struct RepoAIWindowContentView: View {
                     // 让 SwiftUI 系统级保证 icon 与文字字号一致；frame 14×14 保留作为
                     // 防抖容器(SF Symbol 内在尺寸约 ~14pt,容器紧贴不留多余白)。
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(.caption)
+                        .font(interfaceScale.font(.caption))
                         .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                         .frame(width: 14, height: 14)
                     Text(didCopy ? "ai.assistant.copy.copied" : "ai.assistant.chat.copyAll.label")
-                        .font(.caption)
+                        .font(interfaceScale.font(.caption))
                 }
                 .foregroundStyle(didCopy ? Color.green : .secondary)
                 .padding(.horizontal, 8)
@@ -1886,7 +1887,7 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
             Text(message)
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
         }
         .padding(10)
@@ -1916,7 +1917,7 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.yellow)
             Text(LocalizedStringKey(reason.bannerMessageKey))
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
         }
         .padding(10)
@@ -1945,7 +1946,7 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.yellow)
             Text(LocalizedStringKey(reason.bannerMessageKey))
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
         }
         .padding(10)
@@ -2002,7 +2003,7 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
             Text(LocalizedStringKey(reason.bannerMessageKey))
-                .font(.caption2)
+                .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20)
@@ -2037,7 +2038,7 @@ struct RepoAIWindowContentView: View {
                 Image(systemName: "paperclip")
                     .foregroundStyle(.secondary)
                 Text("ai.assistant.chat.contextStatus.prefix")
-                    .font(.caption2)
+                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                 // pill 行——3 个维度按命中条件渲染，缺失维度不占位。pill 之间用 spacing 4
                 // （与 RepoCardInlineMetadataBadge 在 repo 卡片底排连排时的间距一致）。
@@ -2116,9 +2117,9 @@ struct RepoAIWindowContentView: View {
     ) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
@@ -2139,9 +2140,9 @@ struct RepoAIWindowContentView: View {
     ) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
             Text(verbatim: label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
@@ -2186,7 +2187,7 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
             Text(message)
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
             Spacer()
             Button {

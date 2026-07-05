@@ -42,6 +42,7 @@ import SwiftUI
 
 struct AIChatInputView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     /// 原生编辑器持有实际草稿，SwiftUI 只保留“是否为空”这个低频状态。
     /// 普通字符输入不会再让窗口根视图执行属性图更新；只有空/非空切换才刷新发送按钮。
@@ -212,7 +213,7 @@ struct AIChatInputView: View {
                     .frame(width: 28, height: 28)
 
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(interfaceScale.font(.captionStrong, weight: .bold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -254,7 +255,7 @@ struct AIChatInputView: View {
                     .frame(width: 28, height: 28)
 
                 Image(systemName: isSending ? "stop.fill" : "arrow.up")
-                    .font(.system(size: isSending ? 10 : 12, weight: .bold))
+                    .font(interfaceScale.font(isSending ? .captionSmall : .captionStrong, weight: .bold))
                     .foregroundStyle(.white)
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }

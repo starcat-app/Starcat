@@ -20,6 +20,7 @@ struct AppStatusToolbarButton: View {
     @Environment(SyncManager.self) private var syncManager
     @Environment(\.openSettings) private var openSettings
     @Environment(\.locale) private var locale
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let lastSyncedAt: Date?
     let onShowBatchAIPanel: (() -> Void)?
@@ -43,7 +44,7 @@ struct AppStatusToolbarButton: View {
                     )
                 if activeTaskCount > 0 {
                     Text("\(activeTaskCount)")
-                        .font(.caption2.weight(.semibold))
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
                         .monospacedDigit()
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -215,6 +216,7 @@ private struct AppStatusPanel: View {
     let onShowBatchAIPanel: (() -> Void)?
 
     @State private var isTaskCancelHovered = false
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -305,7 +307,7 @@ private struct AppStatusPanel: View {
     private var header: some View {
         HStack(spacing: 8) {
             Label("toolbar.status.panel.title", systemImage: "waveform.path.ecg")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle, weight: .semibold))
             Spacer()
         }
     }
@@ -320,15 +322,15 @@ private struct AppStatusPanel: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
+                .font(interfaceScale.font(.iconMedium, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(subtitle)
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -516,7 +518,7 @@ private struct AppStatusPanel: View {
                     .controlSize(.small)
                     .opacity(isTaskCancelHovered ? 0 : 1)
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(interfaceScale.font(.iconMedium, weight: .semibold))
                     .foregroundStyle(.red)
                     .opacity(isTaskCancelHovered ? 1 : 0)
             }
