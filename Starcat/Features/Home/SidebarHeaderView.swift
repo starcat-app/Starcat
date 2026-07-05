@@ -366,8 +366,8 @@ struct SidebarHeaderView: View {
         Button {
             showShareCardSheet = true
         } label: {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 14, weight: .medium))
+            Image(systemName: "square.and.arrow.up.circle")
+                .font(.system(size: 16, weight: .medium))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)

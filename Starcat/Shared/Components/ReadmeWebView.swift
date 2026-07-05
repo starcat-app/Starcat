@@ -773,10 +773,17 @@ private struct ReadmeFloatingToolbar: View {
 private struct ReadmeBackToTopButton: View {
     let action: () -> Void
 
+    /// 右下角浮动按钮常驻在阅读区，默认弱化；只有鼠标指向时才完整显示，避免压住 README 正文。
+    @State private var isHovering = false
+    @State private var bounceToken = 0
+
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.up.to.line")
-                .font(.system(size: 12, weight: .semibold))
+        Button {
+            bounceToken &+= 1
+            action()
+        } label: {
+            Image(systemName: "arrow.up.circle")
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.secondary)
                 .frame(width: 30, height: 30)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -785,12 +792,16 @@ private struct ReadmeBackToTopButton: View {
                         .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .symbolEffect(.bounce, value: bounceToken)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help("readme.toolbar.backToTop")
         .accessibilityLabel(Text("readme.toolbar.backToTop"))
         .shadow(color: Color.black.opacity(0.09), radius: 8, x: 0, y: 4)
+        .opacity(isHovering ? 1.0 : 0.45)
+        .animation(.easeInOut(duration: 0.18), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }
 

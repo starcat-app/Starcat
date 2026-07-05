@@ -117,6 +117,7 @@ struct RemoteAvatar: View {
 /// - 已登录：显示远程头像，点击打开 GitHub 用户主页
 struct UserAvatar: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 是否已登录
     let isLoggedIn: Bool
@@ -142,7 +143,16 @@ struct UserAvatar: View {
         } label: {
             if isLoggedIn {
                 ZStack(alignment: .bottomTrailing) {
-                    RemoteAvatar(urlString: avatarUrl, size: size)
+                    RemoteAvatar(urlString: avatarUrl, size: size, showBorder: !settings.isProUser)
+                        .overlay {
+                            if settings.isProUser {
+                                // PRO 头像环复用分享卡片的传播感，但只作为身份装饰；
+                                // 浅色用冷色避免发灰，深色用暖色保证暗背景下有足够辨识度。
+                                Circle()
+                                    .stroke(proAvatarRing, lineWidth: 3)
+                                    .frame(width: size + 8, height: size + 8)
+                            }
+                        }
                         .fixedSize()
 
                     if settings.isProUser {
@@ -180,6 +190,28 @@ struct UserAvatar: View {
 
     private func openGitHubProfile(login: String) {
         NSWorkspace.shared.open(GitHubURLs.userProfile(login: login))
+    }
+
+    private var proAvatarRing: LinearGradient {
+        let colors: [Color] = if colorScheme == .dark {
+            [
+                Color.fromHex6(0xFDE68A),
+                Color.fromHex6(0xF59E0B),
+                Color.fromHex6(0xF472B6)
+            ]
+        } else {
+            [
+                Color.fromHex6(0x8B5CF6),
+                Color.fromHex6(0xB8D7FF),
+                Color.fromHex6(0x38BDF8)
+            ]
+        }
+
+        return LinearGradient(
+            colors: colors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }
 

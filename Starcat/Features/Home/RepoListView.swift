@@ -317,15 +317,21 @@ struct RepoListView: View {
                 currentBatchActionBar
             }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    AppStatusToolbarButton(
+                        lastSyncedAt: lastSyncedAt,
+                        onShowBatchAIPanel: onShowBatchAIPanel
+                    )
+                }
                 if showsAgentToolbarEntry {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             onOpenAgentWorkspace?()
                         } label: {
                             ToolbarIcon("bolt.circle")
-                                .accessibilityLabel(Text("Agent"))
+                                .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
                         }
-                        .help("Open Agent Workspace")
+                        .help("toolbar.agentWorkspace.help")
                     }
                 }
                 if showsKnowledgeRAGToolbarEntry {
@@ -334,16 +340,10 @@ struct RepoListView: View {
                             onOpenKnowledgeRAGWorkspace?()
                         } label: {
                             ToolbarIcon("book.circle")
-                                .accessibilityLabel(Text("RAG"))
+                                .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
                         }
-                        .help("Open Knowledge RAG Workspace")
+                        .help("toolbar.knowledgeRAGWorkspace.help")
                     }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    AppStatusToolbarButton(
-                        lastSyncedAt: lastSyncedAt,
-                        onShowBatchAIPanel: onShowBatchAIPanel
-                    )
                 }
                 let spec = currentToolbarSpec
                 if let leading = spec.leadingPrimary {

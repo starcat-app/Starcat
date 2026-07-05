@@ -8912,13 +8912,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clone URL"
+            "value": "Copy Clone URL"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "克隆地址"
+            "value": "复制 Clone 地址"
           }
         }
       }
@@ -13697,13 +13697,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Filter active"
+            "value": "Filters are active"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已启用阅读状态 / 列表过滤"
+            "value": "已启用筛选"
           }
         }
       }
@@ -13714,13 +13714,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Filter by status"
+            "value": "Filter repositories"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按阅读状态过滤"
+            "value": "筛选仓库"
           }
         }
       }
@@ -13830,13 +13830,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Multi-Select Mode"
+            "value": "Enter Multi-Select Mode"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "多选模式"
+            "value": "进入多选模式"
           }
         }
       }
@@ -39069,6 +39069,40 @@
       }
     },
     "Timeline": {},
+    "toolbar.agentWorkspace.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Agent Workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 Agent 工作台"
+          }
+        }
+      }
+    },
+    "toolbar.agentWorkspace.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 工作台"
+          }
+        }
+      }
+    },
     "toolbar.codeFlow.subtitle": {
       "extractionState": "manual",
       "localizations": {
@@ -39116,6 +39150,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "全局搜索 (⌘K)"
+          }
+        }
+      }
+    },
+    "toolbar.knowledgeRAGWorkspace.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Knowledge RAG Workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开知识库 RAG 工作台"
+          }
+        }
+      }
+    },
+    "toolbar.knowledgeRAGWorkspace.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Knowledge RAG Workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识库 RAG 工作台"
           }
         }
       }

@@ -133,16 +133,16 @@ struct UnifiedFilterMenu: View {
         ToolbarIcon(isAnyFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
             .foregroundStyle(isAnyFilterActive ? activeIconColor : Color.primary)
             .accessibilityLabel(accessibilityLabel)
-        .frame(width: 32, height: 26)
+        .frame(width: ToolbarIconMetrics.frameSize, height: ToolbarIconMetrics.frameSize)
         .background {
             if isAnyFilterActive {
-                Capsule(style: .continuous)
+                Circle()
                     .fill(activeBackgroundColor)
             }
         }
         .overlay {
             if isAnyFilterActive {
-                Capsule(style: .continuous)
+                Circle()
                     .stroke(activeBorderColor, lineWidth: 1)
             }
         }
