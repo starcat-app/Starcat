@@ -462,8 +462,6 @@
             border-radius: 24px;
             overflow: hidden;
             padding: 0;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.14);
             box-shadow: 0 46px 110px rgba(0, 0, 0, 0.44);
         }
 
@@ -733,15 +731,12 @@
             position: relative;
             border-radius: 22px;
             overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.14);
             box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
-            transition: border-color var(--duration-normal) var(--ease-out),
-                        box-shadow var(--duration-normal) var(--ease-out),
+            transition: box-shadow var(--duration-normal) var(--ease-out),
                         transform var(--duration-normal) var(--ease-out);
         }
 
         .showcase-image:hover {
-            border-color: var(--color-border-hover);
             box-shadow: 0 34px 100px rgba(0, 0, 0, 0.42);
             transform: translateY(-1px);
         }
