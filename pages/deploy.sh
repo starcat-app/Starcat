@@ -74,6 +74,7 @@ rsync -avz --delete --progress \
     --exclude '*.log' \
     --exclude 'node_modules' \
     --exclude '_local-admin/' \
+    --exclude 'downloads/' \
     --exclude 'deploy.sh' \
     --exclude 'starcat.ink.conf' \
     "$SCRIPT_DIR/" \

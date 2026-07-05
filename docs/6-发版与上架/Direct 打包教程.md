@@ -125,9 +125,50 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
 2. `xcrun stapler staple`
 3. `spctl --assess --type open`
 
-## 5. 更新 appcast
+## 5. 发布 Direct 更新
 
-脚本可调用 Sparkle 的 `generate_appcast` 为本次 DMG 生成更新清单：
+正式发布或端到端测试时，使用发布编排脚本：
+
+```bash
+./scripts/release-direct.sh 1.0.0
+```
+
+它会串联执行：
+
+1. 调用 `scripts/package-direct.sh 1.0.0` 完成本地 Direct 打包。
+2. 生成 Sparkle appcast。
+3. 上传 `pages/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
+4. 上传 DMG / SHA256 到 `https://starcat.ink/downloads/`。
+5. 用 `curl -I` 校验线上 appcast 和 DMG 可访问。
+
+默认远程配置与 `pages/deploy.sh` 保持一致：
+
+```text
+STARCAT_RELEASE_HOST=aliyun
+STARCAT_RELEASE_WEB_DIR=/var/www/starcat
+STARCAT_DOWNLOAD_BASE_URL=https://starcat.ink/downloads/
+```
+
+首次启用 Direct 更新下载路径，或修改过 `pages/starcat.ink.conf` 后，先部署 nginx 配置：
+
+```bash
+cd pages
+./deploy.sh -n
+```
+
+演练发布命令，不实际上传：
+
+```bash
+STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.0.0
+```
+
+正式公开分发时应启用 notarization：
+
+```bash
+STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.0.0
+```
+
+底层打包脚本仍可单独用于本地排查：
 
 ```bash
 STARCAT_GENERATE_APPCAST=1 \
@@ -135,19 +176,16 @@ STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
 ./scripts/package-direct.sh 1.0.0
 ```
 
-脚本会生成并覆盖：
+本地会生成并覆盖：
 
 ```text
 pages/appcast.xml
 dist/direct/downloads/appcast.xml
+dist/direct/downloads/Starcat-1.0.0-arm64.dmg
+dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256
 ```
 
 脚本生成 appcast 时只会把本次 `package-direct.sh` 产出的 DMG 放入临时输入目录。这样可以避免 `dist/direct/downloads/` 中遗留的旧测试包被 Sparkle 扫描进去，造成 `appcast.xml` 同时出现过期版本或未签名版本。
-
-部署时需要同时上传：
-
-- `pages/appcast.xml` -> `https://starcat.ink/appcast.xml`
-- `dist/direct/downloads/Starcat-1.0.0-arm64.dmg` -> `https://starcat.ink/downloads/Starcat-1.0.0-arm64.dmg`
 
 ## 6. Sparkle 验证
 
@@ -156,9 +194,7 @@ dist/direct/downloads/appcast.xml
 如果当前安装的 Direct 版已经是 `1.0.0`，需要构建一个更高版本作为测试更新包，例如：
 
 ```bash
-STARCAT_GENERATE_APPCAST=1 \
-STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
-./scripts/package-direct.sh 1.0.1
+./scripts/release-direct.sh 1.0.1
 ```
 
 这样 appcast 会指向 `Starcat-1.0.1-arm64.dmg`。测试完成后，如果 `1.0.1` 只是临时测试包，不要把它当正式版本对外发布。
@@ -205,6 +241,7 @@ STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
 
 确认：
 
-- `STARCAT_GENERATE_APPCAST=1`
+- 使用 `scripts/release-direct.sh` 发布，或单独运行 `package-direct.sh` 时设置 `STARCAT_GENERATE_APPCAST=1`
 - `STARCAT_DOWNLOAD_BASE_URL` 以 `/downloads/` 结尾
 - DMG 已 notarize/staple 后再生成 appcast
+- nginx 已部署 `pages/starcat.ink.conf` 中 `/appcast.xml` 的 no-cache 规则
