@@ -52,6 +52,32 @@ open -a TextEdit Configs/Secrets.xcconfig
 
 `Configs/Secrets.xcconfig` 已被 `.gitignore` 排除，不应提交。私钥保存在 Keychain，丢失后旧版本 appcast / 更新包签名链路会受影响，需要妥善备份当前 Mac 的 Keychain。
 
+### 多台 Mac / CI 打包
+
+同一个 Direct 更新链路必须使用同一组 Sparkle key：
+
+| 内容 | 用途 | 是否可共享 |
+|------|------|------------|
+| `SUPublicEDKey` | 内置到 App，用于校验更新包签名 | 可以写入各构建机的 `Configs/Secrets.xcconfig` |
+| EdDSA 私钥 | 生成 appcast / 签更新包 | 只能通过安全方式转移，不能进 git |
+
+如果另一台 Mac 只是构建 App，不生成 appcast、不签更新包，只要注入相同 `SUPublicEDKey` 即可。  
+如果另一台 Mac 需要生成 appcast 或签更新包，必须导入同一份私钥。
+
+在当前 Mac 导出私钥：
+
+```bash
+generate_keys -x sparkle-private-key
+```
+
+在另一台 Mac 导入私钥：
+
+```bash
+generate_keys -f sparkle-private-key
+```
+
+`sparkle-private-key` 是敏感文件，必须放在加密存储或密钥管理系统中，不允许提交到 git。不要在不同 Mac 上重新运行 `generate_keys` 生成不同 key；旧版 App 内置的是旧公钥，无法校验新私钥签名的更新包。除非专门做 Sparkle key rotation，否则发布后应长期保留同一份私钥。
+
 写入后重新构建 Direct 版：
 
 ```bash
