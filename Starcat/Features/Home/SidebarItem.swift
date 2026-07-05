@@ -148,6 +148,20 @@ enum SidebarItem: Hashable, Identifiable {
         case .githubStarList:          return "folder.fill"
         }
     }
+
+    /// 固定导航项的轻量语义色。动态项（语言 / 标签 / GitHub Lists）在 SidebarView
+    /// 内已有真实数据来源颜色，这里只覆盖没有业务颜色字段的 Starred 固定分组。
+    var semanticIconColor: Color? {
+        switch self {
+        case .allStars:             return .yellow
+        case .untagged:             return .orange
+        case .library:              return .pink
+        case .smartCollectionsHome,
+             .smartCollection,
+             .userSmartCollection:  return .blue
+        default:                    return nil
+        }
+    }
 }
 
 // MARK: - Smart Collections 导航语义

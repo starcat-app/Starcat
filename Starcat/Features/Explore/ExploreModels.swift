@@ -52,6 +52,18 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    /// Explore 顶层模式的轻量语义色。下钻后的 topics / platforms 没有后端颜色字段，
+    /// 不在这里强行扩展，避免探索侧栏变成装饰性彩色列表。
+    var sidebarIconColor: Color {
+        switch self {
+        case .discover:    return .purple
+        case .trending:    return .blue
+        case .popular:     return .orange
+        case .newReleases: return .cyan
+        case .weekly:      return .green
+        }
+    }
+
     var usesDiscoveryAPI: Bool {
         switch self {
         case .discover, .popular, .newReleases:

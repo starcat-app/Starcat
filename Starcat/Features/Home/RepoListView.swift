@@ -1603,6 +1603,8 @@ struct RepoListView: View {
                 let targets = viewModel.githubStarLists.filter { $0.id != currentListID }
                 if !targets.isEmpty {
                     Divider()
+                    // section header：移到其他分组
+                    Text("githubStarLists.context.moveToOtherGroupSection")
                     ForEach(targets) { list in
                         Button {
                             mutateGitHubStarListMembership {
@@ -1620,6 +1622,8 @@ struct RepoListView: View {
                 if viewModel.githubStarLists.isEmpty {
                     Text("githubStarLists.context.noGroups")
                 } else {
+                    // section header：添加到分组
+                    Text("githubStarLists.context.addToGroupSection")
                     ForEach(viewModel.githubStarLists) { list in
                         Button {
                             mutateGitHubStarListMembership {

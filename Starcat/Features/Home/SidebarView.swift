@@ -596,7 +596,7 @@ struct SidebarView: View {
         exploreSelectableRow(
             selection: .mode(mode),
             icon: mode.systemImage,
-            iconColor: .secondary,
+            iconColor: mode.sidebarIconColor,
             count: exploreModeCount(mode)
         ) {
             Text(mode.titleKey)
@@ -1515,6 +1515,7 @@ struct SidebarView: View {
             }
         } icon: {
             Image(systemName: item.systemImage)
+                .foregroundStyle(item.semanticIconColor ?? .secondary)
         }
         .tag(item)
         // HOM-46 优化：鼠标悬停时预取相邻分类数据，降低点击后的感知延迟

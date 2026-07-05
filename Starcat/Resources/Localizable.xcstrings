@@ -13127,6 +13127,22 @@
         }
       }
     },
+    "githubStarLists.context.addToGroupSection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to Group:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到分组："
+          }
+        }
+      }
+    },
     "githubStarLists.context.moveTo": {
       "extractionState": "stale",
       "localizations": {
@@ -13189,6 +13205,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "移出「%@」"
+          }
+        }
+      }
+    },
+    "githubStarLists.context.moveToOtherGroupSection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Other Group:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移到其他分组："
           }
         }
       }
