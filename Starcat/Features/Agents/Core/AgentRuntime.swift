@@ -45,10 +45,18 @@ struct DefaultAgentRuntime: AgentRuntime {
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
             let task = Task {
+                var runLog: [String] = []
+                let plan = Self.makeWeeklyReportPlan()
                 let steps = Self.makeWeeklyReportSteps()
-                continuation.yield(.runStarted(title: definition.title))
+                let toolOutputs = Self.makeWeeklyToolOutputs()
 
-                for step in steps {
+                continuation.yield(.runStarted(title: definition.title))
+                runLog.append("Run started: \(definition.title)")
+
+                continuation.yield(.planCreated(plan))
+                runLog.append("Plan created: \(plan.count) steps")
+
+                for (index, step) in steps.enumerated() {
                     try? await Task.sleep(nanoseconds: stepStartDelayNanoseconds)
                     guard !Task.isCancelled else {
                         continuation.yield(.runCancelled)
@@ -60,6 +68,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     running.status = .running
                     continuation.yield(.stepStarted(id: running.id))
                     continuation.yield(.stepUpdated(running))
+                    runLog.append("Step started: \(running.title)")
 
                     try? await Task.sleep(nanoseconds: stepCompletionDelayNanoseconds)
                     guard !Task.isCancelled else {
@@ -71,6 +80,13 @@ struct DefaultAgentRuntime: AgentRuntime {
                     var completed = step
                     completed.status = .completed
                     continuation.yield(.stepUpdated(completed))
+                    runLog.append("Step completed: \(completed.title)")
+
+                    if index < toolOutputs.count {
+                        let output = toolOutputs[index]
+                        continuation.yield(.toolOutput(output))
+                        runLog.append("Tool output: \(output.toolName) - \(output.summary)")
+                    }
                 }
 
                 let markdown = Self.makeWeeklyMarkdown(prompt: prompt, context: context)
@@ -78,6 +94,11 @@ struct DefaultAgentRuntime: AgentRuntime {
                     type: .markdown,
                     title: "本周 GitHub 热门项目周刊",
                     content: markdown
+                )))
+                continuation.yield(.artifactCreated(AgentArtifact(
+                    type: .log,
+                    title: "Agent Run Log",
+                    content: Self.makeRunLog(runLog)
                 )))
                 continuation.yield(.runCompleted)
                 continuation.finish()
@@ -87,6 +108,23 @@ struct DefaultAgentRuntime: AgentRuntime {
                 task.cancel()
             }
         }
+    }
+
+    private static func makeWeeklyReportPlan() -> [AgentPlanStep] {
+        [
+            AgentPlanStep(
+                title: "确认输出目标",
+                detail: "把用户输入收敛为 GitHub Weekly Report,输出 Markdown artifact。"
+            ),
+            AgentPlanStep(
+                title: "读取候选来源",
+                detail: "P0 使用内置样例模拟 trending / weekly tools,保持 UI 和 Runtime 可测试。"
+            ),
+            AgentPlanStep(
+                title: "生成可复查产物",
+                detail: "输出报告正文和 run log,明确当前 deterministic runtime 边界。"
+            )
+        ]
     }
 
     private static func makeWeeklyReportSteps() -> [AgentRunStep] {
@@ -110,6 +148,36 @@ struct DefaultAgentRuntime: AgentRuntime {
             AgentRunStep(
                 title: "创建 Markdown Artifact",
                 detail: "把母稿保存为可预览、复制和导出的 Markdown 产出物。"
+            )
+        ]
+    }
+
+    private static func makeWeeklyToolOutputs() -> [AgentToolOutput] {
+        [
+            AgentToolOutput(
+                toolName: "agent.parseGoal",
+                summary: "Weekly Report / Markdown",
+                detail: "识别为周刊生成任务,当前 run 不需要写入用户数据。"
+            ),
+            AgentToolOutput(
+                toolName: "trending.fetchRepos",
+                summary: "使用 deterministic sample",
+                detail: "P0 不访问网络,用固定样例模拟后续 trending-api 返回。"
+            ),
+            AgentToolOutput(
+                toolName: "report.clusterTopics",
+                summary: "3 个主题",
+                detail: "AI Agent 工具链、本地优先应用、开发者效率。"
+            ),
+            AgentToolOutput(
+                toolName: "report.generate",
+                summary: "生成周刊母稿",
+                detail: "按导语、主题段落、项目解读、下一步结构生成 Markdown。"
+            ),
+            AgentToolOutput(
+                toolName: "artifact.buildMarkdown",
+                summary: "1 个 Markdown artifact + 1 个 log artifact",
+                detail: "Markdown 用于用户复制/导出;log 用于审查 runtime 事件。"
             )
         ]
     }
@@ -153,6 +221,17 @@ struct DefaultAgentRuntime: AgentRuntime {
         ## 总结
 
         这份报告是 Agent 底座的可运行验证样例。它证明 Workspace、步骤时间线、Artifact 预览、复制和导出交互可以独立于具体 LLM SDK 先落地。
+        """
+    }
+
+    private static func makeRunLog(_ lines: [String]) -> String {
+        """
+        # Agent Run Log
+
+        > Runtime: DefaultAgentRuntime deterministic mode
+        > Constraint: no network, no write operations, no LLM tool-calling
+
+        \(lines.map { "- \($0)" }.joined(separator: "\n"))
         """
     }
 }
