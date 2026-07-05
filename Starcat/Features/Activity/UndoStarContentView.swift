@@ -186,8 +186,13 @@ struct UndoStarContentView: View {
                 showClearAllConfirm = true
             } label: {
                 Image(systemName: "trash")
-                    .font(.caption)
+                    .font(SyncIconButton.defaultFont)
+                    .foregroundStyle(.secondary)
+                    .frame(width: SyncIconButton.defaultFrameSize, height: SyncIconButton.defaultFrameSize)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .disabled(viewModel.records.isEmpty)
             .help(String.l10n("activity.undoStar.clearAll.help"))
         }

@@ -64,6 +64,12 @@ import SwiftUI
 /// - 与项目其他动画 modifier 行为一致（详见 `PressableHover` 同款约定）
 struct SyncIconButton: View {
 
+    /// 项目内 icon-only 刷新按钮的默认字号。危险操作等同级工具图标应引用它保持视觉一致。
+    static let defaultFont: Font = .caption
+
+    /// 项目内 icon-only 刷新按钮的默认占位尺寸。危险操作等同级工具图标应引用它保持视觉一致。
+    static let defaultFrameSize: CGFloat = 18
+
     // MARK: - 公开参数
 
     /// 是否正在刷新中。true → 图标旋转；false → 图标静止。
@@ -121,8 +127,8 @@ struct SyncIconButton: View {
     init(
         isRefreshing: Bool,
         disabled: Bool = false,
-        font: Font = .caption,
-        frameSize: CGFloat = 18,
+        font: Font = Self.defaultFont,
+        frameSize: CGFloat = Self.defaultFrameSize,
         minVisibleDuration: TimeInterval = 0.6,
         tooltip: String,
         action: @escaping () -> Void

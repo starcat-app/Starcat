@@ -317,22 +317,17 @@ struct ActivityView: View {
             activityRefreshButton(viewModel)
 
             if selectedCategory == .announcement || selectedCategory == .following {
-                Button {
+                clearActivityButton(
+                    help: selectedCategory == .announcement
+                        ? "activity.announcement.clear.help"
+                        : "activity.following.clear.help"
+                ) {
                     if selectedCategory == .announcement {
                         showClearAnnouncementConfirmation = true
                     } else {
                         showClearFollowingConfirmation = true
                     }
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(selectedCategory == .announcement
-                    ? "activity.announcement.clear.help"
-                    : "activity.following.clear.help")
             }
         }
         .padding(.horizontal, 14)
@@ -344,6 +339,19 @@ struct ActivityView: View {
         .onChange(of: selectedCategory) { _, _ in
             restoreTimeSortPreferenceIfNeeded(viewModel)
         }
+    }
+
+    private func clearActivityButton(help: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .font(SyncIconButton.defaultFont)
+                .foregroundStyle(.secondary)
+                .frame(width: SyncIconButton.defaultFrameSize, height: SyncIconButton.defaultFrameSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(help)
     }
 
     private var activitySortPreferenceKey: String {

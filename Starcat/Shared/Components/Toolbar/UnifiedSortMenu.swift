@@ -98,8 +98,8 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
             }
             .pickerStyle(.inline)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.arrow.down")
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up.arrow.down.circle")
                     .foregroundStyle(.secondary)
                 Text("list.sort")
                 Text(displayName(selection))
