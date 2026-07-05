@@ -87,6 +87,9 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
                 )
             }
         }
+        for repoId in repoIds {
+            postTagsDidChange(repoId: repoId)
+        }
     }
 
     // MARK: - 查询

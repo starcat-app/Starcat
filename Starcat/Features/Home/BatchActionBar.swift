@@ -11,9 +11,8 @@
 //
 //  设计约束：
 //  - 用 .safeAreaInset(.bottom) 嵌入 RepoListView 底部，背景做 Material 模糊
-//  - 批量打标签走"先选 1 个 tag → batchAddTag(repoIds, tagId)"流程
-//    （MVP 简化：一次只能给所选 repos 加一个 tag，不做"替换式批量改标签"
-//     ——那语义太重，会清掉用户在每个 repo 上已有的其它标签）
+//  - 批量打标签走"多选 tag → 对每个 tag 执行 batchAddTag(repoIds, tagId)"流程。
+//    语义仍是追加标签，不做"替换式批量改标签"，避免清掉用户在每个 repo 上已有的其它标签。
 //  - W12 PR-3：批量 unstar 按钮仅在 Manage 显示（库内 100% 已 star）；
 //    > 5 条强制走 BatchStarConfirmSheet 二次确认；执行中切到进度态 + 取消按钮；
 //    完成后通过 ToastOverlay 弹「成功 X / 跳过 Y / 失败 Z」摘要。
@@ -601,7 +600,7 @@ struct BatchActionBar: View {
 
 // MARK: - BatchTagSheet
 
-/// 批量打标签 sheet：选一个 tag → 应用到所有 selected repos。
+/// 批量打标签 sheet：选择一组 tag → 追加到所有 selected repos。
 ///
 /// **2026-07-05 优化**：列表顶部新增「新建标签」入口，点击后内联展开创建表单
 /// （名称 + 色板），创建后标签自动加入列表并选中，避免用户退出多选 → 建标签 → 重进多选。
@@ -615,7 +614,7 @@ private struct BatchTagSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var vm: BatchTagSheetViewModel?
     @State private var query: String = ""
-    @State private var selectedTagId: String? = nil
+    @State private var selectedTagIds: Set<String> = []
 
     // 内联新建标签
     @State private var isCreatingTag: Bool = false
@@ -644,17 +643,15 @@ private struct BatchTagSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.2)))
 
             if let vm {
+                if isCreatingTag {
+                    createTagForm
+                }
+
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         // ──── 新建标签入口 ────
                         if !isCreatingTag {
                             createTagButton
-                            Divider()
-                        }
-
-                        // ──── 内联新建标签表单 ────
-                        if isCreatingTag {
-                            createTagForm
                             Divider()
                         }
 
@@ -685,23 +682,27 @@ private struct BatchTagSheet: View {
             }
 
             HStack {
+                if !selectedTagIds.isEmpty {
+                    Text(String(format: String.l10n("tagPicker.selectedCountFormat"), selectedTagIds.count))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("general.cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("action.apply") {
                     Task {
-                        guard let tid = selectedTagId else { return }
-                        let ok = await vm?.apply(repoIds: repoIds, tagId: tid) ?? false
+                        let ok = await vm?.apply(repoIds: repoIds, tagIds: selectedTagIds) ?? false
                         if ok { onCompleted() }
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedTagId == nil || (vm?.isApplying ?? false))
+                .disabled(selectedTagIds.isEmpty || (vm?.isApplying ?? false))
                 .keyboardShortcut(.return)
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(width: 460)
         .task {
             if vm == nil {
                 vm = BatchTagSheetViewModel(
@@ -753,149 +754,31 @@ private struct BatchTagSheet: View {
     private var createTagForm: some View {
         let trimmedName = newTagName.trimmingCharacters(in: .whitespaces)
         let isDuplicate = vm?.isDuplicateName(trimmedName) ?? false
-        let canCreate = !trimmedName.isEmpty && !isDuplicate && !(vm?.isCreating ?? false)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            // 名称输入
-            HStack(spacing: 8) {
-                Text("batch.tagName")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                TextField("batch.tagName.placeholder", text: $newTagName)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color(nsColor: .textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(isDuplicate ? Color.orange : Color.secondary.opacity(0.2))
-                    )
+        return InlineTagCreatePanel(
+            name: $newTagName,
+            colorHex: $newTagColorHex,
+            icon: $newTagIcon,
+            isDuplicate: isDuplicate,
+            isSaving: vm?.isCreating ?? false,
+            error: nil,
+            onCancel: {
+                isCreatingTag = false
+                newTagName = ""
+            },
+            onCreate: {
+                guard let tag = await vm?.createTag(
+                    name: trimmedName,
+                    colorHex: newTagColorHex,
+                    icon: newTagIcon
+                ) else { return }
+                selectedTagIds.insert(tag.id)
+                isCreatingTag = false
+                newTagName = ""
+                newTagIcon = SFSymbolPreset.defaultIcon
+                query = ""
             }
-
-            // 重名提示
-            if isDuplicate {
-                Label {
-                    Text(String(format: String.l10n("batch.createTag.duplicate"), trimmedName))
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                }
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .padding(.leading, 44)
-            }
-
-            // 颜色选择
-            HStack(spacing: 8) {
-                Text("batch.tagColor")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                HStack(spacing: 6) {
-                    ForEach(TagColorPalette.presets, id: \.hex) { preset in
-                        Button {
-                            newTagColorHex = preset.hex
-                        } label: {
-                            Circle()
-                                .fill(Color(hex: preset.hex) ?? .accentColor)
-                                .frame(width: 16, height: 16)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(
-                                            newTagColorHex == preset.hex ? Color.primary : Color.clear,
-                                            lineWidth: 2
-                                        )
-                                )
-                                .scaleEffect(newTagColorHex == preset.hex ? 1.15 : 1.0)
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .help(LocalizedStringKey(preset.name))
-                    }
-                }
-            }
-
-            // 图标选择（非 Lazy 手动 grid，避免嵌套 LazyVStack 布局死循环）
-            HStack(alignment: .top, spacing: 8) {
-                Text("batch.tagIcon")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                    .padding(.top, 2)
-                compactIconGrid(selection: $newTagIcon, columns: 6)
-            }
-
-            // 操作按钮
-            HStack {
-                Spacer()
-                Button("general.cancel") {
-                    isCreatingTag = false
-                    newTagName = ""
-                }
-                .keyboardShortcut(.cancelAction)
-                Button("batch.createTag.confirm") {
-                    Task {
-                        guard let tag = await vm?.createTag(
-                            name: trimmedName,
-                            colorHex: newTagColorHex,
-                            icon: newTagIcon
-                        ) else { return }
-                        selectedTagId = tag.id
-                        isCreatingTag = false
-                        newTagName = ""
-                        newTagIcon = SFSymbolPreset.defaultIcon
-                        query = ""
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canCreate)
-                .keyboardShortcut(.return)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-    }
-
-    /// 非 Lazy 的图标 grid，专用于嵌套在 `LazyVStack` → `ScrollView` 场景。
-    ///
-    /// `SFSymbolGridPicker` 内部使用 `LazyVGrid`，当它被放在 `LazyVStack` 内时，
-    /// 两个 lazy 容器互相等待对方提供高度 → 布局死循环 → 应用无响应。
-    /// 30 个图标（6 列 × 5 行）用 VStack/HStack 手动排版完全可以接受。
-    private func compactIconGrid(selection: Binding<String?>, columns: Int) -> some View {
-        let icons = SFSymbolPreset.icons
-        let rows: [[String]] = stride(from: 0, to: icons.count, by: columns).map { start in
-            Array(icons[start..<min(start + columns, icons.count)])
-        }
-        return VStack(alignment: .leading, spacing: 4) {
-            ForEach(rows.indices, id: \.self) { rowIdx in
-                HStack(spacing: 4) {
-                    ForEach(rows[rowIdx], id: \.self) { icon in
-                        let isSelected = selection.wrappedValue == icon
-                        Button {
-                            selection.wrappedValue = isSelected ? nil : icon
-                        } label: {
-                            Image(systemName: icon)
-                                .font(.system(size: 16))
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.08))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .help(icon)
-                    }
-                }
-            }
-        }
+        )
     }
 
     private func filteredTags(_ tags: [Tag]) -> [Tag] {
@@ -914,12 +797,16 @@ private struct BatchTagSheet: View {
     }
 
     private func row(tag: Tag) -> some View {
-        let selected = (selectedTagId == tag.id)
+        let selected = selectedTagIds.contains(tag.id)
         return Button {
-            selectedTagId = selected ? nil : tag.id
+            if selected {
+                selectedTagIds.remove(tag.id)
+            } else {
+                selectedTagIds.insert(tag.id)
+            }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                Image(systemName: selected ? "checkmark.square.fill" : "square")
                     .foregroundStyle(selected ? Color.accentColor : .secondary)
                 Circle()
                     .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
@@ -1013,14 +900,22 @@ final class BatchTagSheetViewModel {
         errorMessage = nil
     }
 
-    /// 把 tagId 加到 repoIds 中每一个 repo。
+    /// 把 tagIds 逐个追加到 repoIds 中每一个 repo。
+    ///
+    /// 这里复用现有 `batchAddTag(repoIds:tagId:)`，而不是新增仓储 API：
+    /// 追加标签是幂等写入，循环多次事务边界清晰，并且每个 tagId 都会沿用仓储层
+    /// 已有的 repo 标签变更通知，详情页和 Browser Plugin 能同步刷新。
     /// - Returns: 成功 true 让 UI 关闭 sheet；失败 false（errorMessage 已写）。
     @discardableResult
-    func apply(repoIds: Set<Int64>, tagId: String) async -> Bool {
+    func apply(repoIds: Set<Int64>, tagIds: Set<String>) async -> Bool {
+        guard !tagIds.isEmpty else { return false }
         isApplying = true
         defer { isApplying = false }
         do {
-            try await repoTagRepository.batchAddTag(repoIds: Array(repoIds), tagId: tagId)
+            let repoIdArray = Array(repoIds)
+            for tagId in tagIds {
+                try await repoTagRepository.batchAddTag(repoIds: repoIdArray, tagId: tagId)
+            }
             errorMessage = nil
             return true
         } catch {

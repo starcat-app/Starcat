@@ -63,6 +63,10 @@ struct RepoTagsSection: View {
             }
             await viewModel?.loadFor(repoId: repo.id)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoTagsDidChange)) { notification in
+            guard notification.userInfo?["repoId"] as? Int64 == repo.id else { return }
+            Task { await viewModel?.loadFor(repoId: repo.id) }
+        }
     }
 
     // MARK: - chips
@@ -90,9 +94,9 @@ struct RepoTagsSection: View {
     /// 其他地方（侧边栏标签管理 / AI 批量整理）刚创建的新标签。
     private var addButton: some View {
         Button {
+            showPicker = true
             Task {
                 await viewModel?.loadFor(repoId: repo.id)
-                showPicker = true
             }
         } label: {
             Label("tagPicker.addOrModify", systemImage: "plus.circle")
@@ -238,18 +242,20 @@ struct TagPickerView: View {
 
             Divider()
 
+            // 创建表单放在 LazyVStack 外，避免 TextField 输入时复杂表单作为 lazy row
+            // 反复参与高度推导，造成 SwiftUI 布局卡住。
+            if isCreatingTag {
+                pickerCreateTagForm
+                    .padding(10)
+                Divider()
+            }
+
             // List
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     // ──── 新建标签入口 ────
                     if !isCreatingTag {
                         pickerCreateTagButton
-                        Divider()
-                    }
-
-                    // ──── 内联新建标签表单 ────
-                    if isCreatingTag {
-                        pickerCreateTagForm
                         Divider()
                     }
 
@@ -265,7 +271,10 @@ struct TagPickerView: View {
                     }
                 }
             }
-            .frame(minHeight: 200, maxHeight: 320)
+            .frame(
+                minHeight: isCreatingTag ? 120 : 420,
+                maxHeight: isCreatingTag ? 150 : 420
+            )
 
             Divider()
 
@@ -285,7 +294,7 @@ struct TagPickerView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .frame(width: 340)
+        .frame(width: 430, height: 540)
         .onAppear {
             selected = initiallySelected
         }
@@ -335,156 +344,33 @@ struct TagPickerView: View {
         let isDuplicate = isDuplicateName(trimmedName)
         let canCreate = !trimmedName.isEmpty && !isDuplicate && !isSaving
 
-        return VStack(alignment: .leading, spacing: 10) {
-            // 名称
-            HStack(spacing: 8) {
-                Text("batch.tagName")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                TextField("batch.tagName.placeholder", text: $newTagName)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color(nsColor: .textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(isDuplicate ? Color.orange : Color.secondary.opacity(0.2))
-                    )
+        return InlineTagCreatePanel(
+            name: $newTagName,
+            colorHex: $newTagColorHex,
+            icon: $newTagIcon,
+            isDuplicate: isDuplicate,
+            isSaving: isSaving,
+            error: newTagError,
+            onCancel: {
+                isCreatingTag = false
+                newTagName = ""
+                newTagError = nil
+            },
+            onCreate: {
+                guard canCreate,
+                      let tag = await createLocalTag(
+                        name: trimmedName,
+                        colorHex: newTagColorHex,
+                        icon: newTagIcon
+                      )
+                else { return }
+                selected.insert(tag.id)
+                isCreatingTag = false
+                newTagName = ""
+                newTagIcon = SFSymbolPreset.defaultIcon
+                query = ""
             }
-
-            // 重名提示
-            if isDuplicate {
-                Label {
-                    Text(String(format: String.l10n("batch.createTag.duplicate"), trimmedName))
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                }
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .padding(.leading, 44)
-            }
-
-            // 颜色
-            HStack(spacing: 8) {
-                Text("batch.tagColor")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                HStack(spacing: 6) {
-                    ForEach(TagColorPalette.presets, id: \.hex) { preset in
-                        Button {
-                            newTagColorHex = preset.hex
-                        } label: {
-                            Circle()
-                                .fill(Color(hex: preset.hex) ?? .accentColor)
-                                .frame(width: 16, height: 16)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(
-                                            newTagColorHex == preset.hex ? Color.primary : Color.clear,
-                                            lineWidth: 2
-                                        )
-                                )
-                                .scaleEffect(newTagColorHex == preset.hex ? 1.15 : 1.0)
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .help(LocalizedStringKey(preset.name))
-                    }
-                }
-            }
-
-            // 图标（非 Lazy grid，避免嵌套 LazyVStack 布局死循环）
-            HStack(alignment: .top, spacing: 8) {
-                Text("batch.tagIcon")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                    .padding(.top, 2)
-                pickerIconGrid
-            }
-
-            // 错误
-            if let err = newTagError {
-                Label { Text(err) } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                }
-                .font(.caption)
-                .foregroundStyle(.orange)
-            }
-
-            // 操作按钮
-            HStack {
-                Spacer()
-                Button("general.cancel") {
-                    isCreatingTag = false
-                    newTagName = ""
-                }
-                .keyboardShortcut(.cancelAction)
-                Button("batch.createTag.confirm") {
-                    Task {
-                        guard let tag = await createLocalTag(
-                            name: trimmedName,
-                            colorHex: newTagColorHex,
-                            icon: newTagIcon
-                        ) else { return }
-                        selected.insert(tag.id)
-                        isCreatingTag = false
-                        newTagName = ""
-                        newTagIcon = SFSymbolPreset.defaultIcon
-                        query = ""
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canCreate)
-                .keyboardShortcut(.return)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-    }
-
-    /// 非 Lazy 的图标 grid，专用于嵌套在 `LazyVStack` 场景。
-    ///
-    /// `SFSymbolGridPicker` 内部是 `LazyVGrid`，放在 `LazyVStack` 内时两个 lazy 容器
-    /// 互相等待对方提供高度 → 布局死循环 → 应用无响应。
-    private var pickerIconGrid: some View {
-        let icons = SFSymbolPreset.icons
-        let columns = 6
-        let rows: [[String]] = stride(from: 0, to: icons.count, by: columns).map { start in
-            Array(icons[start..<min(start + columns, icons.count)])
-        }
-        return VStack(alignment: .leading, spacing: 4) {
-            ForEach(rows.indices, id: \.self) { rowIdx in
-                HStack(spacing: 4) {
-                    ForEach(rows[rowIdx], id: \.self) { icon in
-                        let isSelected = newTagIcon == icon
-                        Button {
-                            newTagIcon = isSelected ? nil : icon
-                        } label: {
-                            Image(systemName: icon)
-                                .font(.system(size: 16))
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.08))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .help(icon)
-                    }
-                }
-            }
-        }
+        )
     }
 
     /// 创建标签并加入 `localCreatedTags`。
@@ -565,6 +451,214 @@ struct TagPickerView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+    }
+}
+
+// MARK: - InlineTagCreatePanel
+
+/// 详情页 TagPicker 和批量打标签 Sheet 共用的内联新建标签面板。
+///
+/// 面板只负责 UI 和输入状态：名称、颜色、图标、取消、创建。两处调用方仍保留各自
+/// 的写入逻辑，避免把单仓标签编辑和批量标签编辑的业务路径耦合到一个组件里。
+struct InlineTagCreatePanel: View {
+    @Binding var name: String
+    @Binding var colorHex: String
+    @Binding var icon: String?
+
+    let isDuplicate: Bool
+    let isSaving: Bool
+    let error: LocalizedStringKey?
+    let onCancel: () -> Void
+    let onCreate: () async -> Void
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespaces)
+    }
+
+    private var canCreate: Bool {
+        !trimmedName.isEmpty && !isDuplicate && !isSaving
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
+                header
+                nameField
+
+                if isDuplicate {
+                    duplicateMessage
+                }
+
+                colorGrid
+
+                if let error {
+                    Label { Text(error) } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+
+                Spacer(minLength: 0)
+
+                HStack {
+                    Spacer()
+                    Button("batch.createTag.confirm") {
+                        Task { await onCreate() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canCreate)
+                    .keyboardShortcut(.return)
+                }
+            }
+            .frame(width: 170)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("batch.tagIcon")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                iconGrid
+            }
+        }
+        .frame(height: 216)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.secondary.opacity(0.14))
+        )
+    }
+
+    private var header: some View {
+        HStack {
+            Label("batch.createTag", systemImage: "plus.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+            Button("general.cancel") { onCancel() }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var nameField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("batch.tagName")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("batch.tagName.placeholder", text: $name)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(nsColor: .textBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(isDuplicate ? Color.orange : Color.secondary.opacity(0.2))
+                )
+        }
+    }
+
+    private var duplicateMessage: some View {
+        Label {
+            Text(String(format: String.l10n("batch.createTag.duplicate"), trimmedName))
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+        }
+        .font(.caption)
+        .foregroundStyle(.orange)
+    }
+
+    private var colorGrid: some View {
+        let colors = TagColorPalette.presets
+        let columns = 6
+        let rows = stride(from: 0, to: colors.count, by: columns).map { start in
+            Array(colors[start..<min(start + columns, colors.count)])
+        }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("batch.tagColor")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(rows.indices, id: \.self) { rowIdx in
+                    HStack(spacing: 7) {
+                        ForEach(rows[rowIdx], id: \.hex) { preset in
+                            colorButton(name: preset.name, hex: preset.hex)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func colorButton(name: String, hex: String) -> some View {
+        let isSelected = colorHex == hex
+        return Button {
+            colorHex = hex
+        } label: {
+            Circle()
+                .fill(Color(hex: hex) ?? .accentColor)
+                .frame(width: 18, height: 18)
+                .overlay(
+                    Circle()
+                        .strokeBorder(isSelected ? Color.primary : Color.clear, lineWidth: 2)
+                )
+                .scaleEffect(isSelected ? 1.12 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(LocalizedStringKey(name))
+    }
+
+    /// 非 Lazy 图标 grid，避免嵌入 ScrollView/LazyVStack 时触发 SwiftUI 高度推导卡顿。
+    private var iconGrid: some View {
+        let icons = SFSymbolPreset.icons
+        let columns = 6
+        let rows: [[String]] = stride(from: 0, to: icons.count, by: columns).map { start in
+            Array(icons[start..<min(start + columns, icons.count)])
+        }
+
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(rows.indices, id: \.self) { rowIdx in
+                HStack(spacing: 4) {
+                    ForEach(rows[rowIdx], id: \.self) { symbol in
+                        iconButton(symbol)
+                    }
+                }
+            }
+        }
+    }
+
+    private func iconButton(_ symbol: String) -> some View {
+        let isSelected = icon == symbol
+        return Button {
+            icon = isSelected ? nil : symbol
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(symbol)
     }
 }
 
