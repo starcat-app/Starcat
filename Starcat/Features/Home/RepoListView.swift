@@ -1552,54 +1552,110 @@ struct RepoListView: View {
         }
     }
 
+    // MARK: - 右键菜单（仓库分组操作）
+
+    /// repo 列表右键菜单：分组移入 / 移出 / 移动。
+    ///
+    /// **2026-07-05 优化（扁平化）**：
+    /// 之前用 `Menu` 嵌套做「添加到... / 移动到...」子菜单，macOS 上层级展开箭头需要精确
+    /// 鼠标横向移动，分组一多就容易滑错关闭。改为扁平 Button 列表：
+    /// - 颜色圆点匹配侧边栏，一眼识别分组
+    /// - 数量尾标辅助判断目标分组大小
+    /// - 当前分组不可点（"移动到"模式），避免无意义操作
     @ViewBuilder
     private func githubStarListContextMenu(for repo: Repo) -> some View {
         if selectedPage == .manage {
             if case .githubStarList(let currentListID) = viewModel.selection {
-                Button("githubStarLists.context.removeFromGroup") {
-                    mutateGitHubStarListMembership {
-                        try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: currentListID)
+                // ──── 在某个分组内：移出 + 移到其他分组 ────
+                if let currentList = viewModel.githubStarLists.first(where: { $0.id == currentListID }) {
+                    Button {
+                        mutateGitHubStarListMembership {
+                            try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: currentListID)
+                        }
+                    } label: {
+                        Text(String(
+                            format: String.l10n("githubStarLists.context.removeFromGroupFormat"),
+                            currentList.name
+                        ))
                     }
                 }
 
-                Menu("githubStarLists.context.moveTo") {
-                    let targets = viewModel.githubStarLists.filter { $0.id != currentListID }
-                    if targets.isEmpty {
-                        Text("githubStarLists.context.noGroups")
-                    } else {
-                        ForEach(targets) { list in
-                            Button {
-                                mutateGitHubStarListMembership {
-                                    try await dependencies.githubStarListSyncService.moveRepo(
-                                        repo,
-                                        from: currentListID,
-                                        to: list.id
-                                    )
-                                }
-                            } label: {
-                                Text(verbatim: list.name)
+                let targets = viewModel.githubStarLists.filter { $0.id != currentListID }
+                if !targets.isEmpty {
+                    Divider()
+                    ForEach(targets) { list in
+                        Button {
+                            mutateGitHubStarListMembership {
+                                try await dependencies.githubStarListSyncService.moveRepo(
+                                    repo, from: currentListID, to: list.id
+                                )
                             }
+                        } label: {
+                            gitHubStarListMenuItemLabel(list)
                         }
                     }
                 }
             } else {
-                Menu("githubStarLists.context.addTo") {
-                    if viewModel.githubStarLists.isEmpty {
-                        Text("githubStarLists.context.noGroups")
-                    } else {
-                        ForEach(viewModel.githubStarLists) { list in
-                            Button {
-                                mutateGitHubStarListMembership {
-                                    try await dependencies.githubStarListSyncService.addRepo(repo, toList: list.id)
-                                }
-                            } label: {
-                                Text(verbatim: list.name)
+                // ──── 不在分组内（全部星标 / Tags / Languages）：添加到分组 ────
+                if viewModel.githubStarLists.isEmpty {
+                    Text("githubStarLists.context.noGroups")
+                } else {
+                    ForEach(viewModel.githubStarLists) { list in
+                        Button {
+                            mutateGitHubStarListMembership {
+                                try await dependencies.githubStarListSyncService.addRepo(repo, toList: list.id)
                             }
+                        } label: {
+                            gitHubStarListMenuItemLabel(list)
                         }
                     }
                 }
             }
         }
+    }
+
+    /// 分组菜单项标签：颜色圆点（匹配侧边栏）+ 名称 + 数量。
+    ///
+    /// 颜色圆点使用非 template NSImage，确保在 NSMenuItem 中保留原色而非被系统 tint 覆盖。
+    private func gitHubStarListMenuItemLabel(_ list: GitHubStarList) -> some View {
+        let count = viewModel.githubStarListCounts[list.id] ?? 0
+        return Label(
+            title: { Text(verbatim: "\(list.name)  (\(count))") },
+            icon: {
+                if let dot = Self.colorDotImage(hex: list.colorHex) {
+                    Image(nsImage: dot)
+                }
+            }
+        )
+    }
+
+    /// 生成分组颜色圆点 NSImage（非 template，保留原色）。
+    ///
+    /// 必须设置 `isTemplate = false`，否则 AppKit 会按系统主题 tint 覆盖颜色，
+    /// 导致所有圆点变成同色，失去分组辨识意义。
+    private static func colorDotImage(hex: String) -> NSImage? {
+        let nsColor = Self.nsColorFromHex(hex) ?? .controlAccentColor
+        let size: CGFloat = 10
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            nsColor.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    /// 从 `#RRGGBB` 字符串创建 NSColor。
+    private static func nsColorFromHex(_ hex: String) -> NSColor? {
+        var s = hex.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let rgb = UInt32(s, radix: 16) else { return nil }
+        return NSColor(
+            srgbRed: Double((rgb >> 16) & 0xFF) / 255.0,
+            green: Double((rgb >> 8) & 0xFF) / 255.0,
+            blue: Double(rgb & 0xFF) / 255.0,
+            alpha: 1.0
+        )
     }
 
     private func mutateGitHubStarListMembership(_ operation: @escaping () async throws -> Void) {

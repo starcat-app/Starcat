@@ -3984,13 +3984,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI Summary"
+            "value": "Summary"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 摘要"
+            "value": "摘要"
           }
         }
       }
@@ -4085,13 +4085,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI Chat"
+            "value": "Chat"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 对话"
+            "value": "对话"
           }
         }
       }
@@ -13061,6 +13061,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "移出分组"
+          }
+        }
+      }
+    },
+    "githubStarLists.context.removeFromGroupFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from '%@'"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移出「%@」"
           }
         }
       }
