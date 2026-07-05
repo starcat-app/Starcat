@@ -91,14 +91,14 @@ make run-direct
 ## 3. 本地生成 DMG
 
 ```bash
-./scripts/package-direct.sh 1.0.0
+./scripts/package-direct.sh 1.1.0
 ```
 
 脚本会生成：
 
 ```text
-dist/direct/downloads/Starcat-1.0.0-arm64.dmg
-dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256
+dist/direct/downloads/Starcat-1.1.0-arm64.dmg
+dist/direct/downloads/Starcat-1.1.0-arm64.dmg.sha256
 dist/direct/xcodebuild-direct.log
 ```
 
@@ -116,7 +116,7 @@ dist/direct/xcodebuild-direct.log
 正式公开分发时启用 notarization：
 
 ```bash
-STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
+STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.1.0
 ```
 
 脚本会执行：
@@ -127,19 +127,24 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
 
 ## 5. 发布 Direct 更新
 
-正式发布或端到端测试时，使用发布编排脚本：
+正式发布或端到端测试时，使用发布编排脚本。脚本内置 `--help`，忘记用法时先看帮助：
 
 ```bash
-./scripts/release-direct.sh 1.0.0
+./scripts/release-direct.sh --help
+STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.1.0
 ```
 
 它会串联执行：
 
-1. 调用 `scripts/package-direct.sh 1.0.0` 完成本地 Direct 打包。
-2. 生成 Sparkle appcast。
-3. 上传 `pages/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
-4. 上传 DMG / SHA256 到 `https://starcat.ink/downloads/`。
-5. 用 `curl -I` 校验线上 appcast 和 DMG 可访问。
+1. 确认当前分支是 `main` 且工作区干净。
+2. 创建并推送 `v1.1.0` annotated tag。
+3. 生成并部署官网 changelog 页面。
+4. 部署 `pages/starcat.ink.conf` 并 reload nginx。
+5. 调用 `scripts/package-direct.sh 1.1.0` 完成本地 Direct 打包。
+6. 生成 Sparkle appcast。
+7. 上传 `pages/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
+8. 上传 DMG / SHA256 到 `https://starcat.ink/downloads/`。
+9. 用 `curl -I` 校验线上 appcast、DMG 和 changelog 可访问。
 
 默认远程配置与 `pages/deploy.sh` 保持一致：
 
@@ -149,23 +154,25 @@ STARCAT_RELEASE_WEB_DIR=/var/www/starcat
 STARCAT_DOWNLOAD_BASE_URL=https://starcat.ink/downloads/
 ```
 
-首次启用 Direct 更新下载路径，或修改过 `pages/starcat.ink.conf` 后，先部署 nginx 配置：
-
-```bash
-cd pages
-./deploy.sh -n
-```
-
 演练发布命令，不实际上传：
 
 ```bash
-STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.0.0
+STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.1.0
 ```
 
-正式公开分发时应启用 notarization：
+如果 tag 已存在，只想重跑打包、上传和线上校验：
 
 ```bash
-STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.0.0
+STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.1.0
+```
+
+如果只重跑 Direct 更新文件发布，跳过 tag、nginx 和官网静态页部署：
+
+```bash
+STARCAT_RELEASE_SKIP_TAG=1 \
+STARCAT_RELEASE_SKIP_NGINX=1 \
+STARCAT_RELEASE_SKIP_SITE=1 \
+./scripts/release-direct.sh 1.1.0
 ```
 
 底层打包脚本仍可单独用于本地排查：
@@ -173,7 +180,7 @@ STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.0.0
 ```bash
 STARCAT_GENERATE_APPCAST=1 \
 STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
-./scripts/package-direct.sh 1.0.0
+./scripts/package-direct.sh 1.1.0
 ```
 
 本地会生成并覆盖：
@@ -181,23 +188,23 @@ STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
 ```text
 pages/appcast.xml
 dist/direct/downloads/appcast.xml
-dist/direct/downloads/Starcat-1.0.0-arm64.dmg
-dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256
+dist/direct/downloads/Starcat-1.1.0-arm64.dmg
+dist/direct/downloads/Starcat-1.1.0-arm64.dmg.sha256
 ```
 
 脚本生成 appcast 时只会把本次 `package-direct.sh` 产出的 DMG 放入临时输入目录。这样可以避免 `dist/direct/downloads/` 中遗留的旧测试包被 Sparkle 扫描进去，造成 `appcast.xml` 同时出现过期版本或未签名版本。
 
 ## 6. Sparkle 验证
 
-如果当前安装的 Direct 版低于 `1.0.0`，可以直接用 `1.0.0` appcast 验证更新。
+`1.1.0` 是第一个内置 Sparkle 的 Direct 版本，`1.0.0` 不支持应用内自动更新。
 
-如果当前安装的 Direct 版已经是 `1.0.0`，需要构建一个更高版本作为测试更新包，例如：
+如果当前安装的 Direct 版已经是 `1.1.0`，需要构建一个更高版本作为测试更新包，例如：
 
 ```bash
-./scripts/release-direct.sh 1.0.1
+STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.1.1
 ```
 
-这样 appcast 会指向 `Starcat-1.0.1-arm64.dmg`。测试完成后，如果 `1.0.1` 只是临时测试包，不要把它当正式版本对外发布。
+这样 appcast 会指向 `Starcat-1.1.1-arm64.dmg`。测试完成后，如果 `1.1.1` 只是临时测试包，不要把它当正式版本对外发布。
 
 完整更新链路验证：
 
