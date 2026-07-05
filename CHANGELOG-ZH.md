@@ -16,6 +16,10 @@
 - 新增 README 后台预拉取和健康分预热，让仓库详情更快进入可用状态。
 - 新增健康分排序、健康分颜色优化和 OpenSSF Scorecard 预热，帮助更快判断仓库质量。
 - 新增菜单栏与 macOS 顶部菜单控制，常用操作更容易触达。
+- 新增 Direct 分发能力，与 App Store 渠道并行，包含独立 Direct 构建目标、渠道配置和仅 Direct 版本启用的 Sparkle 自动更新。
+- 新增 Direct 版 Sparkle 更新支持，包含 appcast 更新清单、EdDSA key 配置、检查更新菜单入口，以及私钥备份和多台 Mac 签名流程文档。
+- 新增 Direct License 基础设施，包含 License API 服务、本地授权存储，以及同时服务 App Store 和 Direct 渠道的权益抽象。
+- 新增中立的 Direct 支付网关抽象，为后续接入 Creem 等支付 provider 预留扩展点。
 - 新增服务状态徽章、服务健康检查和本地运维工具，方便配置和排查问题。
 - 新增界面字号档位、发布记录分页优化，以及发布订阅总数侧边栏展示。
 
@@ -30,6 +34,9 @@
 - 改进设置页文案、存储操作、服务配置和诊断日志反馈。
 - 改进深色模式下的 AI、健康度、搜索、分享和插件相关界面表现。
 - 改进发布准备材料、开源致谢、分发方案和应用内发布说明读取方式。
+- 改进 Direct 发布工具链，提供 App Store / Direct 独立打包脚本、Direct 运行入口、Sparkle appcast 生成，以及用于上传 appcast 和 DMG 的发布编排脚本。
+- 改进 Starcat 官网 nginx 配置，为 Sparkle 更新增加 appcast 不缓存规则和 Direct 下载路径规则。
+- 改进工具栏、危险操作、常用操作、标签、侧边栏和批量操作中的共享图标规范。
 - 改进内部诊断、遥测安全边界和开发专用开关，避免未完成能力被当成正式功能。
 
 ### 修复
@@ -46,6 +53,8 @@
 - 修复存储重置完成态、未登录状态下存储页滚动，以及若干设置页布局边界问题。
 - 修复语言数据缺失时语言统计排序不正确的问题。
 - 修复 Release 构建中调试菜单相关的编译问题。
+- 修复 Direct 构建签名和 entitlements 检查，确保非 App Store 版本不带 App Sandbox entitlement，同时 App Store 版本继续保留沙箱配置。
+- 修复 Direct 更新测试打包流程，支持临时版本覆盖 marketing/build 版本，并避免 appcast 生成时混入旧 DMG。
 
 ## 1.0.0
 
@@ -68,4 +77,5 @@ Starcat 初始版本。
 - 支持英文和简体中文。
 - 作为原生 macOS 应用运行，包含沙盒、强化运行时、窗口管理和 App Store 上架准备。
 
+[1.1.0]: https://github.com/dong4j/starcat/releases/tag/1.1.0
 [1.0.0]: https://github.com/dong4j/starcat/releases/tag/1.0.0

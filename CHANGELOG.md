@@ -16,6 +16,10 @@ All notable changes to Starcat are summarized here for release notes.
 - Added README background fetching and health score prefetching so repository details can feel ready sooner.
 - Added health score sorting, improved health colors, and OpenSSF Scorecard warmup for easier repository evaluation.
 - Added menu bar and macOS menu controls for quicker access to common actions.
+- Added Direct distribution support alongside the App Store channel, including a separate Direct build target, channel-aware configuration, and Direct-only Sparkle update integration.
+- Added Sparkle update support for Direct builds, including an appcast feed, EdDSA key configuration, update menu integration, and documentation for key backup and multi-Mac signing workflows.
+- Added Direct license infrastructure with a License API service, local license storage, and a channel-neutral entitlement layer for App Store and Direct builds.
+- Added a provider-neutral direct payment abstraction so future payment gateways such as Creem can be integrated without binding the app to one vendor.
 - Added service status badges, service health checks, and local operations tools for easier setup and troubleshooting.
 - Added interface size controls, improved release timeline paging, and release subscription counts in the sidebar.
 
@@ -30,6 +34,9 @@ All notable changes to Starcat are summarized here for release notes.
 - Improved Settings copy, storage actions, service configuration, and diagnostic log feedback.
 - Improved dark mode support across AI, health, search, sharing, and plugin-related screens.
 - Improved release readiness materials, open-source credits, distribution planning, and in-app release notes loading.
+- Improved Direct release tooling with separate App Store and Direct packaging scripts, Direct run targets, Sparkle appcast generation, and a release orchestration script for uploading appcast and DMG files.
+- Improved the Starcat website nginx configuration for Sparkle updates by adding no-cache appcast handling and explicit Direct download rules.
+- Improved shared action icon patterns across toolbars, dangerous actions, common actions, tags, sidebars, and batch operations.
 - Improved internal diagnostics, telemetry safety, and developer-only controls without exposing unfinished features as product features.
 
 ### Fixed
@@ -46,6 +53,8 @@ All notable changes to Starcat are summarized here for release notes.
 - Fixed storage reset completion, unsigned-in storage scrolling, and several settings layout edge cases.
 - Fixed language aggregation sorting when language data is missing.
 - Fixed a release-build issue related to debug-only menu controls.
+- Fixed Direct build signing and entitlement checks so non-App Store builds run without the App Sandbox entitlement while App Store builds keep their sandbox configuration.
+- Fixed Direct update test packaging so temporary versions can override marketing/build versions and appcast generation no longer includes stale DMG files.
 
 ## 1.0.0
 
@@ -68,4 +77,5 @@ Initial Starcat release.
 - Use English and Simplified Chinese throughout the app.
 - Run as a native macOS app with sandboxing, hardened runtime, window management, and App Store readiness work in place.
 
+[1.1.0]: https://github.com/dong4j/starcat/releases/tag/1.1.0
 [1.0.0]: https://github.com/dong4j/starcat/releases/tag/1.0.0
