@@ -863,9 +863,9 @@
          * ================================================================== */
         .pricing-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: 1fr;
             gap: var(--card-gap);
-            max-width: 800px;
+            max-width: 520px;
             margin: 0 auto;
         }
 
@@ -1506,7 +1506,7 @@
             <div class="section-label fade-in">Pricing</div>
             <h2 class="section-title fade-in" id="pricing-title">简单透明的定价</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                基础功能永久免费。AI 能力按需订阅，支持 BYOK。
+                基础功能免费开放，Pro 能力准备好后再开放。
             </p>
 
             <div class="pricing-grid">
@@ -1526,26 +1526,6 @@
                     <a href="#download" class="btn-secondary" role="button">
                         <span class="icon-16"><i data-lucide="download"></i></span>
                         免费下载
-                    </a>
-                </div>
-
-                <!-- Pro -->
-                <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">PRO</span>
-                    <h3 class="pricing-name">Pro</h3>
-                    <div class="pricing-price">订阅制</div>
-                    <div class="pricing-period">解锁全部 AI 能力，或自带 Key</div>
-                    <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> 包含 Free 全部功能</li>
-                        <li><i data-lucide="check"></i> AI 仓库摘要 &amp; README 翻译</li>
-                        <li><i data-lucide="check"></i> AI 标签推荐（置信度评分）</li>
-                        <li><i data-lucide="check"></i> 混合语义搜索（BM25 + Embedding）</li>
-                        <li><i data-lucide="check"></i> Release 订阅追踪 &amp; 推送通知</li>
-                        <li><i data-lucide="check"></i> 支持自建代理 / BYOK 多模型</li>
-                    </ul>
-                    <a href="#download" class="btn-primary" role="button" style="background:var(--color-pro);">
-                        <span class="icon-16"><i data-lucide="zap"></i></span>
-                        获取 Pro
                     </a>
                 </div>
             </div>

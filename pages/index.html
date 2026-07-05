@@ -265,7 +265,7 @@
         /* ==================================================================
          * 7. Pricing
          * ================================================================== */
-        .pricing-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--card-gap); max-width: 800px; margin: 0 auto; }
+        .pricing-grid { display: grid; grid-template-columns: 1fr; gap: var(--card-gap); max-width: 520px; margin: 0 auto; }
         .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; cursor: pointer; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; }
         .pricing-card:hover { border-color: var(--color-border-hover); background: rgba(30, 41, 59, 0.8); transform: translateY(-2px); }
         .pricing-card--pro { border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.06); }
@@ -655,7 +655,7 @@
             <div class="section-label fade-in">Pricing</div>
             <h2 class="section-title fade-in" id="pricing-title">Simple, transparent pricing</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Core features free forever. AI capabilities on subscription — BYOK supported.
+                Core features are free while Pro is being prepared.
             </p>
 
             <div class="pricing-grid">
@@ -674,24 +674,6 @@
                     <a href="#download" class="btn-secondary" role="button">
                         <span class="icon-16"><i data-lucide="download"></i></span>
                         Free Download
-                    </a>
-                </div>
-                <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">PRO</span>
-                    <h3 class="pricing-name">Pro</h3>
-                    <div class="pricing-price">Subscription</div>
-                    <div class="pricing-period">Unlock all AI, or bring your own keys</div>
-                    <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> All Free features</li>
-                        <li><i data-lucide="check"></i> AI repo summaries &amp; README translation</li>
-                        <li><i data-lucide="check"></i> AI tag suggestions (confidence scored)</li>
-                        <li><i data-lucide="check"></i> Hybrid semantic search (BM25 + Embedding)</li>
-                        <li><i data-lucide="check"></i> Release tracking &amp; push notifications</li>
-                        <li><i data-lucide="check"></i> Self-hosted proxy / BYOK multi-model</li>
-                    </ul>
-                    <a href="#download" class="btn-primary" role="button" style="background:var(--color-pro);">
-                        <span class="icon-16"><i data-lucide="zap"></i></span>
-                        Get Pro
                     </a>
                 </div>
             </div>
