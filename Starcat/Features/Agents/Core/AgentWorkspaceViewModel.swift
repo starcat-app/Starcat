@@ -137,7 +137,9 @@ final class AgentWorkspaceViewModel {
             assistantOutput += text
         case .artifactCreated(let artifact):
             artifacts.append(artifact)
-            selectedArtifactID = artifact.id
+            if selectedArtifactID == nil {
+                selectedArtifactID = artifact.id
+            }
         case .runCompleted:
             status = .completed
             runTask = nil

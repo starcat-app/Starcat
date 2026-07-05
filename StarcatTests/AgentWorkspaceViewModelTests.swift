@@ -21,12 +21,14 @@ struct AgentWorkspaceViewModelTests {
     func runProjectsRuntimeEventsIntoWorkspaceState() async throws {
         let step = AgentRunStep(title: "生成周刊", detail: "生成 Markdown", status: .completed)
         let artifact = AgentArtifact(type: .markdown, title: "周刊", content: "# 周刊")
+        let logArtifact = AgentArtifact(type: .log, title: "日志", content: "# Log")
         let runtime = EventReplayAgentRuntime(events: [
             .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
             .planCreated([AgentPlanStep(title: "计划", detail: "确认输出")]),
             .stepUpdated(step),
             .toolOutput(AgentToolOutput(toolName: "report.generate", summary: "ok", detail: "done")),
             .artifactCreated(artifact),
+            .artifactCreated(logArtifact),
             .runCompleted
         ])
         let viewModel = AgentWorkspaceViewModel(
@@ -41,6 +43,7 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.planSteps.count == 1)
         #expect(viewModel.steps == [step])
         #expect(viewModel.toolOutputs.count == 1)
+        #expect(viewModel.artifacts.count == 2)
         #expect(viewModel.selectedArtifact?.content == "# 周刊")
         #expect(viewModel.errorMessage == nil)
     }
@@ -102,4 +105,3 @@ private struct NeverFinishingAgentRuntime: AgentRuntime {
         }
     }
 }
-
