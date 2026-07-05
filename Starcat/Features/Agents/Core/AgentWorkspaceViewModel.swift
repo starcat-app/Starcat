@@ -24,7 +24,9 @@ final class AgentWorkspaceViewModel {
     var prompt: String
     var runTitle: String = "Ready"
     var status: AgentRunStatus = .idle
+    var planSteps: [AgentPlanStep] = []
     var steps: [AgentRunStep] = []
+    var toolOutputs: [AgentToolOutput] = []
     var artifacts: [AgentArtifact] = []
     var selectedArtifactID: UUID?
     var assistantOutput: String = ""
@@ -66,7 +68,9 @@ final class AgentWorkspaceViewModel {
         runTask?.cancel()
         status = .planning
         runTitle = selectedAgent.title
+        planSteps = []
         steps = []
+        toolOutputs = []
         artifacts = []
         selectedArtifactID = nil
         assistantOutput = ""
@@ -121,10 +125,14 @@ final class AgentWorkspaceViewModel {
         case .runStarted(let title):
             runTitle = title
             status = .running
+        case .planCreated(let plan):
+            planSteps = plan
         case .stepStarted:
             status = .running
         case .stepUpdated(let step):
             upsert(step)
+        case .toolOutput(let output):
+            toolOutputs.append(output)
         case .assistantDelta(let text):
             assistantOutput += text
         case .artifactCreated(let artifact):

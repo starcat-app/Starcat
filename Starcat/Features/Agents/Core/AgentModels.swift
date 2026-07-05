@@ -59,6 +59,26 @@ enum AgentArtifactType: String, Sendable {
     }
 }
 
+/// Runtime 生成的执行计划步骤。
+///
+/// 计划步骤和时间线步骤分开保存：计划是 Agent 准备怎么做，时间线是实际做到了哪一步。
+/// 后续接入真实 tool-calling 后，计划可来自模型 structured output，而时间线来自工具执行事件。
+struct AgentPlanStep: Identifiable, Hashable, Sendable {
+    let id: UUID
+    var title: String
+    var detail: String
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        detail: String
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+    }
+}
+
 /// Agent 时间线中的一个步骤。
 struct AgentRunStep: Identifiable, Hashable, Sendable {
     let id: UUID
@@ -76,6 +96,29 @@ struct AgentRunStep: Identifiable, Hashable, Sendable {
         self.title = title
         self.detail = detail
         self.status = status
+    }
+}
+
+/// Agent 工具输出摘要。
+///
+/// 这里先记录 compact output,而不是完整原始数据。真实 tool-calling 接入后,完整原始响应
+/// 应进入 artifact / run storage,喂回 LLM 和展示给用户的都必须是预算受控的摘要。
+struct AgentToolOutput: Identifiable, Hashable, Sendable {
+    let id: UUID
+    var toolName: String
+    var summary: String
+    var detail: String
+
+    init(
+        id: UUID = UUID(),
+        toolName: String,
+        summary: String,
+        detail: String
+    ) {
+        self.id = id
+        self.toolName = toolName
+        self.summary = summary
+        self.detail = detail
     }
 }
 
@@ -118,8 +161,10 @@ struct AgentRunContext: Hashable, Sendable {
 /// 替换成 tool-calling runtime 或 AgentRunKit runtime 时，Workspace 不需要重写。
 enum AgentRunEvent: Sendable {
     case runStarted(title: String)
+    case planCreated([AgentPlanStep])
     case stepStarted(id: UUID)
     case stepUpdated(AgentRunStep)
+    case toolOutput(AgentToolOutput)
     case assistantDelta(String)
     case artifactCreated(AgentArtifact)
     case runCompleted
