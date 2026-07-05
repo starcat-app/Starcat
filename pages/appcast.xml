@@ -1,15 +1,18 @@
-<?xml version="1.0" standalone="yes"?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
-    <channel>
-        <title>Starcat</title>
-        <item>
-            <title>1.0.1</title>
-            <pubDate>Sun, 05 Jul 2026 14:54:09 +0800</pubDate>
-            <sparkle:version>202607051449</sparkle:version>
-            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://starcat.ink/downloads/Starcat-1.0.1-arm64.dmg" length="93348935" type="application/octet-stream" sparkle:edSignature="vCE35qzfNJcv7F1noqn8qFj1LwJk+062u8yLCvaun063Uo2BgQ0cNIIO/azhbVREMoIfdBd/a+iuld6TdICiDQ=="/>
-        </item>
-    </channel>
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Starcat Direct Updates</title>
+    <link>https://starcat.ink</link>
+    <description>Appcast feed for Starcat Direct builds.</description>
+    <language>zh-cn</language>
+    <lastBuildDate>Sun, 05 Jul 2026 00:00:00 +0800</lastBuildDate>
+    <!--
+      Empty feed.
+
+      Do not publish an update item until the Direct DMG has been signed,
+      notarized, uploaded, and signed with Sparkle's EdDSA key. A release item
+      must include the real download URL, bundle version, marketing version,
+      byte length, and sparkle:edSignature generated from the final archive.
+    -->
+  </channel>
 </rss>
