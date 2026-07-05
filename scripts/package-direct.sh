@@ -27,9 +27,9 @@ if [ -z "$VERSION" ]; then
   TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
   VERSION="${TAG#v}"
 fi
-[ -n "$VERSION" ] || VERSION="0.0.1"
+[ -n "$VERSION" ] || VERSION="1.0.0"
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "版本号必须是 X.Y.Z，例如 0.1.0；当前: $VERSION" >&2
+  echo "版本号必须是 X.Y.Z，例如 1.0.0；当前: $VERSION" >&2
   exit 1
 fi
 
@@ -39,10 +39,12 @@ DIST_DIR="${PROJECT_ROOT}/dist/direct"
 DERIVED_DIR="${DIST_DIR}/DerivedData"
 STAGING_DIR="${DIST_DIR}/staging"
 DOWNLOADS_DIR="${DIST_DIR}/downloads"
+APPCAST_INPUT_DIR="${DIST_DIR}/appcast-input"
 APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 BUILD_LOG="${DIST_DIR}/xcodebuild-direct.log"
+BUILD_NUMBER="${STARCAT_DIRECT_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 
 log() { printf '[direct] %s\n' "$1"; }
 fail() { printf '[direct] ERROR: %s\n' "$1" >&2; exit 1; }
@@ -53,7 +55,7 @@ command -v hdiutil >/dev/null 2>&1 || fail "hdiutil 不在 PATH"
 
 cd "$PROJECT_ROOT"
 mkdir -p "$DIST_DIR" "$DOWNLOADS_DIR"
-rm -rf "$DERIVED_DIR" "$STAGING_DIR"
+rm -rf "$DERIVED_DIR" "$STAGING_DIR" "$APPCAST_INPUT_DIR"
 rm -f "$DMG_PATH" "$SHA_PATH"
 
 log "同步 Xcode 工程"
@@ -62,6 +64,10 @@ xcodegen generate >/dev/null
 log "构建 Direct Release app"
 BUILD_SETTINGS=(
   STARCAT_DISTRIBUTION=direct
+  MARKETING_VERSION="$VERSION"
+  CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+  STARCAT_MARKETING_VERSION_OVERRIDE="$VERSION"
+  STARCAT_BUILD_VERSION_OVERRIDE="$BUILD_NUMBER"
 )
 if [ -n "${STARCAT_SPARKLE_PUBLIC_ED_KEY:-}" ]; then
   BUILD_SETTINGS+=("STARCAT_SPARKLE_PUBLIC_ED_KEY=${STARCAT_SPARKLE_PUBLIC_ED_KEY}")
@@ -91,6 +97,12 @@ fi
 
 DIST_VALUE=$(/usr/libexec/PlistBuddy -c 'Print :STARCAT_DISTRIBUTION' "$APP_PATH/Contents/Info.plist")
 [ "$DIST_VALUE" = "direct" ] || fail "STARCAT_DISTRIBUTION 应为 direct，实际为 $DIST_VALUE"
+
+APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")
+[ "$APP_VERSION" = "$VERSION" ] || fail "CFBundleShortVersionString 应为 $VERSION，实际为 $APP_VERSION"
+
+APP_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")
+[ "$APP_BUILD" = "$BUILD_NUMBER" ] || fail "CFBundleVersion 应为 $BUILD_NUMBER，实际为 $APP_BUILD"
 
 ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
 if grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
@@ -144,13 +156,18 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   [ -n "$GENERATE_APPCAST" ] || fail "未找到 Sparkle generate_appcast"
   DOWNLOAD_BASE_URL="${STARCAT_DOWNLOAD_BASE_URL:-https://starcat.ink/downloads/}"
   log "生成 appcast: pages/appcast.xml"
-  "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_BASE_URL" "$DOWNLOADS_DIR"
-  cp "$DOWNLOADS_DIR/appcast.xml" "$PROJECT_ROOT/pages/appcast.xml"
+  # generate_appcast 会扫描输入目录里的所有历史包。测试单个更新包时使用干净目录，
+  # 避免旧 DMG 被重新写入 appcast，导致 Sparkle 看到过期或未签名的更新项。
+  mkdir -p "$APPCAST_INPUT_DIR"
+  cp "$DMG_PATH" "$APPCAST_INPUT_DIR/"
+  "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"
+  cp "$APPCAST_INPUT_DIR/appcast.xml" "$PROJECT_ROOT/pages/appcast.xml"
+  cp "$APPCAST_INPUT_DIR/appcast.xml" "$DOWNLOADS_DIR/appcast.xml"
 else
   log "跳过 appcast 生成；需要时设置 STARCAT_GENERATE_APPCAST=1"
 fi
 
-rm -rf "$STAGING_DIR"
+rm -rf "$STAGING_DIR" "$APPCAST_INPUT_DIR"
 
 log "完成"
 log "dmg: $DMG_PATH"

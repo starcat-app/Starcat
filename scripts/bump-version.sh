@@ -56,13 +56,26 @@ COUNT="$("$GIT_BIN" -C "$SRCROOT" rev-list --count HEAD 2>/dev/null || echo "0")
 # 短 hash，固定 7 位，与 GitHub Web 默认显示一致。
 HASH="$("$GIT_BIN" -C "$SRCROOT" rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")"
 
+# Direct 打包脚本会显式传入版本号，用于生成临时更新包 / appcast。
+# 默认路径仍然走最新 git tag，避免影响 App Store 常规构建。
+MARKETING_OVERRIDE="${STARCAT_MARKETING_VERSION_OVERRIDE:-}"
+BUILD_OVERRIDE="${STARCAT_BUILD_VERSION_OVERRIDE:-}"
+
 # 最近的 tag。`git describe --tags --abbrev=0` 只取 tag 名，不带提交距离后缀；
 # 失败（无 tag / 不在 git 仓库）时输出空串。
 TAG="$("$GIT_BIN" -C "$SRCROOT" describe --tags --abbrev=0 2>/dev/null || true)"
 
-# 把 tag 里常见的 v / V 前缀剥掉：v0.1.3 → 0.1.3。
-MARKETING="${TAG#v}"
-MARKETING="${MARKETING#V}"
+if [ -n "$MARKETING_OVERRIDE" ]; then
+    MARKETING="$MARKETING_OVERRIDE"
+else
+    # 把 tag 里常见的 v / V 前缀剥掉：v0.1.3 → 0.1.3。
+    MARKETING="${TAG#v}"
+    MARKETING="${MARKETING#V}"
+fi
+
+if [ -n "$BUILD_OVERRIDE" ]; then
+    COUNT="$BUILD_OVERRIDE"
+fi
 
 echo "==> Auto Bump Version"
 echo "    git commit count : $COUNT"
@@ -70,7 +83,9 @@ echo "    git short hash   : $HASH"
 echo "    git latest tag   : ${TAG:-<none>}"
 echo "    -> CFBundleVersion              = $COUNT"
 echo "    -> GitCommitHash                = $HASH"
-if [ -n "$MARKETING" ]; then
+if [ -n "$MARKETING_OVERRIDE" ]; then
+    echo "    -> CFBundleShortVersionString   = $MARKETING (from STARCAT_MARKETING_VERSION_OVERRIDE)"
+elif [ -n "$MARKETING" ]; then
     echo "    -> CFBundleShortVersionString   = $MARKETING (from tag)"
 else
     echo "    -> CFBundleShortVersionString   = (keep existing, no git tag yet)"
@@ -97,7 +112,7 @@ PLISTBUDDY="/usr/libexec/PlistBuddy"
 "$PLISTBUDDY" -c "Set :GitCommitHash $HASH" "$PLIST" 2>/dev/null \
     || "$PLISTBUDDY" -c "Add :GitCommitHash string $HASH" "$PLIST"
 
-# CFBundleShortVersionString 只在拿到 git tag 时覆盖，没 tag 就保留 build settings 里现有值（兜底 0.1.0）。
+# CFBundleShortVersionString 只在拿到 git tag / Direct override 时覆盖，没值就保留 build settings 里现有值（兜底 1.0.0）。
 if [ -n "$MARKETING" ]; then
     "$PLISTBUDDY" -c "Set :CFBundleShortVersionString $MARKETING" "$PLIST"
 fi

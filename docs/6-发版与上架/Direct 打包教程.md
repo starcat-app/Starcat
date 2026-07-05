@@ -91,20 +91,22 @@ make run-direct
 ## 3. 本地生成 DMG
 
 ```bash
-./scripts/package-direct.sh 0.1.0
+./scripts/package-direct.sh 1.0.0
 ```
 
 脚本会生成：
 
 ```text
-dist/direct/downloads/Starcat-0.1.0-arm64.dmg
-dist/direct/downloads/Starcat-0.1.0-arm64.dmg.sha256
+dist/direct/downloads/Starcat-1.0.0-arm64.dmg
+dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256
 dist/direct/xcodebuild-direct.log
 ```
 
 脚本内置检查：
 
 - `STARCAT_DISTRIBUTION == direct`
+- `CFBundleShortVersionString` 等于传入版本号
+- `CFBundleVersion` 等于本次 Direct 打包 build number
 - Direct 包包含 `Sparkle.framework`
 - Direct 包不包含 `com.apple.security.app-sandbox`
 - DMG 生成后有 SHA256
@@ -114,7 +116,7 @@ dist/direct/xcodebuild-direct.log
 正式公开分发时启用 notarization：
 
 ```bash
-STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 0.1.0
+STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
 ```
 
 脚本会执行：
@@ -125,34 +127,56 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 0.1.0
 
 ## 5. 更新 appcast
 
-把 DMG 放到 `dist/direct/downloads/` 后，可让脚本调用 Sparkle 的 `generate_appcast`：
+脚本可调用 Sparkle 的 `generate_appcast` 为本次 DMG 生成更新清单：
 
 ```bash
 STARCAT_GENERATE_APPCAST=1 \
 STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
-./scripts/package-direct.sh 0.1.0
+./scripts/package-direct.sh 1.0.0
 ```
 
 脚本会生成并覆盖：
 
 ```text
 pages/appcast.xml
+dist/direct/downloads/appcast.xml
 ```
+
+脚本生成 appcast 时只会把本次 `package-direct.sh` 产出的 DMG 放入临时输入目录。这样可以避免 `dist/direct/downloads/` 中遗留的旧测试包被 Sparkle 扫描进去，造成 `appcast.xml` 同时出现过期版本或未签名版本。
 
 部署时需要同时上传：
 
 - `pages/appcast.xml` -> `https://starcat.ink/appcast.xml`
-- `dist/direct/downloads/Starcat-0.1.0-arm64.dmg` -> `https://starcat.ink/downloads/Starcat-0.1.0-arm64.dmg`
+- `dist/direct/downloads/Starcat-1.0.0-arm64.dmg` -> `https://starcat.ink/downloads/Starcat-1.0.0-arm64.dmg`
 
 ## 6. Sparkle 验证
 
-首个公开版本建议先保持 `pages/appcast.xml` 为空 feed。第二个版本开始验证完整更新链路：
+如果当前安装的 Direct 版低于 `1.0.0`，可以直接用 `1.0.0` appcast 验证更新。
+
+如果当前安装的 Direct 版已经是 `1.0.0`，需要构建一个更高版本作为测试更新包，例如：
+
+```bash
+STARCAT_GENERATE_APPCAST=1 \
+STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
+./scripts/package-direct.sh 1.0.1
+```
+
+这样 appcast 会指向 `Starcat-1.0.1-arm64.dmg`。测试完成后，如果 `1.0.1` 只是临时测试包，不要把它当正式版本对外发布。
+
+完整更新链路验证：
 
 1. 安装旧版 Direct DMG。
 2. 部署新版 DMG 和新版 `appcast.xml`。
 3. 打开 Starcat Direct。
 4. 菜单 `操作 -> 检查更新...`。
 5. 确认 Sparkle 弹窗展示新版并可安装。
+
+自动检查验证：
+
+1. 启动旧版 Direct，看到 Sparkle 权限弹窗时选择 `自动检查`。
+2. 确认 `https://starcat.ink/appcast.xml` 已部署并指向更高版本。
+3. 退出并重新打开旧版 Direct。
+4. Sparkle 的自动检查有调度间隔，默认不是每次启动都立刻弹窗；本地测试时，手动 `操作 -> 检查更新...` 是确定性验证，自动检查用于确认权限弹窗和后台调度未报错。
 
 ## 7. 常见问题
 
