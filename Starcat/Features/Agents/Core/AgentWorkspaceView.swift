@@ -331,6 +331,10 @@ struct AgentWorkspaceView: View {
                 Spacer()
             }
 
+            if !viewModel.planSteps.isEmpty {
+                planBlock
+            }
+
             VStack(spacing: 10) {
                 if viewModel.steps.isEmpty {
                     universalStepCard(
@@ -387,6 +391,10 @@ struct AgentWorkspaceView: View {
                 }
             }
 
+            if !viewModel.toolOutputs.isEmpty {
+                toolOutputBlock
+            }
+
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(agentFont(.callout))
@@ -395,6 +403,76 @@ struct AgentWorkspaceView: View {
                     .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
         }
+    }
+
+    private var planBlock: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Image(systemName: "list.bullet.rectangle")
+                    .foregroundStyle(Color.accentColor)
+                Text("执行计划")
+                    .font(agentFont(.subheadline, weight: .semibold))
+            }
+
+            ForEach(Array(viewModel.planSteps.enumerated()), id: \.element.id) { index, step in
+                HStack(alignment: .top, spacing: 10) {
+                    Text("\(index + 1)")
+                        .font(agentFont(.caption, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 20, height: 20)
+                        .background(Color.accentColor.opacity(0.10), in: Circle())
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(step.title)
+                            .font(agentFont(.caption, weight: .semibold))
+                        Text(step.detail)
+                            .font(agentFont(.caption))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var toolOutputBlock: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Image(systemName: "wrench.and.screwdriver")
+                    .foregroundStyle(.secondary)
+                Text("工具输出")
+                    .font(agentFont(.subheadline, weight: .semibold))
+                Spacer()
+                Text("\(viewModel.toolOutputs.count)")
+                    .font(agentFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(viewModel.toolOutputs) { output in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(output.toolName)
+                            .font(agentFont(.caption, weight: .semibold, design: .monospaced))
+                        Spacer()
+                        Text(output.summary)
+                            .font(agentFont(.caption))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(output.detail)
+                        .font(agentFont(.caption))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func universalStepCard(
@@ -544,9 +622,9 @@ struct AgentWorkspaceView: View {
 
     private var resultSummary: some View {
         HStack(spacing: 10) {
-            metricTile("24", "上下文 repo")
-            metricTile("4", "主题")
-            metricTile("7", "行动项")
+            metricTile("\(max(viewModel.planSteps.count, 3))", "计划步骤")
+            metricTile("\(max(viewModel.toolOutputs.count, 4))", "工具输出")
+            metricTile("\(max(viewModel.artifacts.count, 1))", "产出物")
         }
     }
 
