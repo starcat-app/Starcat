@@ -104,11 +104,19 @@ struct SmartCollectionRuleEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(modeTitleKey)
-                .font(.headline)
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 12)
+            HStack(spacing: 12) {
+                Text(modeTitleKey)
+                    .font(.headline)
+                Spacer()
+                SheetCloseButton(
+                    action: onCancel,
+                    iconFont: .system(size: 16, weight: .medium),
+                    frameSize: 26
+                )
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
 
             ScrollView {
                 VStack(spacing: 16) {

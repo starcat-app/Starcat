@@ -833,7 +833,7 @@ struct SidebarView: View {
             VStack(spacing: 6) {
                 Image(systemName: page.systemImage)
                     // 圆形 SF Symbol 的有效墨迹面积比 folder / bell.badge 小，三入口局部放大避免视觉塌陷。
-                    .font(interfaceScale.font(size: 22, weight: .medium))
+                    .font(interfaceScale.font(size: 30, weight: .medium))
                     .symbolEffect(.bounce, value: rootNavigationBounceTokens[page, default: 0])
                     .frame(height: 30)
                 Text(page.titleKey)
@@ -881,6 +881,11 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: tagsExpanded))
+
+            Text(viewModel.tags.count.formatted())
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
 
             // HOM-179：仅当有 tag 被选中时显示"清除"按钮，避免空状态下噪声。
             // 与 `+` / chevron 同款 14pt hierarchical 语言，hover 反馈复用 pressableHover。
@@ -951,6 +956,12 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: githubStarListsExpanded))
+
+            // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
+            Text((viewModel.githubStarLists.count + 1).formatted())
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
 
             SyncIconButton(
                 isRefreshing: dependencies.githubStarListSyncService.isSyncing,

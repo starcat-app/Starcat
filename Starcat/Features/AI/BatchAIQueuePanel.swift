@@ -80,16 +80,16 @@ struct BatchAIQueuePanel: View {
                 // 用户已经点过取消但 in-flight job 还没跑完时禁用，避免重复点击让人困惑。
                 .disabled(service.isCancelling)
             }
-            Button {
-                if service.isFinished {
-                    service.reset()
-                }
-                onClose()
-            } label: {
-                Label("general.close", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-            }
-            .help("general.close")
+            SheetCloseButton(
+                action: {
+                    if service.isFinished {
+                        service.reset()
+                    }
+                    onClose()
+                },
+                iconFont: .system(size: 16, weight: .medium),
+                frameSize: 26
+            )
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 16)
