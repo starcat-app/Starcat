@@ -146,8 +146,8 @@ struct AppStatusToolbarButton: View {
     }
 
     private var overallStatusIcon: String {
-        if hasIssue { return "exclamationmark.triangle.fill" }
-        if syncManager.isSyncing || activeTaskCount > 0 { return "clock.arrow.circlepath" }
+        if hasIssue { return "exclamationmark.circle.fill" }
+        if syncManager.isSyncing || activeTaskCount > 0 { return "arrow.triangle.2.circlepath.circle.fill" }
         return "checkmark.circle.fill"
     }
 

@@ -45,8 +45,8 @@ struct CloneMenu: View {
                 Label("clone.git", systemImage: "terminal")
             }
         } label: {
-            // clone URL 的核心对象是“地址”，用系统 link 图标比复制方块更贴近语义。
-            ToolbarIcon("link")
+            // clone URL 的核心对象是“地址”，用系统 link.circle 强化 toolbar 入口识别。
+            ToolbarIcon("link.circle")
                 .accessibilityLabel("clone.hint")
         }
         .help("clone.hint")

@@ -208,7 +208,7 @@ struct SmartSearchField: View {
                         }
                     }
                 } label: {
-                    ToolbarIcon("sparkle.magnifyingglass")
+                    ToolbarIcon("magnifyingglass.circle")
                         .accessibilityLabel(Text("toolbar.globalSearch"))
                 } primaryAction: {
                     onOpenGlobalSearch?()

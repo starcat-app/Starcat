@@ -37,9 +37,9 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .manage:   return "folder"
+        case .manage:   return "star.circle"
         case .trending: return "safari"
-        case .activity: return "bell.badge"
+        case .activity: return "bell.circle"
         }
     }
 }

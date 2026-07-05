@@ -121,6 +121,8 @@ struct SidebarView: View {
     /// 应只有一条。因此这里记录用户最后点击的探索行，让视觉行为与星标模块一样走
     /// 系统 selection，同时不强行清空已有筛选状态。
     @State private var exploreListSelection: ExploreSidebarSelection?
+    /// 顶部三入口点击反馈。用计数 token 驱动 symbolEffect，避免把动效状态混进业务 selection。
+    @State private var rootNavigationBounceTokens: [SidebarRootPage: Int] = [:]
 
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
@@ -765,12 +767,11 @@ struct SidebarView: View {
         Label {
             activityCategoryLabel(category)
         } icon: {
-            // 分类色点：故意不复用 LanguageIconView，因为后者会优先匹配 Devicon SVG，
-            // 渲染出 Swift / JS / Go 这类语言 logo，与"分类"语义冲突。
-            // 这里直接画 14pt 实心圆，与 Manage / Trending 的语言图标视觉尺寸保持一致。
-            Circle()
-                .fill(category.iconColor)
-                .frame(width: 14, height: 14)
+            // Activity 分类使用系统语义图标，不复用 LanguageIconView，避免渲染出语言 logo。
+            Image(systemName: category.systemImage)
+                .font(interfaceScale.font(size: 14, weight: .semibold))
+                .foregroundStyle(category.iconColor)
+                .frame(width: 16, height: 16)
         }
         .tag(category)
     }
@@ -822,6 +823,7 @@ struct SidebarView: View {
             && (page == .manage || page == .activity)
 
         return Button {
+            rootNavigationBounceTokens[page, default: 0] += 1
             if needsLogin {
                 showLoginSheet = true
             } else {
@@ -830,8 +832,10 @@ struct SidebarView: View {
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: page.systemImage)
-                    .font(interfaceScale.font(.iconLarge, weight: .regular))
-                    .frame(height: 28)
+                    // 圆形 SF Symbol 的有效墨迹面积比 folder / bell.badge 小，三入口局部放大避免视觉塌陷。
+                    .font(interfaceScale.font(size: 22, weight: .medium))
+                    .symbolEffect(.bounce, value: rootNavigationBounceTokens[page, default: 0])
+                    .frame(height: 30)
                 Text(page.titleKey)
                     .font(interfaceScale.font(.body, weight: .semibold))
                     .lineLimit(1)

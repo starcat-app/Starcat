@@ -76,6 +76,8 @@ struct RepoListView: View {
     @Binding var selectedActivityItem: ActivityItem?
     /// Agent 功能当前不随正式产品入口上线；Debug 菜单打开后才显示 toolbar 入口。
     let showsAgentToolbarEntry: Bool
+    /// RAG 工作台仍是开发期 AI surface，Debug 菜单打开后才显示 toolbar 入口。
+    let showsKnowledgeRAGToolbarEntry: Bool
 
     /// HOM-52：Untagged 视图顶部 banner 的"启动整理 / 查看进度"回调。
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
@@ -85,6 +87,8 @@ struct RepoListView: View {
     var onOpenSearchCenter: (() -> Void)?
     /// 覆盖式 Agent Workspace 由 HomeView 承载；列表 toolbar 只暴露入口。
     var onOpenAgentWorkspace: (() -> Void)?
+    /// 覆盖式知识库 RAG 工作台由 HomeView 承载；列表 toolbar 只暴露入口。
+    var onOpenKnowledgeRAGWorkspace: (() -> Void)?
     /// Browser Plugin 的 Open in Starcat 由 HomeView 负责切换根页面和选中详情。
     var onOpenCompanionRepo: ((Repo) -> Void)?
     /// Browser Plugin 的生成摘要动作需要先定位 repo，再打开 AI 窗口并启动生成。
@@ -103,6 +107,8 @@ struct RepoListView: View {
     @State private var shareSheetItem: RepoShareSheetItem?
     @State private var shareRetryRepo: Repo?
     @State private var shareInFlightRepoID: Int64?
+    /// 当前会话内已成功创建分享链接的 repo。分享 API 暂无列表查询，本地只负责即时反馈图标态。
+    @State private var sharedRepoIDs: Set<Int64> = []
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
@@ -316,9 +322,21 @@ struct RepoListView: View {
                         Button {
                             onOpenAgentWorkspace?()
                         } label: {
-                            Label("Agent", systemImage: "sparkles")
+                            ToolbarIcon("bolt.circle")
+                                .accessibilityLabel(Text("Agent"))
                         }
                         .help("Open Agent Workspace")
+                    }
+                }
+                if showsKnowledgeRAGToolbarEntry {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            onOpenKnowledgeRAGWorkspace?()
+                        } label: {
+                            ToolbarIcon("book.circle")
+                                .accessibilityLabel(Text("RAG"))
+                        }
+                        .help("Open Knowledge RAG Workspace")
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -708,7 +726,7 @@ struct RepoListView: View {
                 Button {
                     openSmartCollectionEditor()
                 } label: {
-                    ToolbarIcon("line.3.horizontal.decrease.circle")
+                    ToolbarIcon("gearshape.circle")
                 }
                 .disabled(!canOpenSmartCollectionEditor)
                 .help("smartCollections.editor.help")
@@ -887,6 +905,7 @@ struct RepoListView: View {
             let targetRepo = toolbarShareRepo(shareRepo, isStarred: true)
             RepoShareButton(
                 isSharing: shareInFlightRepoID == targetRepo.id,
+                isShared: sharedRepoIDs.contains(targetRepo.id),
                 action: {
                     Task { await runShare(targetRepo) }
                 }
@@ -967,6 +986,7 @@ struct RepoListView: View {
             let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
             let response = try await dependencies.shareAPI.shareRepo(request: request)
 
+            sharedRepoIDs.insert(repo.id)
             shareSheetItem = .success(response.shareUrl)
         } catch let error as RepoAIInsightError {
             switch error {

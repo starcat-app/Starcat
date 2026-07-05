@@ -59,10 +59,12 @@ import Foundation
 /// 直接编辑那个 plist 文件也是一回事。
 enum DebugFlags {
     static let agentToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.agentToolbarEntryDidChange")
+    static let knowledgeRAGToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.knowledgeRAGToolbarEntryDidChange")
     static let companionLocalServerDidChangeNotification = Notification.Name("DebugFlags.companionLocalServerDidChange")
     static let debugProOverrideDidChangeNotification = Notification.Name("DebugFlags.debugProOverrideDidChange")
 
     static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
+    static let knowledgeRAGToolbarEntryKey = "DebugKnowledgeRAGToolbarEntry"
     private static let companionLocalServerKey = "DebugCompanionLocalServer"
     static let debugProOverrideKey = "DebugProOverride"
 
@@ -105,6 +107,19 @@ enum DebugFlags {
         #endif
     }
 
+    /// 是否显示尚未上线的知识库 RAG toolbar 入口。
+    ///
+    /// RAG 工作台和 Agent 工作台同属开发期 AI surface，默认隐藏主界面入口；Debug
+    /// 菜单只负责开关入口，实际打开仍走主窗口覆盖式 workspace，避免菜单和 toolbar
+    /// 形成两套交互路径。Release 包永远关闭。
+    static var knowledgeRAGToolbarEntry: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: knowledgeRAGToolbarEntryKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 是否用本地 Debug 开关强制激活 Pro entitlement。
     ///
     /// 这是开发期验证 Pro 门控用的本机覆盖，不代表真实 StoreKit 订阅状态；放在
@@ -137,6 +152,14 @@ enum DebugFlags {
         #if DEBUG
         UserDefaults.standard.set(isVisible, forKey: agentToolbarEntryKey)
         NotificationCenter.default.post(name: agentToolbarEntryDidChangeNotification, object: nil)
+        #endif
+    }
+
+    /// 切换知识库 RAG toolbar 入口并广播给已挂载的主窗口。
+    static func setKnowledgeRAGToolbarEntry(_ isVisible: Bool) {
+        #if DEBUG
+        UserDefaults.standard.set(isVisible, forKey: knowledgeRAGToolbarEntryKey)
+        NotificationCenter.default.post(name: knowledgeRAGToolbarEntryDidChangeNotification, object: nil)
         #endif
     }
 

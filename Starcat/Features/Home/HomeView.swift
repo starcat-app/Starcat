@@ -110,6 +110,8 @@ struct HomeView: View {
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
     /// SwiftUI 刷新；Debug 菜单广播后更新该状态，RepoListView 的 toolbar 立即重建。
     @State private var showsAgentToolbarEntry: Bool = DebugFlags.agentToolbarEntry
+    /// RAG 工作台同样是开发期入口，沿用 Agent 的 Debug 菜单显隐模型。
+    @State private var showsKnowledgeRAGToolbarEntry: Bool = DebugFlags.knowledgeRAGToolbarEntry
     /// 系统入口发来的重置动作必须先二次确认，避免用户误清语言 / 排序 / 筛选偏好。
     @State private var showsResetListPreferencesConfirmation: Bool = false
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
@@ -365,15 +367,16 @@ struct HomeView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showAgentWorkspace)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showKnowledgeRAGWorkspace)
         .preference(key: AgentWorkspaceActivePreferenceKey.self, value: showAgentWorkspace || showKnowledgeRAGWorkspace)
-        .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenKnowledgeRAGWorkspace)) { _ in
-            showAgentWorkspace = false
-            searchCenterViewModel.dismiss()
-            showKnowledgeRAGWorkspace = true
-        }
         .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
             showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
             if !showsAgentToolbarEntry {
                 showAgentWorkspace = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.knowledgeRAGToolbarEntryDidChangeNotification)) { _ in
+            showsKnowledgeRAGToolbarEntry = DebugFlags.knowledgeRAGToolbarEntry
+            if !showsKnowledgeRAGToolbarEntry {
+                showKnowledgeRAGWorkspace = false
             }
         }
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
@@ -872,6 +875,7 @@ struct HomeView: View {
             selectedActivityCategory: $selectedActivityCategory,
             selectedActivityItem: $selectedActivityItem,
             showsAgentToolbarEntry: showsAgentToolbarEntry,
+            showsKnowledgeRAGToolbarEntry: showsKnowledgeRAGToolbarEntry,
             onStartBatchAI: {
                 // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
                 // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
@@ -884,7 +888,14 @@ struct HomeView: View {
                 searchCenterViewModel.present()
             },
             onOpenAgentWorkspace: {
+                showKnowledgeRAGWorkspace = false
+                searchCenterViewModel.dismiss()
                 showAgentWorkspace = true
+            },
+            onOpenKnowledgeRAGWorkspace: {
+                showAgentWorkspace = false
+                searchCenterViewModel.dismiss()
+                showKnowledgeRAGWorkspace = true
             },
             onOpenCompanionRepo: { repo in
                 openCompanionRepository(repo)

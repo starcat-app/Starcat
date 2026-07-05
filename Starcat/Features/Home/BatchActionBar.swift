@@ -597,6 +597,9 @@ struct BatchActionBar: View {
 // MARK: - BatchTagSheet
 
 /// 批量打标签 sheet：选一个 tag → 应用到所有 selected repos。
+///
+/// **2026-07-05 优化**：列表顶部新增「新建标签」入口，点击后内联展开创建表单
+/// （名称 + 色板），创建后标签自动加入列表并选中，避免用户退出多选 → 建标签 → 重进多选。
 private struct BatchTagSheet: View {
 
     let repoIds: Set<Int64>
@@ -608,6 +611,12 @@ private struct BatchTagSheet: View {
     @State private var vm: BatchTagSheetViewModel?
     @State private var query: String = ""
     @State private var selectedTagId: String? = nil
+
+    // 内联新建标签
+    @State private var isCreatingTag: Bool = false
+    @State private var newTagName: String = ""
+    @State private var newTagColorHex: String = TagColorPalette.defaultHex
+    @State private var userPickedColor: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -632,8 +641,21 @@ private struct BatchTagSheet: View {
             if let vm {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        // ──── 新建标签入口 ────
+                        if !isCreatingTag {
+                            createTagButton
+                            Divider()
+                        }
+
+                        // ──── 内联新建标签表单 ────
+                        if isCreatingTag {
+                            createTagForm
+                            Divider()
+                        }
+
+                        // ──── 已有标签列表 ────
                         let tags = filteredTags(vm.tags)
-                        if tags.isEmpty {
+                        if tags.isEmpty && !isCreatingTag {
                             emptyTagsMessage(isInitialEmpty: vm.tags.isEmpty)
                         } else {
                             ForEach(tags) { tag in
@@ -674,7 +696,7 @@ private struct BatchTagSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 380)
+        .frame(width: 420)
         .task {
             if vm == nil {
                 vm = BatchTagSheetViewModel(
@@ -684,6 +706,146 @@ private struct BatchTagSheet: View {
             }
             await vm?.loadTags()
         }
+    }
+
+    // MARK: - 新建标签入口
+
+    /// 列表中「➕ 新建标签」按钮行。
+    private var createTagButton: some View {
+        Button {
+            isCreatingTag = true
+            newTagName = ""
+            newTagColorHex = TagColorPalette.defaultHex
+            userPickedColor = false
+            vm?.clearError()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(Color.accentColor)
+                Text("batch.createTag")
+                    .foregroundStyle(Color.accentColor)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    // MARK: - 内联新建标签表单
+
+    /// 展开的内联创建表单：名称输入 + 12 色板 + 取消 / 创建按钮。
+    ///
+    /// 颜色默认由 `TagAutoVisual.pick(for:)` 按名称稳定推荐，
+    /// 用户点选色板后以手动选择为准（`userPickedColor` 防止继续输入时覆盖手动选择）。
+    private var createTagForm: some View {
+        let trimmedName = newTagName.trimmingCharacters(in: .whitespaces)
+        let isDuplicate = vm?.isDuplicateName(trimmedName) ?? false
+        let canCreate = !trimmedName.isEmpty && !isDuplicate && !(vm?.isCreating ?? false)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            // 名称输入
+            HStack(spacing: 8) {
+                Text("batch.tagName")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .leading)
+                TextField("batch.tagName.placeholder", text: $newTagName)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(nsColor: .textBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(isDuplicate ? Color.orange : Color.secondary.opacity(0.2))
+                    )
+                    .onChange(of: newTagName) { _, newName in
+                        if !userPickedColor {
+                            let t = newName.trimmingCharacters(in: .whitespaces)
+                            if !t.isEmpty {
+                                let (hex, _) = TagAutoVisual.pick(for: t)
+                                newTagColorHex = hex
+                            }
+                        }
+                    }
+            }
+
+            // 重名提示
+            if isDuplicate {
+                Label {
+                    Text(String(format: String.l10n("batch.createTag.duplicate"), trimmedName))
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .padding(.leading, 44)
+            }
+
+            // 颜色选择
+            HStack(spacing: 8) {
+                Text("batch.tagColor")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .leading)
+                HStack(spacing: 6) {
+                    ForEach(TagColorPalette.presets, id: \.hex) { preset in
+                        Button {
+                            newTagColorHex = preset.hex
+                            userPickedColor = true
+                        } label: {
+                            Circle()
+                                .fill(Color(hex: preset.hex) ?? .accentColor)
+                                .frame(width: 16, height: 16)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(
+                                            newTagColorHex == preset.hex ? Color.primary : Color.clear,
+                                            lineWidth: 2
+                                        )
+                                )
+                                .scaleEffect(newTagColorHex == preset.hex ? 1.15 : 1.0)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help(LocalizedStringKey(preset.name))
+                    }
+                }
+            }
+
+            // 操作按钮
+            HStack {
+                Spacer()
+                Button("general.cancel") {
+                    isCreatingTag = false
+                    newTagName = ""
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("batch.createTag.confirm") {
+                    Task {
+                        guard let tag = await vm?.createTag(
+                            name: trimmedName,
+                            colorHex: newTagColorHex
+                        ) else { return }
+                        selectedTagId = tag.id
+                        isCreatingTag = false
+                        newTagName = ""
+                        userPickedColor = false
+                        query = ""
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCreate)
+                .keyboardShortcut(.return)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
     private func filteredTags(_ tags: [Tag]) -> [Tag] {
@@ -735,6 +897,7 @@ final class BatchTagSheetViewModel {
 
     private(set) var tags: [Tag] = []
     private(set) var isApplying: Bool = false
+    private(set) var isCreating: Bool = false
     private(set) var errorMessage: LocalizedStringKey?
 
     private let tagRepository: any TagRepositoryProtocol
@@ -755,6 +918,49 @@ final class BatchTagSheetViewModel {
         } catch {
             errorMessage = "batch.loadTagsFailed"
         }
+    }
+
+    /// 在列表内联创建新标签并插入 `tags` 顶部。
+    ///
+    /// - Returns: 创建成功返回新 Tag 供 UI 自动选中；失败返回 nil（errorMessage 已写）。
+    func createTag(name: String, colorHex: String) async -> Tag? {
+        isCreating = true
+        defer { isCreating = false }
+        do {
+            let now = ISO8601DateFormatter.shared.string(from: Date())
+            let (_, iconName) = TagAutoVisual.pick(for: name)
+            let tag = Tag(
+                id: UUID().uuidString,
+                name: name,
+                color: colorHex,
+                icon: iconName,
+                sortOrder: 0,
+                isPreset: false,
+                parentId: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            try await tagRepository.create(tag)
+            tags.insert(tag, at: 0)
+            errorMessage = nil
+            return tag
+        } catch {
+            errorMessage = "batch.createTag.failed"
+            return nil
+        }
+    }
+
+    /// 检查标签名（case-insensitive）是否与已有标签冲突。
+    ///
+    /// 在用户输入时实时调用，用于禁用「创建标签」按钮和显示重名提示。
+    func isDuplicateName(_ name: String) -> Bool {
+        guard !name.isEmpty else { return false }
+        return tags.contains { $0.name.lowercased() == name.lowercased() }
+    }
+
+    /// 清除错误提示（关闭新建标签表单时重置）。
+    func clearError() {
+        errorMessage = nil
     }
 
     /// 把 tagId 加到 repoIds 中每一个 repo。

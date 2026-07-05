@@ -486,6 +486,7 @@ struct RepoAIOpenButton: View {
 
 struct RepoShareButton: View {
     let isSharing: Bool
+    let isShared: Bool
     let action: () -> Void
 
     var body: some View {
@@ -499,7 +500,7 @@ struct RepoShareButton: View {
                             height: ToolbarIconMetrics.frameSize
                         )
                 } else {
-                    ToolbarIcon("square.and.arrow.up")
+                    ToolbarIcon(isShared ? "square.and.arrow.up.circle.fill" : "square.and.arrow.up.circle")
                         .accessibilityLabel(Text("repo.share.button.label"))
                 }
             }

@@ -22,8 +22,6 @@ extension Notification.Name {
     static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
     /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
     static let starcatResetListPreferencesRequested = Notification.Name("starcat.resetListPreferencesRequested")
-    /// Debug 菜单触发知识库 RAG 工作台。当前只打开 UI 原型，真实 RAG 后端后续再接。
-    static let starcatCommandOpenKnowledgeRAGWorkspace = Notification.Name("starcat.command.openKnowledgeRAGWorkspace")
 }
 
 @main
@@ -848,6 +846,7 @@ private enum ReleaseNotesLoader {
 	struct DebugMenuCommands: Commands {
         @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
         @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
+        @AppStorage(DebugFlags.knowledgeRAGToolbarEntryKey) private var knowledgeRAGToolbarEntry = false
 
 		var body: some Commands {
 			CommandMenu("Who's Your Daddy") {
@@ -859,12 +858,7 @@ private enum ReleaseNotesLoader {
 					)
 				}
 
-                Button("Open Knowledge RAG Workspace") {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NotificationCenter.default.post(name: .starcatCommandOpenKnowledgeRAGWorkspace, object: nil)
-                }
-
-				Divider()
+                Divider()
 
                     Toggle(
                         "Activate Pro",
@@ -886,6 +880,17 @@ private enum ReleaseNotesLoader {
                             set: { newValue in
                                 agentToolbarEntry = newValue
                                 DebugFlags.setAgentToolbarEntry(newValue)
+                            }
+                        )
+                    )
+
+                    Toggle(
+                        "Show RAG Toolbar Entry",
+                        isOn: Binding(
+                            get: { knowledgeRAGToolbarEntry },
+                            set: { newValue in
+                                knowledgeRAGToolbarEntry = newValue
+                                DebugFlags.setKnowledgeRAGToolbarEntry(newValue)
                             }
                         )
                     )

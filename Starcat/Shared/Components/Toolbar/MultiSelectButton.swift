@@ -9,7 +9,7 @@
 //  专项 PR-1 抽出，让 Trending / Weekly / Activity 也能复用同款图标 + 快捷键。
 //
 //  关键约束：
-//  - 视觉态由入参 `isActive` 驱动（`checklist` ↔ `checklist.checked`），具体激活
+//  - 视觉态由入参 `isActive` 驱动（`checkmark.circle` ↔ `checkmark.circle.fill`），具体激活
 //    含义由调用方决定（Manage 用 `HomeViewModel.isMultiSelectMode`、其它场景用
 //    各自的 `MultiSelectionStore.isActive`）；
 //  - 键盘快捷键统一 `⌘⇧M`，调用方注入时不重复定义；
@@ -35,7 +35,7 @@ struct MultiSelectButton: View {
 
     var body: some View {
         Button(action: action) {
-            ToolbarIcon(isActive ? "checklist.checked" : "checklist")
+            ToolbarIcon(isActive ? "checkmark.circle.fill" : "checkmark.circle")
                 .accessibilityLabel(isActive ? Text("batch.exitMultiSelect") : Text("batch.multiSelect"))
         }
         .disabled(isDisabled)

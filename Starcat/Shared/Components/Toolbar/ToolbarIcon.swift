@@ -8,7 +8,7 @@
 //  专项 PR-1 抽出共享，让 ExternalLinksMenu / CloneMenu / MultiSelectButton /
 //  UnifiedSortMenu / UnifiedFilterMenu 共享同一份 size / 行内 frame，避免
 //  不同 SF Symbol 默认 bounding box 差异会造成 toolbar 控件视觉错位；
-//  Clone 入口用 `square.on.square`（复制语义 + 较紧凑的 glyph bounding box）。
+//  具体 symbol 由各 toolbar 入口按当前语义传入，本组件只负责统一光学尺寸。
 //
 
 import SwiftUI

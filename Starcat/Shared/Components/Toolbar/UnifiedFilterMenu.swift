@@ -130,7 +130,7 @@ struct UnifiedFilterMenu: View {
     /// 筛选激活态必须足够明显：仅把 symbol 从空心换成实心，在透明 toolbar 上不容易被注意到。
     /// 这里只通过颜色与底色表达 active，不加数字 / 文案，避免 toolbar 信息过载。
     private var filterIcon: some View {
-        ToolbarIcon(isAnyFilterActive ? "circle.grid.2x1.fill" : "circle.grid.2x1")
+        ToolbarIcon(isAnyFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
             .foregroundStyle(isAnyFilterActive ? activeIconColor : Color.primary)
             .accessibilityLabel(accessibilityLabel)
         .frame(width: 32, height: 26)
