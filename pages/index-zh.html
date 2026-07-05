@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Starcat — 将 GitHub Stars 转化为可搜索的 AI 知识库。macOS 原生应用，本地优先，AI 驱动。">
     <meta name="robots" content="index, follow">
+    <meta property="og:title" content="Starcat — macOS GitHub Stars 管理器">
+    <meta property="og:description" content="将 GitHub Stars 转化为可搜索的 AI 知识库。macOS 15+ 原生应用，本地优先，BYOK AI。">
+    <meta property="og:image" content="sc-banner.webp">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
     <title>Starcat — GitHub Star 管理与 AI 知识整理工具</title>
     <link rel="icon" type="image/png" href="starcat-logo.png">
 
@@ -498,10 +503,30 @@
             margin-top: 4px;
         }
 
+        .hero-version-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 22px;
+            padding: 9px 14px;
+            border: 1px solid var(--color-border);
+            border-radius: 999px;
+            color: var(--color-text-secondary);
+            background: rgba(255, 255, 255, 0.045);
+            font-size: var(--fs-caption);
+        }
+
+        .hero-version-note .lucide {
+            width: 14px;
+            height: 14px;
+            color: var(--color-cta);
+        }
+
         @media (max-width: 767px) {
             .hero-logo { width: 72px; height: 72px; }
             .hero-actions { flex-direction: column; }
             .hero-badges { gap: 24px; }
+            .hero-version-note { align-items: flex-start; border-radius: 14px; text-align: left; }
         }
 
         /* ==================================================================
@@ -836,9 +861,9 @@
          * ================================================================== */
         .pricing-grid {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: var(--card-gap);
-            max-width: 520px;
+            max-width: 920px;
             margin: 0 auto;
         }
 
@@ -925,6 +950,19 @@
             justify-content: center;
         }
 
+        .pricing-disabled {
+            width: 100%;
+            display: inline-flex;
+            justify-content: center;
+            padding: 14px 28px;
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            color: var(--color-text-muted);
+            font-size: var(--fs-small);
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
         @media (max-width: 767px) {
             .pricing-grid { grid-template-columns: 1fr; }
         }
@@ -932,11 +970,103 @@
         /* ==================================================================
          * 7. 下载
          * ================================================================== */
+        .download-modal {
+            position: fixed;
+            inset: 0;
+            z-index: var(--z-overlay);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(4, 6, 10, 0.74);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            opacity: 0;
+            visibility: hidden;
+            transition:
+                opacity var(--duration-normal) var(--ease-out),
+                visibility var(--duration-normal) var(--ease-out);
+        }
+
+        .download-modal.is-open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .download-modal-dialog {
+            width: min(920px, 100%);
+            max-height: min(760px, calc(100vh - 48px));
+            overflow: auto;
+            border: 1px solid var(--color-border-hover);
+            border-radius: 24px;
+            background:
+                radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.12), transparent 36%),
+                #0D1017;
+            box-shadow: 0 40px 120px rgba(0, 0, 0, 0.58);
+            transform: translateY(12px) scale(0.98);
+            transition: transform var(--duration-normal) var(--ease-out);
+        }
+
+        .download-modal.is-open .download-modal-dialog {
+            transform: translateY(0) scale(1);
+        }
+
+        .download-modal-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 28px 28px 0;
+        }
+
+        .download-modal-title {
+            font-size: var(--fs-h2);
+            font-weight: 750;
+            line-height: 1.2;
+            margin-bottom: 8px;
+        }
+
+        .download-modal-desc {
+            color: var(--color-text-secondary);
+            font-size: var(--fs-small);
+            line-height: 1.6;
+            max-width: 600px;
+        }
+
+        .download-modal-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--color-border);
+            border-radius: 10px;
+            color: var(--color-text-secondary);
+            background: rgba(255, 255, 255, 0.04);
+            cursor: pointer;
+            transition:
+                border-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out),
+                background var(--duration-fast) var(--ease-out);
+        }
+
+        .download-modal-close:hover {
+            border-color: var(--color-border-hover);
+            color: var(--color-text);
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .download-modal-close .lucide {
+            width: 18px;
+            height: 18px;
+        }
+
         .download-panel {
             display: grid;
             grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
             gap: var(--card-gap);
             align-items: stretch;
+            padding: 28px;
         }
 
         .download-card,
@@ -1015,6 +1145,30 @@
             line-height: 1.6;
         }
 
+        .download-trust {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .download-trust-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            color: var(--color-text-secondary);
+            font-size: var(--fs-caption);
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .download-trust-item .lucide {
+            width: 14px;
+            height: 14px;
+            color: var(--color-cta);
+        }
+
         .download-card .btn-primary {
             justify-content: center;
             width: 100%;
@@ -1073,10 +1227,108 @@
 
         @media (max-width: 900px) {
             .download-panel { grid-template-columns: 1fr; }
+            .download-trust { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 767px) {
+            .download-modal {
+                align-items: flex-end;
+                padding: 12px;
+            }
+
+            .download-modal-dialog {
+                max-height: calc(100vh - 24px);
+                border-radius: 18px;
+            }
+
+            .download-modal-header {
+                padding: 22px 18px 0;
+            }
+
+            .download-panel {
+                padding: 18px;
+            }
+
+            .download-card,
+            .download-history {
+                padding: 22px;
+            }
         }
 
         /* ==================================================================
-         * 8. Footer
+         * 8. FAQ 与最终 CTA
+         * ================================================================== */
+        .faq-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .faq-item {
+            background: var(--color-bg-glass);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            padding: 22px;
+        }
+
+        .faq-item summary {
+            cursor: pointer;
+            list-style: none;
+            font-size: var(--fs-small);
+            font-weight: 700;
+            color: var(--color-text);
+        }
+
+        .faq-item summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .faq-item p {
+            margin-top: 12px;
+            color: var(--color-text-secondary);
+            font-size: var(--fs-small);
+            line-height: 1.65;
+        }
+
+        .final-cta {
+            padding-top: 0;
+        }
+
+        .final-cta-panel {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 24px;
+            align-items: center;
+            padding: 36px;
+            border: 1px solid var(--color-border);
+            border-radius: 24px;
+            background:
+                radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.14), transparent 34%),
+                var(--color-bg-glass);
+        }
+
+        .final-cta-title {
+            font-size: var(--fs-h2);
+            font-weight: 750;
+            line-height: 1.2;
+            margin-bottom: 10px;
+        }
+
+        .final-cta-desc {
+            color: var(--color-text-secondary);
+            max-width: 620px;
+        }
+
+        @media (max-width: 767px) {
+            .faq-grid,
+            .pricing-grid,
+            .final-cta-panel {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ==================================================================
+         * 9. Footer
          * ================================================================== */
         .footer {
             padding: 60px 24px 40px;
@@ -1166,11 +1418,12 @@
         <div class="nav-links">
             <a href="#features" class="nav-link">功能</a>
             <a href="#tech" class="nav-link">技术</a>
-            <a href="#pricing" class="nav-link">定价</a>
+            <a href="#pricing" class="nav-link">版本</a>
+            <a href="#faq" class="nav-link">FAQ</a>
             <a href="./privacy-zh.html" class="nav-link">隐私</a>
             <a href="./changelog.html" class="nav-link">更新记录</a>
             <a href="./index.html" class="nav-link" title="Switch to English">🇺🇸</a>
-            <a href="#download" class="nav-cta" role="button">下载</a>
+            <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="nav-cta" role="button" data-download-open>下载</a>
         </div>
     </nav>
 
@@ -1200,7 +1453,7 @@
                 每一个收藏的 GitHub 仓库——本地优先，AI 驱动。
             </p>
             <div class="hero-actions">
-                <a href="#download" class="btn-primary" role="button">
+                <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-open>
                     <span class="icon-18"><i data-lucide="download"></i></span>
                     下载 Starcat
                 </a>
@@ -1229,6 +1482,10 @@
                     <div class="hero-badge-value">BYOK AI</div>
                     <div class="hero-badge-label">多模型自由选择</div>
                 </div>
+            </div>
+            <div class="hero-version-note">
+                <i data-lucide="monitor"></i>
+                当前版本仅支持 macOS 15+，提供 Apple Silicon Direct 下载包。
             </div>
         </div>
     </section>
@@ -1450,11 +1707,11 @@
                     <h3 class="showcase-name">AI 服务灵活配置（BYOK）</h3>
                     <p class="showcase-desc">
                         支持自建代理、Gemini、DeepSeek、OpenAI 兼容、Ollama 本地模型。
-                        你的 API Key 你做主，按配额精细控制调用量，数据不外泄。
+                        你的 API Key 与调用配额由你自行掌控。
                     </p>
                     <ul class="showcase-highlights">
                         <li><i data-lucide="check"></i> 多模型自由切换</li>
-                        <li><i data-lucide="check"></i> BYOK 零数据泄露</li>
+                        <li><i data-lucide="check"></i> API Key 自行掌控</li>
                         <li><i data-lucide="check"></i> Quota 用量精细控制</li>
                     </ul>
                 </div>
@@ -1498,7 +1755,7 @@
                     <h3 class="feature-name">私有笔记</h3>
                     <p class="feature-desc">
                         每个仓库可写独立的私有笔记，记录你的想法和评价。
-                        笔记随 CloudKit 跨设备同步，永不丢失。
+                        标签、笔记和状态写入本地 SQLite，可通过导出随时带走。
                     </p>
                 </div>
 
@@ -1559,9 +1816,9 @@
     <section class="section" id="tech" aria-labelledby="tech-title">
         <div class="section-inner">
             <div class="section-label fade-in">Tech Stack</div>
-            <h2 class="section-title fade-in" id="tech-title">Apple 原生，极致体验</h2>
+            <h2 class="section-title fade-in" id="tech-title">macOS 原生，极致体验</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Starcat 深度集成 Apple 平台最新技术，追求与系统一致的原生体验。
+                Starcat 深度集成 macOS 原生能力，专注桌面端的整理、阅读与知识工作流。
             </p>
 
             <div class="tech-grid">
@@ -1598,14 +1855,14 @@
                     </p>
                 </div>
 
-                <!-- Apple 全平台 -->
+                <!-- macOS 专注体验 -->
                 <div class="tech-card fade-in">
                     <div class="tech-icon" style="background:rgba(251,191,36,0.1);color:#FBBF24">
-                        <i data-lucide="monitor-smartphone"></i>
+                        <i data-lucide="monitor"></i>
                     </div>
-                    <h3 class="tech-name">全平台覆盖</h3>
+                    <h3 class="tech-name">macOS 专注体验</h3>
                     <p class="tech-desc">
-                        macOS · iOS · iPadOS · watchOS，一个数据源，多端同步
+                        macOS 15+ 专属版本，围绕三栏窗口、菜单栏、快捷键和桌面阅读体验打磨
                     </p>
                 </div>
             </div>
@@ -1613,20 +1870,19 @@
     </section>
 
     <!-- ==================================================================
-     * 定价
+     * 当前版本
      * ================================================================== -->
     <section class="section" id="pricing" aria-labelledby="pricing-title">
         <div class="section-inner">
-            <div class="section-label fade-in">Pricing</div>
-            <h2 class="section-title fade-in" id="pricing-title">简单透明的定价</h2>
+            <div class="section-label fade-in">Availability</div>
+            <h2 class="section-title fade-in" id="pricing-title">当前可用版本</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                基础功能免费开放，Pro 能力准备好后再开放。
+                先提供 macOS Direct 版本。核心整理能力免费开放，Pro 能力准备好后再开放。
             </p>
 
             <div class="pricing-grid">
-                <!-- Free -->
                 <div class="pricing-card fade-in">
-                    <h3 class="pricing-name">Free</h3>
+                    <h3 class="pricing-name">Free for macOS</h3>
                     <div class="pricing-price">免费</div>
                     <div class="pricing-period">基础功能，永久可用</div>
                     <ul class="pricing-features">
@@ -1637,28 +1893,97 @@
                         <li><i data-lucide="check"></i> FTS5 全文搜索</li>
                         <li><i data-lucide="check"></i> JSON 导入 / 导出</li>
                     </ul>
-                    <a href="#download" class="btn-secondary" role="button">
+                    <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
                         <span class="icon-16"><i data-lucide="download"></i></span>
                         免费下载
                     </a>
+                </div>
+                <div class="pricing-card pricing-card--pro fade-in">
+                    <span class="pricing-badge">准备中</span>
+                    <h3 class="pricing-name">Pro</h3>
+                    <div class="pricing-price">未开放</div>
+                    <div class="pricing-period">更高配额与高级工作流会逐步进入 Pro</div>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> 更高 AI 使用配额与批量整理规划中</li>
+                        <li><i data-lucide="check"></i> CodeFlow / 代码图谱等高级能力规划中</li>
+                        <li><i data-lucide="check"></i> 正式价格以上线版本为准</li>
+                    </ul>
+                    <span class="pricing-disabled">暂未开放购买</span>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- ==================================================================
-     * 下载
+     * FAQ
      * ================================================================== -->
-    <section class="section" id="download" aria-labelledby="download-title">
+    <section class="section" id="faq" aria-labelledby="faq-title">
         <div class="section-inner">
-            <div class="section-label fade-in">Download</div>
-            <h2 class="section-title fade-in" id="download-title">下载 Starcat for macOS</h2>
-            <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                默认下载最新 Direct 版本，也可以按需选择历史版本。
+            <div class="section-label fade-in">FAQ</div>
+            <h2 class="section-title fade-in" id="faq-title">下载前你可能想确认</h2>
+            <p class="section-subtitle fade-in" style="margin-bottom:36px">
+                Starcat 现在是 macOS 专属工具。这里把版本边界、数据存储和 AI Key 说清楚。
             </p>
+            <div class="faq-grid">
+                <details class="faq-item fade-in" open>
+                    <summary>Starcat 支持哪些系统？</summary>
+                    <p>当前仅支持 macOS 15 及以上版本，Direct 下载包面向 Apple Silicon Mac。暂不提供 iOS、iPadOS、watchOS、Windows 或 Android 版本。</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>Direct 版本和 App Store 版本有什么区别？</summary>
+                    <p>当前落地页默认提供 Direct 版本下载，并通过 Sparkle 支持应用内更新。App Store 渠道会按单独发布流程处理，下载区会在可用时明确标注。</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>我的数据存在哪里？</summary>
+                    <p>Starcat 采用本地优先设计。仓库缓存可重建，标签、笔记、状态等长期数据写入本地 SQLite，并提供 JSON 导入导出。</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>AI Key 会不会被 Starcat 托管？</summary>
+                    <p>Starcat 采用 BYOK 思路，你可以配置自己的模型服务或 API Key。页面中涉及 AI 的能力以上线版本实际开放范围为准。</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>以后会支持 iPhone 或 iPad 吗？</summary>
+                    <p>短期重点是把 macOS 版本打磨稳定。未来平台计划会在更新记录中说明，当前页面不承诺多端版本。</p>
+                </details>
+            </div>
+        </div>
+    </section>
 
+    <!-- ==================================================================
+     * 最终 CTA
+     * ================================================================== -->
+    <section class="section final-cta" aria-label="下载 Starcat">
+        <div class="section-inner">
+            <div class="final-cta-panel fade-in">
+                <div>
+                    <div class="final-cta-title">准备把 Stars 变成真正可用的知识库？</div>
+                    <p class="final-cta-desc">下载 macOS Direct 版本，从整理、搜索和阅读你的 GitHub Stars 开始。</p>
+                </div>
+                <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-open>
+                    <span class="icon-16"><i data-lucide="download"></i></span>
+                    下载 Starcat
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================================================================
+     * 下载弹窗
+     * ================================================================== -->
+    <div class="download-modal" id="download-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+        <div class="download-modal-dialog" role="document">
+            <div class="download-modal-header">
+                <div>
+                    <div class="section-label">Download</div>
+                    <h2 class="download-modal-title" id="download-modal-title">下载 Starcat for macOS</h2>
+                    <p class="download-modal-desc">默认下载最新 Direct 版本，也可以按需选择历史版本。</p>
+                </div>
+                <button class="download-modal-close" type="button" aria-label="关闭下载弹窗" data-download-close>
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
             <div class="download-panel">
-                <div class="download-card fade-in">
+                <div class="download-card">
                     <div class="download-card-header">
                         <div>
                             <div class="download-eyebrow">Latest version</div>
@@ -1676,15 +2001,20 @@
                         <span><i data-lucide="hard-drive-download"></i> <span data-download-size>88.6 MB</span></span>
                     </div>
                     <p class="download-note" data-download-note>
-                        这是首个内置 Sparkle 的 Direct 版本，后续 Direct 版本可以在应用内更新。
+                        这是 macOS Direct 版本，内置 Sparkle 更新能力；后续 Direct 版本可以在应用内更新。
                     </p>
+                    <div class="download-trust">
+                        <div class="download-trust-item"><i data-lucide="monitor"></i> 仅 macOS 15+</div>
+                        <div class="download-trust-item"><i data-lucide="cpu"></i> Apple Silicon</div>
+                        <div class="download-trust-item"><i data-lucide="sparkles"></i> Sparkle 自动更新</div>
+                    </div>
                     <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-link>
                         <span class="icon-16"><i data-lucide="download"></i></span>
                         下载最新版
                     </a>
                 </div>
 
-                <div class="download-history fade-in">
+                <div class="download-history">
                     <div class="download-history-title">历史版本</div>
                     <div class="download-history-list" data-download-history>
                         <p class="download-history-empty">暂无历史版本。</p>
@@ -1692,7 +2022,7 @@
                 </div>
             </div>
         </div>
-    </section>
+    </div>
 
     <!-- ==================================================================
      * Footer
@@ -1865,7 +2195,49 @@
         })();
 
         // ================================================================
-        // 4. 下载区块：从 Sparkle appcast 获取最新版和历史版本
+        // 4. 下载弹窗：统一导航、Hero、版本卡片和最终 CTA 的下载入口
+        // ================================================================
+        (function() {
+            const modal = document.getElementById('download-modal');
+            if (!modal) return;
+
+            const openers = document.querySelectorAll('[data-download-open]');
+            const closers = document.querySelectorAll('[data-download-close]');
+            let restoreScrollY = 0;
+            let activeTrigger = null;
+
+            const openModal = (trigger) => {
+                restoreScrollY = window.scrollY;
+                activeTrigger = trigger;
+                modal.classList.add('is-open');
+                modal.setAttribute('aria-hidden', 'false');
+                modal.querySelector('[data-download-close]')?.focus();
+            };
+            const closeModal = () => {
+                modal.classList.remove('is-open');
+                modal.setAttribute('aria-hidden', 'true');
+                activeTrigger?.focus({ preventScroll: true });
+                window.scrollTo(0, restoreScrollY);
+                window.requestAnimationFrame(() => window.scrollTo(0, restoreScrollY));
+            };
+
+            openers.forEach(trigger => {
+                trigger.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    openModal(trigger);
+                });
+            });
+            closers.forEach(trigger => trigger.addEventListener('click', closeModal));
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) closeModal();
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+            });
+        })();
+
+        // ================================================================
+        // 5. 下载信息：从 Sparkle appcast 获取最新版和历史版本
         // ================================================================
         (function() {
             const fallback = {
@@ -1907,6 +2279,7 @@
             const render = (releases) => {
                 const latest = releases[0] || fallback;
                 document.querySelectorAll('[data-download-link]').forEach(link => link.href = latest.url);
+                document.querySelectorAll('[data-download-open]').forEach(link => link.href = latest.url);
                 document.querySelectorAll('[data-download-version]').forEach(el => el.textContent = `Starcat ${latest.version}`);
                 document.querySelectorAll('[data-download-build]').forEach(el => el.textContent = latest.build);
                 document.querySelectorAll('[data-download-size]').forEach(el => el.textContent = formatSize(latest.size));
@@ -1940,7 +2313,7 @@
         })();
 
         // ================================================================
-        // 5. 初始化 Lucide 图标
+        // 6. 初始化 Lucide 图标
         // ================================================================
         (function() {
             if (typeof lucide !== 'undefined') {

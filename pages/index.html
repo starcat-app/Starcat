@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Starcat — Turn GitHub Stars into a searchable AI knowledge base. macOS native app, local-first, AI-powered.">
     <meta name="robots" content="index, follow">
-    <title>Starcat — GitHub Star Manager & AI Knowledge Organizer</title>
+    <meta property="og:title" content="Starcat — Native macOS GitHub Stars Manager">
+    <meta property="og:description" content="Turn GitHub Stars into a searchable AI knowledge base. Native macOS 15+ app, local-first, BYOK AI.">
+    <meta property="og:image" content="sc-banner.webp">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <title>Starcat — GitHub Star Manager &amp; AI Knowledge Organizer</title>
     <link rel="icon" type="image/png" href="starcat-logo.png">
 
     <!-- Lucide Icons -->
@@ -189,10 +194,13 @@
         .hero-badge { text-align: center; }
         .hero-badge-value { font-size: 24px; font-weight: 700; color: var(--color-text); }
         .hero-badge-label { font-size: var(--fs-caption); color: var(--color-text-muted); margin-top: 4px; }
+        .hero-version-note { display: inline-flex; align-items: center; gap: 8px; margin-top: 22px; padding: 9px 14px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); background: rgba(255, 255, 255, 0.045); font-size: var(--fs-caption); }
+        .hero-version-note .lucide { width: 14px; height: 14px; color: var(--color-cta); }
         @media (max-width: 767px) {
             .hero-logo { width: 72px; height: 72px; }
             .hero-actions { flex-direction: column; }
             .hero-badges { gap: 24px; }
+            .hero-version-note { align-items: flex-start; border-radius: 14px; text-align: left; }
         }
 
         /* ==================================================================
@@ -261,7 +269,7 @@
         /* ==================================================================
          * 7. Pricing
          * ================================================================== */
-        .pricing-grid { display: grid; grid-template-columns: 1fr; gap: var(--card-gap); max-width: 520px; margin: 0 auto; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--card-gap); max-width: 920px; margin: 0 auto; }
         .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; }
         .pricing-card:hover { border-color: var(--color-border-hover); background: rgba(255, 255, 255, 0.075); transform: translateY(-1px); }
         .pricing-card--pro { border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.06); }
@@ -274,12 +282,23 @@
         .pricing-features li { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: var(--fs-small); color: var(--color-text-secondary); }
         .pricing-features li i { width: 16px; height: 16px; color: var(--color-cta); flex-shrink: 0; }
         .pricing-card .btn-primary, .pricing-card .btn-secondary { width: 100%; justify-content: center; }
+        .pricing-disabled { width: 100%; display: inline-flex; justify-content: center; padding: 14px 28px; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-text-muted); font-size: var(--fs-small); font-weight: 700; background: rgba(255, 255, 255, 0.035); }
         @media (max-width: 767px) { .pricing-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
          * 8. Download
          * ================================================================== */
-        .download-panel { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: var(--card-gap); align-items: stretch; }
+        .download-modal { position: fixed; inset: 0; z-index: var(--z-overlay); display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(4, 6, 10, 0.74); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); opacity: 0; visibility: hidden; transition: opacity var(--duration-normal) var(--ease-out), visibility var(--duration-normal) var(--ease-out); }
+        .download-modal.is-open { opacity: 1; visibility: visible; }
+        .download-modal-dialog { width: min(920px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--color-border-hover); border-radius: 24px; background: radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.12), transparent 36%), #0D1017; box-shadow: 0 40px 120px rgba(0, 0, 0, 0.58); transform: translateY(12px) scale(0.98); transition: transform var(--duration-normal) var(--ease-out); }
+        .download-modal.is-open .download-modal-dialog { transform: translateY(0) scale(1); }
+        .download-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 28px 28px 0; }
+        .download-modal-title { font-size: var(--fs-h2); font-weight: 750; line-height: 1.2; margin-bottom: 8px; }
+        .download-modal-desc { color: var(--color-text-secondary); font-size: var(--fs-small); line-height: 1.6; max-width: 600px; }
+        .download-modal-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); background: rgba(255, 255, 255, 0.04); cursor: pointer; transition: border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out); }
+        .download-modal-close:hover { border-color: var(--color-border-hover); color: var(--color-text); background: rgba(255, 255, 255, 0.07); }
+        .download-modal-close .lucide { width: 18px; height: 18px; }
+        .download-panel { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: var(--card-gap); align-items: stretch; padding: 28px; }
         .download-card, .download-history { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 32px; }
         .download-card { display: flex; flex-direction: column; gap: 20px; }
         .download-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -290,6 +309,9 @@
         .download-meta > span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); font-size: var(--fs-caption); }
         .download-meta .lucide { width: 14px; height: 14px; }
         .download-note { color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.6; }
+        .download-trust { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .download-trust-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-text-secondary); font-size: var(--fs-caption); background: rgba(255, 255, 255, 0.035); }
+        .download-trust-item .lucide { width: 14px; height: 14px; color: var(--color-cta); }
         .download-card .btn-primary { justify-content: center; width: 100%; }
         .download-history-title { font-size: var(--fs-small); font-weight: 700; margin-bottom: 14px; }
         .download-history-list { display: flex; flex-direction: column; gap: 10px; }
@@ -299,10 +321,25 @@
         .download-history-meta { font-size: var(--fs-caption); color: var(--color-text-muted); margin-top: 2px; }
         .download-history-link { font-size: var(--fs-caption); font-weight: 700; color: var(--color-cta); white-space: nowrap; }
         .download-history-empty { color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.6; }
-        @media (max-width: 900px) { .download-panel { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) { .download-panel { grid-template-columns: 1fr; } .download-trust { grid-template-columns: 1fr; } }
+        @media (max-width: 767px) { .download-modal { align-items: flex-end; padding: 12px; } .download-modal-dialog { max-height: calc(100vh - 24px); border-radius: 18px; } .download-modal-header { padding: 22px 18px 0; } .download-panel { padding: 18px; } .download-card, .download-history { padding: 22px; } }
 
         /* ==================================================================
-         * 9. Footer
+         * 9. FAQ + Final CTA
+         * ================================================================== */
+        .faq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        .faq-item { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 16px; padding: 22px; }
+        .faq-item summary { cursor: pointer; list-style: none; font-size: var(--fs-small); font-weight: 700; color: var(--color-text); }
+        .faq-item summary::-webkit-details-marker { display: none; }
+        .faq-item p { margin-top: 12px; color: var(--color-text-secondary); font-size: var(--fs-small); line-height: 1.65; }
+        .final-cta { padding-top: 0; }
+        .final-cta-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 36px; border: 1px solid var(--color-border); border-radius: 24px; background: radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.14), transparent 34%), var(--color-bg-glass); }
+        .final-cta-title { font-size: var(--fs-h2); font-weight: 750; line-height: 1.2; margin-bottom: 10px; }
+        .final-cta-desc { color: var(--color-text-secondary); max-width: 620px; }
+        @media (max-width: 767px) { .faq-grid, .pricing-grid, .final-cta-panel { grid-template-columns: 1fr; } }
+
+        /* ==================================================================
+         * 10. Footer
          * ================================================================== */
         .footer { padding: 60px 24px 40px; border-top: 1px solid var(--color-border); position: relative; z-index: var(--z-content); }
         .footer-inner { max-width: var(--content-max); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px; }
@@ -333,11 +370,12 @@
         <div class="nav-links">
             <a href="#features" class="nav-link">Features</a>
             <a href="#tech" class="nav-link">Tech</a>
-            <a href="#pricing" class="nav-link">Pricing</a>
+            <a href="#pricing" class="nav-link">Availability</a>
+            <a href="#faq" class="nav-link">FAQ</a>
             <a href="./privacy.html" class="nav-link">Privacy</a>
             <a href="./changelog.html" class="nav-link">Changelog</a>
             <a href="./index-zh.html" class="nav-link" title="切换到中文">🇨🇳</a>
-            <a href="#download" class="nav-cta" role="button">Download</a>
+            <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="nav-cta" role="button" data-download-open>Download</a>
         </div>
     </nav>
 
@@ -358,7 +396,7 @@
                 rediscover, and evaluate every starred GitHub repo — local-first, AI-powered.
             </p>
             <div class="hero-actions">
-                <a href="#download" class="btn-primary" role="button">
+                <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-open>
                     <span class="icon-18"><i data-lucide="download"></i></span>
                     Download Starcat
                 </a>
@@ -383,6 +421,10 @@
                     <div class="hero-badge-value">BYOK AI</div>
                     <div class="hero-badge-label">Multiple models, your keys</div>
                 </div>
+            </div>
+            <div class="hero-version-note">
+                <i data-lucide="monitor"></i>
+                Current release supports macOS 15+ only and ships as an Apple Silicon Direct download.
             </div>
         </div>
     </section>
@@ -506,7 +548,7 @@
                     </ul>
                 </div>
                 <div class="showcase-image">
-                    <img src="sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&A" loading="lazy">
+                    <img src="sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
                 </div>
             </div>
 
@@ -577,11 +619,11 @@
                     <h3 class="showcase-name">Flexible AI Configuration (BYOK)</h3>
                     <p class="showcase-desc">
                         Self-hosted proxy, Gemini, DeepSeek, OpenAI-compatible, Ollama local models.
-                        Your API key, your choice. Fine-grained quota control — zero data leakage.
+                        Your API keys and usage quotas stay under your control.
                     </p>
                     <ul class="showcase-highlights">
                         <li><i data-lucide="check"></i> Multi-model, free to switch</li>
-                        <li><i data-lucide="check"></i> BYOK — zero data leakage</li>
+                        <li><i data-lucide="check"></i> BYOK — keys under your control</li>
                         <li><i data-lucide="check"></i> Granular quota control</li>
                     </ul>
                 </div>
@@ -610,7 +652,7 @@
                 <div class="feature-card fade-in">
                     <div class="feature-icon bento-card-icon--blue"><i data-lucide="file-text"></i></div>
                     <h3 class="feature-name">Private Notes</h3>
-                    <p class="feature-desc">Write independent notes per repo. Record thoughts and evaluations. CloudKit sync across devices.</p>
+                    <p class="feature-desc">Write private notes per repo. Tags, notes, and status live in local SQLite and can be exported when you need to take them with you.</p>
                 </div>
                 <div class="feature-card fade-in">
                     <div class="feature-icon bento-card-icon--violet"><i data-lucide="bot"></i></div>
@@ -640,9 +682,9 @@
     <section class="section" id="tech" aria-labelledby="tech-title">
         <div class="section-inner">
             <div class="section-label fade-in">Tech Stack</div>
-            <h2 class="section-title fade-in" id="tech-title">Apple-native, premium experience</h2>
+            <h2 class="section-title fade-in" id="tech-title">Native macOS, premium experience</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Starcat deeply integrates with Apple's latest platform technologies.
+                Starcat is built deeply for macOS, focused on desktop workflows for organizing, reading, and turning GitHub Stars into reusable knowledge.
             </p>
 
             <div class="tech-grid">
@@ -662,26 +704,26 @@
                     <p class="tech-desc">Gemini / DeepSeek / OpenAI / Ollama — your keys, your choice</p>
                 </div>
                 <div class="tech-card fade-in">
-                    <div class="tech-icon" style="background:rgba(251,191,36,0.1);color:#FBBF24"><i data-lucide="monitor-smartphone"></i></div>
-                    <h3 class="tech-name">Full Platform</h3>
-                    <p class="tech-desc">macOS · iOS · iPadOS · watchOS — one data source, multi-device sync</p>
+                    <div class="tech-icon" style="background:rgba(251,191,36,0.1);color:#FBBF24"><i data-lucide="monitor"></i></div>
+                    <h3 class="tech-name">Focused on macOS</h3>
+                    <p class="tech-desc">A dedicated macOS 15+ app shaped around three-column windows, the menu bar, keyboard shortcuts, and focused desktop reading</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Pricing -->
+    <!-- Availability -->
     <section class="section" id="pricing" aria-labelledby="pricing-title">
         <div class="section-inner">
-            <div class="section-label fade-in">Pricing</div>
-            <h2 class="section-title fade-in" id="pricing-title">Simple, transparent pricing</h2>
+            <div class="section-label fade-in">Availability</div>
+            <h2 class="section-title fade-in" id="pricing-title">Current version</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Core features are free while Pro is being prepared.
+                Starcat currently ships as a macOS Direct build. Core organization features are free while Pro is being prepared.
             </p>
 
             <div class="pricing-grid">
                 <div class="pricing-card fade-in">
-                    <h3 class="pricing-name">Free</h3>
+                    <h3 class="pricing-name">Free for macOS</h3>
                     <div class="pricing-price">Free</div>
                     <div class="pricing-period">Core features, permanently</div>
                     <ul class="pricing-features">
@@ -692,26 +734,91 @@
                         <li><i data-lucide="check"></i> FTS5 full-text search</li>
                         <li><i data-lucide="check"></i> JSON import / export</li>
                     </ul>
-                    <a href="#download" class="btn-secondary" role="button">
+                    <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
                         <span class="icon-16"><i data-lucide="download"></i></span>
                         Free Download
                     </a>
+                </div>
+                <div class="pricing-card pricing-card--pro fade-in">
+                    <span class="pricing-badge">Coming soon</span>
+                    <h3 class="pricing-name">Pro</h3>
+                    <div class="pricing-price">Not available</div>
+                    <div class="pricing-period">Higher quotas and advanced workflows will move into Pro as they stabilize</div>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> Higher AI quotas and batch organization are being prepared</li>
+                        <li><i data-lucide="check"></i> CodeFlow and advanced code graph workflows are planned</li>
+                        <li><i data-lucide="check"></i> Final pricing will be shown when Pro opens</li>
+                    </ul>
+                    <span class="pricing-disabled">Purchasing is not open yet</span>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Download -->
-    <section class="section" id="download" aria-labelledby="download-title">
+    <!-- FAQ -->
+    <section class="section" id="faq" aria-labelledby="faq-title">
         <div class="section-inner">
-            <div class="section-label fade-in">Download</div>
-            <h2 class="section-title fade-in" id="download-title">Get Starcat for macOS</h2>
-            <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Download the latest Direct build, or choose a previous version if you need one.
+            <div class="section-label fade-in">FAQ</div>
+            <h2 class="section-title fade-in" id="faq-title">Before you download</h2>
+            <p class="section-subtitle fade-in" style="margin-bottom:36px">
+                Starcat is currently focused on macOS. Here are the platform, data, and AI boundaries.
             </p>
+            <div class="faq-grid">
+                <details class="faq-item fade-in" open>
+                    <summary>Which systems does Starcat support?</summary>
+                    <p>Starcat currently supports macOS 15 and later only. The Direct download is intended for Apple Silicon Macs. There are no iOS, iPadOS, watchOS, Windows, or Android builds today.</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>How is the Direct build different from an App Store build?</summary>
+                    <p>The landing page currently points to the Direct build, which supports in-app updates through Sparkle. App Store availability follows a separate release path and will be clearly labeled when available.</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>Where is my data stored?</summary>
+                    <p>Starcat is local-first. Repo cache can be rebuilt, while tags, notes, and status are stored in local SQLite and can be imported or exported as JSON.</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>Does Starcat host my AI keys?</summary>
+                    <p>Starcat follows a BYOK model: you configure your own model provider or API key. AI-related features on this page depend on what is enabled in the current app build.</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>Will Starcat support iPhone or iPad later?</summary>
+                    <p>The short-term focus is making the macOS app stable and useful. Future platform plans will be announced in the changelog; this page does not promise multi-platform builds.</p>
+                </details>
+            </div>
+        </div>
+    </section>
 
+    <!-- Final CTA -->
+    <section class="section final-cta" aria-label="Download Starcat">
+        <div class="section-inner">
+            <div class="final-cta-panel fade-in">
+                <div>
+                    <div class="final-cta-title">Ready to make your Stars useful again?</div>
+                    <p class="final-cta-desc">Download the macOS Direct build and start organizing, searching, and reading your GitHub Stars in one focused desktop app.</p>
+                </div>
+                <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-open>
+                    <span class="icon-16"><i data-lucide="download"></i></span>
+                    Download Starcat
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Modal -->
+    <div class="download-modal" id="download-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+        <div class="download-modal-dialog" role="document">
+            <div class="download-modal-header">
+                <div>
+                    <div class="section-label">Download</div>
+                    <h2 class="download-modal-title" id="download-modal-title">Get Starcat for macOS</h2>
+                    <p class="download-modal-desc">Download the latest Direct build, or choose a previous version if you need one.</p>
+                </div>
+                <button class="download-modal-close" type="button" aria-label="Close download dialog" data-download-close>
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
             <div class="download-panel">
-                <div class="download-card fade-in">
+                <div class="download-card">
                     <div class="download-card-header">
                         <div>
                             <div class="download-eyebrow">Latest version</div>
@@ -729,15 +836,20 @@
                         <span><i data-lucide="hard-drive-download"></i> <span data-download-size>88.6 MB</span></span>
                     </div>
                     <p class="download-note" data-download-note>
-                        This is the first Direct build with Sparkle support. Future Direct releases can update in app.
+                        This is the macOS Direct build with Sparkle update support. Future Direct releases can update in app.
                     </p>
+                    <div class="download-trust">
+                        <div class="download-trust-item"><i data-lucide="monitor"></i> macOS 15+ only</div>
+                        <div class="download-trust-item"><i data-lucide="cpu"></i> Apple Silicon</div>
+                        <div class="download-trust-item"><i data-lucide="sparkles"></i> Sparkle updates</div>
+                    </div>
                     <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-link>
                         <span class="icon-16"><i data-lucide="download"></i></span>
                         Download latest
                     </a>
                 </div>
 
-                <div class="download-history fade-in">
+                <div class="download-history">
                     <div class="download-history-title">Previous versions</div>
                     <div class="download-history-list" data-download-history>
                         <p class="download-history-empty">No previous versions yet.</p>
@@ -745,7 +857,7 @@
                 </div>
             </div>
         </div>
-    </section>
+    </div>
 
     <!-- Footer -->
     <footer class="footer" role="contentinfo">
@@ -824,6 +936,45 @@
         })();
 
         (function() {
+            const modal = document.getElementById('download-modal');
+            if (!modal) return;
+
+            const openers = document.querySelectorAll('[data-download-open]');
+            const closers = document.querySelectorAll('[data-download-close]');
+            let restoreScrollY = 0;
+            let activeTrigger = null;
+
+            const openModal = (trigger) => {
+                restoreScrollY = window.scrollY;
+                activeTrigger = trigger;
+                modal.classList.add('is-open');
+                modal.setAttribute('aria-hidden', 'false');
+                modal.querySelector('[data-download-close]')?.focus();
+            };
+            const closeModal = () => {
+                modal.classList.remove('is-open');
+                modal.setAttribute('aria-hidden', 'true');
+                activeTrigger?.focus({ preventScroll: true });
+                window.scrollTo(0, restoreScrollY);
+                window.requestAnimationFrame(() => window.scrollTo(0, restoreScrollY));
+            };
+
+            openers.forEach(trigger => {
+                trigger.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    openModal(trigger);
+                });
+            });
+            closers.forEach(trigger => trigger.addEventListener('click', closeModal));
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) closeModal();
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+            });
+        })();
+
+        (function() {
             const fallback = {
                 version: '1.1.0',
                 build: '202607051928',
@@ -863,6 +1014,7 @@
             const render = (releases) => {
                 const latest = releases[0] || fallback;
                 document.querySelectorAll('[data-download-link]').forEach(link => link.href = latest.url);
+                document.querySelectorAll('[data-download-open]').forEach(link => link.href = latest.url);
                 document.querySelectorAll('[data-download-version]').forEach(el => el.textContent = `Starcat ${latest.version}`);
                 document.querySelectorAll('[data-download-build]').forEach(el => el.textContent = latest.build);
                 document.querySelectorAll('[data-download-size]').forEach(el => el.textContent = formatSize(latest.size));
