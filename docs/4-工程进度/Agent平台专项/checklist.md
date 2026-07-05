@@ -1,6 +1,6 @@
 # Agent 平台专项进度
 
-> 状态: 进行中
+> 状态: 实施完成, 审查中
 > 创建: 2026-07-06
 > 需求讨论: `docs/2-产品/需求讨论/agent/00-概览-Agent方向讨论与方案.md`
 > 底层方案: `docs/2-产品/需求讨论/agent/16-Agent底层平台技术方案.md`
@@ -27,12 +27,12 @@
 ## 3. 实施 checklist
 
 - [x] 新增 Agent 平台专项目录与 checklist。
-- [ ] 扩展 Agent 共享模型,支持 plan / tool output / run log。
-- [ ] 扩展 DefaultAgentRuntime,输出可审计的 Weekly Agent 执行闭环。
-- [ ] 补 AgentRuntime 单测,覆盖事件流、artifact、run log 与取消。
-- [ ] 补 AgentWorkspaceViewModel 单测,覆盖 run / cancel / artifact 状态转换。
-- [ ] Agent Workspace UI 展示计划、工具输出和运行日志 artifact。
-- [ ] 更新 `docs/功能实现总览.md` 的 Agent 高级功能条目与变更日志。
+- [x] 扩展 Agent 共享模型,支持 plan / tool output / run log。
+- [x] 扩展 DefaultAgentRuntime,输出可审计的 Weekly Agent 执行闭环。
+- [x] 补 AgentRuntime 单测,覆盖事件流、artifact、run log 与取消。
+- [x] 补 AgentWorkspaceViewModel 单测,覆盖 run / cancel / artifact 状态转换。
+- [x] Agent Workspace UI 展示计划、工具输出和运行日志 artifact。
+- [x] 更新 `docs/功能实现总览.md` 的 Agent 高级功能条目与变更日志。
 - [ ] 第一轮审查: 文档与 checklist 一致性。
 - [ ] 第二轮审查: 代码实现与设计方案一致性。
 - [ ] 第三轮审查: 单元测试与工程进度一致性。
@@ -41,10 +41,9 @@
 
 ## 4. 验收标准
 
-- [ ] `StarcatTests/AgentRuntimeTests.swift` 覆盖新增 runtime 契约。
-- [ ] Agent Workspace 可以从事件流展示 plan、step、tool output、artifact。
-- [ ] Markdown artifact 明确标注当前数据来源和 deterministic runtime 边界。
-- [ ] `docs/功能实现总览.md` checkbox 与本 checklist 状态一致。
+- [x] `StarcatTests/AgentRuntimeTests.swift` 覆盖新增 runtime 契约。
+- [x] Agent Workspace 可以从事件流展示 plan、step、tool output、artifact。
+- [x] Markdown artifact 明确标注当前数据来源和 deterministic runtime 边界。
+- [x] `docs/功能实现总览.md` checkbox 与本 checklist 状态一致。
 - [ ] 每轮审查报告落在 `docs/4-工程进度/Agent平台专项/`。
 - [ ] 最终结果报告落在 `docs/4-工程进度/Agent平台专项/结果报告.md`。
-
