@@ -7563,6 +7563,22 @@
         }
       }
     },
+    "batch.tagIcon": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Icon"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图标"
+          }
+        }
+      }
+    },
     "batch.tagName": {
       "localizations": {
         "en": {

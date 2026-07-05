@@ -47,6 +47,9 @@ struct BatchActionBar: View {
     @Environment(HomeViewModel.self) private var viewModel
 
     @State private var showTagSheet: Bool = false
+    /// 每次打开打标签 sheet 前自增，强制 SwiftUI 重建 sheet 内容树
+    /// → `.task` 重触发 → `loadTags()` 读取最新 DB 数据。
+    @State private var tagSheetRefreshID: Int = 0
     @State private var showUnstarConfirm: Bool = false
     @State private var showStarConfirm: Bool = false
     @State private var toastMessage: String?
@@ -90,6 +93,7 @@ struct BatchActionBar: View {
                     }
                 }
             )
+            .id(tagSheetRefreshID)  // 强制重建视图 → .task 重触发 → 读取最新标签
             .appLocaleEnvironment()
         }
         .sheet(isPresented: $showUnstarConfirm) {
@@ -153,9 +157,10 @@ struct BatchActionBar: View {
 
             Spacer()
 
-            // 打标签：仅 manage 上下文
+            // 打标签：仅 manage 上下文，打开前自增 refreshID 强制刷新标签数据
             if context == .manage {
                 Button {
+                    tagSheetRefreshID &+= 1
                     showTagSheet = true
                 } label: {
                     Image(systemName: "tag.fill")
@@ -616,7 +621,7 @@ private struct BatchTagSheet: View {
     @State private var isCreatingTag: Bool = false
     @State private var newTagName: String = ""
     @State private var newTagColorHex: String = TagColorPalette.defaultHex
-    @State private var userPickedColor: Bool = false
+    @State private var newTagIcon: String? = SFSymbolPreset.defaultIcon
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -716,7 +721,7 @@ private struct BatchTagSheet: View {
             isCreatingTag = true
             newTagName = ""
             newTagColorHex = TagColorPalette.defaultHex
-            userPickedColor = false
+            newTagIcon = SFSymbolPreset.defaultIcon
             vm?.clearError()
         } label: {
             HStack(spacing: 8) {
@@ -736,10 +741,15 @@ private struct BatchTagSheet: View {
 
     // MARK: - 内联新建标签表单
 
-    /// 展开的内联创建表单：名称输入 + 12 色板 + 取消 / 创建按钮。
+    /// 展开的内联创建表单：名称输入 + 12 色板 + 图标 grid + 取消 / 创建按钮。
     ///
-    /// 颜色默认由 `TagAutoVisual.pick(for:)` 按名称稳定推荐，
-    /// 用户点选色板后以手动选择为准（`userPickedColor` 防止继续输入时覆盖手动选择）。
+    /// 颜色和图标用静态默认值（`TagColorPalette.defaultHex` / `SFSymbolPreset.defaultIcon`），
+    /// 用户自行选择覆盖。**不使用 `TagAutoVisual.pick`**：那是 AI 批量生成时的稳定哈希算法，
+    /// 手动创建标签不应替用户做随机选择。
+    ///
+    /// 图标 grid 用 VStack/HStack 手动排版而**不是 `SFSymbolGridPicker`**：
+    /// 后者内部是 `LazyVGrid`，嵌套在本表单所在的 `LazyVStack` → `ScrollView` 内会导致
+    /// SwiftUI 布局系统无法解析高度 → 死循环 → 应用无响应。
     private var createTagForm: some View {
         let trimmedName = newTagName.trimmingCharacters(in: .whitespaces)
         let isDuplicate = vm?.isDuplicateName(trimmedName) ?? false
@@ -764,15 +774,6 @@ private struct BatchTagSheet: View {
                         RoundedRectangle(cornerRadius: 4)
                             .strokeBorder(isDuplicate ? Color.orange : Color.secondary.opacity(0.2))
                     )
-                    .onChange(of: newTagName) { _, newName in
-                        if !userPickedColor {
-                            let t = newName.trimmingCharacters(in: .whitespaces)
-                            if !t.isEmpty {
-                                let (hex, _) = TagAutoVisual.pick(for: t)
-                                newTagColorHex = hex
-                            }
-                        }
-                    }
             }
 
             // 重名提示
@@ -797,7 +798,6 @@ private struct BatchTagSheet: View {
                     ForEach(TagColorPalette.presets, id: \.hex) { preset in
                         Button {
                             newTagColorHex = preset.hex
-                            userPickedColor = true
                         } label: {
                             Circle()
                                 .fill(Color(hex: preset.hex) ?? .accentColor)
@@ -818,6 +818,16 @@ private struct BatchTagSheet: View {
                 }
             }
 
+            // 图标选择（非 Lazy 手动 grid，避免嵌套 LazyVStack 布局死循环）
+            HStack(alignment: .top, spacing: 8) {
+                Text("batch.tagIcon")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .leading)
+                    .padding(.top, 2)
+                compactIconGrid(selection: $newTagIcon, columns: 6)
+            }
+
             // 操作按钮
             HStack {
                 Spacer()
@@ -830,12 +840,13 @@ private struct BatchTagSheet: View {
                     Task {
                         guard let tag = await vm?.createTag(
                             name: trimmedName,
-                            colorHex: newTagColorHex
+                            colorHex: newTagColorHex,
+                            icon: newTagIcon
                         ) else { return }
                         selectedTagId = tag.id
                         isCreatingTag = false
                         newTagName = ""
-                        userPickedColor = false
+                        newTagIcon = SFSymbolPreset.defaultIcon
                         query = ""
                     }
                 }
@@ -846,6 +857,45 @@ private struct BatchTagSheet: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+    }
+
+    /// 非 Lazy 的图标 grid，专用于嵌套在 `LazyVStack` → `ScrollView` 场景。
+    ///
+    /// `SFSymbolGridPicker` 内部使用 `LazyVGrid`，当它被放在 `LazyVStack` 内时，
+    /// 两个 lazy 容器互相等待对方提供高度 → 布局死循环 → 应用无响应。
+    /// 30 个图标（6 列 × 5 行）用 VStack/HStack 手动排版完全可以接受。
+    private func compactIconGrid(selection: Binding<String?>, columns: Int) -> some View {
+        let icons = SFSymbolPreset.icons
+        let rows: [[String]] = stride(from: 0, to: icons.count, by: columns).map { start in
+            Array(icons[start..<min(start + columns, icons.count)])
+        }
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(rows.indices, id: \.self) { rowIdx in
+                HStack(spacing: 4) {
+                    ForEach(rows[rowIdx], id: \.self) { icon in
+                        let isSelected = selection.wrappedValue == icon
+                        Button {
+                            selection.wrappedValue = isSelected ? nil : icon
+                        } label: {
+                            Image(systemName: icon)
+                                .font(.system(size: 16))
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.08))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help(icon)
+                    }
+                }
+            }
+        }
     }
 
     private func filteredTags(_ tags: [Tag]) -> [Tag] {
@@ -922,18 +972,18 @@ final class BatchTagSheetViewModel {
 
     /// 在列表内联创建新标签并插入 `tags` 顶部。
     ///
+    /// - Parameter icon: 用户选择的图标名（nil 表示无图标）。
     /// - Returns: 创建成功返回新 Tag 供 UI 自动选中；失败返回 nil（errorMessage 已写）。
-    func createTag(name: String, colorHex: String) async -> Tag? {
+    func createTag(name: String, colorHex: String, icon: String?) async -> Tag? {
         isCreating = true
         defer { isCreating = false }
         do {
             let now = ISO8601DateFormatter.shared.string(from: Date())
-            let (_, iconName) = TagAutoVisual.pick(for: name)
             let tag = Tag(
                 id: UUID().uuidString,
                 name: name,
                 color: colorHex,
-                icon: iconName,
+                icon: icon,
                 sortOrder: 0,
                 isPreset: false,
                 parentId: nil,

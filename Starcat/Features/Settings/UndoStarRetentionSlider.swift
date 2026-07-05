@@ -30,6 +30,14 @@ private let nodes: [RetentionNode] = [
 /// 等距节点位置（0.0, 0.25, 0.5, 0.75, 1.0）
 private let segmentSize: Double = 0.25
 
+/// 自绘滑杆尺寸。原生 Slider 在 macOS Form 中会被系统表单列布局压到右侧，
+/// 导致节点标尺和实际轨道不同轴；Undo Star 需要离散语义节点，所以这里用
+/// 组件内自绘轨道固定几何关系。
+private let sliderThumbSize: CGFloat = 18
+private let sliderTrackHeight: CGFloat = 4
+private let sliderHitHeight: CGFloat = 30
+private let sliderLabelWidth: CGFloat = 48
+
 /// retentionDays → 滑杆位置
 private func daysToPosition(_ days: Int) -> Double {
     if days <= 0 { return 1.0 }  // 永久
@@ -86,6 +94,11 @@ private func formatDays(_ days: Int) -> String {
     return "12月"
 }
 
+/// 保留时间比较用的排序值。`-1` 在存储层表示"永久"，但产品语义上比 365 天更长。
+private func retentionRank(_ days: Int) -> Int {
+    days <= 0 ? Int.max : days
+}
+
 // MARK: - Slider View
 
 struct UndoStarRetentionSlider: View {
@@ -118,43 +131,16 @@ struct UndoStarRetentionSlider: View {
             }
             .padding(.bottom, 8)
 
-            // 节点标记
-            HStack(spacing: 0) {
-                ForEach(nodes) { node in
-                    Text(node.label)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: node.id == nodes.count - 1 ? .trailing : node.id == 0 ? .leading : .center)
-                }
+            VStack(spacing: 4) {
+                nodeLabels
+                retentionSliderTrack
             }
-
-            // 滑杆
-            Slider(
-                value: $dragValue,
-                in: 0...1,
-                onEditingChanged: { editing in
-                    isDragging = editing
-                    if editing {
-                        // 开始拖拽：校准初始值
-                        dragValue = daysToPosition(retentionDays)
-                    } else {
-                        // 松手：判断是否需要弹窗
-                        let newDays = positionToDays(dragValue)
-                        if newDays < retentionDays {
-                            // 缩短 → 弹窗确认
-                            pendingDays = newDays
-                            showShortenConfirm = true
-                        } else if newDays > retentionDays {
-                            // 延长 → 直接生效
-                            retentionDays = newDays
-                        }
-                        // 相等则不处理
-                    }
-                }
-            )
-            .controlSize(.large)
             .onAppear {
                 dragValue = daysToPosition(retentionDays)
+            }
+            .onChange(of: retentionDays) { _, newValue in
+                guard !isDragging else { return }
+                dragValue = daysToPosition(newValue)
             }
 
             // 立即删除按钮
@@ -193,5 +179,112 @@ struct UndoStarRetentionSlider: View {
         } message: {
             Text("settings.undoStar.deleteNowMessage")
         }
+    }
+
+    private var nodeLabels: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                ForEach(nodes) { node in
+                    Text(node.label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: sliderLabelWidth, alignment: labelAlignment(for: node))
+                        .position(x: labelXPosition(for: node, width: proxy.size.width), y: 8)
+                }
+            }
+        }
+        .frame(height: 18)
+    }
+
+    private var retentionSliderTrack: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let currentPosition = isDragging ? dragValue : daysToPosition(retentionDays)
+            let thumbX = xPosition(for: currentPosition, width: width)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.20))
+                    .frame(height: sliderTrackHeight)
+                    .position(x: width / 2, y: sliderHitHeight / 2)
+
+                Capsule()
+                    .fill(Color(nsColor: .controlAccentColor))
+                    .frame(width: max(0, thumbX), height: sliderTrackHeight)
+                    .position(x: max(0, thumbX) / 2, y: sliderHitHeight / 2)
+
+                Circle()
+                    .fill(Color(nsColor: .controlColor))
+                    .frame(width: sliderThumbSize, height: sliderThumbSize)
+                    .overlay(
+                        Circle()
+                            .stroke(Color(nsColor: .controlAccentColor), lineWidth: 2)
+                    )
+                    .shadow(color: .black.opacity(0.16), radius: 2, x: 0, y: 1)
+                    .position(x: thumbX, y: sliderHitHeight / 2)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !isDragging {
+                            isDragging = true
+                        }
+                        dragValue = position(forX: value.location.x, width: width)
+                    }
+                    .onEnded { value in
+                        dragValue = position(forX: value.location.x, width: width)
+                        finishEditing()
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel(Text("settings.undoStar.retention"))
+            .accessibilityValue(Text(formatDays(positionToDays(currentPosition))))
+        }
+        .frame(height: sliderHitHeight)
+    }
+
+    private func finishEditing() {
+        isDragging = false
+
+        // 松手后再落盘：缩短保留期可能删除历史记录，必须先让用户确认。
+        let newDays = positionToDays(dragValue)
+        let oldRank = retentionRank(retentionDays)
+        let newRank = retentionRank(newDays)
+        if newRank < oldRank {
+            pendingDays = newDays
+            showShortenConfirm = true
+        } else if newRank > oldRank {
+            retentionDays = newDays
+        } else {
+            dragValue = daysToPosition(retentionDays)
+        }
+    }
+
+    private func nodePosition(_ node: RetentionNode) -> Double {
+        Double(node.id) * segmentSize
+    }
+
+    private func labelXPosition(for node: RetentionNode, width: CGFloat) -> CGFloat {
+        // 首尾标签必须完整落在容器内；中间节点才按滑块几何中心对齐。
+        if node.id == 0 { return sliderLabelWidth / 2 }
+        if node.id == nodes.count - 1 { return max(sliderLabelWidth / 2, width - sliderLabelWidth / 2) }
+        return xPosition(for: nodePosition(node), width: width)
+    }
+
+    private func xPosition(for position: Double, width: CGFloat) -> CGFloat {
+        let usableWidth = max(0, width - sliderThumbSize)
+        return sliderThumbSize / 2 + usableWidth * CGFloat(max(0, min(1, position)))
+    }
+
+    private func position(forX x: CGFloat, width: CGFloat) -> Double {
+        let usableWidth = max(1, width - sliderThumbSize)
+        return Double(max(0, min(usableWidth, x - sliderThumbSize / 2)) / usableWidth)
+    }
+
+    private func labelAlignment(for node: RetentionNode) -> Alignment {
+        if node.id == 0 { return .leading }
+        if node.id == nodes.count - 1 { return .trailing }
+        return .center
     }
 }

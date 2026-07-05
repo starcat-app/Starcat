@@ -863,47 +863,20 @@ struct SidebarView: View {
         }
     }
 
-    /// HOM-43：Tags header 需要同时有"整行可折叠"和独立的标签管理按钮。
+    /// HOM-43：Tags header 需要同时有折叠入口和独立的标签管理按钮。
     /// 避免把 `Button` 嵌在另一个 `Button` 里，否则 SwiftUI 事件命中会不稳定。
     private var tagSectionHeader: some View {
         HStack(spacing: 6) {
             Button {
                 toggleTags()
             } label: {
-                HStack(spacing: 4) {
-                    Text("sidebar.tags")
-                        .font(interfaceScale.font(.body))
-                    Spacer(minLength: 8)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                Text("sidebar.tags")
+                    .font(interfaceScale.font(.body))
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: tagsExpanded))
-
-            Text(viewModel.tags.count.formatted())
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-
-            // HOM-179：仅当有 tag 被选中时显示"清除"按钮，避免空状态下噪声。
-            // 与 `+` / chevron 同款 14pt hierarchical 语言，hover 反馈复用 pressableHover。
-            if !viewModel.selectedTagIds.isEmpty {
-                Button {
-                    viewModel.clearSelectedTags()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(interfaceScale.font(.iconMedium, weight: .medium))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(Text("sidebar.clearSelectedTags"))
-            }
 
             Button {
                 showTagManagement = true
@@ -924,6 +897,32 @@ struct SidebarView: View {
             .focusEffectDisabled()
             .help(Text("sidebar.tagManagement"))
 
+            // HOM-179：仅当有 tag 被选中时显示"清除"按钮，避免空状态下噪声。
+            // 与 `+` / chevron 同款 14pt hierarchical 语言，hover 反馈复用 pressableHover。
+            if !viewModel.selectedTagIds.isEmpty {
+                Button {
+                    viewModel.clearSelectedTags()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(interfaceScale.font(.iconMedium, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("sidebar.clearSelectedTags"))
+            }
+
+            Spacer(minLength: 8)
+
+            Text(viewModel.tags.count.formatted())
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(minWidth: 18, alignment: .trailing)
+
             Button {
                 toggleTags()
             } label: {
@@ -939,36 +938,19 @@ struct SidebarView: View {
         .padding(.trailing, 6)
     }
 
-    /// GitHub Stars List 分组 header：整行折叠 + 独立新增按钮。
+    /// GitHub Stars List 分组 header：折叠入口 + 独立新增 / 刷新按钮。
     private var githubStarListSectionHeader: some View {
         HStack(spacing: 6) {
             Button {
                 toggleGitHubStarLists()
             } label: {
-                HStack(spacing: 4) {
-                    Text("sidebar.githubStarLists")
-                        .font(interfaceScale.font(.body))
-                    Spacer(minLength: 8)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                Text("sidebar.githubStarLists")
+                    .font(interfaceScale.font(.body))
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: githubStarListsExpanded))
-
-            // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
-            Text((viewModel.githubStarLists.count + 1).formatted())
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-
-            SyncIconButton(
-                isRefreshing: dependencies.githubStarListSyncService.isSyncing,
-                disabled: dependencies.githubStarListSyncService.isSyncing || authSession.state.user == nil,
-                tooltip: String.l10n("sidebar.githubStarLists.refresh"),
-                action: { refreshGitHubStarLists() }
-            )
 
             Button {
                 gitHubStarListEditorItem = GitHubStarListEditorItem(list: nil)
@@ -983,6 +965,22 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sidebar.githubStarLists.add"))
+
+            SyncIconButton(
+                isRefreshing: dependencies.githubStarListSyncService.isSyncing,
+                disabled: dependencies.githubStarListSyncService.isSyncing || authSession.state.user == nil,
+                tooltip: String.l10n("sidebar.githubStarLists.refresh"),
+                action: { refreshGitHubStarLists() }
+            )
+
+            Spacer(minLength: 8)
+
+            // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
+            Text((viewModel.githubStarLists.count + 1).formatted())
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(minWidth: 18, alignment: .trailing)
 
             Button {
                 toggleGitHubStarLists()
@@ -1015,6 +1013,7 @@ struct SidebarView: View {
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .frame(minWidth: 18, alignment: .trailing)
 
                 disclosureChevron(isExpanded: languagesExpanded)
                     .frame(width: 20, height: 20)
