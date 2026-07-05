@@ -281,7 +281,32 @@
         @media (max-width: 767px) { .pricing-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
-         * 8. Footer
+         * 8. Download
+         * ================================================================== */
+        .download-panel { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: var(--card-gap); align-items: stretch; }
+        .download-card, .download-history { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 32px; }
+        .download-card { display: flex; flex-direction: column; gap: 20px; }
+        .download-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+        .download-eyebrow { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-caption); color: var(--color-cta); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+        .download-version { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-h2); font-weight: 700; line-height: 1.2; }
+        .download-status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(34, 197, 94, 0.12); color: var(--color-cta); font-size: var(--fs-caption); white-space: nowrap; }
+        .download-meta { display: flex; flex-wrap: wrap; gap: 10px; }
+        .download-meta > span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); font-size: var(--fs-caption); }
+        .download-meta .lucide { width: 14px; height: 14px; }
+        .download-note { color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.6; }
+        .download-card .btn-primary { justify-content: center; width: 100%; }
+        .download-history-title { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-small); font-weight: 600; margin-bottom: 14px; }
+        .download-history-list { display: flex; flex-direction: column; gap: 10px; }
+        .download-history-item { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--color-border); }
+        .download-history-item:first-child { border-top: none; padding-top: 0; }
+        .download-history-version { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-small); color: var(--color-text); }
+        .download-history-meta { font-size: var(--fs-caption); color: var(--color-text-muted); margin-top: 2px; }
+        .download-history-link { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-caption); color: var(--color-cta); white-space: nowrap; }
+        .download-history-empty { color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.6; }
+        @media (max-width: 900px) { .download-panel { grid-template-columns: 1fr; } }
+
+        /* ==================================================================
+         * 9. Footer
          * ================================================================== */
         .footer { padding: 60px 24px 40px; border-top: 1px solid var(--color-border); position: relative; z-index: var(--z-content); }
         .footer-inner { max-width: var(--content-max); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px; }
@@ -680,6 +705,52 @@
         </div>
     </section>
 
+    <!-- Download -->
+    <section class="section" id="download" aria-labelledby="download-title">
+        <div class="section-inner">
+            <div class="section-label fade-in">Download</div>
+            <h2 class="section-title fade-in" id="download-title">Get Starcat for macOS</h2>
+            <p class="section-subtitle fade-in" style="margin-bottom:48px">
+                Download the latest Direct build, or choose a previous version if you need one.
+            </p>
+
+            <div class="download-panel">
+                <div class="download-card fade-in">
+                    <div class="download-card-header">
+                        <div>
+                            <div class="download-eyebrow">Latest version</div>
+                            <div class="download-version" data-download-version>Starcat 1.1.0</div>
+                        </div>
+                        <div class="download-status">
+                            <span class="icon-14"><i data-lucide="sparkles"></i></span>
+                            Direct
+                        </div>
+                    </div>
+                    <div class="download-meta">
+                        <span><i data-lucide="monitor"></i> macOS 15+</span>
+                        <span><i data-lucide="cpu"></i> Apple Silicon</span>
+                        <span><i data-lucide="git-commit"></i> Build <span data-download-build>202607051928</span></span>
+                        <span><i data-lucide="hard-drive-download"></i> <span data-download-size>88.6 MB</span></span>
+                    </div>
+                    <p class="download-note" data-download-note>
+                        This is the first Direct build with Sparkle support. Future Direct releases can update in app.
+                    </p>
+                    <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-link>
+                        <span class="icon-16"><i data-lucide="download"></i></span>
+                        Download latest
+                    </a>
+                </div>
+
+                <div class="download-history fade-in">
+                    <div class="download-history-title">Previous versions</div>
+                    <div class="download-history-list" data-download-history>
+                        <p class="download-history-empty">No previous versions yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Footer -->
     <footer class="footer" role="contentinfo">
         <div class="footer-inner">
@@ -754,6 +825,78 @@
         (function() {
             const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); } }); }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
             document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+        })();
+
+        (function() {
+            const fallback = {
+                version: '1.1.0',
+                build: '202607051928',
+                url: '/downloads/Starcat-1.1.0-arm64.dmg',
+                size: 92912219,
+                pubDate: ''
+            };
+
+            const sparkleNS = 'http://www.andymatuschak.org/xml-namespaces/sparkle';
+            const textFrom = (item, localName) => {
+                const namespaced = item.getElementsByTagNameNS(sparkleNS, localName)[0];
+                const prefixed = item.getElementsByTagName(`sparkle:${localName}`)[0];
+                return (namespaced || prefixed)?.textContent?.trim() || '';
+            };
+            const formatSize = (bytes) => {
+                if (!bytes) return 'Unknown size';
+                const mb = Number(bytes) / (1024 * 1024);
+                return `${mb.toFixed(1)} MB`;
+            };
+            const formatDate = (value) => {
+                if (!value) return '';
+                const date = new Date(value);
+                if (Number.isNaN(date.getTime())) return '';
+                return date.toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' });
+            };
+            const parseItem = (item) => {
+                const enclosure = item.getElementsByTagName('enclosure')[0];
+                const version = textFrom(item, 'shortVersionString') || item.getElementsByTagName('title')[0]?.textContent?.trim() || fallback.version;
+                return {
+                    version,
+                    build: textFrom(item, 'version') || fallback.build,
+                    url: enclosure?.getAttribute('url') || fallback.url,
+                    size: Number(enclosure?.getAttribute('length') || fallback.size),
+                    pubDate: item.getElementsByTagName('pubDate')[0]?.textContent?.trim() || ''
+                };
+            };
+            const render = (releases) => {
+                const latest = releases[0] || fallback;
+                document.querySelectorAll('[data-download-link]').forEach(link => link.href = latest.url);
+                document.querySelectorAll('[data-download-version]').forEach(el => el.textContent = `Starcat ${latest.version}`);
+                document.querySelectorAll('[data-download-build]').forEach(el => el.textContent = latest.build);
+                document.querySelectorAll('[data-download-size]').forEach(el => el.textContent = formatSize(latest.size));
+
+                const history = document.querySelector('[data-download-history]');
+                if (!history) return;
+                const previous = releases.slice(1);
+                if (!previous.length) {
+                    history.innerHTML = '<p class="download-history-empty">No previous versions yet.</p>';
+                    return;
+                }
+                history.innerHTML = previous.map(item => `
+                    <div class="download-history-item">
+                        <div>
+                            <div class="download-history-version">Starcat ${item.version}</div>
+                            <div class="download-history-meta">Build ${item.build}${formatDate(item.pubDate) ? ` · ${formatDate(item.pubDate)}` : ''} · ${formatSize(item.size)}</div>
+                        </div>
+                        <a class="download-history-link" href="${item.url}">Download DMG</a>
+                    </div>
+                `).join('');
+            };
+
+            fetch('/appcast.xml', { cache: 'no-store' })
+                .then(response => response.ok ? response.text() : Promise.reject(new Error('appcast unavailable')))
+                .then(xml => {
+                    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+                    const items = Array.from(doc.getElementsByTagName('item')).map(parseItem);
+                    render(items.length ? items : [fallback]);
+                })
+                .catch(() => render([fallback]));
         })();
 
         (function() { if (typeof lucide !== 'undefined') lucide.createIcons(); })();
