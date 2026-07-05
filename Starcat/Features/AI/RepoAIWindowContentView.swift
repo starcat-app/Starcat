@@ -1350,16 +1350,12 @@ struct RepoAIWindowContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Button {
+            DestructiveIconButton(
+                help: Text("ai.assistant.chat.session.delete.help"),
+                font: interfaceScale.font(.caption)
+            ) {
                 Task { await chat.deleteSession(sessionId: summary.id, repo: repo) }
-            } label: {
-                Image(systemName: "trash")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("ai.assistant.chat.session.delete.help")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

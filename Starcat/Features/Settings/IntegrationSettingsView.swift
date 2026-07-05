@@ -64,13 +64,10 @@ struct IntegrationSettingsTab: View {
                     }
                     .help("settings.integration.codeFlow.outputDir.revealHelp")
                     .fixedSize()
-                    Button {
+                    ResetIconButton(help: Text("settings.integration.codeFlow.outputDir.resetHelp")) {
                         resetOutputDirectory()
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
                     }
                     .disabled(!storage.hasCustomOutputDirectory)
-                    .help("settings.integration.codeFlow.outputDir.resetHelp")
                     .fixedSize()
                 }
 
@@ -122,11 +119,10 @@ struct IntegrationSettingsTab: View {
                     }
                     .help("settings.integration.codeFlow.outputDir.revealHelp")
                     .fixedSize()
-                    Button { resetCodebaseMemoryOutputDirectory() } label: {
-                        Image(systemName: "arrow.counterclockwise")
+                    ResetIconButton(help: Text("settings.integration.codeFlow.outputDir.resetHelp")) {
+                        resetCodebaseMemoryOutputDirectory()
                     }
                     .disabled(!codebaseMemoryStorage.hasCustomOutputDirectory)
-                    .help("settings.integration.codeFlow.outputDir.resetHelp")
                     .fixedSize()
                 }
 

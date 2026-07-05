@@ -10,18 +10,9 @@
 **所有** toolbar / filter bar / inline 工具区里的 icon-only 删除或清空入口,必须使用无背景的系统图标按钮。
 
 ```swift
-Button {
+DestructiveIconButton(help: Text("activity.announcement.clear.help")) {
     showConfirm = true
-} label: {
-    Image(systemName: "trash")
-        .font(SyncIconButton.defaultFont)
-        .foregroundStyle(.secondary)
-        .frame(width: SyncIconButton.defaultFrameSize, height: SyncIconButton.defaultFrameSize)
-        .contentShape(Rectangle())
 }
-.buttonStyle(.plain)
-.focusEffectDisabled()
-.help("activity.announcement.clear.help")
 ```
 
 ## 视觉规格

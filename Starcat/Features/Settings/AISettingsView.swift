@@ -994,12 +994,9 @@ struct AISettingsTab: View {
 
                         // HOM-126 follow-up (dong4j 反馈 2026-06-07)：「恢复默认」按钮去掉文字只保留 icon
                         // （扫一眼就懂 = 旋转箭头），节省横向空间让左侧 segmented picker 不被挤；语义留在 tooltip。
-                        Button {
+                        ResetIconButton(help: Text("settings.ai.prompt.restoreHelpFormat \(promptTask.displayName)")) {
                             restoreDefaultPrompt(promptTask)
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
                         }
-                        .help(Text("settings.ai.prompt.restoreHelpFormat \(promptTask.displayName)"))
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -1529,13 +1526,10 @@ struct AISettingsTab: View {
                 }
                 .help(Text("ai.context.storage.revealHelp"))
                 .fixedSize()
-                Button {
+                ResetIconButton(help: Text("ai.context.storage.resetHelp")) {
                     resetAIContextOutputDirectory()
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
                 }
                 .disabled(!aiContextStorage.hasCustomOutputDirectory)
-                .help(Text("ai.context.storage.resetHelp"))
                 .fixedSize()
             }
 

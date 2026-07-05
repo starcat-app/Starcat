@@ -279,15 +279,12 @@ struct SmartCollectionsOverviewView: View {
             .focusEffectDisabled()
             .help("smartCollections.editor.edit.help")
 
-            Button {
+            DestructiveIconButton(
+                help: Text("smartCollections.delete"),
+                font: .callout
+            ) {
                 Task { await delete(collection) }
-            } label: {
-                Label("smartCollections.delete", systemImage: "trash")
-                    .labelStyle(.iconOnly)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("smartCollections.delete")
         }
         .font(.callout)
         .foregroundStyle(.secondary)

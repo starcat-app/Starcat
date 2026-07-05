@@ -342,16 +342,7 @@ struct ActivityView: View {
     }
 
     private func clearActivityButton(help: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "trash")
-                .font(SyncIconButton.defaultFont)
-                .foregroundStyle(.secondary)
-                .frame(width: SyncIconButton.defaultFrameSize, height: SyncIconButton.defaultFrameSize)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help(help)
+        DestructiveIconButton(help: Text(help), action: action)
     }
 
     private var activitySortPreferenceKey: String {

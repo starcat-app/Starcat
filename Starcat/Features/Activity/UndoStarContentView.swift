@@ -182,19 +182,10 @@ struct UndoStarContentView: View {
             }
 
             // 清空按钮
-            Button {
+            DestructiveIconButton(help: Text("activity.undoStar.clearAll.help")) {
                 showClearAllConfirm = true
-            } label: {
-                Image(systemName: "trash")
-                    .font(SyncIconButton.defaultFont)
-                    .foregroundStyle(.secondary)
-                    .frame(width: SyncIconButton.defaultFrameSize, height: SyncIconButton.defaultFrameSize)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
             .disabled(viewModel.records.isEmpty)
-            .help(String.l10n("activity.undoStar.clearAll.help"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

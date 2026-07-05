@@ -313,19 +313,13 @@ struct SettingsView: View {
                             shortcutValidationError = nil
                         }
 
-                        Button {
+                        ResetIconButton(
+                            help: Text("settings.general.shortcuts.restoreDefault"),
+                            frameSize: 24
+                        ) {
                             settings.globalSearchShortcut = .globalSearchDefault
                             shortcutValidationError = nil
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
                         }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                        .help(Text("settings.general.shortcuts.restoreDefault"))
-                        .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
                     }
                 }
 
@@ -345,19 +339,13 @@ struct SettingsView: View {
                             shortcutValidationError = nil
                         }
 
-                        Button {
+                        ResetIconButton(
+                            help: Text("settings.general.shortcuts.restoreDefault"),
+                            frameSize: 24
+                        ) {
                             settings.regularSearchShortcut = .regularSearchDefault
                             shortcutValidationError = nil
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
                         }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                        .help(Text("settings.general.shortcuts.restoreDefault"))
-                        .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
                     }
                 }
 
