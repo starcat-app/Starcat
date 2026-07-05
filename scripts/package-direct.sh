@@ -142,12 +142,12 @@ if [ "$DMG_TOOL" = "create-dmg" ]; then
     --volname "Starcat ${VERSION}" \
     --background "$DMG_BACKGROUND_PATH" \
     --window-pos 200 120 \
-    --window-size 660 420 \
+    --window-size 820 520 \
     --text-size 13 \
-    --icon-size 104 \
-    --icon "Starcat.app" 185 218 \
+    --icon-size 112 \
+    --icon "Starcat.app" 226 246 \
     --hide-extension "Starcat.app" \
-    --app-drop-link 475 218 \
+    --app-drop-link 556 246 \
     --app-drop-link-name "Applications" \
     --no-internet-enable \
     --format UDZO \
