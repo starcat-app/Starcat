@@ -224,3 +224,5 @@ supports/
 Starcat/Resources/Codebase/codebase
 
 !.claude/skills/macos-app-skills/build
+
+sparkle-private-key
