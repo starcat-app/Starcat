@@ -81,7 +81,7 @@ rsync -avz --delete --progress \
     "$REMOTE_HOST:$REMOTE_WEB_DIR/"
 
 echo "设置文件权限..."
-ssh "$REMOTE_HOST" "chmod 644 $REMOTE_WEB_DIR/*.html $REMOTE_WEB_DIR/*.png $REMOTE_WEB_DIR/*.webp $REMOTE_WEB_DIR/*.jpg 2>/dev/null; true"
+ssh "$REMOTE_HOST" "find '$REMOTE_WEB_DIR' -maxdepth 1 -type f \( -name '*.html' -o -name '*.png' -o -name '*.webp' -o -name '*.jpg' \) -exec chmod 644 {} +"
 
 echo "✓ 静态资源部署完成"
 echo "访问地址: https://starcat.ink"
