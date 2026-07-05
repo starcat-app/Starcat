@@ -59,6 +59,10 @@ struct ActivityView: View {
     /// 当前分类数量回传给父视图的 navigation subtitle。
     private let onItemCountChange: (Int) -> Void
 
+    /// Undo Star → 右侧详情页
+    @State private var selectedUndoStarRecord: UndoStarRecord?
+    var onSelectUndoStarRepo: ((Repo?) -> Void)?
+
     @State private var viewModel: ActivityViewModel?
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
@@ -67,16 +71,25 @@ struct ActivityView: View {
     init(
         selectedCategory: Binding<ActivityCategory>,
         selectedItem: Binding<ActivityItem?>,
-        onItemCountChange: @escaping (Int) -> Void = { _ in }
+        onItemCountChange: @escaping (Int) -> Void = { _ in },
+        onSelectUndoStarRepo: ((Repo?) -> Void)? = nil
     ) {
         _selectedCategory = selectedCategory
         _selectedItem = selectedItem
         self.onItemCountChange = onItemCountChange
+        self.onSelectUndoStarRepo = onSelectUndoStarRepo
     }
 
     var body: some View {
         Group {
-            if let viewModel {
+            if selectedCategory == .undoStar {
+                UndoStarContentView(
+                    repository: dependencies.undoStarHistoryRepository,
+                    settings: dependencies.settings,
+                    selectedRecord: $selectedUndoStarRecord,
+                    onSelectRepo: onSelectUndoStarRepo
+                )
+            } else if let viewModel {
                 content(viewModel)
             } else {
                 ProgressView()

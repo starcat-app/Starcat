@@ -166,6 +166,8 @@ final class StarActionService {
     private let apiClient: any GitHubAPIClientProtocol
     private let repoRepository: any RepoRepositoryProtocol
     private let registry: StarredRegistry
+    /// Undo Star 历史记录仓储（unstar 时写入，star 时移除）。
+    private let undoStarHistory: any UndoStarHistoryRepositoryProtocol
 
     /// 当前登录用户 ID 提供者。注入闭包而非直接持有 AuthSession 是为了：
     /// ① 单测注入 stub `{ 42 }` 即可，不用 mock AuthSession；
@@ -180,12 +182,14 @@ final class StarActionService {
         apiClient: any GitHubAPIClientProtocol,
         repoRepository: any RepoRepositoryProtocol,
         registry: StarredRegistry,
+        undoStarHistory: any UndoStarHistoryRepositoryProtocol,
         userIDProvider: @escaping @MainActor () -> Int64?,
         homeRefresher: (any HomeRefreshing)? = nil
     ) {
         self.apiClient = apiClient
         self.repoRepository = repoRepository
         self.registry = registry
+        self.undoStarHistory = undoStarHistory
         self.userIDProvider = userIDProvider
         self.homeRefresher = homeRefresher
     }
@@ -224,7 +228,19 @@ final class StarActionService {
         // 4. registry._add（fileprivate 同文件可见）
         registry._add(saved.id)
 
-        // 5. HomeView 刷新
+        // 5. 从 Undo Star 历史中移除（如果存在）
+        do {
+            try await undoStarHistory.remove(ghRepoId: saved.id)
+            NotificationCenter.default.post(
+                name: .undoStarHistoryDidChange,
+                object: nil,
+                userInfo: ["starredGhRepoId": saved.id]
+            )
+        } catch {
+            AppLog.sync.error("UndoStar remove failed: \(error.localizedDescription, privacy: .public)")
+        }
+
+        // 6. HomeView 刷新
         await homeRefresher?.refreshAfterStarChange()
 
         AppLog.sync.info("Star OK \(saved.fullName, privacy: .public) (id=\(saved.id, privacy: .public))")
@@ -261,6 +277,27 @@ final class StarActionService {
 
         registry._remove(ghRepoId)
         await homeRefresher?.refreshAfterStarChange()
+
+        // 记录到 Undo Star 历史（去重：同 ghRepoId 更新 unstarred_at）
+        do {
+            let record = UndoStarRecord(
+                ghRepoId: ghRepoId,
+                owner: owner,
+                name: name,
+                fullName: "\(owner)/\(name)",
+                repoDescription: nil,
+                language: nil,
+                starsCount: 0,
+                forksCount: 0,
+                watchersCount: 0,
+                htmlUrl: "https://github.com/\(owner)/\(name)",
+                unstarredAt: ISO8601DateFormatter.shared.string(from: Date())
+            )
+            try await undoStarHistory.record(record)
+            NotificationCenter.default.post(name: .undoStarHistoryDidChange, object: nil)
+        } catch {
+            AppLog.sync.error("UndoStar record failed: \(error.localizedDescription, privacy: .public)")
+        }
 
         AppLog.sync.info("Unstar OK \(owner, privacy: .public)/\(name, privacy: .public) (id=\(ghRepoId, privacy: .public))")
     }

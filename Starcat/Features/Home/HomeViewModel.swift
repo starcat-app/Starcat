@@ -240,6 +240,10 @@ final class HomeViewModel {
     /// - selectedRepo（值）通过 computed property 从 items 派生即可。
     var selectedRepoID: Int64?
 
+    /// 外部传入的 Repo 对象（如 Undo Star 选中行），不在当前 Manage 列表中。
+    /// 设置后 `selectedRepo` 优先返回此值。
+    var externalSelectedRepo: Repo?
+
     /// 外部导航（SearchCenter / 命令面板）写入 `selectedRepoID` 前置 `true`，
     /// 让 `RepoListView` 只在该场景下 `scrollTo` 目标行。
     ///
@@ -255,6 +259,7 @@ final class HomeViewModel {
     /// 但确实在用户可见集合（filteredSorted）里。详情页能正确渲染，列表那一边
     /// 由 `ensureRepoVisible(repoId:)` 负责把 currentPage 推到对应页。
     var selectedRepo: Repo? {
+        if let external = externalSelectedRepo { return external }
         guard let id = selectedRepoID else { return nil }
         return filteredSorted.first { $0.id == id }
     }

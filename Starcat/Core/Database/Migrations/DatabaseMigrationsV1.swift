@@ -56,6 +56,33 @@ enum DatabaseMigrations {
     /// schema 演进直接改 v1，无需追加迁移）。产品上线后再追加 `registerV2(into:)` 等。
     static func registerAll(into migrator: inout DatabaseMigrator) {
         registerV1(into: &migrator)
+        registerV2(into: &migrator)
+    }
+
+    // MARK: - v2-undo-star：Unstar 撤销历史记录（2026-07-05）
+
+    private static func registerV2(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v2-undo-star") { db in
+            try createUndoStarHistory(db)
+        }
+    }
+
+    private static func createUndoStarHistory(_ db: Database) throws {
+        try db.create(table: "undo_star_history") { t in
+            t.column("gh_repo_id", .integer).primaryKey()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("owner", .text).notNull()
+            t.column("name", .text).notNull()
+            t.column("full_name", .text).notNull()
+            t.column("description", .text)
+            t.column("language", .text)
+            t.column("stars_count", .integer).notNull().defaults(to: 0)
+            t.column("forks_count", .integer).notNull().defaults(to: 0)
+            t.column("watchers_count", .integer).notNull().defaults(to: 0)
+            t.column("html_url", .text).notNull()
+            t.column("unstarred_at", .text).notNull()
+        }
+        try db.create(index: "idx_undo_star_unstarred_at", on: "undo_star_history", columns: ["unstarred_at"])
     }
 
     // MARK: - v1-initial：最终 schema 一次性建出

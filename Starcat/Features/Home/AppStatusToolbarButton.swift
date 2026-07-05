@@ -65,6 +65,7 @@ struct AppStatusToolbarButton: View {
                 initialWarmupCoordinator: dependencies.initialWarmupCoordinator,
                 openSSFScorePoller: dependencies.openSSFScorePoller,
                 repoHealthPoller: dependencies.repoHealthPoller,
+                undoStarCleanup: dependencies.undoStarCleanupScheduler,
                 batchService: dependencies.batchAIQueueService,
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
@@ -198,6 +199,7 @@ private struct AppStatusPanel: View {
     let initialWarmupCoordinator: InitialRepoWarmupCoordinator
     let openSSFScorePoller: OpenSSFScorePoller
     let repoHealthPoller: RepoHealthPoller
+    let undoStarCleanup: UndoStarCleanupScheduler
     let batchService: BatchAIQueueService
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
@@ -265,6 +267,20 @@ private struct AppStatusPanel: View {
                 subtitle: diagnosticSubtitle,
                 accessory: { diagnosticAccessory }
             )
+
+            // Undo Star 清理状态（2026-07-05）
+            if let lastCleanup = undoStarCleanup.lastCleanupAt {
+                let count = undoStarCleanup.lastCleanupCount
+                statusRow(
+                    icon: "arrow.uturn.backward.circle",
+                    tint: .secondary,
+                    title: "toolbar.status.undoStar.title",
+                    subtitle: count > 0
+                        ? String(format: String.l10n("toolbar.status.undoStar.lastCleanupWithCount"), count, relativePastDate(lastCleanup))
+                        : String(format: String.l10n("toolbar.status.undoStar.lastCleanup"), relativePastDate(lastCleanup)),
+                    accessory: { EmptyView() }
+                )
+            }
         }
     }
 

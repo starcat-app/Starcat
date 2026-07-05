@@ -1186,6 +1186,11 @@ private struct StorageSettingsTab: View {
                 )
             }
 
+            // Undo Star 历史保留设置（2026-07-05）
+            Section("activity.category.undoStar") {
+                UndoStarRetentionSlider(retentionDays: $settings.undoStarRetentionDays)
+            }
+
             Section("settings.storage.dangerZone") {
                 dangerActionBlock(
                     descriptionKey: "settings.storage.clearAll.description",

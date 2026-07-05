@@ -41,6 +41,7 @@ struct BatchStarServiceTests {
             apiClient: api,
             repoRepository: repo,
             registry: registry,
+            undoStarHistory: MockUndoStarHistoryRepository(),
             userIDProvider: { currentUserID },
             homeRefresher: nil
         )
@@ -294,4 +295,16 @@ private final class ConcurrencyTracker: @unchecked Sendable {
         defer { lock.unlock() }
         return _peak
     }
+}
+
+// MARK: - Mock UndoStarHistoryRepository
+
+struct MockUndoStarHistoryRepository: UndoStarHistoryRepositoryProtocol {
+    func record(_ record: UndoStarRecord) async throws {}
+    func remove(ghRepoId: Int64) async throws {}
+    func fetchAll(sort: UndoStarSortOption) async throws -> [UndoStarRecord] { [] }
+    func clearAll() async throws {}
+    func cleanupExpired(before cutoff: String) async throws -> Int { 0 }
+    func fetchRepo(ghRepoId: Int64) async throws -> Repo? { nil }
+    func countExpired(before cutoff: String) async throws -> Int { 0 }
 }

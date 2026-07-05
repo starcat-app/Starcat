@@ -25,6 +25,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct RepoDetailView: View {
 
@@ -297,6 +298,7 @@ struct ReadmeStateView: View {
 
     @Environment(ReadmeViewModel.self) private var readmeVM
     @Environment(AppSettings.self) private var settings
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
 
@@ -410,6 +412,51 @@ struct ReadmeStateView: View {
         }
     }
 
+    /// 导出当前 README 的原始 Markdown 到本地文件。
+    ///
+    /// 仅 Manage 路径支持（需要本地 Repo 对象 + readme_contents 表）。
+    /// Trending 路径没有本地 Repo，暂不接入。
+    ///
+    /// 流程：
+    /// 1. 查 `readme_contents` 表 → 命中直接导出
+    /// 2. 未命中 → 调 `ReadmeAPI.refreshMarkdownIfNeeded(for:)` 从 GitHub 拉取 → 再导出
+    /// 3. 弹出 NSSavePanel 让用户选择保存位置，文件名默认 `{repoName}.md`
+    private func exportReadmeMarkdown(dependencies: AppDependencies) {
+        guard case .manage(let repoId) = contentScope,
+              let repo = translationControl?.repo else { return }
+
+        Task {
+            let markdown: String
+            // 1. 先查本地缓存
+            if let cached = try? await dependencies.readmeRepository.findContent(repoId: repoId),
+               !cached.isEmpty {
+                markdown = cached
+            } else {
+                // 2. 懒拉取（从 GitHub API 下载原始 Markdown → 写入 readme_contents）
+                _ = await dependencies.readmeAPI.refreshMarkdownIfNeeded(for: repo)
+                markdown = (try? await dependencies.readmeRepository.findContent(repoId: repoId)) ?? ""
+            }
+
+            guard !markdown.isEmpty else { return }
+
+            // 3. 弹出保存面板
+            let panel = NSSavePanel()
+            panel.title = String.l10n("readme.export.savePanel.title")
+            panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+            panel.nameFieldStringValue = "\(repo.name)-README.md"
+            panel.canCreateDirectories = true
+
+            let response = panel.runModal()
+            guard response == .OK, let url = panel.url else { return }
+
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                AppLog.ui.error("Failed to export README markdown: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     /// 用于"新窗口打开 README"的窗口标题。
     ///
     /// Manage 路径从翻译控件拿 `repo.fullName`；Trending 路径从 contentScope 拼。
@@ -484,6 +531,9 @@ struct ReadmeStateView: View {
                             title: windowTitle,
                             settings: settings
                         )
+                    },
+                    onExportMarkdown: { [dependencies] in
+                        exportReadmeMarkdown(dependencies: dependencies)
                     }
                 )
                 .id(readmeWebViewIdentity)

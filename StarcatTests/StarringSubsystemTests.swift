@@ -48,6 +48,7 @@ struct StarringSubsystemTests {
             apiClient: api,
             repoRepository: repo,
             registry: registry,
+            undoStarHistory: MockUndoStarHistoryRepository(),
             userIDProvider: { currentUserID },
             homeRefresher: refresher
         )

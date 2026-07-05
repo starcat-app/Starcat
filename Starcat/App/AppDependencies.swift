@@ -83,6 +83,9 @@ final class AppDependencies {
     let readmePrefetchService: ReadmePrefetchService
     /// README 后台预拉调度器。登录态 + 设置开关开启时由 HomeView 启动。
     let readmePrefetchPoller: ReadmePrefetchPoller
+
+    /// Undo Star 后台清理调度器（2026-07-05）。
+    let undoStarCleanupScheduler: UndoStarCleanupScheduler
     /// 首次 starred 全量同步完成后的 README / Repo Health 预热作业状态 Repository。
     let initialWarmupJobRepository: InitialWarmupJobRepository
     /// 首次 README / Repo Health 预热协调器。负责跨启动恢复与状态窗口进度。
@@ -97,6 +100,8 @@ final class AppDependencies {
     let githubStarListSyncService: GitHubStarListSyncService
     /// W4 Batch A1 引入：repo 笔记 + 状态管理（同表合并）。
     let repoNoteRepository: any RepoNoteRepositoryProtocol
+    /// Undo Star 历史记录仓储（2026-07-05）。
+    let undoStarHistoryRepository: any UndoStarHistoryRepositoryProtocol
     /// 搜索浮层 `⌘K` 的关键词历史 Repository（GRDB SQLite，CloudKit-ready 字段已就绪，W5 同步接入）。
     let searchHistoryRepository: any SearchHistoryRepositoryProtocol
     /// 用户自定义智能集合 Repository。内置集合不入库，只有用户保存的规则在这里。
@@ -364,6 +369,9 @@ final class AppDependencies {
     /// `repo == nil` 的项在 row 层级隐藏 toggle，不会被加入 snapshots。
     let activityMultiSelectionStore: MultiSelectionStore
 
+    /// 2026-07-05：Undo Star 多选 store（仅 Undo Star 分组使用）。
+    let undoStarMultiSelectionStore: MultiSelectionStore
+
     /// W12 toolbar 专项 PR-5：Manage 多选 store（替代原 HomeViewModel.multiSelectedRepoIDs）。
     ///
     /// 与三个远端 store 同款，但语义不同：
@@ -610,6 +618,8 @@ final class AppDependencies {
             repository: githubStarListRepo
         )
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
+        self.undoStarHistoryRepository = GRDBUndoStarHistoryRepository(database: db)
+        self.undoStarCleanupScheduler = UndoStarCleanupScheduler(repository: self.undoStarHistoryRepository, settings: self.settings)
         self.searchHistoryRepository = GRDBSearchHistoryRepository(database: db)
         self.smartCollectionRepository = GatedSmartCollectionRepository(
             base: GRDBSmartCollectionRepository(database: db),
@@ -745,6 +755,7 @@ final class AppDependencies {
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
         self.activityCategoryCountService = ActivityCategoryCountService()
+        self.activityCategoryCountService.configure(undoStarRepository: self.undoStarHistoryRepository)
         self.sidebarAnimationCoordinator = SidebarAnimationCoordinator()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
 
@@ -909,6 +920,7 @@ final class AppDependencies {
             apiClient: api,
             repoRepository: repo,
             registry: registry,
+            undoStarHistory: self.undoStarHistoryRepository,
             userIDProvider: { [weak session] in
                 session?.state.user?.id
             },
@@ -937,6 +949,7 @@ final class AppDependencies {
         self.newReleasesMultiSelectionStore = exploreStore
         self.weeklyMultiSelectionStore = exploreStore
         self.activityMultiSelectionStore = MultiSelectionStore()
+        self.undoStarMultiSelectionStore = MultiSelectionStore()
         self.manageMultiSelectionStore = MultiSelectionStore()
 
         // RepoResolver chain：5 个 source 按优先级顺序

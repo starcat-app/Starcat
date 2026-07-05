@@ -713,9 +713,9 @@ struct SidebarView: View {
     private var activitySidebarContent: some View {
         Section {
             activityCategoryRow(.all)
+            activityCategoryRow(.undoStar)
 
             if activityCategoriesExpanded {
-                // disclosureRowTransition：与 Manage / Trending 同款"顶部滑入 + 淡入"。
                 ForEach(activityLeafCategories) { category in
                     activityCategoryRow(category)
                         .transition(Self.disclosureRowTransition)
@@ -757,7 +757,7 @@ struct SidebarView: View {
 
     /// Activity 可折叠子分类（不含 `.all`——它常驻在 section 顶部）。
     private var activityLeafCategories: [ActivityCategory] {
-        ActivityCategory.allCases.filter { $0 != .all }
+        ActivityCategory.allCases.filter { $0 != .all && $0 != .undoStar }
     }
 
     @ViewBuilder

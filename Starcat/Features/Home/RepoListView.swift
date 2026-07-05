@@ -188,6 +188,10 @@ struct RepoListView: View {
         // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
         .onChange(of: selectedPage) { _, newPage in
             exitInactiveMultiSelectStores(for: newPage, activityCategory: selectedActivityCategory)
+            // 离开活动页时清理 Undo Star 的外部 repo 引用
+            if newPage != .activity {
+                viewModel.externalSelectedRepo = nil
+            }
         }
         .onChange(of: selectedExploreMode) { _, newMode in
             // 探索模块切换子模式时保留多选开关状态，但清空选中项（不同列表 repo 不同）
@@ -199,8 +203,13 @@ struct RepoListView: View {
                 dependencies.weeklySelectionService.clearSelection()
             }
         }
-        .onChange(of: selectedActivityCategory) { _, _ in
-            // 活动模块不参与多选，无需清理 store
+        .onChange(of: selectedActivityCategory) { _, newCat in
+            // 离开 Undo Star 时清理外部 repo 引用 + 退出多选
+            if newCat != .undoStar {
+                viewModel.externalSelectedRepo = nil
+                let store = dependencies.undoStarMultiSelectionStore
+                if store.isActive { store.exit() }
+            }
         }
         // PR-4 followup：登录态变化时（典型场景：登出 / token 失效），主动把所有远端 store
         // exit 掉。否则用户从「多选中」直接登出后，store.isActive 仍为 true，底部条会试图
@@ -356,7 +365,8 @@ struct RepoListView: View {
         case .trending:
             if manage.isActive { manage.exit() }
         case .activity:
-            break
+            if manage.isActive { manage.exit() }
+            if explore.isActive { explore.exit() }
         }
     }
 
@@ -412,7 +422,14 @@ struct RepoListView: View {
                 BatchActionBar(context: .explore, store: store)
             }
         case .activity:
-            EmptyView()
+            if selectedActivityCategory == .undoStar {
+                let store = dependencies.undoStarMultiSelectionStore
+                if store.isActive {
+                    BatchActionBar(context: .explore, store: store)
+                }
+            } else {
+                EmptyView()
+            }
         }
     }
 
@@ -584,12 +601,11 @@ struct RepoListView: View {
         )
     }
 
-    /// Activity 页面 toolbar spec（W12 PR-4）：
-    /// - leading 暂无；
-    /// 活动模块 toolbar spec。2026-07-05：已移除多选模式。
+    /// Activity 页面 toolbar spec。Undo Star 分类支持多选。
     @MainActor
     private func makeActivityToolbarSpec() -> PageToolbarSpec {
         let registry = dependencies.starredRegistry
+        let isAuthed = authSession.state.isAuthenticated
 
         let selectionView: AnyView? = {
             guard let repo = selectedActivityItem?.repo else { return nil }
@@ -610,9 +626,23 @@ struct RepoListView: View {
             )
         }()
 
+        let trailing = AnyView(
+            Group {
+                selectionView
+                if selectedActivityCategory == .undoStar {
+                    let store = dependencies.undoStarMultiSelectionStore
+                    MultiSelectButton(
+                        isActive: store.isActive,
+                        action: { store.toggle() },
+                        isDisabled: !isAuthed
+                    )
+                }
+            }
+        )
+
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
-            trailingPrimary: selectionView,
+            trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
     }
@@ -1002,7 +1032,16 @@ struct RepoListView: View {
                 ActivityView(
                     selectedCategory: $selectedActivityCategory,
                     selectedItem: $selectedActivityItem,
-                    onItemCountChange: { activityItemCount = $0 }
+                    onItemCountChange: { activityItemCount = $0 },
+                    onSelectUndoStarRepo: { repo in
+                        if let repo {
+                            viewModel.selectedRepoID = repo.id
+                            viewModel.externalSelectedRepo = repo
+                        } else {
+                            viewModel.selectedRepoID = nil
+                            viewModel.externalSelectedRepo = nil
+                        }
+                    }
                 )
             } else {
                 // Manage：顶栏（排序 + 同步）始终可见，排序作用于当前侧边栏分类子集。
@@ -1610,7 +1649,12 @@ struct RepoListView: View {
     }
 
     private var activityNavigationSubtitle: String {
-        let count = activityItemCount
+        let count: Int
+        if selectedActivityCategory == .undoStar {
+            count = dependencies.activityCategoryCountService.count(for: .undoStar) ?? 0
+        } else {
+            count = activityItemCount
+        }
         if selectedActivityCategory.usesRepositoryCountSubtitle {
             return repoCountSubtitle(count)
         }

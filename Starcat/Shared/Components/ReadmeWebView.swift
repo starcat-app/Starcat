@@ -80,6 +80,11 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮（独立窗口自身不提供此操作，避免无限套娃）。
     var onOpenInNewWindow: (() -> Void)? = nil
 
+    /// 「导出 README Markdown」回调。
+    ///
+    /// nil 时浮动工具栏不显示该按钮。
+    var onExportMarkdown: (() -> Void)? = nil
+
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
     @State private var isFontToolbarExpanded = false
@@ -102,7 +107,8 @@ struct ReadmeWebView: View {
                 decreaseFontSize: decreaseFontSize,
                 resetFontSize: resetFontSize,
                 increaseFontSize: increaseFontSize,
-                openInNewWindow: onOpenInNewWindow
+                openInNewWindow: onOpenInNewWindow,
+                onExportMarkdown: onExportMarkdown
             )
             .padding(.trailing, 10)
             .padding(.bottom, 54)
@@ -627,6 +633,9 @@ private struct ReadmeFloatingToolbar: View {
     /// 「在新窗口打开 README」回调。nil 时隐藏该按钮（独立窗口不提供此操作）。
     let openInNewWindow: (() -> Void)?
 
+    /// 「导出 README Markdown」回调。nil 时隐藏该按钮。
+    let onExportMarkdown: (() -> Void)?
+
     /// 鼠标是否悬停在浮窗上。
     ///
     /// dong4j 2026-07-04：浮窗默认占用 README 阅读区右下角，长期 100% 不透明会与正文抢戏。
@@ -650,19 +659,19 @@ private struct ReadmeFloatingToolbar: View {
         VStack(spacing: 5) {
             if isExpanded {
                 toolbarButton(
-                    systemImage: "minus",
+                    systemImage: "textformat.size.smaller",
                     helpKey: "readme.toolbar.fontSmaller",
                     isDisabled: !canDecrease,
                     action: decreaseFontSize
                 )
                 toolbarButton(
-                    systemImage: "arrow.counterclockwise",
+                    systemImage: "textformat.size",
                     helpKey: "readme.toolbar.fontReset",
                     isDisabled: fontSizeAdjustment == 0,
                     action: resetFontSize
                 )
                 toolbarButton(
-                    systemImage: "plus",
+                    systemImage: "textformat.size.larger",
                     helpKey: "readme.toolbar.fontLarger",
                     isDisabled: !canIncrease,
                     action: increaseFontSize
@@ -671,9 +680,22 @@ private struct ReadmeFloatingToolbar: View {
                     .frame(width: 16)
                     .padding(.vertical, 1)
                     .transition(.opacity)
+                if let onExportMarkdown {
+                    toolbarButton(
+                        systemImage: "arrow.down.doc",
+                        helpKey: "readme.toolbar.exportMarkdown",
+                        isDisabled: false,
+                        assetImage: "markdown",
+                        action: onExportMarkdown
+                    )
+                    Divider()
+                        .frame(width: 16)
+                        .padding(.vertical, 1)
+                        .transition(.opacity)
+                }
                 if let openInNewWindow {
                     toolbarButton(
-                        systemImage: "macwindow.badge.plus",
+                        systemImage: "rectangle.on.rectangle",
                         helpKey: "readme.toolbar.openInNewWindow",
                         isDisabled: false,
                         action: openInNewWindow
@@ -711,18 +733,34 @@ private struct ReadmeFloatingToolbar: View {
         helpKey: LocalizedStringKey,
         isDisabled: Bool,
         isActive: Bool = false,
+        assetImage: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isDisabled ? Color.secondary.opacity(0.38) : Color.secondary)
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if let assetImage {
+                Image(assetImage)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
+                    .foregroundStyle(isDisabled ? Color.secondary.opacity(0.38) : Color.secondary)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isDisabled ? Color.secondary.opacity(0.38) : Color.secondary)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

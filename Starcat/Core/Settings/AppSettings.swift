@@ -932,6 +932,11 @@ final class AppSettings {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
     }
 
+    /// Undo Star 历史保留天数（2026-07-05）。-1 = 永久不删。
+    var undoStarRetentionDays: Int {
+        didSet { defaults.set(undoStarRetentionDays, forKey: Keys.undoStarRetentionDays) }
+    }
+
     // MARK: - 无障碍 / 动画（2026-06-15 dong4j 需求）
 
     /// 「关闭应用内动画」用户偏好。默认 `false`（动画全开）。
@@ -1497,6 +1502,9 @@ final class AppSettings {
             .flatMap(ReadmeTranslationLanguage.init(rawValue:))
             ?? .defaultForCurrentLocale()
 
+        let retentionDays = defaults.integer(forKey: Keys.undoStarRetentionDays)
+        self.undoStarRetentionDays = retentionDays == 0 ? 7 : retentionDays  // 首次默认 7 天
+
         self.isProUser = defaults.object(forKey: Keys.isProUser) as? Bool ?? false
 
         // 2026-06-15:无障碍——「关闭应用内动画」用户偏好。
@@ -1975,6 +1983,7 @@ final class AppSettings {
         static let externalSearchProviderSettings = "settings.externalSearch.providerSettings.v1"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
+        static let undoStarRetentionDays = "settings.undoStar.retentionDays"  // 2026-07-05
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let hideDockIcon = "settings.general.hideDockIcon.v1"  // 2026-07-02

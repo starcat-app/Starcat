@@ -898,7 +898,9 @@ struct HomeView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if selectedSidebarPage == .activity {
+        if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
+            RepoDetailView(selectedTrendingRepo: nil)
+        } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
         } else if selectedSidebarPage == .trending, selectedExploreMode == .weekly {
             // Weekly 已迁移到 Explore,右栏仍复用原 WeeklyDetailView；详情选择继续由

@@ -598,7 +598,7 @@ final class ActivityViewModel {
                 events: aggregateSnapshot?.events ?? [],
                 announcements: aggregateSnapshot?.announcements ?? []
             ))
-        case .star, .repository, .suggestion:
+        case .star, .repository, .suggestion, .undoStar:
             let repos = (try? await repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)) ?? []
             guard !repos.isEmpty else { return }
             await publishPrimeSnapshot(AggregateSnapshot(

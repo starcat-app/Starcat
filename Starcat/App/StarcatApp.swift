@@ -190,6 +190,8 @@ struct StarcatApp: App {
                     AppDelegate.applyActivationPolicy(hideDockIcon: dependencies.settings.hideDockIcon)
                     applyAppearance(dependencies.settings.appearanceMode)
                     MetricKitReporter.shared.start()
+                    // Undo Star 历史记录后台清理调度器
+                    dependencies.undoStarCleanupScheduler.start()
                     dependencies.telemetryManager.track(.appLaunched)
                 }
                 .onChange(of: dependencies.settings.appearanceMode) { _, newMode in

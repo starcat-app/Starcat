@@ -29,6 +29,8 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
     case repository
     case following
     case suggestion
+    /// Undo Star 历史记录（2026-07-05），不参与「全部」聚合计算。
+    case undoStar
 
     var id: String { rawValue }
 
@@ -41,6 +43,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "activity.category.repository"
         case .following:    return "activity.category.following"
         case .suggestion:   return "activity.category.suggestion"
+        case .undoStar:     return "activity.category.undoStar"
         }
     }
 
@@ -53,6 +56,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return String.l10n("activity.category.repository")
         case .following:    return String.l10n("activity.category.following")
         case .suggestion:   return String.l10n("activity.category.suggestion")
+        case .undoStar:     return String.l10n("activity.category.undoStar")
         }
     }
 
@@ -67,6 +71,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "#A97BFF" // Kotlin purple
         case .following:    return "#701516" // Ruby deep red
         case .suggestion:   return "#3178c6" // TypeScript blue
+        case .undoStar:     return "#F05138" // Swift orange-red（与 all 同色）
         }
     }
 
@@ -84,6 +89,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "folder"
         case .following:    return "person.2"
         case .suggestion:   return "sparkles"
+        case .undoStar:     return "arrow.uturn.backward.circle"
         }
     }
 }
@@ -144,7 +150,7 @@ extension ActivityCategory {
     /// 全部分类也会混入公告、release 等活动项；只有纯仓库型分类用 repo count 文案。
     var usesRepositoryCountSubtitle: Bool {
         switch self {
-        case .star, .repository, .suggestion:
+        case .star, .repository, .suggestion, .undoStar:
             return true
         case .all, .announcement, .release, .following:
             return false
