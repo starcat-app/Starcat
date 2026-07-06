@@ -720,18 +720,18 @@ struct AgentWorkspaceView: View {
     }
 
     private var agentComposerInputBox: some View {
-        ZStack(alignment: .bottomTrailing) {
+        VStack(alignment: .leading, spacing: 8) {
             TextField("继续给 Agent 指令，或 @ 选择已 star repo，/ 调用技能与工具", text: $viewModel.prompt, axis: .vertical)
                 .font(agentFont(.body))
                 .textFieldStyle(.plain)
                 .lineLimit(2...6)
-                .frame(minHeight: 44, alignment: .topLeading)
+                // 与 RAG composer 保持同一布局约束，避免纵向 TextField 首次测量时提前换行。
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                 .disabled(viewModel.isRunning)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 42)
 
             HStack(spacing: 8) {
+                Spacer()
+
                 composerActionIcon("paperclip")
 
                 Button {
@@ -746,9 +746,11 @@ struct AgentWorkspaceView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(viewModel.isRunning || viewModel.selectedAgent?.isEnabled != true)
             }
-            .padding(.trailing, 12)
-            .padding(.bottom, 10)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)

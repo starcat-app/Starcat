@@ -488,18 +488,19 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private var ragComposerInputBox: some View {
-        ZStack(alignment: .bottomTrailing) {
+        VStack(alignment: .leading, spacing: 8) {
             TextField("继续追问知识库...", text: $draftQuestion, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(ragFont(.body))
                 .lineLimit(2...6)
-                .frame(minHeight: 44, alignment: .topLeading)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 42)
+                // 首次聚焦时纵向 TextField 可能只按 intrinsic width 排版。
+                // 显式占满父容器，避免还没到输入框右边就提前换行。
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                 .onSubmit(sendDemoQuestion)
 
             HStack(spacing: 8) {
+                Spacer()
+
                 Button {} label: {
                     Image(systemName: "paperclip")
                         .font(ragIconFont(size: 13, weight: .medium))
@@ -518,9 +519,11 @@ struct KnowledgeRAGWorkspaceView: View {
                 .focusEffectDisabled()
                 .disabled(ragComposerSendDisabled)
             }
-            .padding(.trailing, 12)
-            .padding(.bottom, 10)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
