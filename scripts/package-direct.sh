@@ -145,9 +145,9 @@ if [ "$DMG_TOOL" = "create-dmg" ]; then
     --window-size 820 520 \
     --text-size 13 \
     --icon-size 112 \
-    --icon "Starcat.app" 226 246 \
+    --icon "Starcat.app" 235 210 \
     --hide-extension "Starcat.app" \
-    --app-drop-link 556 246 \
+    --app-drop-link 585 210 \
     --app-drop-link-name "Applications" \
     --no-internet-enable \
     --format UDZO \
