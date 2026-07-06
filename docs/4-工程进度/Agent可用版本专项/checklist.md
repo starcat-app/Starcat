@@ -38,17 +38,17 @@
 - [x] 更新 `docs/功能实现总览.md` 的 Agent 可用版本条目与变更日志。
 - [x] 第一轮审查: 文档与 checklist 一致性。
 - [x] 第二轮审查: 代码实现与设计方案一致性。
-- [ ] 第三轮审查: 单元测试与工程进度一致性。
-- [ ] 根据审查发现完成修复并补充提交。
-- [ ] 新增 Agent 可用版本专项结果报告。
+- [x] 第三轮审查: 单元测试与工程进度一致性。
+- [x] 根据审查发现完成修复并补充提交。
+- [x] 新增 Agent 可用版本专项结果报告。
 
 ## 4. 验收标准
 
-- [ ] Agent Workspace 运行 Weekly Agent 时读取真实 Starcat repo 数据。
-- [ ] 每个 step / tool / AI response 都能展开看到输入与输出。
-- [ ] AI 配置完整时生成真实 Markdown 周刊 artifact。
-- [ ] AI 未配置时不会落入 sample 文案,而是给出可理解错误。
-- [ ] 单测覆盖新增 runtime 契约和失败路径。
-- [ ] `docs/功能实现总览.md` checkbox 与本 checklist 状态一致。
-- [ ] 每轮审查报告落在 `docs/4-工程进度/Agent可用版本专项/`。
-- [ ] 最终结果报告落在 `docs/4-工程进度/Agent可用版本专项/结果报告.md`。
+- [x] Agent Workspace 运行 Weekly Agent 时读取真实 Starcat repo 数据。
+- [x] 每个 step / tool / AI response 都能展开看到输入与输出。
+- [x] AI 配置完整时生成真实 Markdown 周刊 artifact。
+- [x] AI 未配置时不会落入 sample 文案,而是给出可理解错误。
+- [x] 单测覆盖新增 runtime 契约和失败路径。
+- [x] `docs/功能实现总览.md` checkbox 与本 checklist 状态一致。
+- [x] 每轮审查报告落在 `docs/4-工程进度/Agent可用版本专项/`。
+- [x] 最终结果报告落在 `docs/4-工程进度/Agent可用版本专项/结果报告.md`。
