@@ -27,6 +27,7 @@ final class AgentWorkspaceViewModel {
     var planSteps: [AgentPlanStep] = []
     var steps: [AgentRunStep] = []
     var toolOutputs: [AgentToolOutput] = []
+    var traceSpans: [AgentTraceSpan] = []
     var artifacts: [AgentArtifact] = []
     var selectedArtifactID: UUID?
     var assistantOutput: String = ""
@@ -71,6 +72,7 @@ final class AgentWorkspaceViewModel {
         planSteps = []
         steps = []
         toolOutputs = []
+        traceSpans = []
         artifacts = []
         selectedArtifactID = nil
         assistantOutput = ""
@@ -133,6 +135,8 @@ final class AgentWorkspaceViewModel {
             upsert(step)
         case .toolOutput(let output):
             toolOutputs.append(output)
+        case .trace(let span):
+            upsert(span)
         case .assistantDelta(let text):
             assistantOutput += text
         case .artifactCreated(let artifact):
@@ -158,6 +162,14 @@ final class AgentWorkspaceViewModel {
             steps[index] = step
         } else {
             steps.append(step)
+        }
+    }
+
+    private func upsert(_ span: AgentTraceSpan) {
+        if let index = traceSpans.firstIndex(where: { $0.id == span.id }) {
+            traceSpans[index] = span
+        } else {
+            traceSpans.append(span)
         }
     }
 

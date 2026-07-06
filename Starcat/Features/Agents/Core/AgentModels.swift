@@ -108,17 +108,26 @@ struct AgentToolOutput: Identifiable, Hashable, Sendable {
     var toolName: String
     var summary: String
     var detail: String
+    var input: String
+    var output: String
+    var log: String
 
     init(
         id: UUID = UUID(),
         toolName: String,
         summary: String,
-        detail: String
+        detail: String,
+        input: String = "",
+        output: String = "",
+        log: String = ""
     ) {
         self.id = id
         self.toolName = toolName
         self.summary = summary
         self.detail = detail
+        self.input = input
+        self.output = output
+        self.log = log
     }
 }
 
@@ -155,6 +164,51 @@ struct AgentRunContext: Hashable, Sendable {
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
 }
 
+/// Agent run 中可展开审计的一条 span。
+///
+/// Step / Tool / AI generation / Artifact 都统一投影成 trace span。这样 UI 不需要根据
+/// 不同事件临时拼“看起来像输入输出”的文本，Runtime 和工具层也能把真实参数、结果和日志
+/// 原样交给用户审查。
+struct AgentTraceSpan: Identifiable, Hashable, Sendable {
+    let id: UUID
+    var kind: String
+    var title: String
+    var summary: String
+    var input: String
+    var output: String
+    var log: String
+    var status: AgentStepStatus
+    var relatedStepID: UUID?
+    var relatedToolOutputID: UUID?
+    var relatedArtifactID: UUID?
+
+    init(
+        id: UUID = UUID(),
+        kind: String,
+        title: String,
+        summary: String,
+        input: String,
+        output: String,
+        log: String,
+        status: AgentStepStatus = .completed,
+        relatedStepID: UUID? = nil,
+        relatedToolOutputID: UUID? = nil,
+        relatedArtifactID: UUID? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.summary = summary
+        self.input = input
+        self.output = output
+        self.log = log
+        self.status = status
+        self.relatedStepID = relatedStepID
+        self.relatedToolOutputID = relatedToolOutputID
+        self.relatedArtifactID = relatedArtifactID
+    }
+}
+
 /// Runtime 发给 Workspace 的事件。
 ///
 /// UI 只消费事件，不直接调用 Runtime 内部状态。这样未来把 P0 deterministic runtime
@@ -165,6 +219,7 @@ enum AgentRunEvent: Sendable {
     case stepStarted(id: UUID)
     case stepUpdated(AgentRunStep)
     case toolOutput(AgentToolOutput)
+    case trace(AgentTraceSpan)
     case assistantDelta(String)
     case artifactCreated(AgentArtifact)
     case runCompleted
