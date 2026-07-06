@@ -17,6 +17,7 @@ import Observation
 final class AgentWorkspaceViewModel {
 
     private let runtime: any AgentRuntime
+    private var contextProvider: any AgentRunContextProviding
     private var runTask: Task<Void, Never>?
 
     let agents: [AgentDefinition]
@@ -35,10 +36,12 @@ final class AgentWorkspaceViewModel {
 
     init(
         agents: [AgentDefinition] = BuiltInAgents.all,
-        runtime: any AgentRuntime = DefaultAgentRuntime()
+        runtime: any AgentRuntime = DefaultAgentRuntime(),
+        contextProvider: any AgentRunContextProviding = EmptyAgentRunContextProvider()
     ) {
         self.agents = agents
         self.runtime = runtime
+        self.contextProvider = contextProvider
         self.selectedAgentID = agents.first?.id ?? ""
         self.prompt = agents.first?.defaultPrompt ?? ""
     }
@@ -64,6 +67,11 @@ final class AgentWorkspaceViewModel {
         }
     }
 
+    func configureContextProvider(_ provider: any AgentRunContextProviding) {
+        guard !isRunning else { return }
+        contextProvider = provider
+    }
+
     func run() {
         guard let selectedAgent, selectedAgent.isEnabled else { return }
         runTask?.cancel()
@@ -79,14 +87,20 @@ final class AgentWorkspaceViewModel {
         errorMessage = nil
 
         let currentPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let context = AgentRunContext.empty
-        let stream = runtime.run(
-            definition: selectedAgent,
-            prompt: currentPrompt.isEmpty ? selectedAgent.defaultPrompt : currentPrompt,
-            context: context
-        )
+        let effectivePrompt = currentPrompt.isEmpty ? selectedAgent.defaultPrompt : currentPrompt
+        let contextProvider = contextProvider
+        let runtime = runtime
 
         runTask = Task { [weak self] in
+            let context = await contextProvider.makeContext(
+                definition: selectedAgent,
+                prompt: effectivePrompt
+            )
+            let stream = runtime.run(
+                definition: selectedAgent,
+                prompt: effectivePrompt,
+                context: context
+            )
             for await event in stream {
                 await MainActor.run {
                     self?.apply(event)

@@ -72,6 +72,40 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
+    @Test("run 会先冻结 context 再交给 runtime")
+    func runPassesContextProviderSnapshotIntoRuntime() async throws {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot: 1 repo",
+            repos: [
+                AgentRepoSnapshot(
+                    id: 1,
+                    owner: "groue",
+                    name: "GRDB.swift",
+                    fullName: "groue/GRDB.swift",
+                    description: "SQLite toolkit",
+                    language: "Swift",
+                    starsCount: 7800,
+                    topics: ["sqlite"],
+                    isStarred: true,
+                    starredAt: "2026-07-07T00:00:00Z",
+                    htmlUrl: "https://github.com/groue/GRDB.swift"
+                )
+            ]
+        )
+        let runtime = ContextEchoAgentRuntime()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime,
+            contextProvider: StaticAgentRunContextProvider(context: context)
+        )
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.selectedArtifact?.content.contains("Unit Snapshot: 1 repo") == true)
+        #expect(viewModel.selectedArtifact?.content.contains("groue/GRDB.swift") == true)
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 500_000_000,
         _ predicate: @escaping @MainActor () -> Bool
@@ -112,6 +146,37 @@ private struct NeverFinishingAgentRuntime: AgentRuntime {
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
             continuation.yield(.runStarted(title: definition.title))
+        }
+    }
+}
+
+private struct StaticAgentRunContextProvider: AgentRunContextProviding {
+    let context: AgentRunContext
+
+    func makeContext(
+        definition: AgentDefinition,
+        prompt: String
+    ) async -> AgentRunContext {
+        context
+    }
+}
+
+private struct ContextEchoAgentRuntime: AgentRuntime {
+    func run(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            let repoNames = context.repos.map(\.fullName).joined(separator: ", ")
+            continuation.yield(.runStarted(title: definition.title))
+            continuation.yield(.artifactCreated(AgentArtifact(
+                type: .markdown,
+                title: "Context Echo",
+                content: "\(context.sourceDescription)\n\(repoNames)"
+            )))
+            continuation.yield(.runCompleted)
+            continuation.finish()
         }
     }
 }

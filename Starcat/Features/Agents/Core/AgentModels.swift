@@ -156,12 +156,47 @@ struct AgentArtifact: Identifiable, Hashable, Sendable {
 
 /// Agent run 的上下文快照。
 ///
-/// P0 先保存入口描述。后续接入列表多选时，把 SelectionSnapshot、筛选条件等冻结在这里，
-/// 保证用户切换列表筛选不会污染正在运行或历史查看的 Agent run。
+/// run 开始时冻结上下文，而不是让 Runtime 持有列表的 live binding。这样用户在 Agent
+/// 执行过程中切换筛选、刷新列表或打开别的窗口，都不会污染当前 run 的审计记录。
 struct AgentRunContext: Hashable, Sendable {
     var sourceDescription: String
+    var generatedAt: Date
+    var repos: [AgentRepoSnapshot]
+
+    init(
+        sourceDescription: String,
+        generatedAt: Date = Date(),
+        repos: [AgentRepoSnapshot] = []
+    ) {
+        self.sourceDescription = sourceDescription
+        self.generatedAt = generatedAt
+        self.repos = repos
+    }
 
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
+}
+
+/// Agent 可消费的仓库快照。
+///
+/// 这里只保留生成周刊需要的稳定字段，避免把完整 `Repo` 行直接塞进 Runtime。后续要补
+/// README / note / tag 时，也应继续通过快照字段扩展，而不是让工具层读取 UI 状态。
+struct AgentRepoSnapshot: Identifiable, Hashable, Sendable {
+    let id: Int64
+    var owner: String
+    var name: String
+    var fullName: String
+    var description: String?
+    var language: String?
+    var starsCount: Int
+    var topics: [String]
+    var isStarred: Bool
+    var starredAt: String?
+    var htmlUrl: String
+
+    var displaySummary: String {
+        let languagePart = language.map { " · \($0)" } ?? ""
+        return "\(fullName)\(languagePart) · \(starsCount) stars"
+    }
 }
 
 /// Agent run 中可展开审计的一条 span。

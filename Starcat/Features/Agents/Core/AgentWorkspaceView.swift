@@ -12,6 +12,7 @@ import SwiftUI
 
 struct AgentWorkspaceView: View {
 
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var expandedTraceItemIDs: Set<String> = ["llm-generation"]
@@ -32,6 +33,11 @@ struct AgentWorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
+        .task {
+            viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
+                repository: dependencies.repoRepository
+            ))
+        }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }
