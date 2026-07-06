@@ -1,7 +1,8 @@
 # GitHub Weekly Report Agent 技术实现方案
 
 > **文档定位**: `GitHub Weekly Report Agent` 作为 Starcat Agent 底层平台的首个接入实例的技术实现方案。本文只写该 Agent 的实现边界、工具接入、上下文注入、Artifact schema、UI 细节、测试与分期；底层 Runtime / Workspace / Tool / Artifact 通用设计以 [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md) 为准。
-> **状态**: 技术方案稿(2026-06-28),等 dong4j 拍板。
+> **状态**: 技术方案稿(2026-06-28);可用版本首轮落地(2026-07-07)。
+> **实现状态**: 已接入 Starcat 本地仓库快照、read-only Weekly tools、可审计 trace、现有 AI Provider / Keychain / OpenAIClient Markdown 生成;AI 未配置时明确失败,不生成 sample artifact。写 tag / note / status / star 操作仍不在本轮范围。
 > **关联文档**:
 > - [`08-Weekly-Trending解读方案.md`](08-Weekly-Trending解读方案.md):产品与交互方案
 > - [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md):Agent 底层平台方案
