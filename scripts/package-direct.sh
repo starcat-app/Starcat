@@ -41,12 +41,11 @@ DIST_DIR="${PROJECT_ROOT}/dist/direct"
 DERIVED_DIR="${DIST_DIR}/DerivedData"
 STAGING_DIR="${DIST_DIR}/staging"
 DOWNLOADS_DIR="${DIST_DIR}/downloads"
-DMG_ASSETS_DIR="${DIST_DIR}/dmg-assets"
 APPCAST_INPUT_DIR="${DIST_DIR}/appcast-input"
 APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
-DMG_BACKGROUND_PATH="${DMG_ASSETS_DIR}/background.png"
+DMG_BACKGROUND_PATH="${PROJECT_ROOT}/scripts/assets/dmg-background.png"
 BUILD_LOG="${DIST_DIR}/xcodebuild-direct.log"
 BUILD_NUMBER="${STARCAT_DIRECT_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 DMG_TOOL="${STARCAT_DMG_TOOL:-create-dmg}"
@@ -59,7 +58,7 @@ command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild 不在 PATH"
 case "$DMG_TOOL" in
   create-dmg)
     command -v create-dmg >/dev/null 2>&1 || fail "create-dmg 未安装，请先执行: brew install create-dmg"
-    command -v python3 >/dev/null 2>&1 || fail "python3 未安装，无法生成 DMG 背景图"
+    [ -f "$DMG_BACKGROUND_PATH" ] || fail "缺少 DMG 背景图: $DMG_BACKGROUND_PATH"
     ;;
   hdiutil)
     command -v hdiutil >/dev/null 2>&1 || fail "hdiutil 不在 PATH"
@@ -68,84 +67,6 @@ case "$DMG_TOOL" in
     fail "STARCAT_DMG_TOOL 只能是 create-dmg 或 hdiutil，当前: $DMG_TOOL"
     ;;
 esac
-
-generate_dmg_background() {
-  mkdir -p "$DMG_ASSETS_DIR"
-  python3 - "$DMG_BACKGROUND_PATH" <<'PY'
-import math
-import random
-import struct
-import sys
-import zlib
-from pathlib import Path
-
-output = Path(sys.argv[1])
-width, height = 660, 420
-
-random.seed(42)
-stars = [(random.randint(24, width - 24), random.randint(22, height - 24), random.randint(18, 58)) for _ in range(64)]
-
-def clamp(value):
-    return max(0, min(255, int(value)))
-
-def blend(base, color, alpha):
-    t = alpha / 255
-    return tuple(clamp(base[i] * (1 - t) + color[i] * t) for i in range(3))
-
-def line_alpha(px, py, ax, ay, bx, by, thickness):
-    vx, vy = bx - ax, by - ay
-    wx, wy = px - ax, py - ay
-    length_sq = vx * vx + vy * vy
-    if length_sq == 0:
-        distance = math.hypot(px - ax, py - ay)
-    else:
-        t = max(0, min(1, (wx * vx + wy * vy) / length_sq))
-        distance = math.hypot(px - (ax + t * vx), py - (ay + t * vy))
-    return max(0, min(1, (thickness - distance) / thickness))
-
-raw = bytearray()
-for y in range(height):
-    raw.append(0)
-    vertical = y / max(height - 1, 1)
-    for x in range(width):
-        top = (17, 22, 33)
-        bottom = (7, 9, 14)
-        base = tuple(top[i] + (bottom[i] - top[i]) * vertical for i in range(3))
-
-        # 背景只提供品牌氛围和拖拽方向，避免抢走 Finder 里 App 图标的注意力。
-        glow_top = max(0, 1 - math.hypot((x - width * 0.50) / 260, (y + 48) / 170))
-        glow_right = max(0, 1 - math.hypot((x - width * 0.90) / 260, (y - height * 0.96) / 180))
-        color = (
-            base[0] + glow_top * 24 + glow_right * 26,
-            base[1] + glow_top * 42 + glow_right * 22,
-            base[2] + glow_top * 62 + glow_right * 6,
-        )
-
-        for sx, sy, alpha in stars:
-            distance = math.hypot(x - sx, y - sy)
-            if distance < 1.8:
-                color = blend(color, (255, 255, 255), alpha * (1 - distance / 1.8))
-
-        arrow = max(
-            line_alpha(x, y, 244, 214, 416, 214, 2.6),
-            line_alpha(x, y, 416, 214, 396, 198, 2.6),
-            line_alpha(x, y, 416, 214, 396, 230, 2.6),
-        )
-        if arrow > 0:
-            color = blend(color, (255, 255, 255), 62 * arrow)
-
-        raw.extend((clamp(color[0]), clamp(color[1]), clamp(color[2]), 255))
-
-def chunk(kind, data):
-    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-
-png = bytearray(b"\x89PNG\r\n\x1a\n")
-png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
-png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-png += chunk(b"IEND", b"")
-output.write_bytes(png)
-PY
-}
 
 cd "$PROJECT_ROOT"
 mkdir -p "$DIST_DIR" "$DOWNLOADS_DIR"
@@ -217,17 +138,16 @@ mkdir -p "$STAGING_DIR"
 cp -R "$APP_PATH" "$STAGING_DIR/"
 
 if [ "$DMG_TOOL" = "create-dmg" ]; then
-  generate_dmg_background
   create-dmg \
     --volname "Starcat ${VERSION}" \
     --background "$DMG_BACKGROUND_PATH" \
     --window-pos 200 120 \
-    --window-size 660 420 \
+    --window-size 820 520 \
     --text-size 13 \
-    --icon-size 104 \
-    --icon "Starcat.app" 185 218 \
+    --icon-size 112 \
+    --icon "Starcat.app" 226 246 \
     --hide-extension "Starcat.app" \
-    --app-drop-link 475 218 \
+    --app-drop-link 556 246 \
     --app-drop-link-name "Applications" \
     --no-internet-enable \
     --format UDZO \
