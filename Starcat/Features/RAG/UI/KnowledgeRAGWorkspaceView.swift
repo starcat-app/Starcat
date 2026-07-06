@@ -207,18 +207,22 @@ struct KnowledgeRAGWorkspaceView: View {
         VStack(spacing: 0) {
             answerHeader
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    questionBubble
-                    answerBlock
-                    if didSendDemoQuestion {
-                        pendingQuestionBlock
+            GeometryReader { proxy in
+                let userMessageWidth = messageWidthLimit(proxy.size.width, ratio: 0.72, cap: 640)
+                let assistantMessageWidth = messageWidthLimit(proxy.size.width, ratio: 0.78, cap: 920)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        questionBubble(maxWidth: userMessageWidth)
+                        answerBlock(maxWidth: assistantMessageWidth)
+                        if didSendDemoQuestion {
+                            pendingQuestionBlock(maxWidth: userMessageWidth)
+                        }
                     }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
-                .frame(maxWidth: 920, alignment: .leading)
-                .frame(maxWidth: .infinity)
             }
             Divider()
             commandComposer
@@ -272,7 +276,7 @@ struct KnowledgeRAGWorkspaceView: View {
         )
     }
 
-    private var questionBubble: some View {
+    private func questionBubble(maxWidth: CGFloat) -> some View {
         HStack(alignment: .top) {
             Spacer(minLength: 90)
             VStack(alignment: .trailing, spacing: 6) {
@@ -286,10 +290,11 @@ struct KnowledgeRAGWorkspaceView: View {
                     .font(ragFont(.caption2))
                     .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: maxWidth, alignment: .trailing)
         }
     }
 
-    private var answerBlock: some View {
+    private func answerBlock(maxWidth: CGFloat) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "cat")
                 .font(ragIconFont(size: 18, weight: .semibold))
@@ -329,6 +334,7 @@ struct KnowledgeRAGWorkspaceView: View {
                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             )
         }
+        .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
     private var repoBundleList: some View {
@@ -458,7 +464,7 @@ struct KnowledgeRAGWorkspaceView: View {
         .foregroundStyle(.secondary)
     }
 
-    private var pendingQuestionBlock: some View {
+    private func pendingQuestionBlock(maxWidth: CGFloat) -> some View {
         HStack(alignment: .top) {
             Spacer(minLength: 90)
             Text(draftQuestion.isEmpty ? "继续追问知识库..." : draftQuestion)
@@ -467,6 +473,7 @@ struct KnowledgeRAGWorkspaceView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: maxWidth, alignment: .trailing)
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
@@ -533,6 +540,11 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var ragComposerSendDisabled: Bool {
         draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func messageWidthLimit(_ availableWidth: CGFloat, ratio: CGFloat, cap: CGFloat) -> CGFloat {
+        // 宽屏时消息不铺满整栏，窄屏时仍保留可读宽度；用户和 AI 分别使用不同上限。
+        max(280, min(cap, availableWidth * ratio))
     }
 
     private func composerChip(_ text: String, systemImage: String) -> some View {
