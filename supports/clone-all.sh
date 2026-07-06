@@ -135,7 +135,11 @@ for entry in "${PROJECTS[@]}"; do
     # ---- Clone 模式 ----
     if [[ -d "$dir/.git" ]]; then
       echo -e "${GREEN}[✓]${NC} ${BOLD}${dir}${NC} — ${desc}"
-      echo -e "    ${GREEN}已存在,跳过${NC}"
+      # 关键：主仓库 git pull 可能删除了独立仓库的工作树文件（如 starcat-license-api
+      # 从主仓库 git rm --cached 后,pull 会删文件但 .git/ 目录还在）。
+      # git checkout . 恢复干净工作树,幂等且安全。
+      (cd "$dir" && git checkout . 2>/dev/null) || true
+      echo -e "    ${GREEN}已存在,工作树已恢复${NC}"
       ((SKIPPED++))
     else
       echo -e "${CYAN}[↓]${NC} ${BOLD}${dir}${NC} — ${desc}"
