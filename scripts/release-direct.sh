@@ -10,6 +10,7 @@
 #   - 构建逻辑仍由 package-direct.sh 负责，本脚本只做发布编排。
 #   - 默认走完整发布流程；重跑某一段时用 STARCAT_RELEASE_SKIP_* 显式跳过。
 #   - 默认要求 main 分支和干净工作区，避免从临时状态打 tag 或发布不可复现产物。
+#   - appcast 使用增量合并，历史版本以 pages/appcast.xml 为准，不依赖本地保留旧 DMG。
 #
 
 set -euo pipefail
@@ -119,6 +120,7 @@ DOWNLOADS_DIR="${PROJECT_ROOT}/dist/direct/downloads"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 APPCAST_PATH="${PAGES_DIR}/appcast.xml"
+CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
 
 RELEASE_BRANCH="${STARCAT_RELEASE_BRANCH:-main}"
 RELEASE_REMOTE="${STARCAT_RELEASE_REMOTE:-origin}"
@@ -227,14 +229,14 @@ verify_local_artifacts() {
 
   [ -f "$DMG_PATH" ] || fail "未找到 DMG: $DMG_PATH"
   [ -f "$SHA_PATH" ] || fail "未找到 SHA256: $SHA_PATH"
-  [ -f "$APPCAST_PATH" ] || fail "未找到 appcast: $APPCAST_PATH"
+  [ -f "$CURRENT_APPCAST_PATH" ] || fail "未找到当前版本 appcast: $CURRENT_APPCAST_PATH"
 
-  if ! grep -q "Starcat-${VERSION}-arm64.dmg" "$APPCAST_PATH"; then
-    fail "appcast 未指向本次 DMG: Starcat-${VERSION}-arm64.dmg"
+  if ! grep -q "Starcat-${VERSION}-arm64.dmg" "$CURRENT_APPCAST_PATH"; then
+    fail "当前版本 appcast 未指向本次 DMG: Starcat-${VERSION}-arm64.dmg"
   fi
 
-  if ! grep -q "<sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>" "$APPCAST_PATH"; then
-    fail "appcast 中的 sparkle:shortVersionString 不是 ${VERSION}"
+  if ! grep -q "<sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>" "$CURRENT_APPCAST_PATH"; then
+    fail "当前版本 appcast 中的 sparkle:shortVersionString 不是 ${VERSION}"
   fi
 }
 
@@ -247,6 +249,20 @@ upload_direct_artifacts() {
     "$DMG_PATH" \
     "$SHA_PATH" \
     "$RELEASE_HOST:$REMOTE_WEB_DIR/downloads/"
+}
+
+merge_appcast() {
+  [ "$DRY_RUN" = "1" ] && return
+
+  log "增量合并当前版本 appcast: ${VERSION}"
+  python3 "${SCRIPT_DIR}/merge-appcast.py" \
+    --base "$APPCAST_PATH" \
+    --incoming "$CURRENT_APPCAST_PATH" \
+    --output "$APPCAST_PATH"
+
+  if ! grep -q "Starcat-${VERSION}-arm64.dmg" "$APPCAST_PATH"; then
+    fail "合并后的 appcast 未指向本次 DMG: Starcat-${VERSION}-arm64.dmg"
+  fi
 
   log "上传 appcast.xml"
   run_or_print rsync -avz --progress \
@@ -302,6 +318,7 @@ main() {
   package_direct
   verify_local_artifacts
   upload_direct_artifacts
+  merge_appcast
   verify_remote_urls
 }
 

@@ -11,7 +11,7 @@
 #   STARCAT_NOTARIZE=1                 生成 DMG 后提交 Apple Notary。
 #   APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD
 #                                     notarytool 凭证。
-#   STARCAT_GENERATE_APPCAST=1         使用 Sparkle generate_appcast 更新 pages/appcast.xml。
+#   STARCAT_GENERATE_APPCAST=1         使用 Sparkle generate_appcast 生成当前版本 appcast。
 #   STARCAT_DOWNLOAD_BASE_URL          appcast 下载前缀，默认 https://starcat.ink/downloads/。
 #   STARCAT_DMG_TOOL=create-dmg|hdiutil
 #                                     默认 create-dmg；仅显式设置 hdiutil 时生成裸 DMG。
@@ -45,6 +45,7 @@ APPCAST_INPUT_DIR="${DIST_DIR}/appcast-input"
 APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
+CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
 DMG_BACKGROUND_PATH="${PROJECT_ROOT}/scripts/assets/dmg-background.png"
 BUILD_LOG="${DIST_DIR}/xcodebuild-direct.log"
 BUILD_NUMBER="${STARCAT_DIRECT_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
@@ -71,7 +72,7 @@ esac
 cd "$PROJECT_ROOT"
 mkdir -p "$DIST_DIR" "$DOWNLOADS_DIR"
 rm -rf "$DERIVED_DIR" "$STAGING_DIR" "$APPCAST_INPUT_DIR"
-rm -f "$DMG_PATH" "$SHA_PATH"
+rm -f "$DMG_PATH" "$SHA_PATH" "$CURRENT_APPCAST_PATH"
 
 log "同步 Xcode 工程"
 xcodegen generate >/dev/null
@@ -190,14 +191,13 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   GENERATE_APPCAST="$(find "$DERIVED_DIR" -path '*/Sparkle/bin/generate_appcast' -type f | head -1)"
   [ -n "$GENERATE_APPCAST" ] || fail "未找到 Sparkle generate_appcast"
   DOWNLOAD_BASE_URL="${STARCAT_DOWNLOAD_BASE_URL:-https://starcat.ink/downloads/}"
-  log "生成 appcast: pages/appcast.xml"
-  # generate_appcast 会扫描输入目录里的所有历史包。测试单个更新包时使用干净目录，
-  # 避免旧 DMG 被重新写入 appcast，导致 Sparkle 看到过期或未签名的更新项。
+  log "生成当前版本 appcast: $CURRENT_APPCAST_PATH"
+  # 这里只生成当前版本 item。历史版本由 release-direct.sh 增量合并进
+  # pages/appcast.xml，避免发布机必须保存所有旧 DMG。
   mkdir -p "$APPCAST_INPUT_DIR"
   cp "$DMG_PATH" "$APPCAST_INPUT_DIR/"
   "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"
-  cp "$APPCAST_INPUT_DIR/appcast.xml" "$PROJECT_ROOT/pages/appcast.xml"
-  cp "$APPCAST_INPUT_DIR/appcast.xml" "$DOWNLOADS_DIR/appcast.xml"
+  cp "$APPCAST_INPUT_DIR/appcast.xml" "$CURRENT_APPCAST_PATH"
 else
   log "跳过 appcast 生成；需要时设置 STARCAT_GENERATE_APPCAST=1"
 fi
@@ -207,4 +207,7 @@ rm -rf "$STAGING_DIR" "$APPCAST_INPUT_DIR"
 log "完成"
 log "dmg: $DMG_PATH"
 log "sha256: $SHA_PATH"
+if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
+  log "current appcast: $CURRENT_APPCAST_PATH"
+fi
 log "log: $BUILD_LOG"
