@@ -33,6 +33,7 @@ struct AgentRuntimeTests {
         var planStepCount = 0
         var completedStepCount = 0
         var toolOutputCount = 0
+        var traceCount = 0
         var markdownArtifact: AgentArtifact?
         var logArtifact: AgentArtifact?
         var didComplete = false
@@ -50,6 +51,12 @@ struct AgentRuntimeTests {
             case .toolOutput(let output):
                 toolOutputCount += 1
                 #expect(output.toolName.isEmpty == false)
+                #expect(output.input.isEmpty == false)
+                #expect(output.output.isEmpty == false)
+            case .trace(let span):
+                traceCount += 1
+                #expect(span.input.isEmpty == false)
+                #expect(span.output.isEmpty == false)
             case .artifactCreated(let artifact):
                 switch artifact.type {
                 case .markdown:
@@ -59,21 +66,22 @@ struct AgentRuntimeTests {
                 }
             case .runCompleted:
                 didComplete = true
-            case .stepStarted, .trace, .assistantDelta, .runFailed, .runCancelled:
+            case .stepStarted, .assistantDelta, .runFailed, .runCancelled:
                 break
             }
         }
 
         #expect(didStart)
         #expect(planStepCount == 3)
-        #expect(completedStepCount == 5)
+        #expect(completedStepCount == 4)
         #expect(toolOutputCount == 5)
+        #expect(traceCount == 5)
         #expect(markdownArtifact?.type == .markdown)
-        #expect(markdownArtifact?.content.contains("# 本周 GitHub 热门项目观察") == true)
+        #expect(markdownArtifact?.content.contains("# GitHub Weekly Report") == true)
         #expect(markdownArtifact?.content.contains("Unit Test") == true)
         #expect(logArtifact?.type == .log)
-        #expect(logArtifact?.content.contains("DefaultAgentRuntime deterministic mode") == true)
-        #expect(logArtifact?.content.contains("Tool output: report.generate") == true)
+        #expect(logArtifact?.content.contains("DefaultAgentRuntime read-only tools") == true)
+        #expect(logArtifact?.content.contains("Tool output: report.clusterTopics") == true)
         #expect(didComplete)
     }
 
