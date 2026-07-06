@@ -14,6 +14,7 @@ struct AgentWorkspaceView: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
+    @State private var expandedTraceItemIDs: Set<String> = ["llm-generation"]
     let chromeState: WorkspaceChromeState
 
     private let contextChips = ["@ 已选 24 repos", "Trending 本周", "AI Agent", "README 缓存"]
@@ -336,9 +337,7 @@ struct AgentWorkspaceView: View {
                     .lineSpacing(4)
                     .textSelection(.enabled)
 
-                planBlock
-                toolOutputBlock
-                artifactReferenceBlock
+                runTraceBlock
 
                 if waitingForConfirmation {
                     confirmationStrip
@@ -363,77 +362,119 @@ struct AgentWorkspaceView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var planBlock: some View {
+    private var runTraceBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            transcriptSectionHeader("执行计划", icon: "list.bullet.rectangle")
+            HStack(spacing: 7) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .foregroundStyle(Color.accentColor)
+                Text("Run Trace")
+                    .font(agentFont(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("\(agentTraceItems.count) spans")
+                    .font(agentFont(.caption2, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color(nsColor: .separatorColor).opacity(0.14), in: RoundedRectangle(cornerRadius: 5))
+                Spacer()
+            }
 
-            ForEach(Array(transcriptPlanSteps.enumerated()), id: \.element.id) { index, step in
+            ForEach(agentTraceItems) { item in
+                traceItemRow(item)
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func traceItemRow(_ item: AgentTraceItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    if expandedTraceItemIDs.contains(item.id) {
+                        expandedTraceItemIDs.remove(item.id)
+                    } else {
+                        expandedTraceItemIDs.insert(item.id)
+                    }
+                }
+                if let artifactID = item.artifactID {
+                    viewModel.selectedArtifactID = artifactID
+                }
+            } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Text("\(index + 1)")
-                        .font(agentFont(.caption, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 18, height: 18)
-                        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
+                    Image(systemName: item.systemImage)
+                        .font(agentIconFont(size: 13, weight: .semibold))
+                        .foregroundStyle(item.tint)
+                        .frame(width: 18)
+
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(step.title)
-                            .font(agentFont(.caption, weight: .semibold))
-                        Text(step.detail)
+                        HStack(spacing: 8) {
+                            Text(item.title)
+                                .font(agentFont(.caption, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(item.kind)
+                                .font(agentFont(.caption2, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color(nsColor: .separatorColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                        }
+                        Text(item.subtitle)
                             .font(agentFont(.caption))
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(2)
                     }
+
                     Spacer()
-                }
-            }
-        }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var toolOutputBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            transcriptSectionHeader("工具过程", icon: "wrench.and.screwdriver")
-
-            ForEach(transcriptToolRows) { row in
-                transcriptToolRow(row)
-            }
-        }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var artifactReferenceBlock: some View {
-        Button {
-            if let artifact = viewModel.selectedArtifact ?? viewModel.artifacts.first {
-                viewModel.selectedArtifactID = artifact.id
-            }
-        } label: {
-            HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "doc.richtext")
-                    .font(agentIconFont(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 26, height: 26)
-                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(transcriptArtifactTitle)
+                    Image(systemName: expandedTraceItemIDs.contains(item.id) ? "chevron.down" : "chevron.right")
                         .font(agentFont(.caption, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text("右侧 Artifact Inspector 可继续查看结构化结果、证据和日志。")
-                        .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(agentFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
             }
-            .padding(12)
-            .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if expandedTraceItemIDs.contains(item.id) {
+                traceDetailPane(item)
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(viewModel.artifacts.isEmpty)
+        .padding(10)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.42), in: RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(item.tint.opacity(expandedTraceItemIDs.contains(item.id) ? 0.22 : 0.08), lineWidth: 1)
+        )
+    }
+
+    private func traceDetailPane(_ item: AgentTraceItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            traceAuditBlock("输入", icon: "arrow.down.right", text: item.input)
+            traceAuditBlock("输出", icon: "arrow.up.right", text: item.output)
+            traceAuditBlock("日志", icon: "terminal", text: item.log)
+        }
+        .padding(.leading, 28)
+    }
+
+    private func traceAuditBlock(_ title: String, icon: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(agentFont(.caption2, weight: .semibold))
+            .foregroundStyle(.secondary)
+
+            Text(text)
+                .font(agentFont(.caption, design: .monospaced))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        }
     }
 
     private var confirmationStrip: some View {
@@ -461,32 +502,6 @@ struct AgentWorkspaceView: View {
         }
     }
 
-    private func transcriptToolRow(_ row: AgentTranscriptToolRow) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: row.systemImage)
-                .font(agentIconFont(size: 13, weight: .semibold))
-                .foregroundStyle(row.tint)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(row.name)
-                        .font(agentFont(.caption, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.primary)
-                    Text(row.summary)
-                        .font(agentFont(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Text(row.detail)
-                    .font(agentFont(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-
     private func statusBadge(_ text: String, icon: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
@@ -511,6 +526,135 @@ struct AgentWorkspaceView: View {
         return "我会先确认目标和上下文，再读取候选来源、形成主题判断，最后生成可核验的 Markdown artifact。当前只是 UI transcript 形态预览，真实数据接入会在后续 runtime 中替换。"
     }
 
+    private var agentTraceItems: [AgentTraceItem] {
+        var items: [AgentTraceItem] = [
+            AgentTraceItem(
+                id: "llm-generation",
+                title: "AI 回复: 运行策略与产物说明",
+                subtitle: viewModel.isRunning ? "LLM · streaming" : "LLM · ready",
+                kind: "LLM",
+                systemImage: viewModel.isRunning ? "circle.dotted" : "text.bubble",
+                tint: viewModel.isRunning ? .accentColor : .secondary,
+                input: """
+                user_prompt:
+                \(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
+
+                context:
+                \(contextChips.joined(separator: ", "))
+                """,
+                output: assistantTranscriptText,
+                log: "status=\(statusText)\nmode=deterministic_ui_preview\nnote=真实 LLM generation 接入后这里应展示模型原始回复、token、latency。"
+            )
+        ]
+
+        items.append(contentsOf: tracePlanItems)
+        items.append(contentsOf: traceStepItems)
+        items.append(contentsOf: traceToolItems)
+        items.append(contentsOf: traceArtifactItems)
+        return items
+    }
+
+    private var tracePlanItems: [AgentTraceItem] {
+        transcriptPlanSteps.enumerated().map { index, step in
+            AgentTraceItem(
+                id: "plan-\(index)-\(step.id.uuidString)",
+                title: step.title,
+                subtitle: "Plan · step \(index + 1)",
+                kind: "Plan",
+                systemImage: "list.bullet.rectangle",
+                tint: .accentColor,
+                input: """
+                user_goal:
+                \(viewModel.prompt.isEmpty ? "默认 Weekly Report 目标" : viewModel.prompt)
+
+                planning_scope:
+                Agent definition + context chips + deterministic runtime boundary
+                """,
+                output: step.detail,
+                log: "event=planCreated\nindex=\(index + 1)\nsource=\(viewModel.planSteps.isEmpty ? "ui_placeholder" : "runtime_event")"
+            )
+        }
+    }
+
+    private var traceStepItems: [AgentTraceItem] {
+        let steps = viewModel.steps.isEmpty ? defaultTraceSteps : viewModel.steps
+        return steps.enumerated().map { index, step in
+            AgentTraceItem(
+                id: "step-\(index)-\(step.id.uuidString)",
+                title: step.title,
+                subtitle: "\(stepKind(for: step.title)) · \(stepStatusLabel(step.status))",
+                kind: stepKind(for: step.title),
+                systemImage: stepIcon(step.status),
+                tint: stepColor(step.status),
+                input: """
+                previous_state:
+                status=\(statusText)
+
+                step_context:
+                \(step.title)
+                """,
+                output: step.detail,
+                log: "event=stepUpdated\nstatus=\(stepStatusLabel(step.status))\nsource=\(viewModel.steps.isEmpty ? "ui_placeholder" : "runtime_event")"
+            )
+        }
+    }
+
+    private var traceToolItems: [AgentTraceItem] {
+        let outputs = viewModel.toolOutputs.isEmpty ? defaultTraceToolOutputs : viewModel.toolOutputs
+        return outputs.enumerated().map { index, output in
+            AgentTraceItem(
+                id: "tool-\(index)-\(output.id.uuidString)",
+                title: output.toolName,
+                subtitle: "Tool Call · \(output.summary)",
+                kind: "Tool",
+                systemImage: viewModel.toolOutputs.isEmpty && index > 0 ? "circle" : "checkmark.circle.fill",
+                tint: viewModel.toolOutputs.isEmpty && index > 0 ? .secondary : .green,
+                input: """
+                tool_name:
+                \(output.toolName)
+
+                arguments:
+                当前 runtime 尚未记录结构化 arguments；真实 tool-calling 接入后这里展示 JSON args。
+                """,
+                output: output.detail,
+                log: "event=toolOutput\nsummary=\(output.summary)\nsource=\(viewModel.toolOutputs.isEmpty ? "ui_placeholder" : "runtime_event")"
+            )
+        }
+    }
+
+    private var traceArtifactItems: [AgentTraceItem] {
+        if viewModel.artifacts.isEmpty {
+            return [
+                AgentTraceItem(
+                    id: "artifact-placeholder",
+                    title: "生成 Agent Artifact",
+                    subtitle: "Artifact · pending",
+                    kind: "Artifact",
+                    systemImage: "doc.richtext",
+                    tint: .secondary,
+                    input: "report_topics + tool_outputs + user_goal",
+                    output: "等待 runtime 生成 Markdown / log artifact。",
+                    log: "event=artifactCreated\nstatus=pending",
+                    artifactID: nil
+                )
+            ]
+        }
+        return viewModel.artifacts.enumerated().map { index, artifact in
+            AgentTraceItem(
+                id: "artifact-\(artifact.id.uuidString)",
+                title: artifact.title,
+                subtitle: "Artifact · \(artifact.type.title)",
+                kind: "Artifact",
+                systemImage: artifact.type == .markdown ? "doc.richtext" : "doc.text.magnifyingglass",
+                tint: Color.accentColor,
+                input: "tool_outputs + assistant_generation + artifact_schema",
+                output: String(artifact.content.prefix(900)),
+                log: "event=artifactCreated\nindex=\(index + 1)\ncreatedAt=\(artifact.createdAt.formatted())",
+                artifactID: artifact.id
+            )
+        }
+    }
+
     private var transcriptPlanSteps: [AgentPlanStep] {
         if !viewModel.planSteps.isEmpty { return viewModel.planSteps }
         return [
@@ -520,31 +664,34 @@ struct AgentWorkspaceView: View {
         ]
     }
 
-    private var transcriptToolRows: [AgentTranscriptToolRow] {
-        if !viewModel.toolOutputs.isEmpty {
-            return viewModel.toolOutputs.map {
-                AgentTranscriptToolRow(
-                    name: $0.toolName,
-                    summary: $0.summary,
-                    detail: $0.detail,
-                    systemImage: "checkmark.circle.fill",
-                    tint: .green
-                )
-            }
-        }
-        return [
-            AgentTranscriptToolRow(name: "agent.parseGoal", summary: "Ready", detail: "识别任务目标、上下文边界和产物类型。", systemImage: "checkmark.circle.fill", tint: .green),
-            AgentTranscriptToolRow(name: "context.resolveRepos", summary: "Waiting", detail: "正式接入后会解析当前选择和可用 repo 上下文。", systemImage: "circle.dotted", tint: .accentColor),
-            AgentTranscriptToolRow(name: "artifact.prepare", summary: "Pending", detail: "等待 runtime 生成报告、日志或确认请求。", systemImage: "circle", tint: .secondary)
+    private var defaultTraceSteps: [AgentRunStep] {
+        [
+            AgentRunStep(title: "解析任务目标", detail: "识别用户希望生成 Weekly Report，并确认输出为 Markdown artifact。", status: .completed),
+            AgentRunStep(title: "准备数据源", detail: "当前 UI 预览使用 deterministic sample；正式版本会读取冻结的 repo context。", status: .pending),
+            AgentRunStep(title: "生成周刊母稿", detail: "等待 runtime 输出 LLM generation、tool result 和 artifact。", status: .pending)
         ]
     }
 
-    private var transcriptArtifactTitle: String {
-        viewModel.selectedArtifact?.title ?? viewModel.artifacts.first?.title ?? "等待生成 Agent Artifact"
+    private var defaultTraceToolOutputs: [AgentToolOutput] {
+        [
+            AgentToolOutput(toolName: "agent.parseGoal", summary: "Ready", detail: "识别任务目标、上下文边界和产物类型。"),
+            AgentToolOutput(toolName: "context.resolveRepos", summary: "Waiting", detail: "正式接入后会解析当前选择和可用 repo 上下文。"),
+            AgentToolOutput(toolName: "artifact.prepare", summary: "Pending", detail: "等待 runtime 生成报告、日志或确认请求。")
+        ]
     }
 
     private var waitingForConfirmation: Bool {
         viewModel.isRunning || viewModel.status == .completed
+    }
+
+    private func stepStatusLabel(_ status: AgentStepStatus) -> String {
+        switch status {
+        case .pending: return "pending"
+        case .running: return "running"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        case .skipped: return "skipped"
+        }
     }
 
     private func universalStepCard(
@@ -866,14 +1013,17 @@ struct AgentWorkspaceView: View {
 
     // MARK: - Helpers
 
-    private struct AgentTranscriptToolRow: Identifiable {
-        let name: String
-        let summary: String
-        let detail: String
+    private struct AgentTraceItem: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let kind: String
         let systemImage: String
         let tint: Color
-
-        var id: String { "\(name)-\(summary)" }
+        let input: String
+        let output: String
+        let log: String
+        var artifactID: UUID? = nil
     }
 
     private enum AgentFontRole {
