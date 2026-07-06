@@ -43255,7 +43255,23 @@
     "知识库问答": {},
     "统一 Run Surface · steps / tools / artifacts / confirmations": {},
     "需要写入标签、状态或取消 star 时，会在这里等待你确认。": {},
-    "预告": {}
+    "预告": {},
+    "onboarding.action.back": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一步"
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }

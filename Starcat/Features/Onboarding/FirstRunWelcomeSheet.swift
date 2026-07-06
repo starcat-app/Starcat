@@ -492,19 +492,23 @@ struct FirstRunOnboardingView: View {
         }
     }
 
-    /// 第 1–4 步：跳过 │ 步数 │ 下一步，三列对齐。
+    /// 第 1–5 步：返回 │ 跳过 │ 步数 │ 下一步，四列对齐。
     private var steppingActionBar: some View {
         HStack(spacing: 16) {
-            Button(action: { finish(.skip) }) {
-                Text("onboarding.action.skip")
-                    .font(.subheadline.weight(.medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
+            HStack(spacing: 10) {
+                backStepButton
+
+                Button(action: { finish(.skip) }) {
+                    Text("onboarding.action.skip")
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .focusEffectDisabled()
+                .disabled(isExitInProgress)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .focusEffectDisabled()
-            .disabled(isExitInProgress)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(stepCounterLabel)
@@ -537,21 +541,25 @@ struct FirstRunOnboardingView: View {
     /// 最后一步沿用前三列底部栏，避免 Step 文案在最终页突然上浮造成布局跳动。
     private var lastStepActionBar: some View {
         HStack(spacing: 16) {
-            Button(action: { finish(.browseTrending) }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "safari")
-                        .font(.subheadline.weight(.semibold))
-                    Text("onboarding.action.browseTrending")
-                        .font(.subheadline.weight(.semibold))
+            HStack(spacing: 10) {
+                backStepButton
+
+                Button(action: { finish(.browseTrending) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "safari")
+                            .font(.subheadline.weight(.semibold))
+                        Text("onboarding.action.browseTrending")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .frame(minWidth: 160)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .frame(minWidth: 160)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .focusEffectDisabled()
+                .disabled(isExitInProgress)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .focusEffectDisabled()
-            .disabled(isExitInProgress)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(stepCounterLabel)
@@ -582,7 +590,29 @@ struct FirstRunOnboardingView: View {
         }
     }
 
+    private var backStepButton: some View {
+        Button(action: retreatStep) {
+            Image(systemName: "chevron.left")
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 30, height: 30)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .focusEffectDisabled()
+        .disabled(isExitInProgress || currentStep == 0)
+        .opacity(currentStep == 0 ? 0.42 : 1)
+        .help("onboarding.action.back")
+    }
+
     // MARK: - Navigation
+
+    private func retreatStep() {
+        guard currentStep > 0 else { return }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.86)) {
+            currentStep -= 1
+            stepRevealToken += 1
+        }
+    }
 
     private func advanceStep() {
         guard currentStep < Self.steps.count - 1 else { return }
@@ -974,7 +1004,7 @@ private struct OnboardingScreenshotPreview: View {
                     .clipped()
             } else {
                 fallbackPreview
-                    .padding(24)
+                    .padding(22)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
@@ -1020,109 +1050,108 @@ private struct OnboardingScreenshotPreview: View {
     }
 
     private var discoverPreview: some View {
-        previewWindow {
-            HStack(alignment: .top, spacing: 18) {
+        previewWindow(title: "Explore / Weekly") {
+            HStack(alignment: .top, spacing: 14) {
+                miniSidebar(selected: "Weekly")
+
+                VStack(alignment: .leading, spacing: 10) {
+                    segmentedHeader(items: [("flame.fill", "Hot"), ("newspaper.fill", "Weekly"), ("sparkles", "New")], selectedIndex: 1)
+                    miniRepoCard(name: "open-science", subtitle: "Open AI workbench for researchers", icon: "atom", accent: step.tint, selected: true, chips: ["Python", "7.6"])
+                    miniRepoCard(name: "video-use", subtitle: "Edit video with coding agents", icon: "play.rectangle.fill", accent: Color.orange, chips: ["TS", "15k"])
+                    miniRepoCard(name: "browser-use", subtitle: "Automate browser tasks", icon: "safari.fill", accent: Color.blue, chips: ["AI", "25k"])
+                }
+                .frame(maxWidth: .infinity)
+
                 VStack(alignment: .leading, spacing: 12) {
-                    sidebarPill(width: 88, isSelected: true)
-                    sidebarPill(width: 104)
-                    sidebarPill(width: 76)
-                    Spacer(minLength: 0)
-                    sidebarPill(width: 96)
-                    sidebarPill(width: 72)
+                    inspectorHeader(icon: "star.fill", title: "Trending Signal")
+                    metricGrid([("Stars", "32k"), ("Forks", "613"), ("Score", "A")])
+                    miniTagRow(["weekly", "ai", "tools"], tint: step.tint)
+                    previewLine(width: 132, height: 7, opacity: 0.12)
+                    previewLine(width: 164, height: 7, opacity: 0.10)
                 }
-                .frame(width: 118)
-
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack(spacing: 12) {
-                        metricTile(icon: "flame.fill", width: 104)
-                        metricTile(icon: "newspaper.fill", width: 124)
-                        metricTile(icon: "sparkles", width: 104)
-                    }
-
-                    previewRepoRow(icon: "star.fill", primaryWidth: 246, secondaryWidth: 176, accent: step.tint)
-                    previewRepoRow(icon: "chart.line.uptrend.xyaxis", primaryWidth: 286, secondaryWidth: 204, accent: Color.orange)
-                    previewRepoRow(icon: "bolt.fill", primaryWidth: 224, secondaryWidth: 162, accent: Color.blue)
-                    Spacer(minLength: 0)
-                }
+                .padding(14)
+                .frame(width: 180)
+                .softPanel(accent: step.tint)
             }
         }
     }
 
     private var intelligencePreview: some View {
-        previewWindow {
-            HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 13) {
-                    previewLine(width: 218, height: 13, opacity: 0.22)
-                    previewLine(width: 292, height: 9, opacity: 0.12)
-                    previewLine(width: 256, height: 9, opacity: 0.10)
-                    previewLine(width: 188, height: 9, opacity: 0.10)
+        previewWindow(title: "README + AI") {
+            ZStack(alignment: .bottomTrailing) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        repoHeroStrip(icon: "sparkles", title: "ai4s-research / open-science", subtitle: "A local-first AI workbench")
+                        codeBlockPreview
+                        miniTagRow(["summary", "code flow", "README"], tint: step.tint)
+                        previewLine(width: 300, height: 8, opacity: 0.11)
+                        previewLine(width: 250, height: 8, opacity: 0.09)
+                    }
+                    .frame(maxWidth: .infinity)
 
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(step.tint.opacity(0.12))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .overlay(alignment: .topLeading) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Image(systemName: "sparkles")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(step.tint)
-                                previewLine(width: 190, height: 9, opacity: 0.18)
-                                previewLine(width: 246, height: 8, opacity: 0.12)
-                                previewLine(width: 160, height: 8, opacity: 0.10)
-                            }
-                            .padding(18)
-                        }
+                    nodeGraphPreview
+                        .frame(width: 170, height: 210)
+                        .softPanel(accent: Color.blue.opacity(0.8))
                 }
 
-                nodeGraphPreview
-                    .frame(width: 220, height: 240)
+                aiFloatingPanel
+                    .frame(width: 245, height: 118)
+                    .offset(x: -8, y: -4)
             }
         }
     }
 
     private var searchPreview: some View {
-        previewWindow {
-            VStack(alignment: .leading, spacing: 16) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.08))
-                    .frame(height: 50)
-                .overlay(alignment: .leading) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(step.tint)
-                            previewLine(width: 360, height: 9, opacity: 0.16)
-                    }
-                        .padding(.horizontal, 16)
+        previewWindow(title: "Global Search") {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(step.tint)
+                    Text(verbatim: "terminal ui library")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    statusChip("Semantic", tint: step.tint)
                 }
+                .padding(.horizontal, 16)
+                .frame(height: 50)
+                .softPanel(accent: step.tint)
 
                 HStack(spacing: 12) {
-                    metricTile(icon: "text.magnifyingglass", width: 132)
-                    metricTile(icon: "brain.head.profile", width: 150)
-                    metricTile(icon: "tag.fill", width: 112)
+                    searchModeTile(icon: "text.magnifyingglass", title: "Keyword", active: false)
+                    searchModeTile(icon: "brain.head.profile", title: "Semantic", active: true)
+                    searchModeTile(icon: "tag.fill", title: "Filters", active: false)
                 }
 
-                previewRepoRow(icon: "scope", primaryWidth: 310, secondaryWidth: 226, accent: step.tint)
-                previewRepoRow(icon: "point.3.connected.trianglepath.dotted", primaryWidth: 276, secondaryWidth: 190, accent: Color.purple)
-                Spacer(minLength: 0)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(spacing: 10) {
+                        miniRepoCard(name: "awesome-terminal", subtitle: "Modern terminal frameworks", icon: "scope", accent: step.tint, selected: true, chips: ["Rust", "CLI"])
+                        miniRepoCard(name: "agent-shell", subtitle: "Tool calling in local shells", icon: "point.3.connected.trianglepath.dotted", accent: Color.purple, chips: ["AI"])
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        inspectorHeader(icon: "line.3.horizontal.decrease.circle.fill", title: "Refine")
+                        miniTagRow(["macOS", "AI", "terminal"], tint: step.tint)
+                        previewLine(width: 150, height: 7, opacity: 0.12)
+                        previewLine(width: 118, height: 7, opacity: 0.09)
+                    }
+                    .padding(14)
+                    .frame(width: 170)
+                    .softPanel(accent: step.tint)
+                }
             }
         }
     }
 
     private var libraryPreview: some View {
-        previewWindow {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(0..<7, id: \.self) { index in
-                        sidebarPill(width: CGFloat(index == 1 ? 112 : 86 + index * 5), isSelected: index == 1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .frame(width: 128)
+        previewWindow(title: "Library") {
+            HStack(alignment: .top, spacing: 14) {
+                miniSidebar(selected: "Library")
 
                 VStack(spacing: 12) {
-                    previewRepoRow(icon: "tray.and.arrow.down.fill", primaryWidth: 214, secondaryWidth: 142, accent: step.tint)
-                    previewRepoRow(icon: "bookmark.fill", primaryWidth: 246, secondaryWidth: 176, accent: Color.blue)
-                    previewRepoRow(icon: "bell.badge.fill", primaryWidth: 190, secondaryWidth: 144, accent: Color.green)
-                    Spacer(minLength: 0)
+                    miniRepoCard(name: "BetterDisplay", subtitle: "Display control, extra brightness", icon: "heart.fill", accent: step.tint, selected: true, chips: ["Library"])
+                    miniRepoCard(name: "swift-markdown", subtitle: "Render docs and README", icon: "bookmark.fill", accent: Color.blue, chips: ["Read"])
+                    miniRepoCard(name: "release-monitor", subtitle: "Track updates and changelogs", icon: "bell.badge.fill", accent: Color.green, chips: ["Watch"])
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -1131,99 +1160,72 @@ private struct OnboardingScreenshotPreview: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 54, height: 52)
                         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                    previewLine(width: 154, height: 13, opacity: 0.20)
-                    previewLine(width: 184, height: 9, opacity: 0.12)
-                    previewLine(width: 136, height: 9, opacity: 0.10)
-                    Spacer(minLength: 0)
-                    HStack(spacing: 8) {
-                        metricTile(icon: "heart.fill", width: 64)
-                        metricTile(icon: "tag.fill", width: 64)
-                    }
+                    inspectorHeader(icon: "tray.and.arrow.down.fill", title: "Saved Knowledge")
+                    miniTagRow(["display", "macOS", "using"], tint: step.tint)
+                    noteCard(title: "Private note", icon: "note.text")
+                    noteCard(title: "Release watch", icon: "bell.fill")
                 }
+                .padding(14)
                 .frame(width: 190)
+                .softPanel(accent: step.tint)
             }
         }
     }
 
     private var agentPreview: some View {
-        previewWindow {
-            HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 12) {
-                    previewRepoRow(icon: "wand.and.stars", primaryWidth: 176, secondaryWidth: 132, accent: step.tint)
-                    previewRepoRow(icon: "checklist", primaryWidth: 152, secondaryWidth: 112, accent: Color.green)
-                    previewRepoRow(icon: "terminal.fill", primaryWidth: 196, secondaryWidth: 142, accent: Color.orange)
-                    Spacer(minLength: 0)
+        previewWindow(title: "Agent Workspace") {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    agentStepRow(index: 1, title: "Plan repository cleanup", icon: "checklist", active: false, tint: Color.green)
+                    agentStepRow(index: 2, title: "Read README and tags", icon: "doc.text.magnifyingglass", active: true, tint: step.tint)
+                    agentStepRow(index: 3, title: "Run local tools", icon: "terminal.fill", active: false, tint: Color.orange)
+                    agentStepRow(index: 4, title: "Create artifact", icon: "shippingbox.fill", active: false, tint: Color.blue)
                 }
-                .frame(width: 260)
+                .frame(maxWidth: .infinity)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(0..<5, id: \.self) { index in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(index == 0 ? step.tint.opacity(0.85) : Color.primary.opacity(0.14))
-                                .frame(width: 10, height: 10)
-                            previewLine(width: CGFloat(116 + index * 18), height: 8, opacity: index == 0 ? 0.20 : 0.12)
-                        }
-                    }
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(step.tint.opacity(0.12))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .overlay(alignment: .leading) {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .font(.title2.weight(.semibold))
-                                .foregroundStyle(step.tint)
-                                .padding(.leading, 22)
-                        }
-                    }
+                    inspectorHeader(icon: "doc.richtext.fill", title: "Artifacts")
+                    artifactPreview(title: "Summary.md", icon: "doc.text.fill", tint: step.tint)
+                    artifactPreview(title: "tag-plan.json", icon: "curlybraces", tint: Color.green)
+                    Spacer(minLength: 0)
+                    miniTagRow(["Tool timeline", "Artifacts"], tint: step.tint)
+                }
+                .padding(14)
+                .frame(width: 210)
+                .softPanel(accent: step.tint)
             }
         }
     }
 
     private var ragPreview: some View {
-        previewWindow {
-            HStack(alignment: .top, spacing: 18) {
+        previewWindow(title: "RAG Workspace") {
+            HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 12) {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(step.tint.opacity(0.14))
-                        .frame(height: 70)
-                        .overlay(alignment: .leading) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "quote.bubble.fill")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(step.tint)
-                                VStack(alignment: .leading, spacing: 7) {
-                                    previewLine(width: 246, height: 9, opacity: 0.16)
-                                    previewLine(width: 188, height: 8, opacity: 0.12)
-                                }
-                            }
-                            .padding(.horizontal, 18)
-                        }
-                    previewRepoRow(icon: "books.vertical.fill", primaryWidth: 248, secondaryWidth: 180, accent: step.tint)
-                    previewRepoRow(icon: "link", primaryWidth: 206, secondaryWidth: 150, accent: Color.blue)
-                    Spacer(minLength: 0)
+                    questionBubble("Which saved repos help with local AI search?")
+                    answerCard
+                    HStack(spacing: 8) {
+                        statusChip("Answer", tint: step.tint)
+                        statusChip("Citations", tint: Color.blue)
+                    }
                 }
+                .frame(maxWidth: .infinity)
 
-                VStack(spacing: 12) {
-                    metricTile(icon: "books.vertical.fill", width: 126)
-                    metricTile(icon: "link", width: 126)
-                    metricTile(icon: "checkmark.seal.fill", width: 126)
-                    Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.primary.opacity(0.055))
-                        .frame(width: 126, height: 70)
-                        .overlay {
-                            Image(systemName: "text.quote")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(step.tint)
-                        }
+                VStack(alignment: .leading, spacing: 10) {
+                    inspectorHeader(icon: "quote.bubble.fill", title: "Citations")
+                    citationRow(index: 1, title: "open-science", tint: step.tint)
+                    citationRow(index: 2, title: "llama.cpp", tint: Color.blue)
+                    citationRow(index: 3, title: "ragflow", tint: Color.green)
                 }
+                .padding(14)
+                .frame(width: 190)
+                .softPanel(accent: step.tint)
             }
         }
     }
 
-    private func previewWindow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func previewWindow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 0) {
-            previewChrome
+            previewChrome(title: title)
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
                 .padding(.bottom, 14)
@@ -1236,17 +1238,26 @@ private struct OnboardingScreenshotPreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.black.opacity(0.12))
+                .fill(Color.primary.opacity(0.055))
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        }
     }
 
-    private var previewChrome: some View {
+    private func previewChrome(title: String) -> some View {
         HStack(spacing: 6) {
             Circle().fill(Color.red.opacity(0.5)).frame(width: 8, height: 8)
             Circle().fill(Color.yellow.opacity(0.55)).frame(width: 8, height: 8)
             Circle().fill(Color.green.opacity(0.5)).frame(width: 8, height: 8)
+            Text(verbatim: title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 8)
             Spacer()
-            previewLine(width: 88, height: 7, opacity: 0.12)
+            toolbarIcon("line.3.horizontal.decrease.circle")
+            toolbarIcon("magnifyingglass")
         }
     }
 
@@ -1274,46 +1285,333 @@ private struct OnboardingScreenshotPreview: View {
         .frame(width: 190, height: 188)
     }
 
-    private func metricTile(icon: String, width: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(step.tint.opacity(0.14))
-            .frame(width: width, height: 52)
-            .overlay {
-                Image(systemName: icon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(step.tint)
+    private var aiFloatingPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            inspectorHeader(icon: "sparkles", title: "AI Summary")
+            previewLine(width: 178, height: 8, opacity: 0.20)
+            previewLine(width: 206, height: 7, opacity: 0.12)
+            previewLine(width: 146, height: 7, opacity: 0.10)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: step.tint.opacity(0.24), radius: 18, x: 0, y: 10)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(step.tint.opacity(0.32), lineWidth: 1)
+        }
+    }
+
+    private var codeBlockPreview: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            previewLine(width: 232, height: 8, opacity: 0.16)
+            previewLine(width: 288, height: 8, opacity: 0.12)
+            previewLine(width: 198, height: 8, opacity: 0.10)
+            previewLine(width: 260, height: 8, opacity: 0.09)
+        }
+        .padding(14)
+        .frame(height: 110, alignment: .topLeading)
+        .softPanel(accent: step.tint)
+    }
+
+    private var answerCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            previewLine(width: 262, height: 8, opacity: 0.18)
+            previewLine(width: 318, height: 8, opacity: 0.12)
+            previewLine(width: 286, height: 8, opacity: 0.10)
+            HStack(spacing: 6) {
+                citationBadge(1, tint: step.tint)
+                citationBadge(2, tint: Color.blue)
+                citationBadge(3, tint: Color.green)
             }
+            .padding(.top, 4)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 138, alignment: .topLeading)
+        .softPanel(accent: step.tint)
     }
 
-    private func sidebarPill(width: CGFloat, isSelected: Bool = false) -> some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isSelected ? step.tint.opacity(0.22) : Color.primary.opacity(0.07))
-            .frame(width: width, height: 26)
+    private func miniSidebar(selected: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sidebarItem(icon: "star.fill", title: "Stars", selected: selected == "Stars")
+            sidebarItem(icon: "safari.fill", title: "Explore", selected: selected == "Explore")
+            sidebarItem(icon: "newspaper.fill", title: "Weekly", selected: selected == "Weekly")
+            sidebarItem(icon: "tray.and.arrow.down.fill", title: "Library", selected: selected == "Library")
+            Spacer(minLength: 0)
+            sidebarItem(icon: "tag.fill", title: "Tags", selected: false)
+        }
+        .padding(10)
+        .frame(width: 124)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .softPanel(accent: step.tint)
     }
 
-    private func previewRepoRow(icon: String, primaryWidth: CGFloat, secondaryWidth: CGFloat, accent: Color) -> some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(accent.opacity(0.22))
-                .frame(width: 36, height: 36)
+    private func sidebarItem(icon: String, title: String, selected: Bool) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(selected ? step.tint : .secondary)
+                .frame(width: 14)
+            Text(verbatim: title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(selected ? .primary : .secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selected ? step.tint.opacity(0.18) : Color.clear)
+        )
+    }
+
+    private func segmentedHeader(items: [(String, String)], selectedIndex: Int) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                HStack(spacing: 6) {
+                    Image(systemName: item.0)
+                    Text(verbatim: item.1)
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(index == selectedIndex ? step.tint : .secondary)
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(index == selectedIndex ? step.tint.opacity(0.16) : Color.primary.opacity(0.05))
+                )
+            }
+        }
+    }
+
+    private func miniRepoCard(
+        name: String,
+        subtitle: String,
+        icon: String,
+        accent: Color,
+        selected: Bool = false,
+        chips: [String] = []
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(accent.opacity(0.18))
+                .frame(width: 42, height: 42)
                 .overlay {
                     Image(systemName: icon)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(accent)
                 }
 
-            VStack(alignment: .leading, spacing: 7) {
-                previewLine(width: primaryWidth, height: 9, opacity: 0.20)
-                previewLine(width: secondaryWidth, height: 7, opacity: 0.11)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                Text(verbatim: subtitle)
+                    .font(.system(size: 10, weight: .medium))
+                    .lineLimit(2)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ForEach(chips, id: \.self) { chip in
+                        statusChip(chip, tint: accent)
+                    }
+                }
             }
 
             Spacer(minLength: 0)
         }
-        .padding(10)
+        .padding(11)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.primary.opacity(0.055))
+                .fill(selected ? accent.opacity(0.13) : Color.primary.opacity(0.05))
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(selected ? accent.opacity(0.34) : Color.white.opacity(0.06), lineWidth: 1)
+        }
+    }
+
+    private func repoHeroStrip(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(step.tint)
+                .frame(width: 42, height: 42)
+                .background(step.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(verbatim: title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(verbatim: subtitle)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .softPanel(accent: step.tint)
+    }
+
+    private func searchModeTile(icon: String, title: String, active: Bool) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+            Text(verbatim: title)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(active ? step.tint : .secondary)
+        .frame(maxWidth: .infinity)
+        .frame(height: 62)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(active ? step.tint.opacity(0.14) : Color.primary.opacity(0.05))
+        )
+    }
+
+    private func metricGrid(_ metrics: [(String, String)]) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
+                VStack(spacing: 3) {
+                    Text(verbatim: metric.1)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.primary)
+                    Text(verbatim: metric.0)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+    }
+
+    private func miniTagRow(_ tags: [String], tint: Color) -> some View {
+        HStack(spacing: 6) {
+            ForEach(tags, id: \.self) { tag in
+                statusChip(tag, tint: tint)
+            }
+        }
+    }
+
+    private func statusChip(_ text: String, tint: Color) -> some View {
+        Text(verbatim: text)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(tint.opacity(0.13), in: Capsule(style: .continuous))
+    }
+
+    private func inspectorHeader(icon: String, title: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(step.tint)
+            Text(verbatim: title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func noteCard(title: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(step.tint)
+            Text(verbatim: title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 34)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func agentStepRow(index: Int, title: String, icon: String, active: Bool, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Text(verbatim: "\(index)")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(active ? .white : .secondary)
+                .frame(width: 24, height: 24)
+                .background(active ? tint : Color.primary.opacity(0.08), in: Circle())
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 22)
+            Text(verbatim: title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(active ? .primary : .secondary)
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(active ? tint.opacity(0.13) : Color.primary.opacity(0.05))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(active ? tint.opacity(0.34) : Color.white.opacity(0.05), lineWidth: 1)
+        }
+    }
+
+    private func artifactPreview(title: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .frame(width: 22, height: 22)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            Text(verbatim: title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func questionBubble(_ text: String) -> some View {
+        Text(verbatim: text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .softPanel(accent: step.tint)
+    }
+
+    private func citationRow(index: Int, title: String, tint: Color) -> some View {
+        HStack(spacing: 9) {
+            citationBadge(index, tint: tint)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(verbatim: title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.primary)
+                previewLine(width: 96, height: 6, opacity: 0.10)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func citationBadge(_ index: Int, tint: Color) -> some View {
+        Text(verbatim: "\(index)")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(tint)
+            .frame(width: 20, height: 20)
+            .background(tint.opacity(0.14), in: Circle())
+    }
+
+    private func toolbarIcon(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 24, height: 24)
+            .background(Color.primary.opacity(0.045), in: Circle())
     }
 
     private func previewLine(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
@@ -1331,6 +1629,19 @@ private struct OnboardingScreenshotPreview: View {
         case 5: return CGSize(width: -72, height: 9)
         case 6: return CGSize(width: 74, height: 5)
         default: return .zero
+        }
+    }
+}
+
+private extension View {
+    func softPanel(accent: Color) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(accent.opacity(0.20), lineWidth: 1)
         }
     }
 }
