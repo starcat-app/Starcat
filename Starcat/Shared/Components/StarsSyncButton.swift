@@ -32,6 +32,7 @@ struct StarsSyncButton: View {
             } else if case .rateLimited = syncManager.state {
                 syncManager.cancel()
             } else if case .authenticated(let user) = authSession.state {
+                NotificationCenter.default.post(name: .gettingStartedDidRequestSync, object: nil)
                 syncManager.performFullSync(userID: user.id)
             }
         } label: {
@@ -51,7 +52,8 @@ struct StarsSyncButton: View {
         .onChange(of: isSyncing) { _, newValue in
             updateRotation(isSyncing: newValue)
         }
-        .popoverTip(GettingStartedTips.syncStars)
+        .gettingStartedAnchor(.syncStars)
+        .gettingStartedPopoverTip(GettingStartedTips.syncStars)
         .help(helpText)
     }
 

@@ -289,11 +289,9 @@ struct LaunchSplashContainer<Content: View>: View {
                 object: nil
             )
         case .signIn:
-            guard !authSession.state.isAuthenticated else { return }
-            // 2026-06-29：onboarding 阶段用户主动选「Sign in」也是"涉及到需要登录的地方"，
-            // 按 dong4j 统一规则只弹登录 sheet，不强制走 Device Flow——
-            // 用户在 sheet 内自己选 Device Flow / PAT。
-            authSession.requestLoginSheet()
+            // Onboarding 只负责把用户带进主窗口；真正的登录动作交给主窗口头像处的
+            // Getting Started 指引触发，避免首屏刚进入就被登录 sheet 打断。
+            break
         case .skip:
             break
         }

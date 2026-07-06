@@ -95,6 +95,9 @@ struct HomeView: View {
     @State private var paywallContext: ProPaywallContext?
     /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
     @State private var gettingStartedStore = GettingStartedProgressStore()
+    /// 「同步 Stars」教学步骤只认用户主动点击同步入口后的完成态。
+    /// 登录恢复 / 启动 stale sync 仍可照常跑，但不能替用户把第二步勾掉。
+    @State private var gettingStartedSyncRequested = false
     /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
     ///
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
@@ -106,6 +109,8 @@ struct HomeView: View {
     @State private var showsResetListPreferencesConfirmation: Bool = false
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
     @State private var listPreferenceResetToast: String?
+
+    @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
 
     /// 三栏显示状态。
     ///
@@ -279,39 +284,8 @@ struct HomeView: View {
                 LayoutDebugOverlay()
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            GettingStartedChecklistView(
-                store: gettingStartedStore,
-                isSignedIn: authSession.state.isAuthenticated,
-                hasSyncedStars: gettingStartedStore.isCompleted(.syncStars) || viewModel.totalCount > 0,
-                hasSelectedRepo: viewModel.selectedRepoID != nil,
-                canSelectRepo: selectedSidebarPage == .manage && !viewModel.items.isEmpty,
-                onSignIn: {
-                    authSession.requestLoginSheet()
-                },
-                onSyncStars: {
-                    guard let user = authSession.state.user else {
-                        authSession.requestLoginSheet()
-                        return
-                    }
-                    syncManager.performFullSync(userID: user.id, force: true)
-                },
-                onSelectRepo: {
-                    selectFirstRepoForGettingStarted()
-                },
-                onAddTag: {
-                    openNewTagSheetForGettingStarted()
-                },
-                onOpenSearch: {
-                    searchCenterViewModel.present()
-                },
-                onOpenAI: {
-                    openSelectedRepoAIForGettingStarted()
-                }
-            )
-            .padding(.trailing, 18)
-            .padding(.bottom, 18)
-            .zIndex(80)
+        .overlayPreferenceValue(GettingStartedAnchorPreferenceKey.self) { anchors in
+            gettingStartedOverlay(anchors: anchors)
         }
         .overlay {
             if searchCenterViewModel.isPresented {
@@ -348,6 +322,100 @@ struct HomeView: View {
                 .hidden()
         }
         )
+    }
+
+    private func gettingStartedOverlay(anchors: [GettingStartedAnchorID: Anchor<CGRect>]) -> some View {
+        GeometryReader { proxy in
+            GettingStartedChecklistView(
+                store: gettingStartedStore,
+                isSignedIn: authSession.state.isAuthenticated,
+                hasSyncedStars: gettingStartedStore.isCompleted(.syncStars),
+                hasSelectedRepo: viewModel.selectedRepoID != nil,
+                canSelectRepo: selectedSidebarPage == .manage && !viewModel.items.isEmpty,
+                canUnstarRepo: canUnstarSelectedRepoForGettingStarted,
+                canOpenRAGWorkspace: showsKnowledgeRAGToolbarEntry,
+                canOpenAgentWorkspace: showsAgentToolbarEntry,
+                targetFrame: gettingStartedActiveAnchor(in: anchors, proxy: proxy),
+                onSignIn: {
+                    authSession.requestLoginSheet()
+                },
+                onSyncStars: {
+                    guard let user = authSession.state.user else {
+                        authSession.requestLoginSheet()
+                        return
+                    }
+                    requestGettingStartedSync()
+                    syncManager.performFullSync(userID: user.id, force: true)
+                },
+                onSelectRepo: {
+                    selectFirstRepoForGettingStarted()
+                },
+                onAddTag: {
+                    openNewTagSheetForGettingStarted()
+                },
+                onOpenSearch: {
+                    searchCenterViewModel.present()
+                },
+                onOpenAI: {
+                    openSelectedRepoAIForGettingStarted()
+                },
+                onOpenRAGWorkspace: {
+                    openKnowledgeRAGWorkspaceForGettingStarted()
+                },
+                onOpenAgentWorkspace: {
+                    openAgentWorkspaceForGettingStarted()
+                },
+                onOpenRepoHomepage: {
+                    openRepoHomepageForGettingStarted()
+                },
+                onAddRepoToLibrary: {
+                    addRepoToLibraryForGettingStarted()
+                },
+                onShareProfile: {
+                    NotificationCenter.default.post(name: .gettingStartedOpenShareCardRequested, object: nil)
+                },
+                onUnstarRepo: {
+                    unstarRepoForGettingStarted()
+                }
+            )
+            .zIndex(80)
+        }
+    }
+
+    /// 聚焦式开始使用指引只在真实主窗口可交互后运行。
+    /// 当前步骤必须拿到真实控件锚点才画胶囊指引；拿不到锚点时直接不画，
+    /// 避免 splash / 首启 welcome 背后的隐藏控件触发 TipKit 或空目标高亮。
+    private func gettingStartedActiveAnchor(
+        in anchors: [GettingStartedAnchorID: Anchor<CGRect>],
+        proxy: GeometryProxy
+    ) -> CGRect? {
+        guard !firstRunOnboardingActive,
+              !gettingStartedStore.isDismissed,
+              !gettingStartedStore.isComplete
+        else {
+            return nil
+        }
+
+        let stepAnchors: [(GettingStartedProgressStore.StepID, GettingStartedAnchorID?)] = [
+            (.signIn, .signIn),
+            (.syncStars, .syncStars),
+            (.selectRepo, .selectRepo),
+            (.openRepoHomepage, .repoHomepage),
+            (.addRepoToLibrary, .addToLibrary),
+            (.organizeRepo, .organizeRepo),
+            (.useSearch, .search),
+            (.useAI, .ai),
+            (.useRAGWorkspace, .ragWorkspace),
+            (.useAgentWorkspace, .agentWorkspace),
+            (.shareProfile, .shareProfile),
+            (.unstarRepo, .unstarRepo)
+        ]
+        guard let anchorID = stepAnchors.first(where: { !gettingStartedStore.isCompleted($0.0) })?.1,
+              let anchor = anchors[anchorID]
+        else {
+            return nil
+        }
+        return proxy[anchor]
     }
 
     private var navigationWithSheets: AnyView {
@@ -396,7 +464,7 @@ struct HomeView: View {
     }
 
     private var navigationWithLifecycle: AnyView {
-        navigationWithRoutingLifecycle
+        navigationWithResetPresentation
     }
 
     private var navigationWithStartupLifecycle: AnyView {
@@ -478,8 +546,9 @@ struct HomeView: View {
         // syncManager.state 真正变化的边沿触发。
         .onChange(of: syncManager.state) { _, newState in
             dependencies.autoTidyScheduler.notifySyncStateChanged(newState)
-            if case .completed = newState {
+            if case .completed = newState, gettingStartedSyncRequested {
                 gettingStartedStore.markCompleted(.syncStars)
+                gettingStartedSyncRequested = false
             }
         }
         // HOM-126：用户在 Settings 切换「定时」/触发开关后，让 scheduler 重新装载
@@ -569,6 +638,11 @@ struct HomeView: View {
         .onChange(of: selectedSidebarPage) { oldPage, newPage in
             handleSidebarPageChange(oldPage: oldPage, newPage: newPage)
         }
+        )
+    }
+
+    private var navigationWithNotificationLifecycle: AnyView {
+        AnyView(navigationWithRoutingLifecycle
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.browseTrendingNotification)) { _ in
             openTrendingFromFirstRunOnboarding()
         }
@@ -586,12 +660,38 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOrganizeRepo)) { _ in
             gettingStartedStore.markCompleted(.organizeRepo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidRequestSync)) { _ in
+            requestGettingStartedSync()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidUseSearch)) { _ in
             gettingStartedStore.markCompleted(.useSearch)
         }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenAI)) { _ in
             gettingStartedStore.markCompleted(.useAI)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRAGWorkspace)) { _ in
+            gettingStartedStore.markCompleted(.useRAGWorkspace)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenAgentWorkspace)) { _ in
+            gettingStartedStore.markCompleted(.useAgentWorkspace)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRepoHomepage)) { _ in
+            gettingStartedStore.markCompleted(.openRepoHomepage)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidAddRepoToLibrary)) { _ in
+            gettingStartedStore.markCompleted(.addRepoToLibrary)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidShareProfile)) { _ in
+            gettingStartedStore.markCompleted(.shareProfile)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidUnstarRepo)) { _ in
+            gettingStartedStore.markCompleted(.unstarRepo)
+        }
+        )
+    }
+
+    private var navigationWithPreferenceLifecycle: AnyView {
+        AnyView(navigationWithNotificationLifecycle
         .onChange(of: selectedActivityCategory) { _, newCategory in
             handleActivityCategoryChange(newCategory)
         }
@@ -609,6 +709,11 @@ struct HomeView: View {
         .onChange(of: selectedWeeklyLanguage) { _, language in
             persistListPreference(language, key: ListPreferenceKey.weeklyLanguage)
         }
+        )
+    }
+
+    private var navigationWithResetPresentation: AnyView {
+        AnyView(navigationWithPreferenceLifecycle
         .alert("settings.listPreferences.reset.title", isPresented: $showsResetListPreferencesConfirmation) {
             Button("general.cancel", role: .cancel) {}
             Button("settings.listPreferences.reset.confirm", role: .destructive) {
@@ -631,12 +736,19 @@ struct HomeView: View {
         if authSession.state.isAuthenticated {
             gettingStartedStore.markCompleted(.signIn)
         }
-        if viewModel.totalCount > 0 {
-            gettingStartedStore.markCompleted(.syncStars)
-        }
         if viewModel.selectedRepoID != nil {
             gettingStartedStore.markCompleted(.selectRepo)
         }
+    }
+
+    /// 只记录「用户为教学步骤主动点了同步」，不把后台自动同步混入 onboarding 进度。
+    private func requestGettingStartedSync() {
+        gettingStartedSyncRequested = true
+    }
+
+    private var canUnstarSelectedRepoForGettingStarted: Bool {
+        guard let repo = viewModel.selectedRepo else { return false }
+        return repo.isStarred || dependencies.starredRegistry.contains(ghRepoId: repo.id)
     }
 
     /// 本地结果回到 Manage 并复用现有列表加载流程，确保列表与详情状态仍由
@@ -782,6 +894,74 @@ struct HomeView: View {
         )
     }
 
+    private func openKnowledgeRAGWorkspaceForGettingStarted() {
+        searchCenterViewModel.dismiss()
+        NotificationCenter.default.post(name: .gettingStartedDidOpenRAGWorkspace, object: nil)
+        KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies)
+    }
+
+    private func openAgentWorkspaceForGettingStarted() {
+        searchCenterViewModel.dismiss()
+        NotificationCenter.default.post(name: .gettingStartedDidOpenAgentWorkspace, object: nil)
+        AgentWorkspaceWindowController.show(dependencies: dependencies)
+    }
+
+    private func openRepoHomepageForGettingStarted() {
+        guard let repo = viewModel.selectedRepo else {
+            selectFirstRepoForGettingStarted()
+            return
+        }
+        if let url = RepoExternalLinks.repo(repo) {
+            NotificationCenter.default.post(name: .gettingStartedDidOpenRepoHomepage, object: nil)
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func addRepoToLibraryForGettingStarted() {
+        guard authSession.state.isAuthenticated else {
+            authSession.requestLoginSheet()
+            return
+        }
+        guard let repo = viewModel.selectedRepo else {
+            selectFirstRepoForGettingStarted()
+            return
+        }
+        guard repo.id > 0 else { return }
+        Task { @MainActor in
+            do {
+                _ = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(repo: repo, syncedAt: Date())
+                try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: .inLibrary)
+                viewModel.applyLibraryStateChange(repoId: repo.id, state: .inLibrary)
+                await viewModel.refreshSidebar()
+                await viewModel.reloadItems(forceRefresh: true)
+                NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
+            } catch {
+                AppLog.database.error("Getting Started add library failed repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private func unstarRepoForGettingStarted() {
+        guard authSession.state.isAuthenticated else {
+            authSession.requestLoginSheet()
+            return
+        }
+        guard let repo = viewModel.selectedRepo else {
+            selectFirstRepoForGettingStarted()
+            return
+        }
+        guard repo.isStarred || dependencies.starredRegistry.contains(ghRepoId: repo.id) else { return }
+        Task { @MainActor in
+            do {
+                try await dependencies.starActionService.toggle(repo: repo)
+                await viewModel.refreshAfterExternalStarChange()
+                NotificationCenter.default.post(name: .gettingStartedDidUnstarRepo, object: nil)
+            } catch {
+                AppLog.sync.error("Getting Started unstar failed repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     private func toggleSearchRepositoryStar(_ repo: Repo) async throws -> Bool {
         try await dependencies.starActionService.toggle(repo: repo)
         await viewModel.refreshAfterExternalStarChange()
@@ -847,12 +1027,10 @@ struct HomeView: View {
                 searchCenterViewModel.present()
             },
             onOpenAgentWorkspace: {
-                searchCenterViewModel.dismiss()
-                AgentWorkspaceWindowController.show(dependencies: dependencies)
+                openAgentWorkspaceForGettingStarted()
             },
             onOpenKnowledgeRAGWorkspace: {
-                searchCenterViewModel.dismiss()
-                KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies)
+                openKnowledgeRAGWorkspaceForGettingStarted()
             },
             onOpenCompanionRepo: { repo in
                 openCompanionRepository(repo)

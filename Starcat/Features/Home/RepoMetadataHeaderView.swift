@@ -233,6 +233,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                 helpKey: starHelpKey,
                 action: onStarTapped
             )
+            .gettingStartedAnchor(.unstarRepo)
 
             Button {
                 if let url = URL(string: "\(repo.htmlUrl)/fork") {
@@ -423,6 +424,7 @@ struct RepoMetadataAvatarButton: View {
     var body: some View {
         Button {
             if let url = RepoExternalLinks.repo(repo) {
+                NotificationCenter.default.post(name: .gettingStartedDidOpenRepoHomepage, object: nil)
                 NSWorkspace.shared.open(url)
             }
         } label: {
@@ -434,6 +436,7 @@ struct RepoMetadataAvatarButton: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
+        .gettingStartedAnchor(.repoHomepage)
         .help("repo.openOnGithub")
     }
 }
@@ -479,7 +482,7 @@ struct RepoAIOpenButton: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
-        .popoverTip(GettingStartedTips.ai)
+        .gettingStartedPopoverTip(GettingStartedTips.ai)
         .help("ai.assistant.openButton.help")
     }
 }

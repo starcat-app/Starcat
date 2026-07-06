@@ -109,6 +109,11 @@ struct SidebarHeaderView: View {
                 .appSheetRootEnvironment(dependencies)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedOpenShareCardRequested)) { _ in
+            guard case .authenticated = authSession.state else { return }
+            showShareCardSheet = true
+            NotificationCenter.default.post(name: .gettingStartedDidShareProfile, object: nil)
+        }
         .onChange(of: authSession.state) { _, newState in
             if newState.isAuthenticated {
                 showLoginSheet = false
@@ -295,6 +300,7 @@ struct SidebarHeaderView: View {
                 login: nil,
                 onLoginTapped: { showLoginSheet = true }
             )
+            .gettingStartedAnchor(.signIn)
         }
     }
 
@@ -310,8 +316,8 @@ struct SidebarHeaderView: View {
 
     private func avatarRow(user: GitHubUserDTO) -> some View {
         // 头像 + 左右两个浮动按钮。
-        // - 左上角：账户菜单（2026-06-06 由右侧调换过来）
-        // - 右上角：分享卡按钮（HOM-173 新增，2026-06-06 由左侧调换过来）
+        // - 左上角：分享卡按钮
+        // - 右上角：账户菜单
         // 两按钮垂直对齐，share 与 ellipsis 都用 16pt SF Symbol 保持高度一致。
         // 之所以用 ZStack 而非把按钮塞在 UserAvatar 内：
         // ① UserAvatar 是 Button（点击跳 GitHub 主页），把另一个 Button 嵌进它的 label 里
@@ -345,14 +351,13 @@ struct SidebarHeaderView: View {
                 status: user.activeStatus,
                 onLoginTapped: { showLoginSheet = true }
             )
+            .gettingStartedAnchor(.signIn)
 
-            // 顶部浮动按钮行：左侧账户菜单、右侧分享卡入口。
-            // 2026-06-06 dong4j 反馈：将"分享"与"…"位置对换，
-            // 让账户菜单（更高频的入口）落到左侧，分享卡按钮放到右侧。
+            // 顶部浮动按钮行：左侧分享卡入口、右侧账户菜单。
             HStack {
-                accountMenu()
-                Spacer()
                 shareCardButton()
+                Spacer()
+                accountMenu()
             }
         }
     }
@@ -365,6 +370,7 @@ struct SidebarHeaderView: View {
     private func shareCardButton() -> some View {
         Button {
             showShareCardSheet = true
+            NotificationCenter.default.post(name: .gettingStartedDidShareProfile, object: nil)
         } label: {
             Image(systemName: "square.and.arrow.up.circle")
                 .font(.system(size: 16, weight: .medium))
@@ -374,6 +380,7 @@ struct SidebarHeaderView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .gettingStartedAnchor(.shareProfile)
         .help(Text("sharecard.button.help"))
         .accessibilityLabel(Text("sharecard.button.help"))
     }

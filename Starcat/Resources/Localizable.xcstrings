@@ -1940,6 +1940,7 @@
       }
     },
     "activity.filter.sort": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2509,7 +2510,6 @@
         }
       }
     },
-    "Agent Workspace": {},
     "AI": {},
     "ai.assistant.chat.carryOver.collapse": {
       "extractionState": "manual",
@@ -6180,7 +6180,6 @@
         }
       }
     },
-    "Artifacts": {},
     "auth.copyCode": {
       "extractionState": "stale",
       "localizations": {
@@ -7500,6 +7499,7 @@
       }
     },
     "batch.createTag.confirm": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7516,6 +7516,7 @@
       }
     },
     "batch.createTag.duplicate": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7532,6 +7533,7 @@
       }
     },
     "batch.createTag.failed": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7596,6 +7598,7 @@
       }
     },
     "batch.tagName.placeholder": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7878,7 +7881,6 @@
       }
     },
     "batch.star": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7962,7 +7964,6 @@
       }
     },
     "batch.unstar": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8751,7 +8752,6 @@
         }
       }
     },
-    "Built-in Agents": {},
     "cache.anySearch.error.applicationSupportUnavailable": {
       "extractionState": "manual",
       "localizations": {
@@ -11434,6 +11434,7 @@
       }
     },
     "explore.topic.ai": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11450,6 +11451,7 @@
       }
     },
     "explore.topic.media": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11466,6 +11468,7 @@
       }
     },
     "explore.topic.networking": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11482,6 +11485,7 @@
       }
     },
     "explore.topic.privacy": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11498,6 +11502,7 @@
       }
     },
     "explore.topic.reading": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11514,6 +11519,7 @@
       }
     },
     "explore.topic.social": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11530,6 +11536,7 @@
       }
     },
     "explore.topic.tools": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11546,6 +11553,7 @@
       }
     },
     "explore.detail.empty": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11562,6 +11570,7 @@
       }
     },
     "explore.detail.metrics": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11578,6 +11587,7 @@
       }
     },
     "explore.detail.openRelease": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11594,6 +11604,7 @@
       }
     },
     "explore.detail.reasons": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11610,6 +11621,7 @@
       }
     },
     "explore.detail.release": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11626,6 +11638,7 @@
       }
     },
     "explore.detail.signals": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11642,6 +11655,7 @@
       }
     },
     "explore.detail.taxonomy": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11658,6 +11672,7 @@
       }
     },
     "explore.empty.subtitle": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11674,6 +11689,7 @@
       }
     },
     "explore.empty.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11690,6 +11706,7 @@
       }
     },
     "explore.mode.discover": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11706,6 +11723,7 @@
       }
     },
     "explore.mode.newReleases": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11722,6 +11740,7 @@
       }
     },
     "explore.mode.popular": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11738,6 +11757,7 @@
       }
     },
     "explore.mode.trending": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11754,6 +11774,7 @@
       }
     },
     "explore.mode.weekly": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11770,6 +11791,7 @@
       }
     },
     "explore.refresh.tooltip": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11818,6 +11840,7 @@
       }
     },
     "explore.filter.sort": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11834,6 +11857,7 @@
       }
     },
     "explore.filter.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11850,6 +11874,7 @@
       }
     },
     "explore.sort.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11866,6 +11891,7 @@
       }
     },
     "explore.sort.activity": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11882,6 +11908,7 @@
       }
     },
     "explore.sort.created": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11898,6 +11925,7 @@
       }
     },
     "explore.sort.createdAscending": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11914,6 +11942,7 @@
       }
     },
     "explore.sort.nameAsc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11930,6 +11959,7 @@
       }
     },
     "explore.sort.nameDesc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11946,6 +11976,7 @@
       }
     },
     "explore.sort.popular": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11962,6 +11993,7 @@
       }
     },
     "explore.sort.recommended": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11978,6 +12010,7 @@
       }
     },
     "explore.sort.release": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11994,6 +12027,7 @@
       }
     },
     "explore.sort.releaseDate": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12010,6 +12044,7 @@
       }
     },
     "explore.sort.releaseDateAscending": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12026,6 +12061,7 @@
       }
     },
     "explore.sort.stars": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12042,6 +12078,7 @@
       }
     },
     "explore.sort.starsAscending": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12058,6 +12095,7 @@
       }
     },
     "explore.sort.updated": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12074,6 +12112,7 @@
       }
     },
     "explore.sort.updatedAscending": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -13244,6 +13283,7 @@
       }
     },
     "githubStarLists.context.removeFromGroupFormat": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -13843,6 +13883,7 @@
       }
     },
     "list.filter.reset": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -13976,6 +14017,7 @@
       }
     },
     "library.action.add": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14026,6 +14068,7 @@
       }
     },
     "library.action.remove": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14603,6 +14646,7 @@
       }
     },
     "gettingStarted.dismiss": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14635,6 +14679,7 @@
       }
     },
     "gettingStarted.progressFormat": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14651,22 +14696,24 @@
       }
     },
     "gettingStarted.step.ai.action": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open AI"
+            "value": "Open AI summary"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开 AI"
+            "value": "打开 AI 摘要"
           }
         }
       }
     },
     "gettingStarted.step.ai.detail": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14683,6 +14730,7 @@
       }
     },
     "gettingStarted.step.ai.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14699,22 +14747,24 @@
       }
     },
     "gettingStarted.step.organize.action": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add tag"
+            "value": "Add a repo tag"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "添加标签"
+            "value": "给仓库加标签"
           }
         }
       }
     },
     "gettingStarted.step.organize.detail": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14731,6 +14781,7 @@
       }
     },
     "gettingStarted.step.organize.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14747,22 +14798,24 @@
       }
     },
     "gettingStarted.step.search.action": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search"
+            "value": "Search by keyword"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开搜索"
+            "value": "用关键词搜索"
           }
         }
       }
     },
     "gettingStarted.step.search.detail": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14779,6 +14832,7 @@
       }
     },
     "gettingStarted.step.search.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14795,22 +14849,24 @@
       }
     },
     "gettingStarted.step.select.action": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select"
+            "value": "Select a repository"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择仓库"
+            "value": "选择一个仓库"
           }
         }
       }
     },
     "gettingStarted.step.select.detail": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14827,6 +14883,7 @@
       }
     },
     "gettingStarted.step.select.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14843,22 +14900,24 @@
       }
     },
     "gettingStarted.step.signIn.action": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sign in"
+            "value": "Sign in to sync Stars"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "去登录"
+            "value": "登录以同步 Stars"
           }
         }
       }
     },
     "gettingStarted.step.signIn.detail": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14875,6 +14934,7 @@
       }
     },
     "gettingStarted.step.signIn.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14891,22 +14951,24 @@
       }
     },
     "gettingStarted.step.sync.action": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sync"
+            "value": "Sync GitHub Stars"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开始同步"
+            "value": "同步 GitHub Stars"
           }
         }
       }
     },
     "gettingStarted.step.sync.detail": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14923,6 +14985,7 @@
       }
     },
     "gettingStarted.step.sync.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -15927,7 +15990,6 @@
         }
       }
     },
-    "P0 shows planning, data preparation, topic clustering, report drafting, and artifact creation.": {},
     "packer.error.cancelled": {
       "extractionState": "manual",
       "localizations": {
@@ -16338,6 +16400,7 @@
       }
     },
     "readme.toolbar.fontLarger": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16354,6 +16417,7 @@
       }
     },
     "readme.toolbar.fontMenu": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16370,6 +16434,7 @@
       }
     },
     "readme.toolbar.fontReset": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16386,6 +16451,7 @@
       }
     },
     "readme.toolbar.fontSmaller": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16402,6 +16468,7 @@
       }
     },
     "readme.toolbar.openInNewWindow": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16418,6 +16485,7 @@
       }
     },
     "readme.toolbar.exportMarkdown": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16434,6 +16502,7 @@
       }
     },
     "readme.export.savePanel.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17361,6 +17430,7 @@
       }
     },
     "releases.row.hideAssetsFormat": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17393,6 +17463,7 @@
       }
     },
     "releases.row.hideDetails": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17457,6 +17528,7 @@
       }
     },
     "releases.row.viewAssetsFormat": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17473,6 +17545,7 @@
       }
     },
     "releases.row.viewDetails": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17571,6 +17644,7 @@
       }
     },
     "releases.timeline.checkNow": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17689,7 +17763,6 @@
       }
     },
     "releases.timeline.title": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -17722,6 +17795,7 @@
       }
     },
     "repo.access.unavailable": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -18558,6 +18632,7 @@
       }
     },
     "repo.stats.forks": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -18574,6 +18649,7 @@
       }
     },
     "repo.stats.issues": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -18590,6 +18666,7 @@
       }
     },
     "repo.stats.stars": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -18606,6 +18683,7 @@
       }
     },
     "repo.stats.watchers": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -20178,9 +20256,6 @@
         }
       }
     },
-    "Run an agent to generate Markdown or other artifacts.": {},
-    "Run an agent to see each step here.": {},
-    "Run built-in Starcat agents with visible steps and artifacts.": {},
     "search.anysearch.contentType.doc": {
       "extractionState": "manual",
       "localizations": {
@@ -24410,6 +24485,7 @@
       }
     },
     "settings.anySearch.apiKey": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -24477,6 +24553,7 @@
       }
     },
     "settings.anySearch.apiKey.placeholder": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -24561,6 +24638,7 @@
       }
     },
     "settings.anySearch.apiKey.test": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -24628,6 +24706,7 @@
       }
     },
     "settings.anySearch.privacyDescription": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -25982,6 +26061,7 @@
       }
     },
     "settings.general.interfaceScale": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -25998,6 +26078,7 @@
       }
     },
     "settings.general.interfaceScale.compact": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26014,6 +26095,7 @@
       }
     },
     "settings.general.interfaceScale.comfortable": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26046,6 +26128,7 @@
       }
     },
     "settings.general.interfaceScale.large": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26062,6 +26145,7 @@
       }
     },
     "settings.general.interfaceScale.standard": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26372,6 +26456,7 @@
       }
     },
     "settings.filters.interestedLanguages.section": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26388,6 +26473,7 @@
       }
     },
     "list.filter.availability.available": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26404,6 +26490,7 @@
       }
     },
     "list.filter.availability.missing": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26420,6 +26507,7 @@
       }
     },
     "list.filter.healthAvailability": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26436,6 +26524,7 @@
       }
     },
     "list.filter.openSSFAvailability": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -26452,6 +26541,7 @@
       }
     },
     "list.filter.wikiAvailability": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -29339,6 +29429,7 @@
       }
     },
     "settings.services.discovery.description": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -29355,6 +29446,7 @@
       }
     },
     "settings.services.discovery.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32318,6 +32410,7 @@
       }
     },
     "sharecard.action.export.library.html": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32334,6 +32427,7 @@
       }
     },
     "sharecard.action.export.library.markdown": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32350,6 +32444,7 @@
       }
     },
     "sharecard.action.export.starred.html": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32366,6 +32461,7 @@
       }
     },
     "sharecard.action.export.starred.markdown": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32382,6 +32478,7 @@
       }
     },
     "sharecard.action.exportStarred": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32797,6 +32894,7 @@
       }
     },
     "sharecard.export.loading.fetchingLibrary": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32847,6 +32945,7 @@
       }
     },
     "sharecard.exportLibrary.savePanel.message": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32863,6 +32962,7 @@
       }
     },
     "sharecard.exportLibrary.savePanel.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -32913,6 +33013,7 @@
       }
     },
     "sharecard.feedback.exportLibraryEmpty": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -33877,7 +33978,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Repository Groups"
+            "value": "Repo Groups"
           }
         },
         "zh-Hans": {
@@ -37723,7 +37824,6 @@
         }
       }
     },
-    "Soon": {},
     "starAction.error.notAuthenticated": {
       "extractionState": "manual",
       "localizations": {
@@ -39118,7 +39218,6 @@
         }
       }
     },
-    "Timeline": {},
     "toolbar.agentWorkspace.help": {
       "extractionState": "manual",
       "localizations": {
@@ -40509,6 +40608,7 @@
       }
     },
     "trending.filter.period": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40525,6 +40625,7 @@
       }
     },
     "trending.filter.sort": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40541,6 +40642,7 @@
       }
     },
     "trending.filter.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40640,6 +40742,7 @@
       }
     },
     "trending.sort.title": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40656,6 +40759,7 @@
       }
     },
     "trending.sort.nameAsc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40672,6 +40776,7 @@
       }
     },
     "trending.sort.nameDesc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40688,6 +40793,7 @@
       }
     },
     "trending.sort.recommended": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40755,6 +40861,7 @@
       }
     },
     "trending.sort.starsAsc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40771,6 +40878,7 @@
       }
     },
     "trending.sort.starsDesc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40787,6 +40895,7 @@
       }
     },
     "trending.sort.updatedAsc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -40803,6 +40912,7 @@
       }
     },
     "trending.sort.updatedDesc": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -42650,7 +42760,502 @@
           }
         }
       }
-    }
+    },
+    "[%@]": {},
+    "%@ · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ spans": {},
+    "09:41": {},
+    "Agent": {},
+    "Artifact Inspector": {},
+    "gettingStarted.step.agentWorkspace.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Agent workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 Agent 工作台"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.agentWorkspace.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run guided agent workflows and review generated artifacts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 Agent 工作流，并查看生成结果。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.agentWorkspace.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Agent workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试用 Agent 工作台"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.library.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to library"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入知识库"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.library.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save the repo into Starcat's private knowledge library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把当前仓库保存到 Starcat 私有知识库。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.library.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to knowledge library"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入知识库"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.ragWorkspace.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open RAG workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 RAG 工作台"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.ragWorkspace.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask questions across saved repos with source citations."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基于已收藏仓库提问，并查看引用来源。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.ragWorkspace.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try RAG workspace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试用 RAG 工作台"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.repoHomepage.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open GitHub page"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开项目主页"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.repoHomepage.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click the repo logo to open its GitHub project page."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击项目 Logo，打开 GitHub 项目主页。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.repoHomepage.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open project homepage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开项目主页"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.shareProfile.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open share card"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开分享卡片"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.shareProfile.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the avatar share button to export your Starcat card."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用头像旁的分享按钮导出 Starcat 卡片。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.shareProfile.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share your profile card"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享个人卡片"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.unstar.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unstar this repo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消 Star"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.unstar.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unstar it here; restore later from Activity -> Undo Star."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这里取消 Star，以后可在 Activity -> Undo Star 恢复。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.unstar.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unstar and restore later"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消 Star 并了解恢复"
+          }
+        }
+      }
+    },
+    "onboarding.step5.detail": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn selected repositories into a local knowledge workspace. Ask questions across README, notes, and summaries, then inspect the cited evidence."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把选中的仓库变成一个本地知识工作台。你可以跨 README、笔记和摘要提问，并检查答案引用的证据。"
+          }
+        }
+      }
+    },
+    "onboarding.step5.highlight.answers": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grounded answers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有依据的回答"
+          }
+        }
+      }
+    },
+    "onboarding.step5.highlight.citations": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Citations"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引用证据"
+          }
+        }
+      }
+    },
+    "onboarding.step5.highlight.scope": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Knowledge scope"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识范围"
+          }
+        }
+      }
+    },
+    "onboarding.step5.title": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask your repository knowledge base"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向你的仓库知识库提问"
+          }
+        }
+      }
+    },
+    "onboarding.step6.detail": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the Agent workspace for longer tasks: Starcat can prepare context, show each step, call tools, and keep generated artifacts in one place."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把更长的任务交给 Agent 工作台：Starcat 会准备上下文、展示步骤、调用工具，并集中保留生成的产物。"
+          }
+        }
+      }
+    },
+    "onboarding.step6.highlight.artifacts": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artifacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果产物"
+          }
+        }
+      }
+    },
+    "onboarding.step6.highlight.runs": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent runs"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 运行"
+          }
+        }
+      }
+    },
+    "onboarding.step6.highlight.tools": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool timeline"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具时间线"
+          }
+        }
+      }
+    },
+    "onboarding.step6.title": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let agents handle longer workflows"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 Agent 接住更长的工作流"
+          }
+        }
+      }
+    },
+    "Run Trace": {},
+    "上下文": {},
+    "任务工作台": {},
+    "其它引用": {},
+    "最近问答": {},
+    "历史任务": {},
+    "只读 · 本地知识库": {},
+    "同一套 renderer 承载报告、对比表、聚类、标签计划和引用答案。": {},
+    "如果只做第一版本地 RAG，优先从 GRDB.swift 的本地存储能力和 swift-markdown 的文档解析能力开始；MCP Swift SDK 更适合作为后续工具调用扩展。": {},
+    "已 star": {},
+    "引用": {},
+    "引用片段": {},
+    "待确认行动": {},
+    "我的知识库里有哪些适合做本地 RAG 的 Swift 项目？": {},
+    "推荐 %@": {},
+    "本轮回答实际使用的来源": {},
+    "根据知识库中的 repo 元信息、README chunk、笔记和已有摘要，当前最相关的是下面几个 Swift 项目。每个项目都绑定了本轮回答实际使用的引用。": {},
+    "知识库 · 126 repos · 1,248 ready chunks · GPT-4.1 · 只读": {},
+    "知识库问答": {},
+    "统一 Run Surface · steps / tools / artifacts / confirmations": {},
+    "需要写入标签、状态或取消 star 时，会在这里等待你确认。": {},
+    "预告": {}
   },
   "version": "1.0"
 }

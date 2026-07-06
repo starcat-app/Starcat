@@ -116,6 +116,8 @@ private enum OnboardingScreenshotFallback {
     case intelligence
     case search
     case library
+    case agent
+    case rag
 }
 
 /// 首次引导完成后的用户意图，由 `LaunchSplashContainer` 统一映射到现有 App 入口。
@@ -222,6 +224,36 @@ struct FirstRunOnboardingView: View {
             screenshotFallback: .library,
             tint: Color(red: 0.62, green: 0.88, blue: 0.55),
             usesAppIcon: true
+        ),
+        FirstRunOnboardingStep(
+            id: 4,
+            systemImage: "quote.bubble.fill",
+            title: "onboarding.step5.title",
+            detail: "onboarding.step5.detail",
+            highlights: [
+                "onboarding.step5.highlight.scope",
+                "onboarding.step5.highlight.answers",
+                "onboarding.step5.highlight.citations"
+            ],
+            screenshotAssetName: "OnboardingRAG",
+            screenshotFallback: .rag,
+            tint: Color(red: 0.36, green: 0.78, blue: 0.76),
+            usesAppIcon: false
+        ),
+        FirstRunOnboardingStep(
+            id: 5,
+            systemImage: "wand.and.stars",
+            title: "onboarding.step6.title",
+            detail: "onboarding.step6.detail",
+            highlights: [
+                "onboarding.step6.highlight.runs",
+                "onboarding.step6.highlight.tools",
+                "onboarding.step6.highlight.artifacts"
+            ],
+            screenshotAssetName: "OnboardingAgent",
+            screenshotFallback: .agent,
+            tint: Color(red: 0.55, green: 0.58, blue: 1.0),
+            usesAppIcon: false
         )
     ]
 
@@ -472,52 +504,52 @@ struct FirstRunOnboardingView: View {
         }
     }
 
-    /// 最后一步：步数居中 +「先逛 Trending / 登录同步 Stars」明确分流。
+    /// 最后一步沿用前三列底部栏，避免 Step 文案在最终页突然上浮造成布局跳动。
     private var lastStepActionBar: some View {
-        VStack(spacing: 14) {
+        HStack(spacing: 16) {
+            Button(action: { finish(.browseTrending) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "safari")
+                        .font(.subheadline.weight(.semibold))
+                    Text("onboarding.action.browseTrending")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .frame(minWidth: 160)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .focusEffectDisabled()
+            .disabled(isExitInProgress)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             Text(stepCounterLabel)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .frame(maxWidth: .infinity, alignment: .center)
                 .contentTransition(reduceMotion ? .identity : .numericText())
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: currentStep)
 
-            HStack(spacing: 12) {
-                Button(action: { finish(.browseTrending) }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "safari")
-                            .font(.subheadline.weight(.semibold))
-                        Text("onboarding.action.browseTrending")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .frame(minWidth: 160)
+            Button(action: { finish(.signIn) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.subheadline.weight(.semibold))
+                    Text("onboarding.action.signInSync")
+                        .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .focusEffectDisabled()
-                .disabled(isExitInProgress)
-
-                Button(action: { finish(.signIn) }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.subheadline.weight(.semibold))
-                        Text("onboarding.action.signInSync")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .frame(minWidth: 180)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .focusEffectDisabled()
-                .keyboardShortcut(.defaultAction)
-                .disabled(isExitInProgress)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .frame(minWidth: 180)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .focusEffectDisabled()
+            .keyboardShortcut(.defaultAction)
+            .disabled(isExitInProgress)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Navigation
@@ -944,6 +976,10 @@ private struct OnboardingScreenshotPreview: View {
             searchPreview
         case .library:
             libraryPreview
+        case .agent:
+            agentPreview
+        case .rag:
+            ragPreview
         }
     }
 
@@ -1046,6 +1082,63 @@ private struct OnboardingScreenshotPreview: View {
                 previewLine(width: 160, height: 8, opacity: 0.12)
                 previewLine(width: 118, height: 8, opacity: 0.10)
                 Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var agentPreview: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                previewChrome
+                previewRepoRow(icon: "wand.and.stars", primaryWidth: 156, secondaryWidth: 118, accent: step.tint)
+                previewRepoRow(icon: "checklist", primaryWidth: 132, secondaryWidth: 96, accent: Color.green)
+                previewRepoRow(icon: "terminal.fill", primaryWidth: 176, secondaryWidth: 124, accent: Color.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(0..<4, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(index == 0 ? step.tint.opacity(0.85) : Color.primary.opacity(0.14))
+                            .frame(width: 10, height: 10)
+                        previewLine(width: CGFloat(96 + index * 18), height: 8, opacity: index == 0 ? 0.20 : 0.12)
+                    }
+                }
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(step.tint.opacity(0.12))
+                    .frame(height: 64)
+                    .overlay(alignment: .leading) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(step.tint)
+                            .padding(.leading, 18)
+                    }
+            }
+        }
+    }
+
+    private var ragPreview: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                previewChrome
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(step.tint.opacity(0.14))
+                    .frame(height: 58)
+                    .overlay(alignment: .leading) {
+                        Image(systemName: "quote.bubble.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(step.tint)
+                            .padding(.leading, 16)
+                    }
+                previewLine(width: 204, height: 9, opacity: 0.16)
+                previewLine(width: 166, height: 8, opacity: 0.12)
+                previewLine(width: 188, height: 8, opacity: 0.10)
+            }
+
+            VStack(spacing: 10) {
+                metricTile(icon: "books.vertical.fill", width: 104)
+                metricTile(icon: "link", width: 94)
+                metricTile(icon: "checkmark.seal.fill", width: 114)
             }
         }
     }

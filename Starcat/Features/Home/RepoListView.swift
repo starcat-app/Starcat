@@ -332,6 +332,7 @@ struct RepoListView: View {
                                 .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
                         }
                         .help("toolbar.agentWorkspace.help")
+                        .gettingStartedAnchor(.agentWorkspace)
                     }
                 }
                 if showsKnowledgeRAGToolbarEntry {
@@ -343,6 +344,7 @@ struct RepoListView: View {
                                 .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
                         }
                         .help("toolbar.knowledgeRAGWorkspace.help")
+                        .gettingStartedAnchor(.ragWorkspace)
                     }
                 }
                 let spec = currentToolbarSpec
@@ -1345,7 +1347,8 @@ struct RepoListView: View {
                 Task { await removeToolbarSearchHistory(entry) }
             }
         )
-        .popoverTip(GettingStartedTips.search)
+        .gettingStartedAnchor(.search)
+        .gettingStartedPopoverTip(GettingStartedTips.search)
         .onAppear {
             if viewModel.smartSearchMode != settings.smartSearchMode {
                 viewModel.smartSearchMode = settings.smartSearchMode
@@ -1428,6 +1431,12 @@ struct RepoListView: View {
                                 : (selection.wrappedValue == repo.id),
                             semanticHit: viewModel.semanticHit(for: repo.id)
                         )
+                        .background {
+                            if item.index == 0 {
+                                Color.clear
+                                    .gettingStartedAnchor(.selectRepo)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()

@@ -574,6 +574,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         await handleLibraryToggleTapped()
                     }
                 }
+                .gettingStartedAnchor(.addToLibrary)
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
@@ -656,6 +657,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
             libraryToast = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
+            if targetState == .inLibrary {
+                NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
+            }
         } catch {
             AppLog.database.error("Toggle library state failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             libraryToast = "library.action.failed"

@@ -151,7 +151,11 @@ struct StarStatChipButton: View {
         Task { @MainActor in
             isLoading = true
             do {
+                let wasStarred = isStarred
                 try await action()
+                if wasStarred {
+                    NotificationCenter.default.post(name: .gettingStartedDidUnstarRepo, object: nil)
+                }
             } catch {
                 triggerFailureFeedback()
                 AppLog.sync.error("star chip action failed: \(error.localizedDescription, privacy: .public)")

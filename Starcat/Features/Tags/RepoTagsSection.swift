@@ -67,6 +67,7 @@ struct RepoTagsSection: View {
             guard notification.userInfo?["repoId"] as? Int64 == repo.id else { return }
             Task { await viewModel?.loadFor(repoId: repo.id) }
         }
+        .gettingStartedAnchor(.organizeRepo)
     }
 
     // MARK: - chips

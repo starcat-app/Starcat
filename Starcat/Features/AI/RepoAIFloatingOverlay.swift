@@ -102,6 +102,7 @@ struct RepoAIFloatingOverlay: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .gettingStartedAnchor(.ai)
         .help("ai.assistant.inline.collapsed.help")
     }
 

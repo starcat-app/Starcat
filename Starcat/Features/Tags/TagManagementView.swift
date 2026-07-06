@@ -81,7 +81,13 @@ struct TagManagementView: View {
         .onAppear {
             guard opensNewTagSheetOnAppear, !didApplyOpenNewTagIntent else { return }
             didApplyOpenNewTagIntent = true
-            showNewSheet = true
+            Task { @MainActor in
+                // 首次打开 TagManagementView 时，外层 sheet 还在挂载；立刻再呈现内层
+                // NewTagSheet 会被 SwiftUI 忽略。延后一轮 run loop，等父 sheet 稳定后再弹。
+                try? await Task.sleep(for: .milliseconds(120))
+                guard opensNewTagSheetOnAppear else { return }
+                showNewSheet = true
+            }
         }
         .sheet(isPresented: $showNewSheet) {
             NewTagSheet { name, color, icon in
