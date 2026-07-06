@@ -294,126 +294,86 @@ struct AgentWorkspaceView: View {
                 assistantRunBlock
             }
             .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var userPromptBubble: some View {
-        Text(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
-            .font(agentFont(.body))
-            .foregroundStyle(.primary)
-            .textSelection(.enabled)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        HStack(alignment: .top) {
+            Spacer(minLength: 80)
+            Text(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
+                .font(agentFont(.body))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .lineSpacing(3)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: 620, alignment: .leading)
+                .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var assistantRunBlock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "star.circle.fill")
-                    .foregroundStyle(Color.accentColor)
-                    .font(agentFont(.title2))
-                VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles.rectangle.stack.fill")
+                .font(agentIconFont(size: 18, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30, height: 30)
+                .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
                     Text("Starcat")
-                        .font(agentFont(.headline))
-                    Text(statusText)
-                        .font(agentFont(.caption))
-                        .foregroundStyle(.secondary)
+                        .font(agentFont(.subheadline, weight: .semibold))
+                    statusBadge(statusText, icon: statusIcon)
+                    Spacer()
                 }
-                Spacer()
-            }
 
-            if !viewModel.planSteps.isEmpty {
+                Text(assistantTranscriptText)
+                    .font(agentFont(.body))
+                    .foregroundStyle(.primary)
+                    .lineSpacing(4)
+                    .textSelection(.enabled)
+
                 planBlock
-            }
+                toolOutputBlock
+                artifactReferenceBlock
 
-            VStack(spacing: 10) {
-                if viewModel.steps.isEmpty {
-                    universalStepCard(
-                        title: "规划任务",
-                        kind: "Plan",
-                        detail: "识别用户目标、上下文范围、可用工具和最终 artifact 类型。",
-                        status: .completed,
-                        input: "user_input + context chips",
-                        output: "AgentRunPlan"
-                    )
-                    universalStepCard(
-                        title: "调用工具: resolve_selected_repos",
-                        kind: "Tool Call",
-                        detail: "把 UI 中选择的 starred repo 快照转换成 Agent 可读上下文。",
-                        status: .completed,
-                        input: "24 repo selections",
-                        output: "RepoContext[]"
-                    )
-                    universalStepCard(
-                        title: "LLM 思考: 聚类主题与筛选标准",
-                        kind: "Thinking",
-                        detail: "按项目定位、活跃度、生态价值和采用风险形成候选主题。",
-                        status: .running,
-                        input: "RepoContext[] + style guide",
-                        output: "streaming reasoning summary"
-                    )
-                    universalStepCard(
-                        title: "生成 Artifact: structured_report",
-                        kind: "Artifact",
-                        detail: "把最终结果写入统一 artifact schema，供右侧 Inspector 渲染。",
-                        status: .pending,
-                        input: "ReportTopic[]",
-                        output: "AgentArtifact"
-                    )
-                    universalStepCard(
-                        title: "等待确认: 导出 / 写入标签",
-                        kind: "Confirmation",
-                        detail: "所有写入标签、状态或取消 star 的动作都必须由用户确认。",
-                        status: .pending,
-                        input: "SuggestedAction[]",
-                        output: "UserDecision"
-                    )
-                } else {
-                    ForEach(viewModel.steps) { step in
-                        universalStepCard(
-                            title: step.title,
-                            kind: stepKind(for: step.title),
-                            detail: step.detail,
-                            status: step.status,
-                            input: "runtime event",
-                            output: step.status == .completed ? "ok" : "pending"
-                        )
-                    }
+                if waitingForConfirmation {
+                    confirmationStrip
+                }
+
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .font(agentFont(.callout))
+                        .foregroundStyle(.red)
+                        .padding(12)
+                        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 }
             }
-
-            if !viewModel.toolOutputs.isEmpty {
-                toolOutputBlock
-            }
-
-            if let error = viewModel.errorMessage {
-                Text(error)
-                    .font(agentFont(.callout))
-                    .foregroundStyle(.red)
-                    .padding(12)
-                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            }
+            .padding(16)
+            .frame(maxWidth: 860, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var planBlock: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 7) {
-                Image(systemName: "list.bullet.rectangle")
-                    .foregroundStyle(Color.accentColor)
-                Text("执行计划")
-                    .font(agentFont(.subheadline, weight: .semibold))
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            transcriptSectionHeader("执行计划", icon: "list.bullet.rectangle")
 
-            ForEach(Array(viewModel.planSteps.enumerated()), id: \.element.id) { index, step in
+            ForEach(Array(transcriptPlanSteps.enumerated()), id: \.element.id) { index, step in
                 HStack(alignment: .top, spacing: 10) {
                     Text("\(index + 1)")
                         .font(agentFont(.caption, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
-                        .frame(width: 20, height: 20)
-                        .background(Color.accentColor.opacity(0.10), in: Circle())
+                        .frame(width: 18, height: 18)
+                        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(step.title)
                             .font(agentFont(.caption, weight: .semibold))
@@ -426,46 +386,165 @@ struct AgentWorkspaceView: View {
                 }
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var toolOutputBlock: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 7) {
-                Image(systemName: "wrench.and.screwdriver")
-                    .foregroundStyle(.secondary)
-                Text("工具输出")
-                    .font(agentFont(.subheadline, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            transcriptSectionHeader("工具过程", icon: "wrench.and.screwdriver")
+
+            ForEach(transcriptToolRows) { row in
+                transcriptToolRow(row)
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var artifactReferenceBlock: some View {
+        Button {
+            if let artifact = viewModel.selectedArtifact ?? viewModel.artifacts.first {
+                viewModel.selectedArtifactID = artifact.id
+            }
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "doc.richtext")
+                    .font(agentIconFont(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 26, height: 26)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(transcriptArtifactTitle)
+                        .font(agentFont(.caption, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("右侧 Artifact Inspector 可继续查看结构化结果、证据和日志。")
+                        .font(agentFont(.caption))
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
-                Text("\(viewModel.toolOutputs.count)")
+                Image(systemName: "chevron.right")
                     .font(agentFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
+            .padding(12)
+            .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(viewModel.artifacts.isEmpty)
+    }
 
-            ForEach(viewModel.toolOutputs) { output in
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        Text(output.toolName)
-                            .font(agentFont(.caption, weight: .semibold, design: .monospaced))
-                        Spacer()
-                        Text(output.summary)
-                            .font(agentFont(.caption))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(output.detail)
+    private var confirmationStrip: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.shield")
+                .foregroundStyle(.secondary)
+            Text("需要写入标签、状态或取消 star 时，会在这里等待你确认。")
+                .font(agentFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .separatorColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func transcriptSectionHeader(_ title: String, icon: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(agentFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    private func transcriptToolRow(_ row: AgentTranscriptToolRow) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: row.systemImage)
+                .font(agentIconFont(size: 13, weight: .semibold))
+                .foregroundStyle(row.tint)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(row.name)
+                        .font(agentFont(.caption, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                    Text(row.summary)
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
                 }
-                .padding(10)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                Text(row.detail)
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func statusBadge(_ text: String, icon: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+            Text(text)
+        }
+        .font(agentFont(.caption))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .separatorColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var assistantTranscriptText: String {
+        let output = viewModel.assistantOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !output.isEmpty { return output }
+        if viewModel.status == .completed {
+            return "我已经完成这轮 Agent run。下面保留了关键计划、工具过程和产物引用，右侧可以继续核验结构化结果。"
+        }
+        if viewModel.isRunning {
+            return "我正在把你的目标拆成可审查的执行步骤，并在每一步留下工具输出和产物引用，避免只给出一段不可追踪的回答。"
+        }
+        return "我会先确认目标和上下文，再读取候选来源、形成主题判断，最后生成可核验的 Markdown artifact。当前只是 UI transcript 形态预览，真实数据接入会在后续 runtime 中替换。"
+    }
+
+    private var transcriptPlanSteps: [AgentPlanStep] {
+        if !viewModel.planSteps.isEmpty { return viewModel.planSteps }
+        return [
+            AgentPlanStep(title: "确认目标", detail: "把你的输入收敛成明确的 Agent run 目标和产物类型。"),
+            AgentPlanStep(title: "读取上下文", detail: "后续会接入当前选择的 repo、README、笔记、标签和状态。"),
+            AgentPlanStep(title: "生成产物", detail: "输出可复制、可导出、可在 Inspector 中核验的 artifact。")
+        ]
+    }
+
+    private var transcriptToolRows: [AgentTranscriptToolRow] {
+        if !viewModel.toolOutputs.isEmpty {
+            return viewModel.toolOutputs.map {
+                AgentTranscriptToolRow(
+                    name: $0.toolName,
+                    summary: $0.summary,
+                    detail: $0.detail,
+                    systemImage: "checkmark.circle.fill",
+                    tint: .green
+                )
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        return [
+            AgentTranscriptToolRow(name: "agent.parseGoal", summary: "Ready", detail: "识别任务目标、上下文边界和产物类型。", systemImage: "checkmark.circle.fill", tint: .green),
+            AgentTranscriptToolRow(name: "context.resolveRepos", summary: "Waiting", detail: "正式接入后会解析当前选择和可用 repo 上下文。", systemImage: "circle.dotted", tint: .accentColor),
+            AgentTranscriptToolRow(name: "artifact.prepare", summary: "Pending", detail: "等待 runtime 生成报告、日志或确认请求。", systemImage: "circle", tint: .secondary)
+        ]
+    }
+
+    private var transcriptArtifactTitle: String {
+        viewModel.selectedArtifact?.title ?? viewModel.artifacts.first?.title ?? "等待生成 Agent Artifact"
+    }
+
+    private var waitingForConfirmation: Bool {
+        viewModel.isRunning || viewModel.status == .completed
     }
 
     private func universalStepCard(
@@ -786,6 +865,16 @@ struct AgentWorkspaceView: View {
     }
 
     // MARK: - Helpers
+
+    private struct AgentTranscriptToolRow: Identifiable {
+        let name: String
+        let summary: String
+        let detail: String
+        let systemImage: String
+        let tint: Color
+
+        var id: String { "\(name)-\(summary)" }
+    }
 
     private enum AgentFontRole {
         case title2
