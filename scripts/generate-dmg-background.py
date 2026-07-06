@@ -20,12 +20,12 @@ CANVAS_HEIGHT = 520
 
 # Tune these values when the mounted DMG looks vertically unbalanced.
 TITLE_Y = 48
-PANEL_TOP = 176
+PANEL_TOP = 136
 PANEL_HEIGHT = 174
 PANEL_WIDTH = 186
 LEFT_PANEL_X = 142
 RIGHT_PANEL_X = 492
-ARROW_CENTER_Y = 265
+ARROW_CENTER_Y = 225
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "assets" / "dmg-background.png"
 
