@@ -18,7 +18,7 @@ struct AgentWorkspaceView: View {
     @State private var expandedTraceItemIDs: Set<String> = ["llm-generation"]
     let chromeState: WorkspaceChromeState
 
-    private let contextChips = ["@ 已选 24 repos", "Trending 本周", "AI Agent", "README 缓存"]
+    private let contextChips = ["本地仓库快照", "只读工具链", "AI Provider", "Markdown Artifact"]
     private let artifactTabs = ["概览", "结构化结果", "证据", "行动", "日志"]
 
     var body: some View {
@@ -168,7 +168,7 @@ struct AgentWorkspaceView: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, 4)
 
-            historyRow(title: "AI Agent 专题周报", caption: "刚刚 · 24 repos")
+            historyRow(title: "AI Agent 专题周报", caption: "最近一次 · 本地快照")
             historyRow(title: "Swift MCP 替代品", caption: "昨天 · 对比表")
         }
     }
@@ -532,14 +532,18 @@ struct AgentWorkspaceView: View {
         if viewModel.isRunning {
             return "我正在把你的目标拆成可审查的执行步骤，并在每一步留下工具输出和产物引用，避免只给出一段不可追踪的回答。"
         }
-        return "我会先确认目标和上下文，再读取候选来源、形成主题判断，最后生成可核验的 Markdown artifact。当前只是 UI transcript 形态预览，真实数据接入会在后续 runtime 中替换。"
+        return "我会先确认目标和上下文，再读取 Starcat 本地仓库快照、形成主题判断，最后调用已配置的 AI Provider 生成可核验的 Markdown artifact。"
     }
 
     private var agentTraceItems: [AgentTraceItem] {
+        if !viewModel.traceSpans.isEmpty {
+            return viewModel.traceSpans.map(traceItem(from:))
+        }
+
         var items: [AgentTraceItem] = [
             AgentTraceItem(
                 id: "llm-generation",
-                title: "AI 回复: 运行策略与产物说明",
+                title: "AI 回复: 等待运行",
                 subtitle: viewModel.isRunning ? "LLM · streaming" : "LLM · ready",
                 kind: "LLM",
                 systemImage: viewModel.isRunning ? "circle.dotted" : "text.bubble",
@@ -549,10 +553,10 @@ struct AgentWorkspaceView: View {
                 \(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
 
                 context:
-                \(contextChips.joined(separator: ", "))
+                等待 runtime 冻结 Starcat 本地仓库快照
                 """,
                 output: assistantTranscriptText,
-                log: "status=\(statusText)\nmode=deterministic_ui_preview\nnote=真实 LLM generation 接入后这里应展示模型原始回复、token、latency。"
+                log: "status=\(statusText)\nmode=waiting_for_runtime_trace"
             )
         ]
 
@@ -561,6 +565,21 @@ struct AgentWorkspaceView: View {
         items.append(contentsOf: traceToolItems)
         items.append(contentsOf: traceArtifactItems)
         return items
+    }
+
+    private func traceItem(from span: AgentTraceSpan) -> AgentTraceItem {
+        AgentTraceItem(
+            id: "trace-\(span.id.uuidString)",
+            title: span.title,
+            subtitle: "\(span.kind) · \(span.summary)",
+            kind: span.kind,
+            systemImage: traceIcon(for: span),
+            tint: stepColor(span.status),
+            input: span.input,
+            output: span.output,
+            log: span.log,
+            artifactID: span.relatedArtifactID
+        )
     }
 
     private var tracePlanItems: [AgentTraceItem] {
@@ -577,7 +596,7 @@ struct AgentWorkspaceView: View {
                 \(viewModel.prompt.isEmpty ? "默认 Weekly Report 目标" : viewModel.prompt)
 
                 planning_scope:
-                Agent definition + context chips + deterministic runtime boundary
+                Agent definition + frozen Starcat repo context
                 """,
                 output: step.detail,
                 log: "event=planCreated\nindex=\(index + 1)\nsource=\(viewModel.planSteps.isEmpty ? "ui_placeholder" : "runtime_event")"
@@ -623,10 +642,10 @@ struct AgentWorkspaceView: View {
                 \(output.toolName)
 
                 arguments:
-                当前 runtime 尚未记录结构化 arguments；真实 tool-calling 接入后这里展示 JSON args。
+                \(output.input.isEmpty ? "等待 runtime 输出工具参数。" : output.input)
                 """,
-                output: output.detail,
-                log: "event=toolOutput\nsummary=\(output.summary)\nsource=\(viewModel.toolOutputs.isEmpty ? "ui_placeholder" : "runtime_event")"
+                output: output.output.isEmpty ? output.detail : output.output,
+                log: output.log.isEmpty ? "event=toolOutput\nsummary=\(output.summary)\nsource=\(viewModel.toolOutputs.isEmpty ? "ui_placeholder" : "runtime_event")" : output.log
             )
         }
     }
@@ -676,7 +695,7 @@ struct AgentWorkspaceView: View {
     private var defaultTraceSteps: [AgentRunStep] {
         [
             AgentRunStep(title: "解析任务目标", detail: "识别用户希望生成 Weekly Report，并确认输出为 Markdown artifact。", status: .completed),
-            AgentRunStep(title: "准备数据源", detail: "当前 UI 预览使用 deterministic sample；正式版本会读取冻结的 repo context。", status: .pending),
+            AgentRunStep(title: "准备数据源", detail: "运行时会读取冻结的 Starcat 本地仓库快照。", status: .pending),
             AgentRunStep(title: "生成周刊母稿", detail: "等待 runtime 输出 LLM generation、tool result 和 artifact。", status: .pending)
         ]
     }
@@ -1122,6 +1141,19 @@ struct AgentWorkspaceView: View {
             return "xmark.circle.fill"
         case .skipped:
             return "minus.circle"
+        }
+    }
+
+    private func traceIcon(for span: AgentTraceSpan) -> String {
+        switch span.kind {
+        case "Tool":
+            return span.status == .failed ? "wrench.and.screwdriver" : "checkmark.circle.fill"
+        case "LLM":
+            return span.status == .failed ? "exclamationmark.triangle.fill" : "text.bubble"
+        case "Artifact":
+            return "doc.richtext"
+        default:
+            return stepIcon(span.status)
         }
     }
 
