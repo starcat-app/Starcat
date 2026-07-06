@@ -29,6 +29,9 @@ extension View {
         let rooted = self
             .starcatAnimationOverride()
             .appLocaleEnvironment()
+            // AppKit 自建窗口不经过 StarcatApp.contentRoot,需要在这里同步注入
+            // 主窗口同款字号倍率,否则 Agent/RAG/AI 独立窗口会退回 standard。
+            .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.syncManager)

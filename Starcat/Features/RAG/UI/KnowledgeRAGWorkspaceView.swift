@@ -9,6 +9,7 @@
 //  拿不到或只适合调试的检索内部字段。
 //
 
+import AppKit
 import SwiftUI
 
 struct KnowledgeRAGWorkspaceView: View {
@@ -23,6 +24,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var draftQuestion: String = ""
     @State private var isStreaming: Bool = true
     @State private var didSendDemoQuestion: Bool = false
+    @State private var isWindowPinned: Bool = false
 
     private var selectedCitation: RAGDemoCitation {
         RAGDemoData.citations.first { $0.id == selectedCitationID } ?? RAGDemoData.citations[0]
@@ -40,8 +42,6 @@ struct KnowledgeRAGWorkspaceView: View {
                 .frame(minWidth: 390, idealWidth: 420, maxWidth: 460)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // 覆盖层吃掉 titlebar 后内容会贴到 NSWindow 圆角遮罩边缘；保留 6pt
-        // 安全边距，避免左下角 footer 和右侧分数被窗口圆角/边框裁掉。
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -77,7 +77,6 @@ struct KnowledgeRAGWorkspaceView: View {
             }
 
             Spacer(minLength: 0)
-            railFooter
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -103,7 +102,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var backButton: some View {
         Button(action: onClose) {
-            Label("返回 Starcat", systemImage: "arrow.left")
+            Label("关闭窗口", systemImage: "xmark")
                 .font(ragFont(.callout, weight: .medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -213,19 +212,6 @@ struct KnowledgeRAGWorkspaceView: View {
         .padding(.horizontal, 10)
     }
 
-    private var railFooter: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "slider.horizontal.3")
-                .font(ragIconFont(size: 13, weight: .medium))
-            Text("Local RAG · UI migration")
-                .font(ragFont(.caption))
-            Spacer()
-        }
-        .foregroundStyle(.secondary)
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor))
-    }
-
     // MARK: - Answer Surface
 
     private var answerSurface: some View {
@@ -276,14 +262,6 @@ struct KnowledgeRAGWorkspaceView: View {
             .focusEffectDisabled()
             .foregroundStyle(.secondary)
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(ragIconFont(size: 13, weight: .medium))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 13)
@@ -601,12 +579,27 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: "pin")
-                .font(ragIconFont(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+            Button {
+                toggleWindowPinned()
+            } label: {
+                Image(systemName: isWindowPinned ? "pin.fill" : "pin")
+                    .font(ragIconFont(size: 14, weight: .medium))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .foregroundStyle(isWindowPinned ? Color.accentColor : .secondary)
+            .help(isWindowPinned ? "取消窗口置顶" : "置顶窗口")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    private func toggleWindowPinned() {
+        guard let window = NSApp.keyWindow else { return }
+        let nextPinned = !isWindowPinned
+        window.level = nextPinned ? .floating : .normal
+        isWindowPinned = nextPinned
     }
 
     private var selectedCitationSummary: some View {

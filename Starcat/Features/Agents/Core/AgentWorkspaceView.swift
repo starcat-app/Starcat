@@ -8,12 +8,14 @@
 //  和产出物数据；页面结构保持统一，避免 Weekly / 替代品 / 重叠扫描各自长出一套 UI。
 //
 
+import AppKit
 import SwiftUI
 
 struct AgentWorkspaceView: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
+    @State private var isWindowPinned: Bool = false
     let onClose: () -> Void
 
     private let contextChips = ["@ 已选 24 repos", "Trending 本周", "AI Agent", "README 缓存"]
@@ -76,7 +78,7 @@ struct AgentWorkspaceView: View {
                 }
                 onClose()
             } label: {
-                Label("返回主界面", systemImage: "arrow.left")
+                Label("关闭窗口", systemImage: "xmark")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
@@ -204,14 +206,17 @@ struct AgentWorkspaceView: View {
             contextBar
             Divider()
             HStack(spacing: 0) {
-                runTimeline
-                    .frame(minWidth: 460, idealWidth: 560)
+                VStack(spacing: 0) {
+                    runTimeline
+                    Divider()
+                    composer
+                }
+                .frame(minWidth: 460, idealWidth: 560)
+                .layoutPriority(1)
                 Divider()
                 artifactInspector
                     .frame(minWidth: 430, idealWidth: 520)
             }
-            Divider()
-            composer
         }
     }
 
@@ -245,6 +250,14 @@ struct AgentWorkspaceView: View {
             }
             .controlSize(.small)
             .disabled(!viewModel.isRunning)
+
+            Button {
+                toggleWindowPinned()
+            } label: {
+                Label(isWindowPinned ? "取消置顶" : "置顶", systemImage: isWindowPinned ? "pin.fill" : "pin")
+            }
+            .controlSize(.small)
+            .help(isWindowPinned ? "取消窗口置顶" : "置顶窗口")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
@@ -751,12 +764,13 @@ struct AgentWorkspaceView: View {
         .padding(.horizontal, 18)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        .safeAreaInset(edge: .bottom) {
-            Text("Agent 只在你确认后写入标签、状态或取消 star。")
-                .font(agentFont(.caption))
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 6)
-        }
+    }
+
+    private func toggleWindowPinned() {
+        guard let window = NSApp.keyWindow else { return }
+        let nextPinned = !isWindowPinned
+        window.level = nextPinned ? .floating : .normal
+        isWindowPinned = nextPinned
     }
 
     private func composerMenu(_ title: String, icon: String) -> some View {
