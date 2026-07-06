@@ -72,9 +72,12 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
 
         let controls = NSTitlebarAccessoryViewController()
         controls.layoutAttribute = .right
-        controls.view = NSHostingView(rootView: WorkspaceTitlebarControls(chromeState: chromeState) { [weak window] isPinned in
+        let controlsView = NSHostingView(rootView: WorkspaceTitlebarControls(chromeState: chromeState) { [weak window] isPinned in
             window?.level = isPinned ? .floating : .normal
         })
+        // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。
+        controlsView.frame = NSRect(x: 0, y: 0, width: 112, height: 32)
+        controls.view = controlsView
         window.addTitlebarAccessoryViewController(controls)
 
         super.init(window: window)

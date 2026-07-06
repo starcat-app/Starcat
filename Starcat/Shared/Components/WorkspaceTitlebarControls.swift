@@ -57,6 +57,9 @@ struct WorkspaceTitlebarControls: View {
             }
         }
         .padding(.trailing, 10)
+        // NSTitlebarAccessoryViewController 不会可靠地从 SwiftUI 内容推导尺寸。
+        // 在透明标题栏 + fullSizeContentView 下显式给出尺寸，避免按钮组被系统按 0 宽布局而不可见。
+        .frame(width: 112, height: 32, alignment: .trailing)
     }
 
     private func controlButton(
