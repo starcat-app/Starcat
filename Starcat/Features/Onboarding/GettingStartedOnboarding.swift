@@ -18,9 +18,9 @@ import TipKit
 extension Notification.Name {
     /// 用户成功保存过标签或笔记后发出，驱动「整理一个仓库」清单项。
     static let gettingStartedDidOrganizeRepo = Notification.Name("starcat.gettingStarted.didOrganizeRepo")
-    /// 用户主动点击过主界面同步入口后发出，驱动「同步 Stars」等待完成。
+    /// 用户主动点击过主界面同步入口后发出，驱动「同步 Stars」清单项。
     static let gettingStartedDidRequestSync = Notification.Name("starcat.gettingStarted.didRequestSync")
-    /// 用户提交过一次列表搜索后发出，驱动「使用搜索」清单项。
+    /// 用户打开搜索入口或提交过一次列表搜索后发出，驱动「使用搜索」清单项。
     static let gettingStartedDidUseSearch = Notification.Name("starcat.gettingStarted.didUseSearch")
     /// 用户打开过 AI 仓库助手后发出，驱动「试用 AI 摘要」清单项。
     static let gettingStartedDidOpenAI = Notification.Name("starcat.gettingStarted.didOpenAI")
@@ -215,6 +215,7 @@ private struct GettingStartedPopoverTipModifier<T: Tip>: ViewModifier {
 
 struct GettingStartedChecklistView: View {
     let store: GettingStartedProgressStore
+    let isEnabled: Bool
     let isSignedIn: Bool
     let hasSyncedStars: Bool
     let hasSelectedRepo: Bool
@@ -248,7 +249,7 @@ struct GettingStartedChecklistView: View {
     private let panelExpandedMaxHeight: CGFloat = 620
 
     private var shouldRender: Bool {
-        !firstRunOnboardingActive && !store.isDismissed && !store.isComplete
+        isEnabled && !firstRunOnboardingActive && !store.isDismissed && !store.isComplete
     }
 
     private var progressValue: Double {
@@ -532,9 +533,39 @@ private struct GettingStartedCoachMark: View {
     let isFloating: Bool
     let onDismiss: () -> Void
 
-    private let bubbleWidth: CGFloat = 178
     private let bubbleHeight: CGFloat = 30
     private let arrowSize: CGFloat = 20
+
+    private var bubbleWidth: CGFloat {
+        // 宽度按当前中英文 action 文案实测值配置，避免短文案留出大块空白，
+        // 同时给英文长文案保留图标、分隔线、关闭按钮和安全余量。
+        switch step.id {
+        case .signIn:
+            return 200
+        case .syncStars:
+            return 188
+        case .selectRepo:
+            return 188
+        case .openRepoHomepage:
+            return 188
+        case .addRepoToLibrary:
+            return 164
+        case .organizeRepo:
+            return 172
+        case .useSearch:
+            return 192
+        case .useAI:
+            return 188
+        case .useRAGWorkspace:
+            return 204
+        case .useAgentWorkspace:
+            return 216
+        case .shareProfile:
+            return 180
+        case .unstarRepo:
+            return 176
+        }
+    }
 
     private var verticalOffset: CGFloat {
         // 同步入口位于中栏顶区右侧，旁边有时间文案；这里必须严格贴刷新按钮中心线，

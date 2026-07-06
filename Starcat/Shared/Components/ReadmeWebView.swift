@@ -56,6 +56,11 @@ import SwiftUI
 import WebKit
 import AppKit
 
+extension Notification.Name {
+    /// 外部指引请求当前 README 回到顶部，用于在展示顶部 Hero 指引前恢复稳定锚点。
+    static let repoDetailScrollToTopRequested = Notification.Name("starcat.repoDetail.scrollToTopRequested")
+}
+
 struct ReadmeWebView: View {
 
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
@@ -118,6 +123,9 @@ struct ReadmeWebView: View {
             ReadmeBackToTopButton(action: scrollToTop)
                 .padding(.trailing, 10)
                 .padding(.bottom, 14)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .repoDetailScrollToTopRequested)) { _ in
+            scrollToTop()
         }
     }
 

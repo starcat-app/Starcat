@@ -91,6 +91,7 @@ struct RepoAIFloatingOverlay: View {
 
     private var collapsedBar: some View {
         Button {
+            NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
             presentation = .expanded
         } label: {
             Capsule(style: .continuous)

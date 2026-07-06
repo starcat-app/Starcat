@@ -95,9 +95,12 @@ struct HomeView: View {
     @State private var paywallContext: ProPaywallContext?
     /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
     @State private var gettingStartedStore = GettingStartedProgressStore()
-    /// 「同步 Stars」教学步骤只认用户主动点击同步入口后的完成态。
-    /// 登录恢复 / 启动 stale sync 仍可照常跑，但不能替用户把第二步勾掉。
-    @State private var gettingStartedSyncRequested = false
+    /// 详情页教学锚点可能受 README 滚动折叠影响；显示胶囊前先回顶恢复稳定布局。
+    @State private var isPreparingDetailCoachMark = false
+    @State private var preparedDetailCoachMarkStepID: GettingStartedProgressStore.StepID?
+    @State private var preparedDetailCoachMarkRepoID: Repo.ID?
+    /// 主窗口操作指引默认关闭，通过 Debug 菜单临时开启，避免未完成教学流影响日常使用。
+    @State private var showsGettingStartedGuide: Bool = DebugFlags.gettingStartedGuide
     /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
     ///
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
@@ -315,9 +318,12 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: DebugFlags.knowledgeRAGToolbarEntryDidChangeNotification)) { _ in
             showsKnowledgeRAGToolbarEntry = DebugFlags.knowledgeRAGToolbarEntry
         }
+        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.gettingStartedGuideDidChangeNotification)) { _ in
+            showsGettingStartedGuide = DebugFlags.gettingStartedGuide
+        }
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
-            Button("") { searchCenterViewModel.present() }
+            Button("") { presentSearchCenterForGettingStarted() }
                 .keyboardShortcut(
                     settings.globalSearchShortcut.keyEquivalent,
                     modifiers: settings.globalSearchShortcut.eventModifiers
@@ -331,6 +337,7 @@ struct HomeView: View {
         GeometryReader { proxy in
             GettingStartedChecklistView(
                 store: gettingStartedStore,
+                isEnabled: showsGettingStartedGuide,
                 isSignedIn: authSession.state.isAuthenticated,
                 hasSyncedStars: gettingStartedStore.isCompleted(.syncStars),
                 hasSelectedRepo: viewModel.selectedRepoID != nil,
@@ -357,7 +364,7 @@ struct HomeView: View {
                     openNewTagSheetForGettingStarted()
                 },
                 onOpenSearch: {
-                    searchCenterViewModel.present()
+                    presentSearchCenterForGettingStarted()
                 },
                 onOpenAI: {
                     openSelectedRepoAIForGettingStarted()
@@ -399,26 +406,61 @@ struct HomeView: View {
             return nil
         }
 
-        let stepAnchors: [(GettingStartedProgressStore.StepID, GettingStartedAnchorID?)] = [
-            (.signIn, .signIn),
-            (.syncStars, .syncStars),
-            (.selectRepo, .selectRepo),
-            (.openRepoHomepage, .repoHomepage),
-            (.addRepoToLibrary, .addToLibrary),
-            (.organizeRepo, .organizeRepo),
-            (.useSearch, .search),
-            (.useAI, .ai),
-            (.useRAGWorkspace, .ragWorkspace),
-            (.useAgentWorkspace, .agentWorkspace),
-            (.shareProfile, .shareProfile),
-            (.unstarRepo, .unstarRepo)
-        ]
-        guard let anchorID = stepAnchors.first(where: { !gettingStartedStore.isCompleted($0.0) })?.1,
+        guard let stepID = gettingStartedActiveStepID,
+              !(isDetailCoachMarkStep(stepID) && isPreparingDetailCoachMark),
+              let anchorID = gettingStartedAnchorID(for: stepID),
               let anchor = anchors[anchorID]
         else {
             return nil
         }
         return proxy[anchor]
+    }
+
+    private var gettingStartedActiveStepID: GettingStartedProgressStore.StepID? {
+        let orderedSteps: [GettingStartedProgressStore.StepID] = [
+            .signIn,
+            .syncStars,
+            .selectRepo,
+            .openRepoHomepage,
+            .addRepoToLibrary,
+            .organizeRepo,
+            .useSearch,
+            .useAI,
+            .useRAGWorkspace,
+            .useAgentWorkspace,
+            .shareProfile,
+            .unstarRepo
+        ]
+        return orderedSteps.first { !gettingStartedStore.isCompleted($0) }
+    }
+
+    private func gettingStartedAnchorID(for stepID: GettingStartedProgressStore.StepID) -> GettingStartedAnchorID? {
+        switch stepID {
+        case .signIn:
+            return .signIn
+        case .syncStars:
+            return .syncStars
+        case .selectRepo:
+            return .selectRepo
+        case .openRepoHomepage:
+            return .repoHomepage
+        case .addRepoToLibrary:
+            return .addToLibrary
+        case .organizeRepo:
+            return .organizeRepo
+        case .useSearch:
+            return .search
+        case .useAI:
+            return .ai
+        case .useRAGWorkspace:
+            return .ragWorkspace
+        case .useAgentWorkspace:
+            return .agentWorkspace
+        case .shareProfile:
+            return .shareProfile
+        case .unstarRepo:
+            return .unstarRepo
+        }
     }
 
     private var navigationWithSheets: AnyView {
@@ -549,10 +591,6 @@ struct HomeView: View {
         // syncManager.state 真正变化的边沿触发。
         .onChange(of: syncManager.state) { _, newState in
             dependencies.autoTidyScheduler.notifySyncStateChanged(newState)
-            if case .completed = newState, gettingStartedSyncRequested {
-                gettingStartedStore.markCompleted(.syncStars)
-                gettingStartedSyncRequested = false
-            }
         }
         // HOM-126：用户在 Settings 切换「定时」/触发开关后，让 scheduler 重新装载
         // 定时器与监听。settings.autoTidySettings 是结构体，赋值替换即触发 .onChange。
@@ -611,6 +649,17 @@ struct HomeView: View {
         }
         .onAppear {
             syncGettingStartedProgressFromCurrentState()
+            prepareDetailCoachMarkIfNeeded(for: gettingStartedActiveStepID)
+        }
+        .onChange(of: gettingStartedActiveStepID) { _, newStepID in
+            prepareDetailCoachMarkIfNeeded(for: newStepID)
+        }
+        .onChange(of: viewModel.selectedRepoID) { _, _ in
+            prepareDetailCoachMarkIfNeeded(for: gettingStartedActiveStepID)
+        }
+        .onChange(of: showTagManagement) { _, isPresented in
+            guard isPresented else { return }
+            gettingStartedStore.markCompleted(.organizeRepo)
         }
         // Manage 页分类变化 → 持久化为"上次分类"，供下次启动恢复。
         // 仅在 Manage 页且非 Trending 时记录，避免把 Trending 写成 Manage 分类。
@@ -654,7 +703,7 @@ struct HomeView: View {
             syncGettingStartedProgressFromCurrentState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenGlobalSearch)) { _ in
-            searchCenterViewModel.present()
+            presentSearchCenterForGettingStarted()
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
             guard authSession.state.isAuthenticated else { return }
@@ -744,9 +793,55 @@ struct HomeView: View {
         }
     }
 
-    /// 只记录「用户为教学步骤主动点了同步」，不把后台自动同步混入 onboarding 进度。
+    /// 只记录「用户主动点了同步入口」本身，后台自动同步不能替用户把第二步勾掉。
     private func requestGettingStartedSync() {
-        gettingStartedSyncRequested = true
+        gettingStartedStore.markCompleted(.syncStars)
+    }
+
+    /// 搜索指引以“用户打开搜索入口”为通过条件；真实搜索提交路径仍会发同一完成事件。
+    private func presentSearchCenterForGettingStarted() {
+        searchCenterViewModel.present()
+        NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
+    }
+
+    /// 详情页指引依赖顶部 Hero / 本地信息区的稳定位置。进入这些步骤时先请求 README 回顶，
+    /// 等 WebView 平滑滚动带动 Hero 展开后再绘制胶囊，避免锚点落在折叠态旧位置。
+    private func prepareDetailCoachMarkIfNeeded(for stepID: GettingStartedProgressStore.StepID?) {
+        guard let stepID, isDetailCoachMarkStep(stepID) else {
+            isPreparingDetailCoachMark = false
+            preparedDetailCoachMarkStepID = nil
+            preparedDetailCoachMarkRepoID = nil
+            return
+        }
+        guard let repoID = viewModel.selectedRepoID else {
+            isPreparingDetailCoachMark = false
+            preparedDetailCoachMarkStepID = nil
+            preparedDetailCoachMarkRepoID = nil
+            return
+        }
+        guard preparedDetailCoachMarkStepID != stepID || preparedDetailCoachMarkRepoID != repoID else { return }
+
+        preparedDetailCoachMarkStepID = stepID
+        preparedDetailCoachMarkRepoID = repoID
+        isPreparingDetailCoachMark = true
+        NotificationCenter.default.post(name: .repoDetailScrollToTopRequested, object: nil)
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 550_000_000)
+            guard preparedDetailCoachMarkStepID == stepID,
+                  preparedDetailCoachMarkRepoID == repoID
+            else { return }
+            isPreparingDetailCoachMark = false
+        }
+    }
+
+    private func isDetailCoachMarkStep(_ stepID: GettingStartedProgressStore.StepID) -> Bool {
+        switch stepID {
+        case .selectRepo, .openRepoHomepage, .addRepoToLibrary, .organizeRepo, .useAI, .unstarRepo:
+            return true
+        case .signIn, .syncStars, .useSearch, .useRAGWorkspace, .useAgentWorkspace, .shareProfile:
+            return false
+        }
     }
 
     private var canUnstarSelectedRepoForGettingStarted: Bool {
@@ -1041,7 +1136,7 @@ struct HomeView: View {
                 showBatchAIPanel = true
             },
             onOpenSearchCenter: {
-                searchCenterViewModel.present()
+                presentSearchCenterForGettingStarted()
             },
             onOpenAgentWorkspace: {
                 openAgentWorkspaceForGettingStarted()

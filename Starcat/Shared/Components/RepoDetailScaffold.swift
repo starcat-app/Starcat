@@ -627,6 +627,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             }
             await setLibraryState(.outsideLibrary, downgradeUsingStatus: false)
         } else {
+            NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
             await setLibraryState(.inLibrary, downgradeUsingStatus: false)
         }
     }

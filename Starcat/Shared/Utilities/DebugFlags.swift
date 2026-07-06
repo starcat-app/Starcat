@@ -60,11 +60,13 @@ import Foundation
 enum DebugFlags {
     static let agentToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.agentToolbarEntryDidChange")
     static let knowledgeRAGToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.knowledgeRAGToolbarEntryDidChange")
+    static let gettingStartedGuideDidChangeNotification = Notification.Name("DebugFlags.gettingStartedGuideDidChange")
     static let companionLocalServerDidChangeNotification = Notification.Name("DebugFlags.companionLocalServerDidChange")
     static let debugProOverrideDidChangeNotification = Notification.Name("DebugFlags.debugProOverrideDidChange")
 
     static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
     static let knowledgeRAGToolbarEntryKey = "DebugKnowledgeRAGToolbarEntry"
+    static let gettingStartedGuideKey = "DebugGettingStartedGuide"
     private static let companionLocalServerKey = "DebugCompanionLocalServer"
     static let debugProOverrideKey = "DebugProOverride"
 
@@ -120,6 +122,18 @@ enum DebugFlags {
         #endif
     }
 
+    /// 是否显示主窗口 Getting Started 操作指引。
+    ///
+    /// 主窗口指引当前仍用于调试验证，默认关闭；通过 Debug 菜单开启后持久化，
+    /// 让菜单勾选状态和下一次启动后的展示行为保持一致。Release 包永远关闭。
+    static var gettingStartedGuide: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: gettingStartedGuideKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 是否用本地 Debug 开关强制激活 Pro entitlement。
     ///
     /// 这是开发期验证 Pro 门控用的本机覆盖，不代表真实 StoreKit 订阅状态；放在
@@ -160,6 +174,14 @@ enum DebugFlags {
         #if DEBUG
         UserDefaults.standard.set(isVisible, forKey: knowledgeRAGToolbarEntryKey)
         NotificationCenter.default.post(name: knowledgeRAGToolbarEntryDidChangeNotification, object: nil)
+        #endif
+    }
+
+    /// 切换主窗口 Getting Started 指引并广播给已挂载的主窗口。
+    static func setGettingStartedGuide(_ isEnabled: Bool) {
+        #if DEBUG
+        UserDefaults.standard.set(isEnabled, forKey: gettingStartedGuideKey)
+        NotificationCenter.default.post(name: gettingStartedGuideDidChangeNotification, object: nil)
         #endif
     }
 
