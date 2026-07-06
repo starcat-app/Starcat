@@ -1,0 +1,99 @@
+//
+//  GitHubWeeklyReportToolsTests.swift
+//  StarcatTests
+//
+//  GitHub Weekly Report Agent 只读工具测试。
+//
+
+import Foundation
+import Testing
+@testable import Starcat
+
+@Suite("GitHubWeeklyReportTools")
+struct GitHubWeeklyReportToolsTests {
+
+    @Test("resolveCandidateRepos 使用真实 context 快照并按 stars 排序")
+    func resolveCandidateReposUsesContextSnapshot() {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [
+                repo(fullName: "swiftlang/swift-markdown", language: "Swift", stars: 3_100),
+                repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800),
+                repo(fullName: "modelcontextprotocol/swift-sdk", language: "Swift", stars: 1_400)
+            ]
+        )
+
+        let result = GitHubWeeklyReportTools.resolveCandidateRepos(context: context, limit: 2)
+
+        #expect(result.output.summary == "2 repos")
+        #expect(result.output.output.contains("groue/GRDB.swift"))
+        #expect(result.output.output.contains("swiftlang/swift-markdown"))
+        #expect(result.output.output.contains("modelcontextprotocol/swift-sdk") == false)
+        #expect(result.trace.input.contains("Unit Snapshot"))
+    }
+
+    @Test("clusterTopics 按语言生成主题并保留 repo 名称")
+    func clusterTopicsGroupsByLanguage() {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [
+                repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800),
+                repo(fullName: "vercel/next.js", language: "TypeScript", stars: 130_000)
+            ]
+        )
+
+        let (topics, result) = GitHubWeeklyReportTools.clusterTopics(context: context)
+
+        #expect(topics.count == 2)
+        #expect(topics.map(\.title).contains("Swift 生态项目"))
+        #expect(result.output.output.contains("vercel/next.js"))
+        #expect(result.trace.output.contains("groue/GRDB.swift"))
+    }
+
+    @Test("buildMarkdown 从 topic 生成只读 artifact 草稿")
+    func buildMarkdownUsesTopicRepos() {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+        )
+        let topics = [
+            WeeklyReportTopic(
+                title: "Swift 生态项目",
+                reason: "按主要语言聚合。",
+                repos: context.repos
+            )
+        ]
+
+        let (markdown, result) = GitHubWeeklyReportTools.buildMarkdown(
+            prompt: "生成 Swift 周刊",
+            context: context,
+            topics: topics
+        )
+
+        #expect(markdown.contains("groue/GRDB.swift"))
+        #expect(markdown.contains("只读取本地数据"))
+        #expect(result.output.toolName == "artifact.buildMarkdown")
+        #expect(result.trace.output.contains("# GitHub Weekly Report"))
+    }
+
+    private func repo(
+        fullName: String,
+        language: String,
+        stars: Int
+    ) -> AgentRepoSnapshot {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        return AgentRepoSnapshot(
+            id: Int64(abs(fullName.hashValue)),
+            owner: parts.first ?? "owner",
+            name: parts.dropFirst().first ?? "repo",
+            fullName: fullName,
+            description: "\(fullName) description",
+            language: language,
+            starsCount: stars,
+            topics: ["agent", "database"],
+            isStarred: true,
+            starredAt: "2026-07-07T00:00:00Z",
+            htmlUrl: "https://github.com/\(fullName)"
+        )
+    }
+}
