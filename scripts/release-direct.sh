@@ -166,7 +166,7 @@ require_branch() {
   local current_branch
   current_branch="$(git branch --show-current)"
   [ "$current_branch" = "$RELEASE_BRANCH" ] \
-    || fail "当前分支是 $current_branch，发布要求在 $RELEASE_BRANCH"
+    || fail "当前分支是 ${current_branch}，发布要求在 ${RELEASE_BRANCH}"
 }
 
 create_and_push_tag() {
