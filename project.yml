@@ -10,7 +10,7 @@ options:
   bundleIdPrefix: com.starcat
   deploymentTarget:
     macOS: "15.0"
-  developmentLanguage: zh-Hans
+  developmentLanguage: en
   xcodeVersion: "26.5"
   createIntermediateGroups: true
   groupSortPosition: top

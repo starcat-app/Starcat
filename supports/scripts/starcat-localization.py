@@ -1,11 +1,43 @@
 #!/usr/bin/env python3
-"""Export and import Starcat localization packages.
+"""导出和导入 Starcat 本地化语言包。
 
-This script keeps the public localization repository in per-language `.xcloc`
-packages while Starcat itself still uses Xcode's `Localizable.xcstrings` as the
-runtime source of truth. Xcode's built-in export currently fails when the
-project development language differs from the string catalog source language,
-so this script performs the narrow conversion Starcat needs.
+这个脚本用于在两个结构之间同步本地化内容：
+  - Starcat 应用内仍以 `Starcat/Resources/Localizable.xcstrings` 作为运行时来源。
+  - 公开的 `supports/starcat-localization` 仓库按语言维护 `.xcloc` 包。
+
+默认路径：
+  - 应用 String Catalog：`Starcat/Resources/Localizable.xcstrings`
+  - 公开本地化仓库：`supports/starcat-localization`
+  - 语言包输出目录：`supports/starcat-localization/Translation Packages/`
+
+常用命令：
+  从应用的 String Catalog 导出所有语言包：
+
+      supports/scripts/starcat-localization.py export
+
+  只导出指定语言：
+
+      supports/scripts/starcat-localization.py export --locale en --locale zh-Hans
+
+  将单个已审核语言包倒回应用的 String Catalog：
+
+      supports/scripts/starcat-localization.py import \\
+        --package "supports/starcat-localization/Translation Packages/zh-Hans.xcloc"
+
+  将公开本地化仓库里的全部语言包倒回应用：
+
+      supports/scripts/starcat-localization.py import-all
+
+  测试或跨 checkout 操作时，可以指定自定义路径：
+
+      supports/scripts/starcat-localization.py \\
+        --catalog /tmp/Localizable.xcstrings \\
+        --repo /tmp/starcat-localization \\
+        export
+
+仓库规则：
+  公开本地化仓库只维护“每种语言一个 `.xcloc` 包”。不要把完整的
+  `Localizable.xcstrings` 提交到公开本地化仓库。
 """
 
 from __future__ import annotations

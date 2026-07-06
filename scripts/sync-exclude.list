@@ -1,11 +1,18 @@
 # 排除规则（rsync --exclude-from，兜底用）
 #
-# 关键约束：rsync 的 exclude 只对目录递归生效，对单文件完全无效。所以显式清单
-# （sync-manifest.list）里写单文件路径时，写错也拦不住——这是为什么 manifest
-# 注释里强调"不应包含这些路径"。exclude 列表主要保护目录类条目。
+# 关键约束：rsync 的 exclude 只对目录递归生效，对单文件完全无效。
+# 主要保护目录类条目，防止意外把独立仓库内容同步过去。
 
-# === 决策 4c：所有以 -api 结尾的独立 git 仓库 ===
+# === supports/ 下所有独立 git 仓库（共 13 个） ===
+# Go API 服务（7 个，含 starcat-license-api）
 **/*-api/
+# 其他支撑项目（6 个）
+**/starcat-pro/
+**/starcat-localization/
+**/homebrew-starcat/
+**/vscode-makefile-explorer/
+**/starcat-chrome-plugin/
+**/starcat-safari-plugin/
 
 # === 系统 / 构建 / 本地索引（绝不同步） ===
 .DS_Store

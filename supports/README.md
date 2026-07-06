@@ -1,202 +1,178 @@
-# Starcat 支撑服务（supports）
+# Starcat 支撑项目（supports）
 
-> 本目录收录 Starcat 主仓库依赖的**独立后端服务**。每个子目录都是单独的 git 仓库、独立 GitHub 仓库、独立部署单元，**不**与主仓库 (`Starcat/`) 共享版本号或 CI。
+> 本目录收录 Starcat 主仓库依赖的**独立项目**。每个子目录（除明确标注外）都是独立的
+> git 仓库、独立 GitHub 仓库、独立部署单元，**不**与主仓库共享版本号或 CI。
 >
-> 共同约定：**默认端口互不冲突**（5001-5006），本地可同时启动。
+> 文件同步关系详见 [`SYNC.md`](./SYNC.md)。
 
 ---
 
-## 📦 当前收录的支撑服务
+## 📦 项目清单（共 13 个）
 
-| 子目录 | GitHub 仓库 | 默认端口 | 角色 | 状态 |
-|---|---|:---:|---|---|
-| [`starcat-sharing-api/`](./starcat-sharing-api/) | [`dong4j/starcat-sharing-api`](https://github.com/dong4j/starcat-sharing-api) | **5001** | AI 分享链接生成 + 公开分享页托管 | P0 |
-| [`starcat-trending-api/`](./starcat-trending-api/) | [`dong4j/starcat-trending-api`](https://github.com/dong4j/starcat-trending-api) | **5002** | GitHub Trending 页面爬虫 → REST API | P0 |
-| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`dong4j/starcat-weekly-api`](https://github.com/dong4j/starcat-weekly-api) | **5003** | 周刊项目同步 + zread 趋势候选 | P0 |
-| [`starcat-wiki-api/`](./starcat-wiki-api/) | [`dong4j/starcat-wiki-api`](https://github.com/dong4j/starcat-wiki-api) | **5004** | DeepWiki / Zread / CodeWiki 收录探测 | P1 |
-| [`starcat-recommend-api/`](./starcat-recommend-api/) | [`dong4j/starcat-recommend-api`](https://github.com/dong4j/starcat-recommend-api) | **5005** | 相似仓库推荐 API | P1 |
-| [`starcat-discovery-api/`](./starcat-discovery-api/) | [`dong4j/starcat-discovery-api`](https://github.com/dong4j/starcat-discovery-api) | **5006** | 探索发现、热门、新发布榜单 | P1 |
+### Go API 服务（7 个）
 
-> 端口规范：5000 段是 macOS「ControlCenter」/ AirPlay 等系统服务保留段，Starcat 自建后端从 5001 起顺序分配。
+| 子目录 | GitHub | 端口 | 角色 |
+|--------|--------|:----:|------|
+| [`starcat-sharing-api/`](./starcat-sharing-api/) | [`dong4j/starcat-sharing-api`](https://github.com/dong4j/starcat-sharing-api) | 5001 | AI 分享链接生成 + 公开分享页托管 |
+| [`starcat-trending-api/`](./starcat-trending-api/) | [`dong4j/starcat-trending-api`](https://github.com/dong4j/starcat-trending-api) | 5002 | GitHub Trending 爬虫 → REST API |
+| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`dong4j/starcat-weekly-api`](https://github.com/dong4j/starcat-weekly-api) | 5003 | 周刊项目同步 + zread 趋势候选 |
+| [`starcat-wiki-api/`](./starcat-wiki-api/) | [`dong4j/starcat-wiki-api`](https://github.com/dong4j/starcat-wiki-api) | 5004 | DeepWiki / Zread / CodeWiki 收录探测 |
+| [`starcat-recommend-api/`](./starcat-recommend-api/) | [`dong4j/starcat-recommend-api`](https://github.com/dong4j/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
+| [`starcat-discovery-api/`](./starcat-discovery-api/) | [`dong4j/starcat-discovery-api`](https://github.com/dong4j/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
+| [`starcat-license-api/`](./starcat-license-api/) | [`dong4j/starcat-license-api`](https://github.com/dong4j/starcat-license-api) 🔒 | — | Direct 分发授权 API |
+
+### 其他支撑项目（6 个）
+
+| 子目录 | GitHub | 说明 |
+|--------|--------|------|
+| [`starcat-pro/`](./starcat-pro/) | [`dong4j/starcat-pro`](https://github.com/dong4j/starcat-pro) | Pro 订阅服务端 |
+| [`starcat-localization/`](./starcat-localization/) | [`dong4j/starcat-localization`](https://github.com/dong4j/starcat-localization) | 本地化资源管理 |
+| [`homebrew-starcat/`](./homebrew-starcat/) | [`dong4j/homebrew-starcat`](https://github.com/dong4j/homebrew-starcat) | Homebrew tap（`brew install starcat`） |
+| [`vscode-makefile-explorer/`](./vscode-makefile-explorer/) | [`dong4j/vscode-makefile-explorer`](https://github.com/dong4j/vscode-makefile-explorer) | VS Code 插件 |
+| [`extensions/starcat-chrome-plugin/`](./extensions/starcat-chrome-plugin/) | [`dong4j/starcat-chrome-plugin`](https://github.com/dong4j/starcat-chrome-plugin) | Chrome 浏览器插件 |
+| [`extensions/starcat-safari-plugin/`](./extensions/starcat-safari-plugin/) | [`dong4j/starcat-safari-plugin`](https://github.com/dong4j/starcat-safari-plugin) | Safari 浏览器插件 |
+
+> 端口规范：5000 段是 macOS 系统服务保留段，自建后端从 5001 起顺序分配。
 
 ---
 
 ## 🧩 在 Starcat 中的角色
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Starcat App (macOS)                        │
-│                                                             │
-│  ┌──────────────┐    ┌────────────────┐    ┌────────────┐  │
-│  │ GitHub Stars │    │    Trending    │    │   Share    │  │
-│  │ (本地 SQLite)│    │  视图 / 入口    │    │  入口      │  │
-│  └──────┬───────┘    └────────┬───────┘    └─────┬──────┘  │
-│         │                     │                  │         │
-│         │                     │  GET /repo?lang  │  POST   │
-│         │                     │  GET /user       │  /api/  │
-│         │                     │  GET /lang       │  share  │
-│         │                     ↓                  ↓         │
-└─────────┼─────────────────────┼──────────────────┼─────────┘
-          │                     │                  │
-          │                     │ port 5002        │ port 5001
-          │                     ↓                  ↓
-   ┌──────┴────────┐    ┌──────────────────┐   ┌──────────────────┐
-   │ GitHub REST   │    │ starcat-trending │   │ starcat-sharing  │
-   │ (官方)        │    │ -api (自托管)    │   │ -api (自托管)    │
-   └───────────────┘    └──────────────────┘   └──────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Starcat App (macOS)                        │
+│                                                               │
+│  ┌────────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐ │
+│  │ GitHub     │  │  Trending  │  │  Share   │  │  Direct  │ │
+│  │ Stars      │  │  视图/入口  │  │  入口    │  │  购买    │ │
+│  │ (SQLite)   │  │            │  │          │  │  入口    │ │
+│  └─────┬──────┘  └─────┬──────┘  └────┬─────┘  └────┬─────┘ │
+│        │               │              │              │       │
+│        │   GitHub REST │  GET /repo   │  POST /api   │  POST │
+│        │   API (官方)  │  GET /user   │  /share      │  /v1/ │
+│        │               │  GET /lang   │              │direct │
+│        │               ↓              ↓              ↓       │
+└────────┼───────────────┼──────────────┼──────────────┼───────┘
+         │               │              │              │
+         │          port 5002      port 5001           │
+         │               ↓              ↓          port 5010
+  ┌──────┴──────┐ ┌────────────┐ ┌────────────┐ ┌──────────────┐
+  │ GitHub REST │ │ trending   │ │ sharing    │ │ license      │
+  │ (官方)      │ │ -api       │ │ -api       │ │ -api 🔒      │
+  └─────────────┘ └────────────┘ └────────────┘ └──────────────┘
 ```
 
-### 1. `starcat-trending-api`（5002）
+### 核心 API 角色
 
-**解决的痛点**：GitHub 官方 REST API 没有 Trending 接口，Trending 是 GitHub 网页功能。
+**`starcat-trending-api`（5002）** — GitHub 官方 REST API 没有 Trending 接口，由本服务爬取网页并提供结构化数据。
 
-**提供的接口**（与 Python 原版 100% 兼容，详见各子目录的 README）：
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/repo?lang=…&since=daily/weekly/monthly` | Trending 仓库列表 |
+| GET | `/user?lang=…&since=…&sponsorable=1` | Trending 开发者列表 |
+| GET | `/lang` | 支持的语言字典 |
 
-| Method | Path | 说明 | Starcat 端调用点 |
-|---|---|---|---|
-| GET | `/repo?lang=…&since=daily/weekly/monthly` | Trending 仓库列表 | `Starcat/Core/Sync/TrendingRepository.swift` |
-| GET | `/user?lang=…&since=…&sponsorable=1` | Trending 开发者列表 | （P1+ 预留） |
-| GET | `/lang` | 支持的语言字典 | 启动时缓存到 `TrendingReadme.swift` 旁路表 |
+**`starcat-sharing-api`（5001）** — 分享页要被**未安装 Starcat** 的人访问，必须是独立 Web 服务。
 
-**调用链路**：见 `docs/3-设计/详细设计/starcat-trending-设计.md`（已确认方案的原始设计稿）。
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/api/share` | 接收 repo 数据 + AI 摘要，返回短链 |
+| GET | `/s/{id}` | 公开分享页（服务端渲染） |
 
-### 2. `starcat-sharing-api`（5001）
+**`starcat-weekly-api`（5003）** — 同步 GitHub Weekly 周刊、Trending 榜单生成周报数据。
 
-**解决的痛点**：Starcat 用户想把自己收藏 + AI 摘要的 repo「分享」给朋友，但 macOS App 不适合做公开 Web 入口。
+**`starcat-wiki-api`（5004）** — 探测仓库是否有 DeepWiki / Zread / CodeWiki 等第三方文档。
 
-**提供的接口**：
+**`starcat-recommend-api`（5005）** — 基于用户收藏行为生成相似仓库推荐。
 
-| Method | Path | 说明 | Starcat 端调用点 |
-|---|---|---|---|
-| POST | `/api/share` | 接收 repo 数据 + AI 摘要，返回短链 | （P1 实现，预计在「分享弹窗」提交时） |
-| GET | `/s/{id}` | 公开访问的分享页（服务端渲染） | 浏览器侧（不在 App 内） |
+**`starcat-discovery-api`（5006）** — 探索发现首页：热门仓库、新发布、分类榜单。
 
-**为什么需要独立后端**：
-- 分享页要能被**未安装 Starcat** 的人访问 → 不能是 macOS 内部功能
-- 渲染走服务端 `html/template` + Tailwind → Starcat 主端不污染 UI 栈
-- 数据先暂存本地 `data.json`（MVP），后续换持久化
+**`starcat-license-api`（5010）🔒 私有** — Direct 分发授权：license activate / validate / deactivate，对接 Creem 支付。
 
 ---
 
-## 🛠️ 本地开发
+## 🚀 快速开始
 
-### 一次性启动全部服务
+### 一键拉取所有项目
 
 ```bash
 cd supports
+
+# 首次 clone 全部 13 个项目
+./clone-all.sh
+
+# 后续批量更新
+./clone-all.sh --pull
+```
+
+> `starcat-license-api` 是**私有**仓库，需 `gh auth login` 或 SSH key。
+
+### 一次性启动全部 API
+
+```bash
 ./start-all.sh
 ```
 
-### 单独启动服务
+### 单独启动
 
 ```bash
-# Terminal A - Trending API
 cd supports/starcat-trending-api
 go run ./cmd/server
 # → http://localhost:5002
-
-# Terminal B - Sharing API
-cd supports/starcat-sharing-api
-go run ./cmd/server
-# → http://localhost:5001
-```
-
-### 在 Starcat 主端指向本地服务
-
-两个 API 的 base URL 走 Starcat 的设置项（`Starcat/Core/Settings/AppSettings.swift` 的「API Base URL」段）。**当前实现是硬编码**，未来改造为：
-
-```swift
-// 伪代码,示意未来设置面板的设计
-struct APISettings {
-    var trendingBaseURL: URL = URL(string: "http://localhost:5002")!
-    var sharingBaseURL: URL = URL(string: "http://localhost:5001")!
-}
-```
-
-修改后切到生产时，只需把 URL 换成 `https://<fly/render 子域名>` 即可，**无需改业务代码**。
-
-### 健康检查
-
-```bash
-# Trending
-curl http://localhost:5002/        # → {"message":"Hello GitHub trending"}
-
-# Sharing
-curl -X POST http://localhost:5001/api/share \
-     -H "Content-Type: application/json" \
-     -d '{"repo":"octocat/Hello-World","summary":"test"}'
-# → {"id":"abc123","url":"http://localhost:5001/s/abc123"}
 ```
 
 ---
 
-## 🌐 Fly.io 生产部署
+## 📁 本目录文件归属
 
-| App | URL |
-|-----|-----|
-| starcat-sharing-api | https://starcat-sharing-api.fly.dev |
-| starcat-trending-api | https://starcat-trending-api.fly.dev |
-| starcat-weekly-api | https://starcat-weekly-api.fly.dev |
-| starcat-wiki-api | https://starcat-wiki-api.fly.dev |
-| starcat-recommend-api | https://starcat-recommend-api.fly.dev |
-| starcat-discovery-api | https://starcat-discovery-api.fly.dev |
+### 主仓库 git 管理（`git pull` 即可同步）
 
-**环境变量清单 + 与 Starcat 客户端 API Key 对齐**：[`docs/fly-io-环境变量.md`](./docs/fly-io-环境变量.md)
+| 路径 | 说明 |
+|------|------|
+| `AGENTS.md` / `CLAUDE.md` | AI 协作规范 |
+| `SYNC.md` | 文件同步说明 |
+| `README.md` | 本文档 |
+| `Makefile` | 运维命令入口 |
+| `start-all.sh` | 一键启动脚本 |
+| `clone-all.sh` | 一键拉取脚本 |
+| `.claude/` | supports/ 专用 IDE 权限 |
+| `backups/` | Fly 备份目录结构 |
+| `docs/` | 设计文档、方案、指南 |
+| `extensions/{AGENTS,CLAUDE}.md` | 插件目录 AI 规范 |
+| `scripts/` | 运维脚本 |
 
-```bash
-在 Starcat 主仓库根目录：
+### 独立 git 仓库（各自管理）
 
-```bash
-make sync-fly-secrets              # Fly 各 API secrets（并行）
-make setup-production-api-keys     # 客户端各 API baked-in keys
-```
-```
+- 上表 13 个项目目录
 
-sharing 生产环境 `BASE_URL` 须为公网 URL（默认 `https://starcat-sharing-api.fly.dev`），详见环境变量文档 §5.1。
+### 跨机器同步（`sync-untracked.sh`）
+
+- 各 API 项目的 `.env` 文件（含本地密钥，gitignore 不管）
+
+> 详见 [`SYNC.md`](./SYNC.md)
 
 ---
 
-## 🌐 部署（历史 / 其他平台）
-
-每个子仓库自带 `fly.toml`，可独立部署。**生产环境必须用 HTTPS**。
+## 🌐 生产部署
 
 | 平台 | 文档 |
 |------|------|
-| Fly.io | **主文档** → [`docs/fly-io-环境变量.md`](./docs/fly-io-环境变量.md) |
-| Render | 各子仓库 `docs/DEPLOY_RENDER.md`（如存在） |
+| Fly.io | [`docs/fly-io-环境变量.md`](./docs/fly-io-环境变量.md) |
+| 运维命令 | `make help`（在 supports/ 下执行） |
 
 ---
 
-## 🔐 安全与凭据
+## 🔐 安全
 
-- **Fly 生产**：`API_KEYS`、`GITHUB_TOKENS` 等通过 `fly secrets set` 注入，见 [`docs/fly-io-环境变量.md`](./docs/fly-io-环境变量.md)
-- **本地开发**：各子项目 `.env`（gitignore），用 `make fly-secrets-all` 可同步到 Fly
-- **客户端 baked-in Key**：`Configs/Secrets.xcconfig` → `make setup-production-api-keys`（Starcat 主仓库）
-- **绝不要**把真实 API Key / GitHub Token 提交到 git
-
----
-
-## 🔄 升级与同步
-
-这两个子仓库**独立发版**，主 Starcat 通过 HTTP 契约解耦。修改 API 时：
-
-1. **加新字段** → 兼容（旧客户端忽略未知字段）
-2. **删字段 / 改语义** → 必须先升 Starcat 端代码再升服务端（或留双版本过渡）
-3. **改路径 / 改方法** → 不允许（破坏性变更），必须新建 endpoint + 旧 endpoint 至少保留一个 release cycle
+- **Fly 生产**：`API_KEYS`、`GITHUB_TOKENS` 通过 `fly secrets set` 注入
+- **本地开发**：各项目 `.env`（gitignore），跨机器用 `scripts/sync-untracked.sh` 同步
+- **绝不要**把真实 API Key / Token 提交到 git
 
 ---
 
 ## 📚 相关文档
 
-- [Starcat 主仓库 CLAUDE.md](../CLAUDE.md)
-- [Starcat 概要设计](../docs/1-立项/概要设计.md)
-- [Starcat 详细设计索引](../docs/3-设计/详细设计/README.md)
-- 各子仓库 README：
-  - [`starcat-sharing-api/README.md`](./starcat-sharing-api/README.md)
-  - [`starcat-trending-api/README.md`](./starcat-trending-api/README.md)
-  - [`starcat-recommend-api/README.md`](./starcat-recommend-api/README.md)
-  - [`starcat-discovery-api/README.md`](./starcat-discovery-api/README.md)
-
----
-
-*最后更新：2026-06-08 — 端口约定 5001/5002，初始集成文档*
+- [`SYNC.md`](./SYNC.md) — 文件同步说明（git 管理 vs 跨机器同步）
+- [主仓库 CLAUDE.md](../CLAUDE.md)
+- [supports/CLAUDE.md](./CLAUDE.md)
+- [supports/AGENTS.md](./AGENTS.md)
