@@ -747,6 +747,11 @@ private struct FirstRunOnboardingStepPanel: View {
     let step: FirstRunOnboardingStep
     let reduceMotion: Bool
 
+    private let narrativeWidth: CGFloat = 430
+    private let horizontalPreviewWidth: CGFloat = 640
+    private let horizontalPreviewHeight: CGFloat = 420
+    private let verticalPreviewHeight: CGFloat = 320
+
     @State private var revealPhase = RevealPhase.hidden
 
     private enum RevealPhase: Int, Comparable {
@@ -763,10 +768,10 @@ private struct FirstRunOnboardingStepPanel: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 44) {
                 narrativeColumn(alignment: .leading, textAlignment: .leading, chipAlignment: .leading)
-                    .frame(width: 430, alignment: .leading)
+                    .frame(width: narrativeWidth, alignment: .leading)
 
                 screenshotPreview
-                    .frame(width: 560, height: 330)
+                    .frame(width: horizontalPreviewWidth, height: horizontalPreviewHeight)
             }
 
             VStack(spacing: 24) {
@@ -775,7 +780,7 @@ private struct FirstRunOnboardingStepPanel: View {
 
                 screenshotPreview
                     .frame(maxWidth: 560)
-                    .frame(height: 280)
+                    .frame(height: verticalPreviewHeight)
             }
         }
         .padding(.horizontal, 44)
@@ -940,6 +945,7 @@ private struct OnboardingScreenshotPreview: View {
             } else {
                 fallbackPreview
                     .padding(22)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(

@@ -637,10 +637,16 @@ private struct GettingStartedCoachMark: View {
             )
         case .below:
             return CGPoint(
-                x: step.id == .useSearch ? targetFrame.midX : (targetFrame.midX + bubblePosition.x) / 2,
+                // 搜索和加入知识库都是小图标入口：箭头必须对准图标中心，不能被宽胶囊的
+                // clamp 位置拉到相邻按钮上。
+                x: locksArrowToTargetCenter ? targetFrame.midX : (targetFrame.midX + bubblePosition.x) / 2,
                 y: (targetFrame.maxY + bubblePosition.y - bubbleHeight / 2) / 2
             )
         }
+    }
+
+    private var locksArrowToTargetCenter: Bool {
+        step.id == .useSearch || step.id == .addRepoToLibrary
     }
 
     var body: some View {
