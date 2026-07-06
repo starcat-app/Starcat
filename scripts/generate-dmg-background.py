@@ -9,6 +9,7 @@ hand.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -46,14 +47,33 @@ def load_title_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def draw_gradient(draw: ImageDraw.ImageDraw) -> None:
-    """Paint a light vertical gradient to avoid a flat white installer window."""
+    """Paint a layered light gradient to avoid a flat white installer window."""
 
     for y in range(CANVAS_HEIGHT):
-        t = y / (CANVAS_HEIGHT - 1)
-        red = int(252 * (1 - t) + 235 * t)
-        green = int(253 * (1 - t) + 239 * t)
-        blue = int(254 * (1 - t) + 245 * t)
-        draw.line([(0, y), (CANVAS_WIDTH, y)], fill=(red, green, blue))
+        vertical = y / (CANVAS_HEIGHT - 1)
+        for x in range(CANVAS_WIDTH):
+            horizontal = x / (CANVAS_WIDTH - 1)
+            # Slightly warm upper-left, slightly cool lower-right. The range is
+            # deliberately small so Finder icons and labels stay dominant.
+            red = 252 - int(18 * vertical) - int(3 * horizontal)
+            green = 253 - int(14 * vertical) - int(2 * horizontal)
+            blue = 255 - int(9 * vertical) + int(5 * horizontal)
+            draw.point((x, y), fill=(red, green, blue))
+
+
+def draw_ripples(image: Image.Image) -> Image.Image:
+    """Add low-contrast wave lines for texture without competing with icons."""
+
+    ripples = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(ripples)
+    for index, y in enumerate((118, 166, 214, 264, 314, 364)):
+        points = []
+        for x in range(-40, CANVAS_WIDTH + 41, 8):
+            wave = 10 if index % 2 == 0 else -10
+            offset = wave * math.sin((x + index * 34) / 62)
+            points.append((x, y + offset))
+        draw.line(points, fill=(102, 127, 154, 18), width=2)
+    return Image.alpha_composite(image.convert("RGBA"), ripples.filter(ImageFilter.GaussianBlur(0.4)))
 
 
 def draw_isometric_floor(image: Image.Image) -> Image.Image:
@@ -88,6 +108,17 @@ def draw_top_highlight(image: Image.Image) -> Image.Image:
     draw = ImageDraw.Draw(highlight)
     draw.ellipse((-120, -220, CANVAS_WIDTH + 120, 225), fill=(255, 255, 255, 76))
     return Image.alpha_composite(image, highlight)
+
+
+def draw_accent_glow(image: Image.Image) -> Image.Image:
+    """Blend quiet color glows into the background for a more premium surface."""
+
+    glow = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(glow)
+    draw.ellipse((-120, 40, 340, 430), fill=(122, 196, 255, 38))
+    draw.ellipse((480, 80, 960, 500), fill=(255, 205, 128, 26))
+    draw.ellipse((250, 210, 590, 560), fill=(148, 117, 255, 18))
+    return Image.alpha_composite(image.convert("RGBA"), glow.filter(ImageFilter.GaussianBlur(44)))
 
 
 def draw_title(image: Image.Image) -> None:
@@ -139,15 +170,29 @@ def draw_arrow(image: Image.Image) -> None:
     )
 
 
+def draw_footer(image: Image.Image) -> None:
+    """Draw the one-line product promise in the bottom safe area."""
+
+    draw = ImageDraw.Draw(image)
+    font = load_title_font(15)
+    text = "Reacquaint yourself with each project you've starred"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((CANVAS_WIDTH - text_width) / 2, 438), text, font=font, fill=(118, 124, 132))
+
+
 def main() -> None:
     image = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), (248, 249, 251))
     draw_gradient(ImageDraw.Draw(image))
+    image = draw_accent_glow(image)
+    image = draw_ripples(image)
     image = draw_isometric_floor(image)
     image = draw_top_highlight(image)
     draw_title(image)
     image = draw_panel(image, LEFT_PANEL_X)
     image = draw_panel(image, RIGHT_PANEL_X)
     draw_arrow(image)
+    draw_footer(image)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     image.convert("RGB").save(OUTPUT_PATH, optimize=True)
