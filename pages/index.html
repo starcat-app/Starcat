@@ -76,6 +76,16 @@
                 transition-duration: 0.01ms !important;
             }
             html { scroll-behavior: auto; }
+            body.is-loading .hero-logo,
+            body.is-loading .hero-tagline,
+            body.is-loading .hero-desc,
+            body.is-loading .hero-actions,
+            body.is-loading .hero-version-note,
+            body.is-loading .hero-banner img {
+                opacity: 1 !important;
+                filter: none !important;
+                transform: none !important;
+            }
         }
 
         a { color: inherit; text-decoration: none; }
@@ -182,20 +192,27 @@
         .hero-glow--green { width: 600px; height: 600px; background: #7DD3FC; top: -200px; right: -100px; }
         .hero-glow--blue { width: 500px; height: 500px; background: #F5D06F; bottom: -200px; left: -150px; }
         .hero-content { position: relative; z-index: var(--z-content); text-align: center; max-width: 1120px; }
-        .hero-logo { width: 76px; height: 76px; border-radius: 20px; margin-bottom: 22px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32); transition: transform var(--duration-slow) var(--ease-out); }
+        .hero-logo { width: 76px; height: 76px; border-radius: 20px; margin-bottom: 22px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32); transition: opacity 0.75s var(--ease-out), transform 0.85s var(--ease-out); }
         .hero-logo:hover { transform: scale(1.05); }
-        .hero-tagline { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif; font-size: var(--fs-hero); font-weight: 750; line-height: 1.05; letter-spacing: 0; margin-bottom: 20px; }
+        .hero-tagline { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif; font-size: var(--fs-hero); font-weight: 750; line-height: 1.05; letter-spacing: 0; margin-bottom: 20px; transition: opacity 0.72s var(--ease-out), transform 0.72s var(--ease-out); transition-delay: 70ms; }
         .hero-tagline .highlight { background: linear-gradient(135deg, #FFFFFF 0%, #BFEAFF 50%, #F5D06F 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .hero-desc { font-size: var(--fs-h3); font-weight: 400; color: var(--color-text-secondary); max-width: 560px; margin: 0 auto 30px; line-height: 1.6; }
-        .hero-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
+        .hero-desc { font-size: var(--fs-h3); font-weight: 400; color: var(--color-text-secondary); max-width: 560px; margin: 0 auto 30px; line-height: 1.6; transition: opacity 0.72s var(--ease-out), transform 0.72s var(--ease-out); transition-delay: 140ms; }
+        .hero-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; transition: opacity 0.72s var(--ease-out), transform 0.72s var(--ease-out); transition-delay: 210ms; }
         .hero-banner { position: relative; max-width: 1120px; margin: 36px auto 0; border-radius: 24px; overflow: hidden; padding: 0; box-shadow: 0 46px 110px rgba(0, 0, 0, 0.44); }
-        .hero-banner img { display: block; width: 100%; height: auto; border-radius: inherit; }
+        .hero-banner img { display: block; width: 100%; height: auto; border-radius: inherit; transition: opacity 0.9s var(--ease-out), filter 1s var(--ease-out), transform 1s var(--ease-out); transition-delay: 280ms; }
         .hero-badges { display: flex; align-items: center; justify-content: center; gap: 40px; margin-top: 44px; flex-wrap: wrap; }
         .hero-badge { text-align: center; }
         .hero-badge-value { font-size: 24px; font-weight: 700; color: var(--color-text); }
         .hero-badge-label { font-size: var(--fs-caption); color: var(--color-text-muted); margin-top: 4px; }
-        .hero-version-note { display: inline-flex; align-items: center; gap: 8px; margin-top: 22px; padding: 9px 14px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); background: rgba(255, 255, 255, 0.045); font-size: var(--fs-caption); }
+        .hero-version-note { display: inline-flex; align-items: center; gap: 8px; margin-top: 22px; padding: 9px 14px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); background: rgba(255, 255, 255, 0.045); font-size: var(--fs-caption); transition: opacity 0.72s var(--ease-out), transform 0.72s var(--ease-out); transition-delay: 360ms; }
         .hero-version-note .lucide { width: 14px; height: 14px; color: var(--color-cta); }
+        body.is-loading .hero-logo { opacity: 0; transform: scale(1.28) translateY(-10px); }
+        body.is-loading .hero-logo:hover { transform: scale(1.28) translateY(-10px); }
+        body.is-loading .hero-tagline,
+        body.is-loading .hero-desc,
+        body.is-loading .hero-actions,
+        body.is-loading .hero-version-note { opacity: 0; transform: translateY(16px); }
+        body.is-loading .hero-banner img { opacity: 0; filter: blur(18px); transform: scale(1.035); }
         @media (max-width: 767px) {
             .hero-logo { width: 72px; height: 72px; }
             .hero-actions { flex-direction: column; }
@@ -327,11 +344,14 @@
         /* ==================================================================
          * 9. FAQ + Final CTA
          * ================================================================== */
-        .faq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-        .faq-item { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 16px; padding: 22px; }
-        .faq-item summary { cursor: pointer; list-style: none; font-size: var(--fs-small); font-weight: 700; color: var(--color-text); }
+        .faq-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        .faq-item { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 16px; transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out); }
+        .faq-item:hover { border-color: var(--color-border-hover); background: rgba(255, 255, 255, 0.075); }
+        .faq-item summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; cursor: pointer; list-style: none; padding: 22px 24px; font-size: var(--fs-small); font-weight: 700; color: var(--color-text); }
         .faq-item summary::-webkit-details-marker { display: none; }
-        .faq-item p { margin-top: 12px; color: var(--color-text-secondary); font-size: var(--fs-small); line-height: 1.65; }
+        .faq-item summary::after { content: ''; width: 9px; height: 9px; border-right: 2px solid var(--color-text-muted); border-bottom: 2px solid var(--color-text-muted); transform: rotate(45deg); transition: transform var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); flex-shrink: 0; }
+        .faq-item[open] summary::after { transform: rotate(-135deg) translate(-2px, -2px); border-color: var(--color-cta); }
+        .faq-item p { padding: 0 24px 22px; color: var(--color-text-secondary); font-size: var(--fs-small); line-height: 1.65; }
         .final-cta { padding-top: 0; }
         .final-cta-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 36px; border: 1px solid var(--color-border); border-radius: 24px; background: radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.14), transparent 34%), var(--color-bg-glass); }
         .final-cta-title { font-size: var(--fs-h2); font-weight: 750; line-height: 1.2; margin-bottom: 10px; }
@@ -341,16 +361,24 @@
         /* ==================================================================
          * 10. Footer
          * ================================================================== */
-        .footer { padding: 60px 24px 40px; border-top: 1px solid var(--color-border); position: relative; z-index: var(--z-content); }
-        .footer-inner { max-width: var(--content-max); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px; }
-        .footer-brand { display: flex; align-items: center; gap: 10px; }
-        .footer-logo { width: 24px; height: 24px; border-radius: 6px; }
+        .footer { padding: 72px 24px 40px; border-top: 1px solid var(--color-border); position: relative; z-index: var(--z-content); }
+        .footer-inner { max-width: var(--content-max); margin: 0 auto; }
+        .footer-main { display: grid; grid-template-columns: minmax(220px, 1.2fr) repeat(4, minmax(140px, 1fr)); gap: 42px; align-items: flex-start; }
+        .footer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+        .footer-logo { width: 80px; height: 80px; border-radius: 10px; }
         .footer-name { font-size: var(--fs-small); font-weight: 700; }
-        .footer-copyright { font-size: var(--fs-caption); color: var(--color-text-muted); }
-        .footer-links { display: flex; align-items: center; gap: 24px; }
-        .footer-link { font-size: var(--fs-caption); color: var(--color-text-secondary); transition: color var(--duration-fast) var(--ease-out); cursor: pointer; }
+        .footer-desc { max-width: 280px; color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.65; }
+        .footer-heading { margin-bottom: 14px; color: var(--color-text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+        .footer-list { display: flex; flex-direction: column; gap: 10px; }
+        .footer-link { font-size: var(--fs-small); color: var(--color-text-secondary); transition: color var(--duration-fast) var(--ease-out); }
+        .footer-link { cursor: pointer; }
         .footer-link:hover { color: var(--color-text); }
-        @media (max-width: 767px) { .footer-inner { flex-direction: column; text-align: center; } }
+        .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 44px; padding-top: 28px; border-top: 1px solid var(--color-border); }
+        .footer-copyright { font-size: var(--fs-caption); color: var(--color-text-muted); }
+        .footer-meta { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+        .footer-meta .footer-link { font-size: var(--fs-caption); }
+        @media (max-width: 1023px) { .footer-main { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 767px) { .footer-main { grid-template-columns: 1fr; gap: 30px; } .footer-bottom { align-items: flex-start; flex-direction: column; } }
 
         /* ==================================================================
          * Scroll Fade-in Animation
@@ -359,7 +387,7 @@
         .fade-in.visible { opacity: 1; transform: translateY(0); }
     </style>
 </head>
-<body>
+<body class="is-loading">
 
     <!-- Navigation -->
     <nav class="nav" id="nav" role="navigation" aria-label="Main navigation">
@@ -424,7 +452,7 @@
             </div>
             <div class="hero-version-note">
                 <i data-lucide="monitor"></i>
-                Current release supports macOS 15+ only and ships as an Apple Silicon Direct download.
+                Current release supports macOS 15+ and ships as an Apple Silicon Direct download.
             </div>
         </div>
     </section>
@@ -764,7 +792,7 @@
                 Starcat is currently focused on macOS. Here are the platform, data, and AI boundaries.
             </p>
             <div class="faq-grid">
-                <details class="faq-item fade-in" open>
+                <details class="faq-item fade-in">
                     <summary>Which systems does Starcat support?</summary>
                     <p>Starcat currently supports macOS 15 and later only. The Direct download is intended for Apple Silicon Macs. There are no iOS, iPadOS, watchOS, Windows, or Android builds today.</p>
                 </details>
@@ -839,9 +867,9 @@
                         This is the macOS Direct build with Sparkle update support. Future Direct releases can update in app.
                     </p>
                     <div class="download-trust">
-                        <div class="download-trust-item"><i data-lucide="monitor"></i> macOS 15+ only</div>
+                        <div class="download-trust-item"><i data-lucide="monitor"></i> macOS 15+</div>
                         <div class="download-trust-item"><i data-lucide="cpu"></i> Apple Silicon</div>
-                        <div class="download-trust-item"><i data-lucide="sparkles"></i> Sparkle updates</div>
+                        <div class="download-trust-item"><i data-lucide="sparkles"></i> Sparkle</div>
                     </div>
                     <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-link>
                         <span class="icon-16"><i data-lucide="download"></i></span>
@@ -862,22 +890,85 @@
     <!-- Footer -->
     <footer class="footer" role="contentinfo">
         <div class="footer-inner">
-            <div class="footer-brand">
-                <img src="starcat-logo.png" alt="Starcat Logo" class="footer-logo" width="24" height="24">
-                <span class="footer-name">Starcat</span>
+            <div class="footer-main">
+                <div>
+                    <div class="footer-brand">
+                        <img src="starcat-logo.png" alt="Starcat Logo" class="footer-logo" width="40" height="40">
+                        <span class="footer-name">Starcat</span>
+                    </div>
+                    <p class="footer-desc">Turn GitHub Stars into a searchable local-first knowledge base for focused macOS workflows.</p>
+                </div>
+                <div>
+                    <div class="footer-heading">Product</div>
+                    <div class="footer-list">
+                        <a href="#features" class="footer-link">Features</a>
+                        <a href="#tech" class="footer-link">Tech Stack</a>
+                        <a href="#pricing" class="footer-link">Availability</a>
+                        <a href="#faq" class="footer-link">FAQ</a>
+                        <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="footer-link" data-download-open>Download</a>
+                    </div>
+                </div>
+                <div>
+                    <div class="footer-heading">Platform APIs</div>
+                    <div class="footer-list">
+                        <a href="https://github.com/dong4j/starcat-sharing-api" class="footer-link" target="_blank" rel="noopener noreferrer">Sharing API</a>
+                        <a href="https://github.com/dong4j/starcat-trending-api" class="footer-link" target="_blank" rel="noopener noreferrer">Trending API</a>
+                        <a href="https://github.com/dong4j/starcat-weekly-api" class="footer-link" target="_blank" rel="noopener noreferrer">Weekly API</a>
+                        <a href="https://github.com/dong4j/starcat-wiki-api" class="footer-link" target="_blank" rel="noopener noreferrer">Wiki API</a>
+                        <a href="https://github.com/dong4j/starcat-recommend-api" class="footer-link" target="_blank" rel="noopener noreferrer">Recommend API</a>
+                        <a href="https://github.com/dong4j/starcat-discovery-api" class="footer-link" target="_blank" rel="noopener noreferrer">Discovery API</a>
+                    </div>
+                </div>
+                <div>
+                    <div class="footer-heading">Ecosystem</div>
+                    <div class="footer-list">
+                        <a href="https://github.com/dong4j/Starcat/issues" class="footer-link" target="_blank" rel="noopener noreferrer">Issues</a>
+                        <a href="https://github.com/dong4j/starcat-localization" class="footer-link" target="_blank" rel="noopener noreferrer">Localization</a>
+                        <a href="https://github.com/dong4j/homebrew-starcat" class="footer-link" target="_blank" rel="noopener noreferrer">Homebrew Tap</a>
+                        <a href="https://github.com/dong4j/starcat-chrome-plugin" class="footer-link" target="_blank" rel="noopener noreferrer">Chrome Plugin</a>
+                        <a href="https://github.com/dong4j/starcat-safari-plugin" class="footer-link" target="_blank" rel="noopener noreferrer">Safari Plugin</a>
+                    </div>
+                </div>
+                <div>
+                    <div class="footer-heading">Resources</div>
+                    <div class="footer-list">
+                        <a href="changelog.html" class="footer-link">Changelog</a>
+                        <a href="privacy.html" class="footer-link">Privacy Policy</a>
+                        <a href="eula.html" class="footer-link">EULA</a>
+                        <a href="mailto:support@starcat.app" class="footer-link">Contact</a>
+                        <a href="./index-zh.html" class="footer-link">中文</a>
+                    </div>
+                </div>
             </div>
-            <div class="footer-copyright">&copy; 2026 Starcat. All rights reserved.</div>
-            <div class="footer-links">
-                <a href="privacy.html" class="footer-link">Privacy Policy</a>
-                <a href="eula.html" class="footer-link">EULA</a>
-                <a href="changelog.html" class="footer-link">Changelog</a>
-                <a href="mailto:support@starcat.app" class="footer-link">Contact</a>
+            <div class="footer-bottom">
+                <div class="footer-copyright">&copy; 2026 Starcat. All rights reserved.</div>
+                <div class="footer-meta">
+                    <a href="privacy.html" class="footer-link">Privacy</a>
+                    <a href="eula.html" class="footer-link">EULA</a>
+                    <a href="changelog.html" class="footer-link">Changelog</a>
+                    <a href="mailto:support@starcat.app" class="footer-link">Contact</a>
+                </div>
             </div>
         </div>
     </footer>
 
     <!-- Scripts: Particles + Scroll + Icons -->
     <script>
+        (function() {
+            const settle = () => document.body.classList.remove('is-loading');
+            const scheduleSettle = () => window.setTimeout(settle, 120);
+            const heroImage = document.querySelector('.hero-banner img');
+            if (heroImage?.complete) {
+                scheduleSettle();
+            } else if (heroImage) {
+                heroImage.addEventListener('load', scheduleSettle, { once: true });
+                heroImage.addEventListener('error', scheduleSettle, { once: true });
+                window.setTimeout(settle, 1400);
+            } else {
+                scheduleSettle();
+            }
+        })();
+
         (function() {
             const canvas = document.getElementById('heroCanvas');
             if (!canvas) return;
