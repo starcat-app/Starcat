@@ -9,6 +9,7 @@
 //  拿不到或只适合调试的检索内部字段。
 //
 
+import AppKit
 import SwiftUI
 
 struct KnowledgeRAGWorkspaceView: View {
@@ -21,6 +22,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var selectedConversationID: RAGDemoConversation.ID = RAGDemoData.conversations[0].id
     @State private var selectedCitationID: RAGDemoCitation.ID = RAGDemoData.citations[0].id
     @State private var draftQuestion: String = ""
+    @State private var draftQuestionEditorHeight = RAGComposerEditorMetrics.defaultHeight
     @State private var isStreaming: Bool = true
     @State private var didSendDemoQuestion: Bool = false
 
@@ -496,14 +498,13 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var ragComposerInputBox: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("继续追问知识库...", text: $draftQuestion, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(ragFont(.body))
-                .lineLimit(2...6)
-                // 首次聚焦时纵向 TextField 可能只按 intrinsic width 排版。
-                // 显式占满父容器，避免还没到输入框右边就提前换行。
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
-                .onSubmit(sendDemoQuestion)
+            RAGComposerTextEditor(
+                text: $draftQuestion,
+                placeholder: "继续追问知识库...",
+                onHeightChange: { draftQuestionEditorHeight = $0 },
+                onSubmit: sendDemoQuestion
+            )
+            .frame(maxWidth: .infinity, minHeight: draftQuestionEditorHeight, maxHeight: draftQuestionEditorHeight)
 
             HStack(spacing: 8) {
                 Spacer()
@@ -790,5 +791,168 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private func ragIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         interfaceScale.font(size: size, weight: weight)
+    }
+}
+
+private struct RAGComposerTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let onHeightChange: (CGFloat) -> Void
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> RAGComposerIntrinsicScrollView {
+        let scrollView = RAGComposerIntrinsicScrollView()
+        let textView = RAGComposerNSTextView()
+
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.textContainerInset = NSSize(width: 0, height: 2)
+        textView.textContainer?.lineFragmentPadding = 0
+        // 这里是本次修复的关键：RAG 第一次打开时 SwiftUI 纵向 TextField
+        // 会用错误的 text container 宽度换行；NSTextView 明确跟随可视宽度后不会出现预热差异。
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.placeholder = placeholder
+        textView.setAccessibilityLabel(placeholder)
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.onHeightChange = onHeightChange
+        scrollView.connect(textView: textView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: RAGComposerIntrinsicScrollView, context: Context) {
+        context.coordinator.parent = self
+        scrollView.onHeightChange = onHeightChange
+        guard let textView = scrollView.documentView as? RAGComposerNSTextView else { return }
+
+        if textView.string != text {
+            textView.string = text
+            textView.needsDisplay = true
+            scrollView.textDidChange()
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: RAGComposerTextEditor
+
+        init(parent: RAGComposerTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+            textView.needsDisplay = true
+            (textView.enclosingScrollView as? RAGComposerIntrinsicScrollView)?.textDidChange()
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            if modifiers.contains(.shift) {
+                textView.insertNewlineIgnoringFieldEditor(nil)
+            } else {
+                parent.onSubmit()
+            }
+            return true
+        }
+    }
+}
+
+private enum RAGComposerEditorMetrics {
+    static let minimumLines: CGFloat = 2
+    static let maximumLines: CGFloat = 6
+    static let verticalInset: CGFloat = 4
+
+    static var defaultHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        return ceil(NSLayoutManager().defaultLineHeight(for: font) * minimumLines + verticalInset)
+    }
+}
+
+private final class RAGComposerIntrinsicScrollView: NSScrollView {
+    private weak var managedTextView: NSTextView?
+    private var measuredHeight = RAGComposerEditorMetrics.defaultHeight
+    var onHeightChange: ((CGFloat) -> Void)?
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: measuredHeight)
+    }
+
+    override func layout() {
+        super.layout()
+        guard let textView = managedTextView else { return }
+        let availableWidth = contentSize.width
+        if abs(textView.frame.width - availableWidth) >= 0.5 {
+            textView.setFrameSize(NSSize(width: availableWidth, height: max(textView.frame.height, measuredHeight)))
+            textDidChange()
+        }
+    }
+
+    func connect(textView: NSTextView) {
+        managedTextView = textView
+        textDidChange()
+    }
+
+    func textDidChange() {
+        guard let textView = managedTextView,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? .systemFont(ofSize: NSFont.systemFontSize))
+        let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
+        let minimumHeight = lineHeight * RAGComposerEditorMetrics.minimumLines + RAGComposerEditorMetrics.verticalInset
+        let maximumHeight = lineHeight * RAGComposerEditorMetrics.maximumLines + RAGComposerEditorMetrics.verticalInset
+        let nextHeight = min(max(contentHeight, minimumHeight), maximumHeight)
+        let documentHeight = max(contentHeight, nextHeight)
+
+        if abs(textView.frame.height - documentHeight) >= 0.5 {
+            textView.setFrameSize(NSSize(width: textView.frame.width, height: documentHeight))
+        }
+        guard abs(nextHeight - measuredHeight) >= 0.5 else { return }
+        measuredHeight = nextHeight
+        invalidateIntrinsicContentSize()
+        DispatchQueue.main.async { [weak self] in
+            self?.onHeightChange?(nextHeight)
+        }
+    }
+}
+
+private final class RAGComposerNSTextView: NSTextView {
+    var placeholder = ""
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.placeholderTextColor
+        ]
+        placeholder.draw(
+            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
+            withAttributes: attributes
+        )
     }
 }
