@@ -4,12 +4,12 @@
         <title>Starcat</title>
         <item>
             <title>1.1.0</title>
-            <pubDate>Sun, 05 Jul 2026 19:33:18 +0800</pubDate>
-            <sparkle:version>202607051928</sparkle:version>
+            <pubDate>Mon, 06 Jul 2026 23:58:09 +0800</pubDate>
+            <sparkle:version>202607062353</sparkle:version>
             <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg" length="92912219" type="application/octet-stream" sparkle:edSignature="PJ2Z5o5R2oQWqrA2l86jDJ3HLjtMvPoe3St5wiV5tgoIjWUi6eWP/DF9lh6eDZ3AbfrNz+HeeF+kdCkW3/MjCw=="/>
+            <enclosure url="https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg" length="82103047" type="application/octet-stream" sparkle:edSignature="P8+OnrYAbWpJToZBrXl2owY+ohvmXUOdDaPaQTvzjAT2wZifQHXX1HaBh8jtwHOdNtvcXnnfE2oBDVzgSktuBg=="/>
         </item>
     </channel>
 </rss>
