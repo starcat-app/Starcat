@@ -9,7 +9,6 @@
 //  拿不到或只适合调试的检索内部字段。
 //
 
-import AppKit
 import SwiftUI
 
 struct KnowledgeRAGWorkspaceView: View {
@@ -17,16 +16,13 @@ struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    let onClose: () -> Void
+    let chromeState: WorkspaceChromeState
 
     @State private var selectedConversationID: RAGDemoConversation.ID = RAGDemoData.conversations[0].id
     @State private var selectedCitationID: RAGDemoCitation.ID = RAGDemoData.citations[0].id
     @State private var draftQuestion: String = ""
     @State private var isStreaming: Bool = true
     @State private var didSendDemoQuestion: Bool = false
-    @State private var isWindowPinned: Bool = false
-    @State private var isConversationRailCollapsed: Bool = false
-    @State private var isCitationInspectorCollapsed: Bool = false
 
     private var selectedCitation: RAGDemoCitation {
         RAGDemoData.citations.first { $0.id == selectedCitationID } ?? RAGDemoData.citations[0]
@@ -34,14 +30,14 @@ struct KnowledgeRAGWorkspaceView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !isConversationRailCollapsed {
+            if !chromeState.isLeftColumnCollapsed {
                 conversationRail
                     .frame(width: 318)
                 Divider()
             }
             answerSurface
                 .layoutPriority(1)
-            if !isCitationInspectorCollapsed {
+            if !chromeState.isRightColumnCollapsed {
                 Divider()
                 citationInspector
                     .frame(minWidth: 390, idealWidth: 420, maxWidth: 460)
@@ -52,8 +48,8 @@ struct KnowledgeRAGWorkspaceView: View {
         .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isConversationRailCollapsed)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isCitationInspectorCollapsed)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }
 
     // MARK: - Conversation Rail
@@ -246,22 +242,6 @@ struct KnowledgeRAGWorkspaceView: View {
             headerChip("GPT-4.1", systemImage: "sparkles", tint: .purple)
             headerChip(isStreaming ? "Streaming" : "Ready", systemImage: "dot.radiowaves.left.and.right", tint: .green)
 
-            workspaceColumnButton(
-                systemImage: isConversationRailCollapsed ? "rectangle.leftthird.inset.filled" : "rectangle.leftthird.inset",
-                isCollapsed: isConversationRailCollapsed,
-                help: isConversationRailCollapsed ? "显示左侧会话栏" : "隐藏左侧会话栏"
-            ) {
-                isConversationRailCollapsed.toggle()
-            }
-
-            workspaceColumnButton(
-                systemImage: isCitationInspectorCollapsed ? "rectangle.rightthird.inset.filled" : "rectangle.rightthird.inset",
-                isCollapsed: isCitationInspectorCollapsed,
-                help: isCitationInspectorCollapsed ? "显示右侧引用栏" : "隐藏右侧引用栏"
-            ) {
-                isCitationInspectorCollapsed.toggle()
-            }
-
             Button(action: { isStreaming.toggle() }) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(ragIconFont(size: 14, weight: .medium))
@@ -274,24 +254,6 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 13)
-    }
-
-    private func workspaceColumnButton(
-        systemImage: String,
-        isCollapsed: Bool,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(ragIconFont(size: 14, weight: .medium))
-                .frame(width: 28, height: 28)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(isCollapsed ? Color.accentColor : .secondary)
-        .background(isCollapsed ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-        .help(help)
     }
 
     private func headerChip(_ text: String, systemImage: String, tint: Color) -> some View {
@@ -518,44 +480,56 @@ struct KnowledgeRAGWorkspaceView: View {
                 Spacer()
             }
 
-            HStack(spacing: 10) {
+            ragComposerInputBox
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var ragComposerInputBox: some View {
+        ZStack(alignment: .bottomTrailing) {
+            TextField("继续追问知识库...", text: $draftQuestion, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(ragFont(.body))
+                .lineLimit(2...6)
+                .frame(minHeight: 44, alignment: .topLeading)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 42)
+                .onSubmit(sendDemoQuestion)
+
+            HStack(spacing: 8) {
                 Button {} label: {
                     Image(systemName: "paperclip")
-                        .font(ragIconFont(size: 16, weight: .medium))
-                        .frame(width: 28, height: 28)
+                        .font(ragIconFont(size: 13, weight: .medium))
+                        .frame(width: 26, height: 26)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .foregroundStyle(.secondary)
 
-                TextField("继续追问知识库...", text: $draftQuestion)
-                    .textFieldStyle(.plain)
-                    .font(ragFont(.body))
-                    .onSubmit(sendDemoQuestion)
-
                 Button(action: sendDemoQuestion) {
-                    Image(systemName: "arrow.up")
-                        .font(ragIconFont(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Color.accentColor, in: Circle())
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(ragIconFont(size: 21, weight: .semibold))
+                        .foregroundStyle(ragComposerSendDisabled ? .secondary : Color.accentColor)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .disabled(draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.55 : 1)
+                .disabled(ragComposerSendDisabled)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .padding(.trailing, 12)
+            .padding(.bottom, 10)
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var ragComposerSendDisabled: Bool {
+        draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func composerChip(_ text: String, systemImage: String) -> some View {
@@ -606,27 +580,9 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
-                toggleWindowPinned()
-            } label: {
-                Image(systemName: isWindowPinned ? "pin.fill" : "pin")
-                    .font(ragIconFont(size: 14, weight: .medium))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(isWindowPinned ? Color.accentColor : .secondary)
-            .help(isWindowPinned ? "取消窗口置顶" : "置顶窗口")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-    }
-
-    private func toggleWindowPinned() {
-        guard let window = NSApp.keyWindow else { return }
-        let nextPinned = !isWindowPinned
-        window.level = nextPinned ? .floating : .normal
-        isWindowPinned = nextPinned
     }
 
     private var selectedCitationSummary: some View {

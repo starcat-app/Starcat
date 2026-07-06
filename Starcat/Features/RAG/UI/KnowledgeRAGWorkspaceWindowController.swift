@@ -24,6 +24,7 @@ private enum KnowledgeRAGWorkspaceWindowMetrics {
 final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
     private static var shared: KnowledgeRAGWorkspaceWindowController?
+    private let chromeState: WorkspaceChromeState
 
     /// 显示知识库 RAG 工作台窗口。
     @MainActor
@@ -49,16 +50,17 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     }
 
     private init(dependencies: AppDependencies) {
-        let content = KnowledgeRAGWorkspaceView {
-            NSApp.keyWindow?.performClose(nil)
-        }
+        let chromeState = WorkspaceChromeState()
+        self.chromeState = chromeState
+
+        let content = KnowledgeRAGWorkspaceView(chromeState: chromeState)
         .appHostEnvironment(dependencies)
 
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
 
         window.title = "知识库问答"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize)
         window.contentMinSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
         window.minSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
@@ -67,6 +69,13 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.setFrameAutosaveName(KnowledgeRAGWorkspaceWindowMetrics.autosaveName)
+
+        let controls = NSTitlebarAccessoryViewController()
+        controls.layoutAttribute = .right
+        controls.view = NSHostingView(rootView: WorkspaceTitlebarControls(chromeState: chromeState) { [weak window] isPinned in
+            window?.level = isPinned ? .floating : .normal
+        })
+        window.addTitlebarAccessoryViewController(controls)
 
         super.init(window: window)
         window.delegate = self

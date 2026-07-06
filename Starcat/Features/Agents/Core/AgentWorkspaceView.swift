@@ -8,24 +8,20 @@
 //  和产出物数据；页面结构保持统一，避免 Weekly / 替代品 / 重叠扫描各自长出一套 UI。
 //
 
-import AppKit
 import SwiftUI
 
 struct AgentWorkspaceView: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
-    @State private var isWindowPinned: Bool = false
-    @State private var isAgentRailCollapsed: Bool = false
-    @State private var isArtifactInspectorCollapsed: Bool = false
-    let onClose: () -> Void
+    let chromeState: WorkspaceChromeState
 
     private let contextChips = ["@ 已选 24 repos", "Trending 本周", "AI Agent", "README 缓存"]
     private let artifactTabs = ["概览", "结构化结果", "证据", "行动", "日志"]
 
     var body: some View {
         HStack(spacing: 0) {
-            if !isAgentRailCollapsed {
+            if !chromeState.isLeftColumnCollapsed {
                 agentRail
                     .frame(width: 312)
                 Divider()
@@ -35,8 +31,8 @@ struct AgentWorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
-        .animation(.easeInOut(duration: 0.16), value: isAgentRailCollapsed)
-        .animation(.easeInOut(duration: 0.16), value: isArtifactInspectorCollapsed)
+        .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
+        .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }
 
     // MARK: - Agent Rail
@@ -203,7 +199,7 @@ struct AgentWorkspaceView: View {
                 }
                 .frame(minWidth: 460, idealWidth: 560)
                 .layoutPriority(1)
-                if !isArtifactInspectorCollapsed {
+                if !chromeState.isRightColumnCollapsed {
                     Divider()
                     artifactInspector
                         .frame(minWidth: 430, idealWidth: 520)
@@ -233,22 +229,6 @@ struct AgentWorkspaceView: View {
             headerPill("只读模式", icon: "lock")
             headerPill("预计 1 run", icon: "chart.bar.doc.horizontal")
 
-            workspaceColumnButton(
-                systemImage: isAgentRailCollapsed ? "rectangle.leftthird.inset.filled" : "rectangle.leftthird.inset",
-                isCollapsed: isAgentRailCollapsed,
-                help: isAgentRailCollapsed ? "显示左侧 Agent 列表" : "隐藏左侧 Agent 列表"
-            ) {
-                isAgentRailCollapsed.toggle()
-            }
-
-            workspaceColumnButton(
-                systemImage: isArtifactInspectorCollapsed ? "rectangle.rightthird.inset.filled" : "rectangle.rightthird.inset",
-                isCollapsed: isArtifactInspectorCollapsed,
-                help: isArtifactInspectorCollapsed ? "显示右侧产物面板" : "隐藏右侧产物面板"
-            ) {
-                isArtifactInspectorCollapsed.toggle()
-            }
-
             Button {
                 if viewModel.isRunning {
                     viewModel.cancel()
@@ -258,35 +238,9 @@ struct AgentWorkspaceView: View {
             }
             .controlSize(.small)
             .disabled(!viewModel.isRunning)
-
-            Button {
-                toggleWindowPinned()
-            } label: {
-                Label(isWindowPinned ? "取消置顶" : "置顶", systemImage: isWindowPinned ? "pin.fill" : "pin")
-            }
-            .controlSize(.small)
-            .help(isWindowPinned ? "取消窗口置顶" : "置顶窗口")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
-    }
-
-    private func workspaceColumnButton(
-        systemImage: String,
-        isCollapsed: Bool,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(agentIconFont(size: 14, weight: .medium))
-                .frame(width: 28, height: 28)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(isCollapsed ? Color.accentColor : .secondary)
-        .background(isCollapsed ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-        .help(help)
     }
 
     private func headerPill(_ text: String, icon: String) -> some View {
@@ -748,15 +702,7 @@ struct AgentWorkspaceView: View {
     // MARK: - Composer
 
     private var composer: some View {
-        VStack(spacing: 8) {
-            TextField("继续给 Agent 指令，或 @ 选择已 star repo，/ 调用技能与工具", text: $viewModel.prompt, axis: .vertical)
-                .font(agentFont(.body))
-                .textFieldStyle(.plain)
-                .lineLimit(2...5)
-                .disabled(viewModel.isRunning)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 composerMenu("Craft", icon: "wand.and.sparkles")
                 composerMenu("自动", icon: "arrow.triangle.branch")
@@ -764,9 +710,30 @@ struct AgentWorkspaceView: View {
                 composerMenu("只读", icon: "lock")
                 composerMenu("@ Repo", icon: "at")
                 Spacer()
-                composerIcon("plus")
-                composerIcon("sparkles")
-                composerIcon("mic")
+            }
+            .padding(.horizontal, 18)
+
+            agentComposerInputBox
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var agentComposerInputBox: some View {
+        ZStack(alignment: .bottomTrailing) {
+            TextField("继续给 Agent 指令，或 @ 选择已 star repo，/ 调用技能与工具", text: $viewModel.prompt, axis: .vertical)
+                .font(agentFont(.body))
+                .textFieldStyle(.plain)
+                .lineLimit(2...6)
+                .frame(minHeight: 44, alignment: .topLeading)
+                .disabled(viewModel.isRunning)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 42)
+
+            HStack(spacing: 8) {
+                composerActionIcon("paperclip")
+
                 Button {
                     viewModel.run()
                 } label: {
@@ -779,8 +746,8 @@ struct AgentWorkspaceView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(viewModel.isRunning || viewModel.selectedAgent?.isEnabled != true)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .padding(.trailing, 12)
+            .padding(.bottom, 10)
         }
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
@@ -788,15 +755,6 @@ struct AgentWorkspaceView: View {
                 .stroke(Color(nsColor: .separatorColor).opacity(0.44))
         )
         .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-    }
-
-    private func toggleWindowPinned() {
-        guard let window = NSApp.keyWindow else { return }
-        let nextPinned = !isWindowPinned
-        window.level = nextPinned ? .floating : .normal
-        isWindowPinned = nextPinned
     }
 
     private func composerMenu(_ title: String, icon: String) -> some View {
@@ -813,7 +771,7 @@ struct AgentWorkspaceView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
     }
 
-    private func composerIcon(_ icon: String) -> some View {
+    private func composerActionIcon(_ icon: String) -> some View {
         Button {
         } label: {
             Image(systemName: icon)

@@ -24,6 +24,7 @@ private enum AgentWorkspaceWindowMetrics {
 final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
     private static var shared: AgentWorkspaceWindowController?
+    private let chromeState: WorkspaceChromeState
 
     /// 显示 Agent 工作台窗口。
     @MainActor
@@ -49,16 +50,17 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
     }
 
     private init(dependencies: AppDependencies) {
-        let content = AgentWorkspaceView {
-            NSApp.keyWindow?.performClose(nil)
-        }
+        let chromeState = WorkspaceChromeState()
+        self.chromeState = chromeState
+
+        let content = AgentWorkspaceView(chromeState: chromeState)
         .appHostEnvironment(dependencies)
 
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
 
         window.title = "Agent 工作台"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(AgentWorkspaceWindowMetrics.defaultContentSize)
         window.contentMinSize = AgentWorkspaceWindowMetrics.minimumContentSize
         window.minSize = AgentWorkspaceWindowMetrics.minimumContentSize
@@ -67,6 +69,13 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.setFrameAutosaveName(AgentWorkspaceWindowMetrics.autosaveName)
+
+        let controls = NSTitlebarAccessoryViewController()
+        controls.layoutAttribute = .right
+        controls.view = NSHostingView(rootView: WorkspaceTitlebarControls(chromeState: chromeState) { [weak window] isPinned in
+            window?.level = isPinned ? .floating : .normal
+        })
+        window.addTitlebarAccessoryViewController(controls)
 
         super.init(window: window)
         window.delegate = self
