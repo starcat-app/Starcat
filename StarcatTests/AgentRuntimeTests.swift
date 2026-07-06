@@ -4,8 +4,8 @@
 //
 //  Agent 底座 runtime 的事件流测试。
 //
-//  这组测试先锁住 P0 deterministic runtime 的最小契约：一次 run 必须能启动、
-//  推进步骤、生成 Artifact 并正常完成。后续接入真实 tool-calling runtime 时，
+//  这组测试锁住 Agent Runtime 的最小契约：一次 run 必须能启动、推进只读工具、
+//  调用文本生成器、生成 Artifact 并正常完成。后续接入模型 tool-calling 时，
 //  Workspace 仍可以依赖同一组事件语义。
 //
 
@@ -78,7 +78,7 @@ struct AgentRuntimeTests {
         #expect(didStart)
         #expect(planStepCount == 3)
         #expect(completedStepCount == 4)
-        #expect(toolOutputCount == 5)
+        #expect(toolOutputCount == 4)
         #expect(traceCount == 6)
         #expect(assistantOutput.contains("Unit Test AI Output"))
         #expect(markdownArtifact?.type == .markdown)
@@ -86,7 +86,7 @@ struct AgentRuntimeTests {
         #expect(markdownArtifact?.content.contains("Unit Test") == true)
         #expect(logArtifact?.type == .log)
         #expect(logArtifact?.content.contains("DefaultAgentRuntime read-only tools") == true)
-        #expect(logArtifact?.content.contains("Tool output: report.clusterTopics") == true)
+        #expect(logArtifact?.content.contains("Tool output: artifact.buildMarkdown") == true)
         #expect(didComplete)
     }
 

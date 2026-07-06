@@ -246,8 +246,8 @@ struct AgentTraceSpan: Identifiable, Hashable, Sendable {
 
 /// Runtime 发给 Workspace 的事件。
 ///
-/// UI 只消费事件，不直接调用 Runtime 内部状态。这样未来把 P0 deterministic runtime
-/// 替换成 tool-calling runtime 或 AgentRunKit runtime 时，Workspace 不需要重写。
+/// UI 只消费事件，不直接调用 Runtime 内部状态。这样未来把本地 read-only tools
+/// 替换成模型 tool-calling runtime 或 AgentRunKit runtime 时，Workspace 不需要重写。
 enum AgentRunEvent: Sendable {
     case runStarted(title: String)
     case planCreated([AgentPlanStep])

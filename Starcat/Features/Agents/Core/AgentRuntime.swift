@@ -50,6 +50,18 @@ struct DefaultAgentRuntime: AgentRuntime {
                 var runLog: [String] = []
                 let plan = Self.makeWeeklyReportPlan(context: context)
                 let steps = Self.makeWeeklyReportSteps()
+                let clustered = GitHubWeeklyReportTools.clusterTopics(context: context)
+                let (draftMarkdown, draftTool) = GitHubWeeklyReportTools.buildMarkdown(
+                    prompt: prompt,
+                    context: context,
+                    topics: clustered.0
+                )
+                let toolResults = [
+                    GitHubWeeklyReportTools.parseGoal(prompt: prompt, context: context),
+                    GitHubWeeklyReportTools.resolveCandidateRepos(context: context),
+                    clustered.1,
+                    draftTool
+                ]
 
                 continuation.yield(.runStarted(title: definition.title))
                 runLog.append("Run started: \(definition.title)")
@@ -71,11 +83,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     continuation.yield(.stepUpdated(running))
                     runLog.append("Step started: \(running.title)")
 
-                    let toolResult = Self.executeTool(
-                        index: index,
-                        prompt: prompt,
-                        context: context
-                    )
+                    let toolResult = toolResults[index]
 
                     try? await Task.sleep(nanoseconds: stepCompletionDelayNanoseconds)
                     guard !Task.isCancelled else {
@@ -95,12 +103,6 @@ struct DefaultAgentRuntime: AgentRuntime {
                     runLog.append("Tool output: \(toolResult.output.toolName) - \(toolResult.output.summary)")
                 }
 
-                let topics = GitHubWeeklyReportTools.clusterTopics(context: context).0
-                let (draftMarkdown, artifactTool) = GitHubWeeklyReportTools.buildMarkdown(
-                    prompt: prompt,
-                    context: context,
-                    topics: topics
-                )
                 let markdown: String
                 do {
                     let generated = try await textGenerator.generateWeeklyReport(
@@ -139,15 +141,14 @@ struct DefaultAgentRuntime: AgentRuntime {
                     title: "本周 GitHub 热门项目周刊",
                     content: markdown
                 )
-                continuation.yield(.toolOutput(artifactTool.output))
                 continuation.yield(.trace(AgentTraceSpan(
                     kind: "Artifact",
                     title: markdownArtifact.title,
                     summary: markdownArtifact.type.title,
-                    input: artifactTool.output.input,
-                    output: artifactTool.output.output,
-                    log: artifactTool.output.log,
-                    relatedToolOutputID: artifactTool.output.id,
+                    input: draftTool.output.input,
+                    output: draftTool.output.output,
+                    log: draftTool.output.log,
+                    relatedToolOutputID: draftTool.output.id,
                     relatedArtifactID: markdownArtifact.id
                 )))
                 continuation.yield(.artifactCreated(markdownArtifact))
@@ -202,21 +203,6 @@ struct DefaultAgentRuntime: AgentRuntime {
                 detail: "按技术周刊结构生成导语、主题段落、项目解读与结尾。"
             )
         ]
-    }
-
-    private static func executeTool(
-        index: Int,
-        prompt: String,
-        context: AgentRunContext
-    ) -> WeeklyReportToolResult {
-        switch index {
-        case 0:
-            return GitHubWeeklyReportTools.parseGoal(prompt: prompt, context: context)
-        case 1:
-            return GitHubWeeklyReportTools.resolveCandidateRepos(context: context)
-        default:
-            return GitHubWeeklyReportTools.clusterTopics(context: context).1
-        }
     }
 
     private static func makeRunLog(_ lines: [String], context: AgentRunContext) -> String {

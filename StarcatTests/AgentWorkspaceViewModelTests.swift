@@ -5,7 +5,7 @@
 //  Agent Workspace ViewModel 的事件消费测试。
 //
 //  这些测试不验证 SwiftUI 布局,只锁住 ViewModel 对 AgentRunEvent 的状态投影。
-//  这样后续 runtime 从 deterministic 实现切换到真实 tool-calling 时,工作台仍能依赖
+//  这样后续 runtime 从本地只读工具切换到模型 tool-calling 时,工作台仍能依赖
 //  同一组 plan / step / tool output / artifact 状态。
 //
 
