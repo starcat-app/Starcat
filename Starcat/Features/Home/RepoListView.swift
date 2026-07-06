@@ -328,7 +328,7 @@ struct RepoListView: View {
                         Button {
                             onOpenAgentWorkspace?()
                         } label: {
-                            ToolbarIcon("bolt.circle")
+                            workspaceToolbarIcon("bolt.circle", tint: Color(nsColor: .systemIndigo))
                                 .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
                         }
                         .help("toolbar.agentWorkspace.help")
@@ -339,7 +339,7 @@ struct RepoListView: View {
                         Button {
                             onOpenKnowledgeRAGWorkspace?()
                         } label: {
-                            ToolbarIcon("book.circle")
+                            workspaceToolbarIcon("book.circle", tint: Color(nsColor: .systemTeal))
                                 .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
                         }
                         .help("toolbar.knowledgeRAGWorkspace.help")
@@ -362,6 +362,15 @@ struct RepoListView: View {
                     }
                 }
             }
+    }
+
+    private func workspaceToolbarIcon(_ systemName: String, tint: Color) -> some View {
+        ToolbarIcon(systemName)
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(tint)
+            // 这两个入口是 Debug 期 AI workspace 入口，需要比常规灰色 toolbar 图标更容易被发现；
+            // 使用系统动态色而不是固定 RGB，确保明暗主题下都有足够辨识度。
+            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
     }
 
     /// 把三个远端 store 全部 exit。登出 / token 失效场景调用。
