@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__icm__icm_memory_store",
+      "Bash(go build *)",
+      "Bash(echo \"✓ go build 通过, 退出码 $?\")",
+      "Bash(go version *)",
+      "Bash(go mod *)",
+      "Bash(echo \"退出码: $?\")",
+      "Bash(go vet *)",
+      "Bash(go get *)",
+      "Bash(gh pr *)"
+    ]
+  }
+}

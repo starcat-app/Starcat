@@ -143,10 +143,10 @@ targets:
           set -euo pipefail
 
           # App 内 Release Notes 根据用户首选语言读取 bundle 里的更新日志。
-          # 英文 CHANGELOG.md 仍是默认回退；中文 CHANGELOG-ZH.md 只在中文界面下使用。
+          # Release notes 由 supports/starcat-pro 作为单一来源维护，避免根目录重复存放。
           mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${SRCROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${SRCROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
+          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
@@ -234,8 +234,8 @@ targets:
           set -euo pipefail
 
           mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${SRCROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${SRCROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
+          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false

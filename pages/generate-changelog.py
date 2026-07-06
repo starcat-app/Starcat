@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-将项目根目录的 CHANGELOG.md 转换为 pages/changelog.html。
+将 supports/starcat-pro/CHANGELOG.md 转换为 pages/changelog.html。
 暗色主题，与落地页风格一致。
 用法: python3 generate-changelog.py
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-MD_PATH = PROJECT_ROOT / "CHANGELOG.md"
+MD_PATH = PROJECT_ROOT / "supports" / "starcat-pro" / "CHANGELOG.md"
 HTML_PATH = SCRIPT_DIR / "changelog.html"
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -159,7 +159,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def md_to_html(text: str) -> str:
-    """Simple Markdown to HTML converter. Handles the subset used in CHANGELOG.md."""
+    """Simple Markdown to HTML converter. Handles the subset used by Starcat Pro changelog."""
     lines = text.split("\n")
     out = []
     i = 0

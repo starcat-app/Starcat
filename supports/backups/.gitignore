@@ -1,0 +1,3 @@
+# Fly /data 备份落盘目录（make fly-backup-* 输出），勿提交密钥或生产数据
+*
+!.gitignore
