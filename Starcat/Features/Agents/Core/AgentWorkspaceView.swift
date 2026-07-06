@@ -16,6 +16,8 @@ struct AgentWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var isWindowPinned: Bool = false
+    @State private var isAgentRailCollapsed: Bool = false
+    @State private var isArtifactInspectorCollapsed: Bool = false
     let onClose: () -> Void
 
     private let contextChips = ["@ 已选 24 repos", "Trending 本周", "AI Agent", "README 缓存"]
@@ -23,14 +25,18 @@ struct AgentWorkspaceView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            agentRail
-                .frame(width: 312)
-            Divider()
+            if !isAgentRailCollapsed {
+                agentRail
+                    .frame(width: 312)
+                Divider()
+            }
             runSurface
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
+        .animation(.easeInOut(duration: 0.16), value: isAgentRailCollapsed)
+        .animation(.easeInOut(duration: 0.16), value: isArtifactInspectorCollapsed)
     }
 
     // MARK: - Agent Rail
@@ -38,7 +44,6 @@ struct AgentWorkspaceView: View {
     private var agentRail: some View {
         VStack(alignment: .leading, spacing: 0) {
             railHeader
-                .padding(.top, 18)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -72,21 +77,6 @@ struct AgentWorkspaceView: View {
                 Spacer()
             }
 
-            Button {
-                if viewModel.isRunning {
-                    viewModel.cancel()
-                }
-                onClose()
-            } label: {
-                Label("关闭窗口", systemImage: "xmark")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
         }
         .padding(14)
     }
@@ -213,9 +203,11 @@ struct AgentWorkspaceView: View {
                 }
                 .frame(minWidth: 460, idealWidth: 560)
                 .layoutPriority(1)
-                Divider()
-                artifactInspector
-                    .frame(minWidth: 430, idealWidth: 520)
+                if !isArtifactInspectorCollapsed {
+                    Divider()
+                    artifactInspector
+                        .frame(minWidth: 430, idealWidth: 520)
+                }
             }
         }
     }
@@ -241,6 +233,22 @@ struct AgentWorkspaceView: View {
             headerPill("只读模式", icon: "lock")
             headerPill("预计 1 run", icon: "chart.bar.doc.horizontal")
 
+            workspaceColumnButton(
+                systemImage: isAgentRailCollapsed ? "rectangle.leftthird.inset.filled" : "rectangle.leftthird.inset",
+                isCollapsed: isAgentRailCollapsed,
+                help: isAgentRailCollapsed ? "显示左侧 Agent 列表" : "隐藏左侧 Agent 列表"
+            ) {
+                isAgentRailCollapsed.toggle()
+            }
+
+            workspaceColumnButton(
+                systemImage: isArtifactInspectorCollapsed ? "rectangle.rightthird.inset.filled" : "rectangle.rightthird.inset",
+                isCollapsed: isArtifactInspectorCollapsed,
+                help: isArtifactInspectorCollapsed ? "显示右侧产物面板" : "隐藏右侧产物面板"
+            ) {
+                isArtifactInspectorCollapsed.toggle()
+            }
+
             Button {
                 if viewModel.isRunning {
                     viewModel.cancel()
@@ -261,6 +269,24 @@ struct AgentWorkspaceView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
+    }
+
+    private func workspaceColumnButton(
+        systemImage: String,
+        isCollapsed: Bool,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(agentIconFont(size: 14, weight: .medium))
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .foregroundStyle(isCollapsed ? Color.accentColor : .secondary)
+        .background(isCollapsed ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+        .help(help)
     }
 
     private func headerPill(_ text: String, icon: String) -> some View {

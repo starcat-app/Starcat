@@ -25,6 +25,8 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var isStreaming: Bool = true
     @State private var didSendDemoQuestion: Bool = false
     @State private var isWindowPinned: Bool = false
+    @State private var isConversationRailCollapsed: Bool = false
+    @State private var isCitationInspectorCollapsed: Bool = false
 
     private var selectedCitation: RAGDemoCitation {
         RAGDemoData.citations.first { $0.id == selectedCitationID } ?? RAGDemoData.citations[0]
@@ -32,20 +34,26 @@ struct KnowledgeRAGWorkspaceView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            conversationRail
-                .frame(width: 318)
-            Divider()
+            if !isConversationRailCollapsed {
+                conversationRail
+                    .frame(width: 318)
+                Divider()
+            }
             answerSurface
                 .layoutPriority(1)
-            Divider()
-            citationInspector
-                .frame(minWidth: 390, idealWidth: 420, maxWidth: 460)
+            if !isCitationInspectorCollapsed {
+                Divider()
+                citationInspector
+                    .frame(minWidth: 390, idealWidth: 420, maxWidth: 460)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isConversationRailCollapsed)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isCitationInspectorCollapsed)
     }
 
     // MARK: - Conversation Rail
@@ -54,7 +62,6 @@ struct KnowledgeRAGWorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 railTitle
-                backButton
                 statusBlock
                 newConversationButton
             }
@@ -98,20 +105,6 @@ struct KnowledgeRAGWorkspaceView: View {
             }
             Spacer()
         }
-    }
-
-    private var backButton: some View {
-        Button(action: onClose) {
-            Label("关闭窗口", systemImage: "xmark")
-                .font(ragFont(.callout, weight: .medium))
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var statusBlock: some View {
@@ -253,6 +246,22 @@ struct KnowledgeRAGWorkspaceView: View {
             headerChip("GPT-4.1", systemImage: "sparkles", tint: .purple)
             headerChip(isStreaming ? "Streaming" : "Ready", systemImage: "dot.radiowaves.left.and.right", tint: .green)
 
+            workspaceColumnButton(
+                systemImage: isConversationRailCollapsed ? "rectangle.leftthird.inset.filled" : "rectangle.leftthird.inset",
+                isCollapsed: isConversationRailCollapsed,
+                help: isConversationRailCollapsed ? "显示左侧会话栏" : "隐藏左侧会话栏"
+            ) {
+                isConversationRailCollapsed.toggle()
+            }
+
+            workspaceColumnButton(
+                systemImage: isCitationInspectorCollapsed ? "rectangle.rightthird.inset.filled" : "rectangle.rightthird.inset",
+                isCollapsed: isCitationInspectorCollapsed,
+                help: isCitationInspectorCollapsed ? "显示右侧引用栏" : "隐藏右侧引用栏"
+            ) {
+                isCitationInspectorCollapsed.toggle()
+            }
+
             Button(action: { isStreaming.toggle() }) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(ragIconFont(size: 14, weight: .medium))
@@ -265,6 +274,24 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 13)
+    }
+
+    private func workspaceColumnButton(
+        systemImage: String,
+        isCollapsed: Bool,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(ragIconFont(size: 14, weight: .medium))
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .foregroundStyle(isCollapsed ? Color.accentColor : .secondary)
+        .background(isCollapsed ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+        .help(help)
     }
 
     private func headerChip(_ text: String, systemImage: String, tint: Color) -> some View {
