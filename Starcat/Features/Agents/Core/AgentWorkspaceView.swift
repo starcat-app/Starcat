@@ -37,6 +37,9 @@ struct AgentWorkspaceView: View {
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
                 repository: dependencies.repoRepository
             ))
+            viewModel.configureRuntime(DefaultAgentRuntime(
+                textGenerator: AgentTextGeneratorFactory.make(settings: dependencies.settings)
+            ))
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)

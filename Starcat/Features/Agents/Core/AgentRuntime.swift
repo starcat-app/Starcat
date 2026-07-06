@@ -24,6 +24,7 @@ struct DefaultAgentRuntime: AgentRuntime {
 
     private let stepStartDelayNanoseconds: UInt64
     private let stepCompletionDelayNanoseconds: UInt64
+    private let textGenerator: any AgentTextGenerating
 
     /// 创建 P0 默认运行时。
     ///
@@ -31,10 +32,12 @@ struct DefaultAgentRuntime: AgentRuntime {
     /// 测试可以把延迟注入为 0，避免单测依赖固定等待时间。
     init(
         stepStartDelayNanoseconds: UInt64 = 280_000_000,
-        stepCompletionDelayNanoseconds: UInt64 = 420_000_000
+        stepCompletionDelayNanoseconds: UInt64 = 420_000_000,
+        textGenerator: any AgentTextGenerating = DisabledAgentTextGenerator()
     ) {
         self.stepStartDelayNanoseconds = stepStartDelayNanoseconds
         self.stepCompletionDelayNanoseconds = stepCompletionDelayNanoseconds
+        self.textGenerator = textGenerator
     }
 
     func run(
@@ -93,11 +96,44 @@ struct DefaultAgentRuntime: AgentRuntime {
                 }
 
                 let topics = GitHubWeeklyReportTools.clusterTopics(context: context).0
-                let (markdown, artifactTool) = GitHubWeeklyReportTools.buildMarkdown(
+                let (draftMarkdown, artifactTool) = GitHubWeeklyReportTools.buildMarkdown(
                     prompt: prompt,
                     context: context,
                     topics: topics
                 )
+                let markdown: String
+                do {
+                    let generated = try await textGenerator.generateWeeklyReport(
+                        prompt: prompt,
+                        context: context,
+                        draftMarkdown: draftMarkdown
+                    )
+                    markdown = generated
+                    continuation.yield(.assistantDelta(generated))
+                    continuation.yield(.trace(AgentTraceSpan(
+                        kind: "LLM",
+                        title: "AI 生成周刊正文",
+                        summary: "\(generated.count) chars",
+                        input: String(draftMarkdown.prefix(1_200)),
+                        output: String(generated.prefix(1_200)),
+                        log: "model_output=markdown"
+                    )))
+                    runLog.append("LLM generation completed: \(generated.count) chars")
+                } catch {
+                    let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    continuation.yield(.trace(AgentTraceSpan(
+                        kind: "LLM",
+                        title: "AI 生成周刊正文",
+                        summary: "failed",
+                        input: String(draftMarkdown.prefix(1_200)),
+                        output: message,
+                        log: "model_output=failed",
+                        status: .failed
+                    )))
+                    continuation.yield(.runFailed(message))
+                    continuation.finish()
+                    return
+                }
                 let markdownArtifact = AgentArtifact(
                     type: .markdown,
                     title: "本周 GitHub 热门项目周刊",

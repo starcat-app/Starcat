@@ -16,7 +16,7 @@ import Observation
 @Observable
 final class AgentWorkspaceViewModel {
 
-    private let runtime: any AgentRuntime
+    private var runtime: any AgentRuntime
     private var contextProvider: any AgentRunContextProviding
     private var runTask: Task<Void, Never>?
 
@@ -70,6 +70,11 @@ final class AgentWorkspaceViewModel {
     func configureContextProvider(_ provider: any AgentRunContextProviding) {
         guard !isRunning else { return }
         contextProvider = provider
+    }
+
+    func configureRuntime(_ runtime: any AgentRuntime) {
+        guard !isRunning else { return }
+        self.runtime = runtime
     }
 
     func run() {

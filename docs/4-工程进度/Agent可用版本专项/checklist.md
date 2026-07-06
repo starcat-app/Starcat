@@ -31,8 +31,8 @@
 - [x] 扩展 Agent run / trace 模型,让事件流携带真实 input / output / log。
 - [x] 构建真实 `AgentRunContext`,从 Starcat 仓库数据生成快照。
 - [x] 实现 read-only Weekly Agent tools: 解析目标、读取候选 repo、构建上下文、聚类主题、生成 artifact。
-- [ ] Runtime 复用现有 AI Provider / Keychain / OpenAIClient 生成真实 Markdown。
-- [ ] 未配置 AI Provider 时输出明确错误状态,不生成假内容。
+- [x] Runtime 复用现有 AI Provider / Keychain / OpenAIClient 生成真实 Markdown。
+- [x] 未配置 AI Provider 时输出明确错误状态,不生成假内容。
 - [ ] Agent Workspace UI 使用真实 trace 数据展示每一步可展开输入输出。
 - [ ] 补 context / tools / runtime / ViewModel 单元测试。
 - [ ] 更新 `docs/功能实现总览.md` 的 Agent 可用版本条目与变更日志。

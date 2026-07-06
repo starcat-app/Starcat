@@ -20,7 +20,8 @@ struct AgentRuntimeTests {
     func weeklyReportRuntimeEmitsStepsArtifactAndCompletion() async {
         let runtime = DefaultAgentRuntime(
             stepStartDelayNanoseconds: 0,
-            stepCompletionDelayNanoseconds: 0
+            stepCompletionDelayNanoseconds: 0,
+            textGenerator: StaticAgentTextGenerator(markdown: "# GitHub Weekly Report\n\nUnit Test AI Output")
         )
 
         let stream = runtime.run(
@@ -34,6 +35,7 @@ struct AgentRuntimeTests {
         var completedStepCount = 0
         var toolOutputCount = 0
         var traceCount = 0
+        var assistantOutput = ""
         var markdownArtifact: AgentArtifact?
         var logArtifact: AgentArtifact?
         var didComplete = false
@@ -57,6 +59,8 @@ struct AgentRuntimeTests {
                 traceCount += 1
                 #expect(span.input.isEmpty == false)
                 #expect(span.output.isEmpty == false)
+            case .assistantDelta(let text):
+                assistantOutput += text
             case .artifactCreated(let artifact):
                 switch artifact.type {
                 case .markdown:
@@ -66,7 +70,7 @@ struct AgentRuntimeTests {
                 }
             case .runCompleted:
                 didComplete = true
-            case .stepStarted, .assistantDelta, .runFailed, .runCancelled:
+            case .stepStarted, .runFailed, .runCancelled:
                 break
             }
         }
@@ -75,7 +79,8 @@ struct AgentRuntimeTests {
         #expect(planStepCount == 3)
         #expect(completedStepCount == 4)
         #expect(toolOutputCount == 5)
-        #expect(traceCount == 5)
+        #expect(traceCount == 6)
+        #expect(assistantOutput.contains("Unit Test AI Output"))
         #expect(markdownArtifact?.type == .markdown)
         #expect(markdownArtifact?.content.contains("# GitHub Weekly Report") == true)
         #expect(markdownArtifact?.content.contains("Unit Test") == true)
@@ -83,6 +88,36 @@ struct AgentRuntimeTests {
         #expect(logArtifact?.content.contains("DefaultAgentRuntime read-only tools") == true)
         #expect(logArtifact?.content.contains("Tool output: report.clusterTopics") == true)
         #expect(didComplete)
+    }
+
+    @Test("缺少 AI 配置时 runtime 失败且不生成假 artifact")
+    func missingAIDoesNotGenerateFallbackArtifact() async {
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0
+        )
+
+        let stream = runtime.run(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成周刊",
+            context: AgentRunContext(sourceDescription: "Unit Test")
+        )
+
+        var failedMessage: String?
+        var artifactCount = 0
+        for await event in stream {
+            switch event {
+            case .runFailed(let message):
+                failedMessage = message
+            case .artifactCreated:
+                artifactCount += 1
+            default:
+                break
+            }
+        }
+
+        #expect(failedMessage?.contains("AI Provider") == true)
+        #expect(artifactCount == 0)
     }
 
     @Test("取消 runtime stream 会终止后续步骤")
@@ -109,5 +144,17 @@ struct AgentRuntimeTests {
         task.cancel()
         let receivedEvents = await task.value
         #expect(receivedEvents <= 2)
+    }
+}
+
+private struct StaticAgentTextGenerator: AgentTextGenerating {
+    let markdown: String
+
+    func generateWeeklyReport(
+        prompt: String,
+        context: AgentRunContext,
+        draftMarkdown: String
+    ) async throws -> String {
+        markdown
     }
 }
