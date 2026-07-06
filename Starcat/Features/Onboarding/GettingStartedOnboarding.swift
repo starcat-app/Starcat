@@ -542,6 +542,12 @@ private struct GettingStartedCoachMark: View {
         step.id == .syncStars ? 0 : (isFloating ? -3 : 0)
     }
 
+    private var bubbleVerticalOffset: CGFloat {
+        // 分享入口在头像右侧，右向胶囊如果按目标中心线摆放会压住头像主体；
+        // 只上移胶囊和箭头，不移动目标高亮框。
+        step.id == .shareProfile ? 0 : verticalOffset
+    }
+
     private var additionalBubbleGap: CGFloat {
         // 全局搜索入口下方紧挨着详情页快捷图标，胶囊需要额外下移避免遮挡。
         step.id == .useSearch ? 28 : 0
@@ -583,28 +589,28 @@ private struct GettingStartedCoachMark: View {
         case .left:
             rawBubble = CGPoint(
                 x: frame.minX - groupGap - bubbleWidth / 2,
-                y: frame.midY + verticalOffset
+                y: frame.midY + bubbleVerticalOffset
             )
         case .right:
             rawBubble = CGPoint(
                 x: frame.maxX + groupGap + bubbleWidth / 2,
-                y: frame.midY + verticalOffset
+                y: frame.midY + bubbleVerticalOffset
             )
         case .above:
             rawBubble = CGPoint(
                 x: frame.midX,
-                y: frame.minY - groupGap - bubbleHeight / 2 + verticalOffset
+                y: frame.minY - groupGap - bubbleHeight / 2 + bubbleVerticalOffset
             )
         case .below:
             rawBubble = CGPoint(
                 x: frame.midX,
-                y: frame.maxY + groupGap + additionalBubbleGap + bubbleHeight / 2 + verticalOffset
+                y: frame.maxY + groupGap + additionalBubbleGap + bubbleHeight / 2 + bubbleVerticalOffset
             )
         }
 
         // 同步按钮在顶区，目标中心可能低于通用 18pt 顶部安全边距。
         // 如果继续用通用 margin 钳制，胶囊会被强行下推，导致箭头和胶囊中心错开。
-        let verticalMargin = step.id == .syncStars ? CGFloat(0) : margin
+        let verticalMargin = (step.id == .syncStars || step.id == .shareProfile) ? CGFloat(0) : margin
         let bubble = CGPoint(
             x: min(max(rawBubble.x, bubbleWidth / 2 + margin), containerSize.width - bubbleWidth / 2 - margin),
             y: min(max(rawBubble.y, bubbleHeight / 2 + verticalMargin), containerSize.height - bubbleHeight / 2 - margin)
@@ -628,7 +634,7 @@ private struct GettingStartedCoachMark: View {
         case .right:
             return CGPoint(
                 x: (targetFrame.maxX + bubblePosition.x - bubbleWidth / 2) / 2,
-                y: step.id == .syncStars ? targetFrame.midY : (targetFrame.midY + bubblePosition.y) / 2
+                y: locksRightArrowToTargetCenter ? targetFrame.midY : (targetFrame.midY + bubblePosition.y) / 2
             )
         case .above:
             return CGPoint(
@@ -647,6 +653,10 @@ private struct GettingStartedCoachMark: View {
 
     private var locksArrowToTargetCenter: Bool {
         step.id == .useSearch || step.id == .addRepoToLibrary
+    }
+
+    private var locksRightArrowToTargetCenter: Bool {
+        step.id == .syncStars || step.id == .shareProfile
     }
 
     var body: some View {

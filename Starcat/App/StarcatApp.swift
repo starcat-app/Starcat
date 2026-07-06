@@ -849,16 +849,13 @@ private enum ReleaseNotesLoader {
         @AppStorage(DebugFlags.knowledgeRAGToolbarEntryKey) private var knowledgeRAGToolbarEntry = false
 
 		var body: some Commands {
-			CommandMenu("Who's Your Daddy") {
-				Button("Replay First-Run Onboarding") {
-					FirstRunOnboardingPreferences.resetForDebugReplay()
-					NotificationCenter.default.post(
-						name: FirstRunOnboardingPreferences.debugReplayNotification,
-						object: nil
-					)
-				}
+				CommandMenu("Who's Your Daddy") {
+					Button("Replay First-Run Onboarding") {
+						FirstRunOnboardingPreferences.requestManualReplay()
+					}
+                    .disabled(!FirstRunOnboardingPreferences.canReplayManually)
 
-                Divider()
+	                Divider()
 
                     Toggle(
                         "Activate Pro",

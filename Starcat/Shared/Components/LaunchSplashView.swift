@@ -124,6 +124,7 @@ struct LaunchSplashContainer<Content: View>: View {
                 FirstRunOnboardingView(
                     onFinish: { completion in
                         showFirstRunOnboarding = false
+                        FirstRunOnboardingPreferences.endPresentation()
                         handleFirstRunCompletion(completion)
                     },
                     onMainContentRevealBegin: {
@@ -151,9 +152,11 @@ struct LaunchSplashContainer<Content: View>: View {
             await runSplashSequenceIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
+            guard FirstRunOnboardingPreferences.canReplayManually else { return }
             FirstRunOnboardingPreferences.resetForDebugReplay()
             obscureMainContent()
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
+                FirstRunOnboardingPreferences.beginPresentation()
                 showFirstRunOnboarding = true
             }
         }
@@ -271,6 +274,7 @@ struct LaunchSplashContainer<Content: View>: View {
 
         obscureMainContent()
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
+            FirstRunOnboardingPreferences.beginPresentation()
             showFirstRunOnboarding = true
         }
     }

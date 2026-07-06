@@ -55,6 +55,8 @@ struct ActivityView: View {
 
     @Binding var selectedCategory: ActivityCategory
     @Binding var selectedItem: ActivityItem?
+    /// Getting Started 的 Undo Star 教学跳转后，一次性请求打开第一条记录。
+    let undoStarAutoSelectRequestID: Int
 
     /// 当前分类数量回传给父视图的 navigation subtitle。
     private let onItemCountChange: (Int) -> Void
@@ -71,11 +73,13 @@ struct ActivityView: View {
     init(
         selectedCategory: Binding<ActivityCategory>,
         selectedItem: Binding<ActivityItem?>,
+        undoStarAutoSelectRequestID: Int = 0,
         onItemCountChange: @escaping (Int) -> Void = { _ in },
         onSelectUndoStarRepo: ((Repo?) -> Void)? = nil
     ) {
         _selectedCategory = selectedCategory
         _selectedItem = selectedItem
+        self.undoStarAutoSelectRequestID = undoStarAutoSelectRequestID
         self.onItemCountChange = onItemCountChange
         self.onSelectUndoStarRepo = onSelectUndoStarRepo
     }
@@ -87,6 +91,7 @@ struct ActivityView: View {
                     repository: dependencies.undoStarHistoryRepository,
                     settings: dependencies.settings,
                     selectedRecord: $selectedUndoStarRecord,
+                    autoSelectFirstRecordRequestID: undoStarAutoSelectRequestID,
                     onSelectRepo: onSelectUndoStarRepo
                 )
             } else if let viewModel {

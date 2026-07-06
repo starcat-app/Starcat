@@ -26,9 +26,39 @@ import AppKit
 /// 测试时写入的标记阻止新版 4 步引导出现。Clean Build 不会清 UserDefaults。
 enum FirstRunOnboardingPreferences {
     private static let hasCompletedKey = "onboarding.hasCompletedStepGuide"
+    /// 只记录当前进程内 overlay 是否已经在展示或退出动画中。
+    /// 不持久化到 UserDefaults，避免 App 在引导期间异常退出后把手动重播入口永久锁死。
+    @MainActor private static var presentationActive = false
 
     static var shouldShow: Bool {
         !TestEnvironment.isRunning && !UserDefaults.standard.bool(forKey: hasCompletedKey)
+    }
+
+    @MainActor
+    static var canReplayManually: Bool {
+        !presentationActive
+    }
+
+    @MainActor
+    static func beginPresentation() {
+        presentationActive = true
+    }
+
+    @MainActor
+    static func endPresentation() {
+        presentationActive = false
+    }
+
+    /// 手动重播入口的统一保护。设置页和 Debug 菜单都走这里，避免 overlay 还没退出完
+    /// 又叠加一次首次引导。
+    @MainActor
+    static func requestManualReplay() {
+        guard canReplayManually else { return }
+        resetForDebugReplay()
+        NotificationCenter.default.post(
+            name: debugReplayNotification,
+            object: nil
+        )
     }
 
     static func markCompleted() {
@@ -944,8 +974,8 @@ private struct OnboardingScreenshotPreview: View {
                     .clipped()
             } else {
                 fallbackPreview
-                    .padding(22)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .background(
@@ -990,163 +1020,224 @@ private struct OnboardingScreenshotPreview: View {
     }
 
     private var discoverPreview: some View {
-        VStack(spacing: 14) {
-            previewChrome
+        previewWindow {
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 12) {
+                    sidebarPill(width: 88, isSelected: true)
+                    sidebarPill(width: 104)
+                    sidebarPill(width: 76)
+                    Spacer(minLength: 0)
+                    sidebarPill(width: 96)
+                    sidebarPill(width: 72)
+                }
+                .frame(width: 118)
 
-            HStack(spacing: 14) {
-                metricTile(icon: "flame.fill", width: 84)
-                metricTile(icon: "newspaper.fill", width: 104)
-                metricTile(icon: "sparkles", width: 94)
-            }
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack(spacing: 12) {
+                        metricTile(icon: "flame.fill", width: 104)
+                        metricTile(icon: "newspaper.fill", width: 124)
+                        metricTile(icon: "sparkles", width: 104)
+                    }
 
-            VStack(spacing: 10) {
-                previewRepoRow(icon: "star.fill", primaryWidth: 188, secondaryWidth: 132, accent: step.tint)
-                previewRepoRow(icon: "chart.line.uptrend.xyaxis", primaryWidth: 220, secondaryWidth: 158, accent: Color.orange)
-                previewRepoRow(icon: "bolt.fill", primaryWidth: 172, secondaryWidth: 118, accent: Color.blue)
+                    previewRepoRow(icon: "star.fill", primaryWidth: 246, secondaryWidth: 176, accent: step.tint)
+                    previewRepoRow(icon: "chart.line.uptrend.xyaxis", primaryWidth: 286, secondaryWidth: 204, accent: Color.orange)
+                    previewRepoRow(icon: "bolt.fill", primaryWidth: 224, secondaryWidth: 162, accent: Color.blue)
+                    Spacer(minLength: 0)
+                }
             }
         }
     }
 
     private var intelligencePreview: some View {
-        HStack(spacing: 18) {
-            VStack(alignment: .leading, spacing: 12) {
-                previewChrome
-                previewLine(width: 180, height: 12, opacity: 0.22)
-                previewLine(width: 230, height: 8, opacity: 0.12)
-                previewLine(width: 206, height: 8, opacity: 0.10)
-                previewLine(width: 150, height: 8, opacity: 0.10)
+        previewWindow {
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 13) {
+                    previewLine(width: 218, height: 13, opacity: 0.22)
+                    previewLine(width: 292, height: 9, opacity: 0.12)
+                    previewLine(width: 256, height: 9, opacity: 0.10)
+                    previewLine(width: 188, height: 9, opacity: 0.10)
 
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(height: 86)
-                    .overlay(alignment: .topLeading) {
-                        Image(systemName: "sparkles")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(step.tint)
-                            .padding(12)
-                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(step.tint.opacity(0.12))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(alignment: .topLeading) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Image(systemName: "sparkles")
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(step.tint)
+                                previewLine(width: 190, height: 9, opacity: 0.18)
+                                previewLine(width: 246, height: 8, opacity: 0.12)
+                                previewLine(width: 160, height: 8, opacity: 0.10)
+                            }
+                            .padding(18)
+                        }
+                }
+
+                nodeGraphPreview
+                    .frame(width: 220, height: 240)
             }
-
-            nodeGraphPreview
-                .frame(width: 190)
         }
     }
 
     private var searchPreview: some View {
-        VStack(spacing: 14) {
-            previewChrome
-
+        previewWindow {
+            VStack(alignment: .leading, spacing: 16) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.08))
-                .frame(height: 44)
+                    .frame(height: 50)
                 .overlay(alignment: .leading) {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(step.tint)
-                        previewLine(width: 210, height: 8, opacity: 0.16)
+                            previewLine(width: 360, height: 9, opacity: 0.16)
                     }
-                    .padding(.horizontal, 14)
+                        .padding(.horizontal, 16)
                 }
 
-            HStack(spacing: 10) {
-                metricTile(icon: "text.magnifyingglass", width: 116)
-                metricTile(icon: "brain.head.profile", width: 128)
-                metricTile(icon: "tag.fill", width: 86)
-            }
+                HStack(spacing: 12) {
+                    metricTile(icon: "text.magnifyingglass", width: 132)
+                    metricTile(icon: "brain.head.profile", width: 150)
+                    metricTile(icon: "tag.fill", width: 112)
+                }
 
-            VStack(spacing: 9) {
-                previewRepoRow(icon: "scope", primaryWidth: 210, secondaryWidth: 160, accent: step.tint)
-                previewRepoRow(icon: "point.3.connected.trianglepath.dotted", primaryWidth: 186, secondaryWidth: 122, accent: Color.purple)
+                previewRepoRow(icon: "scope", primaryWidth: 310, secondaryWidth: 226, accent: step.tint)
+                previewRepoRow(icon: "point.3.connected.trianglepath.dotted", primaryWidth: 276, secondaryWidth: 190, accent: Color.purple)
+                Spacer(minLength: 0)
             }
         }
     }
 
     private var libraryPreview: some View {
-        HStack(spacing: 14) {
-            VStack(spacing: 10) {
-                ForEach(0..<5, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(index == 1 ? step.tint.opacity(0.22) : Color.primary.opacity(0.07))
-                        .frame(width: 92, height: 24)
+        previewWindow {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(0..<7, id: \.self) { index in
+                        sidebarPill(width: CGFloat(index == 1 ? 112 : 86 + index * 5), isSelected: index == 1)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-            }
+                .frame(width: 128)
 
-            VStack(spacing: 10) {
-                previewRepoRow(icon: "tray.and.arrow.down.fill", primaryWidth: 172, secondaryWidth: 112, accent: step.tint)
-                previewRepoRow(icon: "bookmark.fill", primaryWidth: 204, secondaryWidth: 142, accent: Color.blue)
-                previewRepoRow(icon: "bell.badge.fill", primaryWidth: 158, secondaryWidth: 120, accent: Color.green)
-            }
+                VStack(spacing: 12) {
+                    previewRepoRow(icon: "tray.and.arrow.down.fill", primaryWidth: 214, secondaryWidth: 142, accent: step.tint)
+                    previewRepoRow(icon: "bookmark.fill", primaryWidth: 246, secondaryWidth: 176, accent: Color.blue)
+                    previewRepoRow(icon: "bell.badge.fill", primaryWidth: 190, secondaryWidth: 144, accent: Color.green)
+                    Spacer(minLength: 0)
+                }
 
-            VStack(alignment: .leading, spacing: 12) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 48, height: 46)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                previewLine(width: 136, height: 12, opacity: 0.20)
-                previewLine(width: 160, height: 8, opacity: 0.12)
-                previewLine(width: 118, height: 8, opacity: 0.10)
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 54, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    previewLine(width: 154, height: 13, opacity: 0.20)
+                    previewLine(width: 184, height: 9, opacity: 0.12)
+                    previewLine(width: 136, height: 9, opacity: 0.10)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 8) {
+                        metricTile(icon: "heart.fill", width: 64)
+                        metricTile(icon: "tag.fill", width: 64)
+                    }
+                }
+                .frame(width: 190)
             }
         }
     }
 
     private var agentPreview: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                previewChrome
-                previewRepoRow(icon: "wand.and.stars", primaryWidth: 156, secondaryWidth: 118, accent: step.tint)
-                previewRepoRow(icon: "checklist", primaryWidth: 132, secondaryWidth: 96, accent: Color.green)
-                previewRepoRow(icon: "terminal.fill", primaryWidth: 176, secondaryWidth: 124, accent: Color.orange)
-            }
-
-            VStack(alignment: .leading, spacing: 9) {
-                ForEach(0..<4, id: \.self) { index in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(index == 0 ? step.tint.opacity(0.85) : Color.primary.opacity(0.14))
-                            .frame(width: 10, height: 10)
-                        previewLine(width: CGFloat(96 + index * 18), height: 8, opacity: index == 0 ? 0.20 : 0.12)
-                    }
+        previewWindow {
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 12) {
+                    previewRepoRow(icon: "wand.and.stars", primaryWidth: 176, secondaryWidth: 132, accent: step.tint)
+                    previewRepoRow(icon: "checklist", primaryWidth: 152, secondaryWidth: 112, accent: Color.green)
+                    previewRepoRow(icon: "terminal.fill", primaryWidth: 196, secondaryWidth: 142, accent: Color.orange)
+                    Spacer(minLength: 0)
                 }
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(step.tint.opacity(0.12))
-                    .frame(height: 64)
-                    .overlay(alignment: .leading) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(step.tint)
-                            .padding(.leading, 18)
+                .frame(width: 260)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(0..<5, id: \.self) { index in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(index == 0 ? step.tint.opacity(0.85) : Color.primary.opacity(0.14))
+                                .frame(width: 10, height: 10)
+                            previewLine(width: CGFloat(116 + index * 18), height: 8, opacity: index == 0 ? 0.20 : 0.12)
+                        }
+                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(step.tint.opacity(0.12))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(alignment: .leading) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(step.tint)
+                                .padding(.leading, 22)
+                        }
                     }
             }
         }
     }
 
     private var ragPreview: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                previewChrome
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(step.tint.opacity(0.14))
-                    .frame(height: 58)
-                    .overlay(alignment: .leading) {
-                        Image(systemName: "quote.bubble.fill")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(step.tint)
-                            .padding(.leading, 16)
-                    }
-                previewLine(width: 204, height: 9, opacity: 0.16)
-                previewLine(width: 166, height: 8, opacity: 0.12)
-                previewLine(width: 188, height: 8, opacity: 0.10)
-            }
+        previewWindow {
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 12) {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(step.tint.opacity(0.14))
+                        .frame(height: 70)
+                        .overlay(alignment: .leading) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "quote.bubble.fill")
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(step.tint)
+                                VStack(alignment: .leading, spacing: 7) {
+                                    previewLine(width: 246, height: 9, opacity: 0.16)
+                                    previewLine(width: 188, height: 8, opacity: 0.12)
+                                }
+                            }
+                            .padding(.horizontal, 18)
+                        }
+                    previewRepoRow(icon: "books.vertical.fill", primaryWidth: 248, secondaryWidth: 180, accent: step.tint)
+                    previewRepoRow(icon: "link", primaryWidth: 206, secondaryWidth: 150, accent: Color.blue)
+                    Spacer(minLength: 0)
+                }
 
-            VStack(spacing: 10) {
-                metricTile(icon: "books.vertical.fill", width: 104)
-                metricTile(icon: "link", width: 94)
-                metricTile(icon: "checkmark.seal.fill", width: 114)
+                VStack(spacing: 12) {
+                    metricTile(icon: "books.vertical.fill", width: 126)
+                    metricTile(icon: "link", width: 126)
+                    metricTile(icon: "checkmark.seal.fill", width: 126)
+                    Spacer(minLength: 0)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.primary.opacity(0.055))
+                        .frame(width: 126, height: 70)
+                        .overlay {
+                            Image(systemName: "text.quote")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(step.tint)
+                        }
+                }
             }
         }
+    }
+
+    private func previewWindow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            previewChrome
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 14)
+
+            content()
+                .padding(.horizontal, 18)
+                .padding(.bottom, 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.12))
+        )
     }
 
     private var previewChrome: some View {
@@ -1192,6 +1283,12 @@ private struct OnboardingScreenshotPreview: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(step.tint)
             }
+    }
+
+    private func sidebarPill(width: CGFloat, isSelected: Bool = false) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(isSelected ? step.tint.opacity(0.22) : Color.primary.opacity(0.07))
+            .frame(width: width, height: 26)
     }
 
     private func previewRepoRow(icon: String, primaryWidth: CGFloat, secondaryWidth: CGFloat, accent: Color) -> some View {

@@ -439,15 +439,13 @@ struct SettingsView: View {
                     .help(Text("settings.listPreferences.reset.disabled"))
 
                     Button {
+                        guard FirstRunOnboardingPreferences.canReplayManually else { return }
                         NSApp.keyWindow?.close()
-                        FirstRunOnboardingPreferences.resetForDebugReplay()
-                        NotificationCenter.default.post(
-                            name: FirstRunOnboardingPreferences.debugReplayNotification,
-                            object: nil
-                        )
+                        FirstRunOnboardingPreferences.requestManualReplay()
                     } label: {
                         Label("settings.general.resetOnboarding", systemImage: "arrow.counterclockwise")
                     }
+                    .disabled(!FirstRunOnboardingPreferences.canReplayManually)
                 }
             }
         }

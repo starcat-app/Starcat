@@ -87,7 +87,9 @@ struct UndoStarContentView: View {
 
     /// 选中行 → 通知上层展示详情页
     @Binding var selectedRecord: UndoStarRecord?
+    let autoSelectFirstRecordRequestID: Int
     var onSelectRepo: ((Repo?) -> Void)?
+    @State private var consumedAutoSelectRequestID = 0
 
     /// 正在执行 star 操作的 repo ID（用于即时 UI 反馈）
     @State private var starringRepoIDs: Set<Int64> = []
@@ -98,10 +100,12 @@ struct UndoStarContentView: View {
         repository: any UndoStarHistoryRepositoryProtocol,
         settings: AppSettings,
         selectedRecord: Binding<UndoStarRecord?>,
+        autoSelectFirstRecordRequestID: Int = 0,
         onSelectRepo: ((Repo?) -> Void)? = nil
     ) {
         _viewModel = State(initialValue: UndoStarViewModel(repository: repository, settings: settings))
         _selectedRecord = selectedRecord
+        self.autoSelectFirstRecordRequestID = autoSelectFirstRecordRequestID
         self.onSelectRepo = onSelectRepo
     }
 
@@ -127,9 +131,14 @@ struct UndoStarContentView: View {
             await viewModel.load()
             await viewModel.refreshExpiringCount()
             dependencies.activityCategoryCountService.applyUndoStarCount(viewModel.records.count)
+            selectFirstRecordIfRequested()
         }
         .onChange(of: viewModel.records.count) { _, newCount in
             dependencies.activityCategoryCountService.applyUndoStarCount(newCount)
+            selectFirstRecordIfRequested()
+        }
+        .onChange(of: autoSelectFirstRecordRequestID) { _, _ in
+            selectFirstRecordIfRequested()
         }
         .onReceive(NotificationCenter.default.publisher(for: .undoStarHistoryDidChange)) { notification in
             Task { await viewModel.refreshExpiringCount() }
@@ -157,6 +166,25 @@ struct UndoStarContentView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private func selectFirstRecordIfRequested() {
+        guard autoSelectFirstRecordRequestID > consumedAutoSelectRequestID,
+              !viewModel.isLoading,
+              let first = viewModel.records.first else { return }
+        consumedAutoSelectRequestID = autoSelectFirstRecordRequestID
+        selectRecord(first)
+    }
+
+    private func selectRecord(_ record: UndoStarRecord) {
+        selectedRecord = record
+        Task {
+            if let repo = try? await dependencies.undoStarHistoryRepository.fetchRepo(ghRepoId: record.ghRepoId) {
+                onSelectRepo?(repo)
+            } else {
+                onSelectRepo?(record.asRepo())
             }
         }
     }
@@ -220,15 +248,7 @@ struct UndoStarContentView: View {
                             name: record.name
                         ))
                     } else {
-                        selectedRecord = record
-                        // 异步取完整 Repo 数据给详情页
-                        Task {
-                            if let repo = try? await dependencies.undoStarHistoryRepository.fetchRepo(ghRepoId: record.ghRepoId) {
-                                onSelectRepo?(repo)
-                            } else {
-                                onSelectRepo?(record.asRepo())
-                            }
-                        }
+                        selectRecord(record)
                     }
                 } label: {
                     UnifiedRepoRow(

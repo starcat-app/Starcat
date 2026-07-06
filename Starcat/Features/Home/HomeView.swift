@@ -167,6 +167,9 @@ struct HomeView: View {
 
     /// Activity 页面当前分类。
     @State private var selectedActivityCategory: ActivityCategory = .all
+    /// Getting Started 的 Unstar 步骤跳转到 Undo Star 后，需要打开第一条详情。
+    /// 用递增 token 表示一次性请求，避免修改 Activity 的全局默认选中偏好。
+    @State private var undoStarAutoSelectRequestID = 0
 
     /// Activity 页面记住上次选择的分类。
     /// 与 Manage / Trending 的恢复策略一致：切走保存，切回恢复。
@@ -956,9 +959,22 @@ struct HomeView: View {
                 try await dependencies.starActionService.toggle(repo: repo)
                 await viewModel.refreshAfterExternalStarChange()
                 NotificationCenter.default.post(name: .gettingStartedDidUnstarRepo, object: nil)
+                routeToUndoStarForGettingStarted()
             } catch {
                 AppLog.sync.error("Getting Started unstar failed repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
+        }
+    }
+
+    /// 仅用于 Getting Started 的教学闭环：用户通过指引取消 Star 后，马上带到可恢复入口。
+    /// 普通详情页 Star 按钮仍保持原地操作，不强制跳转。
+    private func routeToUndoStarForGettingStarted() {
+        undoStarAutoSelectRequestID += 1
+        savedActivityCategory = .undoStar
+        if selectedSidebarPage == .activity {
+            selectedActivityCategory = .undoStar
+        } else {
+            selectedSidebarPage = .activity
         }
     }
 
@@ -1013,6 +1029,7 @@ struct HomeView: View {
             selectedWeeklyLanguage: $selectedWeeklyLanguage,
             selectedActivityCategory: $selectedActivityCategory,
             selectedActivityItem: $selectedActivityItem,
+            undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
             showsAgentToolbarEntry: showsAgentToolbarEntry,
             showsKnowledgeRAGToolbarEntry: showsKnowledgeRAGToolbarEntry,
             onStartBatchAI: {

@@ -74,6 +74,8 @@ struct RepoListView: View {
     @Binding var selectedActivityCategory: ActivityCategory
     /// Activity 页当前选中项，驱动右侧详情。
     @Binding var selectedActivityItem: ActivityItem?
+    /// Getting Started 的 Undo Star 教学跳转后，一次性请求打开第一条记录。
+    let undoStarAutoSelectRequestID: Int
     /// Agent 功能当前不随正式产品入口上线；Debug 菜单打开后才显示 toolbar 入口。
     let showsAgentToolbarEntry: Bool
     /// RAG 工作台仍是开发期 AI surface，Debug 菜单打开后才显示 toolbar 入口。
@@ -1063,6 +1065,7 @@ struct RepoListView: View {
                 ActivityView(
                     selectedCategory: $selectedActivityCategory,
                     selectedItem: $selectedActivityItem,
+                    undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
                     onItemCountChange: { activityItemCount = $0 },
                     onSelectUndoStarRepo: { repo in
                         if let repo {
