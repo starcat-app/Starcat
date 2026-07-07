@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starcat 后端发布"
+  short_description: "Starcat supports API 发布流程指南"
+  default_prompt: "使用 $starcat-backend-release 准备或排查 Starcat supports API 发布。"

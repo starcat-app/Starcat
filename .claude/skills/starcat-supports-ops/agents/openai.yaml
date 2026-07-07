@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starcat 后端运维"
+  short_description: "Starcat supports 后端运维操作指南"
+  default_prompt: "使用 $starcat-supports-ops 排查或执行 Starcat supports 后端运维任务。"
