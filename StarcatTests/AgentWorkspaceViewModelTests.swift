@@ -44,6 +44,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        viewModel.prompt = "生成本周 GitHub 热门项目周刊"
 
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
@@ -64,6 +65,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: NeverFinishingAgentRuntime()
         )
+        viewModel.prompt = "生成本周 GitHub 热门项目周刊"
 
         viewModel.run()
         viewModel.cancel()
@@ -98,12 +100,27 @@ struct AgentWorkspaceViewModelTests {
             runtime: runtime,
             contextProvider: StaticAgentRunContextProvider(context: context)
         )
+        viewModel.prompt = "生成本周 GitHub 热门项目周刊"
 
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
 
         #expect(viewModel.selectedArtifact?.content.contains("Unit Snapshot: 1 repo") == true)
         #expect(viewModel.selectedArtifact?.content.contains("groue/GRDB.swift") == true)
+    }
+
+    @Test("空 prompt 不会自动使用默认 Agent 指令运行")
+    func emptyPromptDoesNotRunWithDefaultPrompt() {
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: NeverFinishingAgentRuntime()
+        )
+
+        viewModel.run()
+
+        #expect(viewModel.status == .idle)
+        #expect(viewModel.prompt.isEmpty)
+        #expect(viewModel.isRunning == false)
     }
 
     private func waitUntil(

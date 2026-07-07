@@ -15,10 +15,8 @@ struct AgentWorkspaceView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
-    @State private var expandedTraceItemIDs: Set<String> = ["llm-generation"]
+    @State private var expandedTraceItemIDs: Set<String> = []
     let chromeState: WorkspaceChromeState
-
-    private let contextChips = ["本地仓库快照", "只读工具链", "AI Provider", "Markdown Artifact"]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -198,8 +196,6 @@ struct AgentWorkspaceView: View {
         VStack(spacing: 0) {
             runHeader
             Divider()
-            contextBar
-            Divider()
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     runTimeline
@@ -264,53 +260,52 @@ struct AgentWorkspaceView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private var contextBar: some View {
-        HStack(spacing: 8) {
-            Text("上下文")
-                .font(agentFont(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-            ForEach(contextChips, id: \.self) { chip in
-                contextChip(chip)
-            }
-            Spacer()
-            Button {
-            } label: {
-                Label("管理上下文", systemImage: "slider.horizontal.3")
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .font(agentFont(.caption))
-            .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.42))
-    }
-
-    private func contextChip(_ text: String) -> some View {
-        Text(text)
-            .font(agentFont(.caption))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
-    }
-
     private var runTimeline: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                userPromptBubble
-                assistantRunBlock
+                if hasRunContent {
+                    userPromptBubble
+                    assistantRunBlock
+                } else {
+                    emptyRunState
+                }
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
+    private var hasRunContent: Bool {
+        !viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        viewModel.status != .idle ||
+        !viewModel.planSteps.isEmpty ||
+        !viewModel.steps.isEmpty ||
+        !viewModel.toolOutputs.isEmpty ||
+        !viewModel.traceSpans.isEmpty ||
+        !viewModel.artifacts.isEmpty ||
+        !viewModel.assistantOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        viewModel.errorMessage != nil
+    }
+
+    private var emptyRunState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "sparkles.rectangle.stack")
+                .font(agentIconFont(size: 30, weight: .regular))
+                .foregroundStyle(.secondary)
+            Text("输入任务后开始 Agent run")
+                .font(agentFont(.subheadline, weight: .semibold))
+            Text("中栏会按执行顺序展示步骤、工具调用和产出物。")
+                .font(agentFont(.caption))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 96)
+    }
+
     private var userPromptBubble: some View {
         HStack(alignment: .top) {
             Spacer(minLength: 80)
-            Text(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
+            Text(viewModel.prompt)
                 .font(agentFont(.body))
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
@@ -339,13 +334,17 @@ struct AgentWorkspaceView: View {
                     Spacer()
                 }
 
-                Text(assistantTranscriptText)
-                    .font(agentFont(.body))
-                    .foregroundStyle(.primary)
-                    .lineSpacing(4)
-                    .textSelection(.enabled)
+                if !agentTraceItems.isEmpty {
+                    runTraceBlock
+                }
 
-                runTraceBlock
+                if let text = assistantTranscriptText {
+                    Text(text)
+                        .font(agentFont(.body))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
+                }
 
                 if waitingForConfirmation {
                     confirmationStrip
@@ -522,16 +521,13 @@ struct AgentWorkspaceView: View {
         .background(Color(nsColor: .separatorColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private var assistantTranscriptText: String {
+    private var assistantTranscriptText: String? {
         let output = viewModel.assistantOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         if !output.isEmpty { return output }
         if viewModel.status == .completed {
             return "我已经完成这轮 Agent run。下面保留了关键计划、工具过程和产物引用，右侧可以查看、复制或导出产出物。"
         }
-        if viewModel.isRunning {
-            return "我正在把你的目标拆成可审查的执行步骤，并在每一步留下工具输出和产物引用，避免只给出一段不可追踪的回答。"
-        }
-        return "我会先确认目标和上下文，再读取 Starcat 本地仓库快照、形成主题判断，最后调用已配置的 AI Provider 生成可核验的 Markdown artifact。"
+        return nil
     }
 
     private var agentTraceItems: [AgentTraceItem] {
@@ -539,26 +535,7 @@ struct AgentWorkspaceView: View {
             return viewModel.traceSpans.map(traceItem(from:))
         }
 
-        var items: [AgentTraceItem] = [
-            AgentTraceItem(
-                id: "llm-generation",
-                title: "AI 回复: 等待运行",
-                subtitle: viewModel.isRunning ? "LLM · streaming" : "LLM · ready",
-                kind: "LLM",
-                systemImage: viewModel.isRunning ? "circle.dotted" : "text.bubble",
-                tint: viewModel.isRunning ? .accentColor : .secondary,
-                input: """
-                user_prompt:
-                \(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
-
-                context:
-                等待 runtime 冻结 Starcat 本地仓库快照
-                """,
-                output: assistantTranscriptText,
-                log: "status=\(statusText)\nmode=waiting_for_runtime_trace"
-            )
-        ]
-
+        var items: [AgentTraceItem] = []
         items.append(contentsOf: tracePlanItems)
         items.append(contentsOf: traceStepItems)
         items.append(contentsOf: traceToolItems)
@@ -582,7 +559,7 @@ struct AgentWorkspaceView: View {
     }
 
     private var tracePlanItems: [AgentTraceItem] {
-        transcriptPlanSteps.enumerated().map { index, step in
+        viewModel.planSteps.enumerated().map { index, step in
             AgentTraceItem(
                 id: "plan-\(index)-\(step.id.uuidString)",
                 title: step.title,
@@ -592,20 +569,19 @@ struct AgentWorkspaceView: View {
                 tint: .accentColor,
                 input: """
                 user_goal:
-                \(viewModel.prompt.isEmpty ? "默认 Weekly Report 目标" : viewModel.prompt)
+                \(viewModel.prompt)
 
                 planning_scope:
                 Agent definition + frozen Starcat repo context
                 """,
                 output: step.detail,
-                log: "event=planCreated\nindex=\(index + 1)\nsource=\(viewModel.planSteps.isEmpty ? "ui_placeholder" : "runtime_event")"
+                log: "event=planCreated\nindex=\(index + 1)\nsource=runtime_event"
             )
         }
     }
 
     private var traceStepItems: [AgentTraceItem] {
-        let steps = viewModel.steps.isEmpty ? defaultTraceSteps : viewModel.steps
-        return steps.enumerated().map { index, step in
+        viewModel.steps.enumerated().map { index, step in
             AgentTraceItem(
                 id: "step-\(index)-\(step.id.uuidString)",
                 title: step.title,
@@ -621,21 +597,20 @@ struct AgentWorkspaceView: View {
                 \(step.title)
                 """,
                 output: step.detail,
-                log: "event=stepUpdated\nstatus=\(stepStatusLabel(step.status))\nsource=\(viewModel.steps.isEmpty ? "ui_placeholder" : "runtime_event")"
+                log: "event=stepUpdated\nstatus=\(stepStatusLabel(step.status))\nsource=runtime_event"
             )
         }
     }
 
     private var traceToolItems: [AgentTraceItem] {
-        let outputs = viewModel.toolOutputs.isEmpty ? defaultTraceToolOutputs : viewModel.toolOutputs
-        return outputs.enumerated().map { index, output in
+        viewModel.toolOutputs.enumerated().map { index, output in
             AgentTraceItem(
                 id: "tool-\(index)-\(output.id.uuidString)",
                 title: output.toolName,
                 subtitle: "Tool Call · \(output.summary)",
                 kind: "Tool",
-                systemImage: viewModel.toolOutputs.isEmpty && index > 0 ? "circle" : "checkmark.circle.fill",
-                tint: viewModel.toolOutputs.isEmpty && index > 0 ? .secondary : .green,
+                systemImage: "checkmark.circle.fill",
+                tint: .green,
                 input: """
                 tool_name:
                 \(output.toolName)
@@ -644,29 +619,13 @@ struct AgentWorkspaceView: View {
                 \(output.input.isEmpty ? "等待 runtime 输出工具参数。" : output.input)
                 """,
                 output: output.output.isEmpty ? output.detail : output.output,
-                log: output.log.isEmpty ? "event=toolOutput\nsummary=\(output.summary)\nsource=\(viewModel.toolOutputs.isEmpty ? "ui_placeholder" : "runtime_event")" : output.log
+                log: output.log.isEmpty ? "event=toolOutput\nsummary=\(output.summary)\nsource=runtime_event" : output.log
             )
         }
     }
 
     private var traceArtifactItems: [AgentTraceItem] {
-        if viewModel.artifacts.isEmpty {
-            return [
-                AgentTraceItem(
-                    id: "artifact-placeholder",
-                    title: "生成 Agent Artifact",
-                    subtitle: "Artifact · pending",
-                    kind: "Artifact",
-                    systemImage: "doc.richtext",
-                    tint: .secondary,
-                    input: "report_topics + tool_outputs + user_goal",
-                    output: "等待 runtime 生成 Markdown / log artifact。",
-                    log: "event=artifactCreated\nstatus=pending",
-                    artifactID: nil
-                )
-            ]
-        }
-        return viewModel.artifacts.enumerated().map { index, artifact in
+        viewModel.artifacts.enumerated().map { index, artifact in
             AgentTraceItem(
                 id: "artifact-\(artifact.id.uuidString)",
                 title: artifact.title,
@@ -680,31 +639,6 @@ struct AgentWorkspaceView: View {
                 artifactID: artifact.id
             )
         }
-    }
-
-    private var transcriptPlanSteps: [AgentPlanStep] {
-        if !viewModel.planSteps.isEmpty { return viewModel.planSteps }
-        return [
-            AgentPlanStep(title: "确认目标", detail: "把你的输入收敛成明确的 Agent run 目标和产物类型。"),
-            AgentPlanStep(title: "读取上下文", detail: "后续会接入当前选择的 repo、README、笔记、标签和状态。"),
-            AgentPlanStep(title: "生成产物", detail: "输出可复制、可导出、可在 Inspector 中核验的 artifact。")
-        ]
-    }
-
-    private var defaultTraceSteps: [AgentRunStep] {
-        [
-            AgentRunStep(title: "解析任务目标", detail: "识别用户希望生成 Weekly Report，并确认输出为 Markdown artifact。", status: .completed),
-            AgentRunStep(title: "准备数据源", detail: "运行时会读取冻结的 Starcat 本地仓库快照。", status: .pending),
-            AgentRunStep(title: "生成周刊母稿", detail: "等待 runtime 输出 LLM generation、tool result 和 artifact。", status: .pending)
-        ]
-    }
-
-    private var defaultTraceToolOutputs: [AgentToolOutput] {
-        [
-            AgentToolOutput(toolName: "agent.parseGoal", summary: "Ready", detail: "识别任务目标、上下文边界和产物类型。"),
-            AgentToolOutput(toolName: "context.resolveRepos", summary: "Waiting", detail: "正式接入后会解析当前选择和可用 repo 上下文。"),
-            AgentToolOutput(toolName: "artifact.prepare", summary: "Pending", detail: "等待 runtime 生成报告、日志或确认请求。")
-        ]
     }
 
     private var waitingForConfirmation: Bool {
@@ -968,7 +902,7 @@ struct AgentWorkspaceView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(viewModel.isRunning || viewModel.selectedAgent?.isEnabled != true)
+                .disabled(viewModel.isRunning || viewModel.selectedAgent?.isEnabled != true || viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(.horizontal, 16)

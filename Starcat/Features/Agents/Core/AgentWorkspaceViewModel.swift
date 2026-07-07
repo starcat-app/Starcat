@@ -43,7 +43,7 @@ final class AgentWorkspaceViewModel {
         self.runtime = runtime
         self.contextProvider = contextProvider
         self.selectedAgentID = agents.first?.id ?? ""
-        self.prompt = agents.first?.defaultPrompt ?? ""
+        self.prompt = ""
     }
 
     var selectedAgent: AgentDefinition? {
@@ -62,9 +62,6 @@ final class AgentWorkspaceViewModel {
     func selectAgent(_ agent: AgentDefinition) {
         guard !isRunning else { return }
         selectedAgentID = agent.id
-        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || status == .idle {
-            prompt = agent.defaultPrompt
-        }
     }
 
     func configureContextProvider(_ provider: any AgentRunContextProviding) {
@@ -79,6 +76,9 @@ final class AgentWorkspaceViewModel {
 
     func run() {
         guard let selectedAgent, selectedAgent.isEnabled else { return }
+        let effectivePrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !effectivePrompt.isEmpty else { return }
+
         runTask?.cancel()
         status = .planning
         runTitle = selectedAgent.title
@@ -91,8 +91,6 @@ final class AgentWorkspaceViewModel {
         assistantOutput = ""
         errorMessage = nil
 
-        let currentPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectivePrompt = currentPrompt.isEmpty ? selectedAgent.defaultPrompt : currentPrompt
         let contextProvider = contextProvider
         let runtime = runtime
 
