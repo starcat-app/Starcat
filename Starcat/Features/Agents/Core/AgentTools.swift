@@ -88,6 +88,7 @@ struct AgentToolResult: Sendable {
 enum AgentToolPayload: Sendable {
     case none
     case topics([WeeklyReportTopic])
+    case repo(AgentRepoSnapshot)
     case markdown(String)
     case externalContextMarkdown(String)
 }

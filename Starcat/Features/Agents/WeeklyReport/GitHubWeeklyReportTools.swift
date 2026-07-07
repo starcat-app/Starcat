@@ -241,7 +241,10 @@ enum GitHubWeeklyReportAgentTools {
             ResolveReposTool(),
             externalSearchTool,
             ClusterTopicsTool(),
-            BuildMarkdownTool()
+            BuildMarkdownTool(),
+            RepoInsightAgentTools.ParseGoalTool(),
+            RepoInsightAgentTools.SelectRepoTool(),
+            RepoInsightAgentTools.BuildMarkdownTool()
         ]
     }
 
@@ -307,5 +310,226 @@ private extension WeeklyReportToolResult {
             trace: trace,
             payload: payload
         )
+    }
+}
+
+enum RepoInsightAgentTools {
+    struct ParseGoalTool: AgentTool {
+        let id = "agent.parseRepoInsightGoal"
+        let displayName = "Parse Repo Insight Goal"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            let prompt = input.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let effectivePrompt = prompt.isEmpty ? String.l10n("agent.definition.repoInsight.defaultPrompt") : prompt
+            return makeResult(
+                toolName: id,
+                summary: "Repo Insight",
+                input: """
+                prompt:
+                \(effectivePrompt)
+
+                context_source:
+                \(input.context.sourceDescription)
+                """,
+                output: """
+                goal: Repo Insight
+                artifact: markdown
+                write_policy: read-only
+                repo_count: \(input.context.repos.count)
+                """,
+                log: "Parsed repo insight goal without write-capable actions."
+            ).agentToolResult()
+        }
+    }
+
+    struct SelectRepoTool: AgentTool {
+        let id = "context.selectInsightRepo"
+        let displayName = "Select Repository"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            guard let repo = selectRepo(prompt: input.prompt, repos: input.context.repos) else {
+                let output = AgentToolOutput(
+                    toolName: id,
+                    summary: "0 repos",
+                    detail: "No repository snapshot is available for Repo Insight.",
+                    input: "repo_count: 0",
+                    output: "selected_repo: null",
+                    log: "No AgentRunContext repo snapshots available."
+                )
+                return AgentToolResult(
+                    status: .failed,
+                    output: output,
+                    trace: AgentTraceSpan(
+                        kind: "Tool",
+                        title: id,
+                        summary: output.summary,
+                        input: output.input,
+                        output: output.output,
+                        log: output.log,
+                        status: .failed,
+                        relatedToolOutputID: output.id
+                    )
+                )
+            }
+            let result = makeResult(
+                toolName: id,
+                summary: repo.fullName,
+                input: """
+                prompt:
+                \(input.prompt)
+
+                candidates:
+                \(input.context.repos.map { "- \($0.displaySummary)" }.joined(separator: "\n"))
+                """,
+                output: repoDetail(repo),
+                log: "Selected target repo from frozen AgentRunContext."
+            )
+            return result.agentToolResult(payload: .repo(repo))
+        }
+
+        private func selectRepo(prompt: String, repos: [AgentRepoSnapshot]) -> AgentRepoSnapshot? {
+            let normalizedPrompt = prompt.lowercased()
+            if let mentioned = repos.first(where: { repo in
+                normalizedPrompt.contains(repo.fullName.lowercased()) || normalizedPrompt.contains(repo.name.lowercased())
+            }) {
+                return mentioned
+            }
+            return repos.sorted { lhs, rhs in
+                if lhs.starsCount == rhs.starsCount {
+                    return lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName) == .orderedAscending
+                }
+                return lhs.starsCount > rhs.starsCount
+            }.first
+        }
+    }
+
+    struct BuildMarkdownTool: AgentTool {
+        let id = "artifact.buildRepoInsightMarkdown"
+        let displayName = "Build Repo Insight Artifact"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            guard case .repo(let repo) = input.payload else {
+                let output = AgentToolOutput(
+                    toolName: id,
+                    summary: "missing repo",
+                    detail: "Repo Insight requires a selected repository payload.",
+                    input: "payload: \(input.payload)",
+                    output: "artifact: null",
+                    log: "Selected repo payload is missing."
+                )
+                return AgentToolResult(
+                    status: .failed,
+                    output: output,
+                    trace: AgentTraceSpan(
+                        kind: "Tool",
+                        title: id,
+                        summary: output.summary,
+                        input: output.input,
+                        output: output.output,
+                        log: output.log,
+                        status: .failed,
+                        relatedToolOutputID: output.id
+                    )
+                )
+            }
+            let markdown = buildMarkdown(
+                prompt: input.prompt,
+                context: input.context,
+                repo: repo,
+                externalContextMarkdown: input.values["externalContextMarkdown"] ?? ""
+            )
+            let result = makeResult(
+                toolName: id,
+                summary: "\(markdown.count) chars",
+                input: "selected_repo: \(repo.fullName)\nexternal_context_chars: \((input.values["externalContextMarkdown"] ?? "").count)",
+                output: String(markdown.prefix(1_200)),
+                log: "Built Repo Insight Markdown artifact from read-only context."
+            )
+            return result.agentToolResult(payload: .markdown(markdown))
+        }
+    }
+
+    private static func buildMarkdown(
+        prompt: String,
+        context: AgentRunContext,
+        repo: AgentRepoSnapshot,
+        externalContextMarkdown: String
+    ) -> String {
+        let topics = repo.topics.prefix(8).joined(separator: ", ")
+        let topicsLine = topics.isEmpty ? "暂无 topic" : topics
+        let external = externalContextMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        let externalSection = external.isEmpty ? "> 外部来源：未启用或无结果" : """
+        > 外部来源：External Search
+
+        ## 外部来源摘要
+
+        \(String(external.prefix(2_400)))
+        """
+        return """
+        # Repo Insight: \(repo.fullName)
+
+        > 用户目标：\(prompt)
+        > 数据来源：\(context.sourceDescription)
+        > 只读约束：Agent 不会写入标签、笔记、状态或修改 Star。
+        \(externalSection)
+
+        ## 仓库快照
+
+        \(repoDetail(repo))
+
+        ## 初步分析方向
+
+        - 定位：根据描述、语言、stars 和 topics 判断仓库适合解决的问题。
+        - 采用价值：结合活跃度信号和 Starcat 本地知识库上下文给出采用建议。
+        - 风险：标记需要人工继续核验的 README、License、维护活跃度或替代品风险。
+        - 后续动作：建议继续追问替代品对比、README 深读或接入成本评估。
+
+        ## Topics
+
+        \(topicsLine)
+        """
+    }
+
+    private static func makeResult(
+        toolName: String,
+        summary: String,
+        input: String,
+        output: String,
+        log: String
+    ) -> WeeklyReportToolResult {
+        let toolOutput = AgentToolOutput(
+            toolName: toolName,
+            summary: summary,
+            detail: output,
+            input: input,
+            output: output,
+            log: log
+        )
+        return WeeklyReportToolResult(
+            output: toolOutput,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: toolName,
+                summary: summary,
+                input: input,
+                output: output,
+                log: log,
+                relatedToolOutputID: toolOutput.id
+            )
+        )
+    }
+
+    private static func repoDetail(_ repo: AgentRepoSnapshot) -> String {
+        """
+        repo: \(repo.fullName)
+        language: \(repo.language ?? "Unknown")
+        stars: \(repo.starsCount)
+        description: \(repo.description ?? "暂无描述")
+        topics: \(repo.topics.joined(separator: ", "))
+        url: \(repo.htmlUrl)
+        """
     }
 }

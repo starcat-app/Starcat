@@ -117,7 +117,7 @@ struct OpenAIAgentTextGenerator: AgentTextGenerating {
 
     private static func systemPrompt(for definition: AgentDefinition) -> String {
         switch definition.id {
-        case "repo-insight":
+        case BuiltInAgents.repoInsight.id:
             return """
             You are Starcat's built-in Repo Insight Agent.
             Generate a concise, evidence-oriented Markdown repository analysis from the provided local Starcat repository snapshot.

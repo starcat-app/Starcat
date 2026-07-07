@@ -29,8 +29,26 @@ enum BuiltInAgents {
         artifactTypes: [.markdown, .log]
     )
 
+    static let repoInsight = AgentDefinition(
+        id: "repo-insight",
+        title: String.l10n("agent.definition.repoInsight.title"),
+        subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
+        systemImage: "doc.text.magnifyingglass",
+        capabilityLabels: ["repo", "analysis", "artifact"],
+        defaultPrompt: String.l10n("agent.definition.repoInsight.defaultPrompt"),
+        isEnabled: true,
+        toolIDs: [
+            "agent.parseRepoInsightGoal",
+            "context.selectInsightRepo",
+            "external.search",
+            "artifact.buildRepoInsightMarkdown"
+        ],
+        artifactTypes: [.markdown, .log]
+    )
+
     static let all: [AgentDefinition] = [
         githubWeeklyReport,
+        repoInsight,
         AgentDefinition(
             id: "repo-alternatives",
             title: String.l10n("agent.definition.repoAlternatives.title"),
@@ -65,15 +83,6 @@ enum BuiltInAgents {
             systemImage: "tag",
             capabilityLabels: ["taxonomy", "queue", "review"],
             defaultPrompt: String.l10n("agent.definition.untaggedTidy.defaultPrompt"),
-            isEnabled: false
-        ),
-        AgentDefinition(
-            id: "repo-insight",
-            title: String.l10n("agent.definition.repoInsight.title"),
-            subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
-            systemImage: "doc.text.magnifyingglass",
-            capabilityLabels: ["repo", "analysis"],
-            defaultPrompt: String.l10n("agent.definition.repoInsight.defaultPrompt"),
             isEnabled: false
         ),
         AgentDefinition(

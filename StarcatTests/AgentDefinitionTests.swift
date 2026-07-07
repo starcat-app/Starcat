@@ -28,4 +28,19 @@ struct AgentDefinitionTests {
         ])
         #expect(agent.artifactTypes == [.markdown, .log])
     }
+
+    @Test("Repo Insight Agent 声明只读工具序列并默认启用")
+    func repoInsightDeclaresToolSequence() {
+        let agent = BuiltInAgents.repoInsight
+
+        #expect(agent.isEnabled)
+        #expect(agent.executionStrategy == .linearToolSequence)
+        #expect(agent.toolIDs == [
+            "agent.parseRepoInsightGoal",
+            "context.selectInsightRepo",
+            "external.search",
+            "artifact.buildRepoInsightMarkdown"
+        ])
+        #expect(agent.artifactTypes == [.markdown, .log])
+    }
 }

@@ -241,6 +241,99 @@ struct AgentRuntimeTests {
         #expect(markdownArtifact?.content.contains("External Search Unit Context") == true)
     }
 
+    @Test("Repo Insight Agent 通过通用 Runtime 生成 Markdown artifact")
+    func repoInsightRuntimeEmitsMarkdownArtifact() async throws {
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+            externalSearchTool: StubExternalSearchTool()
+        ))
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0,
+            textGenerator: EchoDraftAgentTextGenerator(),
+            toolRegistry: registry
+        )
+
+        let stream = runtime.run(
+            definition: BuiltInAgents.repoInsight,
+            prompt: "帮我分析 swift-markdown 的定位和风险",
+            context: AgentRunContext(
+                sourceDescription: "Unit Test",
+                repos: [
+                    repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800),
+                    repo(fullName: "swiftlang/swift-markdown", language: "Swift", stars: 3_100)
+                ]
+            )
+        )
+
+        var toolNames: [String] = []
+        var traceCount = 0
+        var markdownArtifact: AgentArtifact?
+        var didComplete = false
+        for await event in stream {
+            switch event {
+            case .toolOutput(let output):
+                toolNames.append(output.toolName)
+            case .trace:
+                traceCount += 1
+            case .artifactCreated(let artifact) where artifact.type == .markdown:
+                markdownArtifact = artifact
+            case .runCompleted:
+                didComplete = true
+            default:
+                break
+            }
+        }
+
+        #expect(toolNames == [
+            "agent.parseRepoInsightGoal",
+            "context.selectInsightRepo",
+            "external.search",
+            "artifact.buildRepoInsightMarkdown"
+        ])
+        #expect(traceCount == 6)
+        #expect(markdownArtifact?.title == BuiltInAgents.repoInsight.title)
+        #expect(markdownArtifact?.content.contains("# Repo Insight: swiftlang/swift-markdown") == true)
+        #expect(markdownArtifact?.content.contains("External Search Unit Context") == true)
+        #expect(didComplete)
+    }
+
+    @Test("Repo Insight 缺少 AI 配置时失败且不生成 artifact")
+    func repoInsightMissingAIDoesNotGenerateFallbackArtifact() async throws {
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+            externalSearchTool: StubExternalSearchTool()
+        ))
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0,
+            toolRegistry: registry
+        )
+
+        let stream = runtime.run(
+            definition: BuiltInAgents.repoInsight,
+            prompt: "帮我分析 GRDB.swift",
+            context: AgentRunContext(
+                sourceDescription: "Unit Test",
+                repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+            )
+        )
+
+        var failedMessage: String?
+        var artifactCount = 0
+        for await event in stream {
+            switch event {
+            case .runFailed(let message):
+                failedMessage = message
+            case .artifactCreated:
+                artifactCount += 1
+            default:
+                break
+            }
+        }
+
+        #expect(failedMessage?.contains("AI Provider") == true)
+        #expect(artifactCount == 0)
+    }
+
     @Test("external.search 失败时 Weekly Runtime 记录失败 trace 并继续本地生成")
     func weeklyRuntimeContinuesWhenExternalSearchFails() async throws {
         let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(

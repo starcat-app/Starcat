@@ -133,6 +133,40 @@ struct GitHubWeeklyReportToolsTests {
         }
     }
 
+    @Test("Repo Insight tools 选择提示词命中的仓库并生成分析草稿")
+    func repoInsightToolsSelectMentionedRepoAndBuildMarkdown() async throws {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [
+                repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800),
+                repo(fullName: "swiftlang/swift-markdown", language: "Swift", stars: 3_100)
+            ]
+        )
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let selectTool = try registry.tool(for: "context.selectInsightRepo")
+        let markdownTool = try registry.tool(for: "artifact.buildRepoInsightMarkdown")
+
+        let selectResult = await selectTool.execute(AgentToolInput(
+            prompt: "帮我分析 swift-markdown 的定位和风险",
+            context: context
+        ))
+        let markdownResult = await markdownTool.execute(AgentToolInput(
+            prompt: "帮我分析 swift-markdown 的定位和风险",
+            context: context,
+            values: ["externalContextMarkdown": "<external_context>parser docs</external_context>"],
+            payload: selectResult.payload
+        ))
+
+        #expect(selectResult.output.output.contains("swiftlang/swift-markdown"))
+        #expect(markdownResult.output.toolName == "artifact.buildRepoInsightMarkdown")
+        if case .markdown(let markdown) = markdownResult.payload {
+            #expect(markdown.contains("# Repo Insight: swiftlang/swift-markdown"))
+            #expect(markdown.contains("parser docs"))
+        } else {
+            Issue.record("Expected Repo Insight markdown payload")
+        }
+    }
+
     private func repo(
         fullName: String,
         language: String,

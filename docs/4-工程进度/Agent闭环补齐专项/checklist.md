@@ -30,10 +30,10 @@
 - [x] 新增 Agent 闭环补齐专项 checklist。
 - [x] 修复既有专项文档状态残留。
 - [x] 抽象 Agent execution profile,让 plan / step / artifact title 不再硬编码 Weekly。
-- [ ] 新增 Repo Insight Agent 定义并启用。
-- [ ] 新增 Repo Insight 只读工具链。
-- [ ] Runtime 支持 Repo Insight 生成 Markdown artifact。
-- [ ] 补 AgentDefinition / Tool / Runtime 单测。
+- [x] 新增 Repo Insight Agent 定义并启用。
+- [x] 新增 Repo Insight 只读工具链。
+- [x] Runtime 支持 Repo Insight 生成 Markdown artifact。
+- [x] 补 AgentDefinition / Tool / Runtime 单测。
 - [ ] 更新 `docs/功能实现总览.md`。
 - [ ] 第一轮审查: 文档、代码、测试、进度一致性。
 - [ ] 根据审查结果修复。
@@ -41,10 +41,10 @@
 
 ## 4. 验收标准
 
-- [ ] Agent 工作台至少有 Weekly Report 与 Repo Insight 两个可运行 Agent。
-- [ ] Repo Insight 使用真实 Starcat repo 快照,不显示 demo 数据。
-- [ ] Repo Insight 每步可展开 input / output / log。
-- [ ] Artifact 仍按执行顺序出现在底部。
-- [ ] 缺 AI 配置时明确失败,不生成假 artifact。
-- [ ] 现有 Weekly Agent 单测继续通过。
-- [ ] 新增 Repo Insight 单测覆盖成功和缺配置失败路径。
+- [x] Agent 工作台至少有 Weekly Report 与 Repo Insight 两个可运行 Agent。
+- [x] Repo Insight 使用真实 Starcat repo 快照,不显示 demo 数据。
+- [x] Repo Insight 每步可展开 input / output / log。
+- [x] Artifact 仍按执行顺序出现在底部。
+- [x] 缺 AI 配置时明确失败,不生成假 artifact。
+- [x] 现有 Weekly Agent 单测继续通过。
+- [x] 新增 Repo Insight 单测覆盖成功和缺配置失败路径。
