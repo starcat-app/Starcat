@@ -9,7 +9,7 @@
 
 把 Agent Run 从内存态推进到可复盘的持久化 v1:
 
-1. 新增 Agent run / step / trace / artifact 的本地 SQLite 存储。
+1. 新增 Agent run / step / tool output / trace / artifact 的本地 SQLite 存储。
 2. Runtime 事件写入持久化 store,保证完成、失败、取消的 run 都可复查。
 3. Agent 工作台左侧接入真实历史列表,不再依赖假历史。
 4. 点击历史 run 可只读查看 prompt、steps、trace、artifact。
@@ -46,7 +46,7 @@
 
 ## 4. 验收标准
 
-- [x] 运行 Agent 后,run / step / trace / artifact 写入本地数据库。
+- [x] 运行 Agent 后,run / step / tool output / trace / artifact 写入本地数据库。
 - [x] 重新打开 Agent 工作台后,左侧历史列表显示真实 run。
 - [x] 点击历史 run 后,中栏和右栏恢复该 run 的只读快照。
 - [x] 新 run 不会覆盖历史 run。
