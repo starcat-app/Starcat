@@ -76,9 +76,9 @@ actor DiscoveryAPI {
     ///
     /// 与 Weekly bulk 同款：客户端拿到完整公开 catalog 后在本地 SQLite 做筛选、排序和分页。
     /// 这里不做 conditional GET；是否发请求由 Repository/ViewModel 的 TTL 负责。
-    func fetchBulk() async throws -> DiscoveryBulkResult {
+    func fetchBulk(ignoresCache: Bool = false) async throws -> DiscoveryBulkResult {
         let url = AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.bulk, to: baseURL)
-        let (data, response) = try await performRequest(url: url)
+        let (data, response) = try await performRequest(url: url, ignoresCache: ignoresCache)
 
         guard let http = response as? HTTPURLResponse else {
             throw StarcatEnvelopeNetworkError.transport(URLError(.badServerResponse))
@@ -140,9 +140,15 @@ actor DiscoveryAPI {
         )
     }
 
-    private func performRequest(url: URL) async throws -> (Data, URLResponse) {
+    private func performRequest(url: URL, ignoresCache: Bool = false) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        if ignoresCache {
+            // 手动刷新必须越过 URLCache，否则后端 bulk 已更新时仍可能拿到系统缓存的旧快照。
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
         if let apiKey, !apiKey.isEmpty {

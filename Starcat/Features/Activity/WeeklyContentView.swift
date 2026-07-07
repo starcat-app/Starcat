@@ -55,6 +55,7 @@ struct WeeklyContentView: View {
 
     @State private var viewModel: WeeklyContentViewModel?
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var isFilterPopoverPresented = false
 
     // R-01 §3.1.4 Step 7.3：refreshAngle / reduceMotion 已无外层用途，统一由 SyncIconButton 内部处理。
     // WeeklyProjectRow 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
@@ -132,96 +133,7 @@ struct WeeklyContentView: View {
     /// 后续要做时增加一个 Menu 即可，结构上已经在 ViewModel 留了 `selectedIssue`。
     private func filterBar(_ viewModel: WeeklyContentViewModel) -> some View {
         HStack(spacing: 10) {
-            Menu {
-                Section("weekly.filter.source") {
-                    ForEach(WeeklySourceFilter.allCases) { source in
-                        Button {
-                            clearWeeklyDetailSelectionIfChanging(source != viewModel.selectedSource)
-                            viewModel.changeSource(to: source)
-                        } label: {
-                            filterMenuRow(
-                                title: source.localizedTitle,
-                                isSelected: source == viewModel.selectedSource
-                            )
-                        }
-                    }
-                }
-
-                Section("weekly.filter.coverage") {
-                    ForEach(WeeklySourceCoverageFilter.allCases) { coverage in
-                        Button {
-                            clearWeeklyDetailSelectionIfChanging(coverage != viewModel.selectedCoverage)
-                            viewModel.changeCoverage(to: coverage)
-                        } label: {
-                            filterMenuRow(
-                                title: coverage.localizedTitle,
-                                isSelected: coverage == viewModel.selectedCoverage
-                            )
-                        }
-                    }
-                }
-
-                Section("weekly.filter.repoState") {
-                    Button {
-                        clearWeeklyDetailSelection()
-                        viewModel.changeHideArchivedRepos(to: !viewModel.hideArchivedRepos)
-                    } label: {
-                        filterMenuRow(
-                            title: String.l10n("weekly.filter.repoState.hideArchived"),
-                            isSelected: viewModel.hideArchivedRepos
-                        )
-                    }
-                    Button {
-                        clearWeeklyDetailSelection()
-                        viewModel.changeHideForkRepos(to: !viewModel.hideForkRepos)
-                    } label: {
-                        filterMenuRow(
-                            title: String.l10n("weekly.filter.repoState.hideForks"),
-                            isSelected: viewModel.hideForkRepos
-                        )
-                    }
-                }
-
-                Section("weekly.filter.stars") {
-                    ForEach(WeeklyStarsFilter.allCases) { starsFilter in
-                        Button {
-                            clearWeeklyDetailSelectionIfChanging(starsFilter != viewModel.selectedStarsFilter)
-                            viewModel.changeStarsFilter(to: starsFilter)
-                        } label: {
-                            filterMenuRow(
-                                title: starsFilter.localizedTitle,
-                                isSelected: starsFilter == viewModel.selectedStarsFilter
-                            )
-                        }
-                    }
-                }
-
-                Section("weekly.filter.activity") {
-                    ForEach(WeeklyPushedRecencyFilter.allCases) { pushedFilter in
-                        Button {
-                            clearWeeklyDetailSelectionIfChanging(pushedFilter != viewModel.selectedPushedRecency)
-                            viewModel.changePushedRecency(to: pushedFilter)
-                        } label: {
-                            filterMenuRow(
-                                title: pushedFilter.localizedTitle,
-                                isSelected: pushedFilter == viewModel.selectedPushedRecency
-                            )
-                        }
-                    }
-                }
-
-            } label: {
-                HStack(spacing: 6) {
-                    Text("weekly.filter.title")
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(.secondary)
-                    Text(viewModel.filterSummaryTitle)
-                    Image(systemName: "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .fixedSize()
+            filterPopoverButton(viewModel)
 
             UnifiedSortMenu(
                 selection: weeklySortBinding(viewModel),
@@ -234,6 +146,175 @@ struct WeeklyContentView: View {
 
             refreshButton(viewModel)
         }
+    }
+
+    /// Weekly 筛选是多条件组合选择，不能用原生 Menu。
+    ///
+    /// `Menu` 在点击任意 `Button` 后会自动关闭，用户连续选择多个条件时会被迫反复打开。
+    /// 这里改为 Popover：内部按钮只更新筛选状态，点击外部 / Esc / 失焦再交给系统关闭。
+    private func filterPopoverButton(_ viewModel: WeeklyContentViewModel) -> some View {
+        Button {
+            isFilterPopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+                Text("weekly.filter.title")
+                Text(viewModel.filterSummaryTitle)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
+        .help("weekly.filter.title")
+        .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .bottom) {
+            weeklyFilterPopover(viewModel)
+                .appLocaleEnvironment()
+        }
+    }
+
+    private func weeklyFilterPopover(_ viewModel: WeeklyContentViewModel) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                weeklyFilterSection("weekly.filter.source") {
+                    ForEach(WeeklySourceFilter.allCases) { source in
+                        weeklyFilterRow(
+                            title: source.localizedTitle,
+                            isSelected: source == viewModel.selectedSource
+                        ) {
+                            clearWeeklyDetailSelectionIfChanging(source != viewModel.selectedSource)
+                            viewModel.changeSource(to: source)
+                        }
+                    }
+                }
+
+                weeklyFilterDivider
+
+                weeklyFilterSection("weekly.filter.coverage") {
+                    ForEach(WeeklySourceCoverageFilter.allCases) { coverage in
+                        weeklyFilterRow(
+                            title: coverage.localizedTitle,
+                            isSelected: coverage == viewModel.selectedCoverage
+                        ) {
+                            clearWeeklyDetailSelectionIfChanging(coverage != viewModel.selectedCoverage)
+                            viewModel.changeCoverage(to: coverage)
+                        }
+                    }
+                }
+
+                weeklyFilterDivider
+
+                weeklyFilterSection("weekly.filter.repoState") {
+                    weeklyFilterRow(
+                        title: String.l10n("weekly.filter.repoState.hideArchived"),
+                        isSelected: viewModel.hideArchivedRepos
+                    ) {
+                        clearWeeklyDetailSelection()
+                        viewModel.changeHideArchivedRepos(to: !viewModel.hideArchivedRepos)
+                    }
+                    weeklyFilterRow(
+                        title: String.l10n("weekly.filter.repoState.hideForks"),
+                        isSelected: viewModel.hideForkRepos
+                    ) {
+                        clearWeeklyDetailSelection()
+                        viewModel.changeHideForkRepos(to: !viewModel.hideForkRepos)
+                    }
+                }
+
+                weeklyFilterDivider
+
+                weeklyFilterSection("weekly.filter.stars") {
+                    ForEach(WeeklyStarsFilter.allCases) { starsFilter in
+                        weeklyFilterRow(
+                            title: starsFilter.localizedTitle,
+                            isSelected: starsFilter == viewModel.selectedStarsFilter
+                        ) {
+                            clearWeeklyDetailSelectionIfChanging(starsFilter != viewModel.selectedStarsFilter)
+                            viewModel.changeStarsFilter(to: starsFilter)
+                        }
+                    }
+                }
+
+                weeklyFilterDivider
+
+                weeklyFilterSection("weekly.filter.activity") {
+                    ForEach(WeeklyPushedRecencyFilter.allCases) { pushedFilter in
+                        weeklyFilterRow(
+                            title: pushedFilter.localizedTitle,
+                            isSelected: pushedFilter == viewModel.selectedPushedRecency
+                        ) {
+                            clearWeeklyDetailSelectionIfChanging(pushedFilter != viewModel.selectedPushedRecency)
+                            viewModel.changePushedRecency(to: pushedFilter)
+                        }
+                    }
+                }
+
+                weeklyFilterDivider
+
+                Button {
+                    clearWeeklyDetailSelectionIfChanging(viewModel.hasActiveFilters)
+                    viewModel.resetFilters()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .frame(width: 16)
+                        Text("weekly.filter.reset")
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                    .opacity(viewModel.hasActiveFilters ? 1 : 0.45)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(!viewModel.hasActiveFilters)
+            }
+            .padding(.vertical, 10)
+        }
+        .frame(width: 270, alignment: .leading)
+        .frame(maxHeight: 620)
+    }
+
+    private func weeklyFilterSection<Content: View>(
+        _ title: LocalizedStringKey,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+            content()
+        }
+    }
+
+    private var weeklyFilterDivider: some View {
+        Divider()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+    }
+
+    private func weeklyFilterRow(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark")
+                    .opacity(isSelected ? 1 : 0)
+                    .frame(width: 16)
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 
     private func weeklySortBinding(_ viewModel: WeeklyContentViewModel) -> Binding<WeeklyFeedSort> {
@@ -287,15 +368,6 @@ struct WeeklyContentView: View {
               sort != viewModel.selectedSort
         else { return }
         viewModel.changeSort(to: sort)
-    }
-
-    @ViewBuilder
-    private func filterMenuRow(title: String, isSelected: Bool) -> some View {
-        if isSelected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Text(title)
-        }
     }
 
     /// 顶部刷新按钮。
@@ -718,6 +790,10 @@ final class WeeklyContentViewModel {
         return count
     }
 
+    var hasActiveFilters: Bool {
+        activeFilterCount > 0
+    }
+
     /// 这些筛选后端分页接口暂不支持，必须基于 bulk 全量数据过滤。
     private var usesLocalOnlyFilters: Bool {
         selectedCoverage != .all ||
@@ -951,6 +1027,21 @@ final class WeeklyContentViewModel {
     func changePushedRecency(to newValue: WeeklyPushedRecencyFilter) {
         guard newValue != selectedPushedRecency else { return }
         selectedPushedRecency = newValue
+        reapplyFilters()
+    }
+
+    /// 把 Weekly 筛选菜单内的条件恢复到默认值。
+    ///
+    /// 只重置当前菜单暴露的筛选项，不动排序和语言偏好：排序是相邻的独立控件，
+    /// 语言来自 Sidebar/全局列表偏好，混在这里重置会让用户难以预期。
+    func resetFilters() {
+        guard hasActiveFilters else { return }
+        selectedSource = .all
+        selectedCoverage = .all
+        hideArchivedRepos = false
+        hideForkRepos = false
+        selectedStarsFilter = .all
+        selectedPushedRecency = .all
         reapplyFilters()
     }
 

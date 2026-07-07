@@ -65,7 +65,7 @@ struct SearchModelsTests {
             isArchived: false, isFork: false, isPrivate: false,
             isStarred: false, isInLibrary: false, badge: nil,
             weeklySources: [], weeklySourceLabel: nil,
-            inlineMetadata: nil, readStatus: nil,
+            inlineMetadata: nil, footerMetadata: nil, readStatus: nil,
             openSSFScore: nil,
             healthBadge: nil
         )

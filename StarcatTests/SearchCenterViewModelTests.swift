@@ -210,6 +210,7 @@ struct SearchCenterViewModelTests {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
+            footerMetadata: nil,
             readStatus: nil,
             openSSFScore: nil,
             healthBadge: nil

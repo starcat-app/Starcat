@@ -101,7 +101,6 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.up.arrow.down.circle")
                     .foregroundStyle(.secondary)
-                Text("list.sort")
                 Text(displayName(selection))
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
@@ -109,6 +108,7 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
                     .foregroundStyle(.secondary)
             }
             .accessibilityLabel("list.sort")
+            .accessibilityValue(displayName(selection))
         }
         .fixedSize()
         .help("list.sortHint")

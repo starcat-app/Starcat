@@ -101,6 +101,10 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     /// 其它场景保持 nil，避免恢复已删除的右上相对时间戳。
     let inlineMetadata: RepoCardInlineMetadata?
 
+    /// chip 行内的轻量元信息。用于新发布列表展示最新 release 日期这类仓库属性，
+    /// 避免挤占 fullName 同行空间。
+    let footerMetadata: RepoCardInlineMetadata?
+
     /// 阅读状态（v2，2026-06-12 引入）。
     ///
     /// **设计意图**：让列表 row 在 chip 行末尾渲染 unread / using 角标，
@@ -164,6 +168,7 @@ extension RepoCardViewData {
             weeklySources: weeklySources,
             weeklySourceLabel: weeklySourceLabel,
             inlineMetadata: inlineMetadata,
+            footerMetadata: footerMetadata,
             readStatus: readStatus,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge
@@ -248,6 +253,7 @@ extension Repo {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: inlineMetadata,
+            footerMetadata: nil,
             readStatus: readStatus,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge
@@ -292,6 +298,7 @@ extension StarcatRepoCardDTO {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
+            footerMetadata: nil,
             readStatus: nil,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge
@@ -342,6 +349,7 @@ extension TrendingRepo {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
+            footerMetadata: nil,
             readStatus: nil,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge
@@ -386,6 +394,7 @@ extension WeeklyFeedItem {
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,
             inlineMetadata: nil,
+            footerMetadata: nil,
             readStatus: nil,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge

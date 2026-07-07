@@ -377,6 +377,8 @@ extension DiscoveryRepoDTO {
     func asCardData(
         registry: StarredRegistry,
         isInLibrary: Bool = false,
+        inlineMetadata: RepoCardInlineMetadata? = nil,
+        footerMetadata: RepoCardInlineMetadata? = nil,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
         healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
@@ -398,9 +400,8 @@ extension DiscoveryRepoDTO {
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,
-            inlineMetadata: latestReleaseAt.map {
-                RepoCardInlineMetadata(systemImage: "shippingbox", text: $0)
-            },
+            inlineMetadata: inlineMetadata,
+            footerMetadata: footerMetadata,
             readStatus: nil,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge

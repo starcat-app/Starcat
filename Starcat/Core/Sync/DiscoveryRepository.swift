@@ -17,10 +17,21 @@ protocol DiscoveryRepositoryProtocol: Sendable {
     func cachedPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async -> DiscoveryCachedPage?
     func fetchPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async throws -> DiscoveryCachedPage
     func cachedBulk() async -> DiscoveryBulkCachedSnapshot?
-    func fetchBulk() async throws -> DiscoveryBulkResult
+    func fetchBulk(ignoresCache: Bool) async throws -> DiscoveryBulkFetchResult
     func cachedSummary() async -> DiscoverySummaryDTO?
     func fetchSummary() async throws -> DiscoverySummaryDTO
     func clearCache() async
+}
+
+struct DiscoveryBulkFetchResult: Sendable {
+    let result: DiscoveryBulkResult
+    let source: Source
+    let fallbackErrorDescription: String?
+
+    enum Source: Equatable, Sendable {
+        case remote
+        case cachedFallback
+    }
 }
 
 /// starcat-discovery-api 的本地缓存仓库实现。
@@ -131,20 +142,29 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
         }
     }
 
-    func fetchBulk() async throws -> DiscoveryBulkResult {
+    func fetchBulk(ignoresCache: Bool = false) async throws -> DiscoveryBulkFetchResult {
         do {
-            let result = try await api.fetchBulk()
+            let result = try await api.fetchBulk(ignoresCache: ignoresCache)
             try await save(bulk: result, cachedAt: Date())
-            return result
+            return DiscoveryBulkFetchResult(
+                result: result,
+                source: .remote,
+                fallbackErrorDescription: nil
+            )
         } catch {
             if let cached = await cachedBulk(), !cached.repos.isEmpty {
                 AppLog.network.warning("Discovery bulk network failed, falling back to cache (\(cached.repos.count) repos): \(error.localizedDescription, privacy: .public)")
-                return DiscoveryBulkResult(
+                let result = DiscoveryBulkResult(
                     repos: cached.repos,
                     summary: cached.summary,
                     etag: cached.etag,
                     generatedAt: cached.generatedAt,
                     total: cached.total
+                )
+                return DiscoveryBulkFetchResult(
+                    result: result,
+                    source: .cachedFallback,
+                    fallbackErrorDescription: error.localizedDescription
                 )
             }
             throw error

@@ -78,7 +78,9 @@ struct DiscoveryRepositoryPersistenceTests {
             return (Self.httpResponse(200, request.url!, headers: ["ETag": "W/bulk-test"]), body)
         }
 
-        let fetched = try await repository.fetchBulk()
+        let fetchResult = try await repository.fetchBulk()
+        let fetched = fetchResult.result
+        #expect(fetchResult.source == .remote)
         #expect(fetched.repos.first?.fullName == "bulk/repo")
         #expect(fetched.repos.first?.popularityScore == 8.5)
         #expect(fetched.repos.first?.categories == ["popular", "new_releases"])

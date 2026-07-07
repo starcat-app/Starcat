@@ -165,6 +165,41 @@ struct ExploreDiscoveryViewModelTests {
         #expect(!viewModel.isRefreshing)
     }
 
+    @Test("手动刷新失败且有 bulk 缓存时保留列表并展示缓存提示")
+    func manualRefreshFailureFallsBackToCachedBulkWithWarning() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(repoID: 501, owner: "cached", name: "repo", topics: ["ai"], platforms: ["macos"])
+        ]))
+        let viewModel = ExploreDiscoveryViewModel()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .discover,
+            language: nil,
+            topic: "ai",
+            platform: "macos",
+            sort: .recommended
+        )
+
+        await repository.setFetchError(FakeDiscoveryError.unavailable)
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .discover,
+            language: nil,
+            topic: "ai",
+            platform: "macos",
+            sort: .recommended,
+            showsRefreshIndicator: true
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["cached/repo"])
+        #expect(viewModel.loadError == nil)
+        #expect(viewModel.cacheWarning?.isEmpty == false)
+        #expect(await repository.lastIgnoresCacheValue() == true)
+    }
+
     private nonisolated static func makeBulkResult(repos: [DiscoveryRepoDTO]) -> DiscoveryBulkResult {
         DiscoveryBulkResult(
             repos: repos,
@@ -260,9 +295,24 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
         cached
     }
 
-    func fetchBulk() async throws -> DiscoveryBulkResult {
+    func fetchBulk(ignoresCache: Bool) async throws -> DiscoveryBulkFetchResult {
         bulkFetches += 1
+        lastIgnoresCache = ignoresCache
         if let fetchError {
+            if let cached {
+                let result = DiscoveryBulkResult(
+                    repos: cached.repos,
+                    summary: cached.summary,
+                    etag: cached.etag,
+                    generatedAt: cached.generatedAt,
+                    total: cached.total
+                )
+                return DiscoveryBulkFetchResult(
+                    result: result,
+                    source: .cachedFallback,
+                    fallbackErrorDescription: fetchError.localizedDescription
+                )
+            }
             throw fetchError
         }
         guard !fetchQueue.isEmpty else {
@@ -277,7 +327,11 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
             generatedAt: result.generatedAt,
             total: result.total
         )
-        return result
+        return DiscoveryBulkFetchResult(
+            result: result,
+            source: .remote,
+            fallbackErrorDescription: nil
+        )
     }
 
     func cachedSummary() async -> DiscoverySummaryDTO? {
@@ -302,6 +356,12 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
 
     func fetchBulkCount() -> Int {
         bulkFetches
+    }
+
+    private var lastIgnoresCache: Bool?
+
+    func lastIgnoresCacheValue() -> Bool? {
+        lastIgnoresCache
     }
 
     func fetchPageCount() -> Int {

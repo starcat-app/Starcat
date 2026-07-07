@@ -380,6 +380,7 @@ private extension UndoStarRecord {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
+            footerMetadata: nil,
             readStatus: nil,
             openSSFScore: nil,
             healthBadge: nil

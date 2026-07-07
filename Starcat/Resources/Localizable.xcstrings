@@ -11807,6 +11807,38 @@
         }
       }
     },
+    "explore.cacheFallback.warning": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using cached discovery data. Refresh again later."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在使用本地缓存的探索数据，稍后可再次刷新。"
+          }
+        }
+      }
+    },
+    "explore.cacheFallback.warningFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using cached discovery data because refresh failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新失败，正在使用本地缓存的探索数据：%@"
+          }
+        }
+      }
+    },
     "explore.sidebar.categories": {
       "localizations": {
         "en": {
@@ -41975,6 +42007,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "隐藏 fork"
+          }
+        }
+      }
+    },
+    "weekly.filter.reset": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Filters"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置筛选条件"
           }
         }
       }

@@ -254,7 +254,24 @@ private struct ExploreDiscoveryListView: View {
                 subtitleKey: "explore.empty.subtitle"
             )
         } else {
-            repoList
+            VStack(spacing: 0) {
+                cacheWarningBanner
+                repoList
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cacheWarningBanner: some View {
+        if let warning = viewModel.cacheWarning {
+            Label(warning, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+                .padding(.vertical, 6)
+                .background(.bar)
         }
     }
 
@@ -284,6 +301,7 @@ private struct ExploreDiscoveryListView: View {
                         card: repo.asCardData(
                             registry: dependencies.starredRegistry,
                             isInLibrary: isInLibrary(repo.repoID),
+                            footerMetadata: releaseFooterMetadata(for: repo),
                             openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.repoID)
                         ),
                         isSelected: store.isActive
@@ -348,6 +366,24 @@ private struct ExploreDiscoveryListView: View {
             await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
             await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
         }
+    }
+
+    /// 新发布列表才展示 release 时间；发现 / 热门不展示，避免把仓库名右侧挤满。
+    ///
+    /// 后端给的是 ISO-8601 `latest_release_at`，列表里只保留短日期（如 `Jul 4` / `7月4日`）。
+    /// 解析失败时直接隐藏，不能把原始时间戳重新暴露到卡片上。
+    private func releaseFooterMetadata(for repo: DiscoveryRepoDTO) -> RepoCardInlineMetadata? {
+        guard mode == .newReleases,
+              let raw = repo.latestReleaseAt,
+              let date = ISO8601DateFormatter.shared.date(from: raw)
+        else { return nil }
+        let text = date.formatted(
+            .dateTime
+                .month(.abbreviated)
+                .day()
+                .locale(LocaleStore.shared.selection.effectiveLocale)
+        )
+        return RepoCardInlineMetadata(systemImage: "shippingbox", text: text)
     }
 
     private var indexedRepos: [IndexedDiscoveryRepo] {

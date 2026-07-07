@@ -19,7 +19,7 @@ import Observation
 final class ExploreDiscoveryViewModel {
 
     private static let pageSize = 20
-    private static let bulkTTL: TimeInterval = 12 * 60 * 60
+    private static let bulkTTL: TimeInterval = 30 * 60
 
     private(set) var repos: [DiscoveryRepoDTO] = []
     private(set) var total: Int = 0
@@ -27,6 +27,7 @@ final class ExploreDiscoveryViewModel {
     private(set) var isLoading: Bool = false
     private(set) var isRefreshing: Bool = false
     private(set) var loadError: String?
+    private(set) var cacheWarning: String?
     private(set) var reposRevision: Int = 0
     private(set) var lastRefreshedAt: Date?
 
@@ -51,6 +52,7 @@ final class ExploreDiscoveryViewModel {
         isLoading = !showsRefreshIndicator
         isRefreshing = showsRefreshIndicator
         loadError = nil
+        cacheWarning = nil
 
         var didShowCachedBulk = false
         if !showsRefreshIndicator,
@@ -68,23 +70,27 @@ final class ExploreDiscoveryViewModel {
             didShowCachedBulk = true
             isLoading = false
             if isCacheFresh(at: cached.lastFetchedAt),
-               Self.isCachedBulkUsable(cached, for: mode) {
+               Self.isCachedBulkUsable(cached, for: mode),
+               !(await isSummaryNewerThanBulk(cached, repository: repository)) {
                 isRefreshing = false
                 return
             }
         }
 
         do {
-            let bulk = try await repository.fetchBulk()
+            let fetchResult = try await repository.fetchBulk(ignoresCache: showsRefreshIndicator)
             guard inFlightRequestID == requestID else { return }
             apply(
-                result: bulk,
+                result: fetchResult.result,
                 mode: mode,
                 language: language,
                 topic: topic,
                 platform: platform,
                 sort: sort
             )
+            if case .cachedFallback = fetchResult.source {
+                cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
+            }
         } catch {
             guard inFlightRequestID == requestID else { return }
             loadError = error.localizedDescription
@@ -336,6 +342,31 @@ final class ExploreDiscoveryViewModel {
 
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    private func isSummaryNewerThanBulk(
+        _ snapshot: DiscoveryBulkCachedSnapshot,
+        repository: any DiscoveryRepositoryProtocol
+    ) async -> Bool {
+        guard let summary = await repository.cachedSummary(),
+              let summaryGeneratedAt = Self.parseAPIDate(summary.generatedAt),
+              let bulkGeneratedAt = Self.parseAPIDate(snapshot.generatedAt)
+        else {
+            return false
+        }
+        return summaryGeneratedAt > bulkGeneratedAt
+    }
+
+    private static func parseAPIDate(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        return ISO8601DateFormatter.shared.date(from: raw)
+    }
+
+    private static func cacheFallbackWarning(_ errorDescription: String?) -> String {
+        guard let errorDescription, !errorDescription.isEmpty else {
+            return String.l10n("explore.cacheFallback.warning")
+        }
+        return String(format: String.l10n("explore.cacheFallback.warningFormat"), errorDescription)
     }
 
     private static func isCachedBulkUsable(_ snapshot: DiscoveryBulkCachedSnapshot, for mode: ExploreMode) -> Bool {
