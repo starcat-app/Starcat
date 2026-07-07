@@ -36,6 +36,7 @@ struct AgentRuntimeTests {
         var skippedStepCount = 0
         var toolOutputCount = 0
         var traceCount = 0
+        var traceTitles: [String] = []
         var assistantOutput = ""
         var markdownArtifact: AgentArtifact?
         var logArtifact: AgentArtifact?
@@ -60,6 +61,7 @@ struct AgentRuntimeTests {
                 #expect(output.output.isEmpty == false)
             case .trace(let span):
                 traceCount += 1
+                traceTitles.append(span.title)
                 #expect(span.input.isEmpty == false)
                 #expect(span.output.isEmpty == false)
             case .assistantDelta(let text):
@@ -84,6 +86,7 @@ struct AgentRuntimeTests {
         #expect(skippedStepCount == 1)
         #expect(toolOutputCount == 5)
         #expect(traceCount == 7)
+        #expect(traceTitles.suffix(2) == ["AI 生成周刊正文", "本周 GitHub 热门项目周刊"])
         #expect(assistantOutput.contains("Unit Test AI Output"))
         #expect(markdownArtifact?.type == .markdown)
         #expect(markdownArtifact?.content.contains("# GitHub Weekly Report") == true)

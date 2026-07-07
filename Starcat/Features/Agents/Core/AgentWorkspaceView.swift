@@ -60,7 +60,6 @@ struct AgentWorkspaceView: View {
                     agentSection("发现", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
                     agentSection("消化", agents: viewModel.agents.filter { ["recall-search", "repo-insight"].contains($0.id) })
                     agentSection("整理", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
-                    historySection
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 18)
@@ -162,39 +161,6 @@ struct AgentWorkspaceView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(!agent.isEnabled || viewModel.isRunning)
-    }
-
-    private var historySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("历史任务")
-                .font(agentFont(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .padding(.horizontal, 4)
-
-            historyRow(title: "AI Agent 专题周报", caption: "最近一次 · 本地快照")
-            historyRow(title: "Swift MCP 替代品", caption: "昨天 · 对比表")
-        }
-    }
-
-    private func historyRow(title: String, caption: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: "clock.arrow.circlepath")
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(agentFont(.caption, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(caption)
-                    .font(agentFont(.caption))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(11)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Run Surface
@@ -869,11 +835,9 @@ struct AgentWorkspaceView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                composerMenu("Craft", icon: "wand.and.sparkles")
-                composerMenu("自动", icon: "arrow.triangle.branch")
-                composerMenu("技能", icon: "hammer")
-                composerMenu("只读", icon: "lock")
-                composerMenu("@ Repo", icon: "at")
+                composerContextChip("Scope: Starred repos", icon: "tray.full")
+                composerContextChip("Mode: Read-only", icon: "lock")
+                composerContextChip("Tools: Registry", icon: "wrench.and.screwdriver")
                 Spacer()
             }
             .padding(.horizontal, 18)
@@ -924,12 +888,10 @@ struct AgentWorkspaceView: View {
         .padding(.horizontal, 18)
     }
 
-    private func composerMenu(_ title: String, icon: String) -> some View {
+    private func composerContextChip(_ title: String, icon: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
             Text(title)
-            Image(systemName: "chevron.down")
-                .font(agentFont(.caption, weight: .semibold))
         }
         .font(agentFont(.caption))
         .foregroundStyle(.primary)
