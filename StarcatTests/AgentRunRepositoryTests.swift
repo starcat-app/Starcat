@@ -71,6 +71,15 @@ struct AgentRunRepositoryTests {
             output: "goal",
             log: "log"
         )
+        let toolOutput = AgentToolOutput(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000014")!,
+            toolName: "agent.parseGoal",
+            summary: "ok",
+            detail: "goal parsed",
+            input: "prompt",
+            output: "goal",
+            log: "log"
+        )
         let artifact = AgentArtifact(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000013")!,
             type: .markdown,
@@ -80,6 +89,7 @@ struct AgentRunRepositoryTests {
         )
 
         try await repository.upsertStep(step, runID: runID, index: 0, updatedAt: fixedDate(10))
+        try await repository.appendToolOutput(toolOutput, runID: runID, index: 0, createdAt: fixedDate(15))
         try await repository.appendTrace(trace, runID: runID, index: 0, createdAt: fixedDate(20))
         try await repository.appendArtifact(artifact, runID: runID, index: 0)
         try await repository.updateRunStatus(
@@ -95,6 +105,7 @@ struct AgentRunRepositoryTests {
         #expect(snapshot?.run.status == AgentRunStatus.completed.rawValue)
         #expect(snapshot?.run.assistantOutput == "# Weekly")
         #expect(snapshot?.steps.first?.title == "解析任务目标")
+        #expect(snapshot?.toolOutputs.first?.toolName == "agent.parseGoal")
         #expect(snapshot?.traces.first?.title == "agent.parseGoal")
         #expect(snapshot?.artifacts.first?.content == "# Weekly")
     }

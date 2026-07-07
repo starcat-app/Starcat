@@ -105,6 +105,34 @@ struct AgentTraceRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     }
 }
 
+struct AgentToolOutputRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
+    static let databaseTableName = "agent_run_tool_outputs"
+
+    var id: String
+    var runId: String
+    var outputIndex: Int
+    var toolName: String
+    var summary: String
+    var detail: String
+    var input: String
+    var output: String
+    var log: String
+    var createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case runId = "run_id"
+        case outputIndex = "output_index"
+        case toolName = "tool_name"
+        case summary
+        case detail
+        case input
+        case output
+        case log
+        case createdAt = "created_at"
+    }
+}
+
 struct AgentArtifactRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
     static let databaseTableName = "agent_artifacts"
 
@@ -130,6 +158,7 @@ struct AgentArtifactRecord: Codable, FetchableRecord, PersistableRecord, Identif
 struct AgentRunSnapshotRecord: Equatable, Sendable {
     var run: AgentRunRecord
     var steps: [AgentRunStepRecord]
+    var toolOutputs: [AgentToolOutputRecord]
     var traces: [AgentTraceRecord]
     var artifacts: [AgentArtifactRecord]
 }
@@ -152,6 +181,7 @@ protocol AgentRunRepositoryProtocol: Sendable {
         finishedAt: Date?
     ) async throws
     func upsertStep(_ step: AgentRunStep, runID: UUID, index: Int, updatedAt: Date) async throws
+    func appendToolOutput(_ output: AgentToolOutput, runID: UUID, index: Int, createdAt: Date) async throws
     func appendTrace(_ trace: AgentTraceSpan, runID: UUID, index: Int, createdAt: Date) async throws
     func appendArtifact(_ artifact: AgentArtifact, runID: UUID, index: Int) async throws
     func recentRuns(limit: Int) async throws -> [AgentRunRecord]
@@ -266,6 +296,24 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
         }
     }
 
+    func appendToolOutput(_ output: AgentToolOutput, runID: UUID, index: Int, createdAt: Date = Date()) async throws {
+        let record = AgentToolOutputRecord(
+            id: output.id.uuidString,
+            runId: runID.uuidString,
+            outputIndex: index,
+            toolName: output.toolName,
+            summary: output.summary,
+            detail: output.detail,
+            input: output.input,
+            output: output.output,
+            log: output.log,
+            createdAt: ISO8601DateFormatter.shared.string(from: createdAt)
+        )
+        try await database.writer.write { db in
+            try record.insert(db)
+        }
+    }
+
     func appendArtifact(_ artifact: AgentArtifact, runID: UUID, index: Int) async throws {
         let record = AgentArtifactRecord(
             id: artifact.id.uuidString,
@@ -303,6 +351,10 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
                 .filter(Column("run_id") == runID.uuidString)
                 .order(Column("trace_index").asc)
                 .fetchAll(db)
+            let toolOutputs = try AgentToolOutputRecord
+                .filter(Column("run_id") == runID.uuidString)
+                .order(Column("output_index").asc)
+                .fetchAll(db)
             let artifacts = try AgentArtifactRecord
                 .filter(Column("run_id") == runID.uuidString)
                 .order(Column("artifact_index").asc)
@@ -310,6 +362,7 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
             return AgentRunSnapshotRecord(
                 run: run,
                 steps: steps,
+                toolOutputs: toolOutputs,
                 traces: traces,
                 artifacts: artifacts
             )

@@ -166,6 +166,15 @@ struct AgentWorkspaceViewModelTests {
             output: "output",
             log: "log"
         )
+        let toolOutput = AgentToolOutput(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001014")!,
+            toolName: "history.tool",
+            summary: "ok",
+            detail: "done",
+            input: "input",
+            output: "output",
+            log: "log"
+        )
         let artifact = AgentArtifact(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000001013")!,
             type: .markdown,
@@ -181,6 +190,7 @@ struct AgentWorkspaceViewModelTests {
             createdAt: Date(timeIntervalSince1970: 1_788_000_000)
         )
         try await repository.upsertStep(step, runID: runID, index: 0, updatedAt: Date())
+        try await repository.appendToolOutput(toolOutput, runID: runID, index: 0, createdAt: Date())
         try await repository.appendTrace(trace, runID: runID, index: 0, createdAt: Date())
         try await repository.appendArtifact(artifact, runID: runID, index: 0)
         try await repository.updateRunStatus(
@@ -202,6 +212,7 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.prompt == "打开历史")
         #expect(viewModel.status == .completed)
         #expect(viewModel.steps.map(\.title) == ["历史步骤"])
+        #expect(viewModel.toolOutputs.map(\.toolName) == ["history.tool"])
         #expect(viewModel.traceSpans.map(\.title) == ["history.tool"])
         #expect(viewModel.selectedArtifact?.content == "# 历史")
         #expect(viewModel.assistantOutput == "# 历史")

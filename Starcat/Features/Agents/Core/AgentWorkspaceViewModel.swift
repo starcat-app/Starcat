@@ -226,7 +226,7 @@ final class AgentWorkspaceViewModel {
         status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
         planSteps = []
         steps = snapshot.steps.map(Self.step(from:))
-        toolOutputs = []
+        toolOutputs = snapshot.toolOutputs.map(Self.toolOutput(from:))
         traceSpans = snapshot.traces.map(Self.trace(from:))
         artifacts = snapshot.artifacts.map(Self.artifact(from:))
         selectedArtifactID = artifacts.first?.id
@@ -255,6 +255,18 @@ final class AgentWorkspaceViewModel {
             status: AgentStepStatus(rawValue: record.status) ?? .pending,
             relatedToolOutputID: record.relatedToolOutputId.flatMap(UUID.init(uuidString:)),
             relatedArtifactID: record.relatedArtifactId.flatMap(UUID.init(uuidString:))
+        )
+    }
+
+    private static func toolOutput(from record: AgentToolOutputRecord) -> AgentToolOutput {
+        AgentToolOutput(
+            id: uuid(record.id),
+            toolName: record.toolName,
+            summary: record.summary,
+            detail: record.detail,
+            input: record.input,
+            output: record.output,
+            log: record.log
         )
     }
 

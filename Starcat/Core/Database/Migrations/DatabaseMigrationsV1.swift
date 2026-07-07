@@ -58,6 +58,15 @@ enum DatabaseMigrations {
         registerV1(into: &migrator)
         registerV2(into: &migrator)
         registerV3(into: &migrator)
+        registerV4(into: &migrator)
+    }
+
+    // MARK: - v4-agent-tool-outputs：Agent 工具输出事件（2026-07-07）
+
+    private static func registerV4(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v4-agent-tool-outputs") { db in
+            try createAgentRunToolOutputs(db)
+        }
     }
 
     // MARK: - v3-agent-runs：Agent 运行历史（2026-07-07）
@@ -121,6 +130,23 @@ enum DatabaseMigrations {
             t.column("created_at", .text).notNull()
         }
         try db.create(index: "idx_agent_run_traces_run_index", on: "agent_run_traces", columns: ["run_id", "trace_index"])
+    }
+
+    private static func createAgentRunToolOutputs(_ db: Database) throws {
+        try db.create(table: "agent_run_tool_outputs") { t in
+            t.column("id", .text).primaryKey()
+            t.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            t.column("output_index", .integer).notNull()
+            t.column("tool_name", .text).notNull()
+            t.column("summary", .text).notNull()
+            t.column("detail", .text).notNull()
+            t.column("input", .text).notNull()
+            t.column("output", .text).notNull()
+            t.column("log", .text).notNull()
+            t.column("created_at", .text).notNull()
+        }
+        try db.create(index: "idx_agent_run_tool_outputs_run_index", on: "agent_run_tool_outputs", columns: ["run_id", "output_index"])
     }
 
     private static func createAgentArtifacts(_ db: Database) throws {

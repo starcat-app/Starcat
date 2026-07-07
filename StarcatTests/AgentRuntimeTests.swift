@@ -313,6 +313,13 @@ struct AgentRuntimeTests {
         #expect(snapshot?.run.status == AgentRunStatus.completed.rawValue)
         #expect(snapshot?.run.userPrompt == "生成 Swift 周刊")
         #expect(snapshot?.steps.isEmpty == false)
+        #expect(snapshot?.toolOutputs.map(\.toolName) == [
+            "agent.parseGoal",
+            "context.resolveRepos",
+            "external.search",
+            "report.clusterTopics",
+            "artifact.buildMarkdown"
+        ])
         #expect(snapshot?.traces.map(\.title).contains("external.search") == true)
         #expect(snapshot?.traces.last?.kind == "Artifact")
         #expect(snapshot?.artifacts.map(\.type) == [

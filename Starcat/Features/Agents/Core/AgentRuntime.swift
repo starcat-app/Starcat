@@ -52,14 +52,15 @@ struct DefaultAgentRuntime: AgentRuntime {
         context: AgentRunContext
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
-            let runID = UUID()
-            let terminationState = AgentRuntimeTerminationState()
-            let task = Task {
-                var runLog: [String] = []
-                let plan = Self.makeWeeklyReportPlan(context: context)
-                let steps = Self.makeWeeklyReportSteps()
-                var traceIndex = 0
-                var artifactIndex = 0
+                let runID = UUID()
+                let terminationState = AgentRuntimeTerminationState()
+                let task = Task {
+                    var runLog: [String] = []
+                    let plan = Self.makeWeeklyReportPlan(context: context)
+                    let steps = Self.makeWeeklyReportSteps()
+                    var traceIndex = 0
+                    var toolOutputIndex = 0
+                    var artifactIndex = 0
                 await Self.persistCreateRun(
                     repository: runRepository,
                     runID: runID,
@@ -176,6 +177,8 @@ struct DefaultAgentRuntime: AgentRuntime {
                     runLog.append("Step completed: \(completed.title)")
 
                     continuation.yield(.toolOutput(toolResult.output))
+                    await Self.persistToolOutput(repository: runRepository, output: toolResult.output, runID: runID, index: toolOutputIndex)
+                    toolOutputIndex += 1
                     continuation.yield(.trace(toolResult.trace))
                     await Self.persistTrace(repository: runRepository, trace: toolResult.trace, runID: runID, index: traceIndex)
                     traceIndex += 1
@@ -431,6 +434,19 @@ struct DefaultAgentRuntime: AgentRuntime {
             try await repository?.appendTrace(trace, runID: runID, index: index, createdAt: Date())
         } catch {
             AppLog.database.warning("Agent run persistence trace failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func persistToolOutput(
+        repository: (any AgentRunRepositoryProtocol)?,
+        output: AgentToolOutput,
+        runID: UUID,
+        index: Int
+    ) async {
+        do {
+            try await repository?.appendToolOutput(output, runID: runID, index: index, createdAt: Date())
+        } catch {
+            AppLog.database.warning("Agent run persistence tool output failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
