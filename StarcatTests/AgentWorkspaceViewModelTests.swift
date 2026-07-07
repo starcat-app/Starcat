@@ -123,6 +123,90 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
+    @Test("reloadHistory 会加载真实 run 历史")
+    func reloadHistoryLoadsPersistedRuns() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        _ = try await repository.createRun(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001001")!,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "历史 run",
+            context: AgentRunContext(sourceDescription: "Unit"),
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: NeverFinishingAgentRuntime()
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.reloadHistory()
+
+        #expect(viewModel.historyRuns.count == 1)
+        #expect(viewModel.historyRuns.first?.userPrompt == "历史 run")
+    }
+
+    @Test("openHistoryRun 会只读恢复 run 快照")
+    func openHistoryRunRestoresSnapshot() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        let runID = UUID(uuidString: "00000000-0000-0000-0000-000000001010")!
+        let step = AgentRunStep(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001011")!,
+            title: "历史步骤",
+            detail: "已完成",
+            status: .completed
+        )
+        let trace = AgentTraceSpan(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001012")!,
+            kind: "Tool",
+            title: "history.tool",
+            summary: "ok",
+            input: "input",
+            output: "output",
+            log: "log"
+        )
+        let artifact = AgentArtifact(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001013")!,
+            type: .markdown,
+            title: "历史产物",
+            content: "# 历史",
+            createdAt: Date(timeIntervalSince1970: 1_788_000_120)
+        )
+        let run = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "打开历史",
+            context: AgentRunContext(sourceDescription: "Unit"),
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        try await repository.upsertStep(step, runID: runID, index: 0, updatedAt: Date())
+        try await repository.appendTrace(trace, runID: runID, index: 0, createdAt: Date())
+        try await repository.appendArtifact(artifact, runID: runID, index: 0)
+        try await repository.updateRunStatus(
+            runID: runID,
+            status: .completed,
+            assistantOutput: "# 历史",
+            errorMessage: nil,
+            finishedAt: Date()
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: NeverFinishingAgentRuntime()
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.openHistoryRun(run)
+
+        #expect(viewModel.selectedHistoryRunID == run.id)
+        #expect(viewModel.prompt == "打开历史")
+        #expect(viewModel.status == .completed)
+        #expect(viewModel.steps.map(\.title) == ["历史步骤"])
+        #expect(viewModel.traceSpans.map(\.title) == ["history.tool"])
+        #expect(viewModel.selectedArtifact?.content == "# 历史")
+        #expect(viewModel.assistantOutput == "# 历史")
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 500_000_000,
         _ predicate: @escaping @MainActor () -> Bool

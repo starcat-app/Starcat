@@ -18,6 +18,7 @@ final class AgentWorkspaceViewModel {
 
     private var runtime: any AgentRuntime
     private var contextProvider: any AgentRunContextProviding
+    private var runRepository: (any AgentRunRepositoryProtocol)?
     private var runTask: Task<Void, Never>?
 
     let agents: [AgentDefinition]
@@ -30,7 +31,9 @@ final class AgentWorkspaceViewModel {
     var toolOutputs: [AgentToolOutput] = []
     var traceSpans: [AgentTraceSpan] = []
     var artifacts: [AgentArtifact] = []
+    var historyRuns: [AgentRunRecord] = []
     var selectedArtifactID: UUID?
+    var selectedHistoryRunID: String?
     var assistantOutput: String = ""
     var errorMessage: String?
 
@@ -74,6 +77,30 @@ final class AgentWorkspaceViewModel {
         self.runtime = runtime
     }
 
+    func configureRunRepository(_ repository: any AgentRunRepositoryProtocol) {
+        guard !isRunning else { return }
+        runRepository = repository
+    }
+
+    func reloadHistory(limit: Int = 20) async {
+        guard let runRepository else { return }
+        do {
+            historyRuns = try await runRepository.recentRuns(limit: limit)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func openHistoryRun(_ run: AgentRunRecord) async {
+        guard !isRunning, let runRepository, let runID = UUID(uuidString: run.id) else { return }
+        do {
+            guard let snapshot = try await runRepository.snapshot(runID: runID) else { return }
+            apply(snapshot)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func run() {
         guard let selectedAgent, selectedAgent.isEnabled else { return }
         let effectivePrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,6 +136,7 @@ final class AgentWorkspaceViewModel {
                     self?.apply(event)
                 }
             }
+            await self?.reloadHistory()
         }
     }
 
@@ -188,6 +216,60 @@ final class AgentWorkspaceViewModel {
         } else {
             traceSpans.append(span)
         }
+    }
+
+    private func apply(_ snapshot: AgentRunSnapshotRecord) {
+        selectedHistoryRunID = snapshot.run.id
+        selectedAgentID = snapshot.run.agentId
+        runTitle = snapshot.run.title
+        prompt = snapshot.run.userPrompt
+        status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
+        planSteps = []
+        steps = snapshot.steps.map(Self.step(from:))
+        toolOutputs = []
+        traceSpans = snapshot.traces.map(Self.trace(from:))
+        artifacts = snapshot.artifacts.map(Self.artifact(from:))
+        selectedArtifactID = artifacts.first?.id
+        assistantOutput = snapshot.run.assistantOutput
+        errorMessage = snapshot.run.errorMessage
+    }
+
+    private static func step(from record: AgentRunStepRecord) -> AgentRunStep {
+        AgentRunStep(
+            id: uuid(record.id),
+            title: record.title,
+            detail: record.detail,
+            status: AgentStepStatus(rawValue: record.status) ?? .pending
+        )
+    }
+
+    private static func trace(from record: AgentTraceRecord) -> AgentTraceSpan {
+        AgentTraceSpan(
+            id: uuid(record.id),
+            kind: record.kind,
+            title: record.title,
+            summary: record.summary,
+            input: record.input,
+            output: record.output,
+            log: record.log,
+            status: AgentStepStatus(rawValue: record.status) ?? .pending,
+            relatedToolOutputID: record.relatedToolOutputId.flatMap(UUID.init(uuidString:)),
+            relatedArtifactID: record.relatedArtifactId.flatMap(UUID.init(uuidString:))
+        )
+    }
+
+    private static func artifact(from record: AgentArtifactRecord) -> AgentArtifact {
+        AgentArtifact(
+            id: uuid(record.id),
+            type: AgentArtifactType(rawValue: record.type) ?? .log,
+            title: record.title,
+            content: record.content,
+            createdAt: ISO8601DateFormatter.shared.date(from: record.createdAt) ?? Date()
+        )
+    }
+
+    private static func uuid(_ raw: String) -> UUID {
+        UUID(uuidString: raw) ?? UUID()
     }
 
     private func suggestedFilename(for artifact: AgentArtifact) -> String {

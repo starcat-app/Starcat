@@ -34,6 +34,7 @@ struct AgentWorkspaceView: View {
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
                 repository: dependencies.repoRepository
             ))
+            viewModel.configureRunRepository(dependencies.agentRunRepository)
             let externalSearchTool = ExternalSearchAgentTool(
                 collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
             )
@@ -45,6 +46,7 @@ struct AgentWorkspaceView: View {
                 toolRegistry: toolRegistry ?? DefaultAgentRuntime.makeDefaultToolRegistry(),
                 runRepository: dependencies.agentRunRepository
             ))
+            await viewModel.reloadHistory()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
@@ -61,6 +63,7 @@ struct AgentWorkspaceView: View {
                     agentSection("发现", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
                     agentSection("消化", agents: viewModel.agents.filter { ["recall-search", "repo-insight"].contains($0.id) })
                     agentSection("整理", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
+                    historySection
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 18)
@@ -162,6 +165,103 @@ struct AgentWorkspaceView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(!agent.isEnabled || viewModel.isRunning)
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("历史任务")
+                .font(agentFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, 4)
+
+            if viewModel.historyRuns.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .foregroundStyle(.secondary)
+                    Text("暂无历史 run")
+                        .font(agentFont(.caption))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(11)
+                .background(Color(nsColor: .separatorColor).opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                ForEach(viewModel.historyRuns) { run in
+                    historyRunButton(run)
+                }
+            }
+        }
+    }
+
+    private func historyRunButton(_ run: AgentRunRecord) -> some View {
+        let isSelected = viewModel.selectedHistoryRunID == run.id
+        return Button {
+            Task {
+                await viewModel.openHistoryRun(run)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: historyIcon(for: run.status))
+                    .foregroundStyle(historyTint(for: run.status))
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(run.title)
+                        .font(agentFont(.caption, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(historySubtitle(run))
+                        .font(agentFont(.caption2))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                isSelected ? Color.accentColor.opacity(0.12) : Color(nsColor: .separatorColor).opacity(0.10),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(viewModel.isRunning)
+    }
+
+    private func historySubtitle(_ run: AgentRunRecord) -> String {
+        "\(run.status) · \(run.createdAt)"
+    }
+
+    private func historyIcon(for status: String) -> String {
+        switch AgentRunStatus(rawValue: status) {
+        case .completed:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "xmark.circle.fill"
+        case .cancelled:
+            return "pause.circle.fill"
+        case .planning, .running:
+            return "circle.dotted"
+        case .idle, .none:
+            return "clock"
+        }
+    }
+
+    private func historyTint(for status: String) -> Color {
+        switch AgentRunStatus(rawValue: status) {
+        case .completed:
+            return .green
+        case .failed:
+            return .red
+        case .cancelled:
+            return .orange
+        case .planning, .running:
+            return .accentColor
+        case .idle, .none:
+            return .secondary
+        }
     }
 
     // MARK: - Run Surface
