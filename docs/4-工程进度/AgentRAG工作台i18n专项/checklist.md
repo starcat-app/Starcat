@@ -28,8 +28,8 @@
 - [x] RAG 工作台 UI 壳层文案接入 i18n。
 - [x] Agent 工作台 UI 壳层文案接入 i18n。
 - [x] 独立 workspace window title 接入 i18n。
-- [ ] Agent 定义 / 状态 / artifact 类型等用户可见模型文案接入 i18n。
-- [ ] 同步 `Localizable.xcstrings` en + zh-Hans。
+- [x] Agent 定义 / 状态 / artifact 类型等用户可见模型文案接入 i18n。
+- [x] 同步 `Localizable.xcstrings` en + zh-Hans。
 - [ ] 更新 `docs/功能实现总览.md`。
 - [ ] 执行 i18n 自检和 JSON 校验。
 - [ ] 新增结果报告。

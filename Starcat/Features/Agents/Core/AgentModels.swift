@@ -87,9 +87,9 @@ enum AgentArtifactType: String, Sendable {
     var title: String {
         switch self {
         case .markdown:
-            return "Markdown"
+            return String.l10n("agent.artifact.type.markdown")
         case .log:
-            return "Run Log"
+            return String.l10n("agent.artifact.type.log")
         }
     }
 }
@@ -230,7 +230,7 @@ struct AgentRepoSnapshot: Identifiable, Hashable, Sendable {
 
     var displaySummary: String {
         let languagePart = language.map { " · \($0)" } ?? ""
-        return "\(fullName)\(languagePart) · \(starsCount) stars"
+        return String(format: String.l10n("agent.repoSnapshot.summaryFormat"), fullName, languagePart, starsCount)
     }
 }
 

@@ -86,7 +86,10 @@ struct AgentRuntimeTests {
         #expect(skippedStepCount == 1)
         #expect(toolOutputCount == 5)
         #expect(traceCount == 7)
-        #expect(traceTitles.suffix(2) == ["AI 生成周刊正文", "本周 GitHub 热门项目周刊"])
+        #expect(traceTitles.suffix(2) == [
+            String.l10n("agent.runtime.trace.llm.title"),
+            String.l10n("agent.runtime.artifact.weeklyReport.title")
+        ])
         #expect(assistantOutput.contains("Unit Test AI Output"))
         #expect(markdownArtifact?.type == .markdown)
         #expect(markdownArtifact?.content.contains("# GitHub Weekly Report") == true)

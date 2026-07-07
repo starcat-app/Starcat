@@ -111,7 +111,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 for (index, tool) in tools.enumerated() {
                     let step = steps.indices.contains(index) ? steps[index] : AgentRunStep(
                         title: tool.displayName,
-                        detail: "执行 Agent tool: \(tool.id)。"
+                        detail: String(format: String.l10n("agent.runtime.step.genericTool.detailFormat"), tool.id)
                     )
                     try? await Task.sleep(nanoseconds: stepStartDelayNanoseconds)
                     guard !Task.isCancelled else {
@@ -210,7 +210,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     continuation.yield(.assistantDelta(generated))
                     let llmTrace = AgentTraceSpan(
                         kind: "LLM",
-                        title: "AI 生成周刊正文",
+                        title: String.l10n("agent.runtime.trace.llm.title"),
                         summary: "\(generated.count) chars",
                         input: String(draftMarkdown.prefix(1_200)),
                         output: String(generated.prefix(1_200)),
@@ -224,8 +224,8 @@ struct DefaultAgentRuntime: AgentRuntime {
                     let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     let failedTrace = AgentTraceSpan(
                         kind: "LLM",
-                        title: "AI 生成周刊正文",
-                        summary: "failed",
+                        title: String.l10n("agent.runtime.trace.llm.title"),
+                        summary: String.l10n("agent.runtime.trace.summary.failed"),
                         input: String(draftMarkdown.prefix(1_200)),
                         output: message,
                         log: "model_output=failed",
@@ -247,7 +247,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 }
                 let markdownArtifact = AgentArtifact(
                     type: .markdown,
-                    title: "本周 GitHub 热门项目周刊",
+                    title: String.l10n("agent.runtime.artifact.weeklyReport.title"),
                     content: markdown
                 )
                 let artifactInput = draftToolOutput?.input ?? "artifact.buildMarkdown"
@@ -270,7 +270,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 artifactIndex += 1
                 let logArtifact = AgentArtifact(
                     type: .log,
-                    title: "Agent Run Log",
+                    title: String.l10n("agent.runtime.artifact.runLog.title"),
                     content: Self.makeRunLog(runLog, context: context)
                 )
                 continuation.yield(.artifactCreated(logArtifact))
@@ -313,16 +313,16 @@ struct DefaultAgentRuntime: AgentRuntime {
     private static func makeWeeklyReportPlan(context: AgentRunContext) -> [AgentPlanStep] {
         [
             AgentPlanStep(
-                title: "确认输出目标",
-                detail: "把用户输入收敛为 GitHub Weekly Report,输出 Markdown artifact。"
+                title: String.l10n("agent.runtime.plan.goal.title"),
+                detail: String.l10n("agent.runtime.plan.goal.detail")
             ),
             AgentPlanStep(
-                title: "读取候选来源",
-                detail: "读取 Starcat 冻结仓库快照: \(context.repos.count) repos。"
+                title: String.l10n("agent.runtime.plan.context.title"),
+                detail: String(format: String.l10n("agent.runtime.plan.context.detailFormat"), context.repos.count)
             ),
             AgentPlanStep(
-                title: "生成可复查产物",
-                detail: "输出报告正文、工具 trace 和 run log,保持 read-only。"
+                title: String.l10n("agent.runtime.plan.artifact.title"),
+                detail: String.l10n("agent.runtime.plan.artifact.detail")
             )
         ]
     }
@@ -330,24 +330,24 @@ struct DefaultAgentRuntime: AgentRuntime {
     private static func makeWeeklyReportSteps() -> [AgentRunStep] {
         [
             AgentRunStep(
-                title: "解析任务目标",
-                detail: "识别用户希望生成 Weekly Report，并确认输出为 Markdown artifact。"
+                title: String.l10n("agent.runtime.step.parseGoal.title"),
+                detail: String.l10n("agent.runtime.step.parseGoal.detail")
             ),
             AgentRunStep(
-                title: "准备数据源",
-                detail: "读取冻结的 Starcat 仓库快照。"
+                title: String.l10n("agent.runtime.step.resolveRepos.title"),
+                detail: String.l10n("agent.runtime.step.resolveRepos.detail")
             ),
             AgentRunStep(
-                title: "补充外部来源",
-                detail: "按设置页 External Search 配置检索外部来源,关闭时记录 skipped 并继续。"
+                title: String.l10n("agent.runtime.step.externalSearch.title"),
+                detail: String.l10n("agent.runtime.step.externalSearch.detail")
             ),
             AgentRunStep(
-                title: "聚类主题",
-                detail: "把候选仓库按语言和主题收敛为周刊段落。"
+                title: String.l10n("agent.runtime.step.clusterTopics.title"),
+                detail: String.l10n("agent.runtime.step.clusterTopics.detail")
             ),
             AgentRunStep(
-                title: "生成周刊母稿",
-                detail: "按技术周刊结构生成导语、主题段落、项目解读与结尾。"
+                title: String.l10n("agent.runtime.step.buildDraft.title"),
+                detail: String.l10n("agent.runtime.step.buildDraft.detail")
             )
         ]
     }

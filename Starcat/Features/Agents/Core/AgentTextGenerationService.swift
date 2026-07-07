@@ -25,9 +25,9 @@ enum AgentTextGenerationError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingProvider:
-            return "未配置可用的 AI Provider。请先到设置页完成 AI 服务商配置和连接测试。"
+            return String.l10n("agent.textGeneration.error.missingProvider")
         case .missingAPIKey:
-            return "当前 AI Provider 缺少 API Key。请先到设置页填写对应服务商的 API Key。"
+            return String.l10n("agent.textGeneration.error.missingAPIKey")
         }
     }
 }

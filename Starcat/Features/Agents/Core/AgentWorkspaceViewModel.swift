@@ -156,7 +156,7 @@ final class AgentWorkspaceViewModel {
     func exportSelectedArtifact() {
         guard let artifact = selectedArtifact else { return }
         let panel = NSSavePanel()
-        panel.title = "Export Agent Artifact"
+        panel.title = String.l10n("agent.workspace.exportPanel.title")
         panel.nameFieldStringValue = suggestedFilename(for: artifact)
         panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }

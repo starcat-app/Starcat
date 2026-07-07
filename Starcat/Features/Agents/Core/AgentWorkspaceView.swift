@@ -662,8 +662,8 @@ struct AgentWorkspaceView: View {
             AgentTraceItem(
                 id: "plan-\(index)-\(step.id.uuidString)",
                 title: step.title,
-                subtitle: "Plan · step \(index + 1)",
-                kind: "Plan",
+                subtitle: String(format: String.l10n("agent.workspace.trace.subtitle.planFormat"), index + 1),
+                kind: String.l10n("agent.workspace.trace.kind.plan"),
                 systemImage: "list.bullet.rectangle",
                 tint: .accentColor,
                 input: """
@@ -681,11 +681,12 @@ struct AgentWorkspaceView: View {
 
     private var traceStepItems: [AgentTraceItem] {
         viewModel.steps.enumerated().map { index, step in
-            AgentTraceItem(
+            let kind = stepKind(at: index, fallbackTitle: step.title)
+            return AgentTraceItem(
                 id: "step-\(index)-\(step.id.uuidString)",
                 title: step.title,
-                subtitle: "\(stepKind(for: step.title)) · \(stepStatusLabel(step.status))",
-                kind: stepKind(for: step.title),
+                subtitle: "\(kind) · \(stepStatusLabel(step.status))",
+                kind: kind,
                 systemImage: stepIcon(step.status),
                 tint: stepColor(step.status),
                 input: """
@@ -706,8 +707,8 @@ struct AgentWorkspaceView: View {
             AgentTraceItem(
                 id: "tool-\(index)-\(output.id.uuidString)",
                 title: output.toolName,
-                subtitle: "Tool Call · \(output.summary)",
-                kind: "Tool",
+                subtitle: String(format: String.l10n("agent.workspace.trace.subtitle.toolCallFormat"), output.summary),
+                kind: String.l10n("agent.workspace.trace.kind.tool"),
                 systemImage: "checkmark.circle.fill",
                 tint: .green,
                 input: """
@@ -715,7 +716,7 @@ struct AgentWorkspaceView: View {
                 \(output.toolName)
 
                 arguments:
-                \(output.input.isEmpty ? "等待 runtime 输出工具参数。" : output.input)
+                \(output.input.isEmpty ? String.l10n("agent.workspace.trace.toolInput.waiting") : output.input)
                 """,
                 output: output.output.isEmpty ? output.detail : output.output,
                 log: output.log.isEmpty ? "event=toolOutput\nsummary=\(output.summary)\nsource=runtime_event" : output.log
@@ -1121,11 +1122,18 @@ struct AgentWorkspaceView: View {
         }
     }
 
-    private func stepKind(for title: String) -> String {
-        if title.contains("数据") || title.contains("准备") { return "Tool Call" }
-        if title.contains("聚类") || title.contains("生成") { return "Thinking" }
-        if title.contains("Artifact") || title.contains("Markdown") { return "Artifact" }
-        return "Plan"
+    private func stepKind(at index: Int, fallbackTitle title: String) -> String {
+        switch index {
+        case 1, 2:
+            return String.l10n("agent.workspace.trace.kind.toolCall")
+        case 3, 4:
+            return String.l10n("agent.workspace.trace.kind.thinking")
+        default:
+            if title.localizedCaseInsensitiveContains("Artifact") || title.localizedCaseInsensitiveContains("Markdown") {
+                return String.l10n("agent.workspace.trace.kind.artifact")
+            }
+            return String.l10n("agent.workspace.trace.kind.plan")
+        }
     }
 
     private func stepIcon(_ status: AgentStepStatus) -> String {

@@ -13,11 +13,11 @@ import Foundation
 enum BuiltInAgents {
     static let githubWeeklyReport = AgentDefinition(
         id: "github-weekly-report",
-        title: "GitHub Weekly Report",
-        subtitle: "整理热门开源项目并生成技术周刊",
+        title: String.l10n("agent.definition.githubWeeklyReport.title"),
+        subtitle: String.l10n("agent.definition.githubWeeklyReport.subtitle"),
         systemImage: "newspaper",
         capabilityLabels: ["trending", "report", "artifact"],
-        defaultPrompt: "帮我生成本周 GitHub 热门开源项目周刊，风格参考阮一峰 Weekly。",
+        defaultPrompt: String.l10n("agent.definition.githubWeeklyReport.defaultPrompt"),
         isEnabled: true,
         toolIDs: [
             "agent.parseGoal",
@@ -33,56 +33,56 @@ enum BuiltInAgents {
         githubWeeklyReport,
         AgentDefinition(
             id: "repo-alternatives",
-            title: "替代品发现",
-            subtitle: "从当前 repo 出发寻找更活跃的同类项目",
+            title: String.l10n("agent.definition.repoAlternatives.title"),
+            subtitle: String.l10n("agent.definition.repoAlternatives.subtitle"),
             systemImage: "arrow.triangle.branch",
             capabilityLabels: ["compare", "github", "table"],
-            defaultPrompt: "帮我基于当前仓库找 3-5 个更活跃的同类替代品，并生成对比表。",
+            defaultPrompt: String.l10n("agent.definition.repoAlternatives.defaultPrompt"),
             isEnabled: false
         ),
         AgentDefinition(
             id: "overlap-scan",
-            title: "重叠扫描",
-            subtitle: "扫描已 star 仓库中的功能重叠簇",
+            title: String.l10n("agent.definition.overlapScan.title"),
+            subtitle: String.l10n("agent.definition.overlapScan.subtitle"),
             systemImage: "rectangle.3.group",
             capabilityLabels: ["cluster", "cleanup", "confirm"],
-            defaultPrompt: "扫描我已 star 的仓库，找出功能重叠的项目组，先给建议，不要自动修改。",
+            defaultPrompt: String.l10n("agent.definition.overlapScan.defaultPrompt"),
             isEnabled: false
         ),
         AgentDefinition(
             id: "recall-search",
-            title: "回忆搜索",
-            subtitle: "用证据引用找回曾经 star 过的项目",
+            title: String.l10n("agent.definition.recallSearch.title"),
+            subtitle: String.l10n("agent.definition.recallSearch.subtitle"),
             systemImage: "quote.bubble",
             capabilityLabels: ["fts", "semantic", "citation"],
-            defaultPrompt: "帮我找回之前 star 过、适合做本地文档 RAG 的 Swift 项目。",
+            defaultPrompt: String.l10n("agent.definition.recallSearch.defaultPrompt"),
             isEnabled: false
         ),
         AgentDefinition(
             id: "untagged-tidy",
-            title: "Untagged 整理",
-            subtitle: "规划 tag 体系并批量整理未分类仓库",
+            title: String.l10n("agent.definition.untaggedTidy.title"),
+            subtitle: String.l10n("agent.definition.untaggedTidy.subtitle"),
             systemImage: "tag",
             capabilityLabels: ["taxonomy", "queue", "review"],
-            defaultPrompt: "帮我给未分类的 starred repo 规划一套 tag 体系，先预览，不要自动写入。",
+            defaultPrompt: String.l10n("agent.definition.untaggedTidy.defaultPrompt"),
             isEnabled: false
         ),
         AgentDefinition(
             id: "repo-insight",
-            title: "Repo Insight",
-            subtitle: "单仓库深度解读与采用建议",
+            title: String.l10n("agent.definition.repoInsight.title"),
+            subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
             systemImage: "doc.text.magnifyingglass",
             capabilityLabels: ["repo", "analysis"],
-            defaultPrompt: "帮我解读当前仓库的定位、亮点和风险。",
+            defaultPrompt: String.l10n("agent.definition.repoInsight.defaultPrompt"),
             isEnabled: false
         ),
         AgentDefinition(
             id: "release-watcher",
-            title: "Release Watcher",
-            subtitle: "整理 Release 变化并分析影响",
+            title: String.l10n("agent.definition.releaseWatcher.title"),
+            subtitle: String.l10n("agent.definition.releaseWatcher.subtitle"),
             systemImage: "bell.badge",
             capabilityLabels: ["release", "watch"],
-            defaultPrompt: "帮我整理最近 Release 的重要变化。",
+            defaultPrompt: String.l10n("agent.definition.releaseWatcher.defaultPrompt"),
             isEnabled: false
         )
     ]

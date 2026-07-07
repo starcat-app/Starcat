@@ -50,9 +50,9 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         let repos = await loadCandidateRepos()
         let sourceDescription: String
         if repos.isEmpty {
-            sourceDescription = "Starcat 本地仓库快照: 0 repos"
+            sourceDescription = String.l10n("agent.context.source.empty")
         } else {
-            sourceDescription = "Starcat 本地仓库快照: \(repos.count) repos"
+            sourceDescription = String(format: String.l10n("agent.context.source.repoCountFormat"), repos.count)
         }
         return AgentRunContext(
             sourceDescription: sourceDescription,

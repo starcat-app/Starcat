@@ -44693,6 +44693,934 @@
           }
         }
       }
+    },
+    "agent.definition.githubWeeklyReport.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Weekly Report"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Weekly Report"
+          }
+        }
+      }
+    },
+    "agent.definition.githubWeeklyReport.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Curate trending open-source projects into a technical weekly report"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理热门开源项目并生成技术周刊"
+          }
+        }
+      }
+    },
+    "agent.definition.githubWeeklyReport.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create this week's GitHub trending open-source weekly report for me, in a style similar to Ruan Yifeng Weekly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我生成本周 GitHub 热门开源项目周刊，风格参考阮一峰 Weekly。"
+          }
+        }
+      }
+    },
+    "agent.definition.repoAlternatives.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alternative Finder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替代品发现"
+          }
+        }
+      }
+    },
+    "agent.definition.repoAlternatives.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find more active similar projects from the current repo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从当前 repo 出发寻找更活跃的同类项目"
+          }
+        }
+      }
+    },
+    "agent.definition.repoAlternatives.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find 3-5 more active alternatives similar to the current repository and generate a comparison table."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我基于当前仓库找 3-5 个更活跃的同类替代品，并生成对比表。"
+          }
+        }
+      }
+    },
+    "agent.definition.overlapScan.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overlap Scan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重叠扫描"
+          }
+        }
+      }
+    },
+    "agent.definition.overlapScan.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan starred repositories for overlapping feature clusters"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描已 star 仓库中的功能重叠簇"
+          }
+        }
+      }
+    },
+    "agent.definition.overlapScan.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan my starred repositories, find groups with overlapping functionality, and only give suggestions without making changes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描我已 star 的仓库，找出功能重叠的项目组，先给建议，不要自动修改。"
+          }
+        }
+      }
+    },
+    "agent.definition.recallSearch.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recall Search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回忆搜索"
+          }
+        }
+      }
+    },
+    "agent.definition.recallSearch.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recover previously starred projects with cited evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用证据引用找回曾经 star 过的项目"
+          }
+        }
+      }
+    },
+    "agent.definition.recallSearch.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Help me recover Swift projects I starred before that are suitable for local document RAG."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我找回之前 star 过、适合做本地文档 RAG 的 Swift 项目。"
+          }
+        }
+      }
+    },
+    "agent.definition.untaggedTidy.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untagged Cleanup"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untagged 整理"
+          }
+        }
+      }
+    },
+    "agent.definition.untaggedTidy.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan a tag taxonomy and batch-organize uncategorized repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规划 tag 体系并批量整理未分类仓库"
+          }
+        }
+      }
+    },
+    "agent.definition.untaggedTidy.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan a tag taxonomy for my uncategorized starred repos. Preview first and do not write automatically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我给未分类的 starred repo 规划一套 tag 体系，先预览，不要自动写入。"
+          }
+        }
+      }
+    },
+    "agent.definition.repoInsight.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repo Insight"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repo Insight"
+          }
+        }
+      }
+    },
+    "agent.definition.repoInsight.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep single-repository analysis and adoption advice"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单仓库深度解读与采用建议"
+          }
+        }
+      }
+    },
+    "agent.definition.repoInsight.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyze the current repository's positioning, strengths, and risks."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我解读当前仓库的定位、亮点和风险。"
+          }
+        }
+      }
+    },
+    "agent.definition.releaseWatcher.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release Watcher"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release Watcher"
+          }
+        }
+      }
+    },
+    "agent.definition.releaseWatcher.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarize release changes and analyze their impact"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理 Release 变化并分析影响"
+          }
+        }
+      }
+    },
+    "agent.definition.releaseWatcher.defaultPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarize important changes from recent releases."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮我整理最近 Release 的重要变化。"
+          }
+        }
+      }
+    },
+    "agent.artifact.type.markdown": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown"
+          }
+        }
+      }
+    },
+    "agent.artifact.type.log": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Log"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行日志"
+          }
+        }
+      }
+    },
+    "agent.repoSnapshot.summaryFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%@ · %d stars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%@ · %d stars"
+          }
+        }
+      }
+    },
+    "agent.context.source.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat local repository snapshot: 0 repos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 本地仓库快照: 0 repos"
+          }
+        }
+      }
+    },
+    "agent.context.source.repoCountFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat local repository snapshot: %d repos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 本地仓库快照: %d repos"
+          }
+        }
+      }
+    },
+    "agent.textGeneration.error.missingProvider": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No available AI provider is configured. Configure and test an AI provider in Settings first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未配置可用的 AI Provider。请先到设置页完成 AI 服务商配置和连接测试。"
+          }
+        }
+      }
+    },
+    "agent.textGeneration.error.missingAPIKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The current AI provider is missing an API key. Add the API key for that provider in Settings first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前 AI Provider 缺少 API Key。请先到设置页填写对应服务商的 API Key。"
+          }
+        }
+      }
+    },
+    "agent.workspace.exportPanel.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Agent Artifact"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出 Agent 产物"
+          }
+        }
+      }
+    },
+    "agent.runtime.trace.llm.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate weekly report with AI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 生成周刊正文"
+          }
+        }
+      }
+    },
+    "agent.runtime.trace.summary.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
+          }
+        }
+      }
+    },
+    "agent.runtime.artifact.weeklyReport.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Week's GitHub Trending Projects Report"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周 GitHub 热门项目周刊"
+          }
+        }
+      }
+    },
+    "agent.runtime.artifact.runLog.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Run Log"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 运行日志"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.goal.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm output goal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认输出目标"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.goal.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Converge the user input into a GitHub Weekly Report and output a Markdown artifact."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把用户输入收敛为 GitHub Weekly Report，输出 Markdown artifact。"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.context.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read candidate sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取候选来源"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.context.detailFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the frozen Starcat repository snapshot: %d repos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取 Starcat 冻结仓库快照: %d repos。"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.artifact.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate reviewable artifacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成可复查产物"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.artifact.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output the report body, tool traces, and run log while staying read-only."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出报告正文、工具 trace 和 run log，保持 read-only。"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.parseGoal.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parse task goal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析任务目标"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.parseGoal.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detect that the user wants a Weekly Report and confirm Markdown artifact output."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别用户希望生成 Weekly Report，并确认输出为 Markdown artifact。"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.resolveRepos.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prepare data source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准备数据源"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.resolveRepos.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the frozen Starcat repository snapshot."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取冻结的 Starcat 仓库快照。"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.externalSearch.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add external sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充外部来源"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.externalSearch.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search external sources using the Settings External Search configuration. When disabled, record skipped and continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按设置页 External Search 配置检索外部来源，关闭时记录 skipped 并继续。"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.clusterTopics.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cluster topics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚类主题"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.clusterTopics.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Converge candidate repositories into weekly report sections by language and topic."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把候选仓库按语言和主题收敛为周刊段落。"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.buildDraft.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate weekly draft"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成周刊母稿"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.buildDraft.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate the intro, topic sections, repository analysis, and closing in a technical weekly structure."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按技术周刊结构生成导语、主题段落、项目解读与结尾。"
+          }
+        }
+      }
+    },
+    "agent.runtime.step.genericTool.detailFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Agent tool: %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行 Agent tool: %@。"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.subtitle.planFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan · step %d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan · step %d"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.subtitle.toolCallFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool Call · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool Call · %@"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.plan": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.tool": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.toolCall": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool Call"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool Call"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.thinking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.artifact": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artifact"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artifact"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.toolInput.waiting": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for runtime tool arguments."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待 runtime 输出工具参数。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
