@@ -71,9 +71,35 @@ struct GitHubWeeklyReportToolsTests {
         )
 
         #expect(markdown.contains("groue/GRDB.swift"))
-        #expect(markdown.contains("只读取本地数据"))
+        #expect(markdown.contains("本地仓库快照"))
         #expect(result.output.toolName == "artifact.buildMarkdown")
         #expect(result.trace.output.contains("# GitHub Weekly Report"))
+    }
+
+    @Test("buildMarkdown 把外部搜索摘要写入草稿")
+    func buildMarkdownIncludesExternalContext() {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+        )
+        let topics = [
+            WeeklyReportTopic(
+                title: "Swift 生态项目",
+                reason: "按主要语言聚合。",
+                repos: context.repos
+            )
+        ]
+
+        let (markdown, result) = GitHubWeeklyReportTools.buildMarkdown(
+            prompt: "生成 Swift 周刊",
+            context: context,
+            topics: topics,
+            externalContextMarkdown: "<external_context>GRDB release notes</external_context>"
+        )
+
+        #expect(markdown.contains("外部来源摘要"))
+        #expect(markdown.contains("GRDB release notes"))
+        #expect(result.output.input.contains("external_context_chars"))
     }
 
     @Test("Weekly tools 可以通过 AgentToolRegistry 执行")
@@ -93,6 +119,7 @@ struct GitHubWeeklyReportToolsTests {
         let markdownResult = await markdownTool.execute(AgentToolInput(
             prompt: "生成 Swift 周刊",
             context: context,
+            values: ["externalContextMarkdown": "<external_context>GRDB docs</external_context>"],
             payload: clusterResult.payload
         ))
 
@@ -100,6 +127,7 @@ struct GitHubWeeklyReportToolsTests {
         #expect(markdownResult.output.toolName == "artifact.buildMarkdown")
         if case .markdown(let markdown) = markdownResult.payload {
             #expect(markdown.contains("groue/GRDB.swift"))
+            #expect(markdown.contains("GRDB docs"))
         } else {
             Issue.record("Expected markdown payload")
         }

@@ -114,8 +114,10 @@ enum GitHubWeeklyReportTools {
     static func buildMarkdown(
         prompt: String,
         context: AgentRunContext,
-        topics: [WeeklyReportTopic]
+        topics: [WeeklyReportTopic],
+        externalContextMarkdown: String = ""
     ) -> (String, WeeklyReportToolResult) {
+        let externalSection = externalContextSection(externalContextMarkdown)
         let markdown: String
         if topics.isEmpty {
             markdown = """
@@ -123,8 +125,10 @@ enum GitHubWeeklyReportTools {
 
             > 用户目标：\(prompt)
             > 数据来源：\(context.sourceDescription)
+            \(externalSection.headerLine)
 
             当前 Starcat 本地没有可用于生成周刊的仓库快照。请先完成 GitHub Stars 同步，或把仓库加入知识库后再运行 Agent。
+            \(externalSection.body)
             """
         } else {
             let sections = topics.enumerated().map { index, topic in
@@ -142,8 +146,10 @@ enum GitHubWeeklyReportTools {
             > 用户目标：\(prompt)
             > 数据来源：\(context.sourceDescription)
             > 生成时间：\(context.generatedAt.formatted())
+            \(externalSection.headerLine)
 
-            本期周刊基于 Starcat 本地仓库快照生成。Agent 只读取本地数据并生成 Markdown，不会写入标签、笔记、状态或修改 Star。
+            本期周刊基于 Starcat 本地仓库快照生成,并在 External Search 开启时补充网络来源。Agent 只读取上下文并生成 Markdown,不会写入标签、笔记、状态或修改 Star。
+            \(externalSection.body)
 
             \(sections)
 
@@ -158,7 +164,7 @@ enum GitHubWeeklyReportTools {
         let result = makeResult(
             toolName: "artifact.buildMarkdown",
             summary: "\(markdown.count) chars",
-            input: "topics: \(topics.count)\nrepo_count: \(context.repos.count)",
+            input: "topics: \(topics.count)\nrepo_count: \(context.repos.count)\nexternal_context_chars: \(externalContextMarkdown.count)",
             output: String(markdown.prefix(1_200)),
             log: "Built Markdown artifact from read-only tool outputs."
         )
@@ -201,6 +207,23 @@ enum GitHubWeeklyReportTools {
         return "- **\(repo.fullName)** (\(repo.starsCount) stars): \(description)\(topicsSuffix)"
     }
 
+    private static func externalContextSection(_ markdown: String) -> (headerLine: String, body: String) {
+        let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ("> 外部来源：未启用或无结果", "")
+        }
+        let capped = String(trimmed.prefix(2_400))
+        return (
+            "> 外部来源：External Search",
+            """
+
+            ## 外部来源摘要
+
+            \(capped)
+            """
+        )
+    }
+
     private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
@@ -208,12 +231,19 @@ enum GitHubWeeklyReportTools {
 }
 
 enum GitHubWeeklyReportAgentTools {
-    static let all: [any AgentTool] = [
-        ParseGoalTool(),
-        ResolveReposTool(),
-        ClusterTopicsTool(),
-        BuildMarkdownTool()
-    ]
+    static var all: [any AgentTool] {
+        makeAll(externalSearchTool: ExternalSearchAgentTool(collector: DisabledAgentExternalSearchCollector()))
+    }
+
+    static func makeAll(externalSearchTool: any AgentTool) -> [any AgentTool] {
+        [
+            ParseGoalTool(),
+            ResolveReposTool(),
+            externalSearchTool,
+            ClusterTopicsTool(),
+            BuildMarkdownTool()
+        ]
+    }
 
     struct ParseGoalTool: AgentTool {
         let id = "agent.parseGoal"
@@ -261,7 +291,8 @@ enum GitHubWeeklyReportAgentTools {
             let (markdown, result) = GitHubWeeklyReportTools.buildMarkdown(
                 prompt: input.prompt,
                 context: input.context,
-                topics: topics
+                topics: topics,
+                externalContextMarkdown: input.values["externalContextMarkdown"] ?? ""
             )
             return result.agentToolResult(payload: .markdown(markdown))
         }

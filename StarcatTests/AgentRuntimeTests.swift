@@ -33,6 +33,7 @@ struct AgentRuntimeTests {
         var didStart = false
         var planStepCount = 0
         var completedStepCount = 0
+        var skippedStepCount = 0
         var toolOutputCount = 0
         var traceCount = 0
         var assistantOutput = ""
@@ -49,6 +50,8 @@ struct AgentRuntimeTests {
             case .stepUpdated(let step):
                 if step.status == .completed {
                     completedStepCount += 1
+                } else if step.status == .skipped {
+                    skippedStepCount += 1
                 }
             case .toolOutput(let output):
                 toolOutputCount += 1
@@ -78,8 +81,9 @@ struct AgentRuntimeTests {
         #expect(didStart)
         #expect(planStepCount == 3)
         #expect(completedStepCount == 4)
-        #expect(toolOutputCount == 4)
-        #expect(traceCount == 6)
+        #expect(skippedStepCount == 1)
+        #expect(toolOutputCount == 5)
+        #expect(traceCount == 7)
         #expect(assistantOutput.contains("Unit Test AI Output"))
         #expect(markdownArtifact?.type == .markdown)
         #expect(markdownArtifact?.content.contains("# GitHub Weekly Report") == true)
@@ -186,6 +190,50 @@ struct AgentRuntimeTests {
         #expect(failedMessage?.contains("agent.missing") == true)
         #expect(didComplete == false)
     }
+
+    @Test("Weekly Runtime 在聚类前执行 external.search 并把外部上下文传给 LLM")
+    func weeklyRuntimeExecutesExternalSearchBeforeClustering() async throws {
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+            externalSearchTool: StubExternalSearchTool()
+        ))
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0,
+            textGenerator: EchoDraftAgentTextGenerator(),
+            toolRegistry: registry
+        )
+
+        let stream = runtime.run(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成 Swift 周刊",
+            context: AgentRunContext(
+                sourceDescription: "Unit Test",
+                repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+            )
+        )
+
+        var toolNames: [String] = []
+        var markdownArtifact: AgentArtifact?
+        for await event in stream {
+            switch event {
+            case .toolOutput(let output):
+                toolNames.append(output.toolName)
+            case .artifactCreated(let artifact) where artifact.type == .markdown:
+                markdownArtifact = artifact
+            default:
+                break
+            }
+        }
+
+        #expect(toolNames == [
+            "agent.parseGoal",
+            "context.resolveRepos",
+            "external.search",
+            "report.clusterTopics",
+            "artifact.buildMarkdown"
+        ])
+        #expect(markdownArtifact?.content.contains("External Search Unit Context") == true)
+    }
 }
 
 private struct StaticAgentTextGenerator: AgentTextGenerating {
@@ -198,4 +246,65 @@ private struct StaticAgentTextGenerator: AgentTextGenerating {
     ) async throws -> String {
         markdown
     }
+}
+
+private struct EchoDraftAgentTextGenerator: AgentTextGenerating {
+    func generateWeeklyReport(
+        prompt: String,
+        context: AgentRunContext,
+        draftMarkdown: String
+    ) async throws -> String {
+        draftMarkdown
+    }
+}
+
+private struct StubExternalSearchTool: AgentTool {
+    let id = "external.search"
+    let displayName = "External Search"
+    let permission: AgentToolPermission = .readOnly
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        let output = AgentToolOutput(
+            toolName: id,
+            summary: "1 sources",
+            detail: "External Search Unit Context",
+            input: "query: GRDB",
+            output: "https://example.com/grdb",
+            log: "provider=stub\ncache=hit"
+        )
+        return AgentToolResult(
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: id,
+                summary: output.summary,
+                input: output.input,
+                output: output.output,
+                log: output.log,
+                relatedToolOutputID: output.id
+            ),
+            payload: .externalContextMarkdown("External Search Unit Context")
+        )
+    }
+}
+
+private func repo(
+    fullName: String,
+    language: String,
+    stars: Int
+) -> AgentRepoSnapshot {
+    let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+    return AgentRepoSnapshot(
+        id: Int64(abs(fullName.hashValue)),
+        owner: parts.first ?? "owner",
+        name: parts.dropFirst().first ?? "repo",
+        fullName: fullName,
+        description: "\(fullName) description",
+        language: language,
+        starsCount: stars,
+        topics: ["agent", "database"],
+        isStarred: true,
+        starredAt: "2026-07-07T00:00:00Z",
+        htmlUrl: "https://github.com/\(fullName)"
+    )
 }

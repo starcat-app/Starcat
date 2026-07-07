@@ -34,8 +34,15 @@ struct AgentWorkspaceView: View {
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
                 repository: dependencies.repoRepository
             ))
+            let externalSearchTool = ExternalSearchAgentTool(
+                collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
+            )
+            let toolRegistry = try? AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+                externalSearchTool: externalSearchTool
+            ))
             viewModel.configureRuntime(DefaultAgentRuntime(
-                textGenerator: AgentTextGeneratorFactory.make(settings: dependencies.settings)
+                textGenerator: AgentTextGeneratorFactory.make(settings: dependencies.settings),
+                toolRegistry: toolRegistry ?? DefaultAgentRuntime.makeDefaultToolRegistry()
             ))
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)

@@ -63,6 +63,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     return
                 }
                 var payload: AgentToolPayload = .none
+                var values: [String: String] = [:]
                 var draftMarkdown = ""
                 var draftToolOutput: AgentToolOutput?
 
@@ -93,9 +94,19 @@ struct DefaultAgentRuntime: AgentRuntime {
                     let toolResult = await tool.execute(AgentToolInput(
                         prompt: prompt,
                         context: context,
+                        values: values,
                         payload: payload
                     ))
-                    payload = toolResult.payload
+                    switch toolResult.payload {
+                    case .none:
+                        break
+                    case .externalContextMarkdown(let markdown):
+                        // External Search 是补充上下文,不是下一个工具的唯一输入。
+                        // 保存在 values 中,避免后续 topic payload 覆盖掉网络搜索结果。
+                        values["externalContextMarkdown"] = markdown
+                    default:
+                        payload = toolResult.payload
+                    }
                     if case .markdown(let markdown) = toolResult.payload {
                         draftMarkdown = markdown
                         draftToolOutput = toolResult.output
@@ -192,7 +203,7 @@ struct DefaultAgentRuntime: AgentRuntime {
         }
     }
 
-    private static func makeDefaultToolRegistry() -> AgentToolRegistry {
+    static func makeDefaultToolRegistry() -> AgentToolRegistry {
         do {
             return try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
         } catch {
@@ -226,6 +237,10 @@ struct DefaultAgentRuntime: AgentRuntime {
             AgentRunStep(
                 title: "准备数据源",
                 detail: "读取冻结的 Starcat 仓库快照。"
+            ),
+            AgentRunStep(
+                title: "补充外部来源",
+                detail: "按设置页 External Search 配置检索外部来源,关闭时记录 skipped 并继续。"
             ),
             AgentRunStep(
                 title: "聚类主题",

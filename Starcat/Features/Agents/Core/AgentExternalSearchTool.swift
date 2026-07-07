@@ -24,6 +24,23 @@ protocol AgentExternalSearchCollecting: Sendable {
     func collect(prompt: String, context: AgentRunContext) async -> AgentExternalSearchCollection
 }
 
+/// 默认降级 collector。
+///
+/// Runtime 单测和无 Settings 注入的调用路径仍需要完整工具链,但不能凭空联网或伪造来源。
+/// 真正的工作台会注入 `AppSettingsAgentExternalSearchCollector`。
+@MainActor
+struct DisabledAgentExternalSearchCollector: AgentExternalSearchCollecting {
+    func collect(prompt: String, context: AgentRunContext) async -> AgentExternalSearchCollection {
+        AgentExternalSearchCollection(
+            status: .skipped,
+            markdown: "",
+            sourceItems: [],
+            querySummary: "external.search=disabled_default_collector",
+            log: "External Search collector is not configured for this runtime."
+        )
+    }
+}
+
 struct ExternalSearchAgentTool: AgentTool {
     let id = "external.search"
     let displayName = "External Search"

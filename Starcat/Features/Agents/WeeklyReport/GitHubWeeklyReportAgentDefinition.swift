@@ -22,6 +22,7 @@ enum BuiltInAgents {
         toolIDs: [
             "agent.parseGoal",
             "context.resolveRepos",
+            "external.search",
             "report.clusterTopics",
             "artifact.buildMarkdown"
         ],
