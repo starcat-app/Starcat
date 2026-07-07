@@ -86,7 +86,7 @@ CREEM_API_KEY=<creem-live-api-key>
 CREEM_WEBHOOK_SECRET=<live-webhook-secret>
 CREEM_PRODUCT_MONTHLY_ID=<live-monthly-product-id>
 CREEM_PRODUCT_LIFETIME_ID=<live-lifetime-product-id>
-STARCAT_SUCCESS_URL=https://starcat.ink/payment/success
+STARCAT_SUCCESS_URL=https://starcat-license-api.fly.dev/payment/success
 ```
 
 ## Fly 后端部署
@@ -104,7 +104,7 @@ fly secrets set \
   CREEM_API_BASE_URL="https://test-api.creem.io/v1" \
   CREEM_PRODUCT_MONTHLY_ID="<test-monthly-product-id>" \
   CREEM_PRODUCT_LIFETIME_ID="<test-lifetime-product-id>" \
-  STARCAT_SUCCESS_URL="https://starcat.ink/payment/success" \
+  STARCAT_SUCCESS_URL="https://starcat-license-api-staging.fly.dev/payment/success" \
   CREEM_WEBHOOK_SECRET="<test-webhook-secret>" \
   -a starcat-license-api-staging
 ```
@@ -148,7 +148,7 @@ fly secrets set \
   CREEM_API_BASE_URL="$CREEM_API_BASE_URL" \
   CREEM_PRODUCT_MONTHLY_ID="$CREEM_PRODUCT_MONTHLY_ID" \
   CREEM_PRODUCT_LIFETIME_ID="$CREEM_PRODUCT_LIFETIME_ID" \
-  STARCAT_SUCCESS_URL="${STARCAT_SUCCESS_URL:-https://starcat.ink/payment/success}" \
+  STARCAT_SUCCESS_URL="${STARCAT_SUCCESS_URL:-https://starcat-license-api.fly.dev/payment/success}" \
   CREEM_WEBHOOK_SECRET="$CREEM_WEBHOOK_SECRET" \
   -a starcat-license-api
 ```

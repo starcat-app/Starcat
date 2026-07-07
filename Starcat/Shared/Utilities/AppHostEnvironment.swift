@@ -37,6 +37,7 @@ extension View {
             .environment(dependencies.syncManager)
             .environment(dependencies.settings)
             .environment(dependencies.subscriptionManager)
+            .environment(dependencies.directLicenseManager)
             .environment(dependencies.entitlementGate)
             .environment(dependencies.contributionService)
             .environment(dependencies.userProfileService)
@@ -61,6 +62,8 @@ extension View {
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.subscriptionManager)
+            .environment(dependencies.directLicenseManager)
+            .environment(dependencies.entitlementGate)
             .environment(dependencies.developerLanguageService)
             .appLocaleEnvironment()
     }

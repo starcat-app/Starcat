@@ -27,26 +27,35 @@ struct ProPaywallContext: Identifiable, Equatable {
 ///
 /// 产品策略：只在用户触发 Pro 能力或免费限额耗尽时出现；基础 stars 管理工作流不主动打扰。
 ///
-/// **Environment 约束**：本视图依赖 `@Environment(SubscriptionManager.self)`。SwiftUI
+/// **Environment 约束**：本视图依赖 `@Environment(SubscriptionManager.self)` 与
+/// `@Environment(DirectLicenseManager.self)`。SwiftUI
 /// `.sheet` 根视图与 AppKit 自建 `NSHostingController` **不会**自动继承主窗订阅环境；
-/// 必须通过 `ProPaywallSheet.hosted(context:subscriptionManager:)` 注入，否则访问
+/// 必须通过 `ProPaywallSheet.hosted(context:dependencies:)` 注入，否则访问
 /// environment 会触发 SwiftUI 运行时断言崩溃（`EnvironmentValues.subscript.getter`）。
 struct ProPaywallSheet: View {
     let context: ProPaywallContext
 
     @Environment(SubscriptionManager.self) private var subscriptionManager
+    @Environment(DirectLicenseManager.self) private var directLicenseManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
     @State private var didActivate: Bool = false
     @State private var isOfferCodeRedemptionPresented = false
+    @State private var directLicenseKey: String = ""
+
+    private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
             benefits
-            products
-            footerActions
+            if isDirectBuild {
+                directActions
+            } else {
+                products
+                footerActions
+            }
         }
         .padding(22)
         .frame(width: 420)
@@ -58,8 +67,12 @@ struct ProPaywallSheet: View {
             }
         }
         .task {
-            await subscriptionManager.loadProducts()
-            await subscriptionManager.refreshEntitlements()
+            if isDirectBuild {
+                _ = await directLicenseManager.validateStoredLicense()
+            } else {
+                await subscriptionManager.loadProducts()
+                await subscriptionManager.refreshEntitlements()
+            }
         }
     }
 
@@ -77,7 +90,7 @@ struct ProPaywallSheet: View {
                     Label("paywall.activated", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
                         .font(.callout.weight(.medium))
-                } else if let error = subscriptionManager.lastErrorMessage {
+                } else if let error = paywallErrorMessage {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(.callout)
@@ -85,6 +98,10 @@ struct ProPaywallSheet: View {
                 }
             }
         }
+    }
+
+    private var paywallErrorMessage: String? {
+        isDirectBuild ? directLicenseManager.lastErrorMessage : subscriptionManager.lastErrorMessage
     }
 
     private var benefits: some View {
@@ -179,6 +196,49 @@ struct ProPaywallSheet: View {
         }
     }
 
+    private var directActions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Button("paywall.direct.buyMonthly") {
+                    Task { await openDirectCheckout(.monthly) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(directLicenseManager.isRequestInFlight)
+
+                Button("paywall.direct.buyLifetime") {
+                    Task { await openDirectCheckout(.lifetime) }
+                }
+                .disabled(directLicenseManager.isRequestInFlight)
+            }
+
+            Divider()
+
+            Text("paywall.direct.activateTitle")
+                .font(.callout.weight(.semibold))
+
+            SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button("settings.pro.direct.button.activate") {
+                    Task { await activateDirectLicense() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("paywall.button.close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            Text("paywall.direct.footer")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func paywallFooterButton(
         _ titleKey: LocalizedStringKey,
         action: @escaping () -> Void
@@ -204,6 +264,20 @@ struct ProPaywallSheet: View {
         let activated = await subscriptionManager.purchase(product)
         guard activated else { return }
         didActivate = true
+        try? await Task.sleep(for: .seconds(1))
+        dismiss()
+    }
+
+    private func openDirectCheckout(_ plan: DirectCheckoutPlan) async {
+        guard let url = await directLicenseManager.createCheckoutURL(for: plan) else { return }
+        openURL(url)
+    }
+
+    private func activateDirectLicense() async {
+        let activated = await directLicenseManager.activate(licenseKey: directLicenseKey)
+        guard activated else { return }
+        didActivate = true
+        directLicenseKey = ""
         try? await Task.sleep(for: .seconds(1))
         dismiss()
     }

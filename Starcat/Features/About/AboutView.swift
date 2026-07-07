@@ -321,10 +321,12 @@ private struct SupportPage: View {
                     systemImage: "safari",
                     url: URL(string: "https://starcat.ink")
                 )
-                SupportReviewRow {
-                    // StoreKit 会自行判断当前环境是否适合展示评分面板；这里不做自定义弹窗，
-                    // 避免打断用户，也符合 Apple 对应用评分请求的限制与展示策略。
-                    requestReview()
+                if DistributionChannel.current.isAppStore {
+                    SupportReviewRow {
+                        // StoreKit 会自行判断当前环境是否适合展示评分面板；Direct 构建没有
+                        // App Store 商品页，隐藏该入口可以避免把用户带到无效的评分流程。
+                        requestReview()
+                    }
                 }
             }
         }

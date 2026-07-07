@@ -11,7 +11,7 @@ import SwiftUI
 
 /// Pro 订阅设置页。
 ///
-/// 本页只负责展示与触发购买动作；权益真相源在 `SubscriptionManager`，业务门控在
+/// 本页只负责展示与触发购买动作；权益真相源在聚合 provider，业务门控在
 /// `EntitlementGate`。这样 Settings 页重建、购买弹窗关闭或后续接服务端校验时，
 /// 都不会让 Pro 状态分裂成多份。
 struct ProSettingsTab: View {
@@ -108,7 +108,7 @@ struct ProSettingsTab: View {
                     .font(.callout.weight(.medium))
                     .foregroundStyle(settings.isProUser ? .green : .secondary)
 
-                if let expiration = subscriptionManager.entitlement.expirationDate, settings.isProUser {
+                if let expiration = activeExpirationDate, settings.isProUser {
                     Label {
                         HStack(spacing: 4) {
                             Text("settings.pro.status.expiration")
@@ -127,7 +127,7 @@ struct ProSettingsTab: View {
                         .font(.callout.weight(.medium))
                 }
 
-                if let error = subscriptionManager.lastErrorMessage {
+                if let error = subscriptionManager.lastErrorMessage, !isDirectBuild {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
@@ -143,7 +143,7 @@ struct ProSettingsTab: View {
             }
             .padding(.vertical, 2)
         } footer: {
-            Text("settings.pro.status.footer")
+            Text(LocalizedStringKey(isDirectBuild ? "settings.pro.direct.status.footer" : "settings.pro.status.footer"))
         }
     }
 
@@ -259,9 +259,9 @@ struct ProSettingsTab: View {
                     detailKey: "settings.pro.benefit.release.detail"
                 )
                 ProBenefitTile(
-                    systemImage: "icloud.fill",
-                    titleKey: "settings.pro.benefit.cloud.title",
-                    detailKey: "settings.pro.benefit.cloud.detail"
+                    systemImage: "shippingbox.fill",
+                    titleKey: "settings.pro.benefit.repoContext.title",
+                    detailKey: "settings.pro.benefit.repoContext.detail"
                 )
             }
         } header: {
@@ -354,6 +354,10 @@ struct ProSettingsTab: View {
             try? await Task.sleep(for: .seconds(4))
             showSuccessMessage = false
         }
+    }
+
+    private var activeExpirationDate: Date? {
+        isDirectBuild ? directLicenseManager.entitlement.expirationDate : subscriptionManager.entitlement.expirationDate
     }
 }
 

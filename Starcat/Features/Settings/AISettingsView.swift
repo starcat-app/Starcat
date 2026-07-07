@@ -26,7 +26,6 @@ import SwiftUI
 struct AISettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
-    @Environment(SubscriptionManager.self) private var subscriptionManager
     /// HOM-126：「立刻手动触发一次」按钮直接调度。@Environment 注入自 StarcatApp。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
     /// 2026-06-12 向量索引改进：AI 索引 Section 的"开始 / 暂停 / 全量重建"按钮需要
@@ -130,7 +129,9 @@ struct AISettingsTab: View {
 
     @ViewBuilder
     var body: some View {
-        if subscriptionManager.entitlement.isActive {
+        // AI 服务是 Direct / StoreKit 共享的 Pro 能力，必须读取聚合后的业务门控；
+        // 直接读取 SubscriptionManager 会把 Direct License 用户误判为未开通。
+        if dependencies.entitlementGate.isProUser {
             aiConfigurationForm
         } else {
             lockedAISettings

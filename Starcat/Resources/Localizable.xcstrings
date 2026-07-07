@@ -16430,6 +16430,74 @@
         }
       }
     },
+    "paywall.direct.activateTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already paid?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经完成支付？"
+          }
+        }
+      }
+    },
+    "paywall.direct.buyLifetime": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buy Lifetime"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买买断版"
+          }
+        }
+      }
+    },
+    "paywall.direct.buyMonthly": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buy Monthly"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买月付版"
+          }
+        }
+      }
+    },
+    "paywall.direct.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Payment opens in your browser. Paste the license key from the success page or receipt to activate Pro on this Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支付会在浏览器打开。完成后粘贴成功页或收据里的授权码，即可在这台 Mac 激活 Pro。"
+          }
+        }
+      }
+    },
     "paywall.subtitleFormat": {
       "extractionState": "manual",
       "localizations": {
@@ -28871,6 +28939,23 @@
         }
       }
     },
+    "settings.pro.direct.status.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Pro entitlement is verified through Starcat License API and mirrored locally for feature gates."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 权益由 Starcat License API 校验，并同步到本地镜像用于功能门控。"
+          }
+        }
+      }
+    },
     "settings.pro.direct.license.placeholder": {
       "extractionState": "manual",
       "localizations": {
@@ -29075,6 +29160,40 @@
         }
       }
     },
+    "settings.pro.benefit.repoContext.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContextPacker, CodeFlow, and codebase context workflows for deeper source understanding."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContextPacker、CodeFlow 与仓库上下文工作流，用于更深入理解源码。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.repoContext.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository context"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库上下文"
+          }
+        }
+      }
+    },
     "settings.pro.benefit.search.detail": {
       "extractionState": "manual",
       "localizations": {
@@ -29114,13 +29233,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pro focuses on advanced workflows first. Reserved items stay visible so the subscription scope is explicit."
+            "value": "Pro covers the current advanced workflows unlocked by Starcat, with one entitlement source for both Direct and App Store builds."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pro 优先覆盖进阶工作流；预留项会明确展示，避免订阅范围含糊。"
+            "value": "Pro 覆盖 Starcat 当前已解锁的进阶工作流，Direct 与 App Store 构建共享同一套权益门控。"
           }
         }
       }
@@ -32464,13 +32583,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remote GitHub stars, CloudKit data, backend service data, and App Store purchases are not modified."
+            "value": "Remote GitHub stars, CloudKit data, backend service data, and payment or license records are not modified."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不会修改远端 GitHub stars、CloudKit 数据、后端服务数据或 App Store 购买记录。"
+            "value": "不会修改远端 GitHub stars、CloudKit 数据、后端服务数据或支付 / 授权记录。"
           }
         }
       }

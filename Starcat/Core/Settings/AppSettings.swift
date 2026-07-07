@@ -1064,9 +1064,10 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpAllowDestructiveWrites, value: mcpAllowDestructiveWrites) }
     }
 
-    /// Pro 订阅状态镜像（HOM-151 → StoreKit）。
+    /// Pro 权益状态镜像（HOM-151 起源于 StoreKit，后续扩展到 Direct License）。
     ///
-    /// 真实订阅接入后，StoreKit 权益是单一真相源，本字段只作为 UI 读模型：
+    /// 真实权益接入后，聚合后的 `CompositeProEntitlementProvider` 是单一真相源，
+    /// 本字段只作为 UI 读模型：
     /// - 用户头像右下角 PRO 标识
     /// - 分享卡 / 关于页等不需要直接依赖 StoreKit 的轻量展示
     /// 不允许设置页或功能入口直接写入，避免本地模拟状态绕过真实订阅。
@@ -1603,9 +1604,10 @@ final class AppSettings {
 
     /// 由订阅权益链路更新 Pro 镜像。
     ///
-    /// StoreKit 的 `Transaction.currentEntitlements` / `Transaction.updates` 是真实来源；
-    /// AppSettings 只负责把最终布尔值持久化给头像标识等轻量 UI 使用。把写入口收口到
-    /// 一个方法里，是为了避免再次出现 HOM-151 阶段设置页直接改 `isProUser` 的临时路径。
+    /// StoreKit 的 `Transaction.currentEntitlements` / `Transaction.updates` 与 Direct
+    /// License 快照都会先进入聚合 provider；AppSettings 只负责把最终布尔值持久化给
+    /// 头像标识等轻量 UI 使用。把写入口收口到一个方法里，是为了避免再次出现
+    /// HOM-151 阶段设置页直接改 `isProUser` 的临时路径。
     func updateProEntitlementMirror(isPro: Bool) {
         guard isProUser != isPro else { return }
         isProUser = isPro
@@ -1615,8 +1617,8 @@ final class AppSettings {
     ///
     /// 使用场景是 Storage 页“清空所有数据”：它的产品语义是本机恢复出厂，
     /// 所以这里会同时清 UserDefaults 偏好与加密凭据文件里的 AI / 服务 / MCP Key。
-    /// 不会访问 GitHub、CloudKit、App Store，也不会修改远端订阅购买记录；
-    /// `isProUser` 只是本机 UI 镜像，重启后仍由 StoreKit 权益链路重新刷新。
+    /// 不会访问 GitHub、CloudKit、App Store 或 License API，也不会修改远端购买记录；
+    /// `isProUser` 只是本机 UI 镜像，重启后仍由聚合权益链路重新刷新。
     func resetToDefaults() throws {
         for key in Keys.resettableKeys {
             defaults.removeObject(forKey: key)
