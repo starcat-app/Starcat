@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-将 supports/starcat-pro/CHANGELOG.md 转换为 pages/changelog.html。
-暗色主题，与落地页风格一致。
+将 supports/starcat-pro/CHANGELOG.md 与 CHANGELOG-ZH.md 转换为官网更新日志页。
+暗色主题，与落地页风格一致；生成逻辑集中在脚本里，避免中英文页面样式漂移。
 用法: python3 generate-changelog.py
 """
 
@@ -11,17 +11,53 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-MD_PATH = PROJECT_ROOT / "supports" / "starcat-pro" / "CHANGELOG.md"
-HTML_PATH = SCRIPT_DIR / "changelog.html"
+CHANGELOG_PAGES = [
+    {
+        "source": PROJECT_ROOT / "supports" / "starcat-pro" / "CHANGELOG.md",
+        "target": SCRIPT_DIR / "changelog.html",
+        "lang": "en",
+        "description": "Starcat Changelog — release notes and product updates",
+        "title": "Changelog · Starcat",
+        "home_href": "./index.html",
+        "privacy_href": "./privacy.html",
+        "current_href": "./changelog.html",
+        "nav_label": "Navigation",
+        "home_label": "Home",
+        "privacy_label": "Privacy",
+        "changelog_label": "Changelog",
+        "hero_eyebrow": "Release Notes",
+        "hero_title": "Changelog",
+        "privacy_footer_label": "Privacy Policy",
+        "contact_label": "Contact",
+    },
+    {
+        "source": PROJECT_ROOT / "supports" / "starcat-pro" / "CHANGELOG-ZH.md",
+        "target": SCRIPT_DIR / "changelog-zh.html",
+        "lang": "zh-Hans",
+        "description": "Starcat 更新日志 — 版本更新记录",
+        "title": "更新记录 · Starcat",
+        "home_href": "./index-zh.html",
+        "privacy_href": "./privacy-zh.html",
+        "current_href": "./changelog-zh.html",
+        "nav_label": "导航",
+        "home_label": "首页",
+        "privacy_label": "隐私",
+        "changelog_label": "更新记录",
+        "hero_eyebrow": "版本记录",
+        "hero_title": "更新记录",
+        "privacy_footer_label": "隐私政策",
+        "contact_label": "联系我们",
+    },
+]
 
 HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="zh-Hans">
+<html lang="{lang}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Starcat Changelog — 版本更新记录">
+    <meta name="description" content="{description}">
     <meta name="robots" content="index, follow">
-    <title>更新记录 · Starcat</title>
+    <title>{title}</title>
     <link rel="icon" type="image/png" href="starcat-logo.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -118,22 +154,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <header class="topbar" role="banner">
     <div class="topbar-inner">
-        <a class="brand" href="./index.html">
+        <a class="brand" href="{home_href}">
             <img src="starcat-logo.png" alt="Starcat" class="brand-logo" width="28" height="28">
             <span>Starcat</span>
         </a>
-        <nav class="topbar-nav" aria-label="导航">
-            <a href="./index.html">Home</a>
-            <a href="./privacy.html">Privacy</a>
-            <a href="./changelog.html" style="color:var(--color-text);font-weight:500;">Changelog</a>
+        <nav class="topbar-nav" aria-label="{nav_label}">
+            <a href="{home_href}">{home_label}</a>
+            <a href="{privacy_href}">{privacy_label}</a>
+            <a href="{current_href}" style="color:var(--color-text);font-weight:500;">{changelog_label}</a>
         </nav>
     </div>
 </header>
 
 <section class="hero">
     <div class="hero-inner">
-        <p class="hero-eyebrow">Release Notes</p>
-        <h1>Changelog</h1>
+        <p class="hero-eyebrow">{hero_eyebrow}</p>
+        <h1>{hero_title}</h1>
     </div>
 </section>
 
@@ -145,10 +181,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <footer class="site-footer" role="contentinfo">
     <div class="links">
-        <a href="./index.html">Home</a>
-        <a href="./privacy.html">Privacy Policy</a>
-        <a href="./changelog.html">Changelog</a>
-        <a href="mailto:dong4j@gmail.com">Contact</a>
+        <a href="{home_href}">{home_label}</a>
+        <a href="{privacy_href}">{privacy_footer_label}</a>
+        <a href="{current_href}">{changelog_label}</a>
+        <a href="mailto:dong4j@gmail.com">{contact_label}</a>
     </div>
     <p class="copyright">Copyright &copy; 2026 Starcat. All rights reserved.</p>
 </footer>
@@ -293,16 +329,20 @@ def _escape(text: str) -> str:
 
 
 def main():
-    if not MD_PATH.exists():
-        print(f"Error: {MD_PATH} not found", file=sys.stderr)
-        sys.exit(1)
+    for page in CHANGELOG_PAGES:
+        source_path = page["source"]
+        target_path = page["target"]
+        if not source_path.exists():
+            print(f"Error: {source_path} not found", file=sys.stderr)
+            sys.exit(1)
 
-    md_text = MD_PATH.read_text(encoding="utf-8")
-    html_body = md_to_html(md_text)
-    full_html = HTML_TEMPLATE.format(content=html_body)
+        md_text = source_path.read_text(encoding="utf-8")
+        html_body = md_to_html(md_text)
+        # 每个页面只替换导航和页头文案；正文仍由对应 Markdown 单一来源生成。
+        full_html = HTML_TEMPLATE.format(content=html_body, **page)
 
-    HTML_PATH.write_text(full_html, encoding="utf-8")
-    print(f"✓ Generated {HTML_PATH} ({len(full_html)} bytes)")
+        target_path.write_text(full_html, encoding="utf-8")
+        print(f"✓ Generated {target_path} ({len(full_html)} bytes)")
 
 
 if __name__ == "__main__":

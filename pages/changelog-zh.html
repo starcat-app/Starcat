@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Starcat 更新日志 — 版本更新记录">
+    <meta name="robots" content="index, follow">
+    <title>更新记录 · Starcat</title>
+    <link rel="icon" type="image/png" href="starcat-logo.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --color-bg:         #0F172A;
+            --color-bg-soft:    #1E293B;
+            --color-card:       rgba(30, 41, 59, 0.6);
+            --color-border:     rgba(148, 163, 184, 0.12);
+            --color-border-hover: rgba(148, 163, 184, 0.25);
+            --color-text:       #F8FAFC;
+            --color-text-secondary: #94A3B8;
+            --color-text-tertiary:  #64748B;
+            --color-primary:    #38BDF8;
+            --color-primary-hover: #7DD3FC;
+            --color-cta:        #22C55E;
+            --color-success:    #4ADE80;
+            --color-accent:     #FBBF24;
+            --color-pro:        #A78BFA;
+            --fs-hero: clamp(28px, 4vw, 40px);
+            --fs-h2: clamp(22px, 3vw, 28px);
+            --fs-h3: 20px;
+            --fs-body: 16px;
+            --fs-small: 14px;
+            --radius: 14px; --radius-sm: 8px;
+            --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+        body {
+            margin: 0; background: var(--color-bg); color: var(--color-text);
+            font-family: var(--font-sans); font-size: var(--fs-body); line-height: 1.7;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+        ::selection { background: rgba(34, 197, 94, 0.3); color: var(--color-text); }
+        a { color: var(--color-primary); text-decoration: none; transition: color .15s ease; }
+        a:hover { color: var(--color-primary-hover); }
+        code {
+            background: rgba(148, 163, 184, 0.12); border-radius: 4px;
+            padding: 2px 6px; font-family: var(--font-mono); font-size: 0.9em; color: var(--color-text);
+        }
+
+        .topbar { position: sticky; top: 0; z-index: 50; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid var(--color-border); }
+        .topbar-inner { max-width: 900px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+        .brand { display: flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 17px; color: var(--color-text); }
+        .brand-logo { width: 28px; height: 28px; border-radius: 7px; }
+        .topbar-nav { display: flex; gap: 28px; font-size: 14px; }
+        .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; transition: color .15s ease; }
+        .topbar-nav a:hover { color: var(--color-text); text-decoration: none; }
+
+        .hero { background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg-soft) 100%); padding: 72px 24px 56px; border-bottom: 1px solid var(--color-border); }
+        .hero-inner { max-width: 900px; margin: 0 auto; }
+        .hero-eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 13px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--color-cta); font-weight: 600; margin: 0 0 12px; }
+        .hero h1 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-hero); font-weight: 700; margin: 0 0 16px; letter-spacing: -0.02em; }
+
+        main { max-width: 900px; margin: 0 auto; padding: 48px 24px 96px; }
+        .changelog-content { background: var(--color-card); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 48px 56px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+
+        .changelog-content h1 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-hero); font-weight: 700; margin: 0 0 8px; color: var(--color-text); }
+        .changelog-content h2 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-h2); font-weight: 700; margin: 48px 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); color: var(--color-text); }
+        .changelog-content h2:first-of-type { margin-top: 0; }
+        .changelog-content h3 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-h3); font-weight: 600; margin: 32px 0 12px; color: var(--color-cta); }
+        .changelog-content p { margin: 12px 0; color: var(--color-text-secondary); line-height: 1.7; }
+        .changelog-content ul { padding-left: 20px; margin: 12px 0; list-style: none; }
+        .changelog-content ul li { margin: 10px 0; color: var(--color-text-secondary); line-height: 1.6; position: relative; padding-left: 16px; }
+        .changelog-content ul li::before { content: "·"; position: absolute; left: 0; color: var(--color-text-tertiary); font-weight: 700; }
+        .changelog-content strong { color: var(--color-text); font-weight: 600; }
+        .changelog-content a { color: var(--color-primary); }
+        .changelog-content a:hover { color: var(--color-primary-hover); }
+        .changelog-content hr { border: none; border-top: 1px solid var(--color-border); margin: 40px 0; }
+        .changelog-content blockquote { border-left: 3px solid var(--color-border); padding: 8px 16px; margin: 16px 0; color: var(--color-text-tertiary); font-style: italic; background: rgba(148,163,184,0.05); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+        .changelog-content blockquote p { color: var(--color-text-tertiary); }
+
+        footer.site-footer { background: var(--color-bg); border-top: 1px solid var(--color-border); padding: 40px 24px; color: var(--color-text-tertiary); font-size: 13px; text-align: center; }
+        footer.site-footer .links { display: flex; justify-content: center; gap: 28px; margin-bottom: 16px; flex-wrap: wrap; }
+        footer.site-footer .links a { color: var(--color-text-tertiary); transition: color .15s ease; }
+        footer.site-footer .links a:hover { color: var(--color-text-secondary); text-decoration: none; }
+        footer.site-footer .copyright { color: var(--color-text-tertiary); font-size: 12px; margin: 0; }
+
+        @media (max-width: 767px) {
+            .changelog-content { padding: 28px 22px; }
+            .topbar-nav { display: none; }
+            .hero { padding: 48px 16px 36px; }
+            .hero h1 { font-size: 28px; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="topbar" role="banner">
+    <div class="topbar-inner">
+        <a class="brand" href="./index-zh.html">
+            <img src="starcat-logo.png" alt="Starcat" class="brand-logo" width="28" height="28">
+            <span>Starcat</span>
+        </a>
+        <nav class="topbar-nav" aria-label="导航">
+            <a href="./index-zh.html">首页</a>
+            <a href="./privacy-zh.html">隐私</a>
+            <a href="./changelog-zh.html" style="color:var(--color-text);font-weight:500;">更新记录</a>
+        </nav>
+    </div>
+</header>
+
+<section class="hero">
+    <div class="hero-inner">
+        <p class="hero-eyebrow">版本记录</p>
+        <h1>更新记录</h1>
+    </div>
+</section>
+
+<main>
+    <div class="changelog-content">
+<h1>Starcat 更新日志</h1>
+<p>这里记录 Starcat 的重要变化，内容用于发布说明。</p>
+<h2>1.2.0</h2>
+<h3>新增</h3>
+<ul>
+<li>新增 Getting Started 新手引导系统，覆盖同步、RAG/Agent 试用、项目主页和知识库等关键操作，支持返回导航和调试模式开关。</li>
+<li>新增浮层状态保护防止异常退出后引导入口锁死，统一手动重播防护，以及分享指引气泡位置优化。</li>
+<li>新增 Agent 与 RAG 独立窗口工作台，支持窗口置顶、侧边栏折叠，并继承主窗口界面字号。</li>
+<li>新增 Agent 计划与工具输出展示、扩展事件模型，并完善运行时事件反馈闭环。</li>
+<li>新增落地页首屏加载动效及多阶段过渡动画、macOS 专属下载弹窗及优化后的定价网格，以及下载版本区块。</li>
+</ul>
+<h3>改进</h3>
+<ul>
+<li>改进 Agent 工作台，增强可审计追踪可见性、优化回复样式、提升工具栏入口辨识度，并调整标题栏控制。</li>
+<li>改进 DMG 背景，经多轮迭代采用明亮主题、简化视觉、优化定位，并更新图标与拖放链接坐标。</li>
+<li>改进落地页视觉呈现，移除首图外层窗口样式、隐藏 Pro 定价卡片，并优化整体质感。</li>
+<li>改进首次同步与周刊页面加载状态，用统一加载提示组件替换空态视图。</li>
+<li>改进 DMG 文件名可读性与背景生成样式。</li>
+</ul>
+<h3>修复</h3>
+<ul>
+<li>修复 Agent 默认产物选中逻辑。</li>
+<li>修复 RAG 与工作台输入框首次按键异常换行。</li>
+<li>修复 RAG 中栏消息对齐问题，并恢复工作台标题栏图标可见性。</li>
+<li>修正落地页 macOS 版本文案。</li>
+</ul>
+<h2>1.1.0</h2>
+<h3>新增</h3>
+<ul>
+<li>新增相似仓库推荐，支持保存推荐结果、展示更清晰的推荐卡片、标记已收藏仓库，并可在新的 Starcat 窗口中打开推荐仓库。</li>
+<li>新增更多 GitHub 登录方式，包括浏览器登录、Token 登录、登录方式选择器和授权倒计时。</li>
+<li>新增仓库代码智能分析能力，作为 Pro 功能提供独立的仓库分析工作区、结果缓存和设置入口。</li>
+<li>新增详情页 AI 助手入口、README AI 摘要、摘要缓存，并支持从 Starcat 和浏览器入口触发摘要生成。</li>
+<li>新增 Browser Plugin 工作流，可在 GitHub 页面与 Starcat 配对，并访问仓库上下文、笔记、标签、健康度、Wiki 上下文、推荐和 Safari WebExtension 支持。</li>
+<li>新增开始使用清单，引导首次设置和关键操作。</li>
+<li>新增探索发现相关页面，覆盖趋势、发现、GitHub 搜索和仓库榜单。</li>
+<li>新增 README 后台预拉取和健康分预热，让仓库详情更快进入可用状态。</li>
+<li>新增健康分排序、健康分颜色优化和 OpenSSF Scorecard 预热，帮助更快判断仓库质量。</li>
+<li>新增菜单栏与 macOS 顶部菜单控制，常用操作更容易触达。</li>
+<li>新增 Direct 分发能力，与 App Store 渠道并行，包含独立 Direct 构建目标、渠道配置和仅 Direct 版本启用的 Sparkle 自动更新。</li>
+<li>新增 Direct 版 Sparkle 更新支持，包含 appcast 更新清单、EdDSA key 配置、检查更新菜单入口，以及私钥备份和多台 Mac 签名流程文档。</li>
+<li>新增 Direct License 基础设施，包含 License API 服务、本地授权存储，以及同时服务 App Store 和 Direct 渠道的权益抽象。</li>
+<li>新增中立的 Direct 支付网关抽象，为后续接入 Creem 等支付 provider 预留扩展点。</li>
+<li>新增服务状态徽章、服务健康检查和本地运维工具，方便配置和排查问题。</li>
+<li>新增界面字号档位、发布记录分页优化，以及发布订阅总数侧边栏展示。</li>
+</ul>
+<h3>改进</h3>
+<ul>
+<li>改进推荐入口位置、推荐卡片样式、缓存策略和 Pro 权限提示。</li>
+<li>改进 README 阅读体验，包括 GitHub 图片处理、系统风格滚动条和更清晰的加载状态。</li>
+<li>改进全局搜索，支持快捷键、历史记录、更可靠的焦点获取和 GitHub 搜索结果分页。</li>
+<li>改进 GitHub Stars List、侧边栏统计、语言图标和空状态展示。</li>
+<li>改进 Activity 和 Weekly 浏览体验，提供更丰富的筛选、更快的数量统计和更清晰的详情加载。</li>
+<li>改进分享卡，加入更多版式和配色、完善个人资料展示，并避免免费用户看到不可用状态。</li>
+<li>改进设置页文案、存储操作、服务配置和诊断日志反馈。</li>
+<li>改进深色模式下的 AI、健康度、搜索、分享和插件相关界面表现。</li>
+<li>改进发布准备材料、开源致谢、分发方案和应用内发布说明读取方式。</li>
+<li>改进 Direct 发布工具链，提供 App Store / Direct 独立打包脚本、Direct 运行入口、Sparkle appcast 生成，以及用于上传 appcast 和 DMG 的发布编排脚本。</li>
+<li>改进 Starcat 官网 nginx 配置，为 Sparkle 更新增加 appcast 不缓存规则和 Direct 下载路径规则。</li>
+<li>改进工具栏、危险操作、常用操作、标签、侧边栏和批量操作中的共享图标规范。</li>
+<li>改进内部诊断、遥测安全边界和开发专用开关，避免未完成能力被当成正式功能。</li>
+</ul>
+<h3>修复</h3>
+<ul>
+<li>修复关闭主窗口后，Dock 或菜单栏重新打开 Starcat 时无法正确恢复的问题。</li>
+<li>修复 README 内容或其他交互区域上方出现浮层时，鼠标光标显示不正确的问题。</li>
+<li>修复 GitHub 仓库名称大小写不一致时 AI 摘要生成失败的问题。</li>
+<li>修复浏览器插件中不可用或 Pro 限制动作的处理方式。</li>
+<li>修复从外部入口修改笔记和标签后，Starcat 当前内容不能自动刷新的问题。</li>
+<li>修复推荐仓库新窗口可能崩溃或 README 一直加载的问题。</li>
+<li>修复多项 CodebaseMemory 启动、存储、缓存和切换仓库时的稳定性问题。</li>
+<li>修复子目录 README 图片和 GitHub raw 图片路径显示问题。</li>
+<li>修复全局搜索焦点时机和若干搜索结果交互细节。</li>
+<li>修复存储重置完成态、未登录状态下存储页滚动，以及若干设置页布局边界问题。</li>
+<li>修复语言数据缺失时语言统计排序不正确的问题。</li>
+<li>修复 Release 构建中调试菜单相关的编译问题。</li>
+<li>修复 Direct 构建签名和 entitlements 检查，确保非 App Store 版本不带 App Sandbox entitlement，同时 App Store 版本继续保留沙箱配置。</li>
+<li>修复 Direct 更新测试打包流程，支持临时版本覆盖 marketing/build 版本，并避免 appcast 生成时混入旧 DMG。</li>
+</ul>
+<h2>1.0.0</h2>
+<p>Starcat 初始版本。</p>
+<h3>亮点</h3>
+<ul>
+<li>用原生 macOS 三栏界面管理 GitHub Stars。</li>
+<li>支持 GitHub 登录和 Stars 同步，包含进度显示、刷新和限流提示。</li>
+<li>支持按全部收藏、标签、语言、智能集合、状态、归档、Fork 和搜索浏览仓库。</li>
+<li>支持查看仓库详情，包括元信息、README、GitHub 快捷入口、克隆链接和取消收藏。</li>
+<li>支持标签、批量打标签、私有笔记，以及阅读或使用状态管理。</li>
+<li>支持本地搜索仓库名称、作者、描述、笔记和相关元数据。</li>
+<li>支持 GitHub Trending、周刊来源、推荐和仓库活动浏览。</li>
+<li>支持 Release 追踪、仓库订阅、资源查看和已读状态管理。</li>
+<li>支持自带配置的 AI 能力，包括仓库摘要、标签建议、对话、语义搜索、README 翻译和分享辅助。</li>
+<li>支持仓库健康度、OpenSSF Scorecard、Wiki 上下文和相关洞察。</li>
+<li>支持创建和导出分享卡及仓库集合。</li>
+<li>支持应用设置、存储管理、诊断、开源致谢、主题、语言和界面偏好。</li>
+<li>支持英文和简体中文。</li>
+<li>作为原生 macOS 应用运行，包含沙盒、强化运行时、窗口管理和 App Store 上架准备。</li>
+</ul>
+<p>[1.2.0]: https://github.com/dong4j/starcat/releases/tag/1.2.0</p>
+<p>[1.1.0]: https://github.com/dong4j/starcat/releases/tag/1.1.0</p>
+<p>[1.0.0]: https://github.com/dong4j/starcat/releases/tag/1.0.0</p>
+    </div>
+</main>
+
+<footer class="site-footer" role="contentinfo">
+    <div class="links">
+        <a href="./index-zh.html">首页</a>
+        <a href="./privacy-zh.html">隐私政策</a>
+        <a href="./changelog-zh.html">更新记录</a>
+        <a href="mailto:dong4j@gmail.com">联系我们</a>
+    </div>
+    <p class="copyright">Copyright &copy; 2026 Starcat. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
