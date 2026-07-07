@@ -1,6 +1,6 @@
 # Agent / RAG 工作台 i18n 专项进度
 
-> 状态: 进行中
+> 状态: 已完成
 > 创建: 2026-07-07
 > 目标分支: `feature/agent`
 
@@ -30,15 +30,24 @@
 - [x] 独立 workspace window title 接入 i18n。
 - [x] Agent 定义 / 状态 / artifact 类型等用户可见模型文案接入 i18n。
 - [x] 同步 `Localizable.xcstrings` en + zh-Hans。
-- [ ] 更新 `docs/功能实现总览.md`。
-- [ ] 执行 i18n 自检和 JSON 校验。
-- [ ] 新增结果报告。
+- [x] 更新 `docs/功能实现总览.md`。
+- [x] 执行 i18n 自检和 JSON 校验。
+- [x] 新增结果报告。
 
 ## 4. 验收标准
 
-- [ ] RAG 工作台固定 UI 文案不再直接硬编码中文。
-- [ ] Agent 工作台固定 UI 文案不再直接硬编码中文。
-- [ ] 两个工作台窗口标题跟随 App 语言设置。
-- [ ] 新增 key 均包含 en + zh-Hans。
-- [ ] `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
-- [ ] `rg "String\\(localized:" --type swift Starcat/` 与 `rg "NSLocalizedString" --type swift Starcat/` 未引入新违规。
+- [x] RAG 工作台固定 UI 文案不再直接硬编码中文。
+- [x] Agent 工作台固定 UI 文案不再直接硬编码中文。
+- [x] 两个工作台窗口标题跟随 App 语言设置。
+- [x] 新增 key 均包含 en + zh-Hans。
+- [x] `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
+- [x] `rg "String\\(localized:" --type swift Starcat/` 与 `rg "NSLocalizedString" --type swift Starcat/` 未引入新违规。
+
+## 5. 审查结论
+
+- 2026-07-07 19:41: `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
+- 2026-07-07 19:41: `git diff --check` 通过。
+- 2026-07-07 19:41: `rg "String\\(localized:" --type swift Starcat/` 与 `rg "NSLocalizedString" --type swift Starcat/` 只命中既有注释。
+- 2026-07-07 19:41: `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build` 通过。
+- 2026-07-07 19:34: `AgentRuntimeTests` + `AgentWorkspaceViewModelTests` 通过。
+- 2026-07-07 19:41: `Starcat/Features/Agents/WeeklyReport/GitHubWeeklyReportTools.swift` 仍保留中文周刊生成模板,属于 Agent 产物内容,不纳入 UI 壳层 i18n 范围。
