@@ -25,9 +25,9 @@
 ## 3. 实施 checklist
 
 - [x] 新增 Agent / RAG 工作台 i18n 专项 checklist。
-- [ ] RAG 工作台 UI 壳层文案接入 i18n。
+- [x] RAG 工作台 UI 壳层文案接入 i18n。
 - [ ] Agent 工作台 UI 壳层文案接入 i18n。
-- [ ] 独立 workspace window title 接入 i18n。
+- [x] 独立 workspace window title 接入 i18n。
 - [ ] Agent 定义 / 状态 / artifact 类型等用户可见模型文案接入 i18n。
 - [ ] 同步 `Localizable.xcstrings` en + zh-Hans。
 - [ ] 更新 `docs/功能实现总览.md`。

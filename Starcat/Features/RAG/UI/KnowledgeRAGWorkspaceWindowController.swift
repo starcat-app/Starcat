@@ -59,7 +59,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
 
-        window.title = "知识库问答"
+        window.title = String.l10n("rag.workspace.window.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize)
         window.contentMinSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize

@@ -67,7 +67,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("最近问答")
+                    Text("rag.workspace.recentConversations")
                         .font(ragFont(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -95,9 +95,9 @@ struct KnowledgeRAGWorkspaceView: View {
                 .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("知识库问答")
+                Text("rag.workspace.title")
                     .font(ragFont(.headline, weight: .semibold))
-                Text("只读 · 本地知识库")
+                Text("rag.workspace.subtitle")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             }
@@ -107,18 +107,18 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var statusBlock: some View {
         VStack(spacing: 10) {
-            statusRow(icon: "scope", label: "范围", value: "知识库")
-            statusRow(icon: "shippingbox", label: "仓库", value: "126 repos")
+            statusRow(icon: "scope", label: String.l10n("rag.workspace.status.scope"), value: String.l10n("rag.workspace.status.knowledgeBase"))
+            statusRow(icon: "shippingbox", label: String.l10n("rag.workspace.status.repos"), value: "126 repos")
 
             VStack(alignment: .leading, spacing: 6) {
-                statusRow(icon: "square.stack.3d.up", label: "Ready chunks", value: "1,248")
+                statusRow(icon: "square.stack.3d.up", label: String.l10n("rag.workspace.status.readyChunks"), value: "1,248")
                 ProgressView(value: 0.92)
                     .tint(Color.accentColor)
                     .controlSize(.small)
             }
 
-            statusRow(icon: "doc.text.magnifyingglass", label: "来源", value: "README / 笔记 / 摘要")
-            statusRow(icon: "lock", label: "模式", value: "只读")
+            statusRow(icon: "doc.text.magnifyingglass", label: String.l10n("rag.workspace.status.sources"), value: String.l10n("rag.workspace.status.sourcesValue"))
+            statusRow(icon: "lock", label: String.l10n("rag.workspace.status.mode"), value: String.l10n("rag.workspace.status.readOnly"))
         }
         .padding(12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -148,7 +148,7 @@ struct KnowledgeRAGWorkspaceView: View {
             didSendDemoQuestion = false
             isStreaming = true
         } label: {
-            Label("新会话", systemImage: "plus.circle.fill")
+            Label("rag.workspace.newConversation", systemImage: "plus.circle.fill")
                 .font(ragFont(.callout, weight: .semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -235,9 +235,9 @@ struct KnowledgeRAGWorkspaceView: View {
     private var answerHeader: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("知识库问答")
+                Text("rag.workspace.title")
                     .font(ragFont(.headline, weight: .semibold))
-                Text("知识库 · 126 repos · 1,248 ready chunks · GPT-4.1 · 只读")
+                Text("rag.workspace.header.subtitle")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             }
@@ -246,7 +246,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
             headerChip("Knowledge", systemImage: "books.vertical", tint: .blue)
             headerChip("GPT-4.1", systemImage: "sparkles", tint: .purple)
-            headerChip(isStreaming ? "Streaming" : "Ready", systemImage: "dot.radiowaves.left.and.right", tint: .green)
+            headerChip(String.l10n(isStreaming ? "rag.workspace.header.streaming" : "rag.workspace.header.ready"), systemImage: "dot.radiowaves.left.and.right", tint: .green)
 
             Button(action: { isStreaming.toggle() }) {
                 Image(systemName: "clock.arrow.circlepath")
@@ -483,9 +483,9 @@ struct KnowledgeRAGWorkspaceView: View {
     private var commandComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                composerChip("Scope: 知识库", systemImage: "books.vertical")
-                composerChip("Sources: README / Notes / Summary", systemImage: "doc.text.magnifyingglass")
-                composerChip("Model: GPT-4.1", systemImage: "sparkles")
+                composerChip(String.l10n("rag.workspace.composer.scope"), systemImage: "books.vertical")
+                composerChip(String.l10n("rag.workspace.composer.sources"), systemImage: "doc.text.magnifyingglass")
+                composerChip(String.l10n("rag.workspace.composer.model"), systemImage: "sparkles")
                 Spacer()
             }
 
@@ -500,7 +500,7 @@ struct KnowledgeRAGWorkspaceView: View {
         VStack(alignment: .leading, spacing: 8) {
             RAGComposerTextEditor(
                 text: $draftQuestion,
-                placeholder: "继续追问知识库...",
+                placeholder: String.l10n("rag.workspace.composer.placeholder"),
                 onHeightChange: { draftQuestionEditorHeight = $0 },
                 onSubmit: sendDemoQuestion
             )
@@ -589,9 +589,9 @@ struct KnowledgeRAGWorkspaceView: View {
     private var inspectorHeader: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("引用")
+                Text("rag.workspace.inspector.title")
                     .font(ragFont(.headline, weight: .semibold))
-                Text("本轮回答实际使用的来源")
+                Text("rag.workspace.inspector.subtitle")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             }
@@ -620,16 +620,16 @@ struct KnowledgeRAGWorkspaceView: View {
                 Spacer()
             }
 
-            inspectorFact("来源", selectedCitation.source, badgeTint: .blue)
-            inspectorFact("位置", selectedCitation.sectionPath, badgeTint: .primary, isNeutral: true)
-            inspectorFact("相关度", "\(Int(selectedCitation.score * 100))%", badgeTint: .green)
-            inspectorFact("详情页", selectedCitation.localDetailAvailable ? "Starcat 本地详情" : "GitHub", badgeTint: selectedCitation.localDetailAvailable ? .accentColor : .secondary)
+            inspectorFact(String.l10n("rag.workspace.inspector.source"), selectedCitation.source, badgeTint: .blue)
+            inspectorFact(String.l10n("rag.workspace.inspector.location"), selectedCitation.sectionPath, badgeTint: .primary, isNeutral: true)
+            inspectorFact(String.l10n("rag.workspace.inspector.relevance"), "\(Int(selectedCitation.score * 100))%", badgeTint: .green)
+            inspectorFact(String.l10n("rag.workspace.inspector.detailPage"), selectedCitation.localDetailAvailable ? String.l10n("rag.workspace.inspector.starcatDetail") : "GitHub", badgeTint: selectedCitation.localDetailAvailable ? .accentColor : .secondary)
 
             Button {
                 NSWorkspace.shared.open(selectedCitation.githubURL)
             } label: {
                 HStack {
-                    Text(selectedCitation.localDetailAvailable ? "打开 Starcat 详情" : "打开 GitHub")
+                    Text(String.l10n(selectedCitation.localDetailAvailable ? "rag.workspace.inspector.openStarcat" : "rag.workspace.inspector.openGitHub"))
                     Spacer()
                     Image(systemName: "arrow.up.right.square")
                 }
@@ -669,7 +669,7 @@ struct KnowledgeRAGWorkspaceView: View {
     private var chunkPreview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("引用片段")
+                Text("rag.workspace.inspector.citationSnippet")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -700,7 +700,7 @@ struct KnowledgeRAGWorkspaceView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if selectedCitation.isTruncated {
-                    Label("片段已按 token 预算截断", systemImage: "scissors")
+                    Label("rag.workspace.inspector.truncated", systemImage: "scissors")
                         .font(ragFont(.caption2, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -716,7 +716,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var otherCitations: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("其它引用")
+            Text("rag.workspace.inspector.otherCitations")
                 .font(ragFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
