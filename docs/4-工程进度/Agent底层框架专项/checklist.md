@@ -48,7 +48,7 @@
 - [x] 定义 `AgentTool` / `AgentToolInput` / `AgentToolResult` / `AgentToolPermission`。
 - [x] 定义 tool status,支持 `completed` / `skipped` / `failed` / `requiresConfirmation`。
 - [x] 新增 `AgentToolRegistry`,支持按 `AgentDefinition.toolIDs` 查找工具。
-- [ ] 扩展 `AgentDefinition`,让每个 Agent 声明 tool id、artifact types 和执行策略。
+- [x] 扩展 `AgentDefinition`,让每个 Agent 声明 tool id、artifact types 和执行策略。
 - [ ] 把 Weekly 本地工具迁移为 Agent tool:
   - `agent.parseGoal`
   - `context.resolveRepos`

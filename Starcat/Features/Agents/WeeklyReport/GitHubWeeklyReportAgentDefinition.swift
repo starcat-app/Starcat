@@ -18,7 +18,14 @@ enum BuiltInAgents {
         systemImage: "newspaper",
         capabilityLabels: ["trending", "report", "artifact"],
         defaultPrompt: "帮我生成本周 GitHub 热门开源项目周刊，风格参考阮一峰 Weekly。",
-        isEnabled: true
+        isEnabled: true,
+        toolIDs: [
+            "agent.parseGoal",
+            "context.resolveRepos",
+            "report.clusterTopics",
+            "artifact.buildMarkdown"
+        ],
+        artifactTypes: [.markdown, .log]
     )
 
     static let all: [AgentDefinition] = [

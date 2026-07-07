@@ -23,6 +23,41 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let capabilityLabels: [String]
     let defaultPrompt: String
     let isEnabled: Bool
+    let toolIDs: [String]
+    let artifactTypes: [AgentArtifactType]
+    let executionStrategy: AgentExecutionStrategy
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        capabilityLabels: [String],
+        defaultPrompt: String,
+        isEnabled: Bool,
+        toolIDs: [String] = [],
+        artifactTypes: [AgentArtifactType] = [],
+        executionStrategy: AgentExecutionStrategy = .linearToolSequence
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.capabilityLabels = capabilityLabels
+        self.defaultPrompt = defaultPrompt
+        self.isEnabled = isEnabled
+        self.toolIDs = toolIDs
+        self.artifactTypes = artifactTypes
+        self.executionStrategy = executionStrategy
+    }
+}
+
+/// Agent Runtime 如何解释 `toolIDs`。
+///
+/// v1 先只支持线性工具序列,保证执行顺序和审计输出稳定。后续接模型 tool-calling loop
+/// 时可以增加新策略,但不能破坏当前顺序可审计的契约。
+enum AgentExecutionStrategy: String, Hashable, Sendable {
+    case linearToolSequence
 }
 
 /// 一次 Agent run 的状态。
