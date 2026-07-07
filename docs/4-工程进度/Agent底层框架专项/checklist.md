@@ -44,10 +44,10 @@
 
 ## 4. 实施 checklist
 
-- [ ] 新增 Agent 底层框架专项 checklist。
-- [ ] 定义 `AgentTool` / `AgentToolInput` / `AgentToolResult` / `AgentToolPermission`。
-- [ ] 定义 tool status,支持 `completed` / `skipped` / `failed` / `requiresConfirmation`。
-- [ ] 新增 `AgentToolRegistry`,支持按 `AgentDefinition.toolIDs` 查找工具。
+- [x] 新增 Agent 底层框架专项 checklist。
+- [x] 定义 `AgentTool` / `AgentToolInput` / `AgentToolResult` / `AgentToolPermission`。
+- [x] 定义 tool status,支持 `completed` / `skipped` / `failed` / `requiresConfirmation`。
+- [x] 新增 `AgentToolRegistry`,支持按 `AgentDefinition.toolIDs` 查找工具。
 - [ ] 扩展 `AgentDefinition`,让每个 Agent 声明 tool id、artifact types 和执行策略。
 - [ ] 把 Weekly 本地工具迁移为 Agent tool:
   - `agent.parseGoal`
