@@ -47,6 +47,12 @@ import AppKit
 /// Explore Weekly 分类的内容视图。
 struct WeeklyContentView: View {
 
+    /// Weekly 筛选 popover 固定宽度。
+    ///
+    /// 这里不跟随系统 popover 内容自适应：筛选项都是短标签，过宽会在右侧留下大片空白。
+    /// 220pt 能容纳当前中英文最长项，后续文案变长时由 row 内 `lineLimit` 兜底省略。
+    private static let filterPopoverWidth: CGFloat = 220
+
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(AppSettings.self) private var settings
@@ -313,7 +319,7 @@ struct WeeklyContentView: View {
             }
             .padding(.vertical, 10)
         }
-        .frame(width: 270, alignment: .leading)
+        .frame(width: Self.filterPopoverWidth, alignment: .leading)
         .frame(maxHeight: 620)
     }
 
@@ -345,6 +351,8 @@ struct WeeklyContentView: View {
                     .frame(width: 16)
                 Text(title)
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)

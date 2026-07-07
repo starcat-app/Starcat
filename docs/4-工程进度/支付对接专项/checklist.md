@@ -47,17 +47,17 @@
 - [x] Starcat License API skeleton — `supports/starcat-license-api` — 2026-07-04
   > 实现：新增独立 Go 服务，提供 healthz、Direct license、checkout、customer portal 和 webhook 端点。
 - [x] `DirectPaymentProvider` 协议 — `supports/starcat-license-api/internal/provider/payment.go` — 2026-07-04
-  > 实现：新增 `PaymentProvider` / `StaticPaymentProvider`，handler 只依赖 provider-neutral 接口，Creem URL 由环境变量配置。
+  > 实现：新增 `PaymentProvider` / `CreemPaymentProvider`，handler 只依赖 provider-neutral 接口，服务端通过 Creem API 动态创建支付 URL。
 - [x] `DirectLicenseProvider` 协议 — `supports/starcat-license-api/internal/provider/provider.go` — 2026-07-04
   > 实现：定义 activate/validate/deactivate provider 接口。
 - [x] Creem test mode adapter — `supports/starcat-license-api/internal/provider/creem.go` — 2026-07-04
   > 实现：支持 Creem test API base、API key、license activate/validate/deactivate 和状态归一化。
 - [x] checkout endpoint — `supports/starcat-license-api/internal/handler/payment.go` — 2026-07-04
-  > 实现：`POST /v1/direct/checkout` 返回配置的 Creem checkout URL。
+  > 实现：`POST /v1/direct/checkout` 使用配置的 Creem product id 创建 checkout URL。
 - [x] activate / validate / deactivate endpoint — `supports/starcat-license-api/internal/handler/license.go` — 2026-07-04
   > 实现：三类 License 端点统一校验请求并转发 provider。
 - [x] customer portal endpoint — `supports/starcat-license-api/internal/handler/payment.go` — 2026-07-04
-  > 实现：`POST /v1/direct/customer-portal` 返回配置的 Creem customer portal URL。
+  > 实现：`POST /v1/direct/customer-portal` 通过 Creem customer id / email 创建 customer portal URL。
 - [x] webhook 验签与事件映射 — `supports/starcat-license-api/internal/handler/webhook.go` — 2026-07-04
   > 实现：校验 `creem-signature` HMAC-SHA256 并返回事件 id/type。
 

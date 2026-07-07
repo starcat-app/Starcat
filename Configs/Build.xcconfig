@@ -29,6 +29,20 @@ STARCAT_PRODUCTION_API_KEY_WIKI =
 STARCAT_PRODUCTION_API_KEY_RECOMMEND =
 STARCAT_PRODUCTION_API_KEY_DISCOVERY =
 
+// MARK: - Direct 分发授权 / 支付后端
+
+// 当前构建使用的 License API 环境。Direct Debug 默认 test，Direct Release 在 project.yml 覆盖为 live。
+// 可选值：test / live。只影响 Starcat 自家 License API；Creem test/live 由对应后端环境变量决定。
+STARCAT_LICENSE_API_ENVIRONMENT = test
+
+// Test Mode / staging：连接使用 Creem Test Mode 的 starcat-license-api-staging。
+STARCAT_LICENSE_API_TEST_BASE_URL = https:/$()/starcat-license-api-staging.fly.dev
+STARCAT_LICENSE_API_TEST_KEY =
+
+// Live / production：连接使用 Creem Live Mode 的 starcat-license-api。
+STARCAT_LICENSE_API_LIVE_BASE_URL = https:/$()/starcat-license-api.fly.dev
+STARCAT_LICENSE_API_LIVE_KEY =
+
 // MARK: - 匿名遥测（Aptabase）
 
 // Aptabase App Key。默认空 = 后端未配置，App 内遥测保持 no-op。

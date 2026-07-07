@@ -31,6 +31,8 @@
 //  - v7（2026-06-28）：新增 Recommend 自建后端，对齐 `/api/v1/ping`、`/healthz`
 //    与 `/api/v1/repos/{repo_id}/recommendations`。
 //  - v8（2026-06-30）：新增 Discovery 自建后端，提供探索发现、热门和新发布接口。
+//  - v9（2026-07-08）：新增 Direct License 后端端点。该服务不放进「设置 → 服务」列表，
+//    因为它承载支付 / 授权，不应暴露为普通 BYOK 服务。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`
@@ -270,6 +272,34 @@ enum AppEndpoints {
         @MainActor
         static func url(_ path: String) -> URL {
             appendPath(path, to: baseURL)
+        }
+    }
+
+    // MARK: - Direct License（官网直售授权）
+
+    /// Starcat Direct 分发授权 / checkout 后端 endpoint 集合。
+    ///
+    /// 这个后端与普通内容类自建服务不同：客户端只拿它创建 checkout、激活 license，
+    /// Creem API Key、webhook secret 和订单状态都留在服务端边界内。
+    enum DirectLicense {
+        static let productionURL = URL(string: "https://starcat-license-api.fly.dev")!
+        static let stagingURL = URL(string: "https://starcat-license-api-staging.fly.dev")!
+
+        enum Paths {
+            /// `POST /v1/direct/checkout` —— 创建 Creem checkout，返回可打开的支付 URL。
+            static let checkout = "/v1/direct/checkout"
+            /// `POST /v1/direct/customer-portal` —— 创建 Creem customer portal URL。
+            static let customerPortal = "/v1/direct/customer-portal"
+            /// `POST /v1/direct/licenses/activate` —— 激活 license key。
+            static let activate = "/v1/direct/licenses/activate"
+            /// `POST /v1/direct/licenses/validate` —— 校验已保存 license key。
+            static let validate = "/v1/direct/licenses/validate"
+            /// `POST /v1/direct/licenses/deactivate` —— 解绑当前设备 license。
+            static let deactivate = "/v1/direct/licenses/deactivate"
+        }
+
+        static func url(_ path: String) -> URL {
+            appendPath(path, to: productionURL)
         }
     }
 

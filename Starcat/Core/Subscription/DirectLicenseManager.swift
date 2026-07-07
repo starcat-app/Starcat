@@ -96,6 +96,34 @@ final class DirectLicenseManager: ProEntitlementProviding {
         return didRemainActive
     }
 
+    /// 创建官网 Direct checkout URL。
+    ///
+    /// 这里不把 Creem product id 传给客户端，只传稳定 plan alias；真实 SKU 映射由
+    /// `starcat-license-api` 读取环境变量完成，后续调价或更换支付平台不需要发新版 App。
+    func createCheckoutURL(for plan: DirectCheckoutPlan) async -> URL? {
+        isRequestInFlight = true
+        defer { isRequestInFlight = false }
+
+        do {
+            let response = try await api.checkout(DirectCheckoutRequest(
+                plan: plan,
+                customerEmail: nil,
+                successURL: nil,
+                requestID: UUID().uuidString
+            ))
+            guard let url = URL(string: response.url) else {
+                lastErrorMessage = DirectLicenseAPIError.invalidResponse.localizedDescription
+                return nil
+            }
+            lastErrorMessage = nil
+            return url
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            AppLog.general.error("[direct-license] checkout failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     func clearStoredCredential() {
         try? store.deleteCredential()
         storedCredential = nil

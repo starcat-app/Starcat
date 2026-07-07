@@ -33,6 +33,7 @@ struct ProSettingsTab: View {
             heroSection
             benefitsSection
             if isDirectBuild {
+                directCheckoutSection
                 directLicenseSection
             } else {
                 productSection
@@ -184,6 +185,28 @@ struct ProSettingsTab: View {
         }
     }
 
+    private var directCheckoutSection: some View {
+        Section {
+            HStack {
+                Spacer()
+
+                Button("settings.pro.direct.checkout.monthly") {
+                    Task { await openDirectCheckout(.monthly) }
+                }
+                .disabled(directLicenseManager.isRequestInFlight)
+
+                Button("settings.pro.direct.checkout.lifetime") {
+                    Task { await openDirectCheckout(.lifetime) }
+                }
+                .disabled(directLicenseManager.isRequestInFlight)
+            }
+        } header: {
+            Text("settings.pro.direct.checkout.section")
+        } footer: {
+            Text("settings.pro.direct.checkout.footer")
+        }
+    }
+
     private var productSection: some View {
         Section {
             if subscriptionManager.isLoadingProducts {
@@ -316,6 +339,11 @@ struct ProSettingsTab: View {
 
     private func deactivateDirectLicense() async {
         _ = await directLicenseManager.deactivateStoredLicense()
+    }
+
+    private func openDirectCheckout(_ plan: DirectCheckoutPlan) async {
+        guard let url = await directLicenseManager.createCheckoutURL(for: plan) else { return }
+        openURL(url)
     }
 
     private func showActivationSuccess() {

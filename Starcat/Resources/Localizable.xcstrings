@@ -28786,6 +28786,74 @@
         }
       }
     },
+    "settings.pro.direct.checkout.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens Creem checkout in your browser. After payment, use the license key from your receipt to activate Pro."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会在浏览器打开 Creem 支付页。支付后使用收据里的授权码激活 Pro。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.checkout.lifetime": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buy Lifetime"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买买断版"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.checkout.monthly": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buy Monthly"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买月付版"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.checkout.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buy Pro"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买 Pro"
+          }
+        }
+      }
+    },
     "settings.pro.direct.footer": {
       "extractionState": "manual",
       "localizations": {

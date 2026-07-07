@@ -26,6 +26,36 @@ enum DirectLicenseStatus: String, Codable, Sendable {
     var grantsPro: Bool { self == .active }
 }
 
+/// Direct 官网售卖的 checkout 计划。
+///
+/// rawValue 与 `supports/starcat-license-api` 的 plan alias 对齐，后端再把它映射到真实
+/// Creem product id。客户端不携带 Creem product id，避免把支付后台 SKU 暴露给 App。
+enum DirectCheckoutPlan: String, Codable, Sendable, CaseIterable {
+    case monthly
+    case lifetime
+}
+
+/// 创建 Direct checkout 的请求体。
+struct DirectCheckoutRequest: Codable, Equatable, Sendable {
+    var plan: DirectCheckoutPlan
+    var customerEmail: String?
+    var successURL: String?
+    var requestID: String?
+}
+
+/// Direct checkout / customer portal 返回的可打开 URL。
+struct DirectPaymentURLResponse: Codable, Equatable, Sendable {
+    var provider: DirectLicenseProviderID
+    var url: String
+    var id: String?
+}
+
+/// 创建支付平台 customer portal 的请求体。
+struct DirectCustomerPortalRequest: Codable, Equatable, Sendable {
+    var customerID: String?
+    var email: String?
+}
+
 /// License API 返回的标准化授权快照。
 struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
     var status: DirectLicenseStatus
