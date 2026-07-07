@@ -74,6 +74,31 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
+    @Test("confirmationRequested 会保存待确认动作")
+    func confirmationRequestedStoresPendingAction() async throws {
+        let action = AgentConfirmationAction(
+            title: "建议创建 tag: database",
+            detail: "确认后才写入 repo tag。",
+            toolName: "tag.propose",
+            input: #"{"tag":"database"}"#
+        )
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+            .confirmationRequested(action),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "规划标签"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.pendingConfirmations == [action])
+    }
+
     @Test("run 会先冻结 context 再交给 runtime")
     func runPassesContextProviderSnapshotIntoRuntime() async throws {
         let context = AgentRunContext(

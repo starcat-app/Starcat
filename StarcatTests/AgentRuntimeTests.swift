@@ -75,7 +75,7 @@ struct AgentRuntimeTests {
                 }
             case .runCompleted:
                 didComplete = true
-            case .stepStarted, .runFailed, .runCancelled:
+            case .stepStarted, .confirmationRequested, .runFailed, .runCancelled:
                 break
             }
         }

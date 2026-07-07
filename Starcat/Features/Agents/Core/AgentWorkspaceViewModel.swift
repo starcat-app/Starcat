@@ -30,6 +30,7 @@ final class AgentWorkspaceViewModel {
     var steps: [AgentRunStep] = []
     var toolOutputs: [AgentToolOutput] = []
     var traceSpans: [AgentTraceSpan] = []
+    var pendingConfirmations: [AgentConfirmationAction] = []
     var artifacts: [AgentArtifact] = []
     var historyRuns: [AgentRunRecord] = []
     var selectedArtifactID: UUID?
@@ -113,6 +114,7 @@ final class AgentWorkspaceViewModel {
         steps = []
         toolOutputs = []
         traceSpans = []
+        pendingConfirmations = []
         artifacts = []
         selectedArtifactID = nil
         assistantOutput = ""
@@ -182,6 +184,8 @@ final class AgentWorkspaceViewModel {
             toolOutputs.append(output)
         case .trace(let span):
             upsert(span)
+        case .confirmationRequested(let action):
+            pendingConfirmations.append(action)
         case .assistantDelta(let text):
             assistantOutput += text
         case .artifactCreated(let artifact):
@@ -228,6 +232,7 @@ final class AgentWorkspaceViewModel {
         steps = snapshot.steps.map(Self.step(from:))
         toolOutputs = snapshot.toolOutputs.map(Self.toolOutput(from:))
         traceSpans = snapshot.traces.map(Self.trace(from:))
+        pendingConfirmations = []
         artifacts = snapshot.artifacts.map(Self.artifact(from:))
         selectedArtifactID = artifacts.first?.id
         assistantOutput = snapshot.run.assistantOutput

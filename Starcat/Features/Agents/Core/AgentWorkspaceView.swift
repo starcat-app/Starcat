@@ -584,13 +584,21 @@ struct AgentWorkspaceView: View {
     }
 
     private var confirmationStrip: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.shield")
-                .foregroundStyle(.secondary)
-            Text("agent.workspace.confirmation.placeholder")
-                .font(agentFont(.caption))
-                .foregroundStyle(.secondary)
-            Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.shield")
+                    .foregroundStyle(.secondary)
+                Text(viewModel.pendingConfirmations.first?.title ?? String.l10n("agent.workspace.confirmation.placeholder"))
+                    .font(agentFont(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            if let detail = viewModel.pendingConfirmations.first?.detail {
+                Text(detail)
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -742,7 +750,7 @@ struct AgentWorkspaceView: View {
     }
 
     private var waitingForConfirmation: Bool {
-        viewModel.isRunning || viewModel.status == .completed
+        !viewModel.pendingConfirmations.isEmpty
     }
 
     private func stepStatusLabel(_ status: AgentStepStatus) -> String {

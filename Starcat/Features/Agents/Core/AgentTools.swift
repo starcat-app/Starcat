@@ -70,17 +70,20 @@ struct AgentToolResult: Sendable {
     var output: AgentToolOutput
     var trace: AgentTraceSpan
     var payload: AgentToolPayload
+    var confirmationAction: AgentConfirmationAction?
 
     init(
         status: AgentToolStatus = .completed,
         output: AgentToolOutput,
         trace: AgentTraceSpan,
-        payload: AgentToolPayload = .none
+        payload: AgentToolPayload = .none,
+        confirmationAction: AgentConfirmationAction? = nil
     ) {
         self.status = status
         self.output = output
         self.trace = trace
         self.payload = payload
+        self.confirmationAction = confirmationAction
     }
 }
 

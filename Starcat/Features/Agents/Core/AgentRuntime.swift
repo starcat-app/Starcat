@@ -277,6 +277,11 @@ struct DefaultAgentRuntime: AgentRuntime {
                     traceIndex += 1
                     runLog.append("Tool output: \(toolResult.output.toolName) - \(toolResult.output.summary)")
 
+                    if let action = toolResult.confirmationAction {
+                        continuation.yield(.confirmationRequested(action))
+                        runLog.append("Confirmation requested: \(action.title)")
+                    }
+
                     if toolResult.status == .failed, Self.isBlockingFailure(tool) {
                         await Self.persistRunStatus(
                             repository: runRepository,

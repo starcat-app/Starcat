@@ -34,6 +34,7 @@
 - [x] 新增 Repo Insight 只读工具链。
 - [x] Runtime 支持 Repo Insight 生成 Markdown artifact。
 - [x] 补 AgentDefinition / Tool / Runtime 单测。
+- [x] 新增确认请求事件与工作台展示链路。
 - [ ] 更新 `docs/功能实现总览.md`。
 - [ ] 第一轮审查: 文档、代码、测试、进度一致性。
 - [ ] 根据审查结果修复。
@@ -48,3 +49,4 @@
 - [x] 缺 AI 配置时明确失败,不生成假 artifact。
 - [x] 现有 Weekly Agent 单测继续通过。
 - [x] 新增 Repo Insight 单测覆盖成功和缺配置失败路径。
+- [x] Runtime / ViewModel 可接收确认型工具请求,但不会自动执行写入。

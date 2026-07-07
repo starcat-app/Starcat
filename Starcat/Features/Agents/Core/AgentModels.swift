@@ -166,6 +166,32 @@ struct AgentToolOutput: Identifiable, Hashable, Sendable {
     }
 }
 
+/// Agent 请求用户确认的动作。
+///
+/// 当前只负责展示和审计,不执行写入。后续接 tag / note / status / star 写操作时,
+/// 必须先生成这个动作,用户确认后再调用对应写工具。
+struct AgentConfirmationAction: Identifiable, Hashable, Sendable {
+    let id: UUID
+    var title: String
+    var detail: String
+    var toolName: String
+    var input: String
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        detail: String,
+        toolName: String,
+        input: String
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.toolName = toolName
+        self.input = input
+    }
+}
+
 /// Agent 产出物。
 struct AgentArtifact: Identifiable, Hashable, Sendable {
     let id: UUID
@@ -290,6 +316,7 @@ enum AgentRunEvent: Sendable {
     case stepUpdated(AgentRunStep)
     case toolOutput(AgentToolOutput)
     case trace(AgentTraceSpan)
+    case confirmationRequested(AgentConfirmationAction)
     case assistantDelta(String)
     case artifactCreated(AgentArtifact)
     case runCompleted
