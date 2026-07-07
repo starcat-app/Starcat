@@ -149,9 +149,263 @@ Starcat 应该先提供领域工具:
 - `user.ask_confirmation`
 - `run.submit_artifact`
 
-## 3. Starcat 当前实现对照
+## 3. Cline VS Code 层的提示词构建
 
-### 3.1 当前 Runtime 是固定工具序列
+上一节只覆盖了 Cline SDK 层的 Agent loop。Cline 的 VS Code 产品层还做了另一件关键事情:把基础提示词、工作区信息、模式约束、用户规则、技能、工具 preset 和每轮消息准备组装成一个可运行的 prompt pipeline。
+
+Starcat 后续不能只写一个 `systemPrompt(for:)` 字符串。真正可交付的 Agent 需要有类似 Cline 的 prompt builder 和 session config builder。
+
+### 3.1 入口链路
+
+Cline VS Code 侧创建任务的关键链路是:
+
+```text
+newTask
+  -> controller.initTask
+  -> SdkSessionConfigBuilder.build
+  -> buildSessionConfig
+  -> buildClineSystemPrompt
+  -> CoreSessionConfig
+  -> SessionRuntime.composeSystemPrompt
+  -> createAgentRuntimeConfig
+  -> AgentRuntime
+```
+
+关键文件:
+
+- [`apps/vscode/src/core/controller/task/newTask.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/apps/vscode/src/core/controller/task/newTask.ts)
+- [`apps/vscode/src/sdk/sdk-session-config-builder.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/apps/vscode/src/sdk/sdk-session-config-builder.ts)
+- [`apps/vscode/src/sdk/cline-session-factory.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/apps/vscode/src/sdk/cline-session-factory.ts)
+- [`sdk/packages/shared/src/prompt/system.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/sdk/packages/shared/src/prompt/system.ts)
+- [`sdk/packages/shared/src/prompt/cline.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/sdk/packages/shared/src/prompt/cline.ts)
+- [`sdk/packages/core/src/runtime/orchestration/session-runtime-orchestrator.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/sdk/packages/core/src/runtime/orchestration/session-runtime-orchestrator.ts)
+- [`sdk/packages/core/src/runtime/orchestration/runtime-builder.ts`](https://github.com/cline/cline/blob/6f7cc4907f3d750ccd42dcca789f4079cecb667b/sdk/packages/core/src/runtime/orchestration/runtime-builder.ts)
+
+### 3.2 基础 system prompt 是模板,不是业务 Agent prompt
+
+`DEFAULT_CLINE_SYSTEM_PROMPT` 负责定义通用 Coding Agent 行为:
+
+- 明确身份: Cline 是 coding agent。
+- 要先收集上下文,不能凭空假设。
+- 要遵循现有代码约定和库。
+- 要展示计划过程。
+- 要使用绝对路径。
+- 要并行发起独立工具调用。
+- 要验证修改。
+- 简单问题可以直接回答。
+- 任务未完成前应继续使用工具。
+
+它还预留了模板变量:
+
+- `{{PLATFORM_NAME}}`
+- `{{CURRENT_DATE}}`
+- `{{IDE_NAME}}`
+- `{{CWD}}`
+- `{{CLINE_RULES}}`
+- `{{CLINE_METADATA}}`
+
+这说明 Cline 的基础 prompt 只定义“通用工作方式”,不把具体任务和工作区信息硬编码进去。
+
+### 3.3 buildClineSystemPrompt 注入环境和工作区元数据
+
+`buildClineSystemPrompt` 接收:
+
+- `ide`
+- `mode`
+- `platform`
+- `workspaceName`
+- `metadata`
+- `rules`
+- `overridePrompt`
+- `providerId`
+- `rootPath / workspaceRoot`
+
+然后完成三类拼装:
+
+1. 替换基础模板中的平台、日期、IDE、cwd。
+2. 将 rules 插入 `{{CLINE_RULES}}`。
+3. 对 Cline provider 额外追加 `# Workspace Configuration` 元数据。
+
+工作区元数据不是自然语言随便拼,而是 JSON 结构,包含 workspace root、hint、remote URL、最新 commit、branch 等。这个做法对 Starcat 有参考意义:Agent 需要可机器解析的上下文块,例如当前知识库范围、选中 repo、外部搜索开关、只读/写入策略。
+
+### 3.4 VS Code session config 追加产品级约束
+
+`buildSessionConfig` 在构造 `CoreSessionConfig` 时做了几件产品级工作:
+
+1. 从 VS Code 的 StateManager 解析 provider、model、API key、baseURL。
+2. 根据当前 mode 构建 system prompt。
+3. 注入 Preferred Language。
+4. Plan mode 下追加 `PLAN_MODE_INSTRUCTIONS`。
+5. 设置 `enableTools`、checkpoint、compaction、mode、reasoning、max tokens。
+6. 设置 extension context,包含 user、client、workspace。
+
+这里最值得 Starcat 参考的是 Plan mode 约束。Cline 的 Plan mode 明确要求:
+
+- 只探索、分析、计划。
+- 可以读文件、搜索、收集上下文。
+- 不能编辑文件、写代码、运行破坏性命令或产生修改。
+- 用户在后续消息明确批准后,才使用 `switch_to_act_mode` 进入 Act mode。
+- 不能在展示计划的同一轮调用 `switch_to_act_mode`。
+- 不能把原始需求当成批准。
+
+这和 Starcat 的“AI 只给建议,用户确认后才写入”高度一致。Starcat 应把它产品化为:
+
+- `readonlyPlanning`: 只读分析和生成建议。
+- `approvedAction`: 用户确认后的写入执行。
+- `backgroundDigest`: 定时/后台只读总结,不写用户数据。
+
+### 3.5 switch_to_act_mode 是提示词约束 + 工具协议的组合
+
+VS Code 层在 Plan mode 额外注册 `switch_to_act_mode` tool。它的描述明确要求:
+
+- 只有用户在计划之后明确批准,才允许调用。
+- 不允许在展示计划同一轮调用。
+- 不允许主动调用。
+- 不允许把原始 task request 当成批准。
+- 调用成功后 run 结束,后续重新以 act mode 执行。
+
+这点很重要:模式切换不是 UI 状态随便改,而是进入 LLM tool-calling loop 的一项 tool protocol。Starcat 后续的写入确认也应该是同类机制:
+
+```text
+assistant: 生成计划和建议
+user: 确认执行
+assistant: tool-call(action.apply_tags / action.update_status)
+tool: tool-result
+assistant: 总结执行结果
+```
+
+而不是“右侧面板按钮点一下,Runtime 外部偷偷写入”。
+
+### 3.6 rules / skills / workflows 是运行时扩展,不是一次性文本拼接
+
+Cline 的 rules / skills / workflows 由 `createUserInstructionConfigService` 扫描和监听:
+
+- rules: `.clinerules`、`.cline/rules`、`AGENTS.md` 等。
+- skills: `.cline/skills`、`.agents/skills`、全局技能、插件技能。
+- workflows: `.cline/workflows`、`.clinerules/workflows` 等。
+
+`user-instruction-plugin` 会:
+
+- 把启用的 rules 注册为 runtime rule,最后合并到 system prompt 的 `# Rules`。
+- 在需要时注册 `skills` tool,让模型按需加载技能内容。
+- 把 skills / workflows 注册为 runtime command。
+
+这个设计避免把所有技能和 workflow 全量塞进 system prompt,而是让模型在需要时通过工具获取。Starcat 可参考为:
+
+- `AgentRuleProvider`: 加载 Starcat Agent 规范、产品边界、当前 feature 的验收规则。
+- `AgentSkillTool`: 后续按需加载某类 Agent 能力说明,例如 GitHub Weekly、Repo Insight、Tag Cleanup。
+- `AgentWorkflowProvider`: 把常见工作流作为可选择的 run profile,而不是硬编码在 UI。
+
+第一阶段可以先只做规则注入,不要马上做完整 skills/workflows。
+
+### 3.7 ToolPresets 和 model-tool-routing 决定“模型能看到哪些工具”
+
+Cline 的 `ToolPresets` 根据 mode 控制工具集合:
+
+- `act`: read/search/bash/webFetch/editor/skills/askQuestion 等。
+- `plan`: read/search/webFetch/skills/askQuestion,不启用 editor。
+- `search`: read/search。
+- `minimal`: 少量工具。
+- `yolo`: 自动化工具并默认 auto approve。
+
+`model-tool-routing` 还会根据 provider/model 动态切换工具,例如 Codex/GPT 模型启用 `apply_patch` 并禁用 `editor`。
+
+Starcat 需要类似但更保守的工具可见性:
+
+| Starcat mode | 可见工具 |
+| --- | --- |
+| `readonlyPlanning` | repo resolve、repo inspect、external.search、ask user、artifact draft |
+| `reportGeneration` | repo resolve、external.search、cluster、artifact build、submit artifact |
+| `approvedAction` | 只暴露用户已批准范围内的 tag/note/status/star 写工具 |
+| `backgroundDigest` | 只读工具 + submit artifact,不允许用户数据写入 |
+
+模型看不到的工具就不能调用,这样比只在执行阶段拒绝更稳。
+
+### 3.8 每轮 prepareTurn 和 messageBuilder 控制上下文预算
+
+Cline 的 `SessionRuntime` 每次 run 都:
+
+1. 把 user message 追加到 conversation store。
+2. 调 `composeSystemPrompt()` 合并注册的 rules。
+3. 合并 extension tools 和 config tools。
+4. 将历史 conversation 转成 `initialMessages`。
+5. 用 `createRuntimePrepareTurn(...)` 在每轮模型请求前处理 messages。
+6. 通过 message builder 做 provider message 组装、压缩、工具结果处理。
+
+这说明 prompt 不是只在 run 开始构建一次。每个 iteration 都可能根据当前 messages、tool result、上下文窗口和 provider 能力重新整理。
+
+Starcat 后续需要一个独立的上下文预算层:
+
+- `AgentPromptBuilder`: 构造 system prompt。
+- `AgentTurnContextBuilder`: 每轮根据 messages 和工具结果构造模型请求。
+- `AgentContextBudgeter`: 控制 repo snapshot、README 摘要、external search 结果、artifact 草稿的长度。
+- `AgentMessageCompactor`: 长 run 时压缩旧消息,保留 tool-call/tool-result 的可审计摘要。
+
+否则 Weekly Agent 一旦接入真实 repo README、外部搜索和历史 run,很容易超过模型上下文或把无关内容塞进 prompt。
+
+### 3.9 Starcat 需要补的 Prompt Pipeline
+
+基于 Cline VS Code 层,Starcat 应新增:
+
+```swift
+struct AgentPromptEnvironment: Sendable {
+    var appName: String
+    var appVersion: String
+    var platform: String
+    var currentDate: Date
+    var localeIdentifier: String
+    var workspaceName: String
+    var mode: AgentExecutionMode
+}
+
+struct AgentPromptContext: Sendable {
+    var definition: AgentDefinition
+    var runContext: AgentRunContext
+    var availableTools: [AgentToolDefinition]
+    var rules: [AgentPromptRule]
+    var userLanguage: String
+    var externalSearchPolicy: AgentExternalSearchPolicy
+}
+
+protocol AgentPromptBuilding: Sendable {
+    func buildSystemPrompt(environment: AgentPromptEnvironment, context: AgentPromptContext) -> String
+    func buildTurnRequest(messages: [AgentMessage], context: AgentPromptContext) -> AgentModelTurnRequest
+}
+```
+
+Starcat 的 system prompt 分层建议:
+
+1. **Base Role**
+   - 你是 Starcat 内置 Agent,面向 GitHub Star 知识库。
+2. **Product Boundary**
+   - 本地优先、只读默认、用户确认后才写入。
+3. **Mode Guardrails**
+   - readonlyPlanning / reportGeneration / approvedAction / backgroundDigest。
+4. **Environment**
+   - app、日期、locale、当前知识库范围。
+5. **Data Contract**
+   - repo snapshot、external search、artifact schema、citation 要求。
+6. **Tool Protocol**
+   - 可用工具列表由 tool schema 提供,prompt 只说明选择原则。
+7. **Rules**
+   - 来自项目文档或 Agent 专项规则。
+8. **Output Contract**
+   - 最终 artifact 类型、顺序、审计要求。
+
+### 3.10 对上一版分析的修正
+
+上一版只分析了 `sdk/packages/agents` 和 `sdk/packages/core` 的 loop / tool schema / approval,还不足以指导 Starcat 交付。补充 VS Code 层后,真正需要参考 Cline 的内容应包括两条线:
+
+1. **Runtime Loop 线**
+   - messages、tool-call、tool-result、approval、event stream、persistence。
+2. **Prompt Pipeline 线**
+   - base prompt、workspace metadata、mode guardrails、rules/skills/workflows、tool presets、prepareTurn、context budget。
+
+Starcat 后续实现如果只补 Runtime Loop,仍然会出现“工具能跑,但模型不知道如何稳定使用”的问题;如果只补 Prompt Pipeline,仍然只是更像样的 demo。两条线必须一起落地。
+
+## 4. Starcat 当前实现对照
+
+### 4.1 当前 Runtime 是固定工具序列
 
 当前 `DefaultAgentRuntime.run` 在启动后:
 
@@ -167,7 +421,7 @@ Starcat 应该先提供领域工具:
 - `Starcat/Features/Agents/Core/AgentRuntime.swift` 204-298 行: 固定 `for` 循环执行工具。
 - `Starcat/Features/Agents/Core/AgentRuntime.swift` 300-321 行: 工具结束后才调用 LLM 生成最终 Markdown。
 
-### 3.2 当前 Tool 缺少模型 schema
+### 4.2 当前 Tool 缺少模型 schema
 
 当前 `AgentTool` 只有:
 
@@ -189,7 +443,7 @@ Starcat 应该先提供领域工具:
 
 因此现有工具只能被 Runtime 调用,不能被模型可靠选择。
 
-### 3.3 当前 LLM 接口只输出文本
+### 4.3 当前 LLM 接口只输出文本
 
 当前 `AgentTextGenerating` 的核心接口是:
 
@@ -200,7 +454,22 @@ Starcat 应该先提供领域工具:
 
 这说明 LLM 目前只负责“最终文本生成”,不是“每轮决定下一步工具调用”。
 
-### 3.4 当前审计 UI 已经接近,但数据模型还不够
+### 4.4 当前 Prompt Pipeline 也不完整
+
+当前 `OpenAIAgentTextGenerator.systemPrompt(for:)` 按 Agent id 返回一段固定英文提示词,`userPrompt(...)` 再拼用户目标、数据来源、仓库快照和结构草稿。这能支撑 Weekly Report 的最终润色,但还不是 Cline VS Code 式 prompt pipeline。
+
+缺口包括:
+
+- 没有 mode guardrails,无法区分只读计划、报告生成、确认写入。
+- 没有工具可见性策略,模型也看不到 tool schema。
+- 没有 workspace metadata / app metadata 的结构化注入。
+- 没有规则来源,无法把 Agent 文档和工程约束并入 prompt。
+- 没有每轮 prepareTurn / context budget,无法控制 repo snapshot、外部搜索结果和历史消息长度。
+- 没有 preferred language / locale 的统一注入,容易和 i18n/UI 语言不一致。
+
+因此 Starcat 当前差距不只是“Runtime 没有 tool-calling loop”,还包括“提示词构建仍是单 Agent 文本拼接”。
+
+### 4.5 当前审计 UI 已经接近,但数据模型还不够
 
 Starcat 现有 trace / tool output / artifact 已经能支撑中栏展开查看每一步输入输出,这是可继续使用的 UI 层资产。但它还不是 Cline 的 messages contract。
 
@@ -213,9 +482,9 @@ Starcat 现有 trace / tool output / artifact 已经能支撑中栏展开查看�
 
 这样 UI 和持久化不会分叉。
 
-## 4. Starcat 应该如何参考 Cline 落地
+## 5. Starcat 应该如何参考 Cline 落地
 
-### 4.1 第一阶段: 建立 Cline-style 核心契约
+### 5.1 第一阶段: 建立 Cline-style 核心契约
 
 新增或改造以下模型:
 
@@ -261,7 +530,29 @@ struct AgentToolResultMessage: Sendable, Codable {
 - `AgentMessage` 必须成为可回放事实源。
 - `AgentTraceSpan` / `AgentToolOutput` 应从 tool-call / tool-result 派生或关联,不要反过来成为事实源。
 
-### 4.2 第二阶段: 改造模型接口
+### 5.2 第二阶段: 补齐 Prompt Pipeline
+
+在 Runtime loop 之前,先补一个可测试的 prompt pipeline。建议新增:
+
+1. `AgentPromptEnvironment`
+   - app、版本、平台、日期、locale、当前 mode。
+2. `AgentPromptContext`
+   - Agent definition、run context、可用工具、外部搜索策略、规则、用户语言。
+3. `AgentPromptBuilder`
+   - 负责构建 system prompt 和每轮 turn request。
+4. `AgentExecutionMode`
+   - `readonlyPlanning`
+   - `reportGeneration`
+   - `approvedAction`
+   - `backgroundDigest`
+5. `AgentRuleProvider`
+   - 第一版先从内置文档/硬编码规则生成,后续再接项目文档扫描。
+6. `AgentContextBudgeter`
+   - 控制 repo snapshot、external search、tool result、artifact 草稿的 token/字符预算。
+
+第一版不要做 Cline 完整 skills/workflows 系统,但要先把扩展点留出来,避免继续在 `OpenAIAgentTextGenerator` 里拼大字符串。
+
+### 5.3 第三阶段: 改造模型接口
 
 新增 `AgentLoopModelClient`,不要直接塞进现有 `generateAgentMarkdown`。
 
@@ -290,7 +581,7 @@ enum AgentModelStreamEvent: Sendable {
 
 这里不需要新增第二套 provider 设置。实现层仍然复用 Starcat 现有 AI Provider / OpenAI-compatible client,但要支持 tool schema / tool calls。若当前 `AIClientProtocol` 不支持 tool calls,则先扩展它,不要绕开设置页另建 SDK。
 
-### 4.3 第三阶段: Runtime 从 fixed sequence 改为 model-driven loop
+### 5.4 第四阶段: Runtime 从 fixed sequence 改为 model-driven loop
 
 目标流程:
 
@@ -321,7 +612,7 @@ while iteration < maxIterations:
 - `LoopAgentRuntime` 作为新主路径。
 - `AgentRuntime` facade 负责选择实现,避免一次性重写 UI。
 
-### 4.4 第四阶段: 权限和确认闭环
+### 5.5 第五阶段: 权限和确认闭环
 
 Starcat 的权限建议分四类:
 
@@ -349,7 +640,7 @@ enum AgentRunStatus {
 - approved: 继续执行原 tool-call。
 - rejected: 写入一个 `tool-result(isError: true)` 给模型,让模型解释替代方案或结束。
 
-### 4.5 第五阶段: 先迁移 GitHub Weekly Report
+### 5.6 第六阶段: 先迁移 GitHub Weekly Report
 
 GitHub Weekly Report 是第一条验证路径,但不能再用固定顺序硬编码。
 
@@ -377,7 +668,7 @@ GitHub Weekly Report 是第一条验证路径,但不能再用固定顺序硬编�
 - 最终必须调用 `artifact.build_weekly_report` 或输出最终 Markdown。
 - 写操作不允许自动执行。
 
-### 4.6 第六阶段: 持久化和 UI 映射
+### 5.7 第七阶段: 持久化和 UI 映射
 
 当前 `AgentRunRepository` 应扩展存储:
 
@@ -399,7 +690,7 @@ UI 映射:
 - artifact 永远按执行顺序放到底部,不能默认放最上面。
 - 右侧 Inspector 只展示当前选中 artifact / run summary / pending approval,不要为每个 Agent 写一套假面板。
 
-## 5. 与 Cline 的差异化边界
+## 6. 与 Cline 的差异化边界
 
 Starcat 不应该复制这些能力到第一阶段:
 
@@ -422,15 +713,24 @@ Starcat 第一阶段必须保留:
 4. Run 必须可审计、可恢复、可导出。
 5. 不生成 demo 默认内容。
 
-## 6. 推荐实施顺序
+## 7. 推荐实施顺序
 
-### 6.1 文档与 checklist 修正
+### 7.1 文档与 checklist 修正
 
 1. 新建 “Cline-style Agent Loop 专项” checklist。
 2. 把现有 “Agent 底层框架与网络搜索工具” 表述纠正为“线性工具编排 v1”。
 3. 明确 Cline-style loop 未完成,避免验收误判。
 
-### 6.2 核心模型
+### 7.2 Prompt Pipeline
+
+1. 新增 `AgentPromptEnvironment` / `AgentPromptContext` / `AgentPromptBuilder`。
+2. 新增 `AgentExecutionMode`,先覆盖只读计划、报告生成和确认写入。
+3. 从现有 `OpenAIAgentTextGenerator.systemPrompt(for:)` 迁移到 PromptBuilder。
+4. 补 Preferred Language / locale 注入。
+5. 补 External Search 策略和可用工具摘要。
+6. 补 prompt 单测,断言不同 mode 下的 guardrails。
+
+### 7.3 核心模型
 
 1. 新增 `AgentMessage` / `AgentMessagePart` / `AgentToolCall` / `AgentToolResultMessage`。
 2. 新增 `AgentToolDefinition` 和轻量 `AgentJSONSchema` / `AgentJSONValue`。
@@ -440,7 +740,7 @@ Starcat 第一阶段必须保留:
    - `execute(callInput:context:)`
 4. 保留现有 `AgentToolOutput` / `AgentTraceSpan`,但增加关联字段。
 
-### 6.3 LLM tool call 适配
+### 7.4 LLM tool call 适配
 
 1. 扩展 `AIChatRequest` 支持 tools。
 2. 扩展 `AIChatResponse` 或新增 stream event 支持 tool calls。
@@ -452,7 +752,7 @@ Starcat 第一阶段必须保留:
    - invalid JSON input
    - unknown tool
 
-### 6.4 Loop Runtime
+### 7.5 Loop Runtime
 
 1. 新增 `LoopAgentRuntime`。
 2. 支持 maxIterations。
@@ -462,7 +762,7 @@ Starcat 第一阶段必须保留:
 6. 支持 persistence。
 7. 将 run events 适配到现有 UI。
 
-### 6.5 工具迁移
+### 7.6 工具迁移
 
 1. `context.resolve_repos`
 2. `external.search`
@@ -471,7 +771,7 @@ Starcat 第一阶段必须保留:
 5. `repo.inspect`
 6. `run.submit_artifact`
 
-### 6.6 UI 调整
+### 7.7 UI 调整
 
 1. 中栏改为 message timeline。
 2. 每个 tool-call 可展开查看:
@@ -484,7 +784,7 @@ Starcat 第一阶段必须保留:
 3. pending approval 作为 timeline 节点展示,右侧只辅助展示详情。
 4. artifact 按执行顺序位于底部。
 
-### 6.7 审查与验收
+### 7.8 审查与验收
 
 1. 文档审查: checklist、技术方案、验收步骤和结果报告一致。
 2. 代码审查: 不存在第二套 AI Provider / 第二套 External Search 设置。
@@ -492,7 +792,7 @@ Starcat 第一阶段必须保留:
 4. UI 审查: 无默认 demo 内容,可展开审计每一步输入输出。
 5. 工程进度审查: `docs/功能实现总览.md` checkbox 和实现说明回填。
 
-## 7. 验收标准
+## 8. 验收标准
 
 第一版 Cline-style Agent loop 完成后,至少满足:
 
@@ -505,8 +805,9 @@ Starcat 第一阶段必须保留:
 7. Weekly Report 产物出现在执行顺序底部。
 8. 没有 demo 默认内容。
 9. 单测覆盖 loop 的正常、失败、取消、确认、网络搜索关闭和网络搜索失败场景。
+10. PromptBuilder 单测覆盖不同 mode、locale、External Search 开关和工具可见性。
 
-## 8. 风险和约束
+## 9. 风险和约束
 
 1. OpenAI-compatible provider 的 tool-call 格式不完全一致。
    - 处理: 先实现 Starcat 当前 OpenAIClient 的标准 tool_calls,再按 provider 差异补 adapter。
@@ -518,8 +819,10 @@ Starcat 第一阶段必须保留:
    - 处理: Runtime 内部维护 pending approval continuation 或 command channel,不要依赖 UI 重新发起 run。
 5. 网络搜索成本和隐私边界。
    - 处理: 继续复用 External Search 设置页,关闭时返回 skipped tool-result。
+6. Prompt 继续散落在多个文件。
+   - 处理: 新增 `AgentPromptBuilder`,把固定 system prompt、mode guardrails、locale、rules 和 tool 摘要集中测试。
 
-## 9. 对当前状态的修正说明
+## 10. 对当前状态的修正说明
 
 之前文档和汇报里“Agent 底层框架与网络搜索工具”可以保留为已完成,但它的准确边界应是:
 
@@ -531,5 +834,4 @@ Starcat 第一阶段必须保留:
 
 真正的交付目标应新增为:
 
-> Cline-style Agent Loop: 模型驱动工具调用、tool-result 回灌、approval pause/resume、message contract 持久化和 UI 可审计映射。
-
+> Cline-style Agent Loop: Prompt Pipeline、模型驱动工具调用、tool-result 回灌、approval pause/resume、message contract 持久化和 UI 可审计映射。
