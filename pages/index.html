@@ -264,11 +264,32 @@
         .showcase-highlights { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
         .showcase-highlights li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-caption); color: var(--color-text-muted); }
         .showcase-highlights li .lucide { width: 14px; height: 14px; color: var(--color-cta); flex-shrink: 0; }
-        .showcase-image { position: relative; border-radius: 22px; overflow: hidden; box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34); transition: box-shadow var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); }
+        .feature-tabs { max-width: 1160px; margin: 0 auto; }
+        .feature-tablist { display: flex; gap: 10px; padding: 8px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255, 255, 255, 0.035); scrollbar-width: thin; }
+        .feature-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 14px; border: 1px solid transparent; border-radius: 12px; color: var(--color-text-secondary); background: transparent; font: inherit; font-size: var(--fs-caption); font-weight: 700; white-space: nowrap; cursor: pointer; transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+        .feature-tab:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.05); }
+        .feature-tab.is-active { color: #071018; border-color: transparent; background: var(--color-cta); }
+        .feature-tab-panels { display: grid; margin-top: 24px; }
+        .feature-tab-panel { grid-area: 1 / 1; display: grid; grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr); gap: 64px; align-items: center; padding: 34px; border: 1px solid var(--color-border); border-radius: 24px; background: rgba(255, 255, 255, 0.03); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 180ms var(--ease-out), visibility 180ms var(--ease-out); }
+        .feature-tab-panel.is-active { opacity: 1; visibility: visible; pointer-events: auto; }
+        .showcase-image { position: relative; border-radius: 22px; overflow: hidden; box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34); cursor: zoom-in; transition: box-shadow var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); }
         .showcase-image:hover { box-shadow: 0 34px 100px rgba(0, 0, 0, 0.42); transform: translateY(-1px); }
+        .showcase-image:focus-visible { outline: 2px solid var(--color-cta); outline-offset: 6px; }
         .showcase-image img { display: block; max-width: 100%; max-height: 440px; width: auto; height: auto; margin: 0 auto; }
         @media (max-width: 1023px) { .showcase-image img { max-height: 320px; } }
-        @media (max-width: 767px) { .showcase-image img { max-height: 260px; } .showcase-row { grid-template-columns: 1fr; gap: 28px; padding: 28px 0; } .showcase-row .showcase-image { order: 2; } .showcase-row .showcase-info { order: 1; } }
+        @media (max-width: 1023px) { .feature-tab-panel { grid-template-columns: 1fr; gap: 28px; padding: 28px; } .feature-tab-panel .showcase-image { order: 2; } .feature-tab-panel .showcase-info { order: 1; } }
+        @media (max-width: 767px) { .showcase-image img { max-height: 260px; } .showcase-row { grid-template-columns: 1fr; gap: 28px; padding: 28px 0; } .showcase-row .showcase-image { order: 2; } .showcase-row .showcase-info { order: 1; } .feature-tablist { margin-inline: -6px; border-radius: 14px; } .feature-tab-panel { padding: 22px; border-radius: 18px; } }
+
+        .image-lightbox { position: fixed; inset: 0; z-index: calc(var(--z-overlay) + 1); display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(4, 6, 10, 0.76); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 220ms var(--ease-out), visibility 220ms var(--ease-out); }
+        .image-lightbox.is-open { opacity: 1; visibility: visible; pointer-events: auto; }
+        .image-lightbox-frame { position: relative; display: flex; max-width: min(1600px, calc(100vw - 32px)); max-height: calc(100vh - 32px); transform: translateY(14px) scale(0.96); transition: transform 260ms var(--ease-out); }
+        .image-lightbox.is-open .image-lightbox-frame { transform: translateY(0) scale(1); }
+        .image-lightbox img { display: block; max-width: 100%; max-height: calc(100vh - 32px); width: auto; height: auto; border-radius: 22px; box-shadow: 0 40px 120px rgba(0, 0, 0, 0.62); cursor: zoom-out; }
+        .image-lightbox-close { position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 10px; color: var(--color-text); background: rgba(13, 16, 23, 0.72); cursor: pointer; transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out); }
+        .image-lightbox-close:hover { border-color: rgba(255, 255, 255, 0.34); background: rgba(13, 16, 23, 0.9); transform: translateY(-1px); }
+        .image-lightbox-close .lucide { width: 18px; height: 18px; }
+        @media (max-width: 767px) { .image-lightbox { padding: 12px; } .image-lightbox-frame { max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); } .image-lightbox img { max-height: calc(100vh - 24px); border-radius: 16px; } }
+        @media (prefers-reduced-motion: reduce) { .image-lightbox, .image-lightbox-frame { transition: none; } }
 
         /* ==================================================================
          * 6. Tech Highlights
@@ -286,20 +307,37 @@
         /* ==================================================================
          * 7. Pricing
          * ================================================================== */
-        .pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--card-gap); max-width: 920px; margin: 0 auto; }
-        .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--card-gap); max-width: 1160px; margin: 0 auto; }
+        .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; display: flex; flex-direction: column; height: 100%; }
         .pricing-card:hover { border-color: var(--color-border-hover); background: rgba(255, 255, 255, 0.075); transform: translateY(-1px); }
         .pricing-card--pro { border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.06); }
         .pricing-card--pro:hover { border-color: rgba(139, 92, 246, 0.5); background: rgba(139, 92, 246, 0.1); }
-        .pricing-badge { display: inline-block; padding: 4px 12px; font-size: 11px; font-weight: 700; color: var(--color-pro); background: rgba(139, 92, 246, 0.15); border-radius: 20px; margin-bottom: 16px; }
+        .pricing-card--featured { border-color: rgba(251, 191, 36, 0.56); box-shadow: 0 24px 80px rgba(251, 191, 36, 0.12); }
+        .pricing-badge { display: inline-block; align-self: flex-start; padding: 4px 12px; font-size: 11px; font-weight: 700; color: var(--color-pro); background: rgba(139, 92, 246, 0.15); border-radius: 20px; margin-bottom: 16px; }
+        .pricing-badge--value { color: #071018; background: var(--color-accent); }
         .pricing-name { font-size: var(--fs-h3); font-weight: 700; margin-bottom: 8px; }
         .pricing-price { font-size: 40px; font-weight: 750; margin-bottom: 4px; }
         .pricing-period { font-size: var(--fs-small); color: var(--color-text-muted); margin-bottom: 24px; }
+        .pricing-note { font-size: var(--fs-small); color: var(--color-text-secondary); line-height: 1.5; margin: -10px 0 24px; min-height: 42px; }
         .pricing-features { list-style: none; margin-bottom: 32px; }
         .pricing-features li { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: var(--fs-small); color: var(--color-text-secondary); }
         .pricing-features li i { width: 16px; height: 16px; color: var(--color-cta); flex-shrink: 0; }
         .pricing-card .btn-primary, .pricing-card .btn-secondary { width: 100%; justify-content: center; }
         .pricing-disabled { width: 100%; display: inline-flex; justify-content: center; padding: 14px 28px; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-text-muted); font-size: var(--fs-small); font-weight: 700; background: rgba(255, 255, 255, 0.035); }
+        .pricing-disabled--primary { color: #071018; border-color: transparent; background: var(--color-cta); opacity: 0.72; }
+        .pricing-action { margin-top: auto; height: 84px; }
+        .pricing-status { margin-top: 10px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
+        .plan-compare { margin: 36px auto 0; max-width: 1160px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255, 255, 255, 0.035); }
+        .compare-table { width: 100%; min-width: 780px; border-collapse: collapse; }
+        .compare-table th, .compare-table td { padding: 16px 18px; border-bottom: 1px solid var(--color-border); text-align: left; font-size: var(--fs-small); color: var(--color-text-secondary); vertical-align: middle; }
+        .compare-table th { color: var(--color-text); font-weight: 750; background: rgba(255, 255, 255, 0.04); }
+        .compare-table tr:last-child td { border-bottom: none; }
+        .compare-feature { color: var(--color-text); font-weight: 650; }
+        .compare-check { color: var(--color-cta); font-weight: 750; }
+        .compare-muted { color: var(--color-text-muted); }
+        .pricing-support { margin: 18px auto 0; max-width: 1160px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
+        .pricing-support a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 3px; }
+        @media (max-width: 1023px) { .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 767px) { .pricing-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
@@ -398,7 +436,7 @@
         <div class="nav-links">
             <a href="#features" class="nav-link">Features</a>
             <a href="#tech" class="nav-link">Tech</a>
-            <a href="#pricing" class="nav-link">Availability</a>
+            <a href="#pricing" class="nav-link">Pricing</a>
             <a href="#faq" class="nav-link">FAQ</a>
             <a href="./privacy.html" class="nav-link">Privacy</a>
             <a href="./changelog.html" class="nav-link">Changelog</a>
@@ -428,9 +466,9 @@
                     <span class="icon-18"><i data-lucide="download"></i></span>
                     Download Starcat
                 </a>
-                <a href="#features" class="btn-secondary" role="button">
+                <a href="#pricing" class="btn-secondary" role="button">
                     <span class="icon-18"><i data-lucide="arrow-down"></i></span>
-                    Learn More
+                    Pricing
                 </a>
             </div>
             <div class="hero-banner fade-in">
@@ -520,143 +558,170 @@
                 From search to AI analysis, from security scoring to share cards — every detail designed for efficiency.
             </p>
 
-            <!-- 1. Global Search -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--green"><i data-lucide="search"></i></div>
-                    <h3 class="showcase-name">Global Search &amp; Structured Filters</h3>
-                    <p class="showcase-desc">
-                        FTS5 full-text engine indexes repo names, descriptions, topics, and notes — results in milliseconds.
-                        Combine language, tag, and status filters for field-level precision.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> FTS5 local full-text index</li>
-                        <li><i data-lucide="check"></i> Multi-field combined filtering</li>
-                        <li><i data-lucide="check"></i> Save complex query presets</li>
-                    </ul>
+            <div class="feature-tabs fade-in" data-feature-tabs>
+                <div class="feature-tablist" role="tablist" aria-label="Feature panorama">
+                    <button class="feature-tab is-active" id="feature-tab-search" type="button" role="tab" aria-selected="true" aria-controls="feature-panel-search" data-feature-tab="search">Search</button>
+                    <button class="feature-tab" id="feature-tab-collections" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-collections" data-feature-tab="collections">Collections</button>
+                    <button class="feature-tab" id="feature-tab-summary" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-summary" data-feature-tab="summary">AI Summary</button>
+                    <button class="feature-tab" id="feature-tab-translation" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-translation" data-feature-tab="translation">Translation</button>
+                    <button class="feature-tab" id="feature-tab-chat" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-chat" data-feature-tab="chat">AI Chat</button>
+                    <button class="feature-tab" id="feature-tab-health" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-health" data-feature-tab="health">Health</button>
+                    <button class="feature-tab" id="feature-tab-openssf" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-openssf" data-feature-tab="openssf">OpenSSF</button>
+                    <button class="feature-tab" id="feature-tab-codegraph" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-codegraph" data-feature-tab="codegraph">Code Graph</button>
+                    <button class="feature-tab" id="feature-tab-share" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-share" data-feature-tab="share">Share</button>
+                    <button class="feature-tab" id="feature-tab-config" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-config" data-feature-tab="config">AI Config</button>
                 </div>
-                <div class="showcase-image">
-                    <img src="sc-全局搜索.webp" alt="Starcat global search: multi-field filtering + FTS5 full-text search" loading="lazy">
-                </div>
-            </div>
-
-            <!-- 2. AI Summary -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-image">
-                    <img src="sc-AI摘要.webp" alt="Starcat AI summary: auto-generated structured repo summaries" loading="lazy">
-                </div>
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--violet"><i data-lucide="sparkles"></i></div>
-                    <h3 class="showcase-name">AI Smart Summaries &amp; Translation</h3>
-                    <p class="showcase-desc">
-                        AI reads README files and auto-generates structured summaries: what it does, tech stack,
-                        ideal use cases. Full README translation. Cached per repo — prompt to regen when source changes.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> Structured summaries</li>
-                        <li><i data-lucide="check"></i> Full README translation</li>
-                        <li><i data-lucide="check"></i> Per-repo caching, incremental updates</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- 3. AI Chat -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--blue"><i data-lucide="message-square"></i></div>
-                    <h3 class="showcase-name">AI Conversational Interface</h3>
-                    <p class="showcase-desc">
-                        Launch AI chat from any repo detail page. Ask in context —
-                        AI understands the code and docs to give precise answers.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> Repository-level context</li>
-                        <li><i data-lucide="check"></i> Multi-turn conversation memory</li>
-                        <li><i data-lucide="check"></i> Code + docs linked</li>
-                    </ul>
-                </div>
-                <div class="showcase-image">
-                    <img src="sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
-                </div>
-            </div>
-
-            <!-- 4. OpenSSF Scorecard -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-image">
-                    <img src="sc-OpenSSF评分.webp" alt="Starcat OpenSSF scorecard: security scoring radar chart" loading="lazy">
-                </div>
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--amber"><i data-lucide="shield"></i></div>
-                    <h3 class="showcase-name">OpenSSF Security Scorecard</h3>
-                    <p class="showcase-desc">
-                        Integrated OpenSSF Scorecard — pulls public security scores for starred repos.
-                        Radar chart across multiple dimensions to assess third-party dependencies.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> OpenSSF Scorecard integration</li>
-                        <li><i data-lucide="check"></i> Multi-dimension security radar</li>
-                        <li><i data-lucide="check"></i> Cooldown-based smart refresh</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- 5. Code Graph -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--green"><i data-lucide="git-branch"></i></div>
-                    <h3 class="showcase-name">Built-in Code Graph</h3>
-                    <p class="showcase-desc">
-                        Explore code architecture without leaving the app. CodeFlow auto-analyzes dependencies,
-                        visualizes module call chains — understand large projects fast.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> Branch-level code analysis</li>
-                        <li><i data-lucide="check"></i> Dependency visualization</li>
-                        <li><i data-lucide="check"></i> Transparent execution steps</li>
-                    </ul>
-                </div>
-                <div class="showcase-image">
-                    <img src="sc-内置代码图谱.webp" alt="Starcat code graph: dependency visualization and architecture exploration" loading="lazy">
-                </div>
-            </div>
-
-            <!-- 6. Share Card -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-image">
-                    <img src="sc-分享卡片.webp" alt="Starcat share card: multi-theme user card export" loading="lazy">
-                </div>
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--violet"><i data-lucide="share"></i></div>
-                    <h3 class="showcase-name">User Share Cards</h3>
-                    <p class="showcase-desc">
-                        Generate beautiful personal cards with GitHub stats. Multiple themes,
-                        one-click export to hi-res PNG or share to X. Show your dev taste.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> Multiple theme palettes</li>
-                        <li><i data-lucide="check"></i> Hi-res PNG export (@3x)</li>
-                        <li><i data-lucide="check"></i> One-click share to X</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- 7. AI Config -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--blue"><i data-lucide="sliders"></i></div>
-                    <h3 class="showcase-name">Flexible AI Configuration (BYOK)</h3>
-                    <p class="showcase-desc">
-                        Self-hosted proxy, Gemini, DeepSeek, OpenAI-compatible, Ollama local models.
-                        Your API keys and usage quotas stay under your control.
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> Multi-model, free to switch</li>
-                        <li><i data-lucide="check"></i> BYOK — keys under your control</li>
-                        <li><i data-lucide="check"></i> Granular quota control</li>
-                    </ul>
-                </div>
-                <div class="showcase-image">
-                    <img src="sc-AI服务配置.webp" alt="Starcat AI configuration: multi-model BYOK" loading="lazy">
+                <div class="feature-tab-panels">
+                    <article class="feature-tab-panel is-active" id="feature-panel-search" role="tabpanel" aria-labelledby="feature-tab-search" data-feature-panel="search">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--green"><i data-lucide="search"></i></div>
+                            <h3 class="showcase-name">Global Search &amp; Structured Filters</h3>
+                            <p class="showcase-desc">FTS5 indexes repo names, descriptions, topics, and notes for fast local search. Combine language, tag, and status filters for field-level precision.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> FTS5 local full-text index</li>
+                                <li><i data-lucide="check"></i> Multi-field combined filtering</li>
+                                <li><i data-lucide="check"></i> Save complex query presets</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-全局搜索.webp" alt="Starcat global search: multi-field filtering + FTS5 full-text search" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-collections" role="tabpanel" aria-labelledby="feature-tab-collections" data-feature-panel="collections">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--blue"><i data-lucide="list-filter"></i></div>
+                            <h3 class="showcase-name">Smart Collections</h3>
+                            <p class="showcase-desc">Browse built-in collections such as Needs Review, Unmaintained, High Value, No Tags, Using, and Recently Active. Custom rules can combine metadata, status, notes, and Health signals.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Built-in explainable collection rules</li>
+                                <li><i data-lucide="check"></i> Filters from metadata, notes, and status</li>
+                                <li><i data-lucide="check"></i> Health-aware review and value signals</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-智能集合.webp" alt="Starcat smart collections: built-in and custom repository collections" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-summary" role="tabpanel" aria-labelledby="feature-tab-summary" data-feature-panel="summary">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--violet"><i data-lucide="sparkles"></i></div>
+                            <h3 class="showcase-name">AI Smart Summaries</h3>
+                            <p class="showcase-desc">AI reads README content and produces structured summaries: what the repo does, its tech stack, and where it fits.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Structured repo summaries</li>
+                                <li><i data-lucide="check"></i> Cached per repository</li>
+                                <li><i data-lucide="check"></i> Designed for quick triage</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI摘要.webp" alt="Starcat AI summary: auto-generated structured repo summaries" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-translation" role="tabpanel" aria-labelledby="feature-tab-translation" data-feature-panel="translation">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--violet"><i data-lucide="languages"></i></div>
+                            <h3 class="showcase-name">README Translation</h3>
+                            <p class="showcase-desc">Translate README HTML on demand while preserving the original structure. Cached translations are reused, and stale source content prompts a fresh translation.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Preserves README HTML structure</li>
+                                <li><i data-lucide="check"></i> Target language follows your setting</li>
+                                <li><i data-lucide="check"></i> Cache hits avoid extra AI quota</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI翻译.webp" alt="Starcat README translation: translated README with preserved structure" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-chat" role="tabpanel" aria-labelledby="feature-tab-chat" data-feature-panel="chat">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--blue"><i data-lucide="message-square"></i></div>
+                            <h3 class="showcase-name">AI Conversational Interface</h3>
+                            <p class="showcase-desc">Launch AI chat from any repo detail page. Ask in context and get answers grounded in the repository code and docs.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Repository-level context</li>
+                                <li><i data-lucide="check"></i> Multi-turn conversation memory</li>
+                                <li><i data-lucide="check"></i> Code and docs linked</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-health" role="tabpanel" aria-labelledby="feature-tab-health" data-feature-panel="health">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--green"><i data-lucide="activity"></i></div>
+                            <h3 class="showcase-name">Repo Health Score</h3>
+                            <p class="showcase-desc">Summarize repository activity, maintenance signals, and risk indicators before you decide what deserves attention.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Activity and maintenance overview</li>
+                                <li><i data-lucide="check"></i> Risk signals for starred repos</li>
+                                <li><i data-lucide="check"></i> Quick attention scoring</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-Health评分.webp" alt="Starcat Repo Health score: repository maintenance and activity overview" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-openssf" role="tabpanel" aria-labelledby="feature-tab-openssf" data-feature-panel="openssf">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--amber"><i data-lucide="shield"></i></div>
+                            <h3 class="showcase-name">OpenSSF Security Scorecard</h3>
+                            <p class="showcase-desc">Integrated OpenSSF Scorecard pulls public security scores for starred repos and presents a radar chart across multiple dimensions.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> OpenSSF Scorecard integration</li>
+                                <li><i data-lucide="check"></i> Multi-dimension security radar</li>
+                                <li><i data-lucide="check"></i> Cooldown-based smart refresh</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-OpenSSF评分.webp" alt="Starcat OpenSSF scorecard: security scoring radar chart" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-codegraph" role="tabpanel" aria-labelledby="feature-tab-codegraph" data-feature-panel="codegraph">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--green"><i data-lucide="git-branch"></i></div>
+                            <h3 class="showcase-name">Built-in Code Graph</h3>
+                            <p class="showcase-desc">Explore code architecture without leaving the app. CodeFlow analyzes dependencies and visualizes module call chains for large projects.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Branch-level code analysis</li>
+                                <li><i data-lucide="check"></i> Dependency visualization</li>
+                                <li><i data-lucide="check"></i> Transparent execution steps</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-内置代码图谱.webp" alt="Starcat code graph: dependency visualization and architecture exploration" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-share" role="tabpanel" aria-labelledby="feature-tab-share" data-feature-panel="share">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--violet"><i data-lucide="share"></i></div>
+                            <h3 class="showcase-name">User Share Cards</h3>
+                            <p class="showcase-desc">Generate personal cards with GitHub stats, theme palettes, and high-resolution PNG export for sharing.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Multiple theme palettes</li>
+                                <li><i data-lucide="check"></i> Hi-res PNG export (@3x)</li>
+                                <li><i data-lucide="check"></i> One-click share to X</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-分享卡片.webp" alt="Starcat share card: multi-theme user card export" loading="lazy">
+                        </div>
+                    </article>
+                    <article class="feature-tab-panel" id="feature-panel-config" role="tabpanel" aria-labelledby="feature-tab-config" data-feature-panel="config">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--blue"><i data-lucide="sliders"></i></div>
+                            <h3 class="showcase-name">Flexible AI Configuration (BYOK)</h3>
+                            <p class="showcase-desc">Self-hosted proxy, Gemini, DeepSeek, OpenAI-compatible, and Ollama local models. Your API keys and usage quotas stay under your control.</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> Multi-model, free to switch</li>
+                                <li><i data-lucide="check"></i> BYOK keys under your control</li>
+                                <li><i data-lucide="check"></i> Granular quota control</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI服务配置.webp" alt="Starcat AI configuration: multi-model BYOK" loading="lazy">
+                        </div>
+                    </article>
                 </div>
             </div>
         </div>
@@ -680,7 +745,7 @@
                 <div class="feature-card fade-in">
                     <div class="feature-icon bento-card-icon--blue"><i data-lucide="file-text"></i></div>
                     <h3 class="feature-name">Private Notes</h3>
-                    <p class="feature-desc">Write private notes per repo. Tags, notes, and status live in local SQLite and can be exported when you need to take them with you.</p>
+                    <p class="feature-desc">Write private notes per repo. Tags, notes, and status live in local SQLite, keeping your organization data local-first.</p>
                 </div>
                 <div class="feature-card fade-in">
                     <div class="feature-icon bento-card-icon--violet"><i data-lucide="bot"></i></div>
@@ -698,9 +763,9 @@
                     <p class="feature-desc">Subscribe to repos. Push notifications on new versions. Smart asset filtering by platform & file type.</p>
                 </div>
                 <div class="feature-card fade-in">
-                    <div class="feature-icon bento-card-icon--blue"><i data-lucide="database"></i></div>
-                    <h3 class="feature-name">Data Import &amp; Export</h3>
-                    <p class="feature-desc">JSON import/export compatible with OhMyStar / Astral. Your data goes with you — never locked in.</p>
+                    <div class="feature-icon bento-card-icon--blue"><i data-lucide="compass"></i></div>
+                    <h3 class="feature-name">Discovery &amp; Trends</h3>
+                    <p class="feature-desc">Browse discovery, trending, popular, new releases, and weekly picks to keep finding repositories worth your attention.</p>
                 </div>
             </div>
         </div>
@@ -744,42 +809,134 @@
     <section class="section" id="pricing" aria-labelledby="pricing-title">
         <div class="section-inner">
             <div class="section-label fade-in">Availability</div>
-            <h2 class="section-title fade-in" id="pricing-title">Current version</h2>
+            <h2 class="section-title fade-in" id="pricing-title">Pricing</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Starcat currently ships as a macOS Direct build. Core organization features are free while Pro is being prepared.
+                Turn your GitHub Stars into a searchable AI knowledge base. Start free, then upgrade when you need AI workflows and larger library limits.
             </p>
 
             <div class="pricing-grid">
                 <div class="pricing-card fade-in">
+                    <span class="pricing-badge">Starter</span>
                     <h3 class="pricing-name">Free for macOS</h3>
                     <div class="pricing-price">Free</div>
                     <div class="pricing-period">Core features, permanently</div>
+                    <p class="pricing-note">A complete local-first library for managing GitHub Stars.</p>
                     <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> GitHub OAuth login &amp; Stars sync</li>
-                        <li><i data-lucide="check"></i> Three-column layout &amp; Liquid Glass UI</li>
-                        <li><i data-lucide="check"></i> Tag management &amp; batch operations</li>
-                        <li><i data-lucide="check"></i> Private notes &amp; status management</li>
-                        <li><i data-lucide="check"></i> FTS5 full-text search</li>
-                        <li><i data-lucide="check"></i> JSON import / export</li>
+                        <li><i data-lucide="check"></i> Sync and local cache</li>
+                        <li><i data-lucide="check"></i> Tags, notes, and status</li>
+                        <li><i data-lucide="check"></i> README and local search</li>
+                        <li><i data-lucide="check"></i> Discover, trends, hot, launches, weekly</li>
+                        <li><i data-lucide="check"></i> Activity timeline and undo star</li>
+                        <li><i data-lucide="check"></i> 20 tags / 4 lists / 5 releases</li>
+                        <li><i data-lucide="check"></i> HTML / Markdown export</li>
                     </ul>
-                    <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
-                        <span class="icon-16"><i data-lucide="download"></i></span>
-                        Free Download
-                    </a>
+                    <div class="pricing-action">
+                        <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
+                            <span class="icon-16"><i data-lucide="download"></i></span>
+                            Free Download
+                        </a>
+                    </div>
                 </div>
                 <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">Coming soon</span>
-                    <h3 class="pricing-name">Pro</h3>
-                    <div class="pricing-price">Not available</div>
-                    <div class="pricing-period">Higher quotas and advanced workflows will move into Pro as they stabilize</div>
+                    <span class="pricing-badge">Most Popular</span>
+                    <h3 class="pricing-name">Pro Monthly</h3>
+                    <div class="pricing-price">$9.99</div>
+                    <div class="pricing-period">per month</div>
+                    <p class="pricing-note">Unlock the AI workflows that turn a Star library into a knowledge base.</p>
                     <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> Higher AI quotas and batch organization are being prepared</li>
-                        <li><i data-lucide="check"></i> CodeFlow and advanced code graph workflows are planned</li>
-                        <li><i data-lucide="check"></i> Final pricing will be shown when Pro opens</li>
+                        <li><i data-lucide="check"></i> Unlimited library limits</li>
+                        <li><i data-lucide="check"></i> AI summaries and tags</li>
+                        <li><i data-lucide="check"></i> AI Chat and translation</li>
+                        <li><i data-lucide="check"></i> Embedding semantic search</li>
+                        <li><i data-lucide="check"></i> LLM-friendly web context</li>
+                        <li><i data-lucide="check"></i> CodeFlow and repo context</li>
+                        <li><i data-lucide="check"></i> Trending AI recommendations</li>
                     </ul>
-                    <span class="pricing-disabled">Purchasing is not open yet</span>
+                    <div class="pricing-action">
+                        <span class="pricing-disabled">Buy Pro Monthly</span>
+                        <div class="pricing-status">Available after payment review</div>
+                    </div>
+                </div>
+                <div class="pricing-card pricing-card--pro pricing-card--featured fade-in">
+                    <span class="pricing-badge pricing-badge--value">Best Value</span>
+                    <h3 class="pricing-name">Pro Lifetime</h3>
+                    <div class="pricing-price">$39.99</div>
+                    <div class="pricing-period">one-time purchase</div>
+                    <p class="pricing-note">Pay once, keep Pro. Equal to 4 months of Pro Monthly.</p>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> Everything included in Pro Monthly</li>
+                        <li><i data-lucide="check"></i> One-time payment</li>
+                        <li><i data-lucide="check"></i> Lifetime current Pro access</li>
+                        <li><i data-lucide="check"></i> No monthly renewal</li>
+                        <li><i data-lucide="check"></i> Built for long-term Starcat use</li>
+                        <li><i data-lucide="check"></i> Protected from future price changes</li>
+                        <li><i data-lucide="check"></i> BYOK Provider configuration</li>
+                    </ul>
+                    <div class="pricing-action">
+                        <span class="pricing-disabled pricing-disabled--primary">Buy Pro Lifetime</span>
+                        <div class="pricing-status">Available after payment review</div>
+                    </div>
                 </div>
             </div>
+            <div class="plan-compare fade-in" aria-label="Plan comparison">
+                <table class="compare-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Free</th>
+                            <th>Pro Monthly</th>
+                            <th>Pro Lifetime</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="compare-feature">Sync, local cache, notes, README</td>
+                            <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">Tags, smart collections, release subscriptions</td>
+                            <td>20 / 4 / 5</td>
+                            <td class="compare-check">Unlimited</td>
+                            <td class="compare-check">Unlimited</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">Release polling and notifications</td>
+                            <td class="compare-muted">Limited</td>
+                            <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">AI summaries, tags, Chat, README translation</td>
+                            <td class="compare-muted">Not included</td>
+                            <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">Semantic search and LLM-friendly web context</td>
+                            <td class="compare-muted">Not included</td>
+                            <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">RepoContextPacker, CodeFlow, Trending AI</td>
+                            <td class="compare-muted">Not included</td>
+                            <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">Payment model</td>
+                            <td>Free</td>
+                            <td>$9.99 monthly</td>
+                            <td>$39.99 one-time</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="pricing-support fade-in">
+                Payment or support: <a href="mailto:dong4j@gmail.com">dong4j@gmail.com</a>
+            </p>
         </div>
     </section>
 
@@ -802,7 +959,7 @@
                 </details>
                 <details class="faq-item fade-in">
                     <summary>Where is my data stored?</summary>
-                    <p>Starcat is local-first. Repo cache can be rebuilt, while tags, notes, and status are stored in local SQLite and can be imported or exported as JSON.</p>
+                    <p>Starcat is local-first. Repo cache can be rebuilt, while tags, notes, and status are stored in local SQLite on your Mac.</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>Does Starcat host my AI keys?</summary>
@@ -903,7 +1060,7 @@
                     <div class="footer-list">
                         <a href="#features" class="footer-link">Features</a>
                         <a href="#tech" class="footer-link">Tech Stack</a>
-                        <a href="#pricing" class="footer-link">Availability</a>
+                        <a href="#pricing" class="footer-link">Pricing</a>
                         <a href="#faq" class="footer-link">FAQ</a>
                         <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="footer-link" data-download-open>Download</a>
                     </div>
@@ -935,7 +1092,7 @@
                         <a href="changelog.html" class="footer-link">Changelog</a>
                         <a href="privacy.html" class="footer-link">Privacy Policy</a>
                         <a href="eula.html" class="footer-link">EULA</a>
-                        <a href="mailto:support@starcat.app" class="footer-link">Contact</a>
+                        <a href="mailto:dong4j@gmail.com" class="footer-link">Contact</a>
                         <a href="./index-zh.html" class="footer-link">中文</a>
                     </div>
                 </div>
@@ -946,7 +1103,7 @@
                     <a href="privacy.html" class="footer-link">Privacy</a>
                     <a href="eula.html" class="footer-link">EULA</a>
                     <a href="changelog.html" class="footer-link">Changelog</a>
-                    <a href="mailto:support@starcat.app" class="footer-link">Contact</a>
+                    <a href="mailto:dong4j@gmail.com" class="footer-link">Contact</a>
                 </div>
             </div>
         </div>
@@ -1022,8 +1179,133 @@
         })();
 
         (function() {
+            document.querySelectorAll('a[href^="#"]').forEach(link => {
+                link.addEventListener('click', (event) => {
+                    const target = document.querySelector(link.getAttribute('href'));
+                    if (!target) return;
+                    event.preventDefault();
+                    const scrollToTarget = (behavior = 'smooth') => target.scrollIntoView({ behavior, block: 'start' });
+                    scrollToTarget();
+                    window.setTimeout(() => scrollToTarget(), 450);
+                    window.setTimeout(() => scrollToTarget('auto'), 900);
+                    history.pushState(null, '', link.getAttribute('href'));
+                });
+            });
+        })();
+
+        (function() {
+            document.querySelectorAll('[data-feature-tabs]').forEach(root => {
+                const tabs = Array.from(root.querySelectorAll('[data-feature-tab]'));
+                const panels = Array.from(root.querySelectorAll('[data-feature-panel]'));
+                if (!tabs.length || !panels.length) return;
+
+                const activate = (id, shouldFocus = false) => {
+                    tabs.forEach(tab => {
+                        const isActive = tab.dataset.featureTab === id;
+                        tab.classList.toggle('is-active', isActive);
+                        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                        tab.tabIndex = isActive ? 0 : -1;
+                        if (isActive && shouldFocus) tab.focus({ preventScroll: true });
+                    });
+
+                    panels.forEach(panel => {
+                        const isActive = panel.dataset.featurePanel === id;
+                        panel.classList.toggle('is-active', isActive);
+                        panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+                    });
+                };
+
+                tabs.forEach((tab, index) => {
+                    tab.tabIndex = tab.classList.contains('is-active') ? 0 : -1;
+                    tab.addEventListener('click', () => activate(tab.dataset.featureTab));
+                    tab.addEventListener('keydown', event => {
+                        if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+                        event.preventDefault();
+
+                        let nextIndex = index;
+                        if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+                        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+                        if (event.key === 'Home') nextIndex = 0;
+                        if (event.key === 'End') nextIndex = tabs.length - 1;
+
+                        activate(tabs[nextIndex].dataset.featureTab, true);
+                    });
+                });
+
+                const initialTab = tabs.find(tab => tab.classList.contains('is-active')) || tabs[0];
+                activate(initialTab.dataset.featureTab);
+            });
+        })();
+
+        (function() {
             const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); } }); }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
             document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+        })();
+
+        (function() {
+            const targets = Array.from(document.querySelectorAll('.showcase-image img'));
+            if (!targets.length) return;
+
+            const lightbox = document.createElement('div');
+            lightbox.className = 'image-lightbox';
+            lightbox.setAttribute('aria-hidden', 'true');
+            lightbox.innerHTML = `
+                <div class="image-lightbox-frame" role="dialog" aria-modal="true" aria-label="Screenshot preview">
+                    <img alt="">
+                    <button class="image-lightbox-close" type="button" aria-label="Close preview">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(lightbox);
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            const previewImage = lightbox.querySelector('img');
+            const closeButton = lightbox.querySelector('.image-lightbox-close');
+            let activeTrigger = null;
+            let isOpen = false;
+
+            const closeLightbox = () => {
+                if (!isOpen) return;
+                isOpen = false;
+                lightbox.classList.remove('is-open');
+                lightbox.setAttribute('aria-hidden', 'true');
+                activeTrigger?.focus({ preventScroll: true });
+                activeTrigger = null;
+            };
+
+            const openLightbox = (image) => {
+                activeTrigger = image.closest('.showcase-image');
+                previewImage.src = image.currentSrc || image.src;
+                previewImage.alt = image.alt || 'Starcat screenshot preview';
+                lightbox.setAttribute('aria-hidden', 'false');
+                lightbox.classList.add('is-open');
+                isOpen = true;
+                closeButton.focus({ preventScroll: true });
+            };
+
+            targets.forEach(image => {
+                const trigger = image.closest('.showcase-image');
+                trigger.setAttribute('role', 'button');
+                trigger.setAttribute('tabindex', '0');
+                trigger.setAttribute('aria-label', image.alt ? `Preview ${image.alt}` : 'Preview Starcat screenshot');
+                trigger.addEventListener('click', () => openLightbox(image));
+                trigger.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openLightbox(image);
+                    }
+                });
+            });
+
+            lightbox.addEventListener('click', (event) => {
+                if (event.target === lightbox || event.target === previewImage) closeLightbox();
+            });
+            closeButton.addEventListener('click', closeLightbox);
+            window.addEventListener('scroll', closeLightbox, { passive: true });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeLightbox();
+            });
         })();
 
         (function() {

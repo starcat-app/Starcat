@@ -808,11 +808,87 @@
             flex-shrink: 0;
         }
 
+        .feature-tabs {
+            max-width: 1160px;
+            margin: 0 auto;
+        }
+
+        .feature-tablist {
+            display: flex;
+            gap: 10px;
+            padding: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--color-border);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.035);
+            scrollbar-width: thin;
+        }
+
+        .feature-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 42px;
+            padding: 0 14px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            color: var(--color-text-secondary);
+            background: transparent;
+            font: inherit;
+            font-size: var(--fs-caption);
+            font-weight: 700;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: color var(--duration-fast) var(--ease-out),
+                        background var(--duration-fast) var(--ease-out),
+                        border-color var(--duration-fast) var(--ease-out);
+        }
+
+        .feature-tab:hover {
+            color: var(--color-text);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .feature-tab.is-active {
+            color: #071018;
+            border-color: transparent;
+            background: var(--color-cta);
+        }
+
+        .feature-tab-panels {
+            display: grid;
+            margin-top: 24px;
+        }
+
+        .feature-tab-panel {
+            grid-area: 1 / 1;
+            display: grid;
+            grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+            gap: 64px;
+            align-items: center;
+            padding: 34px;
+            border: 1px solid var(--color-border);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.03);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 180ms var(--ease-out),
+                        visibility 180ms var(--ease-out);
+        }
+
+        .feature-tab-panel.is-active {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
         .showcase-image {
             position: relative;
             border-radius: 22px;
             overflow: hidden;
             box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+            cursor: zoom-in;
             transition: box-shadow var(--duration-normal) var(--ease-out),
                         transform var(--duration-normal) var(--ease-out);
         }
@@ -820,6 +896,11 @@
         .showcase-image:hover {
             box-shadow: 0 34px 100px rgba(0, 0, 0, 0.42);
             transform: translateY(-1px);
+        }
+
+        .showcase-image:focus-visible {
+            outline: 2px solid var(--color-cta);
+            outline-offset: 6px;
         }
 
         .showcase-image img {
@@ -833,10 +914,34 @@
 
         @media (max-width: 1023px) {
             .showcase-image img { max-height: 320px; }
+
+            .feature-tab-panel {
+                grid-template-columns: 1fr;
+                gap: 28px;
+                padding: 28px;
+            }
+
+            .feature-tab-panel .showcase-image {
+                order: 2;
+            }
+
+            .feature-tab-panel .showcase-info {
+                order: 1;
+            }
         }
 
         @media (max-width: 767px) {
             .showcase-image img { max-height: 260px; }
+
+            .feature-tablist {
+                margin-inline: -6px;
+                border-radius: 14px;
+            }
+
+            .feature-tab-panel {
+                padding: 22px;
+                border-radius: 18px;
+            }
         }
 
         @media (max-width: 767px) {
@@ -851,6 +956,107 @@
             }
             .showcase-row .showcase-info {
                 order: 1;
+            }
+        }
+
+        .image-lightbox {
+            position: fixed;
+            inset: 0;
+            z-index: calc(var(--z-overlay) + 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(4, 6, 10, 0.76);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 220ms var(--ease-out),
+                        visibility 220ms var(--ease-out);
+        }
+
+        .image-lightbox.is-open {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .image-lightbox-frame {
+            position: relative;
+            display: flex;
+            max-width: min(1600px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            transform: translateY(14px) scale(0.96);
+            transition: transform 260ms var(--ease-out);
+        }
+
+        .image-lightbox.is-open .image-lightbox-frame {
+            transform: translateY(0) scale(1);
+        }
+
+        .image-lightbox img {
+            display: block;
+            max-width: 100%;
+            max-height: calc(100vh - 32px);
+            width: auto;
+            height: auto;
+            border-radius: 22px;
+            box-shadow: 0 40px 120px rgba(0, 0, 0, 0.62);
+            cursor: zoom-out;
+        }
+
+        .image-lightbox-close {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            color: var(--color-text);
+            background: rgba(13, 16, 23, 0.72);
+            cursor: pointer;
+            transition: border-color var(--duration-fast) var(--ease-out),
+                        background var(--duration-fast) var(--ease-out),
+                        transform var(--duration-fast) var(--ease-out);
+        }
+
+        .image-lightbox-close:hover {
+            border-color: rgba(255, 255, 255, 0.34);
+            background: rgba(13, 16, 23, 0.9);
+            transform: translateY(-1px);
+        }
+
+        .image-lightbox-close .lucide {
+            width: 18px;
+            height: 18px;
+        }
+
+        @media (max-width: 767px) {
+            .image-lightbox {
+                padding: 12px;
+            }
+
+            .image-lightbox-frame {
+                max-width: calc(100vw - 24px);
+                max-height: calc(100vh - 24px);
+            }
+
+            .image-lightbox img {
+                max-height: calc(100vh - 24px);
+                border-radius: 16px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .image-lightbox,
+            .image-lightbox-frame {
+                transition: none;
             }
         }
 
@@ -917,9 +1123,9 @@
          * ================================================================== */
         .pricing-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: var(--card-gap);
-            max-width: 920px;
+            max-width: 1160px;
             margin: 0 auto;
         }
 
@@ -932,6 +1138,9 @@
                         background var(--duration-normal) var(--ease-out),
                         transform var(--duration-normal) var(--ease-out);
             position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
 
         .pricing-card:hover {
@@ -950,8 +1159,14 @@
             background: rgba(139, 92, 246, 0.1);
         }
 
+        .pricing-card--featured {
+            border-color: rgba(251, 191, 36, 0.56);
+            box-shadow: 0 24px 80px rgba(251, 191, 36, 0.12);
+        }
+
         .pricing-badge {
             display: inline-block;
+            align-self: flex-start;
             padding: 4px 12px;
             font-size: 11px;
             font-weight: 700;
@@ -959,6 +1174,11 @@
             background: rgba(139, 92, 246, 0.15);
             border-radius: 20px;
             margin-bottom: 16px;
+        }
+
+        .pricing-badge--value {
+            color: #071018;
+            background: var(--color-accent);
         }
 
         .pricing-name {
@@ -977,6 +1197,14 @@
             font-size: var(--fs-small);
             color: var(--color-text-muted);
             margin-bottom: 24px;
+        }
+
+        .pricing-note {
+            font-size: var(--fs-small);
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+            margin: -10px 0 24px;
+            min-height: 42px;
         }
 
         .pricing-features {
@@ -1017,6 +1245,92 @@
             font-size: var(--fs-small);
             font-weight: 700;
             background: rgba(255, 255, 255, 0.035);
+        }
+
+        .pricing-disabled--primary {
+            color: #071018;
+            border-color: transparent;
+            background: var(--color-cta);
+            opacity: 0.72;
+        }
+
+        .pricing-action {
+            margin-top: auto;
+            height: 84px;
+        }
+
+        .pricing-status {
+            margin-top: 10px;
+            text-align: center;
+            color: var(--color-text-muted);
+            font-size: var(--fs-caption);
+        }
+
+        .plan-compare {
+            margin: 36px auto 0;
+            max-width: 1160px;
+            overflow-x: auto;
+            border: 1px solid var(--color-border);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .compare-table {
+            width: 100%;
+            min-width: 780px;
+            border-collapse: collapse;
+        }
+
+        .compare-table th,
+        .compare-table td {
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--color-border);
+            text-align: left;
+            font-size: var(--fs-small);
+            color: var(--color-text-secondary);
+            vertical-align: middle;
+        }
+
+        .compare-table th {
+            color: var(--color-text);
+            font-weight: 750;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .compare-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .compare-feature {
+            color: var(--color-text);
+            font-weight: 650;
+        }
+
+        .compare-check {
+            color: var(--color-cta);
+            font-weight: 750;
+        }
+
+        .compare-muted {
+            color: var(--color-text-muted);
+        }
+
+        .pricing-support {
+            margin: 18px auto 0;
+            max-width: 1160px;
+            text-align: center;
+            color: var(--color-text-muted);
+            font-size: var(--fs-caption);
+        }
+
+        .pricing-support a {
+            color: var(--color-text-secondary);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
+        @media (max-width: 1023px) {
+            .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
         @media (max-width: 767px) {
@@ -1559,7 +1873,7 @@
         <div class="nav-links">
             <a href="#features" class="nav-link">功能</a>
             <a href="#tech" class="nav-link">技术</a>
-            <a href="#pricing" class="nav-link">版本</a>
+            <a href="#pricing" class="nav-link">价格</a>
             <a href="#faq" class="nav-link">FAQ</a>
             <a href="./privacy-zh.html" class="nav-link">隐私</a>
             <a href="./changelog-zh.html" class="nav-link">更新记录</a>
@@ -1598,9 +1912,9 @@
                     <span class="icon-18"><i data-lucide="download"></i></span>
                     下载 Starcat
                 </a>
-                <a href="#features" class="btn-secondary" role="button">
+                <a href="#pricing" class="btn-secondary" role="button">
                     <span class="icon-18"><i data-lucide="arrow-down"></i></span>
-                    了解更多
+                    价格
                 </a>
             </div>
             <div class="hero-banner fade-in">
@@ -1711,7 +2025,7 @@
     </section>
 
     <!-- ==================================================================
-     * 功能全景展示 — 7 个核心功能截图轮流展示
+     * 功能全景展示
      * ================================================================== -->
     <section class="section" id="showcase" aria-labelledby="showcase-title">
         <div class="section-inner">
@@ -1721,143 +2035,180 @@
                 从搜索到 AI 分析，从安全评分到分享卡片——每一处细节都为效率而设计。
             </p>
 
-            <!-- 1. 全局搜索 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--green"><i data-lucide="search"></i></div>
-                    <h3 class="showcase-name">全局搜索 &amp; 结构化过滤</h3>
-                    <p class="showcase-desc">
-                        FTS5 全文搜索引擎对仓库名、描述、Topics、笔记建立索引，毫秒级返回结果。
-                        支持按语言、标签、状态组合过滤，字段级精准匹配。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> FTS5 本地全文索引</li>
-                        <li><i data-lucide="check"></i> 多字段组合过滤</li>
-                        <li><i data-lucide="check"></i> 保存复杂查询条件</li>
-                    </ul>
+            <div class="feature-tabs fade-in" data-feature-tabs>
+                <div class="feature-tablist" role="tablist" aria-label="功能全景">
+                    <button class="feature-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="feature-panel-search-zh" id="feature-tab-search-zh" data-feature-tab="search">搜索</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-collections-zh" id="feature-tab-collections-zh" data-feature-tab="collections">智能集合</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-summary-zh" id="feature-tab-summary-zh" data-feature-tab="summary">AI 摘要</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-translation-zh" id="feature-tab-translation-zh" data-feature-tab="translation">README 翻译</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-chat-zh" id="feature-tab-chat-zh" data-feature-tab="chat">AI 对话</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-health-zh" id="feature-tab-health-zh" data-feature-tab="health">Health</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-openssf-zh" id="feature-tab-openssf-zh" data-feature-tab="openssf">OpenSSF</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-codegraph-zh" id="feature-tab-codegraph-zh" data-feature-tab="codegraph">代码图谱</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-share-zh" id="feature-tab-share-zh" data-feature-tab="share">分享卡片</button>
+                    <button class="feature-tab" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-config-zh" id="feature-tab-config-zh" data-feature-tab="config">AI 配置</button>
                 </div>
-                <div class="showcase-image">
-                    <img src="sc-全局搜索.webp" alt="Starcat 全局搜索界面：多字段组合过滤 + FTS5 全文搜索" loading="lazy">
-                </div>
-            </div>
 
-            <!-- 2. AI 摘要 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-image">
-                    <img src="sc-AI摘要.webp" alt="Starcat AI 摘要界面：自动生成仓库结构化中文摘要" loading="lazy">
-                </div>
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--violet"><i data-lucide="sparkles"></i></div>
-                    <h3 class="showcase-name">AI 智能摘要 &amp; 翻译</h3>
-                    <p class="showcase-desc">
-                        AI 阅读 README 后自动生成结构化中文摘要：项目做什么、技术栈是什么、
-                        适用场景有哪些。支持 README 全文翻译，按仓库缓存，源变更后自动提示重新生成。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> 结构化中文摘要</li>
-                        <li><i data-lucide="check"></i> README 全文翻译</li>
-                        <li><i data-lucide="check"></i> 按仓库缓存，增量更新</li>
-                    </ul>
-                </div>
-            </div>
+                <div class="feature-tab-panels">
+                    <article class="feature-tab-panel is-active" role="tabpanel" id="feature-panel-search-zh" aria-labelledby="feature-tab-search-zh" data-feature-panel="search">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--green"><i data-lucide="search"></i></div>
+                            <h3 class="showcase-name">全局搜索 &amp; 结构化过滤</h3>
+                            <p class="showcase-desc">FTS5 全文搜索引擎对仓库名、描述、Topics、笔记建立索引，毫秒级返回结果。支持按语言、标签、状态组合过滤，字段级精准匹配。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> FTS5 本地全文索引</li>
+                                <li><i data-lucide="check"></i> 多字段组合过滤</li>
+                                <li><i data-lucide="check"></i> 保存复杂查询条件</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-全局搜索.webp" alt="Starcat 全局搜索界面：多字段组合过滤 + FTS5 全文搜索" loading="lazy">
+                        </div>
+                    </article>
 
-            <!-- 3. AI 对话 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--blue"><i data-lucide="message-square"></i></div>
-                    <h3 class="showcase-name">AI 对话交互</h3>
-                    <p class="showcase-desc">
-                        在任意仓库详情页中一键唤起 AI 对话，针对当前仓库内容提问。
-                        AI 理解上下文后给出精准回答，帮助快速理解项目架构与设计决策。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> 仓库级上下文对话</li>
-                        <li><i data-lucide="check"></i> 多轮对话记忆</li>
-                        <li><i data-lucide="check"></i> 代码与文档联动</li>
-                    </ul>
-                </div>
-                <div class="showcase-image">
-                    <img src="sc-AI对话.webp" alt="Starcat AI 对话界面：仓库级上下文智能问答" loading="lazy">
-                </div>
-            </div>
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-collections-zh" aria-labelledby="feature-tab-collections-zh" data-feature-panel="collections">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--blue"><i data-lucide="list-filter"></i></div>
+                            <h3 class="showcase-name">智能集合</h3>
+                            <p class="showcase-desc">浏览 Needs Review、Unmaintained、High Value、No Tags、Using、Recently Active 等内置集合，也可用元数据、状态、笔记和 Health 信号组合自定义规则。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 内置可解释集合规则</li>
+                                <li><i data-lucide="check"></i> 按元数据、笔记和状态过滤</li>
+                                <li><i data-lucide="check"></i> 结合 Health 信号判断优先级</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-智能集合.webp" alt="Starcat 智能集合界面：内置集合与自定义仓库规则" loading="lazy">
+                        </div>
+                    </article>
 
-            <!-- 4. OpenSSF 安全评分 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-image">
-                    <img src="sc-OpenSSF评分.webp" alt="Starcat OpenSSF 评分界面：仓库安全评分雷达图" loading="lazy">
-                </div>
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--amber"><i data-lucide="shield"></i></div>
-                    <h3 class="showcase-name">OpenSSF 安全评分</h3>
-                    <p class="showcase-desc">
-                        集成 OpenSSF Scorecard，为已 Star 的仓库拉取公开安全评分。
-                        雷达图展示多维度安全检查结果，帮助评估第三方依赖的安全性。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> OpenSSF Scorecard 集成</li>
-                        <li><i data-lucide="check"></i> 多维度安全雷达图</li>
-                        <li><i data-lucide="check"></i> 冷却期智能刷新</li>
-                    </ul>
-                </div>
-            </div>
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-summary-zh" aria-labelledby="feature-tab-summary-zh" data-feature-panel="summary">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--violet"><i data-lucide="sparkles"></i></div>
+                            <h3 class="showcase-name">AI 智能摘要</h3>
+                            <p class="showcase-desc">AI 阅读 README 后生成结构化摘要：项目做什么、技术栈是什么、适用场景有哪些。摘要按仓库缓存，适合快速判断项目价值。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 结构化中文摘要</li>
+                                <li><i data-lucide="check"></i> 按仓库缓存</li>
+                                <li><i data-lucide="check"></i> 适合快速判断项目价值</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI摘要.webp" alt="Starcat AI 摘要界面：自动生成仓库结构化中文摘要" loading="lazy">
+                        </div>
+                    </article>
 
-            <!-- 5. 内置代码图谱 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--green"><i data-lucide="git-branch"></i></div>
-                    <h3 class="showcase-name">内置代码图谱</h3>
-                    <p class="showcase-desc">
-                        不离开 App 即可探索仓库的代码架构。CodeFlow 自动分析依赖关系，
-                        可视化展示模块调用链路，帮助快速理解大型项目的代码组织。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> 分支级代码分析</li>
-                        <li><i data-lucide="check"></i> 依赖关系可视化</li>
-                        <li><i data-lucide="check"></i> 执行步骤透明展示</li>
-                    </ul>
-                </div>
-                <div class="showcase-image">
-                    <img src="sc-内置代码图谱.webp" alt="Starcat 代码图谱界面：依赖关系可视化与架构探索" loading="lazy">
-                </div>
-            </div>
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-translation-zh" aria-labelledby="feature-tab-translation-zh" data-feature-panel="translation">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--amber"><i data-lucide="languages"></i></div>
+                            <h3 class="showcase-name">README 翻译</h3>
+                            <p class="showcase-desc">按需翻译 README HTML 并保留原始结构。缓存命中时直接展示，源 README 变化后提示重新翻译。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 保留 README HTML 结构</li>
+                                <li><i data-lucide="check"></i> 目标语言跟随设置</li>
+                                <li><i data-lucide="check"></i> 缓存命中不消耗额外 AI 配额</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI翻译.webp" alt="Starcat README 翻译界面：保留结构的 README 译文" loading="lazy">
+                        </div>
+                    </article>
 
-            <!-- 6. 分享卡片 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-image">
-                    <img src="sc-分享卡片.webp" alt="Starcat 分享卡片界面：多主题用户名片导出" loading="lazy">
-                </div>
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--violet"><i data-lucide="share"></i></div>
-                    <h3 class="showcase-name">用户分享卡片</h3>
-                    <p class="showcase-desc">
-                        生成精美的个人名片，展示 GitHub 统计数据。多主题可选，
-                        一键导出高清 PNG 或分享到 X，展示你的技术品味。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> 多主题配色方案</li>
-                        <li><i data-lucide="check"></i> 高清 PNG 导出（@3x）</li>
-                        <li><i data-lucide="check"></i> 一键分享到 X</li>
-                    </ul>
-                </div>
-            </div>
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-chat-zh" aria-labelledby="feature-tab-chat-zh" data-feature-panel="chat">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--blue"><i data-lucide="message-square"></i></div>
+                            <h3 class="showcase-name">AI 对话交互</h3>
+                            <p class="showcase-desc">在任意仓库详情页中一键唤起 AI 对话，针对当前仓库内容提问。AI 理解上下文后给出精准回答，帮助快速理解项目架构与设计决策。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 仓库级上下文对话</li>
+                                <li><i data-lucide="check"></i> 多轮对话记忆</li>
+                                <li><i data-lucide="check"></i> 代码与文档联动</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI对话.webp" alt="Starcat AI 对话界面：仓库级上下文智能问答" loading="lazy">
+                        </div>
+                    </article>
 
-            <!-- 7. AI 服务配置 -->
-            <div class="showcase-row fade-in">
-                <div class="showcase-info">
-                    <div class="showcase-icon bento-card-icon--blue"><i data-lucide="sliders"></i></div>
-                    <h3 class="showcase-name">AI 服务灵活配置（BYOK）</h3>
-                    <p class="showcase-desc">
-                        支持自建代理、Gemini、DeepSeek、OpenAI 兼容、Ollama 本地模型。
-                        你的 API Key 与调用配额由你自行掌控。
-                    </p>
-                    <ul class="showcase-highlights">
-                        <li><i data-lucide="check"></i> 多模型自由切换</li>
-                        <li><i data-lucide="check"></i> API Key 自行掌控</li>
-                        <li><i data-lucide="check"></i> Quota 用量精细控制</li>
-                    </ul>
-                </div>
-                <div class="showcase-image">
-                    <img src="sc-AI服务配置.webp" alt="Starcat AI 服务配置界面：多模型 BYOK 自由切换" loading="lazy">
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-health-zh" aria-labelledby="feature-tab-health-zh" data-feature-panel="health">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--green"><i data-lucide="activity"></i></div>
+                            <h3 class="showcase-name">Repo Health 评分</h3>
+                            <p class="showcase-desc">汇总仓库活跃度、维护状态和风险信号，帮助你快速判断项目是否值得继续关注。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 活跃度与维护状态概览</li>
+                                <li><i data-lucide="check"></i> Star 仓库风险信号</li>
+                                <li><i data-lucide="check"></i> 快速判断关注优先级</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-Health评分.webp" alt="Starcat Repo Health 评分界面：仓库维护状态与活跃度概览" loading="lazy">
+                        </div>
+                    </article>
+
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-openssf-zh" aria-labelledby="feature-tab-openssf-zh" data-feature-panel="openssf">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--amber"><i data-lucide="shield"></i></div>
+                            <h3 class="showcase-name">OpenSSF 安全评分</h3>
+                            <p class="showcase-desc">集成 OpenSSF Scorecard，为已 Star 的仓库拉取公开安全评分。雷达图展示多维度安全检查结果，帮助评估第三方依赖的安全性。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> OpenSSF Scorecard 集成</li>
+                                <li><i data-lucide="check"></i> 多维度安全雷达图</li>
+                                <li><i data-lucide="check"></i> 冷却期智能刷新</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-OpenSSF评分.webp" alt="Starcat OpenSSF 评分界面：仓库安全评分雷达图" loading="lazy">
+                        </div>
+                    </article>
+
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-codegraph-zh" aria-labelledby="feature-tab-codegraph-zh" data-feature-panel="codegraph">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--green"><i data-lucide="git-branch"></i></div>
+                            <h3 class="showcase-name">内置代码图谱</h3>
+                            <p class="showcase-desc">不离开 App 即可探索仓库的代码架构。CodeFlow 自动分析依赖关系，可视化展示模块调用链路，帮助快速理解大型项目的代码组织。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 分支级代码分析</li>
+                                <li><i data-lucide="check"></i> 依赖关系可视化</li>
+                                <li><i data-lucide="check"></i> 执行步骤透明展示</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-内置代码图谱.webp" alt="Starcat 代码图谱界面：依赖关系可视化与架构探索" loading="lazy">
+                        </div>
+                    </article>
+
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-share-zh" aria-labelledby="feature-tab-share-zh" data-feature-panel="share">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--violet"><i data-lucide="share"></i></div>
+                            <h3 class="showcase-name">用户分享卡片</h3>
+                            <p class="showcase-desc">生成精美的个人名片，展示 GitHub 统计数据。多主题可选，一键导出高清 PNG 或分享到 X，展示你的技术品味。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 多主题配色方案</li>
+                                <li><i data-lucide="check"></i> 高清 PNG 导出（@3x）</li>
+                                <li><i data-lucide="check"></i> 一键分享到 X</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-分享卡片.webp" alt="Starcat 分享卡片界面：多主题用户名片导出" loading="lazy">
+                        </div>
+                    </article>
+
+                    <article class="feature-tab-panel" role="tabpanel" id="feature-panel-config-zh" aria-labelledby="feature-tab-config-zh" data-feature-panel="config">
+                        <div class="showcase-info">
+                            <div class="showcase-icon bento-card-icon--blue"><i data-lucide="sliders"></i></div>
+                            <h3 class="showcase-name">AI 服务灵活配置（BYOK）</h3>
+                            <p class="showcase-desc">支持自建代理、Gemini、DeepSeek、OpenAI 兼容、Ollama 本地模型。你的 API Key 与调用配额由你自行掌控。</p>
+                            <ul class="showcase-highlights">
+                                <li><i data-lucide="check"></i> 多模型自由切换</li>
+                                <li><i data-lucide="check"></i> API Key 自行掌控</li>
+                                <li><i data-lucide="check"></i> Quota 用量精细控制</li>
+                            </ul>
+                        </div>
+                        <div class="showcase-image">
+                            <img src="sc-AI服务配置.webp" alt="Starcat AI 服务配置界面：多模型 BYOK 自由切换" loading="lazy">
+                        </div>
+                    </article>
                 </div>
             </div>
         </div>
@@ -1896,7 +2247,7 @@
                     <h3 class="feature-name">私有笔记</h3>
                     <p class="feature-desc">
                         每个仓库可写独立的私有笔记，记录你的想法和评价。
-                        标签、笔记和状态写入本地 SQLite，可通过导出随时带走。
+                        标签、笔记和状态写入本地 SQLite，保持本地优先。
                     </p>
                 </div>
 
@@ -1936,15 +2287,15 @@
                     </p>
                 </div>
 
-                <!-- 数据管理 -->
+                <!-- 发现与趋势 -->
                 <div class="feature-card fade-in">
                     <div class="feature-icon bento-card-icon--blue">
-                        <i data-lucide="database"></i>
+                        <i data-lucide="compass"></i>
                     </div>
-                    <h3 class="feature-name">数据导入导出</h3>
+                    <h3 class="feature-name">发现与趋势</h3>
                     <p class="feature-desc">
-                        兼容 OhMyStar / Astral 格式的 JSON 导入导出。
-                        你的数据随时可以带走，绝不被锁定。
+                        内置发现、趋势、热门、新发布和周刊入口。
+                        帮助你持续找到值得关注的开源项目。
                     </p>
                 </div>
             </div>
@@ -2016,42 +2367,134 @@
     <section class="section" id="pricing" aria-labelledby="pricing-title">
         <div class="section-inner">
             <div class="section-label fade-in">Availability</div>
-            <h2 class="section-title fade-in" id="pricing-title">当前可用版本</h2>
+            <h2 class="section-title fade-in" id="pricing-title">定价</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                先提供 macOS Direct 版本。核心整理能力免费开放，Pro 能力准备好后再开放。
+                把 GitHub Stars 变成可搜索、可整理、可对话的 AI 知识库。免费开始，需要 AI 工作流和更高额度时再升级。
             </p>
 
             <div class="pricing-grid">
                 <div class="pricing-card fade-in">
+                    <span class="pricing-badge">入门</span>
                     <h3 class="pricing-name">Free for macOS</h3>
                     <div class="pricing-price">免费</div>
                     <div class="pricing-period">基础功能，永久可用</div>
+                    <p class="pricing-note">完整的本地优先 GitHub Stars 管理工具。</p>
                     <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> GitHub OAuth 登录 &amp; Stars 同步</li>
-                        <li><i data-lucide="check"></i> 三栏布局 &amp; Liquid Glass 界面</li>
-                        <li><i data-lucide="check"></i> 标签管理 &amp; 批量操作</li>
-                        <li><i data-lucide="check"></i> 私有笔记 &amp; 状态管理</li>
-                        <li><i data-lucide="check"></i> FTS5 全文搜索</li>
-                        <li><i data-lucide="check"></i> JSON 导入 / 导出</li>
+                        <li><i data-lucide="check"></i> 同步与本地缓存</li>
+                        <li><i data-lucide="check"></i> 标签、笔记、仓库状态</li>
+                        <li><i data-lucide="check"></i> README 与本地搜索</li>
+                        <li><i data-lucide="check"></i> 发现 / 趋势 / 热门 / 新发布 / 周刊</li>
+                        <li><i data-lucide="check"></i> 活动时间线 / Undo Star</li>
+                        <li><i data-lucide="check"></i> 20 标签 / 4 智能集合 / 5 Release</li>
+                        <li><i data-lucide="check"></i> HTML / Markdown 导出</li>
                     </ul>
-                    <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
-                        <span class="icon-16"><i data-lucide="download"></i></span>
-                        免费下载
-                    </a>
+                    <div class="pricing-action">
+                        <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
+                            <span class="icon-16"><i data-lucide="download"></i></span>
+                            免费下载
+                        </a>
+                    </div>
                 </div>
                 <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">准备中</span>
-                    <h3 class="pricing-name">Pro</h3>
-                    <div class="pricing-price">未开放</div>
-                    <div class="pricing-period">更高配额与高级工作流会逐步进入 Pro</div>
+                    <span class="pricing-badge">推荐</span>
+                    <h3 class="pricing-name">Pro Monthly</h3>
+                    <div class="pricing-price">$9.99</div>
+                    <div class="pricing-period">每月订阅</div>
+                    <p class="pricing-note">解锁把 Star 仓库变成知识库的 AI 工作流。</p>
                     <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> 更高 AI 使用配额与批量整理规划中</li>
-                        <li><i data-lucide="check"></i> CodeFlow / 代码图谱等高级能力规划中</li>
-                        <li><i data-lucide="check"></i> 正式价格以上线版本为准</li>
+                        <li><i data-lucide="check"></i> 不限基础额度</li>
+                        <li><i data-lucide="check"></i> AI 摘要与 AI 标签</li>
+                        <li><i data-lucide="check"></i> AI Chat 与 README 翻译</li>
+                        <li><i data-lucide="check"></i> Embedding 语义搜索</li>
+                        <li><i data-lucide="check"></i> LLM 友好的网页上下文</li>
+                        <li><i data-lucide="check"></i> CodeFlow 与仓库上下文</li>
+                        <li><i data-lucide="check"></i> Trending AI 推荐</li>
                     </ul>
-                    <span class="pricing-disabled">暂未开放购买</span>
+                    <div class="pricing-action">
+                        <span class="pricing-disabled">购买 Pro Monthly</span>
+                        <div class="pricing-status">支付审核通过后开放</div>
+                    </div>
+                </div>
+                <div class="pricing-card pricing-card--pro pricing-card--featured fade-in">
+                    <span class="pricing-badge pricing-badge--value">买断更划算</span>
+                    <h3 class="pricing-name">Pro Lifetime</h3>
+                    <div class="pricing-price">$39.99</div>
+                    <div class="pricing-period">一次性买断</div>
+                    <p class="pricing-note">一次付款，长期使用；约等于 4 个月月订阅。</p>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> 包含 Pro Monthly 的全部功能</li>
+                        <li><i data-lucide="check"></i> 一次性付款</li>
+                        <li><i data-lucide="check"></i> 终身解锁当前 Pro 功能</li>
+                        <li><i data-lucide="check"></i> 无需每月续费</li>
+                        <li><i data-lucide="check"></i> 适合长期使用 Starcat</li>
+                        <li><i data-lucide="check"></i> 避免后续价格变化影响</li>
+                        <li><i data-lucide="check"></i> BYOK Provider 配置</li>
+                    </ul>
+                    <div class="pricing-action">
+                        <span class="pricing-disabled pricing-disabled--primary">购买 Pro Lifetime</span>
+                        <div class="pricing-status">支付审核通过后开放</div>
+                    </div>
                 </div>
             </div>
+            <div class="plan-compare fade-in" aria-label="功能对比">
+                <table class="compare-table">
+                    <thead>
+                        <tr>
+                            <th>功能</th>
+                            <th>Free</th>
+                            <th>Pro Monthly</th>
+                            <th>Pro Lifetime</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="compare-feature">同步、本地缓存、笔记、README</td>
+                            <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">标签、智能集合、Release 订阅</td>
+                            <td>20 / 4 / 5</td>
+                            <td class="compare-check">不限</td>
+                            <td class="compare-check">不限</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">Release 轮询与通知</td>
+                            <td class="compare-muted">有限</td>
+                            <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">AI 摘要、标签、Chat、README 翻译</td>
+                            <td class="compare-muted">不包含</td>
+                            <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">语义搜索与 LLM 友好网页上下文</td>
+                            <td class="compare-muted">不包含</td>
+                            <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">RepoContextPacker、CodeFlow、Trending AI</td>
+                            <td class="compare-muted">不包含</td>
+                            <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">付款方式</td>
+                            <td>免费</td>
+                            <td>$9.99 / 月</td>
+                            <td>$39.99 买断</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="pricing-support fade-in">
+                支付或支持：<a href="mailto:dong4j@gmail.com">dong4j@gmail.com</a>
+            </p>
         </div>
     </section>
 
@@ -2076,7 +2519,7 @@
                 </details>
                 <details class="faq-item fade-in">
                     <summary>我的数据存在哪里？</summary>
-                    <p>Starcat 采用本地优先设计。仓库缓存可重建，标签、笔记、状态等长期数据写入本地 SQLite，并提供 JSON 导入导出。</p>
+                    <p>Starcat 采用本地优先设计。仓库缓存可重建，标签、笔记、状态等长期数据写入你 Mac 上的本地 SQLite。</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>AI Key 会不会被 Starcat 托管？</summary>
@@ -2183,7 +2626,7 @@
                     <div class="footer-list">
                         <a href="#features" class="footer-link">功能</a>
                         <a href="#tech" class="footer-link">技术栈</a>
-                        <a href="#pricing" class="footer-link">当前版本</a>
+                        <a href="#pricing" class="footer-link">价格</a>
                         <a href="#faq" class="footer-link">FAQ</a>
                         <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="footer-link" data-download-open>下载</a>
                     </div>
@@ -2378,7 +2821,74 @@
         })();
 
         // ================================================================
-        // 3. 滚动渐入动画（Intersection Observer）
+        // 3. 站内锚点：导航、Hero CTA 和 Footer 链接统一平滑滚动
+        // ================================================================
+        (function() {
+            document.querySelectorAll('a[href^="#"]').forEach(link => {
+                link.addEventListener('click', (event) => {
+                    const target = document.querySelector(link.getAttribute('href'));
+                    if (!target) return;
+                    event.preventDefault();
+                    const scrollToTarget = (behavior = 'smooth') => target.scrollIntoView({ behavior, block: 'start' });
+                    scrollToTarget();
+                    window.setTimeout(() => scrollToTarget(), 450);
+                    window.setTimeout(() => scrollToTarget('auto'), 900);
+                    history.pushState(null, '', link.getAttribute('href'));
+                });
+            });
+        })();
+
+        // ================================================================
+        // 4. 功能全景 Tabs
+        // ================================================================
+        (function() {
+            document.querySelectorAll('[data-feature-tabs]').forEach(root => {
+                const tabs = Array.from(root.querySelectorAll('[data-feature-tab]'));
+                const panels = Array.from(root.querySelectorAll('[data-feature-panel]'));
+                if (!tabs.length || !panels.length) return;
+
+                const activate = (id, shouldFocus = false) => {
+                    tabs.forEach(tab => {
+                        const isActive = tab.dataset.featureTab === id;
+                        tab.classList.toggle('is-active', isActive);
+                        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                        tab.tabIndex = isActive ? 0 : -1;
+                        if (isActive && shouldFocus) {
+                            tab.focus({ preventScroll: true });
+                        }
+                    });
+
+                    panels.forEach(panel => {
+                        const isActive = panel.dataset.featurePanel === id;
+                        panel.classList.toggle('is-active', isActive);
+                        panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+                    });
+                };
+
+                tabs.forEach((tab, index) => {
+                    tab.tabIndex = tab.classList.contains('is-active') ? 0 : -1;
+                    tab.addEventListener('click', () => activate(tab.dataset.featureTab));
+                    tab.addEventListener('keydown', event => {
+                        if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+                        event.preventDefault();
+
+                        let nextIndex = index;
+                        if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+                        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+                        if (event.key === 'Home') nextIndex = 0;
+                        if (event.key === 'End') nextIndex = tabs.length - 1;
+
+                        activate(tabs[nextIndex].dataset.featureTab, true);
+                    });
+                });
+
+                const initialTab = tabs.find(tab => tab.classList.contains('is-active')) || tabs[0];
+                activate(initialTab.dataset.featureTab);
+            });
+        })();
+
+        // ================================================================
+        // 5. 滚动渐入动画（Intersection Observer）
         // ================================================================
         (function() {
             const observer = new IntersectionObserver((entries) => {
@@ -2400,7 +2910,76 @@
         })();
 
         // ================================================================
-        // 4. 下载弹窗：统一导航、Hero、版本卡片和最终 CTA 的下载入口
+        // 6. 截图预览：点击产品截图放大，滚动时自动关闭
+        // ================================================================
+        (function() {
+            const targets = Array.from(document.querySelectorAll('.showcase-image img'));
+            if (!targets.length) return;
+
+            const lightbox = document.createElement('div');
+            lightbox.className = 'image-lightbox';
+            lightbox.setAttribute('aria-hidden', 'true');
+            lightbox.innerHTML = `
+                <div class="image-lightbox-frame" role="dialog" aria-modal="true" aria-label="截图预览">
+                    <img alt="">
+                    <button class="image-lightbox-close" type="button" aria-label="关闭预览">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(lightbox);
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            const previewImage = lightbox.querySelector('img');
+            const closeButton = lightbox.querySelector('.image-lightbox-close');
+            let activeTrigger = null;
+            let isOpen = false;
+
+            const closeLightbox = () => {
+                if (!isOpen) return;
+                isOpen = false;
+                lightbox.classList.remove('is-open');
+                lightbox.setAttribute('aria-hidden', 'true');
+                activeTrigger?.focus({ preventScroll: true });
+                activeTrigger = null;
+            };
+
+            const openLightbox = (image) => {
+                activeTrigger = image.closest('.showcase-image');
+                previewImage.src = image.currentSrc || image.src;
+                previewImage.alt = image.alt || 'Starcat 截图预览';
+                lightbox.setAttribute('aria-hidden', 'false');
+                lightbox.classList.add('is-open');
+                isOpen = true;
+                closeButton.focus({ preventScroll: true });
+            };
+
+            targets.forEach(image => {
+                const trigger = image.closest('.showcase-image');
+                trigger.setAttribute('role', 'button');
+                trigger.setAttribute('tabindex', '0');
+                trigger.setAttribute('aria-label', image.alt ? `预览 ${image.alt}` : '预览 Starcat 截图');
+                trigger.addEventListener('click', () => openLightbox(image));
+                trigger.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openLightbox(image);
+                    }
+                });
+            });
+
+            lightbox.addEventListener('click', (event) => {
+                if (event.target === lightbox || event.target === previewImage) closeLightbox();
+            });
+            closeButton.addEventListener('click', closeLightbox);
+            window.addEventListener('scroll', closeLightbox, { passive: true });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeLightbox();
+            });
+        })();
+
+        // ================================================================
+        // 6. 下载弹窗：统一导航、Hero、版本卡片和最终 CTA 的下载入口
         // ================================================================
         (function() {
             const modal = document.getElementById('download-modal');
@@ -2442,7 +3021,7 @@
         })();
 
         // ================================================================
-        // 5. 下载信息：从 Sparkle appcast 获取最新版和历史版本
+        // 7. 下载信息：从 Sparkle appcast 获取最新版和历史版本
         // ================================================================
         (function() {
             const fallback = {
@@ -2518,7 +3097,7 @@
         })();
 
         // ================================================================
-        // 6. 初始化 Lucide 图标
+        // 8. 初始化 Lucide 图标
         // ================================================================
         (function() {
             if (typeof lucide !== 'undefined') {
