@@ -38,7 +38,7 @@
 - [x] 补 Runtime 持久化事件单测。
 - [x] 更新 `docs/功能实现总览.md`。
 - [x] 新增验收步骤说明。
-- [ ] 第一轮审查: 文档、checklist、主进度一致性。
+- [x] 第一轮审查: 文档、checklist、主进度一致性。
 - [ ] 第二轮审查: 代码、单测、数据库迁移一致性。
 - [ ] 第三轮审查: UI 行为、验收步骤、结果报告一致性。
 - [ ] 根据审查发现修复问题,每个修复点单独提交。
@@ -46,17 +46,17 @@
 
 ## 4. 验收标准
 
-- [ ] 运行 Agent 后,run / step / trace / artifact 写入本地数据库。
-- [ ] 重新打开 Agent 工作台后,左侧历史列表显示真实 run。
-- [ ] 点击历史 run 后,中栏和右栏恢复该 run 的只读快照。
-- [ ] 新 run 不会覆盖历史 run。
-- [ ] 失败或取消的 run 也可在历史中查看。
-- [ ] 单测覆盖迁移、Repository、Runtime 写入和 ViewModel 恢复。
-- [ ] `docs/功能实现总览.md`、专项 checklist、审查报告、结果报告状态一致。
+- [x] 运行 Agent 后,run / step / trace / artifact 写入本地数据库。
+- [x] 重新打开 Agent 工作台后,左侧历史列表显示真实 run。
+- [x] 点击历史 run 后,中栏和右栏恢复该 run 的只读快照。
+- [x] 新 run 不会覆盖历史 run。
+- [x] 失败或取消的 run 也可在历史中查看。
+- [x] 单测覆盖迁移、Repository、Runtime 写入和 ViewModel 恢复。
+- [x] `docs/功能实现总览.md`、专项 checklist、审查报告、结果报告状态一致。
 
 ## 5. 提交要求
 
-- [ ] 每完成一个小功能 commit 一次。
-- [ ] commit message 使用中文。
-- [ ] 不 push。
-- [ ] 不提交无关工作区改动。
+- [x] 每完成一个小功能 commit 一次。
+- [x] commit message 使用中文。
+- [x] 不 push。
+- [x] 不提交无关工作区改动。
