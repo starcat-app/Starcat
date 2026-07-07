@@ -2048,26 +2048,26 @@ struct RepoAIWindowContentView: View {
                     if hasSummary {
                         contextStatusPill(
                             icon: "sparkles",
-                            label: "ai.assistant.chat.contextStatus.summary",
+                            labelKey: "ai.assistant.chat.contextStatus.summary",
                             tint: .purple
                         )
                     }
                     if hasCode {
                         contextStatusPill(
                             icon: "doc.text.magnifyingglass",
-                            label: "ai.assistant.chat.contextStatus.code",
+                            labelKey: "ai.assistant.chat.contextStatus.code",
                             tint: .blue
                         )
                     }
                     if hasExternal {
-                        contextStatusPill(
+                        dynamicContextStatusPill(
                             icon: "globe",
                             label: externalContextStatusLabel(vm: vm),
                             tint: .green,
                             help: externalContextStatusHelp(vm: vm)
                         )
                     } else if hasExternalUnavailable {
-                        contextStatusPill(
+                        dynamicContextStatusPill(
                             icon: "globe.badge.exclamationmark",
                             label: String.l10n("ai.assistant.chat.contextStatus.externalUnavailable"),
                             tint: .orange,
@@ -2108,13 +2108,13 @@ struct RepoAIWindowContentView: View {
     /// API 边界的维护成本；如果未来还有第 4 个调用方再做一次 surgical 抽提到共享层。
     private func contextStatusPill(
         icon: String,
-        label: LocalizedStringKey,
+        labelKey: LocalizedStringKey,
         tint: Color
     ) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            Text(label)
+            Text(labelKey)
                 .font(interfaceScale.font(.captionSmall, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
         }
@@ -2128,7 +2128,10 @@ struct RepoAIWindowContentView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func contextStatusPill(
+    /// 动态 context pill：label/help 已经由调用方用 `String.l10n` 或 `String(format:)`
+    /// 渲染成最终文案，这里必须用 `Text(verbatim:)`，避免 provider 名称等动态内容被
+    /// SwiftUI 当成本地化 key 再查一次。
+    private func dynamicContextStatusPill(
         icon: String,
         label: String,
         tint: Color,

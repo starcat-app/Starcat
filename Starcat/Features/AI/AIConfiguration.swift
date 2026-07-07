@@ -361,8 +361,8 @@ enum AIDefaultPrompts {
     /// Summary 任务占位符（dong4j 2026-06-14 v4.x 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
     ///
     /// **system 层**：
-    /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
-    ///   `Japanese` 等；驱动正文语言（技术英文专有名词除外）。
+    /// - `{outputLanguage}`：跟 Starcat Display Language 派发为 `Simplified Chinese` /
+    ///   `English` / `Japanese` 等；驱动正文语言（技术英文专有名词除外）。
     ///
     /// **user 层**：
     /// - `{outputLanguage}`：复用同一个值；驱动章节标题语言（不再是硬编码中文 `## 一句话总结`）。
@@ -459,8 +459,8 @@ enum AIDefaultPrompts {
     /// Tags 任务私有占位符（dong4j 2026-06-14 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
     ///
     /// **system 层**：
-    /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
-    ///   `Japanese` 等；驱动 Tag Style Rules 分支选择 + reason 字段语言。
+    /// - `{outputLanguage}`：跟 Starcat Display Language 派发为 `Simplified Chinese` /
+    ///   `English` / `Japanese` 等；驱动 Tag Style Rules 分支选择 + reason 字段语言。
     ///
     /// **user 层**：
     /// - `{metadata}`：repo 元数据（fullName / description / language / topics 等）；
@@ -654,8 +654,8 @@ enum AIDefaultPrompts {
     /// 2026-06-15 v4.y 新增 `{starcatResources}` 注入 Wiki 镜像 + 本地 CodeFlow 调用图链接）：
     ///
     /// **system 层 9 占位符**：
-    /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
-    ///   `Japanese` 等；驱动正文语言 + 兜底句"无法从上下文确认"自然翻译；
+    /// - `{outputLanguage}`：跟 Starcat Display Language 派发为 `Simplified Chinese` /
+    ///   `English` / `Japanese` 等；驱动正文语言 + 兜底句"无法从上下文确认"自然翻译；
     /// - `{runtimeContext}`：当前运行环境（UTC 时间 / 周几 / 用户时区 / Starcat 版本号），
     ///   由 `RuntimeContextProvider.snapshot()` 生成。让 AI 能回答"现在几点 / 今天周几 /
     ///   你这是什么版本"等元问题。**注入时机**：每次组装 system prompt 时实时生成

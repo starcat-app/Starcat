@@ -82,6 +82,36 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         case .simplifiedChinese: return Locale(identifier: "zh-Hans")
         }
     }
+
+    /// 发给 LLM 的输出语言名。
+    ///
+    /// 这里刻意跟随 Starcat 的 Display Language，而不是 `Locale.current`。`Locale.current`
+    /// 代表系统/进程 locale；用户在设置页切换 App 显示语言时，SwiftUI 只会更新
+    /// `\.locale` environment，不会改变进程 locale。AI 摘要 / 标签 / 对话必须跟用户在
+    /// Starcat 内看到的界面语言一致，否则会出现 UI 已是 English 但 AI 仍输出中文。
+    var aiOutputLanguageDescriptor: String {
+        Self.aiOutputLanguageDescriptor(for: effectiveLocale)
+    }
+
+    /// 把 Locale 映射成 LLM 更稳定理解的英文语言名。
+    static func aiOutputLanguageDescriptor(for locale: Locale) -> String {
+        let lang = locale.language.languageCode?.identifier ?? "en"
+        switch lang {
+        case "zh":
+            let region = locale.language.region?.identifier
+            return (region == "TW" || region == "HK" || region == "MO")
+                ? "Traditional Chinese"
+                : "Simplified Chinese"
+        case "ja": return "Japanese"
+        case "ko": return "Korean"
+        case "fr": return "French"
+        case "de": return "German"
+        case "es": return "Spanish"
+        case "ru": return "Russian"
+        case "pt": return "Portuguese"
+        default:   return "English"
+        }
+    }
 }
 
 /// 应用语言选择的运行时状态。

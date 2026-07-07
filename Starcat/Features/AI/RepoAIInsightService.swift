@@ -756,29 +756,15 @@ final class RepoAIInsightService {
         return try Self.decodeTagSuggestions(json: response.content)
     }
 
-    /// `{outputLanguage}` 占位符的 Locale 派发。
+    /// `{outputLanguage}` 占位符的 Display Language 派发。
     ///
     /// 派发到 LLM 一眼能识别的英文语言名（`Simplified Chinese` / `English` / 等），
-    /// 避免不同 Provider 对 BCP-47 标识（`zh-Hans`）解读不一致。
-    /// Tags 与 Summary 任务都用此 helper 提供 `{outputLanguage}` 值（2026-06-14 v4
-    /// 起统一）；将来其它需要按系统语言切换输出的任务也复用本 helper。
-    nonisolated static func outputLanguageDescriptor() -> String {
-        let lang = Locale.current.language.languageCode?.identifier ?? "en"
-        switch lang {
-        case "zh":
-            let region = Locale.current.language.region?.identifier
-            return (region == "TW" || region == "HK" || region == "MO")
-                ? "Traditional Chinese"
-                : "Simplified Chinese"
-        case "ja": return "Japanese"
-        case "ko": return "Korean"
-        case "fr": return "French"
-        case "de": return "German"
-        case "es": return "Spanish"
-        case "ru": return "Russian"
-        case "pt": return "Portuguese"
-        default:   return "English"
-        }
+    /// 避免不同 Provider 对 BCP-47 标识（`zh-Hans`）解读不一致。输出语言必须跟
+    /// `LocaleStore` 的 Display Language 一致，而不能读 `Locale.current`：用户在
+    /// Starcat 设置页切语言只会更新 SwiftUI environment，不会改变进程级 locale。
+    /// Tags / Summary / Chat 任务都用此 helper 提供 `{outputLanguage}` 值。
+    static func outputLanguageDescriptor() -> String {
+        LocaleStore.shared.selection.aiOutputLanguageDescriptor
     }
 
     private func makeClient(
@@ -807,16 +793,22 @@ final class RepoAIInsightService {
         )), model)
     }
 
-    private func cacheModelKey() -> String {
+    /// AI 摘要缓存 key。
+    ///
+    /// 语言维度必须进入 key：同一 repo + 同一模型在 English / 简体中文下的摘要正文与标签
+    /// reason 都不同，不能共用 `ai_summaries` 记录。保持 internal 是为了让单测能直接锁住
+    /// 这个缓存边界，业务调用仍只通过 cached/generate API 读写。
+    func cacheModelKey() -> String {
         let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
         let tagsModel = settings.aiTagsTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
+        let outputLanguage = Self.outputLanguageDescriptor()
         let external: String = {
             guard settings.externalContextEnabled else { return "off" }
             let privacy = settings.externalSearchAllowPrivateRepos ? "private" : "public"
             let aggregate = settings.aggregateExternalContextSearchEnabled && settings.isProUser ? "aggregate" : "single"
             return "\(aggregate)-\(settings.externalContextProviderSelection.rawValue)-\(settings.externalSearchDefaultProvider.rawValue)-\(privacy)"
         }()
-        return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
+        return "lang:\(outputLanguage)|summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
 
     /// 为标签生成构造双层 hints：repo 自身已绑定标签（强信号） + 用户标签库其它高频标签（弱信号）。

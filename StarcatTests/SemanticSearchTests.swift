@@ -209,4 +209,47 @@ struct RepoAIInsightTests {
         #expect(tags.count == 1)
         #expect(tags[0].name == "local-ai")
     }
+
+    @MainActor
+    @Test("AI 输出语言跟随 Starcat Display Language")
+    func outputLanguageFollowsDisplayLanguage() {
+        let oldSelection = LocaleStore.shared.selection
+        defer { LocaleStore.shared.selection = oldSelection }
+
+        LocaleStore.shared.selection = .english
+        #expect(RepoAIInsightService.outputLanguageDescriptor() == "English")
+
+        LocaleStore.shared.selection = .simplifiedChinese
+        #expect(RepoAIInsightService.outputLanguageDescriptor() == "Simplified Chinese")
+    }
+
+    @MainActor
+    @Test("AI 摘要缓存 key 按输出语言隔离")
+    func cacheModelKeyIncludesOutputLanguage() throws {
+        let oldSelection = LocaleStore.shared.selection
+        defer { LocaleStore.shared.selection = oldSelection }
+
+        let suiteName = "test.starcat.ai-cache-language.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let keychain = InMemoryKeychain()
+        let database = try InMemoryDatabaseManager()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+        let service = RepoAIInsightService(
+            summaryRepository: GRDBAISummaryRepository(database: database),
+            readmeRepository: ReadmeRepository(database: database),
+            settings: settings,
+            keychain: keychain
+        )
+
+        LocaleStore.shared.selection = .english
+        let englishKey = service.cacheModelKey()
+
+        LocaleStore.shared.selection = .simplifiedChinese
+        let chineseKey = service.cacheModelKey()
+
+        #expect(englishKey.contains("lang:English|"))
+        #expect(chineseKey.contains("lang:Simplified Chinese|"))
+        #expect(englishKey != chineseKey)
+    }
 }

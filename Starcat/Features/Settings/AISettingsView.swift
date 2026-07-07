@@ -984,7 +984,7 @@ struct AISettingsTab: View {
                 VStack(spacing: 14) {
                     HStack(spacing: 12) {
                         Picker("settings.ai.prompt.task.pickerLabel", selection: $promptTask) {
-                            ForEach([AIModelTask.summary, .tags, .embedding, .translation]) { task in
+                            ForEach([AIModelTask.summary, .tags, .chat, .embedding, .translation]) { task in
                                 Text(task.displayName).tag(task)
                             }
                         }
@@ -1866,9 +1866,8 @@ struct AISettingsTab: View {
             case .chat:
                 config.prompt = AIDefaultPrompts.chat
             case .translation:
-                // README 翻译的 Prompt 由 ReadmeTranslationService 按目标语言动态拼装，
-                // 不读 task.prompt；这里仅为 switch 穷举性兜底，UI 已经把 translation
-                // 从 Prompt 编辑区排除（见 promptSection）。
+                // README 翻译的 Prompt 由 ReadmeTranslationService 按目标语言动态渲染
+                // `{targetLanguage}` / `{readmeHTML}`，但模板本身仍暴露在 Prompt 编辑区。
                 config.prompt = AIDefaultPrompts.translation
             }
         }
