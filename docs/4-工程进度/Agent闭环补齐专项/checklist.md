@@ -29,7 +29,7 @@
 
 - [x] 新增 Agent 闭环补齐专项 checklist。
 - [x] 修复既有专项文档状态残留。
-- [ ] 抽象 Agent execution profile,让 plan / step / artifact title 不再硬编码 Weekly。
+- [x] 抽象 Agent execution profile,让 plan / step / artifact title 不再硬编码 Weekly。
 - [ ] 新增 Repo Insight Agent 定义并启用。
 - [ ] 新增 Repo Insight 只读工具链。
 - [ ] Runtime 支持 Repo Insight 生成 Markdown artifact。

@@ -11,11 +11,33 @@
 import Foundation
 
 protocol AgentTextGenerating: Sendable {
+    func generateAgentMarkdown(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext,
+        draftMarkdown: String
+    ) async throws -> String
+
     func generateWeeklyReport(
         prompt: String,
         context: AgentRunContext,
         draftMarkdown: String
     ) async throws -> String
+}
+
+extension AgentTextGenerating {
+    func generateAgentMarkdown(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext,
+        draftMarkdown: String
+    ) async throws -> String {
+        try await generateWeeklyReport(
+            prompt: prompt,
+            context: context,
+            draftMarkdown: draftMarkdown
+        )
+    }
 }
 
 enum AgentTextGenerationError: Error, LocalizedError, Equatable {
@@ -58,14 +80,16 @@ struct OpenAIAgentTextGenerator: AgentTextGenerating {
         self.parameters = parameters
     }
 
-    func generateWeeklyReport(
+    func generateAgentMarkdown(
+        definition: AgentDefinition,
         prompt: String,
         context: AgentRunContext,
         draftMarkdown: String
     ) async throws -> String {
         let request = AIChatRequest(
-            systemPrompt: Self.systemPrompt,
+            systemPrompt: Self.systemPrompt(for: definition),
             userPrompt: Self.userPrompt(
+                definition: definition,
                 prompt: prompt,
                 context: context,
                 draftMarkdown: draftMarkdown
@@ -78,14 +102,40 @@ struct OpenAIAgentTextGenerator: AgentTextGenerating {
         return response.content
     }
 
-    private static let systemPrompt = """
-    You are Starcat's built-in GitHub Weekly Report Agent.
-    Generate a concise, auditable Markdown technical weekly report from the provided local Starcat repository snapshot.
-    Do not claim that you fetched live GitHub data. Do not invent repositories. Do not include destructive actions.
-    Output Simplified Chinese unless the user explicitly asks for another language.
-    """
+    func generateWeeklyReport(
+        prompt: String,
+        context: AgentRunContext,
+        draftMarkdown: String
+    ) async throws -> String {
+        try await generateAgentMarkdown(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: prompt,
+            context: context,
+            draftMarkdown: draftMarkdown
+        )
+    }
+
+    private static func systemPrompt(for definition: AgentDefinition) -> String {
+        switch definition.id {
+        case "repo-insight":
+            return """
+            You are Starcat's built-in Repo Insight Agent.
+            Generate a concise, evidence-oriented Markdown repository analysis from the provided local Starcat repository snapshot.
+            Do not claim that you fetched live GitHub data. Do not invent repositories. Do not include destructive actions.
+            Output Simplified Chinese unless the user explicitly asks for another language.
+            """
+        default:
+            return """
+            You are Starcat's built-in GitHub Weekly Report Agent.
+            Generate a concise, auditable Markdown technical weekly report from the provided local Starcat repository snapshot.
+            Do not claim that you fetched live GitHub data. Do not invent repositories. Do not include destructive actions.
+            Output Simplified Chinese unless the user explicitly asks for another language.
+            """
+        }
+    }
 
     private static func userPrompt(
+        definition: AgentDefinition,
         prompt: String,
         context: AgentRunContext,
         draftMarkdown: String
@@ -103,7 +153,7 @@ struct OpenAIAgentTextGenerator: AgentTextGenerating {
         本地工具生成的结构草稿:
         \(draftMarkdown)
 
-        请基于以上真实快照重写为最终 Markdown 周刊。保留“数据来源”和“只读约束”说明。
+        请基于以上真实快照重写为最终 Markdown 报告。Agent 类型：\(definition.title)。保留“数据来源”和“只读约束”说明。
         """
     }
 

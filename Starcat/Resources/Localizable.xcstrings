@@ -46005,6 +46005,38 @@
           }
         }
       }
+    },
+    "agent.runtime.plan.genericGoal.detailFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run %@ with the selected read-only tool chain."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用选定的只读工具链执行 %@。"
+          }
+        }
+      }
+    },
+    "agent.runtime.plan.genericArtifact.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output a reviewable Markdown artifact and keep all tool traces auditable."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出可复查 Markdown artifact，并保留所有工具 trace 可审计。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

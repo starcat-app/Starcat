@@ -19,6 +19,98 @@ protocol AgentRuntime: Sendable {
     ) -> AsyncStream<AgentRunEvent>
 }
 
+/// Runtime 的轻量执行配置。
+///
+/// 这里先把“计划/步骤/产物标题”从 `DefaultAgentRuntime.run` 中抽离出来。它不是完整
+/// planner,只负责把不同内置 Agent 的固定执行骨架集中管理;后续接模型 tool-calling
+/// 或用户确认写操作时,可以继续让 Runtime 事件流保持稳定。
+private struct AgentExecutionProfile {
+    let plan: [AgentPlanStep]
+    let steps: [AgentRunStep]
+    let artifactTitle: String
+
+    init(definition: AgentDefinition, context: AgentRunContext) {
+        switch definition.id {
+        case BuiltInAgents.githubWeeklyReport.id:
+            plan = Self.weeklyPlan(context: context)
+            steps = Self.weeklySteps()
+            artifactTitle = String.l10n("agent.runtime.artifact.weeklyReport.title")
+        default:
+            plan = Self.genericPlan(definition: definition, context: context)
+            steps = Self.genericSteps(definition: definition)
+            artifactTitle = definition.title
+        }
+    }
+
+    private static func weeklyPlan(context: AgentRunContext) -> [AgentPlanStep] {
+        [
+            AgentPlanStep(
+                title: String.l10n("agent.runtime.plan.goal.title"),
+                detail: String.l10n("agent.runtime.plan.goal.detail")
+            ),
+            AgentPlanStep(
+                title: String.l10n("agent.runtime.plan.context.title"),
+                detail: String(format: String.l10n("agent.runtime.plan.context.detailFormat"), context.repos.count)
+            ),
+            AgentPlanStep(
+                title: String.l10n("agent.runtime.plan.artifact.title"),
+                detail: String.l10n("agent.runtime.plan.artifact.detail")
+            )
+        ]
+    }
+
+    private static func weeklySteps() -> [AgentRunStep] {
+        [
+            AgentRunStep(
+                title: String.l10n("agent.runtime.step.parseGoal.title"),
+                detail: String.l10n("agent.runtime.step.parseGoal.detail")
+            ),
+            AgentRunStep(
+                title: String.l10n("agent.runtime.step.resolveRepos.title"),
+                detail: String.l10n("agent.runtime.step.resolveRepos.detail")
+            ),
+            AgentRunStep(
+                title: String.l10n("agent.runtime.step.externalSearch.title"),
+                detail: String.l10n("agent.runtime.step.externalSearch.detail")
+            ),
+            AgentRunStep(
+                title: String.l10n("agent.runtime.step.clusterTopics.title"),
+                detail: String.l10n("agent.runtime.step.clusterTopics.detail")
+            ),
+            AgentRunStep(
+                title: String.l10n("agent.runtime.step.buildDraft.title"),
+                detail: String.l10n("agent.runtime.step.buildDraft.detail")
+            )
+        ]
+    }
+
+    private static func genericPlan(definition: AgentDefinition, context: AgentRunContext) -> [AgentPlanStep] {
+        [
+            AgentPlanStep(
+                title: String.l10n("agent.runtime.plan.goal.title"),
+                detail: String(format: String.l10n("agent.runtime.plan.genericGoal.detailFormat"), definition.title)
+            ),
+            AgentPlanStep(
+                title: String.l10n("agent.runtime.plan.context.title"),
+                detail: String(format: String.l10n("agent.runtime.plan.context.detailFormat"), context.repos.count)
+            ),
+            AgentPlanStep(
+                title: String.l10n("agent.runtime.plan.artifact.title"),
+                detail: String.l10n("agent.runtime.plan.genericArtifact.detail")
+            )
+        ]
+    }
+
+    private static func genericSteps(definition: AgentDefinition) -> [AgentRunStep] {
+        definition.toolIDs.map { toolID in
+            AgentRunStep(
+                title: toolID,
+                detail: String(format: String.l10n("agent.runtime.step.genericTool.detailFormat"), toolID)
+            )
+        }
+    }
+}
+
 /// 默认 Agent 运行时。
 struct DefaultAgentRuntime: AgentRuntime {
 
@@ -56,8 +148,9 @@ struct DefaultAgentRuntime: AgentRuntime {
                 let terminationState = AgentRuntimeTerminationState()
                 let task = Task {
                     var runLog: [String] = []
-                    let plan = Self.makeWeeklyReportPlan(context: context)
-                    let steps = Self.makeWeeklyReportSteps()
+                    let executionProfile = AgentExecutionProfile(definition: definition, context: context)
+                    let plan = executionProfile.plan
+                    let steps = executionProfile.steps
                     var traceIndex = 0
                     var toolOutputIndex = 0
                     var artifactIndex = 0
@@ -201,7 +294,8 @@ struct DefaultAgentRuntime: AgentRuntime {
 
                 let markdown: String
                 do {
-                    let generated = try await textGenerator.generateWeeklyReport(
+                    let generated = try await textGenerator.generateAgentMarkdown(
+                        definition: definition,
                         prompt: prompt,
                         context: context,
                         draftMarkdown: draftMarkdown
@@ -247,7 +341,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 }
                 let markdownArtifact = AgentArtifact(
                     type: .markdown,
-                    title: String.l10n("agent.runtime.artifact.weeklyReport.title"),
+                    title: executionProfile.artifactTitle,
                     content: markdown
                 )
                 let artifactInput = draftToolOutput?.input ?? "artifact.buildMarkdown"
@@ -308,48 +402,6 @@ struct DefaultAgentRuntime: AgentRuntime {
         } catch {
             preconditionFailure("Default Agent tool registry is invalid: \(error)")
         }
-    }
-
-    private static func makeWeeklyReportPlan(context: AgentRunContext) -> [AgentPlanStep] {
-        [
-            AgentPlanStep(
-                title: String.l10n("agent.runtime.plan.goal.title"),
-                detail: String.l10n("agent.runtime.plan.goal.detail")
-            ),
-            AgentPlanStep(
-                title: String.l10n("agent.runtime.plan.context.title"),
-                detail: String(format: String.l10n("agent.runtime.plan.context.detailFormat"), context.repos.count)
-            ),
-            AgentPlanStep(
-                title: String.l10n("agent.runtime.plan.artifact.title"),
-                detail: String.l10n("agent.runtime.plan.artifact.detail")
-            )
-        ]
-    }
-
-    private static func makeWeeklyReportSteps() -> [AgentRunStep] {
-        [
-            AgentRunStep(
-                title: String.l10n("agent.runtime.step.parseGoal.title"),
-                detail: String.l10n("agent.runtime.step.parseGoal.detail")
-            ),
-            AgentRunStep(
-                title: String.l10n("agent.runtime.step.resolveRepos.title"),
-                detail: String.l10n("agent.runtime.step.resolveRepos.detail")
-            ),
-            AgentRunStep(
-                title: String.l10n("agent.runtime.step.externalSearch.title"),
-                detail: String.l10n("agent.runtime.step.externalSearch.detail")
-            ),
-            AgentRunStep(
-                title: String.l10n("agent.runtime.step.clusterTopics.title"),
-                detail: String.l10n("agent.runtime.step.clusterTopics.detail")
-            ),
-            AgentRunStep(
-                title: String.l10n("agent.runtime.step.buildDraft.title"),
-                detail: String.l10n("agent.runtime.step.buildDraft.detail")
-            )
-        ]
     }
 
     private static func makeRunLog(_ lines: [String], context: AgentRunContext) -> String {
