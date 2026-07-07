@@ -26,6 +26,7 @@ struct DefaultAgentRuntime: AgentRuntime {
     private let stepCompletionDelayNanoseconds: UInt64
     private let textGenerator: any AgentTextGenerating
     private let toolRegistry: AgentToolRegistry
+    private let runRepository: (any AgentRunRepositoryProtocol)?
 
     /// 创建 P0 默认运行时。
     ///
@@ -35,12 +36,14 @@ struct DefaultAgentRuntime: AgentRuntime {
         stepStartDelayNanoseconds: UInt64 = 280_000_000,
         stepCompletionDelayNanoseconds: UInt64 = 420_000_000,
         textGenerator: any AgentTextGenerating = DisabledAgentTextGenerator(),
-        toolRegistry: AgentToolRegistry = Self.makeDefaultToolRegistry()
+        toolRegistry: AgentToolRegistry = Self.makeDefaultToolRegistry(),
+        runRepository: (any AgentRunRepositoryProtocol)? = nil
     ) {
         self.stepStartDelayNanoseconds = stepStartDelayNanoseconds
         self.stepCompletionDelayNanoseconds = stepCompletionDelayNanoseconds
         self.textGenerator = textGenerator
         self.toolRegistry = toolRegistry
+        self.runRepository = runRepository
     }
 
     func run(
@@ -53,11 +56,28 @@ struct DefaultAgentRuntime: AgentRuntime {
                 var runLog: [String] = []
                 let plan = Self.makeWeeklyReportPlan(context: context)
                 let steps = Self.makeWeeklyReportSteps()
+                let runID = UUID()
+                var traceIndex = 0
+                var artifactIndex = 0
+                await Self.persistCreateRun(
+                    repository: runRepository,
+                    runID: runID,
+                    definition: definition,
+                    prompt: prompt,
+                    context: context
+                )
                 let tools: [any AgentTool]
                 do {
                     tools = try toolRegistry.tools(for: definition.toolIDs)
                 } catch {
                     let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    await Self.persistRunStatus(
+                        repository: runRepository,
+                        runID: runID,
+                        status: .failed,
+                        errorMessage: message,
+                        finishedAt: Date()
+                    )
                     continuation.yield(.runFailed(message))
                     continuation.finish()
                     return
@@ -68,6 +88,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 var draftToolOutput: AgentToolOutput?
 
                 continuation.yield(.runStarted(title: definition.title))
+                await Self.persistRunStatus(repository: runRepository, runID: runID, status: .running)
                 runLog.append("Run started: \(definition.title)")
 
                 continuation.yield(.planCreated(plan))
@@ -80,6 +101,12 @@ struct DefaultAgentRuntime: AgentRuntime {
                     )
                     try? await Task.sleep(nanoseconds: stepStartDelayNanoseconds)
                     guard !Task.isCancelled else {
+                        await Self.persistRunStatus(
+                            repository: runRepository,
+                            runID: runID,
+                            status: .cancelled,
+                            finishedAt: Date()
+                        )
                         continuation.yield(.runCancelled)
                         continuation.finish()
                         return
@@ -89,6 +116,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     running.status = .running
                     continuation.yield(.stepStarted(id: running.id))
                     continuation.yield(.stepUpdated(running))
+                    await Self.persistStep(repository: runRepository, step: running, runID: runID, index: index)
                     runLog.append("Step started: \(running.title)")
 
                     let toolResult = await tool.execute(AgentToolInput(
@@ -114,6 +142,12 @@ struct DefaultAgentRuntime: AgentRuntime {
 
                     try? await Task.sleep(nanoseconds: stepCompletionDelayNanoseconds)
                     guard !Task.isCancelled else {
+                        await Self.persistRunStatus(
+                            repository: runRepository,
+                            runID: runID,
+                            status: .cancelled,
+                            finishedAt: Date()
+                        )
                         continuation.yield(.runCancelled)
                         continuation.finish()
                         return
@@ -123,13 +157,23 @@ struct DefaultAgentRuntime: AgentRuntime {
                     completed.status = toolResult.status.stepStatus
                     completed.detail = toolResult.output.summary
                     continuation.yield(.stepUpdated(completed))
+                    await Self.persistStep(repository: runRepository, step: completed, runID: runID, index: index)
                     runLog.append("Step completed: \(completed.title)")
 
                     continuation.yield(.toolOutput(toolResult.output))
                     continuation.yield(.trace(toolResult.trace))
+                    await Self.persistTrace(repository: runRepository, trace: toolResult.trace, runID: runID, index: traceIndex)
+                    traceIndex += 1
                     runLog.append("Tool output: \(toolResult.output.toolName) - \(toolResult.output.summary)")
 
                     if toolResult.status == .failed, Self.isBlockingFailure(tool) {
+                        await Self.persistRunStatus(
+                            repository: runRepository,
+                            runID: runID,
+                            status: .failed,
+                            errorMessage: toolResult.output.detail,
+                            finishedAt: Date()
+                        )
                         continuation.yield(.runFailed(toolResult.output.detail))
                         continuation.finish()
                         return
@@ -145,18 +189,21 @@ struct DefaultAgentRuntime: AgentRuntime {
                     )
                     markdown = generated
                     continuation.yield(.assistantDelta(generated))
-                    continuation.yield(.trace(AgentTraceSpan(
+                    let llmTrace = AgentTraceSpan(
                         kind: "LLM",
                         title: "AI 生成周刊正文",
                         summary: "\(generated.count) chars",
                         input: String(draftMarkdown.prefix(1_200)),
                         output: String(generated.prefix(1_200)),
                         log: "model_output=markdown"
-                    )))
+                    )
+                    continuation.yield(.trace(llmTrace))
+                    await Self.persistTrace(repository: runRepository, trace: llmTrace, runID: runID, index: traceIndex)
+                    traceIndex += 1
                     runLog.append("LLM generation completed: \(generated.count) chars")
                 } catch {
                     let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                    continuation.yield(.trace(AgentTraceSpan(
+                    let failedTrace = AgentTraceSpan(
                         kind: "LLM",
                         title: "AI 生成周刊正文",
                         summary: "failed",
@@ -164,7 +211,16 @@ struct DefaultAgentRuntime: AgentRuntime {
                         output: message,
                         log: "model_output=failed",
                         status: .failed
-                    )))
+                    )
+                    continuation.yield(.trace(failedTrace))
+                    await Self.persistTrace(repository: runRepository, trace: failedTrace, runID: runID, index: traceIndex)
+                    await Self.persistRunStatus(
+                        repository: runRepository,
+                        runID: runID,
+                        status: .failed,
+                        errorMessage: message,
+                        finishedAt: Date()
+                    )
                     continuation.yield(.runFailed(message))
                     continuation.finish()
                     return
@@ -177,7 +233,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 let artifactInput = draftToolOutput?.input ?? "artifact.buildMarkdown"
                 let artifactOutput = draftToolOutput?.output ?? String(markdown.prefix(1_200))
                 let artifactLog = draftToolOutput?.log ?? "Created Markdown artifact from generated output."
-                continuation.yield(.trace(AgentTraceSpan(
+                let artifactTrace = AgentTraceSpan(
                     kind: "Artifact",
                     title: markdownArtifact.title,
                     summary: markdownArtifact.type.title,
@@ -186,13 +242,26 @@ struct DefaultAgentRuntime: AgentRuntime {
                     log: artifactLog,
                     relatedToolOutputID: draftToolOutput?.id,
                     relatedArtifactID: markdownArtifact.id
-                )))
+                )
+                continuation.yield(.trace(artifactTrace))
+                await Self.persistTrace(repository: runRepository, trace: artifactTrace, runID: runID, index: traceIndex)
                 continuation.yield(.artifactCreated(markdownArtifact))
-                continuation.yield(.artifactCreated(AgentArtifact(
+                await Self.persistArtifact(repository: runRepository, artifact: markdownArtifact, runID: runID, index: artifactIndex)
+                artifactIndex += 1
+                let logArtifact = AgentArtifact(
                     type: .log,
                     title: "Agent Run Log",
                     content: Self.makeRunLog(runLog, context: context)
-                )))
+                )
+                continuation.yield(.artifactCreated(logArtifact))
+                await Self.persistArtifact(repository: runRepository, artifact: logArtifact, runID: runID, index: artifactIndex)
+                await Self.persistRunStatus(
+                    repository: runRepository,
+                    runID: runID,
+                    status: .completed,
+                    assistantOutput: markdown,
+                    finishedAt: Date()
+                )
                 continuation.yield(.runCompleted)
                 continuation.finish()
             }
@@ -269,5 +338,85 @@ struct DefaultAgentRuntime: AgentRuntime {
         // External Search 只是补充来源,不能因为 provider/API 暂时失败阻断本地周刊生成。
         // 核心工具仍保持 fail-fast,否则 artifact 可能基于缺失的本地上下文生成。
         tool.id != "external.search"
+    }
+
+    private static func persistCreateRun(
+        repository: (any AgentRunRepositoryProtocol)?,
+        runID: UUID,
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) async {
+        do {
+            _ = try await repository?.createRun(
+                id: runID,
+                definition: definition,
+                prompt: prompt,
+                context: context,
+                createdAt: Date()
+            )
+        } catch {
+            AppLog.database.warning("Agent run persistence create failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func persistRunStatus(
+        repository: (any AgentRunRepositoryProtocol)?,
+        runID: UUID,
+        status: AgentRunStatus,
+        assistantOutput: String? = nil,
+        errorMessage: String? = nil,
+        finishedAt: Date? = nil
+    ) async {
+        do {
+            try await repository?.updateRunStatus(
+                runID: runID,
+                status: status,
+                assistantOutput: assistantOutput,
+                errorMessage: errorMessage,
+                finishedAt: finishedAt
+            )
+        } catch {
+            AppLog.database.warning("Agent run persistence status failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func persistStep(
+        repository: (any AgentRunRepositoryProtocol)?,
+        step: AgentRunStep,
+        runID: UUID,
+        index: Int
+    ) async {
+        do {
+            try await repository?.upsertStep(step, runID: runID, index: index, updatedAt: Date())
+        } catch {
+            AppLog.database.warning("Agent run persistence step failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func persistTrace(
+        repository: (any AgentRunRepositoryProtocol)?,
+        trace: AgentTraceSpan,
+        runID: UUID,
+        index: Int
+    ) async {
+        do {
+            try await repository?.appendTrace(trace, runID: runID, index: index, createdAt: Date())
+        } catch {
+            AppLog.database.warning("Agent run persistence trace failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func persistArtifact(
+        repository: (any AgentRunRepositoryProtocol)?,
+        artifact: AgentArtifact,
+        runID: UUID,
+        index: Int
+    ) async {
+        do {
+            try await repository?.appendArtifact(artifact, runID: runID, index: index)
+        } catch {
+            AppLog.database.warning("Agent run persistence artifact failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

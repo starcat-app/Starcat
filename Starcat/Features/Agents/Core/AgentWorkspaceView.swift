@@ -42,7 +42,8 @@ struct AgentWorkspaceView: View {
             ))
             viewModel.configureRuntime(DefaultAgentRuntime(
                 textGenerator: AgentTextGeneratorFactory.make(settings: dependencies.settings),
-                toolRegistry: toolRegistry ?? DefaultAgentRuntime.makeDefaultToolRegistry()
+                toolRegistry: toolRegistry ?? DefaultAgentRuntime.makeDefaultToolRegistry(),
+                runRepository: dependencies.agentRunRepository
             ))
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)

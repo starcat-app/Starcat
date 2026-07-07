@@ -37,6 +37,8 @@ final class AppDependencies {
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
+    /// Agent run 历史记录仓储。Runtime 写入,Agent 工作台左侧历史读取。
+    let agentRunRepository: any AgentRunRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
     /// 匿名遥测协调器。业务层只依赖本对象，不直接接触 Aptabase / MetricKit。
@@ -493,6 +495,7 @@ final class AppDependencies {
         // D-01：构造时用具体类型 GRDBRepoRepository，字段类型是协议 any RepoRepositoryProtocol
         let repo = GRDBRepoRepository(database: db)
         self.repoRepository = repo
+        self.agentRunRepository = GRDBAgentRunRepository(database: db)
         let settings = AppSettings.shared
         self.settings = settings
         let telemetry = TelemetryManager(settings: settings)

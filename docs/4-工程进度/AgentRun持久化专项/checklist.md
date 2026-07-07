@@ -29,13 +29,13 @@
 - [x] 设计 `AgentRunRecord` / `AgentRunStepRecord` / `AgentTraceRecord` / `AgentArtifactRecord`。
 - [x] 新增数据库迁移,创建 agent run 相关表与索引。
 - [x] 新增 `AgentRunRepository` 协议和 GRDB 实现。
-- [ ] Runtime 事件写入 `AgentRunRepository`。
+- [x] Runtime 事件写入 `AgentRunRepository`。
 - [ ] ViewModel 加载真实历史 run 列表。
 - [ ] 点击历史 run 只读恢复 run 快照。
 - [ ] UI 清理: 历史列表无数据时显示真实空态。
 - [x] 补 Repository 单测。
 - [ ] 补 ViewModel 历史加载 / 恢复单测。
-- [ ] 补 Runtime 持久化事件单测。
+- [x] 补 Runtime 持久化事件单测。
 - [ ] 更新 `docs/功能实现总览.md`。
 - [ ] 新增验收步骤说明。
 - [ ] 第一轮审查: 文档、checklist、主进度一致性。

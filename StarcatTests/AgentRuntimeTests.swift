@@ -283,6 +283,43 @@ struct AgentRuntimeTests {
         #expect(markdownArtifact?.content.contains("groue/GRDB.swift") == true)
         #expect(didComplete)
     }
+
+    @Test("Runtime 注入 repository 时持久化 run 快照")
+    func runtimePersistsRunSnapshotWhenRepositoryProvided() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0,
+            textGenerator: EchoDraftAgentTextGenerator(),
+            runRepository: repository
+        )
+
+        let stream = runtime.run(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成 Swift 周刊",
+            context: AgentRunContext(
+                sourceDescription: "Unit Test",
+                repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+            )
+        )
+
+        for await _ in stream {}
+
+        let recent = try await repository.recentRuns(limit: 1)
+        let runID = try #require(UUID(uuidString: recent.first?.id ?? ""))
+        let snapshot = try await repository.snapshot(runID: runID)
+
+        #expect(snapshot?.run.status == AgentRunStatus.completed.rawValue)
+        #expect(snapshot?.run.userPrompt == "生成 Swift 周刊")
+        #expect(snapshot?.steps.isEmpty == false)
+        #expect(snapshot?.traces.map(\.title).contains("external.search") == true)
+        #expect(snapshot?.traces.last?.kind == "Artifact")
+        #expect(snapshot?.artifacts.map(\.type) == [
+            AgentArtifactType.markdown.rawValue,
+            AgentArtifactType.log.rawValue
+        ])
+    }
 }
 
 private struct StaticAgentTextGenerator: AgentTextGenerating {
