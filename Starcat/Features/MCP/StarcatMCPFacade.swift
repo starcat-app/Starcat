@@ -243,7 +243,7 @@ enum StarcatMCPError: Error, LocalizedError, Equatable {
         case .requiresPro:
             return "Starcat MCP Service requires Starcat Pro."
         case .unauthorized:
-            return "Missing or invalid MCP Bearer token."
+            return "Missing or invalid Starcat Local API Key."
         case .invalidArguments(let message), .notFound(let message):
             return message
         case .privateNotesDisabled:

@@ -35,8 +35,9 @@ import SwiftUI
 //   2. 未识别的 object 字符串直接忽略，不 crash；
 //   3. 名字加 `starcat.` 前缀防止与系统 / 三方框架冲突。
 extension Notification.Name {
-/// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
-    /// `"pro"` / `"ai"` / `"services"` / `"integrations"` / `"diagnostics"`。
+    /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
+    /// `"pro"` / `"ai"` / `"services"` / `"integrations"` /
+    /// `"integrations.localAPIKey"` / `"diagnostics"`。
     static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
 }
 
@@ -141,7 +142,7 @@ struct SettingsView: View {
             case "ai":           selectedTab = .ai
             case "mcp":          selectedTab = .mcp
             case "services":     selectedTab = .services
-            case "integrations": selectedTab = .integrations
+            case "integrations", "integrations.localAPIKey": selectedTab = .integrations
             case "storage":      selectedTab = .storage
             case "diagnostics":  selectedTab = .diagnostics
             default: break

@@ -6,7 +6,7 @@
 //
 //  生命周期由 Settings 与 AppDependencies 驱动：
 //  - 用户开启后，只在 Pro 权益有效时监听 `127.0.0.1:{port}/mcp`；
-//  - Bearer token 存在本地加密凭据文件，设置页只展示给用户复制；
+//  - Bearer token 来自全局 Starcat Local API Key，设置页集中在「集成」管理；
 //  - 每个 HTTP 请求都会重新检查开关 / Pro / token，防止订阅状态变化后旧连接继续放行。
 //
 
@@ -24,7 +24,7 @@ final class StarcatMCPService {
 
     private let settings: AppSettings
     private let entitlementGate: EntitlementGate
-    private let tokenStore: StarcatMCPTokenStore
+    private let localAPIKeyStore: StarcatLocalAPIKeyStore
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let notificationService: ReleaseNotificationService?
@@ -34,23 +34,22 @@ final class StarcatMCPService {
     private var lifecycleGeneration = 0
 
     private(set) var state: State = .stopped
-    private(set) var bearerToken: String
+    var bearerToken: String { localAPIKeyStore.apiKey }
 
     init(
         settings: AppSettings,
         entitlementGate: EntitlementGate,
-        tokenStore: StarcatMCPTokenStore = StarcatMCPTokenStore(),
+        localAPIKeyStore: StarcatLocalAPIKeyStore = .shared,
         facade: StarcatMCPFacade,
         writeFacade: StarcatMCPWriteFacade,
         notificationService: ReleaseNotificationService? = nil
     ) {
         self.settings = settings
         self.entitlementGate = entitlementGate
-        self.tokenStore = tokenStore
+        self.localAPIKeyStore = localAPIKeyStore
         self.facade = facade
         self.writeFacade = writeFacade
         self.notificationService = notificationService
-        self.bearerToken = tokenStore.loadOrCreateToken()
     }
 
     var endpointURL: String {
@@ -198,14 +197,6 @@ final class StarcatMCPService {
                 throw StarcatMCPError.invalidArguments(message)
             }
             return  // 端口可用
-        }
-    }
-
-    func rotateToken() {
-        bearerToken = tokenStore.rotateToken()
-        if case .running = state {
-            stop()
-            start()
         }
     }
 

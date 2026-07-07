@@ -104,13 +104,14 @@ struct MCPSettingsTab: View {
                         .textSelection(.enabled)
                 }
 
-                SecureTokenRow(token: mcpService.bearerToken)
-
                 HStack {
                     Spacer()
 
-                    Button("settings.mcp.rotateToken") {
-                        mcpService.rotateToken()
+                    Button("settings.mcp.localAPIKey.open") {
+                        NotificationCenter.default.post(
+                            name: .starcatJumpToSettingsTab,
+                            object: "integrations.localAPIKey"
+                        )
                     }
                     .focusEffectDisabled()
 
@@ -119,6 +120,11 @@ struct MCPSettingsTab: View {
                     }
                     .focusEffectDisabled()
                 }
+
+                Text("settings.mcp.localAPIKey.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
@@ -296,27 +302,5 @@ private struct MCPPortEditorRow: View {
         if value < 1024 { return .belowMinimum }
         if value > 65_535 { return .aboveMaximum }
         return .ok
-    }
-}
-
-private struct SecureTokenRow: View {
-    let token: String
-    @State private var isRevealed = false
-
-    var body: some View {
-        LabeledContent("settings.mcp.token") {
-            HStack(spacing: 8) {
-                Text(isRevealed ? token : String(repeating: "•", count: 24))
-                    .font(.system(.body, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-
-                Button(isRevealed ? "settings.mcp.token.hide" : "settings.mcp.token.reveal") {
-                    isRevealed.toggle()
-                }
-                .focusEffectDisabled()
-            }
-        }
     }
 }

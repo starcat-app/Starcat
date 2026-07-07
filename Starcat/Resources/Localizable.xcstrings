@@ -26956,6 +26956,176 @@
         }
       }
     },
+    "settings.integration.localAPIKey.authorization": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use it as: Authorization: Bearer <Local API Key>"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求时使用: Authorization: Bearer <本地 API Key>"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Local API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制本地 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.hide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Local API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏本地 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "获取 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.reveal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reveal Local API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示本地 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.rotate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rotate Local API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新本地 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One local Bearer key for MCP, browser plugins, and future Alfred, Raycast, uTools, or REST automation clients."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP、浏览器插件以及后续 Alfred、Raycast、uTools 或 REST 自动化统一使用这一枚本机 Bearer key。"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地 API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.localAPIKey.value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key"
+          }
+        }
+      }
+    },
     "settings.integration.browserPlugin.chromeRepository": {
       "extractionState": "manual",
       "localizations": {
@@ -26996,13 +27166,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the endpoint and token in browser extensions. The token only authorizes the local loopback plugin API."
+            "value": "Use this endpoint with the Local API Key from Settings > Integrations > Local API Key. The key only authorizes local loopback access."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在浏览器插件中填写 endpoint 和 token。该 token 只授权本机 loopback 插件 API。"
+            "value": "在浏览器插件中填写 endpoint，并使用「设置 → 集成 → 本地 API Key」中的 key。该 key 只授权本机 loopback 访问。"
           }
         }
       }
@@ -27020,6 +27190,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "启用浏览器插件服务"
+          }
+        }
+      }
+    },
+    "settings.integration.browserPlugin.apiKey": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key"
+          }
+        }
+      }
+    },
+    "settings.integration.browserPlugin.apiKey.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the Local API Key managed at the top of Integrations."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用集成页顶部统一管理的本地 API Key。"
           }
         }
       }
@@ -27823,6 +28027,40 @@
         }
       }
     },
+    "settings.mcp.localAPIKey.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP uses the shared Local API Key from Settings > Integrations > Local API Key. Rotating that key invalidates existing MCP client configs."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 使用「设置 → 集成 → 本地 API Key」中的共享 key。刷新该 key 后，已有 MCP 客户端配置会失效。"
+          }
+        }
+      }
+    },
+    "settings.mcp.localAPIKey.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get API Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "获取 API Key"
+          }
+        }
+      }
+    },
     "settings.mcp.port": {
       "extractionState": "manual",
       "localizations": {
@@ -27999,13 +28237,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MCP Service is available to Pro users only. The endpoint listens on 127.0.0.1 and requires the Token above."
+            "value": "MCP Service is available to Pro users only. The endpoint listens on 127.0.0.1 and requires the shared Local API Key."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "MCP Service 仅 Pro 用户可用。Endpoint 只监听 127.0.0.1，并要求使用上方 Token。"
+            "value": "MCP Service 仅 Pro 用户可用。Endpoint 只监听 127.0.0.1，并要求使用共享的本地 API Key。"
           }
         }
       }

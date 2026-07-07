@@ -10,6 +10,8 @@ import AppKit
 import SwiftUI
 
 struct IntegrationSettingsTab: View {
+    private static let localAPIKeyAnchor = "settings.integrations.localAPIKey"
+
     @Environment(AppSettings.self) private var settings
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
@@ -21,8 +23,10 @@ struct IntegrationSettingsTab: View {
     @State private var expandedExternalSearchProviders: Set<ExternalSearchProviderID> = []
     @State private var externalSearchAPIKeyTestStates: [ExternalSearchProviderID: ExternalSearchAPIKeyTestState] = [:]
     @State private var pluginConfiguration = CompanionConfiguration.shared
-    @State private var isHoveringCopyToken = false
-    @State private var isHoveringResetToken = false
+    @State private var localAPIKeyStore = StarcatLocalAPIKeyStore.shared
+    @State private var isLocalAPIKeyRevealed = false
+    @State private var isHoveringCopyLocalAPIKey = false
+    @State private var isHoveringRotateLocalAPIKey = false
     @State private var isHoveringChromePlugin = false
     @State private var isHoveringSafariPlugin = false
     // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
@@ -34,10 +38,13 @@ struct IntegrationSettingsTab: View {
     // 清除"在存储 Tab 已有入口。汇总 4 项数据切到 `summary` 缓存。
 
     var body: some View {
-        Form {
-            browserPluginSection
-            anySearchSection
-            Section("CodeFlow") {
+        ScrollViewReader { proxy in
+            Form {
+                localAPIKeySection
+                    .id(Self.localAPIKeyAnchor)
+                browserPluginSection
+                anySearchSection
+                Section("CodeFlow") {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("settings.integration.codeFlow.outputDir.title", systemImage: "point.3.connected.trianglepath.dotted")
                         .font(.headline)
@@ -94,7 +101,7 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Section("CodebaseMemory") {
+                Section("CodebaseMemory") {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("3D Code Graph", systemImage: "point.3.filled.connected.trianglepath.dotted")
                         .font(.headline)
@@ -150,15 +157,20 @@ struct IntegrationSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                }
             }
-        }
-        .formStyle(.grouped)
-        .task { storage.reload() }
-        .task { codebaseMemoryStorage.reload() }
-        .task { loadExternalSearchAPIKeys() }
-        .task {
-            if pluginConfiguration.isEnabled {
-                CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
+            .formStyle(.grouped)
+            .task { storage.reload() }
+            .task { codebaseMemoryStorage.reload() }
+            .task { loadExternalSearchAPIKeys() }
+            .task {
+                if pluginConfiguration.isEnabled {
+                    CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToSettingsTab)) { note in
+                guard (note.object as? String) == "integrations.localAPIKey" else { return }
+                proxy.scrollTo(Self.localAPIKeyAnchor, anchor: .top)
             }
         }
         .alert("settings.integration.codeFlow.actionFailedTitle", isPresented: Binding(
@@ -168,6 +180,69 @@ struct IntegrationSettingsTab: View {
             Button("common.ok") { actionError = nil }
         } message: {
             Text(actionError ?? String.l10n("common.unknownError"))
+        }
+    }
+
+    private var localAPIKeySection: some View {
+        Section("settings.integration.localAPIKey.title") {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("settings.integration.localAPIKey.header", systemImage: "key.horizontal")
+                    .font(.headline)
+                Text("settings.integration.localAPIKey.subtitle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .center, spacing: 10) {
+                Text("settings.integration.localAPIKey.value")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 88, alignment: .leading)
+                Text(verbatim: displayedLocalAPIKey)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                CopyFeedbackButton(
+                    providesContent: { localAPIKeyStore.apiKey },
+                    tooltip: "settings.integration.localAPIKey.copy"
+                ) { didCopy in
+                    tokenActionIcon(
+                        systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc",
+                        foregroundStyle: didCopy ? Color.green : Color.secondary,
+                        isHovering: isHoveringCopyLocalAPIKey
+                    )
+                    .contentTransition(.symbolEffect(.replace))
+                }
+                .onHover { isHoveringCopyLocalAPIKey = $0 }
+
+                tokenActionButton(
+                    systemImage: isLocalAPIKeyRevealed ? "eye.slash" : "eye",
+                    titleKey: isLocalAPIKeyRevealed
+                        ? "settings.integration.localAPIKey.hide"
+                        : "settings.integration.localAPIKey.reveal",
+                    isHovering: false
+                ) {
+                    isLocalAPIKeyRevealed.toggle()
+                }
+
+                tokenActionButton(
+                    systemImage: "arrow.clockwise",
+                    titleKey: "settings.integration.localAPIKey.rotate",
+                    isHovering: isHoveringRotateLocalAPIKey
+                ) {
+                    rotateLocalAPIKey()
+                }
+                .onHover { isHoveringRotateLocalAPIKey = $0 }
+            }
+
+            Text("settings.integration.localAPIKey.authorization")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -201,7 +276,7 @@ struct IntegrationSettingsTab: View {
                     titleKey: "settings.integration.browserPlugin.endpoint",
                     value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1"
                 )
-                pluginTokenInfoRow
+                localAPIKeyReferenceRow
             }
 
             LabeledContent {
@@ -267,9 +342,14 @@ struct IntegrationSettingsTab: View {
     }
 
     private var maskedPluginToken: String {
-        let token = pluginConfiguration.token
+        let token = localAPIKeyStore.apiKey
         guard token.count > 12 else { return String(repeating: "•", count: max(token.count, 8)) }
         return "\(token.prefix(6))••••••\(token.suffix(6))"
+    }
+
+    private var displayedLocalAPIKey: String {
+        if isLocalAPIKeyRevealed { return localAPIKeyStore.apiKey }
+        return maskedPluginToken
     }
 
     private var pluginStatusText: String {
@@ -300,37 +380,25 @@ struct IntegrationSettingsTab: View {
         }
     }
 
-    private var pluginTokenInfoRow: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Text("settings.integration.browserPlugin.token")
+    private var localAPIKeyReferenceRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("settings.integration.browserPlugin.apiKey")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 88, alignment: .leading)
-            Text(verbatim: maskedPluginToken)
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Text("settings.integration.browserPlugin.apiKey.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
-            CopyFeedbackButton(
-                providesContent: { pluginConfiguration.token },
-                tooltip: "settings.integration.browserPlugin.copyToken"
-            ) { didCopy in
-                tokenActionIcon(
-                    systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc",
-                    foregroundStyle: didCopy ? Color.green : Color.secondary,
-                    isHovering: isHoveringCopyToken
+            Button("settings.integration.localAPIKey.open") {
+                NotificationCenter.default.post(
+                    name: .starcatJumpToSettingsTab,
+                    object: "integrations.localAPIKey"
                 )
-                .contentTransition(.symbolEffect(.replace))
             }
-            .onHover { isHoveringCopyToken = $0 }
-            tokenActionButton(
-                systemImage: "arrow.clockwise",
-                titleKey: "settings.integration.browserPlugin.resetToken",
-                isHovering: isHoveringResetToken,
-                action: resetPluginToken
-            )
-            .onHover { isHoveringResetToken = $0 }
+            .buttonStyle(.bordered)
+            .focusEffectDisabled()
         }
     }
 
@@ -369,14 +437,8 @@ struct IntegrationSettingsTab: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func copyPluginTokenToPasteboard() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(pluginConfiguration.token, forType: .string)
-    }
-
-    private func resetPluginToken() {
-        pluginConfiguration.resetToken()
-        copyPluginTokenToPasteboard()
+    private func rotateLocalAPIKey() {
+        localAPIKeyStore.rotateAPIKey()
         if pluginConfiguration.isEnabled {
             CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
         }

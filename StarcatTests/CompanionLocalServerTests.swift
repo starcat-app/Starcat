@@ -14,49 +14,49 @@ import Testing
 struct CompanionLocalServerTests {
     private func makeServer() throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("test-token")
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
         let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
         return CompanionLocalServer(
-            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults)
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults)
         )
     }
 
     private func makeServer(noteWriter: CompanionNoteWriter) throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("test-token")
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
         let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
         return CompanionLocalServer(
-            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
             noteWriter: noteWriter
         )
     }
 
     private func makeServer(tagWriter: CompanionTagWriter) throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("test-token")
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
         let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
         return CompanionLocalServer(
-            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
             tagWriter: tagWriter
         )
     }
 
     private func makeServer(libraryStateWriter: CompanionLibraryStateWriter) throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("test-token")
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
         let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
         return CompanionLocalServer(
-            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
             libraryStateWriter: libraryStateWriter
         )
     }
 
     private func makeServer(actionHandler: CompanionActionHandler) throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("test-token")
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
         let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
         return CompanionLocalServer(
-            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
             actionHandler: actionHandler
         )
     }
@@ -215,10 +215,10 @@ struct CompanionLocalServerTests {
     @Test("GET /plugin/v1/repo-context 返回 provider 上下文")
     func repoContextReturnsProviderPayload() async throws {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("test-token")
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
         let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
         let server = CompanionLocalServer(
-            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
             contextProvider: CompanionContextProvider { owner, repo in
                 #expect(owner == "apple")
                 #expect(repo == "swift")

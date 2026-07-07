@@ -2,7 +2,7 @@
 //  CompanionConfigurationTests.swift
 //  StarcatTests
 //
-//  验证 Chrome Companion 配置的 token/port/enabled 持久化边界。
+//  验证 Browser Plugin 配置复用全局 Local API Key, 并只自行持久化端口/enabled。
 //
 
 import Foundation
@@ -19,42 +19,50 @@ struct CompanionConfigurationTests {
         return defaults
     }
 
-    @Test("首次初始化生成并持久化 Companion token")
-    func generatesAndStoresToken() throws {
-        let keychain = InMemoryKeychain()
-        let config = CompanionConfiguration(secureStore: keychain, defaults: try makeDefaults())
-
-        #expect(!config.token.isEmpty)
-        #expect(try keychain.loadCompanionToken() == config.token)
+    private func makeLocalAPIKeyStore(keychain: InMemoryKeychain) -> StarcatLocalAPIKeyStore {
+        StarcatLocalAPIKeyStore(keychain: keychain)
     }
 
-    @Test("已有 token 时复用, 不重新生成")
-    func reusesStoredToken() throws {
+    @Test("首次初始化生成并持久化 Local API Key")
+    func generatesAndStoresLocalAPIKey() throws {
         let keychain = InMemoryKeychain()
-        try keychain.storeCompanionToken("stored-token")
+        let store = makeLocalAPIKeyStore(keychain: keychain)
+        let config = CompanionConfiguration(localAPIKeyStore: store, defaults: try makeDefaults())
 
-        let config = CompanionConfiguration(secureStore: keychain, defaults: try makeDefaults())
+        #expect(!config.token.isEmpty)
+        #expect(try keychain.loadServiceAPIKey(forService: "local_api") == config.token)
+    }
+
+    @Test("已有 Local API Key 时复用, 不重新生成")
+    func reusesStoredLocalAPIKey() throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeServiceAPIKey("stored-token", forService: "local_api")
+        let store = makeLocalAPIKeyStore(keychain: keychain)
+
+        let config = CompanionConfiguration(localAPIKeyStore: store, defaults: try makeDefaults())
 
         #expect(config.token == "stored-token")
     }
 
-    @Test("resetToken 生成新 token 并写回 secure store")
-    func resetTokenPersists() throws {
+    @Test("Local API Key 刷新后 Companion 立即读到新值")
+    func companionReadsRotatedLocalAPIKey() throws {
         let keychain = InMemoryKeychain()
-        let config = CompanionConfiguration(secureStore: keychain, defaults: try makeDefaults())
+        let store = makeLocalAPIKeyStore(keychain: keychain)
+        let config = CompanionConfiguration(localAPIKeyStore: store, defaults: try makeDefaults())
         let old = config.token
 
-        config.resetToken()
+        store.rotateAPIKey()
 
         #expect(config.token != old)
-        #expect(try keychain.loadCompanionToken() == config.token)
+        #expect(try keychain.loadServiceAPIKey(forService: "local_api") == config.token)
     }
 
     @Test("端口只接受 5051...5060, enabled 使用 UserDefaults 持久化")
     func persistsPortAndEnabled() throws {
         let keychain = InMemoryKeychain()
+        let store = makeLocalAPIKeyStore(keychain: keychain)
         let defaults = try makeDefaults()
-        let config = CompanionConfiguration(secureStore: keychain, defaults: defaults)
+        let config = CompanionConfiguration(localAPIKeyStore: store, defaults: defaults)
 
         #expect(config.port == 5051)
         #expect(config.isEnabled == false)
@@ -62,7 +70,7 @@ struct CompanionConfigurationTests {
         config.updateBoundPort(5058)
         config.isEnabled = true
 
-        let restored = CompanionConfiguration(secureStore: keychain, defaults: defaults)
+        let restored = CompanionConfiguration(localAPIKeyStore: store, defaults: defaults)
         #expect(restored.port == 5058)
         #expect(restored.isEnabled == true)
 

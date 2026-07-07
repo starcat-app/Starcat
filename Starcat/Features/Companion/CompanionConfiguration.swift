@@ -2,12 +2,11 @@
 //  CompanionConfiguration.swift
 //  Starcat
 //
-//  Browser Plugin 本机配对配置。
+//  Browser Plugin 本机服务配置。
 //
 //  设计约束:
-//  - token 是本机 HTTP Bearer 凭证, 只授权 loopback API, 不能复用 GitHub/AI/服务 Key;
+//  - token 由全局 Starcat Local API Key 接管, 这里只保存服务开关与端口;
 //  - port 与 enabled 不是秘密, 使用 UserDefaults 便于设置页和测试注入;
-//  - token 生成后写入 Starcat 现有 AES-GCM 凭证文件, 插件只能由用户手动复制;
 //  - 默认 disabled, 避免未发布插件能力在普通用户环境中无意开启本机服务。
 //
 
@@ -35,10 +34,10 @@ final class CompanionConfiguration {
     /// Browser Plugin Service 后，设置页会继续显示旧状态。
     static let shared = CompanionConfiguration()
 
-    private let secureStore: any KeychainManaging
+    private let localAPIKeyStore: StarcatLocalAPIKeyStore
     private let defaults: UserDefaults
 
-    private(set) var token: String
+    var token: String { localAPIKeyStore.apiKey }
     private(set) var port: UInt16
     var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.enabled) }
@@ -46,19 +45,11 @@ final class CompanionConfiguration {
     private(set) var serverStatus: ServerStatus = .stopped
 
     init(
-        secureStore: any KeychainManaging = KeychainManager.shared,
+        localAPIKeyStore: StarcatLocalAPIKeyStore = .shared,
         defaults: UserDefaults = .standard
     ) {
-        self.secureStore = secureStore
+        self.localAPIKeyStore = localAPIKeyStore
         self.defaults = defaults
-
-        if let stored = try? secureStore.loadCompanionToken(), !stored.isEmpty {
-            token = stored
-        } else {
-            let generated = Self.makeToken()
-            token = generated
-            try? secureStore.storeCompanionToken(generated)
-        }
 
         let savedPort = defaults.integer(forKey: Key.port)
         if Self.allowedPortRange.contains(savedPort) {
@@ -67,12 +58,6 @@ final class CompanionConfiguration {
             port = Self.defaultPort
         }
         isEnabled = defaults.bool(forKey: Key.enabled)
-    }
-
-    func resetToken() {
-        let generated = Self.makeToken()
-        token = generated
-        try? secureStore.storeCompanionToken(generated)
     }
 
     func updateBoundPort(_ value: UInt16) {
@@ -85,11 +70,4 @@ final class CompanionConfiguration {
         serverStatus = value
     }
 
-    private static func makeToken() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        for index in bytes.indices {
-            bytes[index] = UInt8.random(in: .min ... .max)
-        }
-        return Data(bytes).base64EncodedString()
-    }
 }

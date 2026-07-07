@@ -67,14 +67,6 @@ protocol KeychainManaging: Sendable {
     func loadServiceAPIKey(forService serviceID: String) throws -> String?
     func deleteServiceAPIKey(forService serviceID: String) throws
 
-    /// Browser Plugin 本机 HTTP Bearer Token。
-    ///
-    /// 与 GitHub Token / AI Key / 服务 API Key 使用同一加密文件, 但必须独立命名。
-    /// Plugin Token 只授权 loopback 本机接口, 不具备任何远端服务访问能力。
-    func storeCompanionToken(_ token: String) throws
-    func loadCompanionToken() throws -> String?
-    func deleteCompanionToken() throws
-
     /// 清空 Starcat 本机加密凭据文件中的全部条目。
     ///
     /// 只用于“清空所有数据 / 本地恢复出厂”这类明确的 destructive 操作。
@@ -94,8 +86,6 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
         static let githubToken = "github_access_token"
         static let aiKey = "ai_api_key"
         static let selfCheck = "self_check_canary"
-        static let companionToken = "companion_bearer_token"
-
         static func aiKey(providerID: String) -> String {
             "ai_api_key::\(providerID)"
         }
@@ -256,20 +246,6 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
     func deleteServiceAPIKey(forService serviceID: String) throws {
         try setValue(nil, forAccount: Account.serviceAPIKey(serviceID: serviceID))
         AppLog.keychain.info("Service API key removed: \(serviceID, privacy: .public)")
-    }
-
-    func storeCompanionToken(_ token: String) throws {
-        try setValue(token, forAccount: Account.companionToken)
-        AppLog.keychain.info("Companion token stored securely")
-    }
-
-    func loadCompanionToken() throws -> String? {
-        value(forAccount: Account.companionToken)
-    }
-
-    func deleteCompanionToken() throws {
-        try setValue(nil, forAccount: Account.companionToken)
-        AppLog.keychain.info("Companion token removed")
     }
 
     func deleteAllCredentials() throws {
