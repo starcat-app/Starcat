@@ -89,6 +89,7 @@ enum AgentToolPayload: Sendable {
     case none
     case topics([WeeklyReportTopic])
     case markdown(String)
+    case externalContextMarkdown(String)
 }
 
 /// 所有 Agent tool 的统一协议。

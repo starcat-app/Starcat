@@ -55,8 +55,8 @@
   - `report.clusterTopics`
   - `artifact.buildMarkdown`
 - [x] 重构 `DefaultAgentRuntime`,按 tool registry 和执行计划驱动工具,不再硬编码静态工具数组。
-- [ ] 新增 Agent 网络搜索工具 `external.search`,复用现有 External Search provider 栈。
-- [ ] 为 `external.search` 输出 `AgentToolOutput` 与 `AgentTraceSpan`,包含 query、provider、结果数、source URL、错误和 cache 状态。
+- [x] 新增 Agent 网络搜索工具 `external.search`,复用现有 External Search provider 栈。
+- [x] 为 `external.search` 输出 `AgentToolOutput` 与 `AgentTraceSpan`,包含 query、provider、结果数、source URL、错误和 cache 状态。
 - [ ] Weekly Agent 接入 `external.search`:
   1. parse goal
   2. resolve local repos
@@ -72,7 +72,7 @@
 - [ ] 右栏只展示真实 artifact,不得展示 Agent 专用硬编码卡片或不可点击占位操作。
 - [ ] 补 Tool Registry 单测。
 - [x] 补 Weekly tool 迁移单测。
-- [ ] 补 `external.search` Agent tool 单测,使用 stub provider。
+- [x] 补 `external.search` Agent tool 单测,使用 stub provider。
 - [ ] 补 Runtime 执行顺序单测,确认网络搜索在聚类前、artifact 在最后。
 - [ ] 补外部搜索关闭 skipped 单测。
 - [ ] 补 provider 失败降级单测。
