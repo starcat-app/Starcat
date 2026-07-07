@@ -19,7 +19,6 @@ struct AgentWorkspaceView: View {
     let chromeState: WorkspaceChromeState
 
     private let contextChips = ["本地仓库快照", "只读工具链", "AI Provider", "Markdown Artifact"]
-    private let artifactTabs = ["概览", "结构化结果", "证据", "行动", "日志"]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -527,7 +526,7 @@ struct AgentWorkspaceView: View {
         let output = viewModel.assistantOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         if !output.isEmpty { return output }
         if viewModel.status == .completed {
-            return "我已经完成这轮 Agent run。下面保留了关键计划、工具过程和产物引用，右侧可以继续核验结构化结果。"
+            return "我已经完成这轮 Agent run。下面保留了关键计划、工具过程和产物引用，右侧可以查看、复制或导出产出物。"
         }
         if viewModel.isRunning {
             return "我正在把你的目标拆成可审查的执行步骤，并在每一步留下工具输出和产物引用，避免只给出一段不可追踪的回答。"
@@ -787,7 +786,7 @@ struct AgentWorkspaceView: View {
         VStack(spacing: 0) {
             artifactInspectorHeader
             Divider()
-            structuredResultPane
+            artifactPane
         }
     }
 
@@ -797,7 +796,7 @@ struct AgentWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Artifact Inspector")
                         .font(agentFont(.headline))
-                    Text("同一套 renderer 承载报告、对比表、聚类、标签计划和引用答案。")
+                    Text("查看、复制、导出本轮 Agent 产出物；执行过程在中栏 trace 中审计。")
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
@@ -817,139 +816,110 @@ struct AgentWorkspaceView: View {
             }
             .controlSize(.small)
 
-            HStack(spacing: 6) {
-                ForEach(artifactTabs, id: \.self) { tab in
-                    Text(tab)
-                        .font(agentFont(.caption, weight: tab == "结构化结果" ? .semibold : .regular))
-                        .foregroundStyle(tab == "结构化结果" ? .primary : .secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(tab == "结构化结果" ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-                }
-            }
+            artifactSelector
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }
 
-    private var structuredResultPane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                resultSummary
-                resultCard(
-                    title: "AI Agent 工具链",
-                    score: "92",
-                    repos: ["modelcontextprotocol/swift-sdk", "SwiftedMind/SwiftAgent", "openai/openai-agents"],
-                    insight: "MCP、Swift Agent runtime、tool-calling 框架是当前最值得继续跟踪的组合。"
-                )
-                resultCard(
-                    title: "本地优先开发者工具",
-                    score: "86",
-                    repos: ["zed-industries/zed", "sindresorhus/Defaults", "groue/GRDB.swift"],
-                    insight: "适合 Starcat 后续桌面端能力建设，但需要关注 macOS 版本与依赖体积。"
-                )
-                actionPreview
-
-                if let artifact = viewModel.selectedArtifact {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(artifact.title)
-                            .font(agentFont(.subheadline, weight: .semibold))
-                        Text(artifact.content)
-                            .font(agentFont(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(12)
-                    }
-                }
-            }
-            .padding(16)
-        }
-    }
-
-    private var resultSummary: some View {
-        HStack(spacing: 10) {
-            metricTile("\(max(viewModel.planSteps.count, 3))", "计划步骤")
-            metricTile("\(max(viewModel.toolOutputs.count, 4))", "工具输出")
-            metricTile("\(max(viewModel.artifacts.count, 1))", "产出物")
-        }
-    }
-
-    private func metricTile(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(agentFont(.title3, weight: .semibold))
-            Text(label)
-                .font(agentFont(.caption))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func resultCard(title: String, score: String, repos: [String], insight: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title)
-                    .font(agentFont(.subheadline, weight: .semibold))
-                Spacer()
-                Text("推荐 \(score)")
-                    .font(agentFont(.caption, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
-            }
-
-            Text(insight)
-                .font(agentFont(.caption))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 6) {
-                ForEach(repos, id: \.self) { repo in
-                    HStack(spacing: 8) {
-                        Image(systemName: "shippingbox")
-                            .foregroundStyle(.secondary)
-                        Text(repo)
-                            .font(agentFont(.caption, weight: .medium))
-                        Spacer()
-                        Text("已 star")
-                            .font(agentFont(.caption))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var actionPreview: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("待确认行动")
-                .font(agentFont(.subheadline, weight: .semibold))
-            actionRow(icon: "tag", title: "建议创建 tag: ai-agent", caption: "确认后才写入")
-            actionRow(icon: "square.and.arrow.down", title: "导出 Markdown artifact", caption: "本地文件，不自动上传")
-            actionRow(icon: "arrow.clockwise", title: "局部重写「采用建议」段落", caption: "只重写 artifact 节点")
-        }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func actionRow(icon: String, title: String, caption: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(agentFont(.caption, weight: .medium))
-                Text(caption)
+    private var artifactSelector: some View {
+        Group {
+            if viewModel.artifacts.isEmpty {
+                Text("暂无产出物")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(viewModel.artifacts) { artifact in
+                        artifactSelectorButton(artifact)
+                    }
+                }
             }
-            Spacer()
+        }
+    }
+
+    private func artifactSelectorButton(_ artifact: AgentArtifact) -> some View {
+        let isSelected = viewModel.selectedArtifact?.id == artifact.id
+        return Button {
+            viewModel.selectedArtifactID = artifact.id
+        } label: {
+            Label(artifact.type.title, systemImage: artifactTypeIcon(artifact.type))
+                .font(agentFont(.caption, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 7)
+                )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(artifact.title)
+    }
+
+    private var artifactPane: some View {
+        Group {
+            if let artifact = viewModel.selectedArtifact {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        artifactMetadata(artifact)
+                        Text(artifact.content)
+                            .font(agentFont(.caption, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(16)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(agentIconFont(size: 28, weight: .regular))
+                        .foregroundStyle(.secondary)
+                    Text("运行 Agent 后将在这里显示 Markdown 或 Run Log。")
+                        .font(agentFont(.caption))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func artifactMetadata(_ artifact: AgentArtifact) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: artifactTypeIcon(artifact.type))
+                    .font(agentIconFont(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(artifact.title)
+                        .font(agentFont(.subheadline, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("\(artifact.type.title) · \(artifact.content.count) chars · \(artifact.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(agentFont(.caption))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            Text("当前右栏只承载产出物查看与导出；步骤、工具调用、AI 输入输出和日志在中栏 trace 中展开审计。")
+                .font(agentFont(.caption))
+                .foregroundStyle(.secondary)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func artifactTypeIcon(_ type: AgentArtifactType) -> String {
+        switch type {
+        case .markdown:
+            return "doc.richtext"
+        case .log:
+            return "doc.text.magnifyingglass"
         }
     }
 
