@@ -42,19 +42,22 @@ enum AgentToolStatus: String, Hashable, Sendable {
 }
 
 /// Runtime 传给工具的一次调用输入。
-struct AgentToolInput: Hashable, Sendable {
+struct AgentToolInput: Sendable {
     var prompt: String
     var context: AgentRunContext
     var values: [String: String]
+    var payload: AgentToolPayload
 
     init(
         prompt: String,
         context: AgentRunContext,
-        values: [String: String] = [:]
+        values: [String: String] = [:],
+        payload: AgentToolPayload = .none
     ) {
         self.prompt = prompt
         self.context = context
         self.values = values
+        self.payload = payload
     }
 }
 

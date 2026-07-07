@@ -49,7 +49,7 @@
 - [x] 定义 tool status,支持 `completed` / `skipped` / `failed` / `requiresConfirmation`。
 - [x] 新增 `AgentToolRegistry`,支持按 `AgentDefinition.toolIDs` 查找工具。
 - [x] 扩展 `AgentDefinition`,让每个 Agent 声明 tool id、artifact types 和执行策略。
-- [ ] 把 Weekly 本地工具迁移为 Agent tool:
+- [x] 把 Weekly 本地工具迁移为 Agent tool:
   - `agent.parseGoal`
   - `context.resolveRepos`
   - `report.clusterTopics`
@@ -71,7 +71,7 @@
 - [ ] 中栏只展示真实 run 数据,不得出现默认 demo prompt / 默认 plan / 默认 tool / 默认 artifact。
 - [ ] 右栏只展示真实 artifact,不得展示 Agent 专用硬编码卡片或不可点击占位操作。
 - [ ] 补 Tool Registry 单测。
-- [ ] 补 Weekly tool 迁移单测。
+- [x] 补 Weekly tool 迁移单测。
 - [ ] 补 `external.search` Agent tool 单测,使用 stub provider。
 - [ ] 补 Runtime 执行顺序单测,确认网络搜索在聚类前、artifact 在最后。
 - [ ] 补外部搜索关闭 skipped 单测。

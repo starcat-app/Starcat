@@ -206,3 +206,75 @@ enum GitHubWeeklyReportTools {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
+
+enum GitHubWeeklyReportAgentTools {
+    static let all: [any AgentTool] = [
+        ParseGoalTool(),
+        ResolveReposTool(),
+        ClusterTopicsTool(),
+        BuildMarkdownTool()
+    ]
+
+    struct ParseGoalTool: AgentTool {
+        let id = "agent.parseGoal"
+        let displayName = "Parse Goal"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            GitHubWeeklyReportTools.parseGoal(prompt: input.prompt, context: input.context).agentToolResult()
+        }
+    }
+
+    struct ResolveReposTool: AgentTool {
+        let id = "context.resolveRepos"
+        let displayName = "Resolve Repositories"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            GitHubWeeklyReportTools.resolveCandidateRepos(context: input.context).agentToolResult()
+        }
+    }
+
+    struct ClusterTopicsTool: AgentTool {
+        let id = "report.clusterTopics"
+        let displayName = "Cluster Topics"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            let (topics, result) = GitHubWeeklyReportTools.clusterTopics(context: input.context)
+            return result.agentToolResult(payload: .topics(topics))
+        }
+    }
+
+    struct BuildMarkdownTool: AgentTool {
+        let id = "artifact.buildMarkdown"
+        let displayName = "Build Markdown Artifact"
+        let permission: AgentToolPermission = .readOnly
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            let topics: [WeeklyReportTopic]
+            if case .topics(let payloadTopics) = input.payload {
+                topics = payloadTopics
+            } else {
+                topics = []
+            }
+            let (markdown, result) = GitHubWeeklyReportTools.buildMarkdown(
+                prompt: input.prompt,
+                context: input.context,
+                topics: topics
+            )
+            return result.agentToolResult(payload: .markdown(markdown))
+        }
+    }
+}
+
+private extension WeeklyReportToolResult {
+    func agentToolResult(payload: AgentToolPayload = .none) -> AgentToolResult {
+        AgentToolResult(
+            status: trace.status == .failed ? .failed : .completed,
+            output: output,
+            trace: trace,
+            payload: payload
+        )
+    }
+}

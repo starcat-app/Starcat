@@ -76,6 +76,35 @@ struct GitHubWeeklyReportToolsTests {
         #expect(result.trace.output.contains("# GitHub Weekly Report"))
     }
 
+    @Test("Weekly tools 可以通过 AgentToolRegistry 执行")
+    func weeklyToolsExecuteThroughRegistry() async throws {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+        )
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let clusterTool = try registry.tool(for: "report.clusterTopics")
+        let markdownTool = try registry.tool(for: "artifact.buildMarkdown")
+
+        let clusterResult = await clusterTool.execute(AgentToolInput(
+            prompt: "生成 Swift 周刊",
+            context: context
+        ))
+        let markdownResult = await markdownTool.execute(AgentToolInput(
+            prompt: "生成 Swift 周刊",
+            context: context,
+            payload: clusterResult.payload
+        ))
+
+        #expect(clusterResult.output.toolName == "report.clusterTopics")
+        #expect(markdownResult.output.toolName == "artifact.buildMarkdown")
+        if case .markdown(let markdown) = markdownResult.payload {
+            #expect(markdown.contains("groue/GRDB.swift"))
+        } else {
+            Issue.record("Expected markdown payload")
+        }
+    }
+
     private func repo(
         fullName: String,
         language: String,
