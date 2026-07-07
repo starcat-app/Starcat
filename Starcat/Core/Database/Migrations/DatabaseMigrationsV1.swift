@@ -57,6 +57,84 @@ enum DatabaseMigrations {
     static func registerAll(into migrator: inout DatabaseMigrator) {
         registerV1(into: &migrator)
         registerV2(into: &migrator)
+        registerV3(into: &migrator)
+    }
+
+    // MARK: - v3-agent-runs：Agent 运行历史（2026-07-07）
+
+    private static func registerV3(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v3-agent-runs") { db in
+            try createAgentRuns(db)
+            try createAgentRunSteps(db)
+            try createAgentRunTraces(db)
+            try createAgentArtifacts(db)
+        }
+    }
+
+    private static func createAgentRuns(_ db: Database) throws {
+        try db.create(table: "agent_runs") { t in
+            t.column("id", .text).primaryKey()
+            t.column("agent_id", .text).notNull()
+            t.column("title", .text).notNull()
+            t.column("user_prompt", .text).notNull()
+            t.column("context_source", .text).notNull()
+            t.column("status", .text).notNull()
+            t.column("assistant_output", .text).notNull().defaults(to: "")
+            t.column("error_message", .text)
+            t.column("created_at", .text).notNull()
+            t.column("updated_at", .text).notNull()
+            t.column("finished_at", .text)
+        }
+        try db.create(index: "idx_agent_runs_agent_created", on: "agent_runs", columns: ["agent_id", "created_at"])
+        try db.create(index: "idx_agent_runs_created", on: "agent_runs", columns: ["created_at"])
+    }
+
+    private static func createAgentRunSteps(_ db: Database) throws {
+        try db.create(table: "agent_run_steps") { t in
+            t.column("id", .text).primaryKey()
+            t.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            t.column("step_index", .integer).notNull()
+            t.column("title", .text).notNull()
+            t.column("detail", .text).notNull()
+            t.column("status", .text).notNull()
+            t.column("updated_at", .text).notNull()
+        }
+        try db.create(index: "idx_agent_run_steps_run_index", on: "agent_run_steps", columns: ["run_id", "step_index"])
+    }
+
+    private static func createAgentRunTraces(_ db: Database) throws {
+        try db.create(table: "agent_run_traces") { t in
+            t.column("id", .text).primaryKey()
+            t.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            t.column("trace_index", .integer).notNull()
+            t.column("kind", .text).notNull()
+            t.column("title", .text).notNull()
+            t.column("summary", .text).notNull()
+            t.column("input", .text).notNull()
+            t.column("output", .text).notNull()
+            t.column("log", .text).notNull()
+            t.column("status", .text).notNull()
+            t.column("related_tool_output_id", .text)
+            t.column("related_artifact_id", .text)
+            t.column("created_at", .text).notNull()
+        }
+        try db.create(index: "idx_agent_run_traces_run_index", on: "agent_run_traces", columns: ["run_id", "trace_index"])
+    }
+
+    private static func createAgentArtifacts(_ db: Database) throws {
+        try db.create(table: "agent_artifacts") { t in
+            t.column("id", .text).primaryKey()
+            t.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            t.column("artifact_index", .integer).notNull()
+            t.column("type", .text).notNull()
+            t.column("title", .text).notNull()
+            t.column("content", .text).notNull()
+            t.column("created_at", .text).notNull()
+        }
+        try db.create(index: "idx_agent_artifacts_run_index", on: "agent_artifacts", columns: ["run_id", "artifact_index"])
     }
 
     // MARK: - v2-undo-star：Unstar 撤销历史记录（2026-07-05）
