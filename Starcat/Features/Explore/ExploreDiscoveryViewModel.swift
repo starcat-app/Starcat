@@ -358,8 +358,7 @@ final class ExploreDiscoveryViewModel {
     }
 
     private static func parseAPIDate(_ raw: String?) -> Date? {
-        guard let raw else { return nil }
-        return ISO8601DateFormatter.shared.date(from: raw)
+        ISO8601DateFormatter.githubDate(from: raw)
     }
 
     private static func cacheFallbackWarning(_ errorDescription: String?) -> String {

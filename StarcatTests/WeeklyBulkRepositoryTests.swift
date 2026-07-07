@@ -119,6 +119,10 @@ private func isoDaysAgo(_ days: Int) -> String {
     return ISO8601DateFormatter().string(from: date)
 }
 
+private func allowWeeklyFilterTaskToFinish() async {
+    try? await Task.sleep(nanoseconds: 50_000_000)
+}
+
 @Suite("WeeklyBulkRepository", .serialized)
 struct WeeklyBulkRepositoryTests {
 
@@ -211,6 +215,70 @@ struct WeeklyBulkRepositoryTests {
         #expect(cached.items.last?.fullName == "owner/a")
         // Sidebar 预取周刊数量只需要 meta.total，不应该依赖 cachedBulk 读全量明细。
         #expect(await repo.cachedTotal() == 2)
+    }
+
+    @Test("cachedPage: SQLite 分页筛选排序只返回当前页")
+    func cachedPageFiltersAndSortsInSQLite() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/a", "Swift", 100, "2026-06-15T10:00:00Z"),
+                    ("owner/b", "Swift", 1_500, "2026-06-15T11:00:00Z"),
+                    ("owner/c", "Go", 8_000, "2026-06-15T12:00:00Z"),
+                    ("owner/d", "Swift", 12_000, "2026-06-15T13:00:00Z")
+                ],
+                total: 4,
+                sourcesByFullName: [
+                    "owner/a": ["weekly"],
+                    "owner/b": ["weekly", "zread"],
+                    "owner/c": ["zread"],
+                    "owner/d": ["weekly", "discovery"]
+                ],
+                archivedFullNames: ["owner/d"],
+                pushedAtByFullName: [
+                    "owner/a": isoDaysAgo(10),
+                    "owner/b": isoDaysAgo(20),
+                    "owner/c": isoDaysAgo(10),
+                    "owner/d": isoDaysAgo(5)
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+
+        let query = WeeklyBulkCacheQuery(
+            source: .weekly,
+            coverage: .multipleSources,
+            hideArchived: true,
+            hideForks: false,
+            starsFilter: .min1000,
+            pushedRecency: .days30,
+            language: "Swift",
+            sort: .starsDesc,
+            page: 1,
+            pageSize: 1,
+            now: Date()
+        )
+
+        let firstPage = try #require(await repo.cachedPage(query: query))
+        #expect(firstPage.catalogTotal == 4)
+        #expect(firstPage.filteredTotal == 1)
+        #expect(firstPage.items.map(\.fullName) == ["owner/b"])
+
+        let secondPage = try #require(await repo.cachedPage(query: WeeklyBulkCacheQuery(
+            source: query.source,
+            coverage: query.coverage,
+            hideArchived: query.hideArchived,
+            hideForks: query.hideForks,
+            starsFilter: query.starsFilter,
+            pushedRecency: query.pushedRecency,
+            language: query.language,
+            sort: query.sort,
+            page: 2,
+            pageSize: 1,
+            now: query.now
+        )))
+        #expect(secondPage.items.isEmpty)
     }
 
     @Test("fetchBulk 整批替换：第二次拉新数据，旧行被全部清掉")
@@ -372,11 +440,13 @@ struct WeeklyBulkRepositoryTests {
         #expect(viewModel.total == 3)
 
         viewModel.changeSource(to: .zread)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.selectedSource == .zread)
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/zread"])
 
         viewModel.changeSource(to: .discovery)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/hn"])
     }
@@ -407,10 +477,12 @@ struct WeeklyBulkRepositoryTests {
         #expect(viewModel.total == 3)
 
         viewModel.changeLanguage(to: "Swift")
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/swift"])
 
         viewModel.changeLanguage(to: TrendingLanguage.uncategorizedKey)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/none"])
     }
@@ -497,6 +569,7 @@ struct WeeklyBulkRepositoryTests {
         #expect(viewModel.total == 6)
 
         viewModel.changeCoverage(to: .multipleSources)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 5)
         #expect(Set(viewModel.items.map(\.fullName)) == [
             "owner/good",
@@ -507,18 +580,22 @@ struct WeeklyBulkRepositoryTests {
         ])
 
         viewModel.changeHideArchivedRepos(to: true)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 4)
         #expect(!viewModel.items.map(\.fullName).contains("owner/archived"))
 
         viewModel.changeHideForkRepos(to: true)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 3)
         #expect(!viewModel.items.map(\.fullName).contains("owner/fork"))
 
         viewModel.changeStarsFilter(to: .min1000)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 2)
         #expect(Set(viewModel.items.map(\.fullName)) == ["owner/good", "owner/stale"])
 
         viewModel.changePushedRecency(to: .days90)
+        await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/good"])
         #expect(viewModel.selectedSort == .defaultOrder)

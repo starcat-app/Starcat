@@ -179,6 +179,19 @@ extension RepoCardViewData {
 struct RepoCardInlineMetadata: Hashable, Sendable {
     let systemImage: String
     let text: String
+    /// 只暴露语义 tint，避免把 SwiftUI.Color 带进跨场景 view data。
+    let tint: RepoCardInlineMetadataTint
+
+    init(systemImage: String, text: String, tint: RepoCardInlineMetadataTint = .secondary) {
+        self.systemImage = systemImage
+        self.text = text
+        self.tint = tint
+    }
+}
+
+enum RepoCardInlineMetadataTint: Hashable, Sendable {
+    case secondary
+    case green
 }
 
 // MARK: - CardBadge

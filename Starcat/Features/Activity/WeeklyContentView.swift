@@ -50,11 +50,13 @@ struct WeeklyContentView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(AppSettings.self) private var settings
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedLanguage: String?
 
     @State private var viewModel: WeeklyContentViewModel?
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
     @State private var isFilterPopoverPresented = false
 
     // R-01 §3.1.4 Step 7.3：refreshAngle / reduceMotion 已无外层用途，统一由 SyncIconButton 内部处理。
@@ -73,7 +75,7 @@ struct WeeklyContentView: View {
             let model = ensureViewModel()
             restoreSortPreferenceIfNeeded(model)
             syncExternalLanguage(to: model)
-            await reloadLibraryStateMap()
+            Task { await reloadLibraryStateMap() }
             await model.loadInitialIfNeeded()
             applyWeeklyDetailSelectionPolicy(from: model.items)
         }
@@ -97,19 +99,10 @@ struct WeeklyContentView: View {
 
             Divider()
 
-            if viewModel.isLoading && viewModel.items.isEmpty {
-                loadingState(title: "weekly.loading.title", subtitle: "weekly.loading.subtitle")
-            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error) {
-                    Task { await viewModel.reload() }
-                }
-            } else if viewModel.items.isEmpty {
-                emptyState(systemImage: "newspaper", title: "weekly.empty.title", subtitle: "weekly.empty.subtitle") {
-                    Task { await viewModel.reload() }
-                }
-            } else {
-                projectList(viewModel)
-            }
+            weeklyContentBody(viewModel)
+                .id(contentStateID(for: viewModel))
+                .transition(contentTransition)
+                .animation(contentAnimation, value: contentStateID(for: viewModel))
         }
         .task {
             await viewModel.loadLanguagesIfNeeded()
@@ -123,6 +116,51 @@ struct WeeklyContentView: View {
             guard enabled else { return }
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
         }
+        .task(id: settings.wikiAvailabilityFilter.rawValue) {
+            await reloadWikiAvailabilityMap(for: viewModel.items)
+        }
+    }
+
+    @ViewBuilder
+    private func weeklyContentBody(_ viewModel: WeeklyContentViewModel) -> some View {
+        if viewModel.isLoading && viewModel.items.isEmpty {
+            RepoSkeletonListView(rowCount: 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+            emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error) {
+                Task { await viewModel.reload() }
+            }
+        } else if viewModel.items.isEmpty {
+            emptyState(systemImage: "newspaper", title: "weekly.empty.title", subtitle: "weekly.empty.subtitle") {
+                Task { await viewModel.reload() }
+            }
+        } else {
+            projectList(viewModel)
+        }
+    }
+
+    private func contentStateID(for viewModel: WeeklyContentViewModel) -> String {
+        if viewModel.isLoading && viewModel.items.isEmpty {
+            return "weekly-loading"
+        }
+        if let error = viewModel.loadError, viewModel.items.isEmpty {
+            return "weekly-error-\(error)"
+        }
+        if viewModel.items.isEmpty {
+            return "weekly-empty"
+        }
+        return "weekly-content"
+    }
+
+    private var contentAnimation: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.22)
+    }
+
+    private var contentTransition: AnyTransition {
+        reduceMotion ? .identity : .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity
+        )
     }
 
     // MARK: - Filter Bar
@@ -485,6 +523,8 @@ struct WeeklyContentView: View {
         }
         .task(id: viewModel.itemsRevision) {
             let repoIDs = viewModel.items.map(\.ghRepoId)
+            await reloadWikiAvailabilityMap(for: viewModel.items)
+            try? await Task.sleep(nanoseconds: 150_000_000)
             await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
             await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
         }
@@ -579,7 +619,7 @@ struct WeeklyContentView: View {
         case .outsideLibrary:
             guard libraryStateMap[repoId] != .inLibrary else { return false }
         }
-        if !matchesWikiFilter(owner: owner, name: name) { return false }
+        if !matchesWikiFilter(repoId: repoId) { return false }
         if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
             return false
         }
@@ -589,12 +629,12 @@ struct WeeklyContentView: View {
         return true
     }
 
-    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+    private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
-            return false
+        guard let available = wikiAvailabilityMap[repoId] else {
+            return settings.wikiAvailabilityFilter == .missing
         }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -607,6 +647,16 @@ struct WeeklyContentView: View {
 
     private func reloadLibraryStateMap() async {
         libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func reloadWikiAvailabilityMap(for items: [WeeklyFeedItem]) async {
+        guard settings.wikiAvailabilityFilter != .unknown else { return }
+        var next = wikiAvailabilityMap
+        for item in items where next[item.ghRepoId] == nil {
+            let snapshot = DiskWikiCache.shared.load(owner: item.owner, repo: item.name)
+            next[item.ghRepoId] = !(snapshot?.indexedLinks.isEmpty ?? true)
+        }
+        wikiAvailabilityMap = next
     }
 
     private func observeLibraryStateChanges() async {
@@ -680,21 +730,6 @@ struct WeeklyContentView: View {
         }
     }
 
-    private func loadingState(title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.regular)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
-    }
 }
 
 // R-01 v1.2 Phase B4（2026-06-10）：原 `WeeklyProjectRow` 已删除，
@@ -826,6 +861,8 @@ final class WeeklyContentViewModel {
     private var filteredLocalItems: [WeeklyFeedItem] = []
     /// bulk 缓存的"原始全量"——`filteredLocalItems` 是它的过滤+排序产物。
     private var bulkAllItems: [WeeklyFeedItem] = []
+    /// true 表示当前 `.local` 来自 SQLite 分页查询，而不是内存全量切片。
+    private var usesPagedCache = false
     /// 上次 bulk 拉取的客户端时间戳（用于判 12h TTL）。
     private(set) var lastBulkFetchedAt: Date?
 
@@ -869,8 +906,8 @@ final class WeeklyContentViewModel {
         defer { isLoading = false }
 
         // Step 1: 尝试从本地缓存读
-        if let cached = await bulkRepository.cachedBulk(), !cached.items.isEmpty {
-            applyLocalSnapshot(cached, bumpRevision: false)
+        if let cached = await bulkRepository.cachedPage(query: makeCacheQuery(page: 1)) {
+            applyPagedCacheSnapshot(cached, page: 1, appending: false, bumpRevision: false)
             // Step 2: TTL 判断
             if isCacheFresh(at: cached.lastFetchedAt) {
                 return  // 12h 内，零网络上屏
@@ -950,7 +987,11 @@ final class WeeklyContentViewModel {
         guard hasMore, !isLoading, !isLoadingMore else { return }
 
         if dataSource == .local {
-            advanceLocalPage()
+            if usesPagedCache {
+                await loadNextCachedPage()
+            } else {
+                advanceLocalPage()
+            }
             return
         }
 
@@ -1059,7 +1100,11 @@ final class WeeklyContentViewModel {
 
     private func reapplyFilters() {
         if dataSource == .local {
-            applyFiltersLocally(bumpRevision: true)
+            if usesPagedCache {
+                Task { await reloadCachedPage(bumpRevision: true) }
+            } else {
+                applyFiltersLocally(bumpRevision: true)
+            }
         } else {
             Task { await reload() }
         }
@@ -1140,8 +1185,61 @@ final class WeeklyContentViewModel {
         bulkAllItems = snapshot.items
         lastBulkFetchedAt = snapshot.lastFetchedAt
         dataSource = .local
+        usesPagedCache = false
         loadError = nil
         applyFiltersLocally(bumpRevision: bumpRevision)
+    }
+
+    private func applyPagedCacheSnapshot(
+        _ snapshot: WeeklyBulkPageSnapshot,
+        page: Int,
+        appending: Bool,
+        bumpRevision: Bool
+    ) {
+        lastBulkFetchedAt = snapshot.lastFetchedAt
+        dataSource = .local
+        usesPagedCache = true
+        loadError = nil
+        self.page = page
+        total = snapshot.filteredTotal
+        hasMore = page * Self.localPageSize < snapshot.filteredTotal
+        if appending {
+            let existingIDs = Set(items.map(\.id))
+            items.append(contentsOf: snapshot.items.filter { !existingIDs.contains($0.id) })
+        } else {
+            items = snapshot.items
+        }
+        if bumpRevision {
+            itemsRevision += 1
+        }
+        selectionService?.applyTotal(snapshot.catalogTotal)
+    }
+
+    private func reloadCachedPage(bumpRevision: Bool) async {
+        let myGen = bumpGeneration()
+        isLoading = true
+        defer {
+            if myGen == generation {
+                isLoading = false
+            }
+        }
+        guard let snapshot = await bulkRepository.cachedPage(query: makeCacheQuery(page: 1)),
+              myGen == generation else { return }
+        applyPagedCacheSnapshot(snapshot, page: 1, appending: false, bumpRevision: bumpRevision)
+    }
+
+    private func loadNextCachedPage() async {
+        let myGen = generation
+        isLoadingMore = true
+        defer {
+            if myGen == generation {
+                isLoadingMore = false
+            }
+        }
+        let nextPage = page + 1
+        guard let snapshot = await bulkRepository.cachedPage(query: makeCacheQuery(page: nextPage)),
+              myGen == generation else { return }
+        applyPagedCacheSnapshot(snapshot, page: nextPage, appending: true, bumpRevision: false)
     }
 
     /// 在 `bulkAllItems` 基础上按当前筛选条件重过滤重排序，切片到 page 1 上屏。
@@ -1190,6 +1288,22 @@ final class WeeklyContentViewModel {
         items = Array(filteredLocalItems.prefix(upper))
         page = nextPage
         hasMore = upper < filteredLocalItems.count
+    }
+
+    private func makeCacheQuery(page: Int) -> WeeklyBulkCacheQuery {
+        WeeklyBulkCacheQuery(
+            source: selectedSource,
+            coverage: selectedCoverage,
+            hideArchived: hideArchivedRepos,
+            hideForks: hideForkRepos,
+            starsFilter: selectedStarsFilter,
+            pushedRecency: selectedPushedRecency,
+            language: selectedLanguage,
+            sort: selectedSort,
+            page: page,
+            pageSize: Self.localPageSize,
+            now: Date()
+        )
     }
 
     /// 12h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 12h 即新鲜）。

@@ -454,7 +454,7 @@ extension DiscoveryRepoDTO {
     }
 
     var latestReleaseDate: Date? {
-        latestReleaseAt.flatMap(ISO8601DateFormatter.shared.date(from:))
+        ISO8601DateFormatter.githubDate(from: latestReleaseAt)
     }
 
     private var topicsJSON: String? {

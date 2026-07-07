@@ -301,7 +301,7 @@ private struct ExploreDiscoveryListView: View {
                         card: repo.asCardData(
                             registry: dependencies.starredRegistry,
                             isInLibrary: isInLibrary(repo.repoID),
-                            footerMetadata: releaseFooterMetadata(for: repo),
+                            footerMetadata: footerMetadata(for: repo),
                             openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.repoID)
                         ),
                         isSelected: store.isActive
@@ -309,6 +309,7 @@ private struct ExploreDiscoveryListView: View {
                             : (selectedRepoID == repo.repoID),
                         showStarredCheckmark: true
                     )
+                    .id(repoRowIdentity(for: repo))
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -373,9 +374,7 @@ private struct ExploreDiscoveryListView: View {
     /// 后端给的是 ISO-8601 `latest_release_at`，列表里只保留短日期（如 `Jul 4` / `7月4日`）。
     /// 解析失败时直接隐藏，不能把原始时间戳重新暴露到卡片上。
     private func releaseFooterMetadata(for repo: DiscoveryRepoDTO) -> RepoCardInlineMetadata? {
-        guard mode == .newReleases,
-              let raw = repo.latestReleaseAt,
-              let date = ISO8601DateFormatter.shared.date(from: raw)
+        guard let date = ISO8601DateFormatter.githubDate(from: repo.latestReleaseAt)
         else { return nil }
         let text = date.formatted(
             .dateTime
@@ -384,6 +383,55 @@ private struct ExploreDiscoveryListView: View {
                 .locale(LocaleStore.shared.selection.effectiveLocale)
         )
         return RepoCardInlineMetadata(systemImage: "shippingbox", text: text)
+    }
+
+    private func footerMetadata(for repo: DiscoveryRepoDTO) -> RepoCardInlineMetadata? {
+        switch mode {
+        case .popular:
+            guard repo.releaseDownloadCount > 0 else { return nil }
+            return RepoCardInlineMetadata(
+                systemImage: "arrow.down.circle",
+                text: repo.releaseDownloadCount.formattedShort,
+                tint: .green
+            )
+        case .discover:
+            return discoverySignalMetadata(for: repo)
+        case .newReleases:
+            return releaseFooterMetadata(for: repo)
+        case .trending, .weekly:
+            return nil
+        }
+    }
+
+    private func discoverySignalMetadata(for repo: DiscoveryRepoDTO) -> RepoCardInlineMetadata? {
+        let reasonCodes = repo.reasons.map { $0.lowercased() }
+        if reasonCodes.contains("recent_release") {
+            return RepoCardInlineMetadata(systemImage: "shippingbox", text: .l10n("explore.discoverySignal.recentRelease"))
+        }
+        if reasonCodes.contains("release_downloads") {
+            return RepoCardInlineMetadata(systemImage: "arrow.down.circle", text: .l10n("explore.discoverySignal.downloads"))
+        }
+        if reasonCodes.contains("popular") {
+            return RepoCardInlineMetadata(systemImage: "star", text: .l10n("explore.discoverySignal.popular"))
+        }
+
+        let signalCodes = repo.signals.map { $0.code.lowercased() }
+        if signalCodes.contains("release") {
+            return RepoCardInlineMetadata(systemImage: "shippingbox", text: .l10n("explore.discoverySignal.recentRelease"))
+        }
+        if signalCodes.contains("downloads") {
+            return RepoCardInlineMetadata(systemImage: "arrow.down.circle", text: .l10n("explore.discoverySignal.downloads"))
+        }
+        if signalCodes.contains("stars") {
+            return RepoCardInlineMetadata(systemImage: "star", text: .l10n("explore.discoverySignal.popular"))
+        }
+        return nil
+    }
+
+    private func repoRowIdentity(for repo: DiscoveryRepoDTO) -> String {
+        // 同一个 repo 可能同时出现在发现 / 热门 / 新发布；把 mode 和 release 时间纳入
+        // row identity，避免 SwiftUI List 复用旧卡片导致新发布的发布时间 chip 不刷新。
+        "\(mode.id)-\(repo.repoID)-\(repo.latestReleaseAt ?? "__no_release__")"
     }
 
     private var indexedRepos: [IndexedDiscoveryRepo] {

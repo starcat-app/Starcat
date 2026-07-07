@@ -421,16 +421,26 @@ private struct RepoCardInlineMetadataBadge: View {
             Text(verbatim: metadata.text)
                 .font(interfaceScale.font(.code, weight: .semibold))
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(tint)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background {
             Capsule(style: .continuous)
-                .fill(Color.secondary.opacity(0.10))
+                .fill(tint.opacity(0.10))
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: 96, alignment: .leading)
         .help(metadata.text)
+    }
+
+    private var tint: Color {
+        switch metadata.tint {
+        case .secondary:
+            return .secondary
+        case .green:
+            return .green
+        }
     }
 }
 

@@ -47,6 +47,13 @@ protocol WeeklyBulkRepositoryProtocol: Sendable {
     /// 解码失败的行被跳过（容错），永不抛出（DB 读失败仅记录日志后返回 nil）。
     func cachedBulk() async -> WeeklyBulkCachedSnapshot?
 
+    /// 分页读取本地 bulk cache。
+    ///
+    /// Weekly 入场首屏只需要 20 条，不能为了首屏把 `weekly_bulk_repos`
+    /// 全表 decode 成 `WeeklyFeedItem`。这个路径把筛选 / 排序 / 分页下推给 SQLite，
+    /// 只 decode 当前页，显著降低切到 Weekly 分类时的主线程等待体感。
+    func cachedPage(query: WeeklyBulkCacheQuery) async -> WeeklyBulkPageSnapshot?
+
     /// 走网络拉新 + 整批替换缓存 + 返回新数据。
     ///
     /// - 网络成功：覆盖缓存，返回新数据
@@ -71,6 +78,29 @@ struct WeeklyBulkCachedSnapshot: Sendable {
     let lastFetchedAt: Date
     let generatedAt: String?
     let total: Int
+}
+
+struct WeeklyBulkPageSnapshot: Sendable {
+    let items: [WeeklyFeedItem]
+    let etag: String?
+    let lastFetchedAt: Date
+    let generatedAt: String?
+    let filteredTotal: Int
+    let catalogTotal: Int
+}
+
+struct WeeklyBulkCacheQuery: Sendable {
+    let source: WeeklySourceFilter
+    let coverage: WeeklySourceCoverageFilter
+    let hideArchived: Bool
+    let hideForks: Bool
+    let starsFilter: WeeklyStarsFilter
+    let pushedRecency: WeeklyPushedRecencyFilter
+    let language: String
+    let sort: WeeklyFeedSort
+    let page: Int
+    let pageSize: Int
+    let now: Date
 }
 
 /// Weekly bulk 数据仓库实现。
@@ -152,6 +182,57 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             return snapshot
         } catch {
             AppLog.network.warning("WeeklyBulk cache read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    func cachedPage(query: WeeklyBulkCacheQuery) async -> WeeklyBulkPageSnapshot? {
+        do {
+            return try await database.writer.read { db -> WeeklyBulkPageSnapshot? in
+                guard let meta = try WeeklyBulkMetaRecord
+                    .filter(Column("id") == WeeklyBulkMetaRecord.singletonID)
+                    .fetchOne(db)
+                else {
+                    return nil
+                }
+                guard let lastFetchedAt = ISO8601DateFormatter.shared.date(from: meta.lastFetchedAt) else {
+                    AppLog.network.warning(
+                        "WeeklyBulk cachedPage: invalid lastFetchedAt='\(meta.lastFetchedAt, privacy: .public)', treating as empty cache"
+                    )
+                    return nil
+                }
+
+                let page = max(query.page, 1)
+                let pageSize = max(query.pageSize, 1)
+                let filter = Self.makeSQLFilter(for: query)
+                let total = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM weekly_bulk_repos" + filter.whereSQL,
+                    arguments: filter.arguments
+                ) ?? 0
+
+                let records = try WeeklyBulkRepoRecord.fetchAll(
+                    db,
+                    sql: """
+                    SELECT * FROM weekly_bulk_repos
+                    \(filter.whereSQL)
+                    ORDER BY \(Self.orderSQL(for: query.sort))
+                    LIMIT ? OFFSET ?
+                    """,
+                    arguments: filter.arguments + [pageSize, (page - 1) * pageSize]
+                )
+                let items = records.compactMap { $0.toDomain() }
+                return WeeklyBulkPageSnapshot(
+                    items: items,
+                    etag: meta.etag,
+                    lastFetchedAt: lastFetchedAt,
+                    generatedAt: meta.generatedAt,
+                    filteredTotal: total,
+                    catalogTotal: meta.total
+                )
+            }
+        } catch {
+            AppLog.network.warning("WeeklyBulk cachedPage read failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -241,6 +322,75 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             AppLog.network.info("WeeklyBulk cache cleared")
         } catch {
             AppLog.network.error("WeeklyBulk clearCache failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func makeSQLFilter(for query: WeeklyBulkCacheQuery) -> (whereSQL: String, arguments: StatementArguments) {
+        var clauses: [String] = []
+        var arguments = StatementArguments()
+
+        if query.source != .all {
+            clauses.append("source_types_json LIKE ?")
+            arguments.append(contentsOf: ["%\"\(query.source.rawValue)\"%"])
+        }
+
+        switch query.coverage {
+        case .all:
+            break
+        case .multipleSources:
+            clauses.append("json_array_length(COALESCE(source_types_json, '[]')) >= 2")
+        case .singleSource:
+            clauses.append("json_array_length(COALESCE(source_types_json, '[]')) = 1")
+        }
+
+        if query.hideArchived {
+            clauses.append("is_archived = 0")
+        }
+        if query.hideForks {
+            clauses.append("is_fork = 0")
+        }
+        if query.starsFilter.rawValue > 0 {
+            clauses.append("stars >= ?")
+            arguments.append(contentsOf: [query.starsFilter.rawValue])
+        }
+        if query.pushedRecency.rawValue > 0,
+           let cutoff = Calendar(identifier: .gregorian).date(byAdding: .day, value: -query.pushedRecency.rawValue, to: query.now) {
+            clauses.append("pushed_at >= ?")
+            arguments.append(contentsOf: [ISO8601DateFormatter.shared.string(from: cutoff)])
+        }
+        if !query.language.isEmpty {
+            if query.language == TrendingLanguage.uncategorizedKey {
+                clauses.append("(language IS NULL OR language = '')")
+            } else {
+                clauses.append("lower(language) = lower(?)")
+                arguments.append(contentsOf: [query.language])
+            }
+        }
+
+        guard !clauses.isEmpty else { return ("", arguments) }
+        return (" WHERE " + clauses.joined(separator: " AND "), arguments)
+    }
+
+    private static func orderSQL(for sort: WeeklyFeedSort) -> String {
+        switch sort {
+        case .defaultOrder:
+            return "latest_event_at DESC, gh_repo_id DESC"
+        case .starsDesc:
+            return "stars DESC, gh_repo_id DESC"
+        case .starsAsc:
+            return "stars ASC, gh_repo_id DESC"
+        case .updatedDesc:
+            return "COALESCE(updated_at, '') DESC, gh_repo_id DESC"
+        case .updatedAsc:
+            return "COALESCE(updated_at, '\u{FFFD}') ASC, gh_repo_id DESC"
+        case .createdDesc:
+            return "COALESCE(created_at, '') DESC, gh_repo_id DESC"
+        case .createdAsc:
+            return "COALESCE(created_at, '\u{FFFD}') ASC, gh_repo_id DESC"
+        case .nameAsc:
+            return "lower(full_name) ASC, gh_repo_id DESC"
+        case .nameDesc:
+            return "lower(full_name) DESC, gh_repo_id DESC"
         }
     }
 }

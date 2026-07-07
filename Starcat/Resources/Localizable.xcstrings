@@ -11654,6 +11654,57 @@
         }
       }
     },
+    "explore.discoverySignal.downloads": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有下载"
+          }
+        }
+      }
+    },
+    "explore.discoverySignal.popular": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Popular"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高星"
+          }
+        }
+      }
+    },
+    "explore.discoverySignal.recentRelease": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent release"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近期发布"
+          }
+        }
+      }
+    },
     "explore.detail.taxonomy": {
       "extractionState": "stale",
       "localizations": {
@@ -41735,40 +41786,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无周刊项目"
-          }
-        }
-      }
-    },
-    "weekly.loading.subtitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Starcat is reading the weekly feed and local cache."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Starcat 正在读取周刊 feed 和本地缓存。"
-          }
-        }
-      }
-    },
-    "weekly.loading.title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Loading weekly projects…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载周刊项目…"
           }
         }
       }
