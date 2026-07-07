@@ -234,6 +234,52 @@ struct AgentRuntimeTests {
         ])
         #expect(markdownArtifact?.content.contains("External Search Unit Context") == true)
     }
+
+    @Test("external.search 失败时 Weekly Runtime 记录失败 trace 并继续本地生成")
+    func weeklyRuntimeContinuesWhenExternalSearchFails() async throws {
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+            externalSearchTool: FailedExternalSearchTool()
+        ))
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0,
+            textGenerator: EchoDraftAgentTextGenerator(),
+            toolRegistry: registry
+        )
+
+        let stream = runtime.run(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成 Swift 周刊",
+            context: AgentRunContext(
+                sourceDescription: "Unit Test",
+                repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+            )
+        )
+
+        var failedTrace: AgentTraceSpan?
+        var failedMessage: String?
+        var markdownArtifact: AgentArtifact?
+        var didComplete = false
+        for await event in stream {
+            switch event {
+            case .trace(let span) where span.title == "external.search" && span.status == .failed:
+                failedTrace = span
+            case .runFailed(let message):
+                failedMessage = message
+            case .artifactCreated(let artifact) where artifact.type == .markdown:
+                markdownArtifact = artifact
+            case .runCompleted:
+                didComplete = true
+            default:
+                break
+            }
+        }
+
+        #expect(failedTrace?.output.contains("provider timeout") == true)
+        #expect(failedMessage == nil)
+        #expect(markdownArtifact?.content.contains("groue/GRDB.swift") == true)
+        #expect(didComplete)
+    }
 }
 
 private struct StaticAgentTextGenerator: AgentTextGenerating {
@@ -284,6 +330,37 @@ private struct StubExternalSearchTool: AgentTool {
                 relatedToolOutputID: output.id
             ),
             payload: .externalContextMarkdown("External Search Unit Context")
+        )
+    }
+}
+
+private struct FailedExternalSearchTool: AgentTool {
+    let id = "external.search"
+    let displayName = "External Search"
+    let permission: AgentToolPermission = .readOnly
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        let output = AgentToolOutput(
+            toolName: id,
+            summary: "failed",
+            detail: "provider timeout",
+            input: "query: GRDB",
+            output: "provider timeout",
+            log: "provider=stub\nstatus=failed"
+        )
+        return AgentToolResult(
+            status: .failed,
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: id,
+                summary: output.summary,
+                input: output.input,
+                output: output.output,
+                log: output.log,
+                status: .failed,
+                relatedToolOutputID: output.id
+            )
         )
     }
 }

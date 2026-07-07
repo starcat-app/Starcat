@@ -66,7 +66,7 @@
   6. LLM generate
   7. artifact create
 - [x] 外部搜索关闭时,Weekly Agent 明确记录 skipped trace 并继续本地生成。
-- [ ] 外部搜索 provider 失败时,Weekly Agent 明确记录 failed/degraded trace 并继续本地生成。
+- [x] 外部搜索 provider 失败时,Weekly Agent 明确记录 failed/degraded trace 并继续本地生成。
 - [ ] Artifact 生成必须处于执行顺序底部,结果不得显示在工具过程之前。
 - [ ] 中栏只展示真实 run 数据,不得出现默认 demo prompt / 默认 plan / 默认 tool / 默认 artifact。
 - [ ] 右栏只展示真实 artifact,不得展示 Agent 专用硬编码卡片或不可点击占位操作。
@@ -75,7 +75,7 @@
 - [x] 补 `external.search` Agent tool 单测,使用 stub provider。
 - [x] 补 Runtime 执行顺序单测,确认网络搜索在聚类前、artifact 在最后。
 - [x] 补外部搜索关闭 skipped 单测。
-- [ ] 补 provider 失败降级单测。
+- [x] 补 provider 失败降级单测。
 - [ ] 更新 `docs/功能实现总览.md` Agent 底层框架条目与变更日志。
 - [ ] 第一轮审查: 文档、checklist、主进度索引一致性。
 - [ ] 第二轮审查: 代码架构与 `16-Agent底层平台技术方案.md` 一致性。

@@ -129,7 +129,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     continuation.yield(.trace(toolResult.trace))
                     runLog.append("Tool output: \(toolResult.output.toolName) - \(toolResult.output.summary)")
 
-                    if toolResult.status == .failed {
+                    if toolResult.status == .failed, Self.isBlockingFailure(tool) {
                         continuation.yield(.runFailed(toolResult.output.detail))
                         continuation.finish()
                         return
@@ -263,5 +263,11 @@ struct DefaultAgentRuntime: AgentRuntime {
 
         \(lines.map { "- \($0)" }.joined(separator: "\n"))
         """
+    }
+
+    private static func isBlockingFailure(_ tool: any AgentTool) -> Bool {
+        // External Search 只是补充来源,不能因为 provider/API 暂时失败阻断本地周刊生成。
+        // 核心工具仍保持 fail-fast,否则 artifact 可能基于缺失的本地上下文生成。
+        tool.id != "external.search"
     }
 }
