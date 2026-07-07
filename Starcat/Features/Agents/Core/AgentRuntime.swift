@@ -25,6 +25,7 @@ struct DefaultAgentRuntime: AgentRuntime {
     private let stepStartDelayNanoseconds: UInt64
     private let stepCompletionDelayNanoseconds: UInt64
     private let textGenerator: any AgentTextGenerating
+    private let toolRegistry: AgentToolRegistry
 
     /// 创建 P0 默认运行时。
     ///
@@ -33,11 +34,13 @@ struct DefaultAgentRuntime: AgentRuntime {
     init(
         stepStartDelayNanoseconds: UInt64 = 280_000_000,
         stepCompletionDelayNanoseconds: UInt64 = 420_000_000,
-        textGenerator: any AgentTextGenerating = DisabledAgentTextGenerator()
+        textGenerator: any AgentTextGenerating = DisabledAgentTextGenerator(),
+        toolRegistry: AgentToolRegistry = Self.makeDefaultToolRegistry()
     ) {
         self.stepStartDelayNanoseconds = stepStartDelayNanoseconds
         self.stepCompletionDelayNanoseconds = stepCompletionDelayNanoseconds
         self.textGenerator = textGenerator
+        self.toolRegistry = toolRegistry
     }
 
     func run(
@@ -50,18 +53,18 @@ struct DefaultAgentRuntime: AgentRuntime {
                 var runLog: [String] = []
                 let plan = Self.makeWeeklyReportPlan(context: context)
                 let steps = Self.makeWeeklyReportSteps()
-                let clustered = GitHubWeeklyReportTools.clusterTopics(context: context)
-                let (draftMarkdown, draftTool) = GitHubWeeklyReportTools.buildMarkdown(
-                    prompt: prompt,
-                    context: context,
-                    topics: clustered.0
-                )
-                let toolResults = [
-                    GitHubWeeklyReportTools.parseGoal(prompt: prompt, context: context),
-                    GitHubWeeklyReportTools.resolveCandidateRepos(context: context),
-                    clustered.1,
-                    draftTool
-                ]
+                let tools: [any AgentTool]
+                do {
+                    tools = try toolRegistry.tools(for: definition.toolIDs)
+                } catch {
+                    let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    continuation.yield(.runFailed(message))
+                    continuation.finish()
+                    return
+                }
+                var payload: AgentToolPayload = .none
+                var draftMarkdown = ""
+                var draftToolOutput: AgentToolOutput?
 
                 continuation.yield(.runStarted(title: definition.title))
                 runLog.append("Run started: \(definition.title)")
@@ -69,7 +72,11 @@ struct DefaultAgentRuntime: AgentRuntime {
                 continuation.yield(.planCreated(plan))
                 runLog.append("Plan created: \(plan.count) steps")
 
-                for (index, step) in steps.enumerated() {
+                for (index, tool) in tools.enumerated() {
+                    let step = steps.indices.contains(index) ? steps[index] : AgentRunStep(
+                        title: tool.displayName,
+                        detail: "执行 Agent tool: \(tool.id)。"
+                    )
                     try? await Task.sleep(nanoseconds: stepStartDelayNanoseconds)
                     guard !Task.isCancelled else {
                         continuation.yield(.runCancelled)
@@ -83,7 +90,16 @@ struct DefaultAgentRuntime: AgentRuntime {
                     continuation.yield(.stepUpdated(running))
                     runLog.append("Step started: \(running.title)")
 
-                    let toolResult = toolResults[index]
+                    let toolResult = await tool.execute(AgentToolInput(
+                        prompt: prompt,
+                        context: context,
+                        payload: payload
+                    ))
+                    payload = toolResult.payload
+                    if case .markdown(let markdown) = toolResult.payload {
+                        draftMarkdown = markdown
+                        draftToolOutput = toolResult.output
+                    }
 
                     try? await Task.sleep(nanoseconds: stepCompletionDelayNanoseconds)
                     guard !Task.isCancelled else {
@@ -93,7 +109,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     }
 
                     var completed = step
-                    completed.status = .completed
+                    completed.status = toolResult.status.stepStatus
                     completed.detail = toolResult.output.summary
                     continuation.yield(.stepUpdated(completed))
                     runLog.append("Step completed: \(completed.title)")
@@ -101,6 +117,12 @@ struct DefaultAgentRuntime: AgentRuntime {
                     continuation.yield(.toolOutput(toolResult.output))
                     continuation.yield(.trace(toolResult.trace))
                     runLog.append("Tool output: \(toolResult.output.toolName) - \(toolResult.output.summary)")
+
+                    if toolResult.status == .failed {
+                        continuation.yield(.runFailed(toolResult.output.detail))
+                        continuation.finish()
+                        return
+                    }
                 }
 
                 let markdown: String
@@ -141,14 +163,17 @@ struct DefaultAgentRuntime: AgentRuntime {
                     title: "本周 GitHub 热门项目周刊",
                     content: markdown
                 )
+                let artifactInput = draftToolOutput?.input ?? "artifact.buildMarkdown"
+                let artifactOutput = draftToolOutput?.output ?? String(markdown.prefix(1_200))
+                let artifactLog = draftToolOutput?.log ?? "Created Markdown artifact from generated output."
                 continuation.yield(.trace(AgentTraceSpan(
                     kind: "Artifact",
                     title: markdownArtifact.title,
                     summary: markdownArtifact.type.title,
-                    input: draftTool.output.input,
-                    output: draftTool.output.output,
-                    log: draftTool.output.log,
-                    relatedToolOutputID: draftTool.output.id,
+                    input: artifactInput,
+                    output: artifactOutput,
+                    log: artifactLog,
+                    relatedToolOutputID: draftToolOutput?.id,
                     relatedArtifactID: markdownArtifact.id
                 )))
                 continuation.yield(.artifactCreated(markdownArtifact))
@@ -164,6 +189,14 @@ struct DefaultAgentRuntime: AgentRuntime {
             continuation.onTermination = { _ in
                 task.cancel()
             }
+        }
+    }
+
+    private static func makeDefaultToolRegistry() -> AgentToolRegistry {
+        do {
+            return try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        } catch {
+            preconditionFailure("Default Agent tool registry is invalid: \(error)")
         }
     }
 

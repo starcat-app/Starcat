@@ -54,7 +54,7 @@
   - `context.resolveRepos`
   - `report.clusterTopics`
   - `artifact.buildMarkdown`
-- [ ] 重构 `DefaultAgentRuntime`,按 tool registry 和执行计划驱动工具,不再硬编码静态工具数组。
+- [x] 重构 `DefaultAgentRuntime`,按 tool registry 和执行计划驱动工具,不再硬编码静态工具数组。
 - [ ] 新增 Agent 网络搜索工具 `external.search`,复用现有 External Search provider 栈。
 - [ ] 为 `external.search` 输出 `AgentToolOutput` 与 `AgentTraceSpan`,包含 query、provider、结果数、source URL、错误和 cache 状态。
 - [ ] Weekly Agent 接入 `external.search`:

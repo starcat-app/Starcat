@@ -145,6 +145,47 @@ struct AgentRuntimeTests {
         let receivedEvents = await task.value
         #expect(receivedEvents <= 2)
     }
+
+    @Test("Runtime 缺少声明工具时显式失败")
+    func missingDeclaredToolFailsRun() async {
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 0,
+            stepCompletionDelayNanoseconds: 0,
+            textGenerator: StaticAgentTextGenerator(markdown: "# Should Not Run")
+        )
+        let definition = AgentDefinition(
+            id: "unit-missing-tool",
+            title: "Missing Tool Agent",
+            subtitle: "Unit",
+            systemImage: "wrench",
+            capabilityLabels: [],
+            defaultPrompt: "",
+            isEnabled: true,
+            toolIDs: ["agent.missing"]
+        )
+
+        let stream = runtime.run(
+            definition: definition,
+            prompt: "run",
+            context: .empty
+        )
+
+        var failedMessage: String?
+        var didComplete = false
+        for await event in stream {
+            switch event {
+            case .runFailed(let message):
+                failedMessage = message
+            case .runCompleted:
+                didComplete = true
+            default:
+                break
+            }
+        }
+
+        #expect(failedMessage?.contains("agent.missing") == true)
+        #expect(didComplete == false)
+    }
 }
 
 private struct StaticAgentTextGenerator: AgentTextGenerating {
