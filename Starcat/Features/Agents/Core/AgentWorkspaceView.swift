@@ -14,6 +14,7 @@ struct AgentWorkspaceView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var expandedTraceItemIDs: Set<String> = []
     let chromeState: WorkspaceChromeState
@@ -231,7 +232,31 @@ struct AgentWorkspaceView: View {
     }
 
     private func historySubtitle(_ run: AgentRunRecord) -> String {
-        "\(run.status) · \(run.createdAt)"
+        "\(historyStatusLabel(for: run.status)) · \(historyTimeLabel(for: run.createdAt))"
+    }
+
+    private func historyStatusLabel(for status: String) -> String {
+        switch AgentRunStatus(rawValue: status) {
+        case .completed:
+            return "已完成"
+        case .failed:
+            return "失败"
+        case .cancelled:
+            return "已取消"
+        case .planning:
+            return "规划中"
+        case .running:
+            return "运行中"
+        case .idle, .none:
+            return "未开始"
+        }
+    }
+
+    private func historyTimeLabel(for raw: String) -> String {
+        guard let date = ISO8601DateFormatter.shared.date(from: raw) else {
+            return raw
+        }
+        return RelativeTimeText.pastEvent(date, locale: locale)
     }
 
     private func historyIcon(for status: String) -> String {
