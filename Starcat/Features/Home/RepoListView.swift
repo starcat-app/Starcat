@@ -330,7 +330,7 @@ struct RepoListView: View {
                         Button {
                             onOpenAgentWorkspace?()
                         } label: {
-                            workspaceToolbarIcon("bolt.circle", tint: Color(nsColor: .systemIndigo))
+                            workspaceToolbarIcon("a.circle", tint: Color(nsColor: .systemIndigo))
                                 .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
                         }
                         .help("toolbar.agentWorkspace.help")
@@ -342,7 +342,7 @@ struct RepoListView: View {
                         Button {
                             onOpenKnowledgeRAGWorkspace?()
                         } label: {
-                            workspaceToolbarIcon("book.circle", tint: Color(nsColor: .systemTeal))
+                            workspaceToolbarIcon("r.circle", tint: Color(nsColor: .systemTeal))
                                 .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
                         }
                         .help("toolbar.knowledgeRAGWorkspace.help")
@@ -886,7 +886,14 @@ struct RepoListView: View {
         if case .userSmartCollection(let id) = viewModel.selection {
             return viewModel.userSmartCollection(id: id) != nil
         }
-        return viewModel.makeRuleFromCurrentManageFilters() != nil
+        switch viewModel.selection {
+        case .allStars, .allLanguages, .untagged, .language, .tag:
+            return true
+        case .library, .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
+            return false
+        case .userSmartCollection:
+            return false
+        }
     }
 
     /// 当前选中 repo 的 toolbar 操作组。

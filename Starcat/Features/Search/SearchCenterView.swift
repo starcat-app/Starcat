@@ -302,9 +302,6 @@ struct SearchCenterView: View {
                 .focusEffectDisabled()
             }
             Spacer()
-            if viewModel.isSearching {
-                ProgressView().controlSize(.small)
-            }
             if filtersAvailable {
                 Button {
                     isFilterDrawerPresented.toggle()
@@ -624,12 +621,14 @@ struct SearchCenterView: View {
                     githubLoadMoreListRow
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 }
 
                 if shouldShowWebLoadMoreRow {
                     webLoadMoreListRow
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 }
             }
             .listStyle(.inset)
@@ -1042,21 +1041,20 @@ struct SearchCenterView: View {
                     if isLoading {
                         ProgressView()
                             .controlSize(.small)
+                            .scaleEffect(0.75)
                     }
                     Text("search.github.loadMore")
                         .font(interfaceScale.font(.captionStrong, weight: .semibold))
                 }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.10), in: Capsule())
+                .foregroundStyle(Color.accentColor)
+                .padding(.vertical, 2)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .disabled(isLoading)
             Spacer()
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 2)
     }
 
     /// 浮层底部 footer。按 scope 分支渲染：

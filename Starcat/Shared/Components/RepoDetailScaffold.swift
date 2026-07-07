@@ -563,6 +563,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                             }
                         }
                     )
+                    .appLocaleEnvironment()
                 }
             }
             if canShowLibraryToggle(for: repo) {

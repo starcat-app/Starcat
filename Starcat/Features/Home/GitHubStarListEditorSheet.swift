@@ -66,8 +66,12 @@ struct GitHubStarListEditorSheet: View {
 
     private var header: some View {
         HStack {
-            Text(isEditing ? "githubStarLists.editor.title.edit" : "githubStarLists.editor.title.create")
-                .font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: isEditing ? "folder" : "folder.badge.plus")
+                    .foregroundStyle(.secondary)
+                Text(isEditing ? "githubStarLists.editor.title.edit" : "githubStarLists.editor.title.create")
+            }
+            .font(.headline)
             Spacer()
             SheetCloseButton {
                 dismiss()

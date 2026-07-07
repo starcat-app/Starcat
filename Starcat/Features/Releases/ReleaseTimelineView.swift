@@ -78,7 +78,8 @@ struct ReleaseTimelineView: View {
     private var header: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.circlepath")
+                Image(systemName: "shippingbox")
+                    .foregroundStyle(.secondary)
                 Text("releases.timeline.title")
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

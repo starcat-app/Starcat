@@ -105,8 +105,12 @@ struct SmartCollectionRuleEditorSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Text(modeTitleKey)
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundStyle(.secondary)
+                    Text(modeTitleKey)
+                }
+                .font(.headline)
                 Spacer()
                 SheetCloseButton(
                     action: onCancel,
@@ -119,7 +123,7 @@ struct SmartCollectionRuleEditorSheet: View {
             .padding(.bottom, 12)
 
             ScrollView {
-                VStack(spacing: 16) {
+                LazyVStack(spacing: 16) {
                     // 名称：不带 Section header（label 行充当）
                     FormSection(titleKey: nil) {
                         FormRow {
@@ -365,6 +369,15 @@ struct SmartCollectionRuleEditorSheet: View {
                         }
                         .padding(12)
                     }
+                    // 预览命中数会扫当前规则的候选仓库和上下文；只在用户滚到预览区后启动，
+                    // 避免打开 sheet 的首帧同时承担完整计数查询。
+                    .task(id: previewTaskID) {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
+                        previewReloadGeneration += 1
+                        let generation = previewReloadGeneration
+                        await reloadPreviewCount(expectedGeneration: generation)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -391,13 +404,6 @@ struct SmartCollectionRuleEditorSheet: View {
             if case .create(let defaultName, _) = mode, name.isEmpty {
                 name = defaultName
             }
-        }
-        .task(id: previewTaskID) {
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            previewReloadGeneration += 1
-            let generation = previewReloadGeneration
-            await reloadPreviewCount(expectedGeneration: generation)
         }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)

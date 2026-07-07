@@ -226,8 +226,12 @@ struct ShareCardSheet: View {
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .center) {
-            Text("sharecard.title")
-                .font(.system(size: 16, weight: .semibold))
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.arrow.up")
+                    .foregroundStyle(.secondary)
+                Text("sharecard.title")
+            }
+            .font(.system(size: 16, weight: .semibold))
 
             Spacer()
 

@@ -155,19 +155,29 @@ struct RepoRecommendationPopover: View {
 
     @ViewBuilder
     private var loadMoreButton: some View {
-        Button(action: onLoadMore) {
-            HStack(spacing: 6) {
-                if isLoadingMore {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.75)
+        HStack {
+            Spacer()
+            Button(action: onLoadMore) {
+                HStack(spacing: 6) {
+                    if isLoadingMore {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.75)
+                    }
+                    if isLoadingMore {
+                        Text("repo.recommendations.loadingMore")
+                    } else {
+                        Text("repo.recommendations.more")
+                    }
                 }
-                Text(LocalizedStringKey(isLoadingMore ? "repo.recommendations.loadingMore" : "repo.recommendations.more"))
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
             }
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(isLoadingMore)
+            Spacer()
         }
-        .buttonStyle(.bordered)
-        .disabled(isLoadingMore)
         .padding(.top, 4)
     }
 
