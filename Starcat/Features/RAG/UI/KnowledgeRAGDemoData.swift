@@ -50,14 +50,16 @@ struct RAGDemoCitation: Identifiable {
 }
 
 enum RAGDemoData {
-    static let conversations: [RAGDemoConversation] = [
-        .init(id: "local-rag", title: "本地 RAG 方案", subtitle: "Swift 项目对比", time: "09:41", citationIndex: 0),
-        .init(id: "markdown", title: "Swift Markdown 渲染", subtitle: "解析库与 README 清洗", time: "昨天", citationIndex: 1),
-        .init(id: "vector-db", title: "向量数据库对比", subtitle: "桌面 app 选型", time: "昨天", citationIndex: 2),
-        .init(id: "concurrency", title: "Swift 并发最佳实践", subtitle: "actor / task cancellation", time: "5 天前", citationIndex: 2)
-    ]
+    static var conversations: [RAGDemoConversation] {
+        [
+            .init(id: "local-rag", title: String.l10n("rag.demo.conversation.localRAG.title"), subtitle: String.l10n("rag.demo.conversation.localRAG.subtitle"), time: "09:41", citationIndex: 0),
+            .init(id: "markdown", title: String.l10n("rag.demo.conversation.markdown.title"), subtitle: String.l10n("rag.demo.conversation.markdown.subtitle"), time: String.l10n("rag.demo.time.yesterday"), citationIndex: 1),
+            .init(id: "vector-db", title: String.l10n("rag.demo.conversation.vectorDB.title"), subtitle: String.l10n("rag.demo.conversation.vectorDB.subtitle"), time: String.l10n("rag.demo.time.yesterday"), citationIndex: 2),
+            .init(id: "concurrency", title: String.l10n("rag.demo.conversation.concurrency.title"), subtitle: String.l10n("rag.demo.conversation.concurrency.subtitle"), time: String.l10n("rag.demo.time.fiveDaysAgo"), citationIndex: 2)
+        ]
+    }
 
-    static let repoBundles: [RAGDemoRepoBundle] = [
+    static var repoBundles: [RAGDemoRepoBundle] { [
         .init(
             id: "grdb",
             repo: "GRDB.swift",
@@ -65,8 +67,8 @@ enum RAGDemoData {
             description: "A toolkit for SQLite databases, with a focus on application development.",
             language: "Swift",
             stars: "7.8k",
-            status: "已在知识库",
-            sources: ["README", "笔记", "Metadata"],
+            status: String.l10n("rag.demo.repo.status.inKnowledgeBase"),
+            sources: ["README", String.l10n("rag.demo.source.notes"), "Metadata"],
             citationIDs: ["grdb-install", "grdb-records"],
             localDetailAvailable: true
         ),
@@ -77,8 +79,8 @@ enum RAGDemoData {
             description: "A Swift package for parsing, building, editing, and analyzing Markdown documents.",
             language: "Swift",
             stars: "3.1k",
-            status: "已在知识库",
-            sources: ["README", "AI 摘要"],
+            status: String.l10n("rag.demo.repo.status.inKnowledgeBase"),
+            sources: ["README", String.l10n("rag.demo.source.aiSummary")],
             citationIDs: ["swift-markdown-overview"],
             localDetailAvailable: true
         ),
@@ -89,21 +91,21 @@ enum RAGDemoData {
             description: "Swift SDK for Model Context Protocol clients and servers.",
             language: "Swift",
             stars: "1.4k",
-            status: "GitHub 引用",
-            sources: ["AI 摘要", "Metadata"],
+            status: String.l10n("rag.demo.repo.status.githubCitation"),
+            sources: [String.l10n("rag.demo.source.aiSummary"), "Metadata"],
             citationIDs: ["mcp-tools"],
             localDetailAvailable: false
         )
-    ]
+    ] }
 
-    static let citations: [RAGDemoCitation] = [
+    static var citations: [RAGDemoCitation] { [
         .init(
             id: "grdb-install",
             rank: 1,
             repo: "GRDB.swift",
             fullName: "groue/GRDB.swift",
             source: "README",
-            sourceDetail: "README 缓存",
+            sourceDetail: String.l10n("rag.demo.sourceDetail.readmeCache"),
             sectionPath: "Installation > SQLite",
             title: "SQLite installation",
             parentTitle: "README > Installation",
@@ -118,13 +120,13 @@ enum RAGDemoData {
             rank: 2,
             repo: "GRDB.swift",
             fullName: "groue/GRDB.swift",
-            source: "笔记",
-            sourceDetail: "私有笔记",
-            sectionPath: "本地存储选型",
-            title: "SQLite + GRDB 作为本地缓存层",
+            source: String.l10n("rag.demo.source.notes"),
+            sourceDetail: String.l10n("rag.demo.sourceDetail.privateNote"),
+            sectionPath: String.l10n("rag.demo.citation.grdbRecords.sectionPath"),
+            title: String.l10n("rag.demo.citation.grdbRecords.title"),
             parentTitle: "Notes",
             score: 0.89,
-            snippet: "本地优先应用需要可控的事务、迁移和 FTS 能力。GRDB 已在 Starcat 主库中使用,适合作为 RAG chunk 与 citation 的本地存储基础。",
+            snippet: String.l10n("rag.demo.citation.grdbRecords.snippet"),
             isTruncated: false,
             localDetailAvailable: true,
             githubURL: URL(string: "https://github.com/groue/GRDB.swift")!
@@ -135,7 +137,7 @@ enum RAGDemoData {
             repo: "swift-markdown",
             fullName: "swiftlang/swift-markdown",
             source: "README",
-            sourceDetail: "README 缓存",
+            sourceDetail: String.l10n("rag.demo.sourceDetail.readmeCache"),
             sectionPath: "Overview > Parsing",
             title: "Markdown parsing",
             parentTitle: "README > Overview",
@@ -150,8 +152,8 @@ enum RAGDemoData {
             rank: 4,
             repo: "swift-sdk",
             fullName: "modelcontextprotocol/swift-sdk",
-            source: "AI 摘要",
-            sourceDetail: "仓库摘要",
+            source: String.l10n("rag.demo.source.aiSummary"),
+            sourceDetail: String.l10n("rag.demo.sourceDetail.repoSummary"),
             sectionPath: "Tool Calling",
             title: "MCP tool surface",
             parentTitle: "AI Summary > Tool Calling",
@@ -161,5 +163,5 @@ enum RAGDemoData {
             localDetailAvailable: false,
             githubURL: URL(string: "https://github.com/modelcontextprotocol/swift-sdk")!
         )
-    ]
+    ] }
 }

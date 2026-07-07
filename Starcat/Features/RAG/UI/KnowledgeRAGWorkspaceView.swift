@@ -282,7 +282,7 @@ struct KnowledgeRAGWorkspaceView: View {
         HStack(alignment: .top) {
             Spacer(minLength: 90)
             VStack(alignment: .trailing, spacing: 6) {
-                Text("我的知识库里有哪些适合做本地 RAG 的 Swift 项目？")
+                Text("rag.workspace.demo.question")
                     .font(ragFont(.body))
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
@@ -305,14 +305,14 @@ struct KnowledgeRAGWorkspaceView: View {
                 .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("根据知识库中的 repo 元信息、README chunk、笔记和已有摘要，当前最相关的是下面几个 Swift 项目。每个项目都绑定了本轮回答实际使用的引用。")
+                Text("rag.workspace.demo.answer.intro")
                     .font(ragFont(.body))
                     .foregroundStyle(.primary)
                     .lineSpacing(3)
 
                 repoBundleList
 
-                Text("如果只做第一版本地 RAG，优先从 GRDB.swift 的本地存储能力和 swift-markdown 的文档解析能力开始；MCP Swift SDK 更适合作为后续工具调用扩展。")
+                Text("rag.workspace.demo.answer.recommendation")
                     .font(ragFont(.body))
                     .foregroundStyle(.primary)
                     .lineSpacing(3)
@@ -469,7 +469,7 @@ struct KnowledgeRAGWorkspaceView: View {
     private func pendingQuestionBlock(maxWidth: CGFloat) -> some View {
         HStack(alignment: .top) {
             Spacer(minLength: 90)
-            Text(draftQuestion.isEmpty ? "继续追问知识库..." : draftQuestion)
+            Text(draftQuestion.isEmpty ? String.l10n("rag.workspace.demo.pendingQuestion") : draftQuestion)
                 .font(ragFont(.body))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 14)

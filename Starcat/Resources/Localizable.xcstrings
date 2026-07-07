@@ -45621,6 +45621,390 @@
           }
         }
       }
+    },
+    "rag.workspace.demo.question": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which Swift projects in my knowledge base are suitable for local RAG?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的知识库里有哪些适合做本地 RAG 的 Swift 项目？"
+          }
+        }
+      }
+    },
+    "rag.workspace.demo.answer.intro": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Based on repository metadata, README chunks, notes, and existing summaries in the knowledge base, the most relevant Swift projects are below. Each project is tied to citations actually used in this answer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "根据知识库中的 repo 元信息、README chunk、笔记和已有摘要，当前最相关的是下面几个 Swift 项目。每个项目都绑定了本轮回答实际使用的引用。"
+          }
+        }
+      }
+    },
+    "rag.workspace.demo.answer.recommendation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For a first version of local RAG, start with GRDB.swift for local storage and swift-markdown for document parsing. MCP Swift SDK is better suited for later tool-calling extensions."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果只做第一版本地 RAG，优先从 GRDB.swift 的本地存储能力和 swift-markdown 的文档解析能力开始；MCP Swift SDK 更适合作为后续工具调用扩展。"
+          }
+        }
+      }
+    },
+    "rag.workspace.demo.pendingQuestion": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue asking the knowledge base..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续追问知识库..."
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.localRAG.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local RAG Plan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地 RAG 方案"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.localRAG.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swift project comparison"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swift 项目对比"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.markdown.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swift Markdown Rendering"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swift Markdown 渲染"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.markdown.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parser library and README cleanup"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析库与 README 清洗"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.vectorDB.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vector Database Comparison"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量数据库对比"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.vectorDB.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop app selection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "桌面 app 选型"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.concurrency.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swift Concurrency Best Practices"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swift 并发最佳实践"
+          }
+        }
+      }
+    },
+    "rag.demo.conversation.concurrency.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "actor / task cancellation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "actor / task cancellation"
+          }
+        }
+      }
+    },
+    "rag.demo.time.yesterday": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yesterday"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "昨天"
+          }
+        }
+      }
+    },
+    "rag.demo.time.fiveDaysAgo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 days ago"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 天前"
+          }
+        }
+      }
+    },
+    "rag.demo.repo.status.inKnowledgeBase": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In knowledge base"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在知识库"
+          }
+        }
+      }
+    },
+    "rag.demo.repo.status.githubCitation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub citation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub 引用"
+          }
+        }
+      }
+    },
+    "rag.demo.source.notes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "笔记"
+          }
+        }
+      }
+    },
+    "rag.demo.source.aiSummary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Summary"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要"
+          }
+        }
+      }
+    },
+    "rag.demo.sourceDetail.readmeCache": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "README cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "README 缓存"
+          }
+        }
+      }
+    },
+    "rag.demo.sourceDetail.privateNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private note"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私有笔记"
+          }
+        }
+      }
+    },
+    "rag.demo.sourceDetail.repoSummary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository summary"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库摘要"
+          }
+        }
+      }
+    },
+    "rag.demo.citation.grdbRecords.sectionPath": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local storage selection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地存储选型"
+          }
+        }
+      }
+    },
+    "rag.demo.citation.grdbRecords.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SQLite + GRDB as local cache layer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SQLite + GRDB 作为本地缓存层"
+          }
+        }
+      }
+    },
+    "rag.demo.citation.grdbRecords.snippet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local-first apps need controllable transactions, migrations, and FTS capabilities. GRDB is already used in Starcat and fits as the local storage base for RAG chunks and citations."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地优先应用需要可控的事务、迁移和 FTS 能力。GRDB 已在 Starcat 主库中使用，适合作为 RAG chunk 与 citation 的本地存储基础。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
