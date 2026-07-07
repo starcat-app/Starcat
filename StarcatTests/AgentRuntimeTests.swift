@@ -320,6 +320,34 @@ struct AgentRuntimeTests {
             AgentArtifactType.log.rawValue
         ])
     }
+
+    @Test("Runtime stream 取消时持久化 cancelled 状态")
+    func runtimePersistsCancelledStatusWhenStreamCancelled() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        let runtime = DefaultAgentRuntime(
+            stepStartDelayNanoseconds: 1_000_000_000,
+            stepCompletionDelayNanoseconds: 1_000_000_000,
+            runRepository: repository
+        )
+        let stream = runtime.run(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成周刊",
+            context: .empty
+        )
+        let task = Task {
+            for await _ in stream {}
+        }
+
+        try await waitUntilRepositoryHasRun(repository)
+        task.cancel()
+        await task.value
+        try await waitUntilRepositoryStatus(repository, status: .cancelled)
+
+        let run = try #require(try await repository.recentRuns(limit: 1).first)
+        #expect(run.status == AgentRunStatus.cancelled.rawValue)
+        #expect(run.finishedAt != nil)
+    }
 }
 
 private struct StaticAgentTextGenerator: AgentTextGenerating {
@@ -424,4 +452,37 @@ private func repo(
         starredAt: "2026-07-07T00:00:00Z",
         htmlUrl: "https://github.com/\(fullName)"
     )
+}
+
+private func waitUntilRepositoryHasRun(
+    _ repository: GRDBAgentRunRepository,
+    timeoutNanoseconds: UInt64 = 500_000_000
+) async throws {
+    let start = ContinuousClock.now
+    while try await repository.recentRuns(limit: 1).isEmpty {
+        if start.duration(to: ContinuousClock.now) > .nanoseconds(Int64(timeoutNanoseconds)) {
+            Issue.record("Timed out waiting for persisted Agent run")
+            return
+        }
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
+}
+
+private func waitUntilRepositoryStatus(
+    _ repository: GRDBAgentRunRepository,
+    status: AgentRunStatus,
+    timeoutNanoseconds: UInt64 = 500_000_000
+) async throws {
+    let start = ContinuousClock.now
+    while true {
+        let run = try await repository.recentRuns(limit: 1).first
+        if run?.status == status.rawValue {
+            return
+        }
+        if start.duration(to: ContinuousClock.now) > .nanoseconds(Int64(timeoutNanoseconds)) {
+            Issue.record("Timed out waiting for Agent run status \(status.rawValue)")
+            return
+        }
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
 }

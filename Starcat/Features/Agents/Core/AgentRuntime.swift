@@ -52,11 +52,12 @@ struct DefaultAgentRuntime: AgentRuntime {
         context: AgentRunContext
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
+            let runID = UUID()
+            let terminationState = AgentRuntimeTerminationState()
             let task = Task {
                 var runLog: [String] = []
                 let plan = Self.makeWeeklyReportPlan(context: context)
                 let steps = Self.makeWeeklyReportSteps()
-                let runID = UUID()
                 var traceIndex = 0
                 var artifactIndex = 0
                 await Self.persistCreateRun(
@@ -66,6 +67,17 @@ struct DefaultAgentRuntime: AgentRuntime {
                     prompt: prompt,
                     context: context
                 )
+                guard !Task.isCancelled, await terminationState.shouldContinue() else {
+                    await Self.persistRunStatus(
+                        repository: runRepository,
+                        runID: runID,
+                        status: .cancelled,
+                        finishedAt: Date()
+                    )
+                    await terminationState.markTerminal()
+                    continuation.finish()
+                    return
+                }
                 let tools: [any AgentTool]
                 do {
                     tools = try toolRegistry.tools(for: definition.toolIDs)
@@ -78,6 +90,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                         errorMessage: message,
                         finishedAt: Date()
                     )
+                    await terminationState.markTerminal()
                     continuation.yield(.runFailed(message))
                     continuation.finish()
                     return
@@ -107,6 +120,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                             status: .cancelled,
                             finishedAt: Date()
                         )
+                        await terminationState.markTerminal()
                         continuation.yield(.runCancelled)
                         continuation.finish()
                         return
@@ -148,6 +162,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                             status: .cancelled,
                             finishedAt: Date()
                         )
+                        await terminationState.markTerminal()
                         continuation.yield(.runCancelled)
                         continuation.finish()
                         return
@@ -174,6 +189,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                             errorMessage: toolResult.output.detail,
                             finishedAt: Date()
                         )
+                        await terminationState.markTerminal()
                         continuation.yield(.runFailed(toolResult.output.detail))
                         continuation.finish()
                         return
@@ -221,6 +237,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                         errorMessage: message,
                         finishedAt: Date()
                     )
+                    await terminationState.markTerminal()
                     continuation.yield(.runFailed(message))
                     continuation.finish()
                     return
@@ -262,12 +279,22 @@ struct DefaultAgentRuntime: AgentRuntime {
                     assistantOutput: markdown,
                     finishedAt: Date()
                 )
+                await terminationState.markTerminal()
                 continuation.yield(.runCompleted)
                 continuation.finish()
             }
 
             continuation.onTermination = { _ in
                 task.cancel()
+                Task {
+                    guard await terminationState.requestCancellation() else { return }
+                    await Self.persistRunStatus(
+                        repository: runRepository,
+                        runID: runID,
+                        status: .cancelled,
+                        finishedAt: Date()
+                    )
+                }
             }
         }
     }
@@ -418,5 +445,29 @@ struct DefaultAgentRuntime: AgentRuntime {
         } catch {
             AppLog.database.warning("Agent run persistence artifact failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+}
+
+/// 协调 `AsyncStream` 终止和 runtime 主任务的状态写入。
+///
+/// `onTermination` 会在正常完成和外部取消时都触发,不能直接把 run 标为 cancelled。
+/// 这个 actor 用一个终态标记把“已经完成 / 失败 / 主动取消”和“消费者提前取消 stream”
+/// 分开,保证历史记录不会被误写,也不会漏掉取消态。
+private actor AgentRuntimeTerminationState {
+    private var isTerminal = false
+    private var isCancellationRequested = false
+
+    func markTerminal() {
+        isTerminal = true
+    }
+
+    func shouldContinue() -> Bool {
+        !isCancellationRequested
+    }
+
+    func requestCancellation() -> Bool {
+        guard !isTerminal else { return false }
+        isCancellationRequested = true
+        return true
     }
 }
