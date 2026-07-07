@@ -1,6 +1,6 @@
 # Agent 底层框架专项进度
 
-> 状态: 待开始
+> 状态: 已实现,审查中
 > 创建: 2026-07-07
 > 目标分支: `feature/agent`
 > 前置专项: `docs/4-工程进度/Agent平台专项/checklist.md`
@@ -29,18 +29,18 @@
 
 ## 3. 架构硬约束
 
-- [ ] Agent 网络搜索工具必须复用 `ExternalSearchRegistry` / `ExternalSearchProvider` / `ExternalSearchContextProvider`。
-- [ ] Agent 网络搜索必须读取 `AppSettings` 中现有 External Search 配置:
+- [x] Agent 网络搜索工具必须复用 `ExternalSearchRegistry` / `ExternalSearchProvider` / `ExternalSearchContextProvider`。
+- [x] Agent 网络搜索必须读取 `AppSettings` 中现有 External Search 配置:
   - `externalContextEnabled`
   - `externalContextProviderSelection`
   - `aggregateExternalContextSearchEnabled`
   - `externalSearchProviderSettings`
   - provider API key / anonymous mode / verified state
   - `externalSearchAllowPrivateRepos`
-- [ ] 网络搜索关闭时,Agent tool 返回 `skipped` trace,不得失败或伪造结果。
-- [ ] Provider 失败时,Agent tool 返回 failed/degraded trace,Weekly Agent 可基于本地上下文继续降级生成。
-- [ ] 所有网络搜索 query、provider、source URL、cache 状态必须进入中栏 trace。
-- [ ] 给 LLM 的网络搜索输出必须预算受控,不得把网页全文无上限塞进 prompt。
+- [x] 网络搜索关闭时,Agent tool 返回 `skipped` trace,不得失败或伪造结果。
+- [x] Provider 失败时,Agent tool 返回 failed/degraded trace,Weekly Agent 可基于本地上下文继续降级生成。
+- [x] 所有网络搜索 query、provider、source URL、cache 状态必须进入中栏 trace。
+- [x] 给 LLM 的网络搜索输出必须预算受控,不得把网页全文无上限塞进 prompt。
 
 ## 4. 实施 checklist
 
@@ -85,15 +85,15 @@
 
 ## 5. 验收标准
 
-- [ ] Agent Runtime 不再依赖 Weekly 专用静态工具流程。
-- [ ] Weekly Agent 是通过 Tool Registry 执行的首个 Agent。
-- [ ] 网络搜索工具复用现有 External Search 设置页配置,没有第二套 API key / provider 设置。
-- [ ] 关闭 External Search 时,Agent trace 显示 skipped,并可继续本地生成。
-- [ ] Provider 失败时,Agent trace 显示 failed/degraded,并保留本地上下文输出。
-- [ ] 每个 tool 调用都能在中栏展开看到 input / output / log。
-- [ ] Artifact 始终在执行顺序底部生成。
-- [ ] 右侧 Artifact Inspector 只展示真实产出物。
-- [ ] 单测覆盖工具注册、网络搜索适配、执行顺序和降级策略。
+- [x] Agent Runtime 不再依赖 Weekly 专用静态工具流程。
+- [x] Weekly Agent 是通过 Tool Registry 执行的首个 Agent。
+- [x] 网络搜索工具复用现有 External Search 设置页配置,没有第二套 API key / provider 设置。
+- [x] 关闭 External Search 时,Agent trace 显示 skipped,并可继续本地生成。
+- [x] Provider 失败时,Agent trace 显示 failed/degraded,并保留本地上下文输出。
+- [x] 每个 tool 调用都能在中栏展开看到 input / output / log。
+- [x] Artifact 始终在执行顺序底部生成。
+- [x] 右侧 Artifact Inspector 只展示真实产出物。
+- [x] 单测覆盖工具注册、网络搜索适配、执行顺序和降级策略。
 - [ ] `docs/功能实现总览.md`、专项 checklist、审查报告、结果报告状态一致。
 
 ## 6. 提交要求
