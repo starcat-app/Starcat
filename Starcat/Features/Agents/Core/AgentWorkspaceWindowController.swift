@@ -59,7 +59,7 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
 
-        window.title = "Agent 工作台"
+        window.title = String.l10n("agent.workspace.window.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(AgentWorkspaceWindowMetrics.defaultContentSize)
         window.contentMinSize = AgentWorkspaceWindowMetrics.minimumContentSize

@@ -61,9 +61,9 @@ struct AgentWorkspaceView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    agentSection("发现", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
-                    agentSection("消化", agents: viewModel.agents.filter { ["recall-search", "repo-insight"].contains($0.id) })
-                    agentSection("整理", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
+                    agentSection("agent.workspace.section.discovery", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
+                    agentSection("agent.workspace.section.digest", agents: viewModel.agents.filter { ["recall-search", "repo-insight"].contains($0.id) })
+                    agentSection("agent.workspace.section.organize", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
                     historySection
                 }
                 .padding(.horizontal, 12)
@@ -82,9 +82,9 @@ struct AgentWorkspaceView: View {
                     .frame(width: 28, height: 28)
                     .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Agent")
+                    Text("agent.workspace.title")
                         .font(agentFont(.headline))
-                    Text("任务工作台")
+                    Text("agent.workspace.subtitle")
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
@@ -95,9 +95,9 @@ struct AgentWorkspaceView: View {
         .padding(14)
     }
 
-    private func agentSection(_ title: String, agents: [AgentDefinition]) -> some View {
+    private func agentSection(_ titleKey: String, agents: [AgentDefinition]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
+            Text(LocalizedStringKey(titleKey))
                 .font(agentFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
@@ -127,7 +127,7 @@ struct AgentWorkspaceView: View {
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         if !agent.isEnabled {
-                            Text("预告")
+                            Text("agent.workspace.badge.preview")
                                 .font(agentFont(.caption2, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
@@ -170,7 +170,7 @@ struct AgentWorkspaceView: View {
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("历史任务")
+            Text("agent.workspace.history.title")
                 .font(agentFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
@@ -180,7 +180,7 @@ struct AgentWorkspaceView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .foregroundStyle(.secondary)
-                    Text("暂无历史 run")
+                    Text("agent.workspace.history.empty")
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -238,17 +238,17 @@ struct AgentWorkspaceView: View {
     private func historyStatusLabel(for status: String) -> String {
         switch AgentRunStatus(rawValue: status) {
         case .completed:
-            return "已完成"
+            return String.l10n("agent.workspace.status.completed")
         case .failed:
-            return "失败"
+            return String.l10n("agent.workspace.status.failed")
         case .cancelled:
-            return "已取消"
+            return String.l10n("agent.workspace.status.cancelled")
         case .planning:
-            return "规划中"
+            return String.l10n("agent.workspace.status.planning")
         case .running:
-            return "运行中"
+            return String.l10n("agent.workspace.status.running")
         case .idle, .none:
-            return "未开始"
+            return String.l10n("agent.workspace.status.idle")
         }
     }
 
@@ -316,13 +316,13 @@ struct AgentWorkspaceView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(viewModel.selectedAgent?.title ?? "Agent 工作台")
+                    Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
                         .font(agentFont(.title3, weight: .semibold))
                     Image(systemName: "chevron.down")
                         .font(agentFont(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
-                Text("统一 Run Surface · steps / tools / artifacts / confirmations")
+                Text("agent.workspace.header.subtitle")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             }
@@ -330,15 +330,15 @@ struct AgentWorkspaceView: View {
             Spacer()
 
             headerPill(statusText, icon: statusIcon)
-            headerPill("只读模式", icon: "lock")
-            headerPill("预计 1 run", icon: "chart.bar.doc.horizontal")
+            headerPill(String.l10n("agent.workspace.header.readOnly"), icon: "lock")
+            headerPill(String.l10n("agent.workspace.header.estimatedRun"), icon: "chart.bar.doc.horizontal")
 
             Button {
                 if viewModel.isRunning {
                     viewModel.cancel()
                 }
             } label: {
-                Label("停止", systemImage: "stop.circle")
+                Label("agent.workspace.stop", systemImage: "stop.circle")
             }
             .controlSize(.small)
             .disabled(!viewModel.isRunning)
@@ -391,9 +391,9 @@ struct AgentWorkspaceView: View {
             Image(systemName: "sparkles.rectangle.stack")
                 .font(agentIconFont(size: 30, weight: .regular))
                 .foregroundStyle(.secondary)
-            Text("输入任务后开始 Agent run")
+            Text("agent.workspace.empty.title")
                 .font(agentFont(.subheadline, weight: .semibold))
-            Text("中栏会按执行顺序展示步骤、工具调用和产出物。")
+            Text("agent.workspace.empty.subtitle")
                 .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
         }
@@ -473,10 +473,10 @@ struct AgentWorkspaceView: View {
             HStack(spacing: 7) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .foregroundStyle(Color.accentColor)
-                Text("Run Trace")
+                Text("agent.workspace.trace.title")
                     .font(agentFont(.caption, weight: .semibold))
                     .foregroundStyle(.primary)
-                Text("\(agentTraceItems.count) spans")
+                Text(String(format: String.l10n("agent.workspace.trace.countFormat"), agentTraceItems.count))
                     .font(agentFont(.caption2, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
@@ -556,9 +556,9 @@ struct AgentWorkspaceView: View {
 
     private func traceDetailPane(_ item: AgentTraceItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            traceAuditBlock("输入", icon: "arrow.down.right", text: item.input)
-            traceAuditBlock("输出", icon: "arrow.up.right", text: item.output)
-            traceAuditBlock("日志", icon: "terminal", text: item.log)
+            traceAuditBlock(String.l10n("agent.workspace.trace.input"), icon: "arrow.down.right", text: item.input)
+            traceAuditBlock(String.l10n("agent.workspace.trace.output"), icon: "arrow.up.right", text: item.output)
+            traceAuditBlock(String.l10n("agent.workspace.trace.log"), icon: "terminal", text: item.log)
         }
         .padding(.leading, 28)
     }
@@ -587,7 +587,7 @@ struct AgentWorkspaceView: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.shield")
                 .foregroundStyle(.secondary)
-            Text("需要写入标签、状态或取消 star 时，会在这里等待你确认。")
+            Text("agent.workspace.confirmation.placeholder")
                 .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -624,7 +624,7 @@ struct AgentWorkspaceView: View {
         let output = viewModel.assistantOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         if !output.isEmpty { return output }
         if viewModel.status == .completed {
-            return "我已经完成这轮 Agent run。下面保留了关键计划、工具过程和产物引用，右侧可以查看、复制或导出产出物。"
+            return String.l10n("agent.workspace.assistant.completedFallback")
         }
         return nil
     }
@@ -792,8 +792,8 @@ struct AgentWorkspaceView: View {
             }
 
             HStack(spacing: 8) {
-                metaPill("输入: \(input)")
-                metaPill("输出: \(output)")
+                metaPill(String(format: String.l10n("agent.workspace.meta.inputFormat"), input))
+                metaPill(String(format: String.l10n("agent.workspace.meta.outputFormat"), output))
                 Spacer()
             }
             .padding(.leading, 32)
@@ -827,9 +827,9 @@ struct AgentWorkspaceView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Artifact Inspector")
+                    Text("agent.workspace.inspector.title")
                         .font(agentFont(.headline))
-                    Text("查看、复制、导出本轮 Agent 产出物；执行过程在中栏 trace 中审计。")
+                    Text("agent.workspace.inspector.subtitle")
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
@@ -837,13 +837,13 @@ struct AgentWorkspaceView: View {
                 Button {
                     viewModel.copySelectedArtifact()
                 } label: {
-                    Label("复制", systemImage: "doc.on.doc")
+                    Label("agent.workspace.inspector.copy", systemImage: "doc.on.doc")
                 }
                 .disabled(viewModel.selectedArtifact == nil)
                 Button {
                     viewModel.exportSelectedArtifact()
                 } label: {
-                    Label("导出", systemImage: "square.and.arrow.down")
+                    Label("agent.workspace.inspector.export", systemImage: "square.and.arrow.down")
                 }
                 .disabled(viewModel.selectedArtifact == nil)
             }
@@ -858,7 +858,7 @@ struct AgentWorkspaceView: View {
     private var artifactSelector: some View {
         Group {
             if viewModel.artifacts.isEmpty {
-                Text("暂无产出物")
+                Text("agent.workspace.inspector.noArtifacts")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             } else {
@@ -911,7 +911,7 @@ struct AgentWorkspaceView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(agentIconFont(size: 28, weight: .regular))
                         .foregroundStyle(.secondary)
-                    Text("运行 Agent 后将在这里显示 Markdown 或 Run Log。")
+                    Text("agent.workspace.inspector.empty")
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
@@ -938,7 +938,7 @@ struct AgentWorkspaceView: View {
                 Spacer()
             }
 
-            Text("当前右栏只承载产出物查看与导出；步骤、工具调用、AI 输入输出和日志在中栏 trace 中展开审计。")
+            Text("agent.workspace.inspector.auditHint")
                 .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
                 .padding(10)
@@ -961,9 +961,9 @@ struct AgentWorkspaceView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                composerContextChip("Scope: Starred repos", icon: "tray.full")
-                composerContextChip("Mode: Read-only", icon: "lock")
-                composerContextChip("Tools: Registry", icon: "wrench.and.screwdriver")
+                composerContextChip(String.l10n("agent.workspace.composer.scope"), icon: "tray.full")
+                composerContextChip(String.l10n("agent.workspace.composer.mode"), icon: "lock")
+                composerContextChip(String.l10n("agent.workspace.composer.tools"), icon: "wrench.and.screwdriver")
                 Spacer()
             }
             .padding(.horizontal, 18)
@@ -976,7 +976,7 @@ struct AgentWorkspaceView: View {
 
     private var agentComposerInputBox: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("继续给 Agent 指令，或 @ 选择已 star repo，/ 调用技能与工具", text: $viewModel.prompt, axis: .vertical)
+            TextField(String.l10n("agent.workspace.composer.placeholder"), text: $viewModel.prompt, axis: .vertical)
                 .font(agentFont(.body))
                 .textFieldStyle(.plain)
                 .lineLimit(2...6)
@@ -1092,17 +1092,17 @@ struct AgentWorkspaceView: View {
     private var statusText: String {
         switch viewModel.status {
         case .idle:
-            return "就绪"
+            return String.l10n("agent.workspace.status.ready")
         case .planning:
-            return "规划中"
+            return String.l10n("agent.workspace.status.planning")
         case .running:
-            return "运行中"
+            return String.l10n("agent.workspace.status.running")
         case .completed:
-            return "已完成"
+            return String.l10n("agent.workspace.status.completed")
         case .failed:
-            return "失败"
+            return String.l10n("agent.workspace.status.failed")
         case .cancelled:
-            return "已取消"
+            return String.l10n("agent.workspace.status.cancelled")
         }
     }
 
