@@ -11,7 +11,7 @@
 **版本号字段全自动**，发版一行命令：
 
 ```bash
-./scripts/release.sh v0.1.1
+./scripts/release-store.sh v0.1.1
 ```
 
 它会按顺序：① 校验 working tree 干净 / tag 不冲突 → ② 二次确认 → ③ 本地打 tag → ④ 跑 `scripts/build-dmg.sh` 出 DMG（产物 plist 由 `bump-version.sh` 自动写入版本号）→ ⑤ push tag 到远端 → ⑥ 打印 GitHub Release 创建链接。
@@ -66,17 +66,17 @@ Version 0.1.0 (Build 201.f09a499)
 
 ## 2. 标准发版 SOP（每次发版都按这个走）
 
-### 推荐路径：`scripts/release.sh`（一键发版）
+### 推荐路径：`scripts/release-store.sh`（一键发版）
 
-`release.sh` 是发版总入口，把"打 tag → 出 DMG → 推 tag"串起来，并做完整前置校验。
+`release-store.sh` 是发版总入口，把"打 tag → 出 DMG → 推 tag"串起来，并做完整前置校验。
 
 ```bash
-./scripts/release.sh v0.1.1                # 标准发版（happy path）
-./scripts/release.sh v0.1.1 --dry-run      # 先演练看流程
-./scripts/release.sh v0.1.1 --yes          # CI 友好，跳过二次确认
-./scripts/release.sh v0.1.1 --skip-dmg     # 只打 tag + push，不出 DMG
-./scripts/release.sh v0.1.1 --skip-push    # 只本地 tag + 出 DMG，不推远端
-./scripts/release.sh --help                # 完整用法
+./scripts/release-store.sh v0.1.1                # 标准发版（happy path）
+./scripts/release-store.sh v0.1.1 --dry-run      # 先演练看流程
+./scripts/release-store.sh v0.1.1 --yes          # CI 友好，跳过二次确认
+./scripts/release-store.sh v0.1.1 --skip-dmg     # 只打 tag + push，不出 DMG
+./scripts/release-store.sh v0.1.1 --skip-push    # 只本地 tag + 出 DMG，不推远端
+./scripts/release-store.sh --help                # 完整用法
 ```
 
 执行顺序（**先本地 tag → build → push tag**，build 失败时 tag 还在本地不污染远端）：
@@ -94,7 +94,7 @@ Version 0.1.0 (Build 201.f09a499)
 - `v` 前缀可省可加，内部归一化（与 `build-dmg.sh` 严格 `X.Y.Z` 接口对齐）
 - 严格 SemVer X.Y.Z 校验（暂不支持 `-beta` / `-rc` 后缀，与 `build-dmg.sh` 限制一致）
 
-> 下面 §2.x 的 5 步 SOP 是脚本背后做的事，理解一下有助于排查问题，但日常用 `release.sh` 一行就够。
+> 下面 §2.x 的 5 步 SOP 是脚本背后做的事，理解一下有助于排查问题，但日常用 `release-store.sh` 一行就够。
 
 ### 第 1 步：定 marketing 版本号（SemVer）
 
@@ -160,13 +160,13 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build
 
 ## 3. 典型场景速查
 
-> 全部场景都可以用 `release.sh` 一行搞定，下面命令保留两种写法（推荐路径 + 手动等价命令）方便对照理解。
+> 全部场景都可以用 `release-store.sh` 一行搞定，下面命令保留两种写法（推荐路径 + 手动等价命令）方便对照理解。
 
 ### 3.1 首次发版（0.1.0 → 0.1.1，目前的 hot path）
 
 ```bash
 # 推荐
-./scripts/release.sh v0.1.1
+./scripts/release-store.sh v0.1.1
 
 # 手动等价
 git tag v0.1.1 && git push --tags
@@ -181,7 +181,7 @@ git checkout main
 # 2. 修复 bug 并 commit
 git commit -m "fix: 紧急修复 X"
 # 3. 一键发版
-./scripts/release.sh v0.1.2
+./scripts/release-store.sh v0.1.2
 ```
 
 ### 3.3 pre-release（beta / rc）
@@ -296,9 +296,9 @@ git tag v0.1.1 && git push --tags
 
 | 角色 | 路径 |
 |---|---|
-| **发版总入口** | **`scripts/release.sh`（推荐用法）** |
+| **发版总入口** | **`scripts/release-store.sh`（推荐用法）** |
 | 版本写入脚本 | `scripts/bump-version.sh`（由 Xcode postBuildScripts 自动触发） |
-| DMG 打包 | `scripts/build-dmg.sh`（接收 `$1` 参数；release.sh 会自动调它） |
+| DMG 打包 | `scripts/build-dmg.sh`（接收 `$1` 参数；release-store.sh 会自动调它） |
 | Build phase 配置 | `project.yml` → `targets.Starcat.postBuildScripts` |
 | Info.plist 兜底值 | `project.yml` → `settings.base.MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` |
 | 关于页 UI 读取 | `Starcat/Features/About/AboutView.swift` → `AboutVersion.current` / `displayBuild` |
@@ -320,7 +320,7 @@ git tag v0.1.1 && git push --tags
                                     ├── 加新功能(兼容)  → vX.(Y+1).0
                                     └── 破坏性变更      → v(X+1).0.0
                                                 ↓
-                                    ./scripts/release.sh vX.Y.Z
+                                    ./scripts/release-store.sh vX.Y.Z
                                                 ↓
                                     脚本完成：tag → DMG → push → 提示 Release 链接
                                                 ↓
@@ -332,7 +332,7 @@ git tag v0.1.1 && git push --tags
 ## 8. 封版后的 Bug 修复流程
 
 > 创建：2026-06-28
-> 适用场景：已通过 `release.sh` 打 tag 封版的版本（如 v1.0.0），发现代码 bug 需要修复。
+> 适用场景：已通过 `release-store.sh` 打 tag 封版的版本（如 v1.0.0），发现代码 bug 需要修复。
 > 核心原则：**封版 ≠ 不可改**。未公开前按 §8.1 走；公开后按 §8.2 走。
 
 ### 8.1 未上架场景（tag 可移动）
@@ -431,7 +431,7 @@ git cherry-pick <commit-hash>   # 或：git merge release/vX.Y.x
 
 ### 8.4 注意事项
 
-- **`release.sh` 在 §8.1 流程中不要跑**——它会拒绝覆盖已存在的 tag。手动 git tag 即可。
+- **`release-store.sh` 在 §8.1 流程中不要跑**——它会拒绝覆盖已存在的 tag。手动 git tag 即可。
 - **§8.1 的 tag 移动会触发 `bump-version.sh` 的 plist 更新**——下次 build 的产物会自动反映新 commit 的 hash（build 号 = commit count，自动 +1）
 - **cherry-pick 可能冲突**：release 分支的 commit 与 main / dev 后续演进可能重叠，冲突时人工解决
 - **release 分支的命名严格 `release/vX.Y.x`**（X.Y 不变，x 留作未来命名扩展位），与 dev / main 长期并行

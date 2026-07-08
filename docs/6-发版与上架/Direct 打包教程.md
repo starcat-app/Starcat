@@ -119,6 +119,8 @@ dist/direct/xcodebuild-direct.log
 STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.1.0
 ```
 
+脚本默认使用 `Developer ID Application: liwen gong (8WCUMGCWMB)` 签名；只有未来换 Team / CI keychain 时才需要传 `STARCAT_DIRECT_SIGN_IDENTITY` 覆盖。
+
 脚本会执行：
 
 1. `xcrun notarytool submit --wait`
@@ -131,8 +133,10 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.1.0
 
 ```bash
 ./scripts/release-direct.sh --help
-STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.1.0
+STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.1.0
 ```
+
+dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和 `starcat-notary`，正式发布时直接使用上面这条即可。
 
 它会串联执行：
 

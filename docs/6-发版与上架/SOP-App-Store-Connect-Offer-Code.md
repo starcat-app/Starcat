@@ -26,7 +26,7 @@ Starcat 内入口：
 
 ## 2. 前置条件
 
-- [ ] App 已在 App Store Connect 创建，Bundle ID = `com.starcat.app`
+- [ ] App 已在 App Store Connect 创建，Bundle ID = `com.starcat.app.store`
 - [ ] 自动续期订阅已创建且 **至少一个版本处于「准备提交」或已上架** 状态  
   （仅本地 `.storekit` 可跳过 Connect，但真机/TestFlight 必须 Connect 有商品）
 - [ ] 订阅 Product ID 与代码一致：

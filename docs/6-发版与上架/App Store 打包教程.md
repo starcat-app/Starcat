@@ -3,7 +3,8 @@
 > 适用渠道：Mac App Store / TestFlight  
 > 对应脚本：`scripts/package-appstore.sh`  
 > 构建目标：`Starcat`  
-> Bundle ID：`com.starcat.app`
+> Bundle ID：`com.starcat.app.store`
+> 完整首次上架流程：`docs/6-发版与上架/SOP-App-Store-首次上架流程.md`
 
 ## 1. 前置条件
 
