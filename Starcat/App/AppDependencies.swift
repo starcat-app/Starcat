@@ -1032,6 +1032,9 @@ final class AppDependencies {
                 self?.proEntitlementProvider.reloadFromSources()
                 self?.mcpService.refreshForCurrentSettings()
             }
+            Task { [directLicenseManager] in
+                _ = await directLicenseManager.validateStoredLicenseIfNeeded()
+            }
             self.mcpService.refreshForCurrentSettings()
             self.serviceAvailabilityMonitor.startPeriodicChecks()
         }

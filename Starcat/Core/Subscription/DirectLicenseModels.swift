@@ -35,6 +35,42 @@ enum DirectCheckoutPlan: String, Codable, Sendable, CaseIterable {
     case lifetime
 }
 
+/// Direct License 在本机运行期的授权状态。
+///
+/// 这个状态只用于内部诊断和校验调度，不直接展示给用户。用户只看到最终 Pro 是否可用，
+/// 网络失败这类中间态不应该打扰正常使用。
+enum DirectLicenseRuntimeState: String, Codable, Equatable, Sendable {
+    case none
+    case localActive
+    case verifiedActive
+    case revoked
+    case expired
+}
+
+/// Direct License 远程校验记录。
+///
+/// 与授权码一起存在本机安全存储里，用来控制后台校验频率和避免网络抖动误伤 Pro。
+/// `lastErrorCode` 仅供日志/诊断使用，不能作为 UI 文案直接暴露给用户。
+struct DirectLicenseValidationRecord: Equatable, Sendable {
+    var plan: DirectCheckoutPlan?
+    var runtimeState: DirectLicenseRuntimeState
+    var lastAttemptAt: Date?
+    var lastSuccessAt: Date?
+    var lastFailureAt: Date?
+    var lastErrorCode: String?
+    var lastRemoteStatus: DirectLicenseStatus?
+
+    static let empty = DirectLicenseValidationRecord(
+        plan: nil,
+        runtimeState: .none,
+        lastAttemptAt: nil,
+        lastSuccessAt: nil,
+        lastFailureAt: nil,
+        lastErrorCode: nil,
+        lastRemoteStatus: nil
+    )
+}
+
 /// 创建 Direct checkout 的请求体。
 struct DirectCheckoutRequest: Codable, Equatable, Sendable {
     var plan: DirectCheckoutPlan

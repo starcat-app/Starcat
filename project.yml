@@ -87,7 +87,7 @@ targets:
       Release: Configs/Build.xcconfig
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store
         CODE_SIGN_ENTITLEMENTS: Starcat/Starcat.entitlements
         INFOPLIST_KEY_CFBundleURLTypes: ""  # 由 entitlements + plist 增量在 info 段定义
       configs:
@@ -109,7 +109,7 @@ targets:
         # 不提交到 git。缺失时 Web Flow 退化为不可用提示。
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
         CFBundleURLTypes:
-          - CFBundleURLName: com.starcat.app
+          - CFBundleURLName: com.starcat.app.store
             CFBundleURLSchemes:
               - starcat
         # R-01 v1.2 私密配置注入：每个自建后端独立 production API Key（xcconfig → Info.plist）。

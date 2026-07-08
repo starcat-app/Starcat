@@ -56,7 +56,7 @@ struct ProSettingsTab: View {
         }
         .task {
             if isDirectBuild {
-                _ = await directLicenseManager.validateStoredLicense()
+                _ = await directLicenseManager.validateStoredLicenseIfNeeded()
             } else {
                 await subscriptionManager.loadProducts()
                 await subscriptionManager.refreshEntitlements()

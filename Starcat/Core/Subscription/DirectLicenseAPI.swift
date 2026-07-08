@@ -68,11 +68,43 @@ struct DirectLicenseAPI: Sendable {
         }
         request.httpBody = try encoder.encode(body)
 
-        let (data, response) = try await urlSession.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await urlSession.data(for: request)
+        } catch let error as URLError {
+            throw DirectLicenseAPIError.transport(code: error.code.rawValue)
+        } catch {
+            throw DirectLicenseAPIError.transport(code: nil)
+        }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw DirectLicenseAPIError.invalidResponse
+            throw mapHTTPError(response: response, data: data)
         }
         return try decoder.decode(Response.self, from: data)
+    }
+
+    private func mapHTTPError(response: URLResponse, data: Data) -> DirectLicenseAPIError {
+        guard let http = response as? HTTPURLResponse else {
+            return .invalidResponse
+        }
+        let body = (try? decoder.decode(DirectLicenseErrorResponse.self, from: data)) ?? DirectLicenseErrorResponse()
+        let code = body.normalizedCode
+        switch http.statusCode {
+        case 401, 403:
+            return .unauthorizedClient
+        case 404:
+            return .licenseNotFound
+        case 408, 429, 500...599:
+            return .temporaryServerFailure(statusCode: http.statusCode, code: code)
+        default:
+            if code == "license_not_found" || code == "not_found" {
+                return .licenseNotFound
+            }
+            if let code, code == "license_revoked" || code == "license_expired" || code == "invalid_license" {
+                return .licenseRejected(code: code)
+            }
+            return .invalidResponse
+        }
     }
 
     /// 当前构建选择的 License API 环境。
@@ -116,6 +148,72 @@ struct DirectLicenseAPI: Sendable {
 
 enum DirectLicenseAPIError: Error, Equatable {
     case invalidResponse
+    case transport(code: Int?)
+    case temporaryServerFailure(statusCode: Int, code: String?)
+    case unauthorizedClient
+    case licenseNotFound
+    case licenseRejected(code: String)
+
+    /// 是否属于不能撤销本地 Pro 的临时失败。
+    var preservesLocalEntitlement: Bool {
+        switch self {
+        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse:
+            return true
+        case .licenseNotFound, .licenseRejected:
+            return false
+        }
+    }
+
+    var diagnosticCode: String {
+        switch self {
+        case .invalidResponse:
+            return "invalid_response"
+        case let .transport(code):
+            return code.map { "transport_\($0)" } ?? "transport_error"
+        case let .temporaryServerFailure(statusCode, code):
+            return code ?? "http_\(statusCode)"
+        case .unauthorizedClient:
+            return "unauthorized_client"
+        case .licenseNotFound:
+            return "license_not_found"
+        case let .licenseRejected(code):
+            return code
+        }
+    }
+}
+
+extension DirectLicenseAPIError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "Invalid response from Starcat License API."
+        case .transport:
+            return "Unable to reach Starcat License API."
+        case let .temporaryServerFailure(statusCode, _):
+            return "Starcat License API is temporarily unavailable. HTTP \(statusCode)."
+        case .unauthorizedClient:
+            return "Starcat License API rejected the client key."
+        case .licenseNotFound:
+            return "License was not found."
+        case .licenseRejected:
+            return "License is no longer active."
+        }
+    }
+}
+
+private struct DirectLicenseErrorResponse: Decodable {
+    var code: String?
+    var error: String?
+    var message: String?
+
+    var normalizedCode: String? {
+        let raw = code ?? error ?? message
+        return raw?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "_")
+            .nilIfEmpty
+    }
 }
 
 private extension JSONDecoder {
