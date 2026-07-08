@@ -7,11 +7,11 @@
     <meta name="robots" content="index, follow">
     <meta property="og:title" content="Starcat for GitHub — Native macOS GitHub Stars Manager">
     <meta property="og:description" content="Turn GitHub Stars into a searchable AI knowledge base. Native macOS 15+ app, local-first, BYOK AI. Available on the Mac App Store.">
-    <meta property="og:image" content="../sc-banner.webp">
+    <meta property="og:image" content="/starcat/sc-banner.webp">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <title>Starcat for GitHub — GitHub Star Manager &amp; AI Knowledge Organizer</title>
-    <link rel="icon" type="image/png" href="../starcat-logo.png">
+    <link rel="icon" type="image/png" href="/starcat/starcat-logo.png">
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -98,7 +98,6 @@
         .bento-card-icon .lucide { width: 20px; height: 20px; }
         .feature-icon .lucide { width: 20px; height: 20px; }
         .tech-icon .lucide { width: 24px; height: 24px; }
-        .pricing-features .lucide { width: 16px; height: 16px; color: var(--color-cta); }
         .bento-card-arrow .lucide { width: 14px; height: 14px; }
         ::selection { background: rgba(125, 211, 252, 0.28); color: var(--color-text); }
 
@@ -298,38 +297,7 @@
         @media (max-width: 767px) { .tech-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
-         * 7. Pricing — App Store edition: Free + Pro subscription only
-         * ================================================================== */
-        .pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--card-gap); max-width: 800px; margin: 0 auto; }
-        .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; display: flex; flex-direction: column; height: 100%; }
-        .pricing-card:hover { border-color: var(--color-border-hover); background: rgba(255, 255, 255, 0.075); transform: translateY(-1px); }
-        .pricing-card--pro { border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.06); }
-        .pricing-card--pro:hover { border-color: rgba(139, 92, 246, 0.5); background: rgba(139, 92, 246, 0.1); }
-        .pricing-badge { display: inline-block; align-self: flex-start; padding: 4px 12px; font-size: 11px; font-weight: 700; color: var(--color-pro); background: rgba(139, 92, 246, 0.15); border-radius: 20px; margin-bottom: 16px; }
-        .pricing-name { font-size: var(--fs-h3); font-weight: 700; margin-bottom: 8px; }
-        .pricing-price { font-size: 40px; font-weight: 750; margin-bottom: 4px; }
-        .pricing-period { font-size: var(--fs-small); color: var(--color-text-muted); margin-bottom: 24px; }
-        .pricing-note { font-size: var(--fs-small); color: var(--color-text-secondary); line-height: 1.5; margin: -10px 0 24px; min-height: 42px; }
-        .pricing-features { list-style: none; margin-bottom: 32px; }
-        .pricing-features li { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: var(--fs-small); color: var(--color-text-secondary); }
-        .pricing-features li i { width: 16px; height: 16px; color: var(--color-cta); flex-shrink: 0; }
-        .pricing-card .btn-primary, .pricing-card .btn-secondary { width: 100%; justify-content: center; }
-        .pricing-action { margin-top: auto; }
-        .pricing-status { margin-top: 10px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
-        .plan-compare { margin: 36px auto 0; max-width: 800px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255, 255, 255, 0.035); }
-        .compare-table { width: 100%; min-width: 600px; border-collapse: collapse; }
-        .compare-table th, .compare-table td { padding: 16px 18px; border-bottom: 1px solid var(--color-border); text-align: left; font-size: var(--fs-small); color: var(--color-text-secondary); vertical-align: middle; }
-        .compare-table th { color: var(--color-text); font-weight: 750; background: rgba(255, 255, 255, 0.04); }
-        .compare-table tr:last-child td { border-bottom: none; }
-        .compare-feature { color: var(--color-text); font-weight: 650; }
-        .compare-check { color: var(--color-cta); font-weight: 750; }
-        .compare-muted { color: var(--color-text-muted); }
-        .pricing-support { margin: 18px auto 0; max-width: 800px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
-        .pricing-support a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 3px; }
-        @media (max-width: 767px) { .pricing-grid { grid-template-columns: 1fr; } }
-
-        /* ==================================================================
-         * 8. FAQ — reused from main site
+         * 7. FAQ — reused from main site
          * ================================================================== */
         .faq-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
         .faq-item { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 16px; transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out); }
@@ -386,13 +354,12 @@
     <!-- Navigation -->
     <nav class="nav" id="nav" role="navigation" aria-label="Main navigation">
         <div class="nav-brand">
-            <img src="../starcat-logo.png" alt="Starcat Logo" class="nav-logo" width="32" height="32">
+            <img src="/starcat/starcat-logo.png" alt="Starcat Logo" class="nav-logo" width="32" height="32">
             <span class="nav-name">Starcat</span>
         </div>
         <div class="nav-links">
             <a href="#features" class="nav-link">Features</a>
             <a href="#tech" class="nav-link">Tech</a>
-            <a href="#pricing" class="nav-link">Pricing</a>
             <a href="#faq" class="nav-link">FAQ</a>
             <a href="./support.html" class="nav-link">Support</a>
         </div>
@@ -401,7 +368,7 @@
     <!-- Hero -->
     <section class="hero" id="hero" aria-label="Hero">
         <div class="hero-content fade-in">
-            <img src="../starcat-logo.png" alt="Starcat App Icon" class="hero-logo" width="96" height="96">
+            <img src="/starcat/starcat-logo.png" alt="Starcat App Icon" class="hero-logo" width="96" height="96">
             <h1 class="hero-tagline">
                 Starcat for GitHub<br>
                 <span class="highlight">Your Stars, organized with AI</span>
@@ -415,13 +382,9 @@
                     <span class="icon-18"><i data-lucide="download"></i></span>
                     Download on the Mac App Store
                 </button>
-                <a href="#pricing" class="btn-secondary" role="button">
-                    <span class="icon-18"><i data-lucide="arrow-down"></i></span>
-                    View Pricing
-                </a>
             </div>
             <div class="hero-banner fade-in">
-                <img src="../sc-banner.webp" alt="Starcat main interface screenshot" width="3428" height="2170">
+                <img src="/starcat/sc-banner.webp" alt="Starcat main interface screenshot" width="3428" height="2170">
             </div>
             <div class="hero-badges">
                 <div class="hero-badge">
@@ -533,7 +496,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-全局搜索.webp" alt="Starcat global search: multi-field filtering + FTS5 full-text search" loading="lazy">
+                            <img src="/starcat/sc-全局搜索.webp" alt="Starcat global search: multi-field filtering + FTS5 full-text search" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-collections" role="tabpanel" aria-labelledby="ft-collections" data-feature-panel="collections">
@@ -548,7 +511,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-智能集合.webp" alt="Starcat smart collections: built-in and custom repository collections" loading="lazy">
+                            <img src="/starcat/sc-智能集合.webp" alt="Starcat smart collections: built-in and custom repository collections" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-summary" role="tabpanel" aria-labelledby="ft-summary" data-feature-panel="summary">
@@ -563,7 +526,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-AI摘要.webp" alt="Starcat AI summary: auto-generated structured repo summaries" loading="lazy">
+                            <img src="/starcat/sc-AI摘要.webp" alt="Starcat AI summary: auto-generated structured repo summaries" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-translation" role="tabpanel" aria-labelledby="ft-translation" data-feature-panel="translation">
@@ -578,7 +541,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-AI翻译.webp" alt="Starcat README translation: translated README with preserved structure" loading="lazy">
+                            <img src="/starcat/sc-AI翻译.webp" alt="Starcat README translation: translated README with preserved structure" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-chat" role="tabpanel" aria-labelledby="ft-chat" data-feature-panel="chat">
@@ -593,7 +556,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
+                            <img src="/starcat/sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-health" role="tabpanel" aria-labelledby="ft-health" data-feature-panel="health">
@@ -608,7 +571,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-Health评分.webp" alt="Starcat Repo Health score: repository maintenance and activity overview" loading="lazy">
+                            <img src="/starcat/sc-Health评分.webp" alt="Starcat Repo Health score: repository maintenance and activity overview" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-openssf" role="tabpanel" aria-labelledby="ft-openssf" data-feature-panel="openssf">
@@ -623,7 +586,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-OpenSSF评分.webp" alt="Starcat OpenSSF scorecard: security scoring radar chart" loading="lazy">
+                            <img src="/starcat/sc-OpenSSF评分.webp" alt="Starcat OpenSSF scorecard: security scoring radar chart" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-codegraph" role="tabpanel" aria-labelledby="ft-codegraph" data-feature-panel="codegraph">
@@ -638,7 +601,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-内置代码图谱.webp" alt="Starcat code graph: dependency visualization and architecture exploration" loading="lazy">
+                            <img src="/starcat/sc-内置代码图谱.webp" alt="Starcat code graph: dependency visualization and architecture exploration" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-share" role="tabpanel" aria-labelledby="ft-share" data-feature-panel="share">
@@ -653,7 +616,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-分享卡片.webp" alt="Starcat share card: multi-theme user card export" loading="lazy">
+                            <img src="/starcat/sc-分享卡片.webp" alt="Starcat share card: multi-theme user card export" loading="lazy">
                         </div>
                     </article>
                     <article class="feature-tab-panel" id="fp-config" role="tabpanel" aria-labelledby="ft-config" data-feature-panel="config">
@@ -668,7 +631,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="../sc-AI服务配置.webp" alt="Starcat AI configuration: multi-model BYOK" loading="lazy">
+                            <img src="/starcat/sc-AI服务配置.webp" alt="Starcat AI configuration: multi-model BYOK" loading="lazy">
                         </div>
                     </article>
                 </div>
@@ -754,123 +717,6 @@
         </div>
     </section>
 
-    <!-- Pricing — App Store edition: Free + Pro subscription only, NO Lifetime -->
-    <section class="section" id="pricing" aria-labelledby="pricing-title">
-        <div class="section-inner">
-            <div class="section-label fade-in">Pricing</div>
-            <h2 class="section-title fade-in" id="pricing-title">Simple, transparent pricing</h2>
-            <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Start free. Upgrade to Pro with a 14-day free trial, billed through your Apple ID.
-            </p>
-
-            <div class="pricing-grid">
-                <div class="pricing-card fade-in">
-                    <span class="pricing-badge">Starter</span>
-                    <h3 class="pricing-name">Free</h3>
-                    <div class="pricing-price">Free</div>
-                    <div class="pricing-period">Core features, permanently</div>
-                    <p class="pricing-note">A complete local-first library for managing GitHub Stars.</p>
-                    <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> Sync and local cache</li>
-                        <li><i data-lucide="check"></i> Tags, notes, and status</li>
-                        <li><i data-lucide="check"></i> README and local search</li>
-                        <li><i data-lucide="check"></i> Discover, trends, hot, launches, weekly</li>
-                        <li><i data-lucide="check"></i> Activity timeline and undo star</li>
-                        <li><i data-lucide="check"></i> 20 tags / 4 lists / 5 releases</li>
-                        <li><i data-lucide="check"></i> HTML / Markdown export</li>
-                    </ul>
-                    <div class="pricing-action">
-                        <button class="btn-secondary" disabled>
-                            <span class="icon-16"><i data-lucide="apple"></i></span>
-                            Included with App
-                        </button>
-                    </div>
-                </div>
-                <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">Most Popular</span>
-                    <h3 class="pricing-name">Pro</h3>
-                    <div class="pricing-price">$9.99</div>
-                    <div class="pricing-period">per month</div>
-                    <p class="pricing-note">14-day free trial, then $9.99/month. Subscribe through Apple In-App Purchase.</p>
-                    <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> 14-day full Pro trial</li>
-                        <li><i data-lucide="check"></i> Unlimited library limits</li>
-                        <li><i data-lucide="check"></i> AI summaries and tags</li>
-                        <li><i data-lucide="check"></i> AI Chat and translation</li>
-                        <li><i data-lucide="check"></i> Embedding semantic search</li>
-                        <li><i data-lucide="check"></i> LLM-friendly web context</li>
-                        <li><i data-lucide="check"></i> CodeFlow and repo context</li>
-                        <li><i data-lucide="check"></i> Trending AI recommendations</li>
-                    </ul>
-                    <div class="pricing-action">
-                        <button class="btn-secondary" disabled>
-                            <span class="icon-16"><i data-lucide="apple"></i></span>
-                            Available In-App
-                        </button>
-                        <div class="pricing-status">Subscribe via Apple In-App Purchase</div>
-                    </div>
-                </div>
-            </div>
-            <div class="plan-compare fade-in" aria-label="Plan comparison">
-                <table class="compare-table">
-                    <thead>
-                        <tr>
-                            <th>Feature</th>
-                            <th>Free</th>
-                            <th>Pro</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td class="compare-feature">Sync, local cache, notes, README</td>
-                            <td class="compare-check">Included</td>
-                            <td class="compare-check">Included</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">Tags, smart collections, release subscriptions</td>
-                            <td>20 / 4 / 5</td>
-                            <td class="compare-check">Unlimited</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">Release polling and notifications</td>
-                            <td class="compare-muted">Limited</td>
-                            <td class="compare-check">Included</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">AI summaries, tags, Chat, README translation</td>
-                            <td class="compare-muted">Not included</td>
-                            <td class="compare-check">Included</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">Semantic search and LLM-friendly web context</td>
-                            <td class="compare-muted">Not included</td>
-                            <td class="compare-check">Included</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">RepoContextPacker, CodeFlow, Trending AI</td>
-                            <td class="compare-muted">Not included</td>
-                            <td class="compare-check">Included</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">Payment model</td>
-                            <td>Free</td>
-                            <td>14-day trial, then $9.99/month via Apple IAP</td>
-                        </tr>
-                        <tr>
-                            <td class="compare-feature">Subscription management</td>
-                            <td class="compare-muted">Not required</td>
-                            <td>Apple App Store</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <p class="pricing-support fade-in">
-                Pro subscription is managed entirely through your Apple ID. Manage or cancel anytime in App Store account settings.
-                Questions? <a href="mailto:dong4j@gmail.com">dong4j@gmail.com</a>
-            </p>
-        </div>
-    </section>
-
     <!-- FAQ -->
     <section class="section" id="faq" aria-labelledby="faq-title">
         <div class="section-inner">
@@ -944,7 +790,7 @@
             <div class="footer-main">
                 <div>
                     <div class="footer-brand">
-                        <img src="../starcat-logo.png" alt="Starcat Logo" class="footer-logo" width="40" height="40">
+                        <img src="/starcat/starcat-logo.png" alt="Starcat Logo" class="footer-logo" width="40" height="40">
                         <span class="footer-name">Starcat</span>
                     </div>
                     <p class="footer-desc">Turn GitHub Stars into a searchable local-first knowledge base for focused macOS workflows. Available on the Mac App Store.</p>
@@ -954,7 +800,6 @@
                     <div class="footer-list">
                         <a href="#features" class="footer-link">Features</a>
                         <a href="#tech" class="footer-link">Tech Stack</a>
-                        <a href="#pricing" class="footer-link">Pricing</a>
                         <a href="#faq" class="footer-link">FAQ</a>
                     </div>
                 </div>
