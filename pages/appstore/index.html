@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Starcat — Turn GitHub Stars into a searchable AI knowledge base. macOS native app, local-first, AI-powered.">
+    <meta name="description" content="Starcat for GitHub — Turn GitHub Stars into a searchable AI knowledge base. Native macOS app, available on the Mac App Store.">
     <meta name="robots" content="index, follow">
-    <meta property="og:title" content="Starcat — Native macOS GitHub Stars Manager">
-    <meta property="og:description" content="Turn GitHub Stars into a searchable AI knowledge base. Native macOS 15+ app, local-first, BYOK AI.">
-    <meta property="og:image" content="sc-banner.webp">
+    <meta property="og:title" content="Starcat for GitHub — Native macOS GitHub Stars Manager">
+    <meta property="og:description" content="Turn GitHub Stars into a searchable AI knowledge base. Native macOS 15+ app, local-first, BYOK AI. Available on the Mac App Store.">
+    <meta property="og:image" content="../sc-banner.webp">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <title>Starcat — GitHub Star Manager &amp; AI Knowledge Organizer</title>
-    <link rel="icon" type="image/png" href="starcat-logo.png">
+    <title>Starcat for GitHub — GitHub Star Manager &amp; AI Knowledge Organizer</title>
+    <link rel="icon" type="image/png" href="../starcat-logo.png">
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
         /* ==================================================================
-         * CSS Variables & Design Tokens
+         * CSS Variables & Design Tokens — reused from main site
          * ================================================================== */
         :root {
             --color-bg:         #090B10;
@@ -80,7 +80,6 @@
             body.is-loading .hero-tagline,
             body.is-loading .hero-desc,
             body.is-loading .hero-actions,
-            body.is-loading .hero-version-note,
             body.is-loading .hero-banner img {
                 opacity: 1 !important;
                 filter: none !important;
@@ -104,7 +103,7 @@
         ::selection { background: rgba(125, 211, 252, 0.28); color: var(--color-text); }
 
         /* ==================================================================
-         * Reusable Components
+         * Reusable Components — reused from main site
          * ================================================================== */
         .section { padding: var(--section-gap) 24px; position: relative; z-index: var(--z-content); }
         .section-inner { max-width: var(--content-max); margin: 0 auto; }
@@ -136,8 +135,8 @@
             box-shadow: 0 18px 42px rgba(125, 211, 252, 0.22); transform: translateY(-1px);
         }
         .btn-primary:active { transform: translateY(0); }
-        .btn-primary:disabled, .btn-secondary:disabled {
-            cursor: progress; opacity: 0.72; transform: none; box-shadow: none;
+        .btn-primary:disabled {
+            cursor: not-allowed; opacity: 0.55; transform: none; box-shadow: none;
         }
         .btn-secondary {
             display: inline-flex; align-items: center; gap: 8px;
@@ -154,7 +153,7 @@
         }
 
         /* ==================================================================
-         * 1. Navigation
+         * 1. Navigation — reused from main site
          * ================================================================== */
         .nav {
             position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
@@ -172,10 +171,6 @@
         .nav-links { display: flex; align-items: center; gap: 28px; }
         .nav-link { font-size: var(--fs-small); font-weight: 500; color: var(--color-text-secondary); transition: color var(--duration-fast) var(--ease-out); cursor: pointer; }
         .nav-link:hover { color: var(--color-text); }
-        .lang-toggle {
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: var(--fs-caption);
-            font-weight: 600; color: var(--color-cta) !important;
-        }
         .nav-cta {
             padding: 8px 18px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
             font-size: var(--fs-caption); font-weight: 600; color: #0F172A;
@@ -187,13 +182,9 @@
         @media (max-width: 767px) { .nav-links { display: none; } }
 
         /* ==================================================================
-         * 2. Hero
+         * 2. Hero — reused from main site
          * ================================================================== */
         .hero { position: relative; min-height: auto; display: flex; align-items: center; justify-content: center; padding: 112px 24px 64px; overflow: hidden; background: radial-gradient(circle at 50% -10%, rgba(125, 211, 252, 0.10), transparent 34%), linear-gradient(180deg, #0B0D12 0%, #090B10 70%); }
-        .hero-canvas { display: none; }
-        .hero-glow { display: none; }
-        .hero-glow--green { width: 600px; height: 600px; background: #7DD3FC; top: -200px; right: -100px; }
-        .hero-glow--blue { width: 500px; height: 500px; background: #F5D06F; bottom: -200px; left: -150px; }
         .hero-content { position: relative; z-index: var(--z-content); text-align: center; max-width: 1120px; }
         .hero-logo { width: 76px; height: 76px; border-radius: 20px; margin-bottom: 22px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32); transition: opacity 0.75s var(--ease-out), transform 0.85s var(--ease-out); }
         .hero-logo:hover { transform: scale(1.05); }
@@ -224,7 +215,7 @@
         }
 
         /* ==================================================================
-         * 3. Bento Grid — Pain → Solution
+         * 3. Bento Grid — Pain → Solution — reused from main site
          * ================================================================== */
         .bento-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--card-gap); }
         .bento-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 18px; padding: 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; overflow: hidden; }
@@ -242,7 +233,7 @@
         @media (max-width: 767px) { .bento-grid { grid-template-columns: 1fr; } .bento-card { padding: 24px; } }
 
         /* ==================================================================
-         * 4. Core Features
+         * 4. Core Features — reused from main site
          * ================================================================== */
         .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--card-gap); }
         .feature-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 16px; padding: 28px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); }
@@ -255,18 +246,8 @@
         @media (max-width: 767px) { .features-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
-         * 5. Feature Showcase
+         * 5. Feature Showcase — reused from main site
          * ================================================================== */
-        .showcase-row { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; padding: 40px 0; border-bottom: 1px solid var(--color-border); }
-        .showcase-row:last-child { border-bottom: none; }
-        .showcase-info { display: flex; flex-direction: column; gap: 12px; }
-        .showcase-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
-        .showcase-icon .lucide { width: 20px; height: 20px; }
-        .showcase-name { font-size: var(--fs-h3); font-weight: 700; }
-        .showcase-desc { font-size: var(--fs-small); color: var(--color-text-secondary); line-height: 1.7; }
-        .showcase-highlights { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-        .showcase-highlights li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-caption); color: var(--color-text-muted); }
-        .showcase-highlights li .lucide { width: 14px; height: 14px; color: var(--color-cta); flex-shrink: 0; }
         .feature-tabs { max-width: 1160px; margin: 0 auto; }
         .feature-tablist { display: flex; gap: 10px; padding: 8px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255, 255, 255, 0.035); scrollbar-width: thin; }
         .feature-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 14px; border: 1px solid transparent; border-radius: 12px; color: var(--color-text-secondary); background: transparent; font: inherit; font-size: var(--fs-caption); font-weight: 700; white-space: nowrap; cursor: pointer; transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
@@ -279,10 +260,19 @@
         .showcase-image:hover { box-shadow: 0 34px 100px rgba(0, 0, 0, 0.42); transform: translateY(-1px); }
         .showcase-image:focus-visible { outline: 2px solid var(--color-cta); outline-offset: 6px; }
         .showcase-image img { display: block; max-width: 100%; max-height: 440px; width: auto; height: auto; margin: 0 auto; }
+        .showcase-info { display: flex; flex-direction: column; gap: 12px; }
+        .showcase-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+        .showcase-icon .lucide { width: 20px; height: 20px; }
+        .showcase-name { font-size: var(--fs-h3); font-weight: 700; }
+        .showcase-desc { font-size: var(--fs-small); color: var(--color-text-secondary); line-height: 1.7; }
+        .showcase-highlights { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+        .showcase-highlights li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-caption); color: var(--color-text-muted); }
+        .showcase-highlights li .lucide { width: 14px; height: 14px; color: var(--color-cta); flex-shrink: 0; }
         @media (max-width: 1023px) { .showcase-image img { max-height: 320px; } }
         @media (max-width: 1023px) { .feature-tab-panel { grid-template-columns: 1fr; gap: 28px; padding: 28px; } .feature-tab-panel .showcase-image { order: 2; } .feature-tab-panel .showcase-info { order: 1; } }
-        @media (max-width: 767px) { .showcase-image img { max-height: 260px; } .showcase-row { grid-template-columns: 1fr; gap: 28px; padding: 28px 0; } .showcase-row .showcase-image { order: 2; } .showcase-row .showcase-info { order: 1; } .feature-tablist { margin-inline: -6px; border-radius: 14px; } .feature-tab-panel { padding: 22px; border-radius: 18px; } }
+        @media (max-width: 767px) { .showcase-image img { max-height: 260px; } .feature-tablist { margin-inline: -6px; border-radius: 14px; } .feature-tab-panel { padding: 22px; border-radius: 18px; } }
 
+        /* Lightbox — reused from main site */
         .image-lightbox { position: fixed; inset: 0; z-index: calc(var(--z-overlay) + 1); display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(4, 6, 10, 0.76); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 220ms var(--ease-out), visibility 220ms var(--ease-out); }
         .image-lightbox.is-open { opacity: 1; visibility: visible; pointer-events: auto; }
         .image-lightbox-frame { position: relative; display: flex; max-width: min(1600px, calc(100vw - 32px)); max-height: calc(100vh - 32px); transform: translateY(14px) scale(0.96); transition: transform 260ms var(--ease-out); }
@@ -295,7 +285,7 @@
         @media (prefers-reduced-motion: reduce) { .image-lightbox, .image-lightbox-frame { transition: none; } }
 
         /* ==================================================================
-         * 6. Tech Highlights
+         * 6. Tech Highlights — reused from main site
          * ================================================================== */
         .tech-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--card-gap); }
         .tech-card { text-align: center; padding: 34px 20px; background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 18px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); }
@@ -308,16 +298,14 @@
         @media (max-width: 767px) { .tech-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
-         * 7. Pricing
+         * 7. Pricing — App Store edition: Free + Pro subscription only
          * ================================================================== */
-        .pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--card-gap); max-width: 1160px; margin: 0 auto; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--card-gap); max-width: 800px; margin: 0 auto; }
         .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; display: flex; flex-direction: column; height: 100%; }
         .pricing-card:hover { border-color: var(--color-border-hover); background: rgba(255, 255, 255, 0.075); transform: translateY(-1px); }
         .pricing-card--pro { border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.06); }
         .pricing-card--pro:hover { border-color: rgba(139, 92, 246, 0.5); background: rgba(139, 92, 246, 0.1); }
-        .pricing-card--featured { border-color: rgba(251, 191, 36, 0.56); box-shadow: 0 24px 80px rgba(251, 191, 36, 0.12); }
         .pricing-badge { display: inline-block; align-self: flex-start; padding: 4px 12px; font-size: 11px; font-weight: 700; color: var(--color-pro); background: rgba(139, 92, 246, 0.15); border-radius: 20px; margin-bottom: 16px; }
-        .pricing-badge--value { color: #071018; background: var(--color-accent); }
         .pricing-name { font-size: var(--fs-h3); font-weight: 700; margin-bottom: 8px; }
         .pricing-price { font-size: 40px; font-weight: 750; margin-bottom: 4px; }
         .pricing-period { font-size: var(--fs-small); color: var(--color-text-muted); margin-bottom: 24px; }
@@ -326,64 +314,22 @@
         .pricing-features li { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: var(--fs-small); color: var(--color-text-secondary); }
         .pricing-features li i { width: 16px; height: 16px; color: var(--color-cta); flex-shrink: 0; }
         .pricing-card .btn-primary, .pricing-card .btn-secondary { width: 100%; justify-content: center; }
-        .pricing-disabled { width: 100%; display: inline-flex; justify-content: center; padding: 14px 28px; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-text-muted); font-size: var(--fs-small); font-weight: 700; background: rgba(255, 255, 255, 0.035); }
-        .pricing-disabled--primary { color: #071018; border-color: transparent; background: var(--color-cta); opacity: 0.72; }
-        .pricing-action { margin-top: auto; height: 84px; }
+        .pricing-action { margin-top: auto; }
         .pricing-status { margin-top: 10px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
-        .plan-compare { margin: 36px auto 0; max-width: 1160px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255, 255, 255, 0.035); }
-        .compare-table { width: 100%; min-width: 780px; border-collapse: collapse; }
+        .plan-compare { margin: 36px auto 0; max-width: 800px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255, 255, 255, 0.035); }
+        .compare-table { width: 100%; min-width: 600px; border-collapse: collapse; }
         .compare-table th, .compare-table td { padding: 16px 18px; border-bottom: 1px solid var(--color-border); text-align: left; font-size: var(--fs-small); color: var(--color-text-secondary); vertical-align: middle; }
         .compare-table th { color: var(--color-text); font-weight: 750; background: rgba(255, 255, 255, 0.04); }
         .compare-table tr:last-child td { border-bottom: none; }
         .compare-feature { color: var(--color-text); font-weight: 650; }
         .compare-check { color: var(--color-cta); font-weight: 750; }
         .compare-muted { color: var(--color-text-muted); }
-        .pricing-support { margin: 18px auto 0; max-width: 1160px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
+        .pricing-support { margin: 18px auto 0; max-width: 800px; text-align: center; color: var(--color-text-muted); font-size: var(--fs-caption); }
         .pricing-support a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 3px; }
-        @media (max-width: 1023px) { .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 767px) { .pricing-grid { grid-template-columns: 1fr; } }
 
         /* ==================================================================
-         * 8. Download
-         * ================================================================== */
-        .download-modal { position: fixed; inset: 0; z-index: var(--z-overlay); display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(4, 6, 10, 0.74); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); opacity: 0; visibility: hidden; transition: opacity var(--duration-normal) var(--ease-out), visibility var(--duration-normal) var(--ease-out); }
-        .download-modal.is-open { opacity: 1; visibility: visible; }
-        .download-modal-dialog { width: min(920px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; border: 1px solid var(--color-border-hover); border-radius: 24px; background: radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.12), transparent 36%), #0D1017; box-shadow: 0 40px 120px rgba(0, 0, 0, 0.58); transform: translateY(12px) scale(0.98); transition: transform var(--duration-normal) var(--ease-out); }
-        .download-modal.is-open .download-modal-dialog { transform: translateY(0) scale(1); }
-        .download-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 28px 28px 0; }
-        .download-modal-title { font-size: var(--fs-h2); font-weight: 750; line-height: 1.2; margin-bottom: 8px; }
-        .download-modal-desc { color: var(--color-text-secondary); font-size: var(--fs-small); line-height: 1.6; max-width: 600px; }
-        .download-modal-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); background: rgba(255, 255, 255, 0.04); cursor: pointer; transition: border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out); }
-        .download-modal-close:hover { border-color: var(--color-border-hover); color: var(--color-text); background: rgba(255, 255, 255, 0.07); }
-        .download-modal-close .lucide { width: 18px; height: 18px; }
-        .download-panel { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: var(--card-gap); align-items: stretch; padding: 28px; }
-        .download-card, .download-history { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 32px; }
-        .download-card { display: flex; flex-direction: column; gap: 20px; }
-        .download-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-        .download-eyebrow { font-size: var(--fs-caption); font-weight: 700; color: var(--color-cta); text-transform: uppercase; letter-spacing: 0; margin-bottom: 8px; }
-        .download-version { font-size: var(--fs-h2); font-weight: 750; line-height: 1.2; }
-        .download-status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(125, 211, 252, 0.12); color: var(--color-cta); font-size: var(--fs-caption); white-space: nowrap; }
-        .download-meta { display: flex; flex-wrap: wrap; gap: 10px; }
-        .download-meta > span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); font-size: var(--fs-caption); }
-        .download-meta .lucide { width: 14px; height: 14px; }
-        .download-note { color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.6; }
-        .download-trust { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-        .download-trust-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-text-secondary); font-size: var(--fs-caption); background: rgba(255, 255, 255, 0.035); }
-        .download-trust-item .lucide { width: 14px; height: 14px; color: var(--color-cta); }
-        .download-card .btn-primary { justify-content: center; width: 100%; }
-        .download-history-title { font-size: var(--fs-small); font-weight: 700; margin-bottom: 14px; }
-        .download-history-list { display: flex; flex-direction: column; gap: 10px; }
-        .download-history-item { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--color-border); }
-        .download-history-item:first-child { border-top: none; padding-top: 0; }
-        .download-history-version { font-size: var(--fs-small); font-weight: 700; color: var(--color-text); }
-        .download-history-meta { font-size: var(--fs-caption); color: var(--color-text-muted); margin-top: 2px; }
-        .download-history-link { font-size: var(--fs-caption); font-weight: 700; color: var(--color-cta); white-space: nowrap; }
-        .download-history-empty { color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.6; }
-        @media (max-width: 900px) { .download-panel { grid-template-columns: 1fr; } .download-trust { grid-template-columns: 1fr; } }
-        @media (max-width: 767px) { .download-modal { align-items: flex-end; padding: 12px; } .download-modal-dialog { max-height: calc(100vh - 24px); border-radius: 18px; } .download-modal-header { padding: 22px 18px 0; } .download-panel { padding: 18px; } .download-card, .download-history { padding: 22px; } }
-
-        /* ==================================================================
-         * 9. FAQ + Final CTA
+         * 8. FAQ — reused from main site
          * ================================================================== */
         .faq-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
         .faq-item { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 16px; transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out); }
@@ -393,26 +339,29 @@
         .faq-item summary::after { content: ''; width: 9px; height: 9px; border-right: 2px solid var(--color-text-muted); border-bottom: 2px solid var(--color-text-muted); transform: rotate(45deg); transition: transform var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); flex-shrink: 0; }
         .faq-item[open] summary::after { transform: rotate(-135deg) translate(-2px, -2px); border-color: var(--color-cta); }
         .faq-item p { padding: 0 24px 22px; color: var(--color-text-secondary); font-size: var(--fs-small); line-height: 1.65; }
+
+        /* ==================================================================
+         * 9. Final CTA — reused from main site
+         * ================================================================== */
         .final-cta { padding-top: 0; }
         .final-cta-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 36px; border: 1px solid var(--color-border); border-radius: 24px; background: radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.14), transparent 34%), var(--color-bg-glass); }
         .final-cta-title { font-size: var(--fs-h2); font-weight: 750; line-height: 1.2; margin-bottom: 10px; }
         .final-cta-desc { color: var(--color-text-secondary); max-width: 620px; }
-        @media (max-width: 767px) { .faq-grid, .pricing-grid, .final-cta-panel { grid-template-columns: 1fr; } }
+        @media (max-width: 767px) { .final-cta-panel { grid-template-columns: 1fr; } }
 
         /* ==================================================================
-         * 10. Footer
+         * 10. Footer — reused from main site, adapted for App Store
          * ================================================================== */
         .footer { padding: 72px 24px 40px; border-top: 1px solid var(--color-border); position: relative; z-index: var(--z-content); }
         .footer-inner { max-width: var(--content-max); margin: 0 auto; }
-        .footer-main { display: grid; grid-template-columns: minmax(220px, 1.2fr) repeat(4, minmax(140px, 1fr)); gap: 42px; align-items: flex-start; }
+        .footer-main { display: grid; grid-template-columns: minmax(220px, 1.2fr) repeat(3, minmax(140px, 1fr)); gap: 42px; align-items: flex-start; }
         .footer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-        .footer-logo { width: 80px; height: 80px; border-radius: 10px; }
+        .footer-logo { width: 40px; height: 40px; border-radius: 10px; }
         .footer-name { font-size: var(--fs-small); font-weight: 700; }
         .footer-desc { max-width: 280px; color: var(--color-text-muted); font-size: var(--fs-small); line-height: 1.65; }
         .footer-heading { margin-bottom: 14px; color: var(--color-text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
         .footer-list { display: flex; flex-direction: column; gap: 10px; }
-        .footer-link { font-size: var(--fs-small); color: var(--color-text-secondary); transition: color var(--duration-fast) var(--ease-out); }
-        .footer-link { cursor: pointer; }
+        .footer-link { font-size: var(--fs-small); color: var(--color-text-secondary); transition: color var(--duration-fast) var(--ease-out); cursor: pointer; }
         .footer-link:hover { color: var(--color-text); }
         .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 44px; padding-top: 28px; border-top: 1px solid var(--color-border); }
         .footer-copyright { font-size: var(--fs-caption); color: var(--color-text-muted); }
@@ -422,10 +371,14 @@
         @media (max-width: 767px) { .footer-main { grid-template-columns: 1fr; gap: 30px; } .footer-bottom { align-items: flex-start; flex-direction: column; } }
 
         /* ==================================================================
-         * Scroll Fade-in Animation
+         * Scroll Fade-in Animation — reused from main site
          * ================================================================== */
         .fade-in { opacity: 0; transform: translateY(32px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }
         .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+        /* App Store badge */
+        .appstore-badge { display: inline-block; height: 40px; }
+        .appstore-badge img { height: 100%; width: auto; }
     </style>
 </head>
 <body class="is-loading">
@@ -433,7 +386,7 @@
     <!-- Navigation -->
     <nav class="nav" id="nav" role="navigation" aria-label="Main navigation">
         <div class="nav-brand">
-            <img src="starcat-logo.png" alt="Starcat Logo" class="nav-logo" width="32" height="32">
+            <img src="../starcat-logo.png" alt="Starcat Logo" class="nav-logo" width="32" height="32">
             <span class="nav-name">Starcat</span>
         </div>
         <div class="nav-links">
@@ -441,41 +394,34 @@
             <a href="#tech" class="nav-link">Tech</a>
             <a href="#pricing" class="nav-link">Pricing</a>
             <a href="#faq" class="nav-link">FAQ</a>
-            <a href="./privacy.html" class="nav-link">Privacy</a>
-            <a href="./changelog.html" class="nav-link">Changelog</a>
-            <a href="./index-zh.html" class="nav-link" title="切换到中文">🇨🇳</a>
-            <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="nav-cta" role="button" data-download-open>Download</a>
+            <a href="./support.html" class="nav-link">Support</a>
         </div>
     </nav>
 
     <!-- Hero -->
     <section class="hero" id="hero" aria-label="Hero">
-        <div class="hero-glow hero-glow--green" aria-hidden="true"></div>
-        <div class="hero-glow hero-glow--blue" aria-hidden="true"></div>
-        <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
-
         <div class="hero-content fade-in">
-            <img src="starcat-logo.png" alt="Starcat App Icon" class="hero-logo" width="96" height="96">
+            <img src="../starcat-logo.png" alt="Starcat App Icon" class="hero-logo" width="96" height="96">
             <h1 class="hero-tagline">
-                Turn GitHub Stars<br>
-                into a <span class="highlight">searchable AI knowledge base</span>
+                Starcat for GitHub<br>
+                <span class="highlight">Your Stars, organized with AI</span>
             </h1>
             <p class="hero-desc">
-                Starcat is a macOS native app that helps you organize, understand,
-                rediscover, and evaluate every starred GitHub repo — local-first, AI-powered.
+                A native macOS app that turns your GitHub Stars into a searchable, AI-powered knowledge base.
+                Available on the Mac App Store.
             </p>
             <div class="hero-actions">
-                <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-open>
+                <button class="btn-primary" disabled title="Coming soon on the Mac App Store">
                     <span class="icon-18"><i data-lucide="download"></i></span>
-                    Download Starcat
-                </a>
+                    Download on the Mac App Store
+                </button>
                 <a href="#pricing" class="btn-secondary" role="button">
                     <span class="icon-18"><i data-lucide="arrow-down"></i></span>
-                    Pricing
+                    View Pricing
                 </a>
             </div>
             <div class="hero-banner fade-in">
-                <img src="sc-banner.webp" alt="Starcat main interface screenshot" width="3428" height="2170">
+                <img src="../sc-banner.webp" alt="Starcat main interface screenshot" width="3428" height="2170">
             </div>
             <div class="hero-badges">
                 <div class="hero-badge">
@@ -492,8 +438,8 @@
                 </div>
             </div>
             <div class="hero-version-note">
-                <i data-lucide="monitor"></i>
-                Current release supports macOS 15+ and ships as an Apple Silicon Direct download.
+                <i data-lucide="apple"></i>
+                Available on the Mac App Store. Pro subscription managed through Apple In-App Purchase.
             </div>
         </div>
     </section>
@@ -563,19 +509,19 @@
 
             <div class="feature-tabs fade-in" data-feature-tabs>
                 <div class="feature-tablist" role="tablist" aria-label="Feature panorama">
-                    <button class="feature-tab is-active" id="feature-tab-search" type="button" role="tab" aria-selected="true" aria-controls="feature-panel-search" data-feature-tab="search">Search</button>
-                    <button class="feature-tab" id="feature-tab-collections" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-collections" data-feature-tab="collections">Collections</button>
-                    <button class="feature-tab" id="feature-tab-summary" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-summary" data-feature-tab="summary">AI Summary</button>
-                    <button class="feature-tab" id="feature-tab-translation" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-translation" data-feature-tab="translation">Translation</button>
-                    <button class="feature-tab" id="feature-tab-chat" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-chat" data-feature-tab="chat">AI Chat</button>
-                    <button class="feature-tab" id="feature-tab-health" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-health" data-feature-tab="health">Health</button>
-                    <button class="feature-tab" id="feature-tab-openssf" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-openssf" data-feature-tab="openssf">OpenSSF</button>
-                    <button class="feature-tab" id="feature-tab-codegraph" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-codegraph" data-feature-tab="codegraph">Code Graph</button>
-                    <button class="feature-tab" id="feature-tab-share" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-share" data-feature-tab="share">Share</button>
-                    <button class="feature-tab" id="feature-tab-config" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-config" data-feature-tab="config">AI Config</button>
+                    <button class="feature-tab is-active" id="ft-search" type="button" role="tab" aria-selected="true" aria-controls="fp-search" data-feature-tab="search">Search</button>
+                    <button class="feature-tab" id="ft-collections" type="button" role="tab" aria-selected="false" aria-controls="fp-collections" data-feature-tab="collections">Collections</button>
+                    <button class="feature-tab" id="ft-summary" type="button" role="tab" aria-selected="false" aria-controls="fp-summary" data-feature-tab="summary">AI Summary</button>
+                    <button class="feature-tab" id="ft-translation" type="button" role="tab" aria-selected="false" aria-controls="fp-translation" data-feature-tab="translation">Translation</button>
+                    <button class="feature-tab" id="ft-chat" type="button" role="tab" aria-selected="false" aria-controls="fp-chat" data-feature-tab="chat">AI Chat</button>
+                    <button class="feature-tab" id="ft-health" type="button" role="tab" aria-selected="false" aria-controls="fp-health" data-feature-tab="health">Health</button>
+                    <button class="feature-tab" id="ft-openssf" type="button" role="tab" aria-selected="false" aria-controls="fp-openssf" data-feature-tab="openssf">OpenSSF</button>
+                    <button class="feature-tab" id="ft-codegraph" type="button" role="tab" aria-selected="false" aria-controls="fp-codegraph" data-feature-tab="codegraph">Code Graph</button>
+                    <button class="feature-tab" id="ft-share" type="button" role="tab" aria-selected="false" aria-controls="fp-share" data-feature-tab="share">Share</button>
+                    <button class="feature-tab" id="ft-config" type="button" role="tab" aria-selected="false" aria-controls="fp-config" data-feature-tab="config">AI Config</button>
                 </div>
                 <div class="feature-tab-panels">
-                    <article class="feature-tab-panel is-active" id="feature-panel-search" role="tabpanel" aria-labelledby="feature-tab-search" data-feature-panel="search">
+                    <article class="feature-tab-panel is-active" id="fp-search" role="tabpanel" aria-labelledby="ft-search" data-feature-panel="search">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--green"><i data-lucide="search"></i></div>
                             <h3 class="showcase-name">Global Search &amp; Structured Filters</h3>
@@ -587,10 +533,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-全局搜索.webp" alt="Starcat global search: multi-field filtering + FTS5 full-text search" loading="lazy">
+                            <img src="../sc-全局搜索.webp" alt="Starcat global search: multi-field filtering + FTS5 full-text search" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-collections" role="tabpanel" aria-labelledby="feature-tab-collections" data-feature-panel="collections">
+                    <article class="feature-tab-panel" id="fp-collections" role="tabpanel" aria-labelledby="ft-collections" data-feature-panel="collections">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--blue"><i data-lucide="list-filter"></i></div>
                             <h3 class="showcase-name">Smart Collections</h3>
@@ -602,10 +548,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-智能集合.webp" alt="Starcat smart collections: built-in and custom repository collections" loading="lazy">
+                            <img src="../sc-智能集合.webp" alt="Starcat smart collections: built-in and custom repository collections" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-summary" role="tabpanel" aria-labelledby="feature-tab-summary" data-feature-panel="summary">
+                    <article class="feature-tab-panel" id="fp-summary" role="tabpanel" aria-labelledby="ft-summary" data-feature-panel="summary">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--violet"><i data-lucide="sparkles"></i></div>
                             <h3 class="showcase-name">AI Smart Summaries</h3>
@@ -617,10 +563,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-AI摘要.webp" alt="Starcat AI summary: auto-generated structured repo summaries" loading="lazy">
+                            <img src="../sc-AI摘要.webp" alt="Starcat AI summary: auto-generated structured repo summaries" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-translation" role="tabpanel" aria-labelledby="feature-tab-translation" data-feature-panel="translation">
+                    <article class="feature-tab-panel" id="fp-translation" role="tabpanel" aria-labelledby="ft-translation" data-feature-panel="translation">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--violet"><i data-lucide="languages"></i></div>
                             <h3 class="showcase-name">README Translation</h3>
@@ -632,10 +578,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-AI翻译.webp" alt="Starcat README translation: translated README with preserved structure" loading="lazy">
+                            <img src="../sc-AI翻译.webp" alt="Starcat README translation: translated README with preserved structure" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-chat" role="tabpanel" aria-labelledby="feature-tab-chat" data-feature-panel="chat">
+                    <article class="feature-tab-panel" id="fp-chat" role="tabpanel" aria-labelledby="ft-chat" data-feature-panel="chat">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--blue"><i data-lucide="message-square"></i></div>
                             <h3 class="showcase-name">AI Conversational Interface</h3>
@@ -647,10 +593,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
+                            <img src="../sc-AI对话.webp" alt="Starcat AI chat: repository-context intelligent Q&amp;A" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-health" role="tabpanel" aria-labelledby="feature-tab-health" data-feature-panel="health">
+                    <article class="feature-tab-panel" id="fp-health" role="tabpanel" aria-labelledby="ft-health" data-feature-panel="health">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--green"><i data-lucide="activity"></i></div>
                             <h3 class="showcase-name">Repo Health Score</h3>
@@ -662,10 +608,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-Health评分.webp" alt="Starcat Repo Health score: repository maintenance and activity overview" loading="lazy">
+                            <img src="../sc-Health评分.webp" alt="Starcat Repo Health score: repository maintenance and activity overview" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-openssf" role="tabpanel" aria-labelledby="feature-tab-openssf" data-feature-panel="openssf">
+                    <article class="feature-tab-panel" id="fp-openssf" role="tabpanel" aria-labelledby="ft-openssf" data-feature-panel="openssf">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--amber"><i data-lucide="shield"></i></div>
                             <h3 class="showcase-name">OpenSSF Security Scorecard</h3>
@@ -677,10 +623,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-OpenSSF评分.webp" alt="Starcat OpenSSF scorecard: security scoring radar chart" loading="lazy">
+                            <img src="../sc-OpenSSF评分.webp" alt="Starcat OpenSSF scorecard: security scoring radar chart" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-codegraph" role="tabpanel" aria-labelledby="feature-tab-codegraph" data-feature-panel="codegraph">
+                    <article class="feature-tab-panel" id="fp-codegraph" role="tabpanel" aria-labelledby="ft-codegraph" data-feature-panel="codegraph">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--green"><i data-lucide="git-branch"></i></div>
                             <h3 class="showcase-name">Built-in Code Graph</h3>
@@ -692,10 +638,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-内置代码图谱.webp" alt="Starcat code graph: dependency visualization and architecture exploration" loading="lazy">
+                            <img src="../sc-内置代码图谱.webp" alt="Starcat code graph: dependency visualization and architecture exploration" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-share" role="tabpanel" aria-labelledby="feature-tab-share" data-feature-panel="share">
+                    <article class="feature-tab-panel" id="fp-share" role="tabpanel" aria-labelledby="ft-share" data-feature-panel="share">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--violet"><i data-lucide="share"></i></div>
                             <h3 class="showcase-name">User Share Cards</h3>
@@ -707,10 +653,10 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-分享卡片.webp" alt="Starcat share card: multi-theme user card export" loading="lazy">
+                            <img src="../sc-分享卡片.webp" alt="Starcat share card: multi-theme user card export" loading="lazy">
                         </div>
                     </article>
-                    <article class="feature-tab-panel" id="feature-panel-config" role="tabpanel" aria-labelledby="feature-tab-config" data-feature-panel="config">
+                    <article class="feature-tab-panel" id="fp-config" role="tabpanel" aria-labelledby="ft-config" data-feature-panel="config">
                         <div class="showcase-info">
                             <div class="showcase-icon bento-card-icon--blue"><i data-lucide="sliders"></i></div>
                             <h3 class="showcase-name">Flexible AI Configuration (BYOK)</h3>
@@ -722,7 +668,7 @@
                             </ul>
                         </div>
                         <div class="showcase-image">
-                            <img src="sc-AI服务配置.webp" alt="Starcat AI configuration: multi-model BYOK" loading="lazy">
+                            <img src="../sc-AI服务配置.webp" alt="Starcat AI configuration: multi-model BYOK" loading="lazy">
                         </div>
                     </article>
                 </div>
@@ -800,27 +746,27 @@
                     <p class="tech-desc">Gemini / DeepSeek / OpenAI / Ollama — your keys, your choice</p>
                 </div>
                 <div class="tech-card fade-in">
-                    <div class="tech-icon" style="background:rgba(251,191,36,0.1);color:#FBBF24"><i data-lucide="monitor"></i></div>
-                    <h3 class="tech-name">Focused on macOS</h3>
-                    <p class="tech-desc">A dedicated macOS 15+ app shaped around three-column windows, the menu bar, keyboard shortcuts, and focused desktop reading</p>
+                    <div class="tech-icon" style="background:rgba(251,191,36,0.1);color:#FBBF24"><i data-lucide="apple"></i></div>
+                    <h3 class="tech-name">App Store Distribution</h3>
+                    <p class="tech-desc">Available on the Mac App Store with Apple-notarized security and seamless updates</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Availability -->
+    <!-- Pricing — App Store edition: Free + Pro subscription only, NO Lifetime -->
     <section class="section" id="pricing" aria-labelledby="pricing-title">
         <div class="section-inner">
-            <div class="section-label fade-in">Availability</div>
-            <h2 class="section-title fade-in" id="pricing-title">Pricing</h2>
+            <div class="section-label fade-in">Pricing</div>
+            <h2 class="section-title fade-in" id="pricing-title">Simple, transparent pricing</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Start free, try Pro Monthly for 14 days, or choose Lifetime for one-time access on one Mac.
+                Start free. Upgrade to Pro with a 14-day free trial, billed through your Apple ID.
             </p>
 
             <div class="pricing-grid">
                 <div class="pricing-card fade-in">
                     <span class="pricing-badge">Starter</span>
-                    <h3 class="pricing-name">Free for macOS</h3>
+                    <h3 class="pricing-name">Free</h3>
                     <div class="pricing-price">Free</div>
                     <div class="pricing-period">Core features, permanently</div>
                     <p class="pricing-note">A complete local-first library for managing GitHub Stars.</p>
@@ -834,21 +780,20 @@
                         <li><i data-lucide="check"></i> HTML / Markdown export</li>
                     </ul>
                     <div class="pricing-action">
-                        <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-secondary" role="button" data-download-open>
-                            <span class="icon-16"><i data-lucide="download"></i></span>
-                            Free Download
-                        </a>
+                        <button class="btn-secondary" disabled>
+                            <span class="icon-16"><i data-lucide="apple"></i></span>
+                            Included with App
+                        </button>
                     </div>
                 </div>
                 <div class="pricing-card pricing-card--pro fade-in">
                     <span class="pricing-badge">Most Popular</span>
-                    <h3 class="pricing-name">Pro Monthly</h3>
+                    <h3 class="pricing-name">Pro</h3>
                     <div class="pricing-price">$9.99</div>
                     <div class="pricing-period">per month</div>
-                    <p class="pricing-note">14-day free trial, then $9.99/month. Licensed for 1 Mac.</p>
+                    <p class="pricing-note">14-day free trial, then $9.99/month. Subscribe through Apple In-App Purchase.</p>
                     <ul class="pricing-features">
                         <li><i data-lucide="check"></i> 14-day full Pro trial</li>
-                        <li><i data-lucide="check"></i> 1 Mac license seat</li>
                         <li><i data-lucide="check"></i> Unlimited library limits</li>
                         <li><i data-lucide="check"></i> AI summaries and tags</li>
                         <li><i data-lucide="check"></i> AI Chat and translation</li>
@@ -858,33 +803,11 @@
                         <li><i data-lucide="check"></i> Trending AI recommendations</li>
                     </ul>
                     <div class="pricing-action">
-                        <button class="btn-secondary" type="button" data-checkout-plan="monthly">
-                            Buy Pro Monthly
+                        <button class="btn-secondary" disabled>
+                            <span class="icon-16"><i data-lucide="apple"></i></span>
+                            Available In-App
                         </button>
-                        <div class="pricing-status" data-checkout-status="monthly">14-day trial included</div>
-                    </div>
-                </div>
-                <div class="pricing-card pricing-card--pro pricing-card--featured fade-in">
-                    <span class="pricing-badge pricing-badge--value">Best Value</span>
-                    <h3 class="pricing-name">Pro Lifetime</h3>
-                    <div class="pricing-price">$39.99</div>
-                    <div class="pricing-period">one-time purchase</div>
-                    <p class="pricing-note">One-time purchase for 1 Mac. Includes every Pro Monthly feature.</p>
-                    <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> Everything included in Pro Monthly</li>
-                        <li><i data-lucide="check"></i> 1 Mac license seat</li>
-                        <li><i data-lucide="check"></i> One-time payment</li>
-                        <li><i data-lucide="check"></i> Lifetime current Pro access</li>
-                        <li><i data-lucide="check"></i> No monthly renewal</li>
-                        <li><i data-lucide="check"></i> Built for long-term Starcat use</li>
-                        <li><i data-lucide="check"></i> Protected from future price changes</li>
-                        <li><i data-lucide="check"></i> BYOK Provider configuration</li>
-                    </ul>
-                    <div class="pricing-action">
-                        <button class="btn-primary" type="button" data-checkout-plan="lifetime">
-                            Buy Pro Lifetime
-                        </button>
-                        <div class="pricing-status" data-checkout-status="lifetime">Pay once, keep current Pro</div>
+                        <div class="pricing-status">Subscribe via Apple In-App Purchase</div>
                     </div>
                 </div>
             </div>
@@ -894,8 +817,7 @@
                         <tr>
                             <th>Feature</th>
                             <th>Free</th>
-                            <th>Pro Monthly</th>
-                            <th>Pro Lifetime</th>
+                            <th>Pro</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -903,55 +825,48 @@
                             <td class="compare-feature">Sync, local cache, notes, README</td>
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
-                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">Tags, smart collections, release subscriptions</td>
                             <td>20 / 4 / 5</td>
-                            <td class="compare-check">Unlimited</td>
                             <td class="compare-check">Unlimited</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">Release polling and notifications</td>
                             <td class="compare-muted">Limited</td>
                             <td class="compare-check">Included</td>
-                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">AI summaries, tags, Chat, README translation</td>
                             <td class="compare-muted">Not included</td>
-                            <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">Semantic search and LLM-friendly web context</td>
                             <td class="compare-muted">Not included</td>
                             <td class="compare-check">Included</td>
-                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">RepoContextPacker, CodeFlow, Trending AI</td>
                             <td class="compare-muted">Not included</td>
                             <td class="compare-check">Included</td>
-                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">Payment model</td>
                             <td>Free</td>
-                            <td>14-day trial, then $9.99/month</td>
-                            <td>$39.99 one-time</td>
+                            <td>14-day trial, then $9.99/month via Apple IAP</td>
                         </tr>
                         <tr>
-                            <td class="compare-feature">License seats</td>
+                            <td class="compare-feature">Subscription management</td>
                             <td class="compare-muted">Not required</td>
-                            <td>1 Mac</td>
-                            <td>1 Mac</td>
+                            <td>Apple App Store</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             <p class="pricing-support fade-in">
-                Payment or support: <a href="mailto:dong4j@gmail.com">dong4j@gmail.com</a>
+                Pro subscription is managed entirely through your Apple ID. Manage or cancel anytime in App Store account settings.
+                Questions? <a href="mailto:dong4j@gmail.com">dong4j@gmail.com</a>
             </p>
         </div>
     </section>
@@ -960,107 +875,66 @@
     <section class="section" id="faq" aria-labelledby="faq-title">
         <div class="section-inner">
             <div class="section-label fade-in">FAQ</div>
-            <h2 class="section-title fade-in" id="faq-title">Before you download</h2>
+            <h2 class="section-title fade-in" id="faq-title">Frequently asked questions</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:36px">
-                Starcat is currently focused on macOS. Here are the platform, data, and AI boundaries.
+                Everything you need to know about Starcat for GitHub on the Mac App Store.
             </p>
             <div class="faq-grid">
                 <details class="faq-item fade-in">
                     <summary>Which systems does Starcat support?</summary>
-                    <p>Starcat currently supports macOS 15 and later only. The Direct download is intended for Apple Silicon Macs. There are no iOS, iPadOS, watchOS, Windows, or Android builds today.</p>
+                    <p>Starcat supports macOS 15 and later. It is available on the Mac App Store for Apple Silicon and Intel Macs.</p>
                 </details>
                 <details class="faq-item fade-in">
-                    <summary>How is the Direct build different from an App Store build?</summary>
-                    <p>The landing page currently points to the Direct build, which supports in-app updates through Sparkle. App Store availability follows a separate release path and will be clearly labeled when available.</p>
+                    <summary>How do I get the Pro subscription?</summary>
+                    <p>Pro is available through Apple In-App Purchase. Open Starcat, go to Settings → Pro, and subscribe. You get a 14-day free trial before being charged.</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>How do I manage or cancel my Pro subscription?</summary>
+                    <p>All subscriptions are managed by Apple. Open the App Store app, click your account, and go to Account Settings → Subscriptions to view, change, or cancel your Starcat Pro subscription.</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>How do I restore my Pro purchase on a new Mac?</summary>
+                    <p>Open Starcat, go to Settings → Pro, and tap "Restore Purchases." Your Apple ID will verify your subscription and unlock Pro features.</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>Where is my data stored?</summary>
-                    <p>Starcat is local-first. Repo cache can be rebuilt, while tags, notes, and status are stored in local SQLite on your Mac.</p>
+                    <p>Starcat is local-first. Repo cache, tags, notes, and status are stored in local SQLite on your Mac. GitHub tokens and AI provider keys are stored securely in your Mac's Keychain.</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>Does Starcat host my AI keys?</summary>
-                    <p>Starcat follows a BYOK model: you configure your own model provider or API key. AI-related features on this page depend on what is enabled in the current app build.</p>
+                    <p>No. Starcat follows a BYOK (Bring Your Own Key) model. You configure your own AI provider keys, which are stored locally in your Mac's Keychain and never sent to Starcat servers.</p>
                 </details>
                 <details class="faq-item fade-in">
-                    <summary>How does the Pro trial and license seat work?</summary>
-                    <p>Pro Monthly includes a 14-day trial with full Pro features. Direct licenses are currently limited to 1 Mac per license; Lifetime includes the same Pro feature set without monthly renewal.</p>
-                </details>
-                <details class="faq-item fade-in">
-                    <summary>Will Starcat support iPhone or iPad later?</summary>
-                    <p>The short-term focus is making the macOS app stable and useful. Future platform plans will be announced in the changelog; this page does not promise multi-platform builds.</p>
+                    <summary>Will Starcat support iPhone or iPad?</summary>
+                    <p>The short-term focus is making the macOS app stable and useful. Future platform plans will be announced when available.</p>
                 </details>
             </div>
         </div>
     </section>
 
     <!-- Final CTA -->
-    <section class="section final-cta" aria-label="Download Starcat">
+    <section class="section final-cta" aria-label="Get Starcat">
         <div class="section-inner">
             <div class="final-cta-panel fade-in">
                 <div>
                     <div class="final-cta-title">Ready to make your Stars useful again?</div>
-                    <p class="final-cta-desc">Download the macOS Direct build and start organizing, searching, and reading your GitHub Stars in one focused desktop app.</p>
+                    <p class="final-cta-desc">Download Starcat for GitHub from the Mac App Store and start organizing, searching, and reading your GitHub Stars in one focused desktop app.</p>
                 </div>
-                <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-open>
-                    <span class="icon-16"><i data-lucide="download"></i></span>
-                    Download Starcat
+                <a href="./support.html" class="btn-primary" role="button">
+                    <span class="icon-16"><i data-lucide="help-circle"></i></span>
+                    View Support
                 </a>
             </div>
         </div>
     </section>
 
-    <!-- Download Modal -->
-    <div class="download-modal" id="download-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
-        <div class="download-modal-dialog" role="document">
-            <div class="download-modal-header">
-                <div>
-                    <div class="section-label">Download</div>
-                    <h2 class="download-modal-title" id="download-modal-title">Get Starcat for macOS</h2>
-                    <p class="download-modal-desc">Download the latest Direct build, or choose a previous version if you need one.</p>
-                </div>
-                <button class="download-modal-close" type="button" aria-label="Close download dialog" data-download-close>
-                    <i data-lucide="x"></i>
-                </button>
-            </div>
-            <div class="download-panel">
-                <div class="download-card">
-                    <div class="download-card-header">
-                        <div>
-                            <div class="download-eyebrow">Latest version</div>
-                            <div class="download-version" data-download-version>Starcat 1.1.0</div>
-                        </div>
-                        <div class="download-status">
-                            <span class="icon-14"><i data-lucide="sparkles"></i></span>
-                            Direct
-                        </div>
-                    </div>
-                    <div class="download-meta">
-                        <span><i data-lucide="monitor"></i> macOS 15+</span>
-                        <span><i data-lucide="cpu"></i> Apple Silicon</span>
-                        <span><i data-lucide="git-commit"></i> Build <span data-download-build>202607051928</span></span>
-                        <span><i data-lucide="hard-drive-download"></i> <span data-download-size>88.6 MB</span></span>
-                    </div>
-                    <p class="download-note" data-download-note>
-                        This is the macOS Direct build with Sparkle update support. Future Direct releases can update in app.
-                    </p>
-                    <div class="download-trust">
-                        <div class="download-trust-item"><i data-lucide="monitor"></i> macOS 15+</div>
-                        <div class="download-trust-item"><i data-lucide="cpu"></i> Apple Silicon</div>
-                        <div class="download-trust-item"><i data-lucide="sparkles"></i> Sparkle</div>
-                    </div>
-                    <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="btn-primary" role="button" data-download-link>
-                        <span class="icon-16"><i data-lucide="download"></i></span>
-                        Download latest
-                    </a>
-                </div>
-
-                <div class="download-history">
-                    <div class="download-history-title">Previous versions</div>
-                    <div class="download-history-list" data-download-history>
-                        <p class="download-history-empty">No previous versions yet.</p>
-                    </div>
-                </div>
-            </div>
+    <!-- Image Lightbox -->
+    <div class="image-lightbox" id="image-lightbox" aria-hidden="true" role="dialog" aria-modal="true">
+        <div class="image-lightbox-frame">
+            <button class="image-lightbox-close" type="button" aria-label="Close preview" data-lightbox-close>
+                <i data-lucide="x"></i>
+            </button>
+            <img src="" alt="" id="lightbox-img">
         </div>
     </div>
 
@@ -1070,10 +944,10 @@
             <div class="footer-main">
                 <div>
                     <div class="footer-brand">
-                        <img src="starcat-logo.png" alt="Starcat Logo" class="footer-logo" width="40" height="40">
+                        <img src="../starcat-logo.png" alt="Starcat Logo" class="footer-logo" width="40" height="40">
                         <span class="footer-name">Starcat</span>
                     </div>
-                    <p class="footer-desc">Turn GitHub Stars into a searchable local-first knowledge base for focused macOS workflows.</p>
+                    <p class="footer-desc">Turn GitHub Stars into a searchable local-first knowledge base for focused macOS workflows. Available on the Mac App Store.</p>
                 </div>
                 <div>
                     <div class="footer-heading">Product</div>
@@ -1082,55 +956,40 @@
                         <a href="#tech" class="footer-link">Tech Stack</a>
                         <a href="#pricing" class="footer-link">Pricing</a>
                         <a href="#faq" class="footer-link">FAQ</a>
-                        <a href="/downloads/Starcat-1.1.0-arm64.dmg" class="footer-link" data-download-open>Download</a>
-                    </div>
-                </div>
-                <div>
-                    <div class="footer-heading">Platform APIs</div>
-                    <div class="footer-list">
-                        <a href="https://github.com/dong4j/starcat-sharing-api" class="footer-link" target="_blank" rel="noopener noreferrer">Sharing API</a>
-                        <a href="https://github.com/dong4j/starcat-trending-api" class="footer-link" target="_blank" rel="noopener noreferrer">Trending API</a>
-                        <a href="https://github.com/dong4j/starcat-weekly-api" class="footer-link" target="_blank" rel="noopener noreferrer">Weekly API</a>
-                        <a href="https://github.com/dong4j/starcat-wiki-api" class="footer-link" target="_blank" rel="noopener noreferrer">Wiki API</a>
-                        <a href="https://github.com/dong4j/starcat-recommend-api" class="footer-link" target="_blank" rel="noopener noreferrer">Recommend API</a>
-                        <a href="https://github.com/dong4j/starcat-discovery-api" class="footer-link" target="_blank" rel="noopener noreferrer">Discovery API</a>
-                    </div>
-                </div>
-                <div>
-                    <div class="footer-heading">Ecosystem</div>
-                    <div class="footer-list">
-                        <a href="https://github.com/dong4j/Starcat/issues" class="footer-link" target="_blank" rel="noopener noreferrer">Issues</a>
-                        <a href="https://github.com/dong4j/starcat-localization" class="footer-link" target="_blank" rel="noopener noreferrer">Localization</a>
-                        <a href="https://github.com/dong4j/homebrew-starcat" class="footer-link" target="_blank" rel="noopener noreferrer">Homebrew Tap</a>
-                        <a href="https://github.com/dong4j/starcat-chrome-plugin" class="footer-link" target="_blank" rel="noopener noreferrer">Chrome Plugin</a>
-                        <a href="https://github.com/dong4j/starcat-safari-plugin" class="footer-link" target="_blank" rel="noopener noreferrer">Safari Plugin</a>
                     </div>
                 </div>
                 <div>
                     <div class="footer-heading">Resources</div>
                     <div class="footer-list">
-                        <a href="changelog.html" class="footer-link">Changelog</a>
-                        <a href="privacy.html" class="footer-link">Privacy Policy</a>
-                        <a href="eula.html" class="footer-link">EULA</a>
+                        <a href="./support.html" class="footer-link">Support</a>
+                        <a href="./privacy.html" class="footer-link">Privacy Policy</a>
+                        <a href="./eula.html" class="footer-link">EULA</a>
                         <a href="mailto:dong4j@gmail.com" class="footer-link">Contact</a>
-                        <a href="./index-zh.html" class="footer-link">中文</a>
+                    </div>
+                </div>
+                <div>
+                    <div class="footer-heading">Links</div>
+                    <div class="footer-list">
+                        <a href="https://github.com/dong4j/Starcat" class="footer-link" target="_blank" rel="noopener noreferrer">GitHub</a>
+                        <a href="https://github.com/dong4j/Starcat/issues" class="footer-link" target="_blank" rel="noopener noreferrer">Issues</a>
                     </div>
                 </div>
             </div>
             <div class="footer-bottom">
                 <div class="footer-copyright">&copy; 2026 Starcat. All rights reserved.</div>
                 <div class="footer-meta">
-                    <a href="privacy.html" class="footer-link">Privacy</a>
-                    <a href="eula.html" class="footer-link">EULA</a>
-                    <a href="changelog.html" class="footer-link">Changelog</a>
+                    <a href="./privacy.html" class="footer-link">Privacy</a>
+                    <a href="./eula.html" class="footer-link">EULA</a>
+                    <a href="./support.html" class="footer-link">Support</a>
                     <a href="mailto:dong4j@gmail.com" class="footer-link">Contact</a>
                 </div>
             </div>
         </div>
     </footer>
 
-    <!-- Scripts: Particles + Scroll + Icons -->
+    <!-- Scripts -->
     <script>
+        // Settle loading state
         (function() {
             const settle = () => document.body.classList.remove('is-loading');
             const scheduleSettle = () => window.setTimeout(settle, 120);
@@ -1146,50 +1005,7 @@
             }
         })();
 
-        (function() {
-            const canvas = document.getElementById('heroCanvas');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            let width, height, particles = [];
-            const PARTICLE_COUNT = 80;
-
-            class Particle {
-                constructor() { this.reset(); this.y = Math.random() * height; }
-                reset() {
-                    this.x = Math.random() * width; this.y = -10;
-                    this.size = Math.random() * 2 + 0.5;
-                    this.speedY = Math.random() * 0.4 + 0.15;
-                    this.speedX = (Math.random() - 0.5) * 0.3;
-                    this.opacity = Math.random() * 0.5 + 0.2;
-                    this.twinkleSpeed = Math.random() * 0.02 + 0.005;
-                    this.twinkleOffset = Math.random() * Math.PI * 2;
-                }
-                update() { this.y += this.speedY; this.x += this.speedX; if (this.y > height + 10) this.reset(); if (this.x < -10) this.x = width + 10; if (this.x > width + 10) this.x = -10; }
-                draw(ctx, frame) {
-                    const twinkle = Math.sin(frame * this.twinkleSpeed + this.twinkleOffset) * 0.3 + 0.7;
-                    ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                    ctx.fillStyle = `rgba(148, 163, 184, ${this.opacity * twinkle})`; ctx.fill();
-                }
-            }
-
-            function initParticles() { particles = []; for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle()); }
-            function resize() { const rect = canvas.parentElement.getBoundingClientRect(); width = rect.width; height = rect.height; canvas.width = width; canvas.height = height; initParticles(); }
-
-            let frame = 0, animId;
-            function animate() {
-                if (prefersReducedMotion) return;
-                frame++; ctx.clearRect(0, 0, width, height);
-                particles.forEach(p => { p.update(); p.draw(ctx, frame); });
-                animId = requestAnimationFrame(animate);
-            }
-            resize(); if (!prefersReducedMotion) animate();
-            window.addEventListener('resize', resize);
-            window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => {
-                if (e.matches) { cancelAnimationFrame(animId); ctx.clearRect(0, 0, width, height); } else animate();
-            });
-        })();
-
+        // Nav scroll effect
         (function() {
             const nav = document.getElementById('nav'); if (!nav) return;
             let ticking = false;
@@ -1198,6 +1014,7 @@
             }, { passive: true });
         })();
 
+        // Smooth scroll for anchor links
         (function() {
             document.querySelectorAll('a[href^="#"]').forEach(link => {
                 link.addEventListener('click', (event) => {
@@ -1213,6 +1030,7 @@
             });
         })();
 
+        // Feature tabs
         (function() {
             document.querySelectorAll('[data-feature-tabs]').forEach(root => {
                 const tabs = Array.from(root.querySelectorAll('[data-feature-tab]'));
@@ -1227,7 +1045,6 @@
                         tab.tabIndex = isActive ? 0 : -1;
                         if (isActive && shouldFocus) tab.focus({ preventScroll: true });
                     });
-
                     panels.forEach(panel => {
                         const isActive = panel.dataset.featurePanel === id;
                         panel.classList.toggle('is-active', isActive);
@@ -1241,269 +1058,62 @@
                     tab.addEventListener('keydown', event => {
                         if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
                         event.preventDefault();
-
                         let nextIndex = index;
                         if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
                         if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
                         if (event.key === 'Home') nextIndex = 0;
                         if (event.key === 'End') nextIndex = tabs.length - 1;
-
                         activate(tabs[nextIndex].dataset.featureTab, true);
+                        tabs[nextIndex].focus({ preventScroll: true });
                     });
                 });
-
-                const initialTab = tabs.find(tab => tab.classList.contains('is-active')) || tabs[0];
-                activate(initialTab.dataset.featureTab);
             });
         })();
 
+        // Image lightbox
         (function() {
-            const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); } }); }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+            const lb = document.getElementById('image-lightbox');
+            const img = document.getElementById('lightbox-img');
+            if (!lb || !img) return;
+            document.querySelectorAll('.showcase-image').forEach(el => {
+                el.addEventListener('click', () => {
+                    const source = el.querySelector('img');
+                    if (!source) return;
+                    img.src = source.src;
+                    img.alt = source.alt;
+                    lb.classList.add('is-open');
+                    lb.setAttribute('aria-hidden', 'false');
+                });
+            });
+            lb.addEventListener('click', (e) => {
+                if (e.target === lb || e.target.closest('[data-lightbox-close]')) {
+                    lb.classList.remove('is-open');
+                    lb.setAttribute('aria-hidden', 'true');
+                }
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && lb.classList.contains('is-open')) {
+                    lb.classList.remove('is-open');
+                    lb.setAttribute('aria-hidden', 'true');
+                }
+            });
+        })();
+
+        // Fade-in on scroll
+        (function() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
             document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
         })();
 
-        (function() {
-            const targets = Array.from(document.querySelectorAll('.showcase-image img'));
-            if (!targets.length) return;
-
-            const lightbox = document.createElement('div');
-            lightbox.className = 'image-lightbox';
-            lightbox.setAttribute('aria-hidden', 'true');
-            lightbox.innerHTML = `
-                <div class="image-lightbox-frame" role="dialog" aria-modal="true" aria-label="Screenshot preview">
-                    <img alt="">
-                    <button class="image-lightbox-close" type="button" aria-label="Close preview">
-                        <i data-lucide="x"></i>
-                    </button>
-                </div>
-            `;
-            document.body.appendChild(lightbox);
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-
-            const previewImage = lightbox.querySelector('img');
-            const closeButton = lightbox.querySelector('.image-lightbox-close');
-            let activeTrigger = null;
-            let isOpen = false;
-
-            const closeLightbox = () => {
-                if (!isOpen) return;
-                isOpen = false;
-                lightbox.classList.remove('is-open');
-                lightbox.setAttribute('aria-hidden', 'true');
-                activeTrigger?.focus({ preventScroll: true });
-                activeTrigger = null;
-            };
-
-            const openLightbox = (image) => {
-                activeTrigger = image.closest('.showcase-image');
-                previewImage.src = image.currentSrc || image.src;
-                previewImage.alt = image.alt || 'Starcat screenshot preview';
-                lightbox.setAttribute('aria-hidden', 'false');
-                lightbox.classList.add('is-open');
-                isOpen = true;
-                closeButton.focus({ preventScroll: true });
-            };
-
-            targets.forEach(image => {
-                const trigger = image.closest('.showcase-image');
-                trigger.setAttribute('role', 'button');
-                trigger.setAttribute('tabindex', '0');
-                trigger.setAttribute('aria-label', image.alt ? `Preview ${image.alt}` : 'Preview Starcat screenshot');
-                trigger.addEventListener('click', () => openLightbox(image));
-                trigger.addEventListener('keydown', (event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        openLightbox(image);
-                    }
-                });
-            });
-
-            lightbox.addEventListener('click', (event) => {
-                if (event.target === lightbox || event.target === previewImage) closeLightbox();
-            });
-            closeButton.addEventListener('click', closeLightbox);
-            window.addEventListener('scroll', closeLightbox, { passive: true });
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') closeLightbox();
-            });
-        })();
-
-        (function() {
-            const modal = document.getElementById('download-modal');
-            if (!modal) return;
-
-            const openers = document.querySelectorAll('[data-download-open]');
-            const closers = document.querySelectorAll('[data-download-close]');
-            let restoreScrollY = 0;
-            let activeTrigger = null;
-
-            const openModal = (trigger) => {
-                restoreScrollY = window.scrollY;
-                activeTrigger = trigger;
-                modal.classList.add('is-open');
-                modal.setAttribute('aria-hidden', 'false');
-                modal.querySelector('[data-download-close]')?.focus();
-            };
-            const closeModal = () => {
-                modal.classList.remove('is-open');
-                modal.setAttribute('aria-hidden', 'true');
-                activeTrigger?.focus({ preventScroll: true });
-                window.scrollTo(0, restoreScrollY);
-                window.requestAnimationFrame(() => window.scrollTo(0, restoreScrollY));
-            };
-
-            openers.forEach(trigger => {
-                trigger.addEventListener('click', (event) => {
-                    event.preventDefault();
-                    openModal(trigger);
-                });
-            });
-            closers.forEach(trigger => trigger.addEventListener('click', closeModal));
-            modal.addEventListener('click', (event) => {
-                if (event.target === modal) closeModal();
-            });
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
-            });
-        })();
-
-        (function() {
-            const endpoint = 'https://starcat-license-api.fly.dev/v1/direct/checkout';
-            const buttons = Array.from(document.querySelectorAll('[data-checkout-plan]'));
-            if (!buttons.length) return;
-
-            const labels = {
-                monthly: 'Buy Pro Monthly',
-                lifetime: 'Buy Pro Lifetime'
-            };
-            const loadingLabels = {
-                monthly: 'Opening checkout...',
-                lifetime: 'Opening checkout...'
-            };
-            const idleStatuses = {
-                monthly: '14-day trial included',
-                lifetime: 'Pay once, keep current Pro'
-            };
-
-            const requestID = () => {
-                if (window.crypto?.randomUUID) return window.crypto.randomUUID();
-                return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            };
-
-            const setBusy = (button, isBusy) => {
-                const plan = button.dataset.checkoutPlan;
-                button.disabled = isBusy;
-                button.textContent = isBusy ? loadingLabels[plan] : labels[plan];
-            };
-
-            const setStatus = (plan, message) => {
-                const status = document.querySelector(`[data-checkout-status="${plan}"]`);
-                if (status) status.textContent = message;
-            };
-
-            buttons.forEach(button => {
-                button.addEventListener('click', async () => {
-                    const plan = button.dataset.checkoutPlan;
-                    if (!plan || button.disabled) return;
-
-                    setBusy(button, true);
-                    setStatus(plan, 'Creating secure checkout...');
-
-                    try {
-                        const response = await fetch(endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ plan, requestID: requestID() })
-                        });
-                        const payload = await response.json().catch(() => ({}));
-                        if (!response.ok || !payload.url) {
-                            throw new Error(payload.message || 'Checkout is temporarily unavailable.');
-                        }
-                        window.location.assign(payload.url);
-                    } catch (error) {
-                        setStatus(plan, error.message || 'Checkout is temporarily unavailable.');
-                        setBusy(button, false);
-                        window.setTimeout(() => setStatus(plan, idleStatuses[plan]), 6000);
-                    }
-                });
-            });
-        })();
-
-        (function() {
-            const fallback = {
-                version: '1.1.0',
-                build: '202607051928',
-                url: '/downloads/Starcat-1.1.0-arm64.dmg',
-                size: 92912219,
-                pubDate: ''
-            };
-
-            const sparkleNS = 'http://www.andymatuschak.org/xml-namespaces/sparkle';
-            const textFrom = (item, localName) => {
-                const namespaced = item.getElementsByTagNameNS(sparkleNS, localName)[0];
-                const prefixed = item.getElementsByTagName(`sparkle:${localName}`)[0];
-                return (namespaced || prefixed)?.textContent?.trim() || '';
-            };
-            const formatSize = (bytes) => {
-                if (!bytes) return 'Unknown size';
-                const mb = Number(bytes) / (1024 * 1024);
-                return `${mb.toFixed(1)} MB`;
-            };
-            const formatDate = (value) => {
-                if (!value) return '';
-                const date = new Date(value);
-                if (Number.isNaN(date.getTime())) return '';
-                return date.toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' });
-            };
-            const parseItem = (item) => {
-                const enclosure = item.getElementsByTagName('enclosure')[0];
-                const version = textFrom(item, 'shortVersionString') || item.getElementsByTagName('title')[0]?.textContent?.trim() || fallback.version;
-                return {
-                    version,
-                    build: textFrom(item, 'version') || fallback.build,
-                    url: enclosure?.getAttribute('url') || fallback.url,
-                    size: Number(enclosure?.getAttribute('length') || fallback.size),
-                    pubDate: item.getElementsByTagName('pubDate')[0]?.textContent?.trim() || ''
-                };
-            };
-            const render = (releases) => {
-                const latest = releases[0] || fallback;
-                document.querySelectorAll('[data-download-link]').forEach(link => link.href = latest.url);
-                document.querySelectorAll('[data-download-open]').forEach(link => link.href = latest.url);
-                document.querySelectorAll('[data-download-version]').forEach(el => el.textContent = `Starcat ${latest.version}`);
-                document.querySelectorAll('[data-download-build]').forEach(el => el.textContent = latest.build);
-                document.querySelectorAll('[data-download-size]').forEach(el => el.textContent = formatSize(latest.size));
-
-                const history = document.querySelector('[data-download-history]');
-                if (!history) return;
-                const previous = releases.slice(1);
-                if (!previous.length) {
-                    history.innerHTML = '<p class="download-history-empty">No previous versions yet.</p>';
-                    return;
-                }
-                history.innerHTML = previous.map(item => `
-                    <div class="download-history-item">
-                        <div>
-                            <div class="download-history-version">Starcat ${item.version}</div>
-                            <div class="download-history-meta">Build ${item.build}${formatDate(item.pubDate) ? ` · ${formatDate(item.pubDate)}` : ''} · ${formatSize(item.size)}</div>
-                        </div>
-                        <a class="download-history-link" href="${item.url}">Download DMG</a>
-                    </div>
-                `).join('');
-            };
-
-            fetch('/appcast.xml', { cache: 'no-store' })
-                .then(response => response.ok ? response.text() : Promise.reject(new Error('appcast unavailable')))
-                .then(xml => {
-                    const doc = new DOMParser().parseFromString(xml, 'application/xml');
-                    const items = Array.from(doc.getElementsByTagName('item')).map(parseItem);
-                    render(items.length ? items : [fallback]);
-                })
-                .catch(() => render([fallback]));
-        })();
-
-        (function() { if (typeof lucide !== 'undefined') lucide.createIcons(); })();
+        // Lucide icons
+        lucide.createIcons();
     </script>
-
 </body>
 </html>

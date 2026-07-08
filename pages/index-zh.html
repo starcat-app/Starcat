@@ -255,6 +255,14 @@
             transform: translateY(0);
         }
 
+        .btn-primary:disabled,
+        .btn-secondary:disabled {
+            cursor: progress;
+            opacity: 0.72;
+            transform: none;
+            box-shadow: none;
+        }
+
         .btn-secondary {
             display: inline-flex;
             align-items: center;
@@ -2369,7 +2377,7 @@
             <div class="section-label fade-in">Availability</div>
             <h2 class="section-title fade-in" id="pricing-title">定价</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                把 GitHub Stars 变成可搜索、可整理、可对话的 AI 知识库。免费开始，需要 AI 工作流和更高额度时再升级。
+                免费开始，Pro Monthly 可试用 14 天；买断版一次付款，当前授权 1 台 Mac。
             </p>
 
             <div class="pricing-grid">
@@ -2400,8 +2408,10 @@
                     <h3 class="pricing-name">Pro Monthly</h3>
                     <div class="pricing-price">$9.99</div>
                     <div class="pricing-period">每月订阅</div>
-                    <p class="pricing-note">解锁把 Star 仓库变成知识库的 AI 工作流。</p>
+                    <p class="pricing-note">14 天免费试用，之后 $9.99/月；当前授权 1 台 Mac。</p>
                     <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> 14 天完整 Pro 试用</li>
+                        <li><i data-lucide="check"></i> 1 台 Mac 授权</li>
                         <li><i data-lucide="check"></i> 不限基础额度</li>
                         <li><i data-lucide="check"></i> AI 摘要与 AI 标签</li>
                         <li><i data-lucide="check"></i> AI Chat 与 README 翻译</li>
@@ -2411,8 +2421,10 @@
                         <li><i data-lucide="check"></i> Trending AI 推荐</li>
                     </ul>
                     <div class="pricing-action">
-                        <span class="pricing-disabled">购买 Pro Monthly</span>
-                        <div class="pricing-status">支付审核通过后开放</div>
+                        <button class="btn-secondary" type="button" data-checkout-plan="monthly">
+                            购买 Pro Monthly
+                        </button>
+                        <div class="pricing-status" data-checkout-status="monthly">包含 14 天试用</div>
                     </div>
                 </div>
                 <div class="pricing-card pricing-card--pro pricing-card--featured fade-in">
@@ -2420,9 +2432,10 @@
                     <h3 class="pricing-name">Pro Lifetime</h3>
                     <div class="pricing-price">$39.99</div>
                     <div class="pricing-period">一次性买断</div>
-                    <p class="pricing-note">一次付款，长期使用；约等于 4 个月月订阅。</p>
+                    <p class="pricing-note">一次付款授权 1 台 Mac，包含 Pro Monthly 的全部功能。</p>
                     <ul class="pricing-features">
                         <li><i data-lucide="check"></i> 包含 Pro Monthly 的全部功能</li>
+                        <li><i data-lucide="check"></i> 1 台 Mac 授权</li>
                         <li><i data-lucide="check"></i> 一次性付款</li>
                         <li><i data-lucide="check"></i> 终身解锁当前 Pro 功能</li>
                         <li><i data-lucide="check"></i> 无需每月续费</li>
@@ -2431,8 +2444,10 @@
                         <li><i data-lucide="check"></i> BYOK Provider 配置</li>
                     </ul>
                     <div class="pricing-action">
-                        <span class="pricing-disabled pricing-disabled--primary">购买 Pro Lifetime</span>
-                        <div class="pricing-status">支付审核通过后开放</div>
+                        <button class="btn-primary" type="button" data-checkout-plan="lifetime">
+                            购买 Pro Lifetime
+                        </button>
+                        <div class="pricing-status" data-checkout-status="lifetime">一次付款，保留当前 Pro</div>
                     </div>
                 </div>
             </div>
@@ -2486,8 +2501,14 @@
                         <tr>
                             <td class="compare-feature">付款方式</td>
                             <td>免费</td>
-                            <td>$9.99 / 月</td>
+                            <td>14 天试用，之后 $9.99 / 月</td>
                             <td>$39.99 买断</td>
+                        </tr>
+                        <tr>
+                            <td class="compare-feature">授权设备数</td>
+                            <td class="compare-muted">无需授权</td>
+                            <td>1 台 Mac</td>
+                            <td>1 台 Mac</td>
                         </tr>
                     </tbody>
                 </table>
@@ -2524,6 +2545,10 @@
                 <details class="faq-item fade-in">
                     <summary>AI Key 会不会被 Starcat 托管？</summary>
                     <p>Starcat 采用 BYOK 思路，你可以配置自己的模型服务或 API Key。页面中涉及 AI 的能力以上线版本实际开放范围为准。</p>
+                </details>
+                <details class="faq-item fade-in">
+                    <summary>Pro 试用和授权设备数怎么计算？</summary>
+                    <p>Pro Monthly 提供 14 天免费试用，试用期间可使用全部 Pro 功能。Direct 授权当前限制为每个许可证 1 台 Mac；Pro Lifetime 包含 Pro Monthly 的全部功能，但不需要每月续费。</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>以后会支持 iPhone 或 iPad 吗？</summary>
@@ -3017,6 +3042,71 @@
             });
             document.addEventListener('keydown', (event) => {
                 if (event.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+            });
+        })();
+
+        // ================================================================
+        // 7. Pro 购买：落地页只调用 Starcat License API，不直连支付渠道
+        // ================================================================
+        (function() {
+            const endpoint = 'https://starcat-license-api.fly.dev/v1/direct/checkout';
+            const buttons = Array.from(document.querySelectorAll('[data-checkout-plan]'));
+            if (!buttons.length) return;
+
+            const labels = {
+                monthly: '购买 Pro Monthly',
+                lifetime: '购买 Pro Lifetime'
+            };
+            const loadingLabels = {
+                monthly: '正在打开支付...',
+                lifetime: '正在打开支付...'
+            };
+            const idleStatuses = {
+                monthly: '包含 14 天试用',
+                lifetime: '一次付款，保留当前 Pro'
+            };
+
+            const requestID = () => {
+                if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+                return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            };
+
+            const setBusy = (button, isBusy) => {
+                const plan = button.dataset.checkoutPlan;
+                button.disabled = isBusy;
+                button.textContent = isBusy ? loadingLabels[plan] : labels[plan];
+            };
+
+            const setStatus = (plan, message) => {
+                const status = document.querySelector(`[data-checkout-status="${plan}"]`);
+                if (status) status.textContent = message;
+            };
+
+            buttons.forEach(button => {
+                button.addEventListener('click', async () => {
+                    const plan = button.dataset.checkoutPlan;
+                    if (!plan || button.disabled) return;
+
+                    setBusy(button, true);
+                    setStatus(plan, '正在创建安全支付...');
+
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ plan, requestID: requestID() })
+                        });
+                        const payload = await response.json().catch(() => ({}));
+                        if (!response.ok || !payload.url) {
+                            throw new Error(payload.message || '支付暂时不可用，请稍后再试。');
+                        }
+                        window.location.assign(payload.url);
+                    } catch (error) {
+                        setStatus(plan, error.message || '支付暂时不可用，请稍后再试。');
+                        setBusy(button, false);
+                        window.setTimeout(() => setStatus(plan, idleStatuses[plan]), 6000);
+                    }
+                });
             });
         })();
 
