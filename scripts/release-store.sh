@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 #
-# release.sh — Starcat 发版总入口
+# release-store.sh — Starcat Store 渠道历史发版入口（legacy）
 #
 # 用途：
-#   一行命令完成"打 git tag → 出 DMG → 推 tag 到远端"全流程，本身不重复实现任何
-#   构建 / 校验逻辑，只是编排现有脚本（build-dmg.sh）和原生 git / xcodegen。
+#   这是 Apple Developer 账号接入前的历史 ad-hoc DMG 发版入口。正式双渠道发布请使用：
+#   - Direct 官网版：scripts/release-direct.sh
+#   - App Store 版：scripts/package-appstore.sh 后通过 Xcode Organizer / Transporter 上传
 #
 # 用法：
-#   ./scripts/release.sh v1.0.0            # 标准发版（happy path，最常用）
-#   ./scripts/release.sh 1.0.0             # 等价（v 前缀可省，会自动加上）
-#   ./scripts/release.sh v1.0.0 --dry-run  # 演练：只打印要执行的命令，不真做
-#   ./scripts/release.sh v1.0.0 --yes      # 跳过二次确认（CI 友好）
-#   ./scripts/release.sh v1.0.0 --skip-dmg # 只打 tag + push，不出 DMG
-#   ./scripts/release.sh v1.0.0 --skip-push# 只本地 tag + 出 DMG，不推到远端
-#   ./scripts/release.sh --help            # 用法
+#   ./scripts/release-store.sh v1.0.0            # 标准发版（happy path，最常用）
+#   ./scripts/release-store.sh 1.0.0             # 等价（v 前缀可省，会自动加上）
+#   ./scripts/release-store.sh v1.0.0 --dry-run  # 演练：只打印要执行的命令，不真做
+#   ./scripts/release-store.sh v1.0.0 --yes      # 跳过二次确认（CI 友好）
+#   ./scripts/release-store.sh v1.0.0 --skip-dmg # 只打 tag + push，不出 DMG
+#   ./scripts/release-store.sh v1.0.0 --skip-push# 只本地 tag + 出 DMG，不推到远端
+#   ./scripts/release-store.sh --help            # 用法
 #
 # 流程：
 #   1. 解析参数 / 归一化版本号（vX.Y.Z 与 X.Y.Z 都接受）
@@ -75,10 +76,14 @@ log_section() { echo -e "\n${BOLD}${1}${RESET}"; }
 # ============================================================================
 show_help() {
     cat <<'EOF'
-release.sh — Starcat 发版总入口
+release-store.sh — Starcat Store 渠道历史发版入口（legacy）
+
+当前正式发布入口：
+    Direct 官网版：./scripts/release-direct.sh <version>
+    App Store 版：./scripts/package-appstore.sh
 
 USAGE
-    ./scripts/release.sh <version> [flags]
+    ./scripts/release-store.sh <version> [flags]
 
 ARGUMENTS
     <version>       目标版本号，X.Y.Z 或 vX.Y.Z（如 v1.0.0 / 1.2.3）
@@ -91,11 +96,11 @@ FLAGS
     --help, -h      显示本帮助
 
 EXAMPLES
-    ./scripts/release.sh v1.0.0                # 标准发版
-    ./scripts/release.sh v1.0.0 --dry-run      # 先演练一次看流程
-    ./scripts/release.sh 0.1.1 --yes           # 自动化场景跳过确认
+    ./scripts/release-store.sh v1.0.0                # 标准发版
+    ./scripts/release-store.sh v1.0.0 --dry-run      # 先演练一次看流程
+    ./scripts/release-store.sh 0.1.1 --yes           # 自动化场景跳过确认
 
-详见：docs/发版流程.md
+详见：docs/6-发版与上架/SOP-发版流程.md
 EOF
 }
 
@@ -163,6 +168,14 @@ if ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     log_dim "→ 必须是 X.Y.Z 三段纯数字（如 v1.0.0 / 1.2.3）"
     log_dim "→ 暂不支持 -beta / -rc 等 SemVer 预发布后缀，受限于 build-dmg.sh"
     log_dim "→ v 前缀可省可加（v1.0.0 与 1.0.0 等价）"
+    exit 1
+fi
+
+if [[ "${STARCAT_ALLOW_LEGACY_RELEASE:-0}" != "1" ]]; then
+    log_err "release-store.sh 是旧 ad-hoc DMG 发版入口，默认禁用"
+    log_dim "→ Direct 官网版请使用：STARCAT_NOTARIZE=1 ./scripts/release-direct.sh ${PLAIN_VERSION}"
+    log_dim "→ App Store 版请使用：./scripts/package-appstore.sh"
+    log_dim "→ 如确需运行旧流程，显式设置：STARCAT_ALLOW_LEGACY_RELEASE=1"
     exit 1
 fi
 

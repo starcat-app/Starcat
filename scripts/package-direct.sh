@@ -8,9 +8,12 @@
 #
 # 可选环境变量：
 #   STARCAT_SPARKLE_PUBLIC_ED_KEY      注入 Direct 包 Info.plist 的 Sparkle EdDSA 公钥。
+#   STARCAT_DIRECT_SIGN_IDENTITY       Direct 公开发布用签名身份，优先级高于 CODE_SIGN_IDENTITY。
+#                                     未设置时默认使用本机 Starcat Developer ID 证书。
 #   STARCAT_NOTARIZE=1                 生成 DMG 后提交 Apple Notary。
+#   STARCAT_NOTARY_PROFILE             notarytool Keychain profile，推荐值 starcat-notary。
 #   APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD
-#                                     notarytool 凭证。
+#                                     未配置 STARCAT_NOTARY_PROFILE 时的兼容凭证。
 #   STARCAT_GENERATE_APPCAST=1         使用 Sparkle generate_appcast 生成当前版本 appcast。
 #   STARCAT_DOWNLOAD_BASE_URL          appcast 下载前缀，默认 https://starcat.ink/downloads/。
 #   STARCAT_DMG_TOOL=create-dmg|hdiutil
@@ -50,6 +53,7 @@ DMG_BACKGROUND_PATH="${PROJECT_ROOT}/scripts/assets/dmg-background.png"
 BUILD_LOG="${DIST_DIR}/xcodebuild-direct.log"
 BUILD_NUMBER="${STARCAT_DIRECT_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 DMG_TOOL="${STARCAT_DMG_TOOL:-create-dmg}"
+DEFAULT_DIRECT_SIGN_IDENTITY="Developer ID Application: liwen gong (8WCUMGCWMB)"
 
 log() { printf '[direct] %s\n' "$1"; }
 fail() { printf '[direct] ERROR: %s\n' "$1" >&2; exit 1; }
@@ -126,7 +130,18 @@ if grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
 fi
 
 log "重新签名 Direct app"
-SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}"
+# Direct 正式分发固定使用 Starcat 当前 Developer ID 证书作为默认值；
+# 仍保留环境变量覆盖，方便未来换 Apple Team 或 CI 使用不同 keychain。
+SIGN_IDENTITY="${STARCAT_DIRECT_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-$DEFAULT_DIRECT_SIGN_IDENTITY}}"
+if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
+  if [ "$SIGN_IDENTITY" = "-" ]; then
+    fail "STARCAT_NOTARIZE=1 时 CODE_SIGN_IDENTITY 不能是 ad-hoc，请使用 Developer ID Application"
+  fi
+  if [[ "$SIGN_IDENTITY" != Developer\ ID\ Application:* ]]; then
+    fail "STARCAT_NOTARIZE=1 需要 Developer ID Application 签名，当前: $SIGN_IDENTITY"
+  fi
+fi
+
 if [ "$SIGN_IDENTITY" = "-" ]; then
   codesign --force --deep --sign "$SIGN_IDENTITY" --timestamp=none "$APP_PATH" >/dev/null
 else
@@ -169,19 +184,25 @@ SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
 printf '%s  %s\n' "$SHA256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
 
 if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
-  [ -n "${APPLE_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 APPLE_ID"
-  [ -n "${APPLE_TEAM_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 APPLE_TEAM_ID"
-  [ -n "${APPLE_APP_PASSWORD:-}" ] || fail "STARCAT_NOTARIZE=1 需要 APPLE_APP_PASSWORD"
-
   log "提交 notarization"
-  xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$APPLE_ID" \
-    --team-id "$APPLE_TEAM_ID" \
-    --password "$APPLE_APP_PASSWORD" \
-    --wait
+  if [ -n "${STARCAT_NOTARY_PROFILE:-}" ]; then
+    xcrun notarytool submit "$DMG_PATH" \
+      --keychain-profile "$STARCAT_NOTARY_PROFILE" \
+      --wait
+  else
+    [ -n "${APPLE_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_ID"
+    [ -n "${APPLE_TEAM_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_TEAM_ID"
+    [ -n "${APPLE_APP_PASSWORD:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_APP_PASSWORD"
+    xcrun notarytool submit "$DMG_PATH" \
+      --apple-id "$APPLE_ID" \
+      --team-id "$APPLE_TEAM_ID" \
+      --password "$APPLE_APP_PASSWORD" \
+      --wait
+  fi
 
   log "staple DMG"
   xcrun stapler staple "$DMG_PATH"
+  xcrun stapler validate "$DMG_PATH"
   spctl --assess --type open --verbose "$DMG_PATH"
 else
   log "跳过 notarization；正式公开分发前请设置 STARCAT_NOTARIZE=1"

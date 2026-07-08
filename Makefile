@@ -16,7 +16,7 @@
 
 # macOS 沙盒下 Starcat 的真实数据根。注意：不是 ~/Library/Application Support/，
 # 而是 Containers/<bundle-id>/Data/... ——沙盒应用永远走 Container 视图。
-APP_SUPPORT := $(HOME)/Library/Containers/com.starcat.app/Data/Library/Application Support/com.starcat.app
+APP_SUPPORT := $(HOME)/Library/Containers/com.starcat.app.store/Data/Library/Application Support/com.starcat.app
 
 # Direct / 非 App Store Debug App 的数据根。当前 App Support 子目录由
 # `AppConstants.bundleIdentifier` 决定，仍是 com.starcat.app。
@@ -43,7 +43,7 @@ help: ## 列出所有可用命令
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
 	@echo "  make build-dmg VERSION=0.1.0 打包 Release DMG（调用 scripts/build-dmg.sh）"
-	@echo "  make release VERSION=v0.1.0  发版总入口：tag + DMG + push tag（调用 scripts/release.sh）"
+	@echo "  make release VERSION=v0.1.0  Store 历史发版入口：tag + DMG + push tag（调用 scripts/release-store.sh）"
 	@echo "  make release-dry-run VERSION=v0.1.0  演练发版流程，不实际改动"
 	@echo "  make pr-helper              PR 自动化：dev → main 创建/合并/清理（要求工作区干净）"
 	@echo "  make bump-version           手动调试版本号脚本（正常由 Xcode build phase 调用）"
@@ -81,13 +81,13 @@ build-dmg:
 
 ## 发版总入口（VERSION=v0.1.0 RELEASE_FLAGS="--skip-push"）
 release: 
-	# release.sh 会打本地 tag、构建 DMG，并按参数决定是否 push tag。
+	# release-store.sh 会打本地 tag、构建 DMG，并按参数决定是否 push tag。
 	# 这是发版动作，必须显式传 VERSION，避免误用默认 0.0.1 发版。
 	@if [ "$(origin VERSION)" = "file" ]; then \
 		echo "请显式传版本号，例如：make release VERSION=v0.1.0"; \
 		exit 1; \
 	fi
-	@bash scripts/release.sh "$(VERSION)" $(RELEASE_FLAGS)
+	@bash scripts/release-store.sh "$(VERSION)" $(RELEASE_FLAGS)
 
 ## 演练发版流程（VERSION=v0.1.0）
 release-dry-run: 
@@ -95,7 +95,7 @@ release-dry-run:
 		echo "请显式传版本号，例如：make release-dry-run VERSION=v0.1.0"; \
 		exit 1; \
 	fi
-	@bash scripts/release.sh "$(VERSION)" --dry-run $(RELEASE_FLAGS)
+	@bash scripts/release-store.sh "$(VERSION)" --dry-run $(RELEASE_FLAGS)
 
 pr-helper: ## PR 自动化脚本（要求 dev 分支 + 工作区干净）
 	# 会推送 dev、创建 PR、尝试合并并清理远端 dev；运行前请确认当前分支与工作区状态。

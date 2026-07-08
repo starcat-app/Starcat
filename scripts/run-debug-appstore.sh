@@ -17,9 +17,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Sandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 
-# Personal Team 的 Team ID。后续如果换账号，可用环境变量覆盖：
+# 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-appstore.sh
-DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-6N2V7FYPJ8}"
+DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 
 cd "$PROJECT_ROOT"
 
@@ -56,9 +56,9 @@ fi
 echo "==> 签名摘要:"
 codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: sandbox"
-echo "    preferences: ~/Library/Containers/com.starcat.app/Data/Library/Preferences/com.starcat.app.plist"
-echo "    data: ~/Library/Containers/com.starcat.app/Data"
-echo "    app support: ~/Library/Containers/com.starcat.app/Data/Library/Application Support/com.starcat.app"
+echo "    preferences: ~/Library/Containers/com.starcat.app.store/Data/Library/Preferences/com.starcat.app.plist"
+echo "    data: ~/Library/Containers/com.starcat.app.store/Data"
+echo "    app support: ~/Library/Containers/com.starcat.app.store/Data/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
 
 open "$APP_PATH"

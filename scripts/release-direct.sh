@@ -26,7 +26,7 @@ Starcat Direct 一键发布脚本
 示例:
   # 完整发布 1.1.0：检查 main/干净工作区，创建并推送 v1.1.0 tag，
   # 部署 nginx 和官网，打包 Direct DMG，上传 appcast/DMG/SHA256 并校验线上 URL。
-  STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.1.0
+  STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.1.0
 
   # 演练完整流程，不创建 tag、不推送、不上传、不部署、不做线上校验。
   STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.1.0
@@ -58,8 +58,21 @@ Starcat Direct 一键发布脚本
   STARCAT_NOTARIZE=1
       透传给 package-direct.sh。正式公开发布建议开启。
 
+  STARCAT_NOTARY_PROFILE=starcat-notary
+      透传给 package-direct.sh。推荐使用 notarytool Keychain profile，避免在命令行暴露密码。
+
+  STARCAT_DIRECT_SIGN_IDENTITY="Developer ID Application: liwen gong (8WCUMGCWMB)"
+      透传给 package-direct.sh。Direct 公开发布用 Developer ID Application 签名身份；
+      默认已使用 Starcat 当前 Developer ID 证书，通常无需手动传。
+
+  STARCAT_RELEASE_ALLOW_UNNOTARIZED=1
+      允许发布未公证 DMG。仅内部临时验证使用，正式公开发布不要设置。
+
   STARCAT_RELEASE_HOST=aliyun
       SSH host，默认 aliyun，需要在 ~/.ssh/config 中配置。
+
+  STARCAT_RELEASE_SSH_KEY=~/.ssh/server
+      发布服务器私钥。设置后会透传给 pages/deploy.sh，并用于本脚本的 ssh / rsync。
 
   STARCAT_RELEASE_WEB_DIR=/var/www/starcat
       远程网站根目录，默认 /var/www/starcat。
@@ -125,10 +138,18 @@ CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
 RELEASE_BRANCH="${STARCAT_RELEASE_BRANCH:-main}"
 RELEASE_REMOTE="${STARCAT_RELEASE_REMOTE:-origin}"
 RELEASE_HOST="${STARCAT_RELEASE_HOST:-aliyun}"
+RELEASE_SSH_KEY="${STARCAT_RELEASE_SSH_KEY:-${DEPLOY_SSH_KEY:-}}"
 REMOTE_WEB_DIR="${STARCAT_RELEASE_WEB_DIR:-/var/www/starcat}"
 DOWNLOAD_BASE_URL="${STARCAT_DOWNLOAD_BASE_URL:-https://starcat.ink/downloads/}"
 DRY_RUN="${STARCAT_RELEASE_DRY_RUN:-0}"
 TAG_NAME="v${VERSION}"
+SSH_CMD=(ssh)
+RSYNC_SSH="ssh"
+if [ -n "$RELEASE_SSH_KEY" ]; then
+  SSH_CMD=(ssh -i "$RELEASE_SSH_KEY")
+  RSYNC_SSH="ssh -i $RELEASE_SSH_KEY"
+  export DEPLOY_SSH_KEY="$RELEASE_SSH_KEY"
+fi
 
 log() { printf '[release-direct] %s\n' "$1"; }
 fail() { printf '[release-direct] ERROR: %s\n' "$1" >&2; exit 1; }
@@ -203,6 +224,23 @@ deploy_nginx() {
   run_or_print "${PAGES_DIR}/deploy.sh" -n
 }
 
+require_notarization_policy() {
+  if [ "$DRY_RUN" = "1" ]; then
+    return
+  fi
+
+  if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
+    return
+  fi
+
+  if [ "${STARCAT_RELEASE_ALLOW_UNNOTARIZED:-0}" = "1" ]; then
+    log "允许发布未公证 DMG：STARCAT_RELEASE_ALLOW_UNNOTARIZED=1"
+    return
+  fi
+
+  fail "Direct 正式发布必须设置 STARCAT_NOTARIZE=1；临时内部验证才允许 STARCAT_RELEASE_ALLOW_UNNOTARIZED=1"
+}
+
 deploy_site() {
   if [ "${STARCAT_RELEASE_SKIP_SITE:-0}" = "1" ]; then
     log "跳过官网 changelog 生成和静态页部署"
@@ -242,10 +280,11 @@ verify_local_artifacts() {
 
 upload_direct_artifacts() {
   log "准备远程目录: ${RELEASE_HOST}:${REMOTE_WEB_DIR}/downloads"
-  run_or_print ssh "$RELEASE_HOST" "mkdir -p '$REMOTE_WEB_DIR/downloads'"
+  run_or_print "${SSH_CMD[@]}" "$RELEASE_HOST" "mkdir -p '$REMOTE_WEB_DIR/downloads'"
 
   log "上传 DMG 和 SHA256"
   run_or_print rsync -avz --progress \
+    -e "$RSYNC_SSH" \
     "$DMG_PATH" \
     "$SHA_PATH" \
     "$RELEASE_HOST:$REMOTE_WEB_DIR/downloads/"
@@ -266,11 +305,12 @@ merge_appcast() {
 
   log "上传 appcast.xml"
   run_or_print rsync -avz --progress \
+    -e "$RSYNC_SSH" \
     "$APPCAST_PATH" \
     "$RELEASE_HOST:$REMOTE_WEB_DIR/appcast.xml"
 
   log "设置远程文件权限"
-  run_or_print ssh "$RELEASE_HOST" "chmod 644 '$REMOTE_WEB_DIR/appcast.xml' '$REMOTE_WEB_DIR/downloads/$(basename "$DMG_PATH")' '$REMOTE_WEB_DIR/downloads/$(basename "$SHA_PATH")'"
+  run_or_print "${SSH_CMD[@]}" "$RELEASE_HOST" "chmod 644 '$REMOTE_WEB_DIR/appcast.xml' '$REMOTE_WEB_DIR/downloads/$(basename "$DMG_PATH")' '$REMOTE_WEB_DIR/downloads/$(basename "$SHA_PATH")'"
 }
 
 verify_remote_urls() {
@@ -312,6 +352,7 @@ main() {
 
   require_branch
   require_clean_worktree
+  require_notarization_policy
   create_and_push_tag
   deploy_nginx
   deploy_site

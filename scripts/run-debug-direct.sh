@@ -19,9 +19,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 
-# Personal Team 的 Team ID。后续如果换账号，可用环境变量覆盖：
+# 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
-DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-6N2V7FYPJ8}"
+DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 
 cd "$PROJECT_ROOT"
 
