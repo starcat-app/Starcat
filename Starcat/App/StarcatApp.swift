@@ -87,15 +87,21 @@ struct StarcatApp: App {
         // 可接受的权衡，不要为了消除这点闪烁再回到 init() 里调 NSApp。
     }
 
-    /// 2026-06-29：处理从 macOS URL handler 进来的 `starcat://callback?code=...&state=...`。
-    /// `dependencies` 在 `init()` 失败时为 nil，此时收到 URL 也无法处理（没有 authSession）——
-    /// 直接忽略，让用户手动重新登录。
+    /// 处理从 macOS URL handler 进来的 Starcat URL。
+    ///
+    /// OAuth 和 Direct License 支付回跳都走同一个 scheme。这里先识别支付成功页的
+    /// `starcat://license/activate?...`，其余 URL 再交给 GitHub OAuth，避免 license
+    /// deep link 被 OAuth callback parser 当作无效登录回调吞掉。
     private func handleIncomingURL(_ url: URL) {
-        guard let session = dependencies?.authSession else {
+        guard let dependencies else {
             AppLog.auth.warning("StarcatApp.handleIncomingURL: dependencies not ready, ignoring \(url.absoluteString, privacy: .public)")
             return
         }
-        Task { await session.handleWebFlowCallback(url: url) }
+        if url.host == "license", url.path == "/activate" {
+            Task { await dependencies.directLicenseManager.activateFromPaymentSuccessURL(url) }
+            return
+        }
+        Task { await dependencies.authSession.handleWebFlowCallback(url: url) }
     }
 
     var body: some Scene {

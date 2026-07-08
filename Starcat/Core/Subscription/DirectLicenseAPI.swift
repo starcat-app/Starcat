@@ -38,6 +38,10 @@ struct DirectLicenseAPI: Sendable {
         try await send(path: AppEndpoints.DirectLicense.Paths.customerPortal, body: request)
     }
 
+    func cancelSubscription(_ request: DirectCancelSubscriptionRequest) async throws -> DirectSubscriptionSnapshot {
+        try await send(path: AppEndpoints.DirectLicense.Paths.cancelSubscription, body: request)
+    }
+
     func activate(_ request: DirectLicenseActivationRequest) async throws -> DirectLicenseSnapshot {
         try await send(path: AppEndpoints.DirectLicense.Paths.activate, body: request)
     }

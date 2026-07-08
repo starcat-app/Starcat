@@ -56,12 +56,32 @@ struct DirectCustomerPortalRequest: Codable, Equatable, Sendable {
     var email: String?
 }
 
+/// 取消 Direct 月订阅的请求体。
+struct DirectCancelSubscriptionRequest: Codable, Equatable, Sendable {
+    var subscriptionID: String
+    var mode: String?
+    var onExecute: String?
+}
+
+/// Direct 订阅生命周期快照。
+struct DirectSubscriptionSnapshot: Codable, Equatable, Sendable {
+    var provider: DirectLicenseProviderID
+    var subscriptionID: String
+    var status: String?
+    var productID: String?
+    var customerID: String?
+    var currentPeriodEnd: String?
+    var canceledAt: String?
+}
+
 /// License API 返回的标准化授权快照。
 struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
     var status: DirectLicenseStatus
     var provider: DirectLicenseProviderID
     var productID: String?
     var instanceID: String?
+    var activationUsed: Int? = nil
+    var activationLimit: Int? = nil
     var licenseKeySuffix: String?
     var expiresAt: Date?
     var validatedAt: Date

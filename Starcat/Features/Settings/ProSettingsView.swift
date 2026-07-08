@@ -23,6 +23,7 @@ struct ProSettingsTab: View {
 
     @State private var confettiTrigger: Int = 0
     @State private var showSuccessMessage: Bool = false
+    @State private var showCancelSubscriptionSuccess: Bool = false
     @State private var isOfferCodeRedemptionPresented = false
     @State private var directLicenseKey: String = ""
 
@@ -35,6 +36,9 @@ struct ProSettingsTab: View {
             if isDirectBuild {
                 directCheckoutSection
                 directLicenseSection
+                if directLicenseManager.storedCredential?.subscriptionID != nil {
+                    directSubscriptionSection
+                }
             } else {
                 productSection
                 actionSection
@@ -182,6 +186,36 @@ struct ProSettingsTab: View {
             Text("settings.pro.direct.section")
         } footer: {
             Text("settings.pro.direct.footer")
+        }
+    }
+
+    private var directSubscriptionSection: some View {
+        Section {
+            if let snapshot = directLicenseManager.lastSubscriptionSnapshot {
+                Label {
+                    Text(LocalizedStringKey(snapshot.currentPeriodEnd == nil
+                                            ? "settings.pro.direct.cancel.scheduled"
+                                            : "settings.pro.direct.cancel.scheduledWithPeriod"))
+                } icon: {
+                    Image(systemName: "calendar.badge.minus")
+                }
+                .foregroundStyle(.green)
+            } else if showCancelSubscriptionSuccess {
+                Label("settings.pro.direct.cancel.scheduled", systemImage: "calendar.badge.minus")
+                    .foregroundStyle(.green)
+            }
+
+            HStack {
+                Spacer()
+                Button("settings.pro.direct.cancel.button", role: .destructive) {
+                    Task { await cancelDirectSubscription() }
+                }
+                .disabled(directLicenseManager.isRequestInFlight)
+            }
+        } header: {
+            Text("settings.pro.direct.cancel.section")
+        } footer: {
+            Text("settings.pro.direct.cancel.footer")
         }
     }
 
@@ -339,6 +373,12 @@ struct ProSettingsTab: View {
 
     private func deactivateDirectLicense() async {
         _ = await directLicenseManager.deactivateStoredLicense()
+    }
+
+    private func cancelDirectSubscription() async {
+        let didCancel = await directLicenseManager.cancelStoredMonthlySubscription()
+        guard didCancel else { return }
+        showCancelSubscriptionSuccess = true
     }
 
     private func openDirectCheckout(_ plan: DirectCheckoutPlan) async {

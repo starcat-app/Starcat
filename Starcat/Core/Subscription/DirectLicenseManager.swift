@@ -29,6 +29,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         }
     }
     private(set) var lastSnapshot: DirectLicenseSnapshot?
+    private(set) var lastSubscriptionSnapshot: DirectSubscriptionSnapshot?
     private(set) var lastErrorMessage: String?
     private(set) var isRequestInFlight = false
 
@@ -48,7 +49,12 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     @discardableResult
-    func activate(licenseKey: String) async -> Bool {
+    func activate(
+        licenseKey: String,
+        subscriptionID: String? = nil,
+        customerID: String? = nil,
+        productID: String? = nil
+    ) async -> Bool {
         let trimmed = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
@@ -59,12 +65,40 @@ final class DirectLicenseManager: ProEntitlementProviding {
                 appVersion: appVersionProvider()
             ))
             if snapshot.status.grantsPro, let instanceID = snapshot.instanceID {
-                let credential = DirectLicenseCredential(licenseKey: trimmed, instanceID: instanceID)
+                let previous = storedCredential ?? (try? store.loadCredential())
+                let credential = DirectLicenseCredential(
+                    licenseKey: trimmed,
+                    instanceID: instanceID,
+                    subscriptionID: directLicenseTrimmed(subscriptionID) ?? previous?.subscriptionID,
+                    customerID: directLicenseTrimmed(customerID) ?? previous?.customerID,
+                    productID: directLicenseTrimmed(productID) ?? snapshot.productID ?? previous?.productID
+                )
                 try store.storeCredential(credential)
                 storedCredential = credential
             }
             return snapshot
         }
+    }
+
+    /// 处理支付成功页 deep link 带回的授权信息。
+    ///
+    /// Creem 的 license validate 不返回 subscription id，所以取消月订阅依赖成功页在
+    /// 首次回跳时把 `subscription_id` 交给客户端保存。Lifetime checkout 没有
+    /// subscription id 时保留旧月订阅 id，方便用户升级后立刻取消续费。
+    @discardableResult
+    func activateFromPaymentSuccessURL(_ url: URL) async -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let licenseKey = components.queryItemValue("license_key")
+        else {
+            lastErrorMessage = DirectLicenseAPIError.invalidResponse.localizedDescription
+            return false
+        }
+        return await activate(
+            licenseKey: licenseKey,
+            subscriptionID: components.queryItemValue("subscription_id"),
+            customerID: components.queryItemValue("customer_id"),
+            productID: components.queryItemValue("product_id")
+        )
     }
 
     @discardableResult
@@ -94,6 +128,35 @@ final class DirectLicenseManager: ProEntitlementProviding {
             return snapshot
         }
         return didRemainActive
+    }
+
+    @discardableResult
+    func cancelStoredMonthlySubscription() async -> Bool {
+        guard let credential = storedCredential ?? (try? store.loadCredential()),
+              let subscriptionID = directLicenseTrimmed(credential.subscriptionID)
+        else {
+            lastErrorMessage = String.l10n("settings.pro.direct.cancel.missingSubscription")
+            return false
+        }
+
+        isRequestInFlight = true
+        defer { isRequestInFlight = false }
+
+        do {
+            // 取消使用 period-end 预约模式，避免用户刚付款就立即失去本期权益。
+            let snapshot = try await api.cancelSubscription(DirectCancelSubscriptionRequest(
+                subscriptionID: subscriptionID,
+                mode: "scheduled",
+                onExecute: "cancel"
+            ))
+            lastSubscriptionSnapshot = snapshot
+            lastErrorMessage = nil
+            return true
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            AppLog.general.error("[direct-license] cancel subscription failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 
     /// 创建官网 Direct checkout URL。
@@ -128,6 +191,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         try? store.deleteCredential()
         storedCredential = nil
         lastSnapshot = nil
+        lastSubscriptionSnapshot = nil
         entitlement = .inactive
     }
 
@@ -147,4 +211,17 @@ final class DirectLicenseManager: ProEntitlementProviding {
             return false
         }
     }
+}
+
+private extension URLComponents {
+    func queryItemValue(_ name: String) -> String? {
+        directLicenseTrimmed(queryItems?.first(where: { $0.name == name })?.value)
+    }
+}
+
+private func directLicenseTrimmed(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+        return nil
+    }
+    return trimmed
 }

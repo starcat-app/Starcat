@@ -28922,6 +28922,108 @@
         }
       }
     },
+    "settings.pro.direct.cancel.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Monthly Renewal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消月订阅续费"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.cancel.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancellation is scheduled for the end of the current billing period. Your current Pro access remains active until then."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消会预约到当前账期结束时执行；本期已开通的 Pro 权益仍可继续使用。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.cancel.missingSubscription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No monthly subscription record is stored on this Mac. Open the Creem customer portal from your receipt to manage billing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 Mac 没有保存月订阅记录。请从 Creem 收据进入客户门户管理账单。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.cancel.scheduled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly renewal cancellation has been scheduled."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已预约取消月订阅续费。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.cancel.scheduledWithPeriod": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly renewal cancellation has been scheduled for the current billing period end."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已预约在当前账期结束时取消月订阅续费。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.cancel.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly Subscription"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月订阅"
+          }
+        }
+      }
+    },
     "settings.pro.direct.footer": {
       "extractionState": "manual",
       "localizations": {

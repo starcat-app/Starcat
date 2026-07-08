@@ -79,6 +79,42 @@ struct DirectLicenseAPITests {
         #expect(URLProtocolStub.receivedRequests.count == 1)
     }
 
+    @Test("cancelSubscription 命中 Direct 取消订阅路径")
+    func cancelSubscriptionUsesDirectEndpoint() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/v1/direct/subscriptions/cancel")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer license-api-key")
+            return Self.jsonResponse(for: request, body: """
+            {
+              "provider": "creem",
+              "subscriptionID": "sub_123",
+              "status": "active",
+              "productID": "prod_monthly",
+              "customerID": "cust_123",
+              "currentPeriodEnd": "2026-08-08T00:00:00Z"
+            }
+            """)
+        }
+
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: "license-api-key",
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+        let response = try await api.cancelSubscription(DirectCancelSubscriptionRequest(
+            subscriptionID: "sub_123",
+            mode: "scheduled",
+            onExecute: "cancel"
+        ))
+
+        #expect(response.provider == .creem)
+        #expect(response.subscriptionID == "sub_123")
+        #expect(response.customerID == "cust_123")
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
     private static func jsonResponse(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,

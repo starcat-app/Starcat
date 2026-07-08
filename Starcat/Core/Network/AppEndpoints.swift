@@ -290,6 +290,8 @@ enum AppEndpoints {
             static let checkout = "/v1/direct/checkout"
             /// `POST /v1/direct/customer-portal` —— 创建 Creem customer portal URL。
             static let customerPortal = "/v1/direct/customer-portal"
+            /// `POST /v1/direct/subscriptions/cancel` —— 预约取消 Direct 月订阅续费。
+            static let cancelSubscription = "/v1/direct/subscriptions/cancel"
             /// `POST /v1/direct/licenses/activate` —— 激活 license key。
             static let activate = "/v1/direct/licenses/activate"
             /// `POST /v1/direct/licenses/validate` —— 校验已保存 license key。
