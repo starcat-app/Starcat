@@ -131,7 +131,7 @@ private struct AboutBrandPanel: View {
             SafeExternalLink(
                 title: "about.brand.getSupport",
                 systemImage: "lifepreserver",
-                url: URL(string: "https://starcat.ink/support")
+                url: AppWebsiteLinks.current.support
             )
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -319,7 +319,7 @@ private struct SupportPage: View {
                     title: "about.support.website.title",
                     detail: "about.support.website.detail",
                     systemImage: "safari",
-                    url: URL(string: "https://starcat.ink")
+                    url: AppWebsiteLinks.current.home
                 )
                 if DistributionChannel.current.isAppStore {
                     SupportReviewRow {
@@ -360,7 +360,7 @@ private struct EULAPage: View {
                     SafeExternalLink(
                         title: "about.eula.viewFull",
                         systemImage: "arrow.up.right.square",
-                        url: URL(string: "https://starcat.ink/eula")
+                        url: AppWebsiteLinks.current.eula
                     )
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
@@ -404,7 +404,7 @@ private struct PrivacyPage: View {
                     SafeExternalLink(
                         title: "about.privacy.viewFull",
                         systemImage: "arrow.up.right.square",
-                        url: URL(string: "https://starcat.ink/privacy")
+                        url: AppWebsiteLinks.current.privacy
                     )
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
@@ -862,7 +862,16 @@ private struct AboutDependency: Identifiable {
 
     var id: String { name }
 
-    static let all: [AboutDependency] = [
+    static var all: [AboutDependency] {
+        var dependencies = base
+        if DistributionChannel.current.isDirect {
+            dependencies.append(sparkle)
+        }
+        dependencies.append(contentsOf: embeddedResources)
+        return dependencies
+    }
+
+    private static let base: [AboutDependency] = [
         // MARK: SPM 依赖（与 project.yml `packages` 一一对应）
 
         AboutDependency(
@@ -919,15 +928,20 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2023 Sumbit Labs Ltd.",
             url: URL(string: "https://github.com/aptabase/aptabase-swift")
         ),
-        AboutDependency(
-            name: "Sparkle",
-            license: "MIT",
-            copyright: "Copyright (c) 2006-2026 Sparkle Project",
-            url: URL(string: "https://github.com/sparkle-project/Sparkle")
-        ),
+    ]
 
-        // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
+    // MARK: Direct-only 依赖
 
+    private static let sparkle = AboutDependency(
+        name: "Sparkle",
+        license: "MIT",
+        copyright: "Copyright (c) 2006-2026 Sparkle Project",
+        url: URL(string: "https://github.com/sparkle-project/Sparkle")
+    )
+
+    // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
+
+    private static let embeddedResources: [AboutDependency] = [
         AboutDependency(
             name: "Devicon",
             license: "MIT",

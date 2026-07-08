@@ -208,7 +208,7 @@ GitHub login is required because the app's core purpose is to sync and organize 
 
 The MCP service is optional, off by default, listens on 127.0.0.1 only, and requires a local bearer token.
 
-The App Store build uses Apple In-App Purchase only. It does not include external checkout, license-key activation, Sparkle updates, or Direct payment providers.
+Pro subscription in this App Store build is handled through Apple In-App Purchase. Direct distribution, website checkout, and standalone license activation are separate from this App Store submission.
 
 Pro features can be tested through StoreKit/TestFlight subscription flow. AI provider keys are stored locally in Keychain.
 ```
@@ -536,7 +536,7 @@ Starcat is a native macOS client for organizing GitHub Stars.
 
 GitHub login is required because the core feature is syncing the user's GitHub Stars. This is not a general account system.
 
-The App Store build uses Apple In-App Purchase only. It does not contain external checkout, license-key activation, Creem/Waffo payment, Sparkle updates, or Direct distribution flows.
+Pro subscription in this App Store build is handled through Apple In-App Purchase. Direct distribution, website checkout, and standalone license activation are separate from this App Store submission.
 
 Pro features are unlocked through StoreKit subscriptions. The 14-day trial, if enabled, grants the same Pro feature set during the trial period.
 
@@ -595,7 +595,7 @@ Reviewers may use their own GitHub account to test syncing Stars. The app reques
 | Build | 选中的是最终 build |
 | 价格 | App 免费，Pro 订阅价格正确 |
 | 地区 | 可用地区符合预期 |
-| 官网 | `https://starcat.ink` 页面没有引导 App Store 用户走外部支付 |
+| 官网 | `https://dong4j.app/starcat` 页面没有引导 App Store 用户走外部支付 |
 | 客服邮箱 | `dong4j@gmail.com` 与页面一致 |
 
 ### 11.3 上线后检查
@@ -679,10 +679,10 @@ App Store build 不允许出现外部 checkout、官网购买、授权码激活�
 提交前手动打开：
 
 ```text
-https://starcat.ink
-https://starcat.ink/support
-https://starcat.ink/privacy
-https://starcat.ink/eula
+https://dong4j.app/starcat
+https://dong4j.app/starcat/support
+https://dong4j.app/starcat/privacy
+https://dong4j.app/starcat/eula
 ```
 
 任一 404 / 证书错误 / 内容不一致，都先修官网再提交审核。

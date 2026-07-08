@@ -107,7 +107,7 @@ struct ShareAISummaryDTO: Codable, Sendable {
 /// 映射（**不依赖** decoder 的 `.convertFromSnakeCase`，原因见文件头注释）。
 ///
 /// 字段说明：
-/// - `shareUrl`：完整的分享页 URL（如 `https://starcat.ink/s/abc12345`）
+/// - `shareUrl`：完整的分享页 URL（如 `https://example.com/s/abc12345`，实际域名以后端返回为准）
 /// - `shareId`：短 ID（用于后续重分享 / 撤回 / 统计；目前前端只展示 url，留着备用）
 /// - `expiresAt`：过期时间 ISO8601 字符串；`nil` = **永不过期**（R-01 设计 §3.1）
 /// - `createdAt`：创建时间 ISO8601 字符串

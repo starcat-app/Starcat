@@ -124,10 +124,10 @@ Direct-only 链接继续保留 `starcat.ink`；App Store 用户可见链接改�
 - [ ] 部署 `https://dong4j.app/starcat/privacy`。
 - [ ] 部署 `https://dong4j.app/starcat/eula`。
 - [ ] 从 App Store 专用页面中移除 Direct 支付 / Lifetime / Creem / DMG 下载 / Sparkle 内容。
-- [ ] 新增 App 内链接集中入口。
-- [ ] App Store build 链接指向 `dong4j.app/starcat/*`。
-- [ ] Direct build 链接继续指向 `starcat.ink/*`。
-- [ ] 复查分享导出内容，避免 App Store build 导出的页面引导到 Direct 购买页。
+- [x] 新增 App 内链接集中入口 `AppWebsiteLinks`。
+- [x] App Store build 链接指向 `dong4j.app/starcat/*`。
+- [x] Direct build 链接继续指向 `starcat.ink/*`。
+- [x] 复查分享导出内容，避免 App Store build 导出的页面引导到 Direct 购买页。
 - [ ] 更新 App Store Connect：Support URL / Marketing URL / Privacy URL。
 - [ ] 更新 `docs/6-发版与上架/SOP-App-Store-首次上架流程.md`。
 

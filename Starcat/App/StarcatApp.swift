@@ -98,6 +98,10 @@ struct StarcatApp: App {
             return
         }
         if url.host == "license", url.path == "/activate" {
+            guard DistributionChannel.current.isDirect else {
+                AppLog.auth.warning("StarcatApp.handleIncomingURL: ignoring Direct license callback in App Store build")
+                return
+            }
             Task { await dependencies.directLicenseManager.activateFromPaymentSuccessURL(url) }
             return
         }
@@ -411,7 +415,7 @@ private struct StarcatAppCommands: Commands {
 
         CommandGroup(replacing: .help) {
             Button("commands.help.helpCenter") {
-                openExternal("https://starcat.ink/support")
+                openExternal(AppWebsiteLinks.current.support)
             }
 
             Button("commands.help.contactSupport") {
@@ -419,7 +423,7 @@ private struct StarcatAppCommands: Commands {
             }
 
             Button("commands.help.privacyPolicy") {
-                openExternal("https://starcat.ink/privacy")
+                openExternal(AppWebsiteLinks.current.privacy)
             }
 
             Divider()
@@ -452,6 +456,11 @@ private struct StarcatAppCommands: Commands {
     @MainActor
     private func openExternal(_ rawURL: String) {
         guard let url = URL(string: rawURL) else { return }
+        openExternal(url)
+    }
+
+    @MainActor
+    private func openExternal(_ url: URL) {
         NSWorkspace.shared.open(url)
     }
 }

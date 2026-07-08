@@ -95,11 +95,9 @@ targets:
           # Debug/test 必须允许多实例：xcodebuild test 会另外启动一个 test host，
           # 如果本机已有 Starcat 正在运行，固定单实例会被 LaunchServices 拒绝。
           INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
-          STARCAT_LICENSE_API_ENVIRONMENT: test
         Release:
           # Release 保留单实例：Web Flow 浏览器回调 starcat://callback 时只激活现有实例。
           INFOPLIST_KEY_LSMultipleInstancesProhibited: YES
-          STARCAT_LICENSE_API_ENVIRONMENT: live
     info:
       path: Starcat/Generated/Info.generated.plist
       properties:
@@ -121,11 +119,6 @@ targets:
         STARCAT_PRODUCTION_API_KEY_WIKI: $(STARCAT_PRODUCTION_API_KEY_WIKI)
         STARCAT_PRODUCTION_API_KEY_RECOMMEND: $(STARCAT_PRODUCTION_API_KEY_RECOMMEND)
         STARCAT_PRODUCTION_API_KEY_DISCOVERY: $(STARCAT_PRODUCTION_API_KEY_DISCOVERY)
-        STARCAT_LICENSE_API_ENVIRONMENT: $(STARCAT_LICENSE_API_ENVIRONMENT)
-        STARCAT_LICENSE_API_TEST_BASE_URL: $(STARCAT_LICENSE_API_TEST_BASE_URL)
-        STARCAT_LICENSE_API_TEST_KEY: $(STARCAT_LICENSE_API_TEST_KEY)
-        STARCAT_LICENSE_API_LIVE_BASE_URL: $(STARCAT_LICENSE_API_LIVE_BASE_URL)
-        STARCAT_LICENSE_API_LIVE_KEY: $(STARCAT_LICENSE_API_LIVE_KEY)
         # 匿名产品事件后端。留空时遥测保持 no-op；用户开关关闭时也不会发送。
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         # 显式构建渠道。App Store build 默认 appstore；Direct build 后续覆盖为 direct。

@@ -40,8 +40,10 @@ import Foundation
 /// 把 [Repo] 渲染为离线可打开的单页面 HTML。无状态。
 enum StarredHTMLRenderer {
 
-    /// Starcat 官网地址。导出 HTML 里所有 Starcat 品牌链接都指向官网，不再分散写仓库地址。
-    private static let starcatWebsiteURL = "https://starcat.ink"
+    /// Starcat 官网地址。导出 HTML 里所有 Starcat 品牌链接都按当前分发渠道指向对应官网。
+    private static var starcatWebsiteURL: String {
+        AppWebsiteLinks.current.home.absoluteString
+    }
 
     /// 导出 HTML 需要的"附加资源"。
     ///

@@ -69,7 +69,7 @@ enum LibraryMarkdownRenderer {
 
         **[@\(escape(user.login))](\(user.htmlUrl ?? "https://github.com/\(user.login)"))** · \(escape(displayName)) · **\(repos.count)** repos
 
-        _Exported on `\(exportedISO)` by [Starcat](https://starcat.ink). This file represents your private Starcat library, not your GitHub Starred list._
+        _Exported on `\(exportedISO)` by [Starcat](\(AppWebsiteLinks.current.home.absoluteString)). This file represents your private Starcat library, not your GitHub Starred list._
 
         ---
         """
@@ -209,7 +209,9 @@ enum LibraryMarkdownRenderer {
 /// “个人知识库档案”：overview、状态分布、逐仓库笔记和缓存摘要直接展开，便于离线阅读。
 enum LibraryHTMLRenderer {
 
-    private static let starcatWebsiteURL = "https://starcat.ink"
+    private static var starcatWebsiteURL: String {
+        AppWebsiteLinks.current.home.absoluteString
+    }
 
     static func render(
         repos: [Repo],

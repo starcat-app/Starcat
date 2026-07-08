@@ -518,9 +518,15 @@ final class AppDependencies {
         self.subscriptionManager = subscriptions
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
+        let distributionChannel = DistributionChannel.current
+        // App Store 与 Direct 是两套互斥授权来源。这里在依赖容器层面切开，
+        // 避免 App Store build 因本机残留 Direct license 而被误判为 Pro。
+        let entitlementProviders: [any ProEntitlementProviding] = distributionChannel.isDirect
+            ? [directLicenseManager]
+            : [subscriptions]
         let proEntitlementProvider = CompositeProEntitlementProvider(
             settings: settings,
-            providers: [subscriptions, directLicenseManager]
+            providers: entitlementProviders
         )
         self.proEntitlementProvider = proEntitlementProvider
         self.directUpdateController = DirectUpdateController()
@@ -1028,12 +1034,14 @@ final class AppDependencies {
                 self?.proEntitlementProvider.reloadFromSources()
                 self?.mcpService.refreshForCurrentSettings()
             }
-            directLicenseManager.onEntitlementDidChange = { [weak self] in
-                self?.proEntitlementProvider.reloadFromSources()
-                self?.mcpService.refreshForCurrentSettings()
-            }
-            Task { [directLicenseManager] in
-                _ = await directLicenseManager.validateStoredLicenseIfNeeded()
+            if distributionChannel.isDirect {
+                directLicenseManager.onEntitlementDidChange = { [weak self] in
+                    self?.proEntitlementProvider.reloadFromSources()
+                    self?.mcpService.refreshForCurrentSettings()
+                }
+                Task { [directLicenseManager] in
+                    _ = await directLicenseManager.validateStoredLicenseIfNeeded()
+                }
             }
             self.mcpService.refreshForCurrentSettings()
             self.serviceAvailabilityMonitor.startPeriodicChecks()

@@ -35,6 +35,26 @@ struct DistributionChannelTests {
         #expect(DistributionChannel.resolve(from: bundle).isAppStore)
     }
 
+    @Test("App Store 网站链接指向 dong4j.app")
+    func appStoreWebsiteLinksUseComplianceDomain() {
+        let links = AppWebsiteLinks.links(for: .appStore)
+
+        #expect(links.home.absoluteString == "https://dong4j.app/starcat")
+        #expect(links.support.absoluteString == "https://dong4j.app/starcat/support")
+        #expect(links.privacy.absoluteString == "https://dong4j.app/starcat/privacy")
+        #expect(links.eula.absoluteString == "https://dong4j.app/starcat/eula")
+    }
+
+    @Test("Direct 网站链接保留 starcat.ink")
+    func directWebsiteLinksUseDirectDomain() {
+        let links = AppWebsiteLinks.links(for: .direct)
+
+        #expect(links.home.absoluteString == "https://starcat.ink")
+        #expect(links.support.absoluteString == "https://starcat.ink/support")
+        #expect(links.privacy.absoluteString == "https://starcat.ink/privacy")
+        #expect(links.eula.absoluteString == "https://starcat.ink/eula")
+    }
+
     private func makeBundle(info: [String: Any]) -> Bundle {
         MockInfoBundle(info: info)
     }
