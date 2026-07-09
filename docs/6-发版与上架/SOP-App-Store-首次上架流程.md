@@ -14,7 +14,7 @@
 1. **确认渠道边界**：App Store 版只走 StoreKit，不出现 Direct 授权码、Creem、Sparkle、外部支付。
 2. **准备 Apple 后台**：证书、Bundle ID、App Store Connect App 记录、协议税务银行信息。
 3. **准备商店物料**：截图、描述、隐私政策、支持页、审核备注、年龄分级、隐私标签。
-4. **准备 IAP / 订阅**：月订 / 年订 / 14 天试用，商品 ID 与客户端一致。
+4. **准备 IAP / 订阅**：月订 / 年订，商品 ID 与客户端一致。
 5. **本地 archive**：运行 `scripts/package-appstore.sh` 生成 `Starcat-AppStore.xcarchive`。
 6. **上传 build**：用 Xcode Organizer Validate / Distribute 到 App Store Connect。
 7. **TestFlight 测试**：先内部测试，再按需外部测试，确认 GitHub 登录、Pro 购买、恢复购买、AI 门控。
@@ -236,7 +236,7 @@ macOS 截图至少准备 5 张，避免只截登录页：
 
 ---
 
-## 6. 订阅 / IAP / 14 天试用
+## 6. 订阅 / IAP
 
 Starcat App Store 版只走 StoreKit，Direct 的 Creem / License API 不进入 App Store build。
 
@@ -261,25 +261,13 @@ App Store Connect：
 4. 创建年订：`Starcat Pro Yearly`。
 5. 添加本地化名称、描述、价格、可用地区。
 
-### 6.3 14 天免费试用
-
-如果要给 Pro 做 14 天试用，走 Apple **Introductory Offer**：
-
-1. 进入订阅商品。
-2. 找到 Introductory Offers。
-3. 类型选择 Free Trial。
-4. Duration 选择 14 days。
-5. 适用地区按默认或全地区。
-
-试用期内应解锁 Pro 所有功能；过期后由 StoreKit transaction 状态决定是否继续 Pro。
-
-### 6.4 App Store Server Notifications
+### 6.3 App Store Server Notifications
 
 首版如果客户端只靠 StoreKit 2 刷新权益，可以暂时不接服务端通知；但后续如果你要做服务端订阅状态、退款、账单宽限期分析，应该配置 App Store Server Notifications。
 
 如果配置，后台填服务端 HTTPS URL，不能填本地地址。相关官方入口见 Apple 文档：`Enter server URLs for App Store Server Notifications`。
 
-### 6.5 IAP 与 App 一起提交
+### 6.4 IAP 与 App 一起提交
 
 第一次提交带订阅的 App 时，经常漏掉这一步：
 
@@ -289,13 +277,13 @@ App Store Connect：
 
 Offer Code 另见 `docs/6-发版与上架/SOP-App-Store-Connect-Offer-Code.md`。
 
-### 6.6 什么时候配置订阅商品
+### 6.5 什么时候配置订阅商品
 
 订阅商品**不用等 App 正式上架后再配置**。正确顺序是：
 
 1. 先在 App Store Connect 创建 Starcat App 记录，Bundle ID 选择 `com.starcat.app.store`。
 2. 立刻创建订阅组和订阅商品。
-3. 配好月订 / 年订价格、地区、本地化、14 天试用。
+3. 配好月订 / 年订价格、地区、本地化。
 4. 上传 build 后，在提交 App Review 前把订阅商品和 App version 一起加入本次提交。
 5. TestFlight 阶段就用这些 Connect 商品做真实 Sandbox / TestFlight 购买验证。
 
@@ -491,7 +479,7 @@ tail -120 dist/appstore/xcodebuild-appstore.log
 | 搜索 / README / 标签 / 笔记 / 状态 | [ ] |
 | Trending / Weekly / Activity | [ ] |
 | Pro 月订购买 | [ ] |
-| 14 天试用开始后 Pro 解锁 | [ ] |
+| Pro 购买后立即解锁 | [ ] |
 | 恢复购买 | [ ] |
 | 取消订阅后权益变化 | [ ] |
 | AI Provider 配置 / AI 摘要 | [ ] |
@@ -538,7 +526,7 @@ GitHub login is required because the core feature is syncing the user's GitHub S
 
 Pro subscription in this App Store build is handled through Apple In-App Purchase. Direct distribution, website checkout, and standalone license activation are separate from this App Store submission.
 
-Pro features are unlocked through StoreKit subscriptions. The 14-day trial, if enabled, grants the same Pro feature set during the trial period.
+Pro features are unlocked through StoreKit subscriptions immediately upon purchase.
 
 The optional MCP service is off by default, listens only on 127.0.0.1, and requires a local bearer token. It is intended for local developer tools on the same Mac.
 

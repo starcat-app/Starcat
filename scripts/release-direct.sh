@@ -10,7 +10,7 @@
 #   - 构建逻辑仍由 package-direct.sh 负责，本脚本只做发布编排。
 #   - 默认走完整发布流程；重跑某一段时用 STARCAT_RELEASE_SKIP_* 显式跳过。
 #   - 默认要求 main 分支和干净工作区，避免从临时状态打 tag 或发布不可复现产物。
-#   - appcast 使用增量合并，历史版本以 pages/appcast.xml 为准，不依赖本地保留旧 DMG。
+#   - appcast 使用增量合并，历史版本以 pages/direct/appcast.xml 为准，不依赖本地保留旧 DMG。
 #
 
 set -euo pipefail
@@ -47,8 +47,8 @@ Starcat Direct 一键发布脚本
   4. 确认 tag v<version> 不存在
   5. 创建 annotated tag
   6. 推送 tag 到 origin
-  7. 生成 pages/changelog.html
-  8. 部署 pages/starcat.ink.conf 并 reload nginx
+  7. 生成 pages/direct/changelog.html
+  8. 部署 pages/direct/starcat.ink.conf 并 reload nginx
   9. 部署官网静态页
  10. 调用 scripts/package-direct.sh <version> 打包 Direct DMG 并生成 appcast
  11. 上传 appcast.xml、DMG、SHA256
@@ -128,7 +128,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PAGES_DIR="${PROJECT_ROOT}/pages"
+PAGES_DIR="${PROJECT_ROOT}/pages/direct"
 DOWNLOADS_DIR="${PROJECT_ROOT}/dist/direct/downloads"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"

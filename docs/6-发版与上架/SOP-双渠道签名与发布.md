@@ -102,7 +102,7 @@ xcrun notarytool history --keychain-profile starcat-notary
 2. Identifiers：确认 Bundle ID `com.starcat.app.store`。
 3. App Store Connect：创建 Starcat App，Bundle ID 选 `com.starcat.app.store`。
 4. In-App Purchases / Subscriptions：创建 StoreKit 商品，Product ID 必须与代码中的 `ProProductID` 对齐。
-5. 14 天试用走 Apple Introductory Offer / Offer Code，不走 Creem。
+5. Apple IAP 直接付费订阅，不走 Creem。
 
 ### 4.2 本地 archive
 

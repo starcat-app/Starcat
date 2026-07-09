@@ -194,7 +194,7 @@ Starcat 内入口：
 - 用 **Connect Offer Code**（本指南），或  
 - App 外单独授权（Grandfather / 内测），不能与 App Store 订阅混为「官方优惠价」
 
-### Q4：Offer Code 和 14 天免费试用叠加吗？
+### Q4：Offer Code 如何使用？
 
 由 Connect 创建 Offer 时的选项决定；**创建后不可改 duration/type**，只能新建 Offer。
 

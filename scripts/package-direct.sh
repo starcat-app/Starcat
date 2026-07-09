@@ -214,7 +214,7 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   DOWNLOAD_BASE_URL="${STARCAT_DOWNLOAD_BASE_URL:-https://starcat.ink/downloads/}"
   log "生成当前版本 appcast: $CURRENT_APPCAST_PATH"
   # 这里只生成当前版本 item。历史版本由 release-direct.sh 增量合并进
-  # pages/appcast.xml，避免发布机必须保存所有旧 DMG。
+  # pages/direct/appcast.xml，避免发布机必须保存所有旧 DMG。
   mkdir -p "$APPCAST_INPUT_DIR"
   cp "$DMG_PATH" "$APPCAST_INPUT_DIR/"
   "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"

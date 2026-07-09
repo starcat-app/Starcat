@@ -2,7 +2,7 @@
 """Merge one freshly generated Sparkle appcast item into the persistent appcast.
 
 Release builds only need the current DMG locally. Older DMGs may already live on
-the web server, so the persistent `pages/appcast.xml` is treated as the source of
+the web server, so the persistent `pages/direct/appcast.xml` is treated as the source of
 historical update metadata. This script replaces the same version item when
 re-publishing and otherwise inserts the new item while keeping older items.
 """
