@@ -72,8 +72,8 @@ struct GRDBUndoStarHistoryRepository: UndoStarHistoryRepositoryProtocol {
     }
 
     func remove(ghRepoId: Int64) async throws {
-        try await database.writer.write { db in
-            try UndoStarRecord.deleteOne(db, key: ghRepoId)
+        try await database.writer.write { db -> Void in
+            _ = try UndoStarRecord.deleteOne(db, key: ghRepoId)
         }
     }
 
@@ -109,8 +109,8 @@ struct GRDBUndoStarHistoryRepository: UndoStarHistoryRepositoryProtocol {
     }
 
     func clearAll() async throws {
-        try await database.writer.write { db in
-            try UndoStarRecord.deleteAll(db)
+        try await database.writer.write { db -> Void in
+            _ = try UndoStarRecord.deleteAll(db)
         }
     }
 

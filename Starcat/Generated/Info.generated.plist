@@ -29,6 +29,10 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
 	<key>STARCAT_APTABASE_APP_KEY</key>
 	<string>$(STARCAT_APTABASE_APP_KEY)</string>
 	<key>STARCAT_DISTRIBUTION</key>

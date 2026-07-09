@@ -16,7 +16,7 @@
 import AppKit
 
 @MainActor
-final class StatusBarController: NSObject {
+final class StatusBarController: NSObject, NSMenuDelegate {
     static let shared = StatusBarController()
 
     private var statusItem: NSStatusItem?
@@ -57,8 +57,17 @@ final class StatusBarController: NSObject {
     }
 
     private func showContextMenu() {
-        guard let statusItem else { return }
-        statusItem.popUpMenu(makeMenu())
+        guard let statusItem, let button = statusItem.button else { return }
+        let menu = makeMenu()
+        menu.delegate = self
+        // `popUpMenu(_:)` 已废弃；右键时临时绑定 menu 后触发按钮点击，
+        // 菜单关闭后再解绑，避免左键也变成展开菜单。
+        statusItem.menu = menu
+        button.performClick(nil)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        statusItem?.menu = nil
     }
 
     private func makeMenu() -> NSMenu {

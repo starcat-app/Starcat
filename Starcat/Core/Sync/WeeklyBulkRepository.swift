@@ -331,7 +331,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
 
         if query.source != .all {
             clauses.append("source_types_json LIKE ?")
-            arguments.append(contentsOf: ["%\"\(query.source.rawValue)\"%"])
+            _ = arguments.append(contentsOf: ["%\"\(query.source.rawValue)\"%"])
         }
 
         switch query.coverage {
@@ -351,19 +351,19 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
         }
         if query.starsFilter.rawValue > 0 {
             clauses.append("stars >= ?")
-            arguments.append(contentsOf: [query.starsFilter.rawValue])
+            _ = arguments.append(contentsOf: [query.starsFilter.rawValue])
         }
         if query.pushedRecency.rawValue > 0,
            let cutoff = Calendar(identifier: .gregorian).date(byAdding: .day, value: -query.pushedRecency.rawValue, to: query.now) {
             clauses.append("pushed_at >= ?")
-            arguments.append(contentsOf: [ISO8601DateFormatter.shared.string(from: cutoff)])
+            _ = arguments.append(contentsOf: [ISO8601DateFormatter.shared.string(from: cutoff)])
         }
         if !query.language.isEmpty {
             if query.language == TrendingLanguage.uncategorizedKey {
                 clauses.append("(language IS NULL OR language = '')")
             } else {
                 clauses.append("lower(language) = lower(?)")
-                arguments.append(contentsOf: [query.language])
+                _ = arguments.append(contentsOf: [query.language])
             }
         }
 
