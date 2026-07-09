@@ -514,11 +514,14 @@ final class AppDependencies {
             notificationService: notificationService,
             telemetryManager: telemetry
         )
-        let subscriptions = SubscriptionManager(settings: settings)
-        self.subscriptionManager = subscriptions
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
         let distributionChannel = DistributionChannel.current
+        let subscriptions = SubscriptionManager(
+            settings: settings,
+            startTransactionListener: distributionChannel.isAppStore
+        )
+        self.subscriptionManager = subscriptions
         // App Store 与 Direct 是两套互斥授权来源。这里在依赖容器层面切开，
         // 避免 App Store build 因本机残留 Direct license 而被误判为 Pro。
         let entitlementProviders: [any ProEntitlementProviding] = distributionChannel.isDirect

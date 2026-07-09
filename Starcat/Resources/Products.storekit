@@ -1,97 +1,81 @@
 {
-  "identifier" : "STARCAT-PRO-LOCAL",
-  "nonRenewingSubscriptions" : [
-  ],
-  "products" : [
-  ],
-  "settings" : {
-  },
-  "subscriptionGroups" : [
+  "identifier": "STARCAT-PRO-LOCAL",
+  "type": "local",
+  "settings": {},
+  "products": [],
+  "nonRenewingSubscriptions": [],
+  "subscriptionGroups": [
     {
-      "id" : "STARCAT-PRO-GROUP",
-      "localizations" : [
+      "id": 1,
+      "name": "Starcat Pro",
+      "localizations": [
         {
-          "displayName" : "Starcat Pro",
-          "locale" : "en_US"
+          "locale": "en_US",
+          "displayName": "Starcat Pro"
         },
         {
-          "displayName" : "Starcat Pro",
-          "locale" : "zh-Hans"
+          "locale": "zh-Hans",
+          "displayName": "Starcat Pro"
         }
       ],
-      "name" : "Starcat Pro",
-      "subscriptions" : [
+      "subscriptions": [
         {
-          "adHocOffers" : [
-          ],
-          "codeOffers" : [
+          "type": "RecurringSubscription",
+          "referenceName": "Starcat Pro Monthly",
+          "productID": "com.starcat.app.pro.monthly",
+          "internalID": 101,
+          "displayPrice": "2.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "subscriptionGroupID": 1,
+          "recurringSubscriptionPeriod": "P1M",
+          "introductoryOffer": null,
+          "codeOffers": [],
+          "adHocOffers": [],
+          "localizations": [
             {
-              "displayPrice" : "19.99",
-              "eligibility" : [
-                "new",
-                "existing",
-                "expired"
-              ],
-              "internalID" : "STARCAT-OFFER-EARLY-BIRD",
-              "numberOfPeriods" : 1,
-              "offerID" : "early_bird_yearly",
-              "paymentMode" : "payUpFront",
-              "referenceName" : "Early Bird Yearly",
-              "subscriptionPeriod" : "P1Y"
-            }
-          ],
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "Unlock AI organization, semantic search, release tracking, and future cloud sync.",
-              "displayName" : "Starcat Pro Yearly",
-              "locale" : "en_US"
+              "locale": "en_US",
+              "displayName": "Starcat Pro Monthly",
+              "description": "Unlock AI organization, semantic search, release tracking, and higher local limits."
             },
             {
-              "description" : "解锁 AI 整理、语义搜索、Release 订阅与未来云同步。",
-              "displayName" : "Starcat Pro 年订",
-              "locale" : "zh-Hans"
+              "locale": "zh-Hans",
+              "displayName": "Starcat Pro 月订",
+              "description": "解锁 AI 整理、语义搜索、Release 追踪和更高本地额度。"
             }
-          ],
-          "productID" : "com.starcat.app.pro.yearly",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Starcat Pro Yearly",
-          "subscriptionGroupID" : "STARCAT-PRO-GROUP",
-          "type" : "RecurringSubscription"
+          ]
         },
         {
-          "adHocOffers" : [
-          ],
-          "codeOffers" : [
-          ],
-          "displayPrice" : "4.99",
-          "familyShareable" : false,
-          "groupNumber" : 2,
-          "internalID" : "STARCAT-PRO-MONTHLY",
-          "introductoryOffer" : null,
-          "localizations" : [
+          "type": "RecurringSubscription",
+          "referenceName": "Starcat Pro Yearly",
+          "productID": "com.starcat.app.pro.yearly",
+          "internalID": 102,
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "subscriptionGroupID": 1,
+          "recurringSubscriptionPeriod": "P1Y",
+          "introductoryOffer": null,
+          "codeOffers": [],
+          "adHocOffers": [],
+          "localizations": [
             {
-              "description" : "Unlock AI organization, semantic search, release tracking, and future cloud sync.",
-              "displayName" : "Starcat Pro Monthly",
-              "locale" : "en_US"
+              "locale": "en_US",
+              "displayName": "Starcat Pro Yearly",
+              "description": "Unlock AI organization, semantic search, release tracking, and higher local limits."
             },
             {
-              "description" : "解锁 AI 整理、语义搜索、Release 订阅与未来云同步。",
-              "displayName" : "Starcat Pro 月订",
-              "locale" : "zh-Hans"
+              "locale": "zh-Hans",
+              "displayName": "Starcat Pro 年订",
+              "description": "解锁 AI 整理、语义搜索、Release 追踪和更高本地额度。"
             }
-          ],
-          "productID" : "com.starcat.app.pro.monthly",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Starcat Pro Monthly",
-          "subscriptionGroupID" : "STARCAT-PRO-GROUP",
-          "type" : "RecurringSubscription"
+          ]
         }
       ]
     }
   ],
-  "version" : {
-    "major" : 4,
-    "minor" : 0
+  "version": {
+    "major": 4,
+    "minor": 0
   }
 }

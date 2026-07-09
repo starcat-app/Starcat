@@ -24,6 +24,7 @@ final class SubscriptionManager: ProEntitlementProviding {
     private let productIDs: [String]
     private let settings: AppSettings
     private var updatesTask: Task<Void, Never>?
+    private var productsLoadTask: Task<Void, Never>?
 
     private(set) var products: [Product] = []
     private(set) var entitlement: ProEntitlement = .inactive {
@@ -67,15 +68,17 @@ final class SubscriptionManager: ProEntitlementProviding {
         }
     }
 
-    /// 启动订阅监听与首轮刷新。
+    /// 启动订阅监听与首轮权益刷新。
     ///
     /// AppDependencies 构造期调用即可；内部幂等，避免 Settings scene 重建时重复监听。
+    /// 注意这里故意不加载商品列表：Xcode 的 StoreKit Testing session 由 Launch 注入，
+    /// App 刚初始化时过早调用 `Product.products(for:)` 偶发返回空数组。商品元数据只在
+    /// Pro 设置页 / Paywall 真正需要展示购买入口时加载。
     func start() {
         guard updatesTask == nil, !TestEnvironment.isRunning else { return }
         updatesTask = Task { [weak self] in
             guard let self else { return }
             await self.refreshEntitlements()
-            await self.loadProducts()
             await self.listenForTransactionUpdates()
         }
     }
@@ -85,9 +88,36 @@ final class SubscriptionManager: ProEntitlementProviding {
     /// 价格、币种、订阅周期均以 StoreKit 返回为准；Connect 后台调整价格后，代码无需改。
     func loadProducts() async {
         guard !TestEnvironment.isRunning else { return }
+        if let productsLoadTask {
+            await productsLoadTask.value
+            return
+        }
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performLoadProductsWithRetry()
+        }
+        productsLoadTask = task
+        await task.value
+        productsLoadTask = nil
+    }
+
+    private func performLoadProductsWithRetry() async {
         isLoadingProducts = true
         defer { isLoadingProducts = false }
 
+        if await loadProductsOnce(attempt: 1) {
+            return
+        }
+
+        // StoreKit Testing session 由 Xcode launch 注入。若首次返回空数组，短暂等待后
+        // 再试一次；只重试空结果，不掩盖真实 StoreKit 错误。
+        try? await Task.sleep(for: .milliseconds(800))
+        _ = await loadProductsOnce(attempt: 2)
+    }
+
+    @discardableResult
+    private func loadProductsOnce(attempt: Int) async -> Bool {
         do {
             let loaded = try await Product.products(for: productIDs)
             products = loaded.sorted {
@@ -95,12 +125,22 @@ final class SubscriptionManager: ProEntitlementProviding {
             }
             if products.isEmpty {
                 lastErrorMessage = SubscriptionError.productsUnavailable.localizedDescription
+                let bundleID = Bundle.main.bundleIdentifier ?? "<missing>"
+                let ids = productIDs.joined(separator: ",")
+                AppLog.general.error("[subscription] StoreKit returned no products. attempt=\(attempt, privacy: .public), bundle=\(bundleID, privacy: .public), distribution=\(DistributionChannel.current.rawValue, privacy: .public), requestedIDs=\(ids, privacy: .public)")
+                return false
             } else {
                 lastErrorMessage = nil
+                let ids = products.map(\.id).joined(separator: ",")
+                AppLog.general.info("[subscription] loaded StoreKit products. attempt=\(attempt, privacy: .public), ids=\(ids, privacy: .public)")
+                return true
             }
         } catch {
             lastErrorMessage = SubscriptionError.unknown(error.localizedDescription).localizedDescription
-            AppLog.general.error("[subscription] loadProducts failed: \(error.localizedDescription, privacy: .public)")
+            let bundleID = Bundle.main.bundleIdentifier ?? "<missing>"
+            let ids = productIDs.joined(separator: ",")
+            AppLog.general.error("[subscription] loadProducts failed. attempt=\(attempt, privacy: .public), bundle=\(bundleID, privacy: .public), distribution=\(DistributionChannel.current.rawValue, privacy: .public), requestedIDs=\(ids, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
+            return true
         }
     }
 
