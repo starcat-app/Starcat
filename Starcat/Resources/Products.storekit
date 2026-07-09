@@ -14,7 +14,21 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "39.99",
+      "familyShareable" : true,
+      "internalID" : "2D3B34A7",
+      "localizations" : [
+        {
+          "description" : "One-time purchase for lifetime access to current Starcat Pro features.",
+          "displayName" : "Starcat Pro Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.starcat.app.pro.lifetime",
+      "referenceName" : "Starcat Pro Lifetime",
+      "type" : "NonConsumable"
+    }
   ],
   "settings" : {
     "_askToBuyEnabled" : false,
@@ -94,7 +108,7 @@
 
           ],
           "displayPrice" : "19.99",
-          "familyShareable" : false,
+          "familyShareable" : true,
           "groupNumber" : 1,
           "internalID" : "0DC12C71",
           "introductoryOffers" : [

@@ -466,30 +466,94 @@ private struct ProProductRow: View {
     let isBusy: Bool
     let onPurchase: () -> Void
 
+    private var productID: ProProductID? {
+        ProProductID(rawValue: product.id)
+    }
+
+    private var title: String {
+        if product.displayName.isEmpty == false {
+            return product.displayName
+        }
+        switch productID {
+        case .monthly: return String.l10n("settings.pro.plan.monthly.title")
+        case .yearly: return String.l10n("settings.pro.plan.yearly.title")
+        case .lifetime: return String.l10n("settings.pro.plan.lifetime.title")
+        case .none: return product.id
+        }
+    }
+
+    private var subtitleKey: LocalizedStringKey {
+        switch productID {
+        case .monthly: return "settings.pro.plan.monthly.subtitle"
+        case .yearly: return "settings.pro.plan.yearly.subtitle"
+        case .lifetime: return "settings.pro.plan.lifetime.subtitle"
+        case .none: return "settings.pro.plan.available"
+        }
+    }
+
+    private var priceText: String {
+        switch productID {
+        case .monthly:
+            return String(format: String.l10n("settings.pro.plan.price.monthlyFormat"), product.displayPrice)
+        case .yearly:
+            return String(format: String.l10n("settings.pro.plan.price.yearlyFormat"), product.displayPrice)
+        case .lifetime:
+            return String(format: String.l10n("settings.pro.plan.price.lifetimeFormat"), product.displayPrice)
+        case .none:
+            return product.displayPrice
+        }
+    }
+
+    private var badgeKey: LocalizedStringKey? {
+        switch productID {
+        case .yearly: return "settings.pro.plan.badge.bestValue"
+        case .lifetime: return "settings.pro.plan.badge.lifetime"
+        default: return nil
+        }
+    }
+
+    private var purchaseButtonKey: LocalizedStringKey {
+        productID == .lifetime ? "settings.pro.plan.buy" : "settings.pro.plan.subscribe"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(product.displayName)
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(title)
                         .font(.callout.weight(.semibold))
-                    Text(product.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let badgeKey {
+                        Text(badgeKey)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(Color.orange.opacity(0.14))
+                            )
+                    }
                 }
 
-                Spacer(minLength: 12)
+                Text(subtitleKey)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(product.displayPrice)
-                        .font(.title3.weight(.semibold))
-                    Text(LocalizedStringKey(isCurrent ? "settings.pro.plan.current" : "settings.pro.plan.available"))
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(isCurrent ? .green : .secondary)
-                }
+                Text(isCurrent ? "settings.pro.plan.current" : "settings.pro.plan.available")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(isCurrent ? .green : .secondary)
             }
 
-            Button {
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 8) {
+                Text(priceText)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+
+                Button {
                     onPurchase()
                 } label: {
                     if isBusy {
@@ -498,17 +562,17 @@ private struct ProProductRow: View {
                     } else if isCurrent {
                         Label("settings.pro.plan.current", systemImage: "checkmark.seal.fill")
                     } else {
-                        Text(String(format: String.l10n("settings.pro.plan.subscribeFormat"),
-                                    product.displayPrice))
+                        Text(purchaseButtonKey)
                             .font(.callout.weight(.semibold))
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isBusy || isCurrent)
                 .fixedSize()
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
-        .padding(10)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(isCurrent ? 0.08 : 0.05))

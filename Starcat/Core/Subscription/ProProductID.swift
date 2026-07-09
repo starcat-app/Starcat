@@ -11,11 +11,12 @@ import Foundation
 ///
 /// 约束：
 /// - 代码、App Store Connect、`Products.storekit` 必须保持完全一致；
-/// - v1 只启用月订 + 年订，lifetime 买断只在文档中预留，不进入本轮代码路径；
+/// - App Store 版同时启用月订、年订和 lifetime 买断；
 /// - UI 价格从 StoreKit `Product.displayPrice` 读取，不在代码里写死。
 enum ProProductID: String, CaseIterable, Identifiable, Sendable {
     case monthly = "com.starcat.app.pro.monthly"
     case yearly = "com.starcat.app.pro.yearly"
+    case lifetime = "com.starcat.app.pro.lifetime"
 
     var id: String { rawValue }
 
@@ -23,8 +24,9 @@ enum ProProductID: String, CaseIterable, Identifiable, Sendable {
 
     var sortOrder: Int {
         switch self {
-        case .yearly: return 0
-        case .monthly: return 1
+        case .monthly: return 0
+        case .yearly: return 1
+        case .lifetime: return 2
         }
     }
 
