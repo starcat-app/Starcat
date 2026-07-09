@@ -328,7 +328,7 @@ resume_notarized_package() {
   local info status
   info="$(xcrun notarytool info "$submission_id" "${auth_args[@]}")"
   printf '%s\n' "$info"
-  status="$(printf '%s\n' "$info" | sed -n 's/^status: //p' | head -1)"
+  status="$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*status:[[:space:]]*//p' | head -1)"
 
   case "$status" in
     Accepted)
@@ -364,6 +364,7 @@ generate_current_appcast_from_existing_dmg() {
   "$generate_appcast" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"
   cp "$APPCAST_INPUT_DIR/appcast.xml" "$CURRENT_APPCAST_PATH"
   rm -rf "$APPCAST_INPUT_DIR"
+  rm -f "$NOTARY_SUBMISSION_PATH"
 }
 
 verify_local_artifacts() {
