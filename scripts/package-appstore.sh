@@ -14,8 +14,6 @@
 # 可选环境变量：
 #   STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB
 #       正式 Apple Developer Team ID。设置后 archive 显式使用该 Team。
-#   CODE_SIGN_IDENTITY="Apple Distribution"
-#       默认 Apple Distribution；如需临时排查可覆盖。
 #
 
 set -euo pipefail
@@ -26,7 +24,6 @@ DIST_DIR="${PROJECT_ROOT}/dist/appstore"
 ARCHIVE_PATH="${DIST_DIR}/Starcat-AppStore.xcarchive"
 BUILD_LOG="${DIST_DIR}/xcodebuild-appstore.log"
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-}}"
-SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Apple Distribution}"
 
 log() { printf '[appstore] %s\n' "$1"; }
 fail() { printf '[appstore] ERROR: %s\n' "$1" >&2; exit 1; }
@@ -44,7 +41,6 @@ xcodegen generate >/dev/null
 log "构建 App Store archive: $ARCHIVE_PATH"
 BUILD_SETTINGS=(
   CODE_SIGN_STYLE=Automatic
-  "CODE_SIGN_IDENTITY=${SIGN_IDENTITY}"
   STARCAT_DISTRIBUTION=appstore
 )
 if [ -n "$DEVELOPMENT_TEAM_ID" ]; then

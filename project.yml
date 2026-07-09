@@ -130,6 +130,9 @@ targets:
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         # 显式构建渠道。App Store build 默认 appstore；Direct build 后续覆盖为 direct。
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        # Starcat 只使用系统 TLS/Keychain/StoreKit 等标准加密能力，不包含非豁免加密。
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
       - package: GRDB
       - package: KeychainAccess
@@ -227,6 +230,9 @@ targets:
         STARCAT_LICENSE_API_LIVE_KEY: $(STARCAT_LICENSE_API_LIVE_KEY)
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        # Direct 包同样只使用系统 TLS/Keychain 等标准加密能力，保持双渠道合规声明一致。
+        ITSAppUsesNonExemptEncryption: false
         SUFeedURL: https://starcat.ink/appcast.xml
         SUPublicEDKey: $(STARCAT_SPARKLE_PUBLIC_ED_KEY)
         SUEnableInstallerLauncherService: YES
