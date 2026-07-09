@@ -24,21 +24,21 @@ Starcat Direct 一键发布脚本
   ./scripts/release-direct.sh --help
 
 示例:
-  # 完整发布 1.1.0：检查 main/干净工作区，创建并推送 v1.1.0 tag，
+  # 完整发布 1.0.0：检查 main/干净工作区，创建并推送 v1.0.0 tag，
   # 部署 nginx 和官网，打包 Direct DMG，上传 appcast/DMG/SHA256 并校验线上 URL。
-  STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.1.0
+  STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.0.0
 
   # 演练完整流程，不创建 tag、不推送、不上传、不部署、不做线上校验。
-  STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.1.0
+  STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.0.0
 
   # tag 已经存在且已推送，只重跑官网部署、打包、上传和校验。
-  STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.1.0
+  STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.0.0
 
   # 只重跑 Direct 更新文件发布，跳过 tag、nginx 和官网静态页部署。
   STARCAT_RELEASE_SKIP_TAG=1 \
   STARCAT_RELEASE_SKIP_NGINX=1 \
   STARCAT_RELEASE_SKIP_SITE=1 \
-  ./scripts/release-direct.sh 1.1.0
+  ./scripts/release-direct.sh 1.0.0
 
 默认流程:
   1. 确认当前分支是 main
@@ -122,7 +122,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "版本号必须是 X.Y.Z，例如 1.1.0；当前: $VERSION" >&2
+  echo "版本号必须是 X.Y.Z，例如 1.0.0；当前: $VERSION" >&2
   exit 1
 fi
 

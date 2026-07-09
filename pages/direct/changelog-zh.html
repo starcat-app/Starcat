@@ -125,85 +125,8 @@
     <div class="changelog-content">
 <h1>Starcat 更新日志</h1>
 <p>这里记录 Starcat 的重要变化，内容用于发布说明。</p>
-<h2>1.2.0</h2>
-<h3>新增</h3>
-<ul>
-<li>新增 Getting Started 新手引导系统，覆盖同步、RAG/Agent 试用、项目主页和知识库等关键操作，支持返回导航和调试模式开关。</li>
-<li>新增浮层状态保护防止异常退出后引导入口锁死，统一手动重播防护，以及分享指引气泡位置优化。</li>
-<li>新增 Agent 与 RAG 独立窗口工作台，支持窗口置顶、侧边栏折叠，并继承主窗口界面字号。</li>
-<li>新增 Agent 计划与工具输出展示、扩展事件模型，并完善运行时事件反馈闭环。</li>
-<li>新增落地页首屏加载动效及多阶段过渡动画、macOS 专属下载弹窗及优化后的定价网格，以及下载版本区块。</li>
-</ul>
-<h3>改进</h3>
-<ul>
-<li>改进 Agent 工作台，增强可审计追踪可见性、优化回复样式、提升工具栏入口辨识度，并调整标题栏控制。</li>
-<li>改进 DMG 背景，经多轮迭代采用明亮主题、简化视觉、优化定位，并更新图标与拖放链接坐标。</li>
-<li>改进落地页视觉呈现，移除首图外层窗口样式、隐藏 Pro 定价卡片，并优化整体质感。</li>
-<li>改进首次同步与周刊页面加载状态，用统一加载提示组件替换空态视图。</li>
-<li>改进 DMG 文件名可读性与背景生成样式。</li>
-</ul>
-<h3>修复</h3>
-<ul>
-<li>修复 Agent 默认产物选中逻辑。</li>
-<li>修复 RAG 与工作台输入框首次按键异常换行。</li>
-<li>修复 RAG 中栏消息对齐问题，并恢复工作台标题栏图标可见性。</li>
-<li>修正落地页 macOS 版本文案。</li>
-</ul>
-<h2>1.1.0</h2>
-<h3>新增</h3>
-<ul>
-<li>新增相似仓库推荐，支持保存推荐结果、展示更清晰的推荐卡片、标记已收藏仓库，并可在新的 Starcat 窗口中打开推荐仓库。</li>
-<li>新增更多 GitHub 登录方式，包括浏览器登录、Token 登录、登录方式选择器和授权倒计时。</li>
-<li>新增仓库代码智能分析能力，作为 Pro 功能提供独立的仓库分析工作区、结果缓存和设置入口。</li>
-<li>新增详情页 AI 助手入口、README AI 摘要、摘要缓存，并支持从 Starcat 和浏览器入口触发摘要生成。</li>
-<li>新增 Browser Plugin 工作流，可在 GitHub 页面与 Starcat 配对，并访问仓库上下文、笔记、标签、健康度、Wiki 上下文、推荐和 Safari WebExtension 支持。</li>
-<li>新增开始使用清单，引导首次设置和关键操作。</li>
-<li>新增探索发现相关页面，覆盖趋势、发现、GitHub 搜索和仓库榜单。</li>
-<li>新增 README 后台预拉取和健康分预热，让仓库详情更快进入可用状态。</li>
-<li>新增健康分排序、健康分颜色优化和 OpenSSF Scorecard 预热，帮助更快判断仓库质量。</li>
-<li>新增菜单栏与 macOS 顶部菜单控制，常用操作更容易触达。</li>
-<li>新增 Direct 分发能力，与 App Store 渠道并行，包含独立 Direct 构建目标、渠道配置和仅 Direct 版本启用的 Sparkle 自动更新。</li>
-<li>新增 Direct 版 Sparkle 更新支持，包含 appcast 更新清单、EdDSA key 配置、检查更新菜单入口，以及私钥备份和多台 Mac 签名流程文档。</li>
-<li>新增 Direct License 基础设施，包含 License API 服务、本地授权存储，以及同时服务 App Store 和 Direct 渠道的权益抽象。</li>
-<li>新增中立的 Direct 支付网关抽象，为后续接入 Creem 等支付 provider 预留扩展点。</li>
-<li>新增服务状态徽章、服务健康检查和本地运维工具，方便配置和排查问题。</li>
-<li>新增界面字号档位、发布记录分页优化，以及发布订阅总数侧边栏展示。</li>
-</ul>
-<h3>改进</h3>
-<ul>
-<li>改进推荐入口位置、推荐卡片样式、缓存策略和 Pro 权限提示。</li>
-<li>改进 README 阅读体验，包括 GitHub 图片处理、系统风格滚动条和更清晰的加载状态。</li>
-<li>改进全局搜索，支持快捷键、历史记录、更可靠的焦点获取和 GitHub 搜索结果分页。</li>
-<li>改进 GitHub Stars List、侧边栏统计、语言图标和空状态展示。</li>
-<li>改进 Activity 和 Weekly 浏览体验，提供更丰富的筛选、更快的数量统计和更清晰的详情加载。</li>
-<li>改进分享卡，加入更多版式和配色、完善个人资料展示，并避免免费用户看到不可用状态。</li>
-<li>改进设置页文案、存储操作、服务配置和诊断日志反馈。</li>
-<li>改进深色模式下的 AI、健康度、搜索、分享和插件相关界面表现。</li>
-<li>改进发布准备材料、开源致谢、分发方案和应用内发布说明读取方式。</li>
-<li>改进 Direct 发布工具链，提供 App Store / Direct 独立打包脚本、Direct 运行入口、Sparkle appcast 生成，以及用于上传 appcast 和 DMG 的发布编排脚本。</li>
-<li>改进 Starcat 官网 nginx 配置，为 Sparkle 更新增加 appcast 不缓存规则和 Direct 下载路径规则。</li>
-<li>改进工具栏、危险操作、常用操作、标签、侧边栏和批量操作中的共享图标规范。</li>
-<li>改进内部诊断、遥测安全边界和开发专用开关，避免未完成能力被当成正式功能。</li>
-</ul>
-<h3>修复</h3>
-<ul>
-<li>修复关闭主窗口后，Dock 或菜单栏重新打开 Starcat 时无法正确恢复的问题。</li>
-<li>修复 README 内容或其他交互区域上方出现浮层时，鼠标光标显示不正确的问题。</li>
-<li>修复 GitHub 仓库名称大小写不一致时 AI 摘要生成失败的问题。</li>
-<li>修复浏览器插件中不可用或 Pro 限制动作的处理方式。</li>
-<li>修复从外部入口修改笔记和标签后，Starcat 当前内容不能自动刷新的问题。</li>
-<li>修复推荐仓库新窗口可能崩溃或 README 一直加载的问题。</li>
-<li>修复多项 CodebaseMemory 启动、存储、缓存和切换仓库时的稳定性问题。</li>
-<li>修复子目录 README 图片和 GitHub raw 图片路径显示问题。</li>
-<li>修复全局搜索焦点时机和若干搜索结果交互细节。</li>
-<li>修复存储重置完成态、未登录状态下存储页滚动，以及若干设置页布局边界问题。</li>
-<li>修复语言数据缺失时语言统计排序不正确的问题。</li>
-<li>修复 Release 构建中调试菜单相关的编译问题。</li>
-<li>修复 Direct 构建签名和 entitlements 检查，确保非 App Store 版本不带 App Sandbox entitlement，同时 App Store 版本继续保留沙箱配置。</li>
-<li>修复 Direct 更新测试打包流程，支持临时版本覆盖 marketing/build 版本，并避免 appcast 生成时混入旧 DMG。</li>
-</ul>
 <h2>1.0.0</h2>
-<p>Starcat 初始版本。</p>
+<p>Starcat 正式初始版本。</p>
 <h3>亮点</h3>
 <ul>
 <li>用原生 macOS 三栏界面管理 GitHub Stars。</li>
@@ -221,9 +144,67 @@
 <li>支持英文和简体中文。</li>
 <li>作为原生 macOS 应用运行，包含沙盒、强化运行时、窗口管理和 App Store 上架准备。</li>
 </ul>
-<p>[1.2.0]: https://github.com/dong4j/starcat/releases/tag/1.2.0</p>
-<p>[1.1.0]: https://github.com/dong4j/starcat/releases/tag/1.1.0</p>
-<p>[1.0.0]: https://github.com/dong4j/starcat/releases/tag/1.0.0</p>
+<h3>新增</h3>
+<ul>
+<li>新增 Getting Started 新手引导系统，覆盖同步、RAG/Agent 试用、项目主页和知识库等关键操作，支持返回导航和调试模式开关。</li>
+<li>新增浮层状态保护防止异常退出后引导入口锁死，统一手动重播防护，以及分享指引气泡位置优化。</li>
+<li>新增 Agent 与 RAG 独立窗口工作台，支持窗口置顶、侧边栏折叠，并继承主窗口界面字号。</li>
+<li>新增 Agent 计划与工具输出展示、扩展事件模型，并完善运行时事件反馈闭环。</li>
+<li>新增落地页首屏加载动效及多阶段过渡动画、macOS 专属下载弹窗及优化后的定价网格，以及下载版本区块。</li>
+<li>新增相似仓库推荐，支持保存推荐结果、展示更清晰的推荐卡片、标记已收藏仓库，并可在新的 Starcat 窗口中打开推荐仓库。</li>
+<li>新增更多 GitHub 登录方式，包括浏览器登录、Token 登录、登录方式选择器和授权倒计时。</li>
+<li>新增仓库代码智能分析能力，作为 Pro 功能提供独立的仓库分析工作区、结果缓存和设置入口。</li>
+<li>新增详情页 AI 助手入口、README AI 摘要、摘要缓存，并支持从 Starcat 和浏览器入口触发摘要生成。</li>
+<li>新增 Browser Plugin 工作流，可在 GitHub 页面与 Starcat 配对，并访问仓库上下文、笔记、标签、健康度、Wiki 上下文、推荐和 Safari WebExtension 支持。</li>
+<li>新增开始使用清单，引导首次设置和关键操作。</li>
+<li>新增探索发现相关页面，覆盖趋势、发现、GitHub 搜索和仓库榜单。</li>
+<li>新增 README 后台预拉取和健康分预热，让仓库详情更快进入可用状态。</li>
+<li>新增健康分排序、健康分颜色优化和 OpenSSF Scorecard 预热，帮助更快判断仓库质量。</li>
+<li>新增菜单栏与 macOS 顶部菜单控制，常用操作更容易触达。</li>
+<li>新增 Direct 分发能力，与 App Store 渠道并行，包含独立 Direct 构建目标、渠道配置和仅 Direct 版本启用的 Sparkle 自动更新。</li>
+<li>新增 Direct 版 Sparkle 更新支持，包含 appcast 更新清单、EdDSA key 配置、检查更新菜单入口，以及私钥备份和多台 Mac 签名流程文档。</li>
+<li>新增 Direct License 基础设施，包含 License API 服务、本地授权存储，以及同时服务 App Store 和 Direct 渠道的权益抽象。</li>
+<li>新增中立的 Direct 支付网关抽象，为后续接入 Creem 等支付 provider 预留扩展点。</li>
+<li>新增服务状态徽章、服务健康检查和本地运维工具，方便配置和排查问题。</li>
+<li>新增界面字号档位、发布记录分页，以及发布订阅总数侧边栏展示。</li>
+</ul>
+<ul>
+<li>提供 Agent 工作台，包含可审计追踪、回复样式、清晰的工具栏入口和标题栏控制。</li>
+<li>提供完整的 DMG 背景、应用拖放位置和可读的 Direct 分发文件名。</li>
+<li>提供优化后的落地页视觉、macOS 专属下载流程、定价布局和产品质感。</li>
+<li>提供首次同步与周刊页面加载状态，以及统一加载提示组件。</li>
+<li>提供推荐卡片、推荐缓存、清晰入口、已收藏标记和 Pro 权限提示。</li>
+<li>提供 README 阅读体验，包含 GitHub 图片处理、系统风格滚动条和清晰加载状态。</li>
+<li>提供全局搜索，包含快捷键、历史记录、可靠焦点获取和 GitHub 搜索结果分页。</li>
+<li>提供 GitHub Stars 列表、侧边栏统计、语言图标和空状态展示。</li>
+<li>提供 Activity 与 Weekly 浏览能力，包含筛选、快速数量统计和详情加载状态。</li>
+<li>提供分享卡能力，包含多种版式、配色、个人资料展示和 Pro 可用性判断。</li>
+<li>提供设置页文案、存储操作、服务配置和诊断日志反馈。</li>
+<li>提供深色模式下 AI、健康度、搜索、分享和插件相关界面的完整适配。</li>
+<li>提供发布准备材料、开源致谢、分发方案和应用内发布说明读取能力。</li>
+<li>提供 Direct 发布工具链，包含 App Store / Direct 独立打包脚本、Direct 运行入口、Sparkle appcast 生成和 appcast / DMG 上传编排。</li>
+<li>提供 Starcat 官网 nginx 规则，支持 Sparkle appcast 不缓存和 Direct 下载路径。</li>
+<li>提供工具栏、危险操作、常用操作、标签、侧边栏和批量操作中的统一图标规范。</li>
+<li>提供内部诊断、遥测安全边界和开发专用开关，避免未完成能力被当成正式功能。</li>
+<li>提供 Agent 默认产物加载选择。</li>
+<li>提供 RAG 与工作台输入框的稳定首键输入体验。</li>
+<li>提供 RAG 中栏消息对齐和工作台标题栏图标显示。</li>
+<li>提供正确的落地页 macOS 版本文案。</li>
+<li>提供关闭主窗口后通过 Dock 或菜单栏重新打开 Starcat 的行为。</li>
+<li>提供浮层覆盖 README 或其他交互区域时的正确鼠标光标行为。</li>
+<li>提供 GitHub 仓库名称大小写不一致时的 AI 摘要生成能力。</li>
+<li>提供浏览器插件中不可用或 Pro 限制动作的明确处理。</li>
+<li>提供外部入口修改笔记和标签后的可见内容自动刷新。</li>
+<li>提供推荐仓库新窗口和 README 加载的稳定体验。</li>
+<li>提供 CodebaseMemory 启动、存储、缓存和仓库切换支持。</li>
+<li>提供子目录 README 图片和 GitHub raw 图片路径显示。</li>
+<li>提供全局搜索焦点时机和搜索结果交互细节。</li>
+<li>提供存储重置完成态、未登录状态下存储页滚动和设置页布局边界处理。</li>
+<li>提供语言数据缺失时的语言统计排序。</li>
+<li>提供 Release 构建可用的调试菜单控制。</li>
+<li>提供 Direct 构建签名和 entitlements 检查，确保非 App Store 版本不带 App Sandbox entitlement，同时 App Store 版本继续保留沙箱配置。</li>
+<li>提供 Direct 更新测试打包流程，支持临时版本覆盖 marketing/build 版本，并避免 appcast 生成时混入旧 DMG。</li>
+</ul>
     </div>
 </main>
 
