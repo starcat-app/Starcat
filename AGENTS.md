@@ -14,6 +14,10 @@
 > ⚠️ **dong4j 在反馈方案 / 修正理解 / 给出补充信息时，默认仍在讨论阶段。**
 > ⚠️ **必须等 dong4j 明确说「开干 / 改吧 / GO / 动手 / 实施」等字眼，才能开始改代码；只要还在交换意见就只读不写。**
 
+> ⚠️ **【铁律 #3】禁止擅自执行打包 / 发布 / 上传脚本。**
+> ⚠️ **除非 dong4j 在当前消息里明确要求执行，否则 Agent 只能修改脚本、写文档、给命令，不能执行 `scripts/package-*`、`scripts/release-*`、`deploy.sh`、notary 上传、App Store 上传、服务器上传等会生成或发布分发产物的命令。**
+> ⚠️ **允许执行只读检查命令，例如 `bash -n`、`git diff --check`、`codesign -d`、`PlistBuddy -c Print`、`dwarfdump --uuid`。**
+
 ---
 
 ## 🧭 主进度索引（每次开工前必读）
