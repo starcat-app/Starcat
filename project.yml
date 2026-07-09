@@ -9,8 +9,8 @@ name: Starcat
 options:
   bundleIdPrefix: com.starcat
   # Xcode scheme 里的 StoreKit 配置路径由 XcodeGen 用这个前缀拼接。
-  # 默认 "../../" 在当前仓库名刚好叫 Starcat 时也能绕回根目录，但路径不直观；
-  # "../" 明确从 Starcat.xcodeproj 回到仓库根目录，再进入 Starcat/Resources。
+  # Xcode 26 实测会在 Run Options 中保存为 "../../Starcat/Resources/Products.storekit"；
+  # 这里保持该生成结果，避免重新生成工程后丢失本地 StoreKit Testing 商品配置。
   schemePathPrefix: "../"
   deploymentTarget:
     macOS: "15.0"
