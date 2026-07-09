@@ -9,8 +9,8 @@ import re
 import sys
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+SCRIPT_DIR = Path(__file__).resolve().parent  # pages/direct/
+PROJECT_ROOT = SCRIPT_DIR.parent.parent       # 项目根目录
 CHANGELOG_PAGES = [
     {
         "source": PROJECT_ROOT / "supports" / "starcat-pro" / "CHANGELOG.md",

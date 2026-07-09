@@ -1131,7 +1131,7 @@
          * ================================================================== */
         .pricing-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: var(--card-gap);
             max-width: 1160px;
             margin: 0 auto;
@@ -1170,6 +1170,8 @@
         .pricing-card--featured {
             border-color: rgba(251, 191, 36, 0.56);
             box-shadow: 0 24px 80px rgba(251, 191, 36, 0.12);
+            transform: scale(1.05);
+            z-index: 1;
         }
 
         .pricing-badge {
@@ -1184,6 +1186,9 @@
             margin-bottom: 16px;
         }
 
+        .pricing-badge--starter  { color: #7DD3FC; background: rgba(125, 211, 252, 0.12); }
+        .pricing-badge--monthly  { color: #A78BFA; background: rgba(167, 139, 250, 0.12); }
+        .pricing-badge--popular  { color: #071018; background: var(--color-accent); }
         .pricing-badge--value {
             color: #071018;
             background: var(--color-accent);
@@ -2377,12 +2382,12 @@
             <div class="section-label fade-in">Availability</div>
             <h2 class="section-title fade-in" id="pricing-title">定价</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                免费开始，Pro Monthly 可试用 14 天；买断版一次付款，当前授权 1 台 Mac。
+                免费开始，按月或按年订阅，也可一次买断永久使用。
             </p>
 
             <div class="pricing-grid">
                 <div class="pricing-card fade-in">
-                    <span class="pricing-badge">入门</span>
+                    <span class="pricing-badge pricing-badge--starter">入门</span>
                     <h3 class="pricing-name">Free for macOS</h3>
                     <div class="pricing-price">免费</div>
                     <div class="pricing-period">基础功能，永久可用</div>
@@ -2404,13 +2409,13 @@
                     </div>
                 </div>
                 <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">推荐</span>
+                    <span class="pricing-badge pricing-badge--monthly">按月</span>
                     <h3 class="pricing-name">Pro Monthly</h3>
-                    <div class="pricing-price">$9.99</div>
+                    <div class="pricing-price">$2.99</div>
                     <div class="pricing-period">每月订阅</div>
-                    <p class="pricing-note">14 天免费试用，之后 $9.99/月；当前授权 1 台 Mac。</p>
+                    <p class="pricing-note">$2.99/月，当前授权 1 台 Mac。</p>
                     <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> 14 天完整 Pro 试用</li>
+                        <li><i data-lucide="check"></i> 完整 Pro 功能，可随时取消</li>
                         <li><i data-lucide="check"></i> 1 台 Mac 授权</li>
                         <li><i data-lucide="check"></i> 不限基础额度</li>
                         <li><i data-lucide="check"></i> AI 摘要与 AI 标签</li>
@@ -2424,10 +2429,34 @@
                         <button class="btn-secondary" type="button" data-checkout-plan="monthly">
                             购买 Pro Monthly
                         </button>
-                        <div class="pricing-status" data-checkout-status="monthly">包含 14 天试用</div>
+                        <div class="pricing-status" data-checkout-status="monthly">$2.99/月</div>
                     </div>
                 </div>
                 <div class="pricing-card pricing-card--pro pricing-card--featured fade-in">
+                    <span class="pricing-badge pricing-badge--popular">最受欢迎</span>
+                    <h3 class="pricing-name">Pro Yearly</h3>
+                    <div class="pricing-price">$19.99</div>
+                    <div class="pricing-period">每年订阅</div>
+                    <p class="pricing-note">相比月付节省约 44%。当前授权 1 台 Mac。</p>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> 包含 Pro Monthly 全部功能</li>
+                        <li><i data-lucide="check"></i> 1 台 Mac 授权</li>
+                        <li><i data-lucide="check"></i> 不限基础额度</li>
+                        <li><i data-lucide="check"></i> AI 摘要与 AI 标签</li>
+                        <li><i data-lucide="check"></i> AI Chat 与 README 翻译</li>
+                        <li><i data-lucide="check"></i> Embedding 语义搜索</li>
+                        <li><i data-lucide="check"></i> LLM 友好的网页上下文</li>
+                        <li><i data-lucide="check"></i> CodeFlow 与仓库上下文</li>
+                        <li><i data-lucide="check"></i> Trending AI 推荐</li>
+                    </ul>
+                    <div class="pricing-action">
+                        <button class="btn-secondary" type="button" data-checkout-plan="yearly">
+                            购买 Pro Yearly
+                        </button>
+                        <div class="pricing-status" data-checkout-status="yearly">$19.99/年</div>
+                    </div>
+                </div>
+                <div class="pricing-card pricing-card--pro fade-in">
                     <span class="pricing-badge pricing-badge--value">买断更划算</span>
                     <h3 class="pricing-name">Pro Lifetime</h3>
                     <div class="pricing-price">$39.99</div>
@@ -2458,6 +2487,7 @@
                             <th>功能</th>
                             <th>Free</th>
                             <th>Pro Monthly</th>
+                            <th>Pro Yearly</th>
                             <th>Pro Lifetime</th>
                         </tr>
                     </thead>
@@ -2467,10 +2497,12 @@
                             <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">标签、智能集合、Release 订阅</td>
                             <td>20 / 4 / 5</td>
+                            <td class="compare-check">不限</td>
                             <td class="compare-check">不限</td>
                             <td class="compare-check">不限</td>
                         </tr>
@@ -2479,10 +2511,12 @@
                             <td class="compare-muted">有限</td>
                             <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">AI 摘要、标签、Chat、README 翻译</td>
                             <td class="compare-muted">不包含</td>
+                            <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
                         </tr>
@@ -2491,22 +2525,26 @@
                             <td class="compare-muted">不包含</td>
                             <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">RepoContextPacker、CodeFlow、Trending AI</td>
                             <td class="compare-muted">不包含</td>
                             <td class="compare-check">包含</td>
                             <td class="compare-check">包含</td>
+                            <td class="compare-check">包含</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">付款方式</td>
                             <td>免费</td>
-                            <td>14 天试用，之后 $9.99 / 月</td>
+                            <td>$2.99 / 月</td>
+                            <td>$19.99 / 年</td>
                             <td>$39.99 买断</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">授权设备数</td>
                             <td class="compare-muted">无需授权</td>
+                            <td>1 台 Mac</td>
                             <td>1 台 Mac</td>
                             <td>1 台 Mac</td>
                         </tr>
@@ -2547,8 +2585,8 @@
                     <p>Starcat 采用 BYOK 思路，你可以配置自己的模型服务或 API Key。页面中涉及 AI 的能力以上线版本实际开放范围为准。</p>
                 </details>
                 <details class="faq-item fade-in">
-                    <summary>Pro 试用和授权设备数怎么计算？</summary>
-                    <p>Pro Monthly 提供 14 天免费试用，试用期间可使用全部 Pro 功能。Direct 授权当前限制为每个许可证 1 台 Mac；Pro Lifetime 包含 Pro Monthly 的全部功能，但不需要每月续费。</p>
+                    <summary>Pro 授权设备数怎么计算？</summary>
+                    <p>每个 Pro 方案授权 1 台 Mac。Pro Yearly 相比月付节省约 44%。Lifetime 为一次性买断，包含全部 Pro 功能，无需续费。</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>以后会支持 iPhone 或 iPad 吗？</summary>
@@ -3055,14 +3093,17 @@
 
             const labels = {
                 monthly: '购买 Pro Monthly',
+                yearly: '购买 Pro Yearly',
                 lifetime: '购买 Pro Lifetime'
             };
             const loadingLabels = {
                 monthly: '正在打开支付...',
+                yearly: '正在打开支付...',
                 lifetime: '正在打开支付...'
             };
             const idleStatuses = {
-                monthly: '包含 14 天试用',
+                monthly: '$2.99/月',
+                yearly: '$19.99/年',
                 lifetime: '一次付款，保留当前 Pro'
             };
 

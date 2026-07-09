@@ -310,14 +310,17 @@
         /* ==================================================================
          * 7. Pricing
          * ================================================================== */
-        .pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--card-gap); max-width: 1160px; margin: 0 auto; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--card-gap); max-width: 1160px; margin: 0 auto; }
         .pricing-card { background: var(--color-bg-glass); border: 1px solid var(--color-border); border-radius: 20px; padding: 40px 32px; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out); position: relative; display: flex; flex-direction: column; height: 100%; }
         .pricing-card:hover { border-color: var(--color-border-hover); background: rgba(255, 255, 255, 0.075); transform: translateY(-1px); }
         .pricing-card--pro { border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.06); }
         .pricing-card--pro:hover { border-color: rgba(139, 92, 246, 0.5); background: rgba(139, 92, 246, 0.1); }
-        .pricing-card--featured { border-color: rgba(251, 191, 36, 0.56); box-shadow: 0 24px 80px rgba(251, 191, 36, 0.12); }
+        .pricing-card--featured { border-color: rgba(251, 191, 36, 0.56); box-shadow: 0 24px 80px rgba(251, 191, 36, 0.12); transform: scale(1.05); z-index: 1; }
         .pricing-badge { display: inline-block; align-self: flex-start; padding: 4px 12px; font-size: 11px; font-weight: 700; color: var(--color-pro); background: rgba(139, 92, 246, 0.15); border-radius: 20px; margin-bottom: 16px; }
-        .pricing-badge--value { color: #071018; background: var(--color-accent); }
+        .pricing-badge--starter  { color: #7DD3FC; background: rgba(125, 211, 252, 0.12); }
+        .pricing-badge--monthly  { color: #A78BFA; background: rgba(167, 139, 250, 0.12); }
+        .pricing-badge--popular  { color: #071018; background: var(--color-accent); }
+        .pricing-badge--value    { color: #F5D06F; background: rgba(245, 208, 111, 0.12); }
         .pricing-name { font-size: var(--fs-h3); font-weight: 700; margin-bottom: 8px; }
         .pricing-price { font-size: 40px; font-weight: 750; margin-bottom: 4px; }
         .pricing-period { font-size: var(--fs-small); color: var(--color-text-muted); margin-bottom: 24px; }
@@ -814,12 +817,12 @@
             <div class="section-label fade-in">Availability</div>
             <h2 class="section-title fade-in" id="pricing-title">Pricing</h2>
             <p class="section-subtitle fade-in" style="margin-bottom:48px">
-                Start free, try Pro Monthly for 14 days, or choose Lifetime for one-time access on one Mac.
+                Start free, subscribe monthly or yearly, or own it forever with Lifetime.
             </p>
 
             <div class="pricing-grid">
                 <div class="pricing-card fade-in">
-                    <span class="pricing-badge">Starter</span>
+                    <span class="pricing-badge pricing-badge--starter">Starter</span>
                     <h3 class="pricing-name">Free for macOS</h3>
                     <div class="pricing-price">Free</div>
                     <div class="pricing-period">Core features, permanently</div>
@@ -841,13 +844,13 @@
                     </div>
                 </div>
                 <div class="pricing-card pricing-card--pro fade-in">
-                    <span class="pricing-badge">Most Popular</span>
+                    <span class="pricing-badge pricing-badge--monthly">Monthly</span>
                     <h3 class="pricing-name">Pro Monthly</h3>
-                    <div class="pricing-price">$9.99</div>
+                    <div class="pricing-price">$2.99</div>
                     <div class="pricing-period">per month</div>
-                    <p class="pricing-note">14-day free trial, then $9.99/month. Licensed for 1 Mac.</p>
+                    <p class="pricing-note">$2.99/month. Licensed for 1 Mac.</p>
                     <ul class="pricing-features">
-                        <li><i data-lucide="check"></i> 14-day full Pro trial</li>
+                        <li><i data-lucide="check"></i> Full Pro features, cancel anytime</li>
                         <li><i data-lucide="check"></i> 1 Mac license seat</li>
                         <li><i data-lucide="check"></i> Unlimited library limits</li>
                         <li><i data-lucide="check"></i> AI summaries and tags</li>
@@ -861,10 +864,34 @@
                         <button class="btn-secondary" type="button" data-checkout-plan="monthly">
                             Buy Pro Monthly
                         </button>
-                        <div class="pricing-status" data-checkout-status="monthly">14-day trial included</div>
+                        <div class="pricing-status" data-checkout-status="monthly">$2.99/month</div>
                     </div>
                 </div>
                 <div class="pricing-card pricing-card--pro pricing-card--featured fade-in">
+                    <span class="pricing-badge pricing-badge--popular">Most Popular</span>
+                    <h3 class="pricing-name">Pro Yearly</h3>
+                    <div class="pricing-price">$19.99</div>
+                    <div class="pricing-period">per year</div>
+                    <p class="pricing-note">Save 44% vs monthly. Licensed for 1 Mac.</p>
+                    <ul class="pricing-features">
+                        <li><i data-lucide="check"></i> Everything in Pro Monthly</li>
+                        <li><i data-lucide="check"></i> 1 Mac license seat</li>
+                        <li><i data-lucide="check"></i> Unlimited library limits</li>
+                        <li><i data-lucide="check"></i> AI summaries and tags</li>
+                        <li><i data-lucide="check"></i> AI Chat and translation</li>
+                        <li><i data-lucide="check"></i> Embedding semantic search</li>
+                        <li><i data-lucide="check"></i> LLM-friendly web context</li>
+                        <li><i data-lucide="check"></i> CodeFlow and repo context</li>
+                        <li><i data-lucide="check"></i> Trending AI recommendations</li>
+                    </ul>
+                    <div class="pricing-action">
+                        <button class="btn-secondary" type="button" data-checkout-plan="yearly">
+                            Buy Pro Yearly
+                        </button>
+                        <div class="pricing-status" data-checkout-status="yearly">$19.99/year</div>
+                    </div>
+                </div>
+                <div class="pricing-card pricing-card--pro fade-in">
                     <span class="pricing-badge pricing-badge--value">Best Value</span>
                     <h3 class="pricing-name">Pro Lifetime</h3>
                     <div class="pricing-price">$39.99</div>
@@ -895,6 +922,7 @@
                             <th>Feature</th>
                             <th>Free</th>
                             <th>Pro Monthly</th>
+                            <th>Pro Yearly</th>
                             <th>Pro Lifetime</th>
                         </tr>
                     </thead>
@@ -904,10 +932,12 @@
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">Tags, smart collections, release subscriptions</td>
                             <td>20 / 4 / 5</td>
+                            <td class="compare-check">Unlimited</td>
                             <td class="compare-check">Unlimited</td>
                             <td class="compare-check">Unlimited</td>
                         </tr>
@@ -916,10 +946,12 @@
                             <td class="compare-muted">Limited</td>
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">AI summaries, tags, Chat, README translation</td>
                             <td class="compare-muted">Not included</td>
+                            <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
                         </tr>
@@ -928,22 +960,26 @@
                             <td class="compare-muted">Not included</td>
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">RepoContextPacker, CodeFlow, Trending AI</td>
                             <td class="compare-muted">Not included</td>
                             <td class="compare-check">Included</td>
                             <td class="compare-check">Included</td>
+                            <td class="compare-check">Included</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">Payment model</td>
                             <td>Free</td>
-                            <td>14-day trial, then $9.99/month</td>
+                            <td>$2.99/month</td>
+                            <td>$19.99/year</td>
                             <td>$39.99 one-time</td>
                         </tr>
                         <tr>
                             <td class="compare-feature">License seats</td>
                             <td class="compare-muted">Not required</td>
+                            <td>1 Mac</td>
                             <td>1 Mac</td>
                             <td>1 Mac</td>
                         </tr>
@@ -982,8 +1018,8 @@
                     <p>Starcat follows a BYOK model: you configure your own model provider or API key. AI-related features on this page depend on what is enabled in the current app build.</p>
                 </details>
                 <details class="faq-item fade-in">
-                    <summary>How does the Pro trial and license seat work?</summary>
-                    <p>Pro Monthly includes a 14-day trial with full Pro features. Direct licenses are currently limited to 1 Mac per license; Lifetime includes the same Pro feature set without monthly renewal.</p>
+                    <summary>How do Pro license seats work?</summary>
+                    <p>Each Pro plan is licensed for 1 Mac. Pro Yearly saves 44% vs monthly. Lifetime is a one-time purchase that includes all Pro features with no recurring payments.</p>
                 </details>
                 <details class="faq-item fade-in">
                     <summary>Will Starcat support iPhone or iPad later?</summary>
@@ -1374,14 +1410,17 @@
 
             const labels = {
                 monthly: 'Buy Pro Monthly',
+                yearly: 'Buy Pro Yearly',
                 lifetime: 'Buy Pro Lifetime'
             };
             const loadingLabels = {
                 monthly: 'Opening checkout...',
+                yearly: 'Opening checkout...',
                 lifetime: 'Opening checkout...'
             };
             const idleStatuses = {
-                monthly: '14-day trial included',
+                monthly: '$2.99/month',
+                yearly: '$19.99/year',
                 lifetime: 'Pay once, keep current Pro'
             };
 

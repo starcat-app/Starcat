@@ -3,7 +3,7 @@
 # Starcat 落地页部署脚本
 #
 # 用法:
-#   ./deploy.sh          上传 pages/ 目录下所有静态资源到 aliyun:/var/www/starcat/
+#   ./deploy.sh          上传 pages/direct/ 目录下所有静态资源到 aliyun:/var/www/starcat/
 #   ./deploy.sh -n       上传 nginx 配置并重载 nginx
 #   DEPLOY_SSH_KEY=~/.ssh/server ./deploy.sh
 #                       使用指定私钥连接远程服务器，避免本机 ssh alias 绑定到错误 key
@@ -77,7 +77,7 @@ echo "================================"
 # 确保远程目录存在
 "${SSH_CMD[@]}" "$REMOTE_HOST" "mkdir -p $REMOTE_WEB_DIR"
 
-# rsync 同步 pages/ 目录下的静态文件
+# rsync 同步 pages/direct/ 目录下的静态文件
 # --delete: 删除远程多余文件，保持完全一致
 echo "正在同步文件..."
 rsync -avz --delete --progress \
@@ -85,10 +85,6 @@ rsync -avz --delete --progress \
     --exclude '.DS_Store' \
     --exclude '*.log' \
     --exclude 'node_modules' \
-    --exclude '_local-admin/' \
-    --exclude 'appstore/' \
-    --exclude 'downloads/' \
-    --exclude 'deploy.sh' \
     --exclude 'starcat.ink.conf' \
     "$SCRIPT_DIR/" \
     "$REMOTE_HOST:$REMOTE_WEB_DIR/"
