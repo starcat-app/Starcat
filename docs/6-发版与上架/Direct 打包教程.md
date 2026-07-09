@@ -133,10 +133,10 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
 
 ```bash
 ./scripts/release-direct.sh --help
-STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.0.0
+STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.0.0
 ```
 
-dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和 `starcat-notary`，正式发布时直接使用上面这条即可。
+dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和 `starcat-notary`，正式发布时直接使用上面这条即可。脚本未显式传 `STARCAT_NOTARY_PROFILE` 时会默认使用 `starcat-notary`。
 
 它会串联执行：
 
@@ -149,6 +149,13 @@ dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和
 7. 上传 `pages/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
 8. 上传 DMG / SHA256 到 `https://starcat.ink/downloads/`。
 9. 用 `curl -I` 校验线上 appcast、DMG 和 changelog 可访问。
+
+如果 `notarytool --wait` 在拿到 Submission ID 后网络超时，先等 Apple 状态变成 `Accepted`，再复用已有 DMG 续跑：
+
+```bash
+xcrun notarytool info <submission-id> --keychain-profile starcat-notary
+STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_NOTARY_SUBMISSION_ID=<submission-id> ./scripts/release-direct.sh 1.0.0
+```
 
 默认远程配置与 `pages/deploy.sh` 保持一致：
 

@@ -12,6 +12,7 @@
 #                                     未设置时默认使用本机 Starcat Developer ID 证书。
 #   STARCAT_NOTARIZE=1                 生成 DMG 后提交 Apple Notary。
 #   STARCAT_NOTARY_PROFILE             notarytool Keychain profile，推荐值 starcat-notary。
+#   *.notary-submission-id             脚本在等待超时时写入 Submission ID，供 release-direct.sh 断点续跑。
 #   APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD
 #                                     未配置 STARCAT_NOTARY_PROFILE 时的兼容凭证。
 #   STARCAT_GENERATE_APPCAST=1         使用 Sparkle generate_appcast 生成当前版本 appcast。
@@ -49,6 +50,8 @@ APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
+NOTARY_SUBMISSION_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.notary-submission-id"
+NOTARY_OUTPUT_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.notary-submit.log"
 DMG_BACKGROUND_PATH="${PROJECT_ROOT}/scripts/assets/dmg-background.png"
 BUILD_LOG="${DIST_DIR}/xcodebuild-direct.log"
 BUILD_NUMBER="${STARCAT_DIRECT_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
@@ -76,7 +79,7 @@ esac
 cd "$PROJECT_ROOT"
 mkdir -p "$DIST_DIR" "$DOWNLOADS_DIR"
 rm -rf "$DERIVED_DIR" "$STAGING_DIR" "$APPCAST_INPUT_DIR"
-rm -f "$DMG_PATH" "$SHA_PATH" "$CURRENT_APPCAST_PATH"
+rm -f "$DMG_PATH" "$SHA_PATH" "$CURRENT_APPCAST_PATH" "$NOTARY_SUBMISSION_PATH" "$NOTARY_OUTPUT_PATH"
 
 log "同步 Xcode 工程"
 xcodegen generate >/dev/null
@@ -196,18 +199,37 @@ if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   fi
 
   if [ -n "$NOTARY_PROFILE" ]; then
+    set +e
     xcrun notarytool submit "$DMG_PATH" \
       --keychain-profile "$NOTARY_PROFILE" \
-      --wait
+      --wait 2>&1 | tee "$NOTARY_OUTPUT_PATH"
+    NOTARY_EXIT=${PIPESTATUS[0]}
+    set -e
   else
     [ -n "${APPLE_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_ID"
     [ -n "${APPLE_TEAM_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_TEAM_ID"
     [ -n "${APPLE_APP_PASSWORD:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_APP_PASSWORD"
+    set +e
     xcrun notarytool submit "$DMG_PATH" \
       --apple-id "$APPLE_ID" \
       --team-id "$APPLE_TEAM_ID" \
       --password "$APPLE_APP_PASSWORD" \
-      --wait
+      --wait 2>&1 | tee "$NOTARY_OUTPUT_PATH"
+    NOTARY_EXIT=${PIPESTATUS[0]}
+    set -e
+  fi
+
+  SUBMISSION_ID="$(sed -n 's/^[[:space:]]*id:[[:space:]]*//p' "$NOTARY_OUTPUT_PATH" | head -1)"
+  if [ -n "$SUBMISSION_ID" ]; then
+    printf '%s\n' "$SUBMISSION_ID" > "$NOTARY_SUBMISSION_PATH"
+    log "notarization submission id: $SUBMISSION_ID"
+  fi
+
+  if [ "$NOTARY_EXIT" -ne 0 ]; then
+    if [ -n "$SUBMISSION_ID" ]; then
+      fail "notarization 等待失败；Submission ID 已保存到 $NOTARY_SUBMISSION_PATH。Accepted 后可用 STARCAT_NOTARY_SUBMISSION_ID=$SUBMISSION_ID 续跑 release-direct.sh"
+    fi
+    fail "notarization 提交或等待失败，完整输出: $NOTARY_OUTPUT_PATH"
   fi
 
   log "staple DMG"

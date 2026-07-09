@@ -180,7 +180,13 @@ STARCAT_SPARKLE_PUBLIC_ED_KEY="你的 Sparkle EdDSA 公钥" \
 dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和 `starcat-notary`，正式发布最简命令是：
 
 ```bash
-STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.0.0
+STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.0.0
+```
+
+如果 Apple notarization 已收到 Submission ID 但 `--wait` 网络超时，等状态变成 `Accepted` 后续跑：
+
+```bash
+STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_NOTARY_SUBMISSION_ID=<submission-id> ./scripts/release-direct.sh 1.0.0
 ```
 
 `release-direct.sh` 会执行：

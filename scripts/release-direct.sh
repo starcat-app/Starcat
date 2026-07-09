@@ -26,7 +26,7 @@ Starcat Direct 一键发布脚本
 示例:
   # 完整发布 1.0.0：检查 main/干净工作区，创建并推送 v1.0.0 tag，
   # 部署 nginx 和官网，打包 Direct DMG，上传 appcast/DMG/SHA256 并校验线上 URL。
-  STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/release-direct.sh 1.0.0
+  STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.0.0
 
   # 演练完整流程，不创建 tag、不推送、不上传、不部署、不做线上校验。
   STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.0.0
@@ -60,6 +60,11 @@ Starcat Direct 一键发布脚本
 
   STARCAT_NOTARY_PROFILE=starcat-notary
       透传给 package-direct.sh。推荐使用 notarytool Keychain profile，避免在命令行暴露密码。
+      未设置时默认使用本机已保存的 starcat-notary。
+
+  STARCAT_NOTARY_SUBMISSION_ID=<uuid>
+      notarization 已提交但 --wait 超时后的断点续跑入口。脚本会复用现有 DMG，
+      查询该 submission 状态；Accepted 后自动 staple、生成 appcast 并继续上传。
 
   STARCAT_DIRECT_SIGN_IDENTITY="Developer ID Application: liwen gong (8WCUMGCWMB)"
       透传给 package-direct.sh。Direct 公开发布用 Developer ID Application 签名身份；
@@ -130,10 +135,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PAGES_DIR="${PROJECT_ROOT}/pages/direct"
 DOWNLOADS_DIR="${PROJECT_ROOT}/dist/direct/downloads"
+DERIVED_DIR="${PROJECT_ROOT}/dist/direct/DerivedData"
+APPCAST_INPUT_DIR="${PROJECT_ROOT}/dist/direct/appcast-input"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 APPCAST_PATH="${PAGES_DIR}/appcast.xml"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
+NOTARY_SUBMISSION_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.notary-submission-id"
 
 RELEASE_BRANCH="${STARCAT_RELEASE_BRANCH:-main}"
 RELEASE_REMOTE="${STARCAT_RELEASE_REMOTE:-origin}"
@@ -255,11 +263,107 @@ deploy_site() {
 }
 
 package_direct() {
+  local submission_id
+  submission_id="$(existing_notary_submission_id)"
+  if [ -n "$submission_id" ]; then
+    resume_notarized_package "$submission_id"
+    return
+  fi
+
   log "本地打包并生成 Sparkle appcast: ${VERSION}"
   run_or_print env \
     STARCAT_GENERATE_APPCAST=1 \
     STARCAT_DOWNLOAD_BASE_URL="$DOWNLOAD_BASE_URL" \
     "${SCRIPT_DIR}/package-direct.sh" "$VERSION"
+}
+
+existing_notary_submission_id() {
+  if [ -n "${STARCAT_NOTARY_SUBMISSION_ID:-}" ]; then
+    printf '%s\n' "$STARCAT_NOTARY_SUBMISSION_ID"
+    return
+  fi
+
+  if [ -f "$NOTARY_SUBMISSION_PATH" ]; then
+    head -1 "$NOTARY_SUBMISSION_PATH"
+  fi
+}
+
+notary_auth_args() {
+  if [ -n "${STARCAT_NOTARY_PROFILE:-}" ]; then
+    printf '%s\n' "--keychain-profile"
+    printf '%s\n' "$STARCAT_NOTARY_PROFILE"
+    return
+  fi
+
+  if [ -n "${APPLE_ID:-}" ] || [ -n "${APPLE_TEAM_ID:-}" ] || [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+    [ -n "${APPLE_ID:-}" ] || fail "STARCAT_NOTARY_SUBMISSION_ID 续跑需要 STARCAT_NOTARY_PROFILE 或 APPLE_ID"
+    [ -n "${APPLE_TEAM_ID:-}" ] || fail "STARCAT_NOTARY_SUBMISSION_ID 续跑需要 STARCAT_NOTARY_PROFILE 或 APPLE_TEAM_ID"
+    [ -n "${APPLE_APP_PASSWORD:-}" ] || fail "STARCAT_NOTARY_SUBMISSION_ID 续跑需要 STARCAT_NOTARY_PROFILE 或 APPLE_APP_PASSWORD"
+    printf '%s\n' "--apple-id"
+    printf '%s\n' "$APPLE_ID"
+    printf '%s\n' "--team-id"
+    printf '%s\n' "$APPLE_TEAM_ID"
+    printf '%s\n' "--password"
+    printf '%s\n' "$APPLE_APP_PASSWORD"
+    return
+  fi
+
+  printf '%s\n' "--keychain-profile"
+  printf '%s\n' "starcat-notary"
+}
+
+resume_notarized_package() {
+  [ "$DRY_RUN" = "1" ] && return
+
+  local submission_id="$1"
+  [ -f "$DMG_PATH" ] || fail "续跑 notarization 需要现有 DMG: $DMG_PATH"
+  [ -f "$SHA_PATH" ] || fail "续跑 notarization 需要现有 SHA256: $SHA_PATH"
+
+  log "续跑 notarization: $submission_id"
+  local auth_args=()
+  while IFS= read -r arg; do
+    auth_args+=("$arg")
+  done < <(notary_auth_args)
+
+  local info status
+  info="$(xcrun notarytool info "$submission_id" "${auth_args[@]}")"
+  printf '%s\n' "$info"
+  status="$(printf '%s\n' "$info" | sed -n 's/^status: //p' | head -1)"
+
+  case "$status" in
+    Accepted)
+      log "notarization 已通过，继续 staple 和本地校验"
+      ;;
+    "In Progress")
+      fail "notarization 仍在处理中，请稍后重跑同一条命令"
+      ;;
+    Invalid)
+      fail "notarization 被拒绝，请执行: xcrun notarytool log $submission_id ${auth_args[*]}"
+      ;;
+    *)
+      fail "无法识别 notarization 状态: ${status:-<empty>}"
+      ;;
+  esac
+
+  xcrun stapler staple "$DMG_PATH"
+  xcrun stapler validate "$DMG_PATH"
+  spctl --assess --type open --verbose "$DMG_PATH"
+
+  generate_current_appcast_from_existing_dmg
+}
+
+generate_current_appcast_from_existing_dmg() {
+  local generate_appcast
+  generate_appcast="$(find "$DERIVED_DIR" -path '*/Sparkle/bin/generate_appcast' -type f | head -1)"
+  [ -n "$generate_appcast" ] || fail "未找到 Sparkle generate_appcast；请重新跑一次完整打包"
+
+  log "基于现有 DMG 生成当前版本 appcast: $CURRENT_APPCAST_PATH"
+  rm -rf "$APPCAST_INPUT_DIR"
+  mkdir -p "$APPCAST_INPUT_DIR"
+  cp "$DMG_PATH" "$APPCAST_INPUT_DIR/"
+  "$generate_appcast" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"
+  cp "$APPCAST_INPUT_DIR/appcast.xml" "$CURRENT_APPCAST_PATH"
+  rm -rf "$APPCAST_INPUT_DIR"
 }
 
 verify_local_artifacts() {
