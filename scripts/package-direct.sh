@@ -185,9 +185,19 @@ printf '%s  %s\n' "$SHA256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
 
 if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   log "提交 notarization"
-  if [ -n "${STARCAT_NOTARY_PROFILE:-}" ]; then
+  NOTARY_PROFILE="${STARCAT_NOTARY_PROFILE:-}"
+  if [ -z "$NOTARY_PROFILE" ] \
+    && [ -z "${APPLE_ID:-}" ] \
+    && [ -z "${APPLE_TEAM_ID:-}" ] \
+    && [ -z "${APPLE_APP_PASSWORD:-}" ]; then
+    # dong4j 本机已用 notarytool 将该 profile 保存到 Keychain。
+    # 这里提供默认值，让正式发布命令只需要开启 STARCAT_NOTARIZE=1。
+    NOTARY_PROFILE="starcat-notary"
+  fi
+
+  if [ -n "$NOTARY_PROFILE" ]; then
     xcrun notarytool submit "$DMG_PATH" \
-      --keychain-profile "$STARCAT_NOTARY_PROFILE" \
+      --keychain-profile "$NOTARY_PROFILE" \
       --wait
   else
     [ -n "${APPLE_ID:-}" ] || fail "STARCAT_NOTARIZE=1 需要 STARCAT_NOTARY_PROFILE 或 APPLE_ID"
