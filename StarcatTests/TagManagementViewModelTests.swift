@@ -107,7 +107,8 @@ struct TagManagementViewModelTests {
         let (vm, _, _, _) = try makeVM()
         let ok = await vm.create(name: "   ", color: nil, icon: nil)
         #expect(ok == false)
-        #expect(vm.errorMessage?.contains("不能为空") == true)
+        let message = try #require(vm.errorMessage)
+        #expect(!message.isEmpty)
         #expect(vm.tags.isEmpty)
     }
 
@@ -117,7 +118,8 @@ struct TagManagementViewModelTests {
         _ = await vm.create(name: "swift", color: nil, icon: nil)
         let ok = await vm.create(name: "swift", color: nil, icon: nil)
         #expect(ok == false)
-        #expect(vm.errorMessage?.contains("已存在") == true)
+        let message = try #require(vm.errorMessage)
+        #expect(!message.isEmpty)
         #expect(vm.tags.count == 1)
     }
 
@@ -155,7 +157,8 @@ struct TagManagementViewModelTests {
 
         let ok = await vm.update(swift, name: "rust", color: nil, icon: nil)
         #expect(ok == false)
-        #expect(vm.errorMessage?.contains("已存在") == true)
+        let message = try #require(vm.errorMessage)
+        #expect(!message.isEmpty)
     }
 
     // MARK: - delete

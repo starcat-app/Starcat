@@ -9,7 +9,9 @@ import Foundation
 import Testing
 @testable import Starcat
 
-@Suite("RelativeTimeText")
+// 此 Suite 会临时改写 UserDefaults.standard 的显示语言。必须独占执行，避免同时运行的
+// UI/Agent 测试读到中间态语言并把本地化文案误判为功能失败。
+@Suite("RelativeTimeText", .serialized)
 struct RelativeTimeTextTests {
 
     private let locale = Locale(identifier: "zh-Hans")
