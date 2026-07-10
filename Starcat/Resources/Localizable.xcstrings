@@ -4048,15 +4048,176 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Artifact Inspector"
+            "value" : "Run Inspector"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Artifact Inspector"
+            "value" : "运行检查器"
           }
         }
+      }
+    },
+    "agent.workspace.inspector.approval.permission" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permission" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "权限" } }
+      }
+    },
+    "agent.workspace.inspector.approval.risk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Execution Risk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行风险" } }
+      }
+    },
+    "agent.workspace.inspector.approval.riskDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approval executes this exact tool call once. Review its arguments before allowing changes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "批准后仅执行这一次原始工具调用。允许写入前请核对参数。" } }
+      }
+    },
+    "agent.workspace.inspector.approval.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Review the pending tool call" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审核待执行的工具调用" } }
+      }
+    },
+    "agent.workspace.inspector.approval.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending Tool" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待审批工具" } }
+      }
+    },
+    "agent.workspace.inspector.artifact.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Inspect and export the selected artifact" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检查并导出当前产出物" } }
+      }
+    },
+    "agent.workspace.inspector.artifactMetadataFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ · %d characters" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ · %d 字符" } }
+      }
+    },
+    "agent.workspace.inspector.artifactPicker" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifact" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "产出物" } }
+      }
+    },
+    "agent.workspace.inspector.summary.error" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Error" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "错误" } }
+      }
+    },
+    "agent.workspace.inspector.summary.messages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Messages" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "消息" } }
+      }
+    },
+    "agent.workspace.inspector.summary.status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "状态" } }
+      }
+    },
+    "agent.workspace.inspector.summary.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current run facts and usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前运行事实与用量" } }
+      }
+    },
+    "agent.workspace.inspector.summary.tokens" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Token" } }
+      }
+    },
+    "agent.workspace.inspector.summary.toolCalls" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool Calls" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具调用" } }
+      }
+    },
+    "agent.workspace.timeline.approval" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approval" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审批" } }
+      }
+    },
+    "agent.workspace.timeline.execution" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Execution" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行信息" } }
+      }
+    },
+    "agent.workspace.timeline.input" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Input" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输入" } }
+      }
+    },
+    "agent.workspace.timeline.output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Output" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输出" } }
+      }
+    },
+    "agent.workspace.timeline.reasoning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reasoning" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "思考过程" } }
+      }
+    },
+    "agent.workspace.timeline.reviewArguments" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Review Arguments" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "核对参数" } }
+      }
+    },
+    "agent.workspace.timeline.sources" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sources" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来源" } }
+      }
+    },
+    "agent.workspace.timeline.toolCall" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool Call" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具调用" } }
+      }
+    },
+    "agent.workspace.timeline.toolResult" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool Result" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具结果" } }
       }
     },
     "agent.workspace.meta.inputFormat" : {

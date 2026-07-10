@@ -197,18 +197,18 @@
 
 ### 5.10 Workspace Timeline 与 Inspector
 
-- [ ] 中栏改为统一 message timeline:user 靠右,assistant/tool/artifact 靠左。
-- [ ] assistant reasoning/text 支持真实流式追加,完成后与持久化消息一致。
-- [ ] tool-call 节点展示 name、arguments、状态和 sequence,可展开。
-- [ ] tool-result 节点展示 output/error/elapsed/sources/retry,可展开并关联 tool-call。
-- [ ] approval 节点展示等待、批准、拒绝和取消状态。
-- [ ] artifact 节点按 sequence 位于实际生成位置,点击联动右侧 Inspector。
-- [ ] Inspector 只展示当前选中 artifact、pending approval 或 run summary,不按 Agent 写专用假面板。
+- [x] 中栏改为统一 message timeline:user 靠右,assistant/tool/artifact 靠左。
+- [~] assistant text 已真实流式追加并在落库后切换到持久化消息;reasoning 实时增量展示待补。
+- [x] tool-call 节点展示 name、arguments、状态和 sequence,可展开。
+- [~] tool-result 已展示 output/error/elapsed/sources 并关联 tool-call;逐次 retry 审计待补。
+- [x] approval 节点展示等待、批准、拒绝和取消状态。
+- [x] artifact 节点按 sequence 位于实际生成位置,点击联动右侧 Inspector。
+- [x] Inspector 只展示当前选中 artifact、pending approval 或 run summary,不按 Agent 写专用假面板。
 - [ ] 复制、导出、artifact 选择继续使用真实状态并补错误反馈。
-- [ ] 删除固定 step kind 猜测、completed fallback、空附件按钮、静态演示延迟和其他占位行为。
+- [~] 已删除固定 step kind 猜测、completed fallback、静态演示延迟和旧 UI 事件;空附件按钮待附件功能闭环。
 - [ ] 没有附件能力前不显示附件按钮;不得保留空 action。
-- [ ] 空工作台不注入 demo prompt、demo plan、demo message 或 demo artifact。
-- [ ] 补 timeline ordering、流式合并、展开数据、artifact selection、approval 操作、历史恢复和空态单测。
+- [x] 空工作台不注入 demo prompt、demo plan、demo message 或 demo artifact。
+- [~] 已补 timeline ordering 与历史恢复单测;流式合并、artifact selection、approval 操作和空态覆盖待补。
 
 ### 5.11 i18n、日志与可观测性
 

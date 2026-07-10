@@ -27,11 +27,6 @@ final class AgentWorkspaceViewModel {
     var prompt: String
     var runTitle: String = "Ready"
     var status: AgentRunStatus = .idle
-    var planSteps: [AgentPlanStep] = []
-    var steps: [AgentRunStep] = []
-    var toolOutputs: [AgentToolOutput] = []
-    var traceSpans: [AgentTraceSpan] = []
-    var pendingConfirmations: [AgentConfirmationAction] = []
     var approvals: [AgentApprovalRequest] = []
     var messages: [AgentMessage] = []
     var usage: AgentUsage = .zero
@@ -119,11 +114,6 @@ final class AgentWorkspaceViewModel {
         runTask?.cancel()
         status = .planning
         runTitle = selectedAgent.title
-        planSteps = []
-        steps = []
-        toolOutputs = []
-        traceSpans = []
-        pendingConfirmations = []
         approvals = []
         messages = []
         usage = .zero
@@ -199,31 +189,20 @@ final class AgentWorkspaceViewModel {
         case .runStarted(let title):
             runTitle = title
             status = .running
-        case .planCreated(let plan):
-            planSteps = plan
-        case .stepStarted:
-            status = .running
-        case .stepUpdated(let step):
-            upsert(step)
-        case .toolOutput(let output):
-            toolOutputs.append(output)
-        case .trace(let span):
-            upsert(span)
-        case .confirmationRequested(let action):
-            if !pendingConfirmations.contains(where: { $0.id == action.id }) {
-                pendingConfirmations.append(action)
-            }
         case .approvalUpdated(let approval):
             upsert(approval)
             if approval.status == .pending {
                 status = .waitingForConfirmation
             } else {
-                pendingConfirmations.removeAll { $0.id == approval.id }
                 if status == .waitingForConfirmation { status = .running }
             }
         case .messageAppended(let message):
             activeRunID = message.runID
             messages.append(message)
+            if message.role == .assistant {
+                // 流式文本只负责显示尚未落库的增量；assistant message 成为事实后立即清空。
+                assistantOutput = ""
+            }
         case .usageUpdated(let nextUsage):
             usage = nextUsage
         case .assistantDelta(let text):
@@ -246,22 +225,6 @@ final class AgentWorkspaceViewModel {
         }
     }
 
-    private func upsert(_ step: AgentRunStep) {
-        if let index = steps.firstIndex(where: { $0.id == step.id }) {
-            steps[index] = step
-        } else {
-            steps.append(step)
-        }
-    }
-
-    private func upsert(_ span: AgentTraceSpan) {
-        if let index = traceSpans.firstIndex(where: { $0.id == span.id }) {
-            traceSpans[index] = span
-        } else {
-            traceSpans.append(span)
-        }
-    }
-
     private func apply(_ snapshot: AgentRunSnapshotRecord) {
         activeRunID = UUID(uuidString: snapshot.run.id)
         selectedHistoryRunID = snapshot.run.id
@@ -269,30 +232,16 @@ final class AgentWorkspaceViewModel {
         runTitle = snapshot.run.title
         prompt = snapshot.run.userPrompt
         status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
-        planSteps = []
         messages = snapshot.messages
         usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in
             var merged = partial
             merged.merge(next)
             return merged
         }
-        let projection = Self.legacyProjection(from: snapshot.messages)
-        steps = projection.steps
-        toolOutputs = projection.outputs
-        traceSpans = projection.traces
         approvals = snapshot.approvals
-        pendingConfirmations = approvals.filter { $0.status == .pending }.map { approval in
-            AgentConfirmationAction(
-                id: approval.id,
-                title: approval.toolName,
-                detail: approval.permission.rawValue,
-                toolName: approval.toolName,
-                input: (try? approval.input.jsonString()) ?? "{}"
-            )
-        }
         artifacts = snapshot.artifacts
         selectedArtifactID = artifacts.first?.id
-        assistantOutput = Self.finalAssistantText(snapshot.messages)
+        assistantOutput = ""
         errorMessage = snapshot.run.errorMessage
     }
 
@@ -311,56 +260,6 @@ final class AgentWorkspaceViewModel {
             }
             await self?.reloadHistory()
         }
-    }
-
-    private static func legacyProjection(
-        from messages: [AgentMessage]
-    ) -> (steps: [AgentRunStep], outputs: [AgentToolOutput], traces: [AgentTraceSpan]) {
-        let calls = messages.flatMap { message in
-            message.parts.compactMap { part -> AgentToolCall? in
-                guard case .toolCall(let call) = part else { return nil }
-                return call
-            }
-        }
-        let results = Dictionary(uniqueKeysWithValues: messages.flatMap { message in
-            message.parts.compactMap { part -> (String, AgentToolResultMessage)? in
-                guard case .toolResult(let result) = part else { return nil }
-                return (result.toolCallID, result)
-            }
-        })
-        let steps = calls.map { call in
-            let result = results[call.id]
-            return AgentRunStep(
-                title: call.name,
-                detail: result?.status.rawValue ?? "pending",
-                status: stepStatus(result?.status)
-            )
-        }
-        let outputs = calls.compactMap { call -> AgentToolOutput? in
-            guard let result = results[call.id] else { return nil }
-            let output = (try? result.output.jsonString()) ?? "{}"
-            return AgentToolOutput(
-                toolName: call.name,
-                summary: result.status.rawValue,
-                detail: output,
-                input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}"),
-                output: output,
-                log: "elapsed_ms=\(result.elapsedMilliseconds)"
-            )
-        }
-        let traces = outputs.map { output in
-            AgentTraceSpan(
-                kind: "Tool",
-                title: output.toolName,
-                summary: output.summary,
-                input: output.input,
-                output: output.output,
-                log: output.log,
-                status: output.summary == AgentToolResultStatus.completed.rawValue ? .completed : .failed,
-                relatedToolOutputID: output.id
-            )
-        }
-        return (steps, outputs, traces)
     }
 
     private func upsert(_ approval: AgentApprovalRequest) {
@@ -385,26 +284,6 @@ final class AgentWorkspaceViewModel {
                 decision: decision
             ))
         }
-    }
-
-    private static func stepStatus(_ status: AgentToolResultStatus?) -> AgentStepStatus {
-        switch status {
-        case .completed:
-            return .completed
-        case .skipped:
-            return .skipped
-        case .failed, .timedOut, .rejected:
-            return .failed
-        case nil:
-            return .pending
-        }
-    }
-
-    private static func finalAssistantText(_ messages: [AgentMessage]) -> String {
-        messages.reversed().first(where: { $0.role == .assistant })?.parts.compactMap { part in
-            guard case .text(let text) = part else { return nil }
-            return text
-        }.joined(separator: "\n") ?? ""
     }
 
     private func suggestedFilename(for artifact: AgentArtifact) -> String {

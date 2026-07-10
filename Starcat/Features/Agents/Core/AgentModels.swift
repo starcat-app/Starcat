@@ -85,46 +85,6 @@ enum AgentArtifactType: String, Codable, Hashable, Sendable {
     }
 }
 
-/// Runtime 生成的执行计划步骤。
-///
-/// 计划步骤和时间线步骤分开保存：计划是 Agent 准备怎么做，时间线是实际做到了哪一步。
-/// 后续接入真实 tool-calling 后，计划可来自模型 structured output，而时间线来自工具执行事件。
-struct AgentPlanStep: Identifiable, Hashable, Sendable {
-    let id: UUID
-    var title: String
-    var detail: String
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        detail: String
-    ) {
-        self.id = id
-        self.title = title
-        self.detail = detail
-    }
-}
-
-/// Agent 时间线中的一个步骤。
-struct AgentRunStep: Identifiable, Hashable, Sendable {
-    let id: UUID
-    var title: String
-    var detail: String
-    var status: AgentStepStatus
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        detail: String,
-        status: AgentStepStatus = .pending
-    ) {
-        self.id = id
-        self.title = title
-        self.detail = detail
-        self.status = status
-    }
-}
-
 /// Agent 工具输出摘要。
 ///
 /// 这里先记录 compact output,而不是完整原始数据。真实 tool-calling 接入后,完整原始响应
@@ -154,32 +114,6 @@ struct AgentToolOutput: Identifiable, Hashable, Sendable {
         self.input = input
         self.output = output
         self.log = log
-    }
-}
-
-/// Agent 请求用户确认的动作。
-///
-/// 当前只负责展示和审计,不执行写入。后续接 tag / note / status / star 写操作时,
-/// 必须先生成这个动作,用户确认后再调用对应写工具。
-struct AgentConfirmationAction: Identifiable, Hashable, Sendable {
-    let id: UUID
-    var title: String
-    var detail: String
-    var toolName: String
-    var input: String
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        detail: String,
-        toolName: String,
-        input: String
-    ) {
-        self.id = id
-        self.title = title
-        self.detail = detail
-        self.toolName = toolName
-        self.input = input
     }
 }
 
@@ -312,12 +246,6 @@ struct AgentTraceSpan: Identifiable, Hashable, Sendable {
 /// 替换成模型 tool-calling runtime 或 AgentRunKit runtime 时，Workspace 不需要重写。
 enum AgentRunEvent: Sendable {
     case runStarted(title: String)
-    case planCreated([AgentPlanStep])
-    case stepStarted(id: UUID)
-    case stepUpdated(AgentRunStep)
-    case toolOutput(AgentToolOutput)
-    case trace(AgentTraceSpan)
-    case confirmationRequested(AgentConfirmationAction)
     case approvalUpdated(AgentApprovalRequest)
     case messageAppended(AgentMessage)
     case usageUpdated(AgentUsage)

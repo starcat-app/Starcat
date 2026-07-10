@@ -122,7 +122,6 @@ struct AgentToolResult: Sendable {
     var output: AgentToolOutput
     var trace: AgentTraceSpan
     var payload: AgentToolPayload
-    var confirmationAction: AgentConfirmationAction?
     var sources: [AgentToolResultSource]
 
     init(
@@ -130,14 +129,12 @@ struct AgentToolResult: Sendable {
         output: AgentToolOutput,
         trace: AgentTraceSpan,
         payload: AgentToolPayload = .none,
-        confirmationAction: AgentConfirmationAction? = nil,
         sources: [AgentToolResultSource] = []
     ) {
         self.status = status
         self.output = output
         self.trace = trace
         self.payload = payload
-        self.confirmationAction = confirmationAction
         self.sources = sources
     }
 }

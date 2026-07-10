@@ -264,7 +264,6 @@ struct LoopAgentRuntime: AgentRuntime {
             continuation.yield(.messageAppended(toolMessage))
             if let result = restored.execution.result {
                 applyPayload(result.payload, payload: &payload, values: &values)
-                emitLegacyToolEvents(result, continuation: continuation)
             }
         } else {
             let initialRequest = promptBuilder.buildTurnRequest(
@@ -387,7 +386,6 @@ struct LoopAgentRuntime: AgentRuntime {
 
                 if let result = execution.result {
                     applyPayload(result.payload, payload: &payload, values: &values)
-                    emitLegacyToolEvents(result, continuation: continuation)
                     if case .markdown(let markdown) = result.payload {
                         if completesRun, execution.status == .completed {
                             // 完成工具的 artifact 延迟到本轮所有 tool-result 都写完后再提交，
@@ -533,13 +531,6 @@ struct LoopAgentRuntime: AgentRuntime {
         await approvalCoordinator.prepare(approval)
         try await persistApproval(approval, runStatus: .waitingForConfirmation)
         continuation.yield(.approvalUpdated(approval))
-        continuation.yield(.confirmationRequested(AgentConfirmationAction(
-            id: approval.id,
-            title: call.name,
-            detail: tool.permission.rawValue,
-            toolName: call.name,
-            input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}")
-        )))
 
         return try await resolvePreparedApproval(
             approval: approval,
@@ -638,13 +629,6 @@ struct LoopAgentRuntime: AgentRuntime {
 
         await approvalCoordinator.prepare(approval)
         continuation.yield(.approvalUpdated(approval))
-        continuation.yield(.confirmationRequested(AgentConfirmationAction(
-            id: approval.id,
-            title: call.name,
-            detail: tool.permission.rawValue,
-            toolName: call.name,
-            input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}")
-        )))
         let execution = try await resolvePreparedApproval(
             approval: approval,
             tool: tool,
@@ -770,23 +754,6 @@ struct LoopAgentRuntime: AgentRuntime {
             values["externalContextMarkdown"] = markdown
         default:
             payload = next
-        }
-    }
-
-    private func emitLegacyToolEvents(
-        _ result: AgentToolResult,
-        continuation: AsyncStream<AgentRunEvent>.Continuation
-    ) {
-        let step = AgentRunStep(
-            title: result.output.toolName,
-            detail: result.output.summary,
-            status: result.status.stepStatus
-        )
-        continuation.yield(.stepUpdated(step))
-        continuation.yield(.toolOutput(result.output))
-        continuation.yield(.trace(result.trace))
-        if let action = result.confirmationAction {
-            continuation.yield(.confirmationRequested(action))
         }
     }
 

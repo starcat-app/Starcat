@@ -6,7 +6,7 @@
 //
 //  这些测试不验证 SwiftUI 布局,只锁住 ViewModel 对 AgentRunEvent 的状态投影。
 //  这样后续 runtime 从本地只读工具切换到模型 tool-calling 时,工作台仍能依赖
-//  同一组 plan / step / tool output / artifact 状态。
+//  同一组 message / approval / artifact 事实状态。
 //
 
 import Foundation
@@ -19,23 +19,15 @@ struct AgentWorkspaceViewModelTests {
 
     @Test("run 会把 runtime 事件投影成工作台状态")
     func runProjectsRuntimeEventsIntoWorkspaceState() async throws {
-        let step = AgentRunStep(title: "生成周刊", detail: "生成 Markdown", status: .completed)
+        let runID = UUID()
         let artifact = AgentArtifact(type: .markdown, title: "周刊", content: "# 周刊")
         let logArtifact = AgentArtifact(type: .log, title: "日志", content: "# Log")
-        let traceSpan = AgentTraceSpan(
-            kind: "Tool",
-            title: "report.generate",
-            summary: "ok",
-            input: #"{"prompt":"生成周刊"}"#,
-            output: #"{"artifact":"markdown"}"#,
-            log: "latency=1ms"
-        )
+        let user = AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("生成周刊")])
+        let assistant = AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.text("开始整理")])
         let runtime = EventReplayAgentRuntime(events: [
             .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
-            .planCreated([AgentPlanStep(title: "计划", detail: "确认输出")]),
-            .stepUpdated(step),
-            .toolOutput(AgentToolOutput(toolName: "report.generate", summary: "ok", detail: "done")),
-            .trace(traceSpan),
+            .messageAppended(user),
+            .messageAppended(assistant),
             .artifactCreated(artifact),
             .artifactCreated(logArtifact),
             .runCompleted
@@ -50,10 +42,7 @@ struct AgentWorkspaceViewModelTests {
         try await waitUntil { viewModel.status == .completed }
 
         #expect(viewModel.runTitle == BuiltInAgents.githubWeeklyReport.title)
-        #expect(viewModel.planSteps.count == 1)
-        #expect(viewModel.steps == [step])
-        #expect(viewModel.toolOutputs.count == 1)
-        #expect(viewModel.traceSpans == [traceSpan])
+        #expect(viewModel.messages.map(\.role) == [.user, .assistant])
         #expect(viewModel.artifacts.count == 2)
         #expect(viewModel.selectedArtifact?.content == "# 周刊")
         #expect(viewModel.errorMessage == nil)
@@ -74,17 +63,19 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
-    @Test("confirmationRequested 会保存待确认动作")
-    func confirmationRequestedStoresPendingAction() async throws {
-        let action = AgentConfirmationAction(
-            title: "建议创建 tag: database",
-            detail: "确认后才写入 repo tag。",
-            toolName: "tag.propose",
-            input: #"{"tag":"database"}"#
+    @Test("approvalUpdated 会保存待审批事实")
+    func approvalUpdatedStoresPendingApproval() async throws {
+        let approval = AgentApprovalRequest(
+            runID: UUID(),
+            toolCallID: "call-tag",
+            toolName: "tag_propose",
+            input: .object(["tag": .string("database")]),
+            permission: .requiresConfirmation,
+            sequence: 1
         )
         let runtime = EventReplayAgentRuntime(events: [
             .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
-            .confirmationRequested(action),
+            .approvalUpdated(approval),
             .runCompleted
         ])
         let viewModel = AgentWorkspaceViewModel(
@@ -96,7 +87,7 @@ struct AgentWorkspaceViewModelTests {
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
 
-        #expect(viewModel.pendingConfirmations == [action])
+        #expect(viewModel.approvals == [approval])
     }
 
     @Test("run 会先冻结 context 再交给 runtime")
@@ -256,11 +247,9 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.selectedHistoryRunID == run.id)
         #expect(viewModel.prompt == "打开历史")
         #expect(viewModel.status == .completed)
-        #expect(viewModel.steps.map(\.title) == ["history_tool"])
-        #expect(viewModel.toolOutputs.map(\.toolName) == ["history_tool"])
-        #expect(viewModel.traceSpans.map(\.title) == ["history_tool"])
+        #expect(viewModel.messages.map(\.role) == [.user, .assistant, .tool, .assistant])
         #expect(viewModel.selectedArtifact?.content == "# 历史")
-        #expect(viewModel.assistantOutput == "# 历史")
+        #expect(viewModel.assistantOutput.isEmpty)
     }
 
     private func waitUntil(
