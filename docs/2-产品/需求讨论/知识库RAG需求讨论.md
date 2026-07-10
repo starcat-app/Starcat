@@ -152,5 +152,5 @@ Starcat 目前不存储 repo issues,也不打算把 issues 作为长期本地数
 3. 入口形态: 独立知识库问答工作台,与 Agent Workspace 同级但心智不同。
 4. 输出要求: streaming markdown 回答 + 引用 chip + 证据 Inspector。
 5. 上下文增强: issues / releases / PR 等只作为本轮远程临时上下文,不进入本地 RAG 索引。
-6. 可选增强: 后续允许用户在 Settings 中接入自托管 Meilisearch / Qdrant。
-7. 落地节奏: 先做只读问答闭环,再扩展历史、导出、建议动作和 Agent 联动。
+6. 可选增强: 本次交付即允许用户在 Settings 中接入自托管 Meilisearch / Qdrant,但默认仍为 Local。
+7. 落地节奏: 内部可以分批实现,产品按只读问答、历史、导出、远程上下文和可选后端完整闭环一次性交付;建议动作和 Agent 联动另立专项。

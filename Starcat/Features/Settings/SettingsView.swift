@@ -930,6 +930,8 @@ private struct StorageSettingsTab: View {
     @State private var resetDidComplete = false
     @State private var storageActionError: String?
     @State private var isTriggeringReadmePrefetch = false
+    @State private var ragIndexBytes: Int64 = 0
+    @State private var ragConversationStats: RAGConversationStatistics = .empty
 
     /// AI 代码上下文产物（精细化面板已搬到 AISettingsView，本 Tab 仅消费汇总数字
     /// + "清除全部"入口）。`@Observable` 单例直接订阅，外部 storage 写入立即反映。
@@ -965,7 +967,8 @@ private struct StorageSettingsTab: View {
     /// 单项缓存继续共用 confirmationDialog；"删除全部缓存"已经升级为危险区 sheet，
     /// 但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory, aiContext, codeFlow, codebaseMemory, all
+        case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory
+        case ragIndex, ragHistory, aiContext, codeFlow, codebaseMemory, all
         var id: String {
             switch self {
             case .readme:       return "readme"
@@ -976,6 +979,8 @@ private struct StorageSettingsTab: View {
             case .wiki:         return "wiki"
             case .recommendation: return "recommendation"
             case .chatHistory:  return "chatHistory"
+            case .ragIndex:     return "ragIndex"
+            case .ragHistory:   return "ragHistory"
             case .aiContext:    return "aiContext"
             case .codeFlow:     return "codeFlow"
             case .codebaseMemory: return "codebaseMemory"
@@ -992,6 +997,8 @@ private struct StorageSettingsTab: View {
             case .wiki:         return String.l10n("settings.storage.clearWiki.confirm")
             case .recommendation: return String.l10n("settings.storage.clearRecommendation.confirm")
             case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
+            case .ragIndex:     return String.l10n("settings.storage.clearRAGIndex.confirm")
+            case .ragHistory:   return String.l10n("settings.storage.clearRAGHistory.confirm")
             case .aiContext:    return String.l10n("settings.storage.clearAiContext.confirm")
             case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.confirm")
             case .codebaseMemory: return String.l10n("settings.storage.clearCodebaseMemory.confirm")
@@ -1008,6 +1015,8 @@ private struct StorageSettingsTab: View {
             case .wiki:         return "settings.storage.clearWiki.message"
             case .recommendation: return "settings.storage.clearRecommendation.message"
             case .chatHistory:  return "settings.storage.clearChatHistory.message"
+            case .ragIndex:     return "settings.storage.clearRAGIndex.message"
+            case .ragHistory:   return "settings.storage.clearRAGHistory.message"
             case .aiContext:    return "settings.storage.clearAiContext.message"
             case .codeFlow:     return "settings.storage.clearCodeFlow.message"
             case .codebaseMemory: return "settings.storage.clearCodebaseMemory.message"
@@ -1025,6 +1034,8 @@ private struct StorageSettingsTab: View {
             && wikiCache.itemCount == 0
             && recommendationCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
+            && ragIndexBytes == 0
+            && ragConversationStats.conversationCount == 0
             && aiContextStorage.projectCount == 0
             && codeFlowStorage.projectCount == 0
             && codebaseMemoryStorage.projectCount == 0
@@ -1154,6 +1165,20 @@ private struct StorageSettingsTab: View {
                     helpKey: "settings.storage.chatHistory.help"
                 )
                 usageRow(
+                    titleKey: "settings.storage.ragIndex",
+                    usageText: ragIndexBytes.formattedByteSize,
+                    isEmpty: ragIndexBytes == 0,
+                    action: .ragIndex,
+                    helpKey: "settings.storage.ragIndex.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.ragHistory",
+                    usageText: ragHistoryUsageText,
+                    isEmpty: ragConversationStats.conversationCount == 0,
+                    action: .ragHistory,
+                    helpKey: "settings.storage.ragHistory.help"
+                )
+                usageRow(
                     titleKey: "settings.storage.aiContext",
                     usageText: aiContextUsageText,
                     isEmpty: aiContextStorage.projectCount == 0,
@@ -1243,6 +1268,7 @@ private struct StorageSettingsTab: View {
             translationCache.reload()
             externalSearchCache.reload()
             chatHistoryStore.reload()
+            await refreshRAGStorageStatistics()
         }
         .confirmationDialog(
             pendingAction?.confirmTitle ?? "",
@@ -1426,6 +1452,7 @@ private struct StorageSettingsTab: View {
         case .anySearch:
             do { try await externalSearchCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
+            await RAGRemoteContextMemoryCache.shared.removeAll()
         case .wiki:
             do { try wikiCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
@@ -1434,6 +1461,12 @@ private struct StorageSettingsTab: View {
             catch { storageActionError = error.localizedDescription }
         case .chatHistory:
             do { try chatHistoryStore.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
+        case .ragIndex:
+            do { try await dependencies.ragChunkRepository.deleteAll() }
+            catch { storageActionError = error.localizedDescription }
+        case .ragHistory:
+            do { try await dependencies.ragConversationStore.deleteAll() }
             catch { storageActionError = error.localizedDescription }
         case .aiContext:
             do { try aiContextStorage.deleteAllProjects() }
@@ -1454,6 +1487,7 @@ private struct StorageSettingsTab: View {
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
+            await RAGRemoteContextMemoryCache.shared.removeAll()
             do { try wikiCache.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
@@ -1463,6 +1497,14 @@ private struct StorageSettingsTab: View {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
             do { try chatHistoryStore.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try await dependencies.ragChunkRepository.deleteAll() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try await dependencies.ragConversationStore.deleteAll() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -1480,8 +1522,24 @@ private struct StorageSettingsTab: View {
             }
         }
         await refreshCacheStatistics(using: cleaner)
+        await refreshRAGStorageStatistics()
         isWorking = false
         pendingAction = nil
+    }
+
+    private var ragHistoryUsageText: String {
+        let size = ragConversationStats.totalBytes.formattedByteSize
+        return String(
+            format: String.l10n("settings.storage.ragHistory.usageFormat"),
+            ragConversationStats.conversationCount,
+            size
+        )
+    }
+
+    @MainActor
+    private func refreshRAGStorageStatistics() async {
+        ragIndexBytes = (try? await dependencies.ragChunkRepository.totalBytes()) ?? 0
+        ragConversationStats = (try? await dependencies.ragConversationStore.statistics()) ?? .empty
     }
 
     /// 执行“本机恢复出厂”。真正的删除逻辑在 AppDependencies / AppDataResetService；

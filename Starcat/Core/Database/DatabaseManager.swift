@@ -225,6 +225,7 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
     /// 期望表结构，让派生缓存能被重新生成。
     private static func repairPrelaunchDevelopmentSchema(on writer: any DatabaseWriter) throws {
         try writer.write { db in
+            try DatabaseMigrations.ensurePrelaunchRAGSchema(db)
             try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS repo_health_snapshots (
                     repo_id INTEGER PRIMARY KEY REFERENCES repos(id) ON DELETE CASCADE,

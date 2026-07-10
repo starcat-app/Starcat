@@ -79,6 +79,28 @@ struct ReadmeContentRepositoryTests {
         #expect(fetched == "v2")
     }
 
+    @Test("upsertContent 仅在正文变化时发送 RAG 刷新事件")
+    func contentChangeNotificationIsDiffAware() async throws {
+        let (baseRepository, db, repoId) = try await makeRepoAndDb()
+        _ = baseRepository
+        let center = NotificationCenter()
+        let repository = ReadmeRepository(database: db, notificationCenter: center)
+        var eventCount = 0
+        var eventRepoID: Int64?
+        let token = center.addObserver(forName: .readmeContentDidChange, object: nil, queue: nil) { notification in
+            eventCount += 1
+            eventRepoID = notification.userInfo?["repoId"] as? Int64
+        }
+        defer { center.removeObserver(token) }
+
+        try await repository.upsertContent(repoId: repoId, content: "v1", at: Date())
+        try await repository.upsertContent(repoId: repoId, content: "v1", at: Date().addingTimeInterval(1))
+        try await repository.upsertContent(repoId: repoId, content: "v2", at: Date().addingTimeInterval(2))
+
+        #expect(eventCount == 2)
+        #expect(eventRepoID == repoId)
+    }
+
     @Test("readme_contents 列存压缩 BLOB(磁盘不是明文)")
     func contentStoredAsCompressedBlob() async throws {
         let (repo, db, repoId) = try await makeRepoAndDb()

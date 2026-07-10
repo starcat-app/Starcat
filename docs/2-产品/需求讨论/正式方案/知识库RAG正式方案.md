@@ -74,7 +74,9 @@ RAG 默认只使用 `knowledge`。原因是 RAG 不是“找候选”,而是“�
 
 ### 3.4 远程临时上下文
 
-第一版不做通用联网 web RAG。MVP 只识别 issues / releases / PR 等远程临时上下文需求并提示当前版本暂未启用;后续 PR 再允许对本轮候选 repo 拉取受控的远程临时上下文。
+第一版不做通用联网 web RAG,但实现受控的 GitHub 远程临时上下文。Query Planner 只声明
+issues / PR / releases / contributors / commit activity / security advisories 等现场数据需求;
+本地候选 repo 确定后,必须由用户确认资源 chips,再对保留项发起请求。
 
 适用场景:
 
@@ -88,8 +90,9 @@ RAG 默认只使用 `knowledge`。原因是 RAG 不是“找候选”,而是“�
 约束:
 
 - 必须先由知识库范围筛出候选 repo。
-- MVP 不实际拉取 issues / releases / PR;启用后也只能对候选 repo 拉取。
+- 只能对知识库 SQL 候选 repo 拉取,GitHub Search 响应还要二次校验 repo 归属。
 - 远程数据不进入 `rag_chunks`,不生成 embedding,不进入 CloudKit。
+- 非 UI 调用方没有提供确认器时默认全部跳过,不能静默批准联网。
 - 失败时降级为“仅基于本地知识库回答”,不能让整轮问答失败。
 
 ## 4. 信息架构与入口
@@ -324,7 +327,7 @@ MVP 需要保存完整问答历史,但 citation 不保存完整 chunk 内容快�
 
 ### 9.1 高级自托管组件
 
-Meilisearch 和 Qdrant 可以作为后续高级选项接入,但不是第一版使用 RAG 的前置条件。
+Meilisearch 和 Qdrant 作为第一版高级可选后端提供,但不是使用 RAG 的前置条件。
 
 | 组件 | 角色 | 配置入口 | 默认状态 |
 |---|---|---|---|
@@ -332,13 +335,13 @@ Meilisearch 和 Qdrant 可以作为后续高级选项接入,但不是第一版�
 | SQLite embedding table | 本地 vector search | 内置 | 开启 |
 | Meilisearch | 自托管 keyword / hybrid search provider | Settings -> AI -> RAG Backend | 关闭 |
 | Qdrant | 自托管 vector store provider | Settings -> AI -> RAG Backend | 关闭 |
-| Reranker | cloud / local rerank provider | Settings -> AI -> RAG Backend | 关闭 |
 
 Settings 交互要求:
 
 - 默认展示“Local RAG Backend”,普通用户无需配置。
 - 高级开关打开后,才展示 Meilisearch / Qdrant endpoint、API key、index / collection。
-- 提供“测试连接”按钮,检查认证、index/collection 存在、向量维度和 embedding model 是否匹配。
+- 提供“测试连接”按钮,检查 endpoint 和认证;已有 Qdrant collection 还要校验 named vector,
+  首次不存在的 index/collection 在重建时创建。
 - provider 切换后,如果现有索引不可复用,提示需要重建索引。
 - 外部 provider 的 API key 存 Keychain。
 - 私有 repo 默认安全模式是不上传代码内容到云 embedding 或远程 RAG provider。
@@ -362,8 +365,9 @@ RAG 属于 Pro 能力,因为它需要:
 - 构建 RAG chunk 索引会调用 embedding API。
 - 每次提问会调用 chat 模型。
 - 默认检索在本地执行;启用 Meilisearch / Qdrant 后,检索请求和必要 payload 会发送到用户配置的自托管服务。
-- MVP 中如果问题需要 issues / releases / PR,只提示该能力暂未启用;后续启用后才会调用 GitHub API 拉取本轮候选 repo 的临时上下文。
-- 如果用户上传图片或附件,会随本轮请求发送给所选模型;不支持 vision/附件的模型需要在发送前阻断。
+- 问题需要 issues / releases / PR 等现场信息时,用户确认后才调用 GitHub API 拉取本轮候选 repo 的临时上下文。
+- 如果用户上传图片或附件,会随本轮请求发送给所选模型。OpenAI-compatible 服务没有统一的
+  vision capability 字段,Starcat 不按模型名猜测;服务端拒绝时原样展示错误并允许用户切换模型或移除图片。
 - 如果知识库很大,首次索引耗时较长。
 
 UI 不应夸大费用估算,只给用户可理解的提示:
@@ -392,12 +396,12 @@ UI 不应夸大费用估算,只给用户可理解的提示:
 
 1. 数据与索引: 新增 chunk-level RAG 索引,默认只覆盖知识库。
 2. Retriever: FTS + vector hybrid retrieval,输出 chunk citations 和命中方式。
-3. Remote Context: MVP 先识别并提示,后续对候选 repo 拉取 issues / releases / PR 等远程临时上下文。
+3. Remote Context: 对候选 repo 提议并确认 issues / releases / PR 等远程临时上下文,支持逐资源降级。
 4. Generator: RAG prompt、streaming 回答、引用解析。
 5. Command Composer: `@repo`、模型下拉、附件 chip、GitHub 链接识别。
 6. Workspace: 独立覆盖式知识库问答 UI。
-7. 历史与导出: MVP 保存本地会话历史,复制/导出 markdown 后置。
-8. 质量增强: Meilisearch / Qdrant provider、reranker、证据过滤、Agent 联动。
+7. 历史与导出: 保存完整本地问答历史和 citation metadata,支持复制与导出 Markdown。
+8. 质量增强: Meilisearch / Qdrant 可选 provider、证据过滤和后端回退;reranker、Agent 联动另立专项。
 
 ## 13. 成功标准
 

@@ -1,7 +1,7 @@
 # 30 — 知识库 RAG 详细设计
 
 > 日期: 2026-07-03
-> 状态: 设计方案, 尚未实现
+> 状态: 已按整体交付方案实现，自动化与真实数据验收记录见专项 checklist
 > 范围: 基于 Starcat 知识库的本地 RAG 索引、召回、生成、引用、工作台 UI 与落地 checklist
 >
 > 关联文档:
@@ -57,38 +57,33 @@
 
 ## 3. 模块拆分
 
-建议新增 `Starcat/Features/RAG`:
+最终实现按现有 Starcat 分层落在 `Core/RAG`、`Features/RAG/Core`、`Features/RAG/Storage` 和
+`Features/RAG/UI`，没有为了与设计草图同名而拆出只被一个页面使用的空壳组件：
 
 ```text
-Starcat/Features/RAG/
+Starcat/
+├── Core/RAG/
+│   ├── RAGChunkBuilder.swift
+│   ├── RAGChunkRepository.swift
+│   └── KnowledgeRAGIndexBuilder.swift
+└── Features/RAG/
 ├── Core/
 │   ├── KnowledgeRAGModels.swift
 │   ├── KnowledgeRAGQueryPlanner.swift
 │   ├── KnowledgeRAGService.swift
 │   ├── KnowledgeRAGRetriever.swift
-│   ├── RAGKeywordSearchProvider.swift
-│   ├── RAGVectorSearchProvider.swift
-│   ├── RAGHybridFusionEngine.swift
-│   ├── RAGRerankProvider.swift
+│   ├── RAGSearchProviders.swift
 │   ├── RAGBackendConfiguration.swift
-│   ├── KnowledgeRAGRemoteContextProvider.swift
+│   ├── RAGExternalSearchProviders.swift
+│   ├── GitHubRAGRemoteContextProvider.swift
+│   ├── RAGAttachmentProcessor.swift
 │   ├── KnowledgeRAGPromptBuilder.swift
-│   └── KnowledgeRAGCitationParser.swift
-├── Indexing/
-│   ├── RAGChunkBuilder.swift
-│   ├── RAGIndexBuilder.swift
-│   └── RAGIndexingStatus.swift
+│   └── RAGRepoCandidateRepository.swift
 ├── UI/
 │   ├── KnowledgeRAGWorkspaceView.swift
 │   ├── KnowledgeRAGWorkspaceViewModel.swift
-│   ├── RAGCommandComposerView.swift
-│   ├── RAGMentionPicker.swift
-│   ├── RAGContextChip.swift
-│   ├── RAGAnswerView.swift
-│   ├── RAGEvidenceInspector.swift
-│   └── RAGCitationChip.swift
+│   └── KnowledgeRAGWorkspaceWindowController.swift
 └── Storage/
-    ├── RAGChunkRepository.swift
     └── RAGConversationStore.swift
 ```
 
@@ -96,7 +91,7 @@ Repository 与数据库模型放到现有 Core 层:
 
 ```text
 Starcat/Core/Database/Models/RAGChunk.swift
-Starcat/Core/Sync/RAGChunkRepository.swift
+Starcat/Core/RAG/RAGChunkRepository.swift
 ```
 
 原因:
@@ -449,10 +444,14 @@ fetchKnowledgeRepos
 - 用户手动构建 RAG 索引。
 - repo 加入知识库后,后台排队索引该 repo。
 - repo 移出知识库后,不立即删除 chunk,但 RAG retrieve 不再召回它。
-- README 缓存更新后,如果 repo 仍在知识库,排队更新 readme chunks。
+- README raw Markdown 事务提交后,`ReadmeRepository` 发送 `.readmeContentDidChange`;如果 repo
+  仍在知识库,只更新 readme chunks。详情页补全、后台预取和语义索引补全都走该仓储入口。
 - notes 保存后,如果 repo 在知识库,debounce 后更新 notes chunk。
-- AI summary 生成后,如果 repo 在知识库,更新 summary chunk。
+- AI summary 写入后,`AISummaryRepository` 发送 `.aiSummaryDidChange`;如果 repo 在知识库,
+  只更新 summary chunk。不能只依赖某个摘要生成页面的回调。
 - repo metadata 更新后,如果 repo 在知识库,按 metadata 更新策略决定是否更新 metadata chunk。
+- 用户清空全部 README cache 时,README 事件不带 `repoId`;索引器执行一次知识库 source diff,
+  删除失效 readme chunks,并复用其它未变化 source 的 embedding。
 
 为什么移出知识库不立即删除:
 
@@ -498,7 +497,8 @@ chunk_key = source + ":" + normalized_section_path + ":" + ordinal_in_section
 | summary | AI Summary | 0 | `summary:ai-summary:0` |
 | metadata | Repo Metadata | 0 | `metadata:repo-metadata:0` |
 
-如果 README 没有 heading,用 `readme:root:{ordinal}`。如果同名 heading 重复,`ordinal_in_section` 负责区分。
+如果 README 没有 heading,用 `readme:root:{ordinal}`。同一路径的 heading 重复时先给 section
+slug 加 occurrence 后缀,如 `setup`、`setup-2`;每个 section 内再用 `ordinal_in_section` 区分 segments。
 
 ### 6.5 embedding_status
 
@@ -539,13 +539,14 @@ UI 如果发现 pending / failed 数量不为 0,在工作台顶部显示“索�
 
 README 更新只影响 `source = readme`:
 
-1. 用新的 README markdown 生成 readme drafts。
-2. 查询旧 readme chunks。
-3. 按 `chunk_key` 对齐。
-4. `content_hash` 一致: 保留旧 row 与 embedding。
-5. `content_hash` 不一致: 更新 content/hash,状态设为 `pending`。
-6. 新 chunk: 插入,状态设为 `pending`。
-7. 旧 chunk 不再存在: 第一版直接删除;如果未来要支持历史 citation 回看,再改为 `stale` 保留。
+1. `ReadmeRepository.upsertContent` 在同一写事务中比较旧正文和新正文。
+2. 正文相同只刷新 cache 时间,不发送 RAG 事件;正文变化才发送带 `repoId` 的事件。
+3. `KnowledgeRAGIndexBuilder` 收到事件后先确认 repo 仍在知识库。
+4. 用新的 README markdown 生成 readme drafts并查询旧 readme chunks。
+5. 按 `chunk_key` 对齐;`content_hash` 一致时保留旧 row 与 embedding。
+6. `content_hash` 不一致时更新 content/hash并设为 `pending`;新 chunk 同样设为 `pending`。
+7. 旧 chunk 不再存在时直接删除;历史 citation 的 metadata 独立保存,外键只会把 `chunk_id` 置空。
+8. 详情页不再直接调用 RAG refresh,避免仓储事件和页面回调重复触发。
 
 ### 6.7 Notes 更新
 
@@ -562,6 +563,8 @@ AI summary 更新只影响 `source = summary`:
 
 - 之前没有 summary: 新增 summary chunk。
 - 重新生成 summary: diff summary chunk。
+- 触发入口固定为 `AISummaryRepository.upsert` 成功后的 `.aiSummaryDidChange`,批量生成和单 repo
+  生成不再分别维护 RAG 回调。
 - summary stale 但未重新生成: 仍可保留旧 summary chunk;Inspector 需要标记“摘要缓存”。
 - RAG 索引不为了补 summary 主动调用 AI 摘要生成。
 
@@ -600,6 +603,24 @@ Settings 或 RAG 工作台需要展示:
 | 最近索引时间 | max(indexed_at) |
 
 覆盖率按当前 embedding model 计算,换模型后应显示需要重建。
+
+### 6.11 多账号数据库切换屏障
+
+RAG chunk 和会话历史跟随当前用户 SQLite。登录、登出或换号时,不能只关闭工作台:
+旧账号的 README/notes/summary 索引或 Stars 同步后 metadata 刷新可能正停在 `await`,
+如果直接切库,恢复后会继续写入新账号数据库。
+
+切换顺序固定为:
+
+1. 取消当前 RAG 问答并销毁工作台 ViewModel。
+2. 索引器进入 suspended 状态,拒绝新的重建、source 刷新和 debounce 任务。
+3. 取消当前重建、NotificationCenter 监听和 notes debounce `Task`。
+4. 通过 active operation 计数等待所有已进入的写索引操作退出;这一层必须覆盖不由
+   索引器持有 `Task` 引用的外部回调。
+5. 执行 `DatabaseManager.reopen(userId:)`。
+6. 无论切库成功还是失败,都恢复 source 监听;失败时继续服务原数据库。
+
+工作台关闭解决内存历史串号,索引器屏障解决异步写入串号,两者缺一不可。
 
 ## 7. RAG Query Planner 与执行状态机
 
@@ -917,6 +938,9 @@ Planner:
 ```
 
 这种场景不应该硬做 child retrieval。直接用 SQL repo candidates + metadata/summary bundle 生成列表或表格。
+结构化 SQL 默认最多取 1000 个候选用于准确计数;Prompt 明确提供 `structured_candidate_count`、
+`structured_rows_in_prompt` 和 `structured_rows_truncated`,并在 token 预算内最多展开前 50 行。
+模型做计数必须使用 candidate count,做列表只能使用实际展开行,截断时必须明示。
 
 #### 7.4.4 歧义问题
 
@@ -1217,12 +1241,12 @@ query
   -> vector search: local embedding table
   -> fusion: RRF / weighted score
   -> repo aggregation
-  -> optional rerank
   -> parent context packing
   -> Generator
 ```
 
-第一版可以不接 Meilisearch / Qdrant / reranker,但 provider 边界要保留。这样后续用户自行部署外部组件时,Starcat 只需要在 Settings 配置 endpoint 和凭据,再通过 API 调用对应 provider。
+默认 provider 是 SQLite FTS5 与本地向量；用户配置后可分别替换为 Meilisearch/Qdrant，并按设置
+在远端报错或空命中时回退本地。reranker 不属于本次运行时边界。
 
 ### 8.1 输入输出
 
@@ -1233,7 +1257,6 @@ struct RAGRetrievalQuery {
     var keywordTopK: Int = 30
     var vectorTopK: Int = 30
     var fusionTopK: Int = 20
-    var rerankTopK: Int = 8
     var topRepoLimit: Int = 5
     var perRepoLimit: Int = 3
 }
@@ -1248,10 +1271,6 @@ protocol RAGVectorSearchProvider {
 
 protocol RAGHybridFusionEngine {
     func fuse(keywordHits: [RAGRetrievalHit], vectorHits: [RAGRetrievalHit]) -> [RAGRetrievalHit]
-}
-
-protocol RAGRerankProvider {
-    func rerank(_ hits: [RAGRetrievalHit], query: String) async throws -> [RAGRetrievalHit]
 }
 
 struct RAGRepoCandidateSet {
@@ -1278,7 +1297,6 @@ struct RepoContextBundle {
     var notesChunk: RAGChunk?
     var summaryChunk: RAGChunk?
     var metadataChunk: RAGChunk?
-    var remoteContextBlocks: [RAGRemoteContextBlock]
     var tokenBudget: Int
 }
 
@@ -1337,7 +1355,6 @@ WHERE n.library_state = 'in_library'
 | `RAGKeywordSearchProvider` | SQLite FTS5 | Meilisearch |
 | `RAGVectorSearchProvider` | SQLite embedding BLOB + 本地 cosine | Qdrant |
 | `RAGHybridFusionEngine` | RRF 或 weighted score | 可按 provider 能力调整 |
-| `RAGRerankProvider` | off | Cohere / Jina / BGE / local reranker |
 
 默认参数:
 
@@ -1346,10 +1363,12 @@ WHERE n.library_state = 'in_library'
 | keyword topK | 30 |
 | vector topK | 30 |
 | fusion topK | 20 |
-| rerank topK | 8 |
 | llm context chunks | 5-8 |
 
 Keyword search 负责精确词、库名、API、文件路径、错误码等问题。例如“有没有用 GRDB”“哪里提到 WKWebView”。Vector search 负责语义相近问题。例如“适合做本地数据库的 Swift 项目”。两者不能互相替代。
+
+两路检索独立降级: query embedding/vector provider 失败时仍使用 keyword hits;keyword provider
+失败时仍使用 vector hits。只有两路都失败才把本轮作为检索错误返回,不能让单路故障抹掉有效证据。
 
 Fusion 第一版建议用 RRF:
 
@@ -1408,7 +1427,6 @@ query
   -> keyword retrieval
   -> vector retrieval
   -> fusion
-  -> optional rerank
   -> top child hits
   -> group by repo_id
   -> compute repoScore
@@ -1496,27 +1514,15 @@ UI 展示:
 
 这避免 citation 退化成“整个 repo 都算引用”,也避免答案只围绕碎片展开。
 
-### 8.9 Reranker
+### 8.9 Reranker 边界
 
-第一版默认不做 reranker,但保留 `RAGRerankProvider`。理由:
-
-- 先验证知识库范围和 citation 闭环。
-- child 召回 + repo 聚合 + parent packing 已经能解决大部分上下文不足问题。
-- 外部 reranker 会增加一次模型调用和隐私暴露。
-
-后续策略:
-
-| 模式 | 说明 |
-|---|---|
-| Off | 默认,无额外成本 |
-| Cloud reranker | Cohere / Jina 等,需要明确发送哪些 chunk |
-| Local reranker | 用户自行部署或本地模型,延迟较高但隐私更好 |
-
-默认流程不要把 top 100 全塞给 LLM。建议先 fusion top 20,再 rerank top 8,最终送 LLM 5-8 个 chunk。
+本次整体交付不实现 reranker，也不提前引入空的 `RAGRerankProvider` 协议和 Settings 选项。
+当前链路通过 keyword/vector RRF、source weight、per-repo cap 和 parent packing 控制上下文。
+reranker 只有在真实召回评测证明 fusion 不足时，才作为独立专项设计其本地/云端实现和隐私边界。
 
 ### 8.10 可选自托管后端
 
-Meilisearch 和 Qdrant 作为高级可选后端,不作为第一版默认依赖。
+Meilisearch 和 Qdrant 已作为高级可选后端实现，但不作为默认依赖。
 
 | 后端 | 角色 | 适用场景 | Starcat 责任 |
 |---|---|---|---|
@@ -1525,7 +1531,12 @@ Meilisearch 和 Qdrant 作为高级可选后端,不作为第一版默认依赖�
 | Meilisearch | keyword / hybrid search provider | 用户已有自托管搜索服务,希望增强全局搜索与 RAG keyword 召回 | 通过 REST API 连接 |
 | Qdrant | vector search provider | 大规模 repo、代码 chunk、模型迁移、payload filter | 通过 REST API 连接 |
 
-Starcat 不负责默认安装、启动、升级这些服务。用户自行部署后,在 Settings 中配置 endpoint / API key / index / collection。连接失败时只影响对应 provider,不能破坏本地默认 RAG。
+Starcat 不负责安装、启动、升级这些服务。用户自行部署后，在 Settings 中配置 endpoint、API key、
+index/collection/vectorName。外部 provider 报错或空命中时按配置回退 SQLite；Qdrant 在清理旧点位前
+校验 named vector 和 embedding dimension。外部索引是本地 chunk 的可重建派生副本，当前用完整
+replace 优先保证 source 删除与更新一致；私有仓库默认不同步到 Meilisearch/Qdrant。Meilisearch
+写操作返回异步 task，Starcat 必须轮询到 `succeeded` 才继续 delete -> import -> settings 的下一步；
+`failed/canceled/timeout` 都按外部同步失败处理，不能把收到 HTTP 202 当成索引已经完成。
 
 ### 8.11 无命中处理
 
@@ -1543,31 +1554,39 @@ Starcat 不负责默认安装、启动、升级这些服务。用户自行部署
 
 远程临时上下文用于回答“本地索引不适合长期保存,但本轮问题确实需要”的信息。典型例子是 GitHub issues: Starcat 不存储 issues,也不把 issues 做成 RAG chunk,但用户问“最近有没有集中反馈的问题”时,issues 可以作为临时上下文给 LLM。
 
-MVP 阶段不实际拉取 issues / releases / PR。Planner 可以识别这类意图,UI 提示“该问题需要 GitHub 临时上下文,当前版本暂未启用”,Generator 只能基于本地 README / notes / summary / metadata 回答,并说明未包含实时 issues / releases / PR 数据。真实远程拉取从 PR-5 开始实现。
+当前版本已实际支持 issues、pull requests、releases、contributors、commit activity 和 security
+advisories。Planner 只声明远程意图；本地候选 repo 确定后，工作台必须先让用户确认资源，再按
+`maxRepos/perRepoLimit` 拉取。GitHub Search 响应还必须按 `repository_url`/HTML 路径二次校验，
+防止 query 中额外 qualifier 扩大候选 repo 范围。成功结果只进入本轮 prompt 和 15 分钟内存
+TTL cache;cache key 必须按 GitHub token 的不可逆指纹隔离账户。限流、断网、权限错误等
+degradation block 不缓存,允许用户修复环境后立即重试。
 
 边界:
 
 - 不进入 `rag_chunks`。
 - 不生成 embedding。
 - 不写入 notes / summary / tags / status。
+- README、notes、summary、远程 body 和附件都作为不可信数据放入 prompt;其中的角色声明、
+  系统提示和操作指令必须被 System Prompt 明确要求忽略,防止上下文内容覆盖执行边界。
 - 不作为 CloudKit 同步数据。
 - 只在用户主动提问后,对本轮候选 repo 拉取。
 - 可以做短 TTL 缓存,但缓存是网络降噪层,不是 RAG 索引。
 
 ### 9.2 Provider
 
-新增 `KnowledgeRAGRemoteContextProvider`:
+`GitHubRAGRemoteContextProvider` 的执行边界：
 
 ```swift
-protocol KnowledgeRAGRemoteContextProvider {
+protocol KnowledgeRAGRemoteContextProviding {
     func fetch(
         requests: [RAGRemoteContextRequest],
-        bundles: [RepoContextBundle]
-    ) async -> [Int64: [RAGRemoteContextBlock]]
+        candidates: [RAGRepoCandidate]
+    ) async -> [RAGRemoteContextBlock]
 }
 ```
 
-Provider 输入已经是 Retriever 选出的 `RepoContextBundle`,而不是全量知识库 repo。这样 issues / releases 等远程信息只补充候选 repo,不会扩大 RAG 范围。
+Provider 输入是经过知识库边界和结构化 SQL 筛选后的 top candidates，而不是全量 repo。远程数据
+只补充既有候选，不得反向扩大 RAG 范围。
 
 第一版支持的 resource:
 
@@ -1600,7 +1619,7 @@ Provider 输入已经是 Retriever 选出的 `RepoContextBundle`,而不是全量
 2. SQL / Retriever 先确定候选 repo。
 3. Provider 只对 top repo 拉取远程数据。
 4. Provider 把 raw JSON 转成 LLM 友好的文本块。
-5. Service 将 `RAGRemoteContextBlock` 合并回对应 `RepoContextBundle.remoteContextBlocks`。
+5. Service 将 blocks 作为独立的 ephemeral context 参数交给 PromptBuilder。
 6. Generator 在 prompt 中明确区分 local indexed context 与 remote ephemeral context。
 
 `structured_only` 也可以使用远程上下文,但必须先有 SQL 候选 repo。例如“列出我知识库里最近 issue 很活跃的 Swift 项目”可以先用 SQL 找 Swift 知识库 repo,再对候选 repo 拉取 issues 统计。不能反过来先全网搜 issue 再生成 repo 列表。
@@ -1669,7 +1688,7 @@ System prompt 核心约束:
 
 硬性约束:
 1. 只能引用上下文中出现的 repo 和片段。
-2. 提到关键 repo 时必须使用 [owner/repo] 引用标记。
+2. 使用本地证据时必须保留上下文中已有的 [S1] 证据编号。
 3. 不知道就说知识库资料不足,不要编造。
 4. 如果片段之间冲突,说明冲突并引用来源。
 5. 默认用中文回答,除非用户用英文提问。
@@ -1732,23 +1751,22 @@ XML-like 格式便于:
 Generator 的回答要求:
 
 - 先按 repo 给出结论。
-- 每个关键 repo 用 `[owner/repo]` 标记。
+- 每个关键结论使用 `[S1]` 这类由 Starcat 分配的证据编号。
 - 每个 repo 的依据来自 matched child 或 section parent。
 - 如果使用 issues / releases 等远程上下文,必须说明这是本轮临时获取的信息。
 - 不把不同 repo 的证据混成一个无法追踪的结论。
 
 ### 10.3 引用解析
 
-LLM 输出中的 `[owner/repo]` 是人类可读引用。最终 citation 仍以 bundle 内 matched child chunk id 为准。
+证据编号完全由本地 `KnowledgeRAGPromptBuilder` 分配：每个 `[S<n>]` 在发给模型前已经绑定
+`repoID/chunkID/source/section/score/hitKind/sourceURL`。生成完成后只扫描回答实际保留的编号：
 
-解析步骤:
-
-1. 正则提取 `[owner/repo]`。
-2. 与本轮 `RepoContextBundle.repo.fullName` 匹配。
-3. 只保留本轮上下文出现过的 repo。
-4. 为该 repo 绑定本轮 matched children 中分数最高的 1-3 个 chunks。
-5. 如果 LLM 引用了上下文外 repo,标记为 invalid citation 并在 UI 隐藏该 chip。
-6. Inspector 显示 repo parent、section parent 和 matched child,不只显示孤立 chunk。
+1. 按编号顺序检查回答中的 `[S<n>]`。
+2. 只接受本轮 `citationsByMarker` 中存在的编号。
+3. 模型创造的编号或上下文外 repo 不会生成 citation。
+4. 历史只保存 citation metadata，不保存 chunk 正文快照。
+5. chunk 被清理后外键把 `chunkID` 置空，历史仍保留 repo/source/section，并提示重建索引。
+6. Inspector 按 `chunkID` 即时回读正文，展示命中方式、score、section 和截断状态。
 
 ### 10.4 Streaming
 
@@ -1793,14 +1811,13 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 
 ### 11.1 入口
 
-新增覆盖式 `KnowledgeRAGWorkspaceView`,与 `AgentWorkspaceView` 同级。
+新增独立窗口 `KnowledgeRAGWorkspaceView`,与 Agent Workspace 同级但不共享会话和运行时。
 
-接入建议:
+已落地入口:
 
-- `HomeView` 增加 `showKnowledgeRAGWorkspace`。
-- toolbar 增加 `知识库问答` 按钮。
-- 未稳定前使用 `DebugFlags.ragWorkspaceEntryKey` 控制入口。
-- Smart Collections -> 知识库页顶部动作也可打开同一 workspace。
+- Debug toolbar 的“知识库问答”按钮用于开发期快速入口。
+- Smart Collections -> 知识库页的“知识库问答”是正式产品入口。
+- 两个入口统一调用 `KnowledgeRAGWorkspaceWindowController`，复用同一真实 ViewModel。
 
 不建议把 RAG 放进 Agent rail 作为唯一入口。Agent 是任务工作台,RAG 是高频知识问答。
 
@@ -1892,9 +1909,8 @@ Citation chip 点击后的行为:
 
 ### 11.6 Remote Context 展示
 
-MVP 中右侧 Inspector 不单独提供 Remote Context tab。issues / releases / PR 只在 Query Plan chips 和回答正文中提示“当前版本暂未启用”,不展示真实远程数据。
-
-真实远程上下文启用后,如果本轮使用 issues / releases / PR 等远程临时上下文,引用详情内可以附带轻量 Remote Context 分组:
+右侧 Inspector 不单独增加 Remote Context tab。使用 issues / releases / PR 等远程临时上下文时，
+Evidence 页在本地 citations 后显示轻量远程证据分组：
 
 - 标明 resource: GitHub Issues / Releases / Pull Requests 等。
 - 标明 fetchedAt 与“本轮临时获取”。
@@ -1902,7 +1918,9 @@ MVP 中右侧 Inspector 不单独提供 Remote Context tab。issues / releases /
 - 展示失败降级原因,例如 rate limit、无权限、网络超时。
 - 不把 remote context 展示成已索引 chunk,也不提供“打开 chunk”动作。
 
-Answer Surface 顶部的 Query Plan chips 可以显示“GitHub Issues 临时上下文”等 chip。用户删除该 chip 后重新执行,Planner 或本地执行层应跳过对应 `remoteContextRequests`。
+Planner 产出远程请求后，Answer Surface 进入确认态并显示资源 chips。用户可以取消单个资源、确认
+保留项或全部跳过；未确认的资源不会发起网络请求。非 UI 调用方没有提供确认器时按“全部跳过”
+处理，不能把缺少确认器解释成默认批准。
 
 ### 11.7 Command Composer
 
@@ -1944,8 +1962,9 @@ Composer 内提供模型下拉:
 
 - 默认使用 Settings -> AI 的 RAG chat model。
 - 本轮切换只写入 `selectedModelID`,不修改全局设置。
-- 模型不可用时直接标注原因: 缺 API key、不支持 vision、不支持附件、余额/订阅不可用。
-- 如果用户上传图片但当前模型不支持 vision,发送前阻断并提示切换模型或移除图片。
+- 下拉只列已启用且已完成 provider 配置验证的 chat 模型；真正调用时再次校验 API key。
+- OpenAI-compatible `/models` 没有统一 vision capability 字段，Starcat 不用模型名猜能力。图片按
+  multimodal content parts 发送；服务端明确拒绝时原样展示错误，用户可切换模型或移除图片。
 
 #### 11.7.3 远程上下文确认
 
@@ -1965,20 +1984,17 @@ issues / releases / PR 等远程临时上下文由 Query Planner 根据自然语
 
 附件是本轮临时上下文,不进入 `rag_chunks`。
 
-第一版交互:
+已落地交互:
 
-- 支持拖拽或点击上传。
+- 支持点击选择多个附件。
 - 图片附件进入 `handling = .vision`。
 - Markdown / txt / small PDF 可进入 `handling = .textContext`。
 - 不支持的格式展示为 disabled chip,不能发送。
 - 每个附件 chip 展示文件名、类型、大小、是否会发送给模型。
 - 附件总大小和 token 预算必须有本地上限,超出时要求用户删除或压缩。
 
-实现优先级可以分阶段:
-
-1. 先做 UI 与数据结构。
-2. 再支持图片 vision。
-3. 再支持文本/PDF 提取。
+本地上限为单轮 5 个附件、单文件 10 MB、总计 20 MB；文本/PDF 单文件最多提取 40,000 字符。
+确定不支持或超预算时在发送前阻断，图片/附件都不写 `rag_chunks`、notes 或 CloudKit。
 
 #### 11.7.5 GitHub 链接识别
 
@@ -2032,7 +2048,6 @@ Settings -> AI 建议增加:
 - RAG Backend: Local / Custom。
 - Keyword Search Provider: FTS5 / Meilisearch。
 - Vector Store Provider: SQLite / Qdrant。
-- Reranker: Off / Cloud / Local。
 - Provider 连接测试。
 - Provider 切换后的索引重建提示。
 
@@ -2040,66 +2055,34 @@ Settings -> AI 建议增加:
 
 ```swift
 struct RAGBackendConfiguration: Codable, Sendable {
-    var backendMode: RAGBackendMode
-    var keywordProvider: RAGKeywordProviderKind
-    var vectorProvider: RAGVectorProviderKind
-    var rerankProvider: RAGRerankProviderKind
-    var meilisearch: RAGMeilisearchConfiguration?
-    var qdrant: RAGQdrantConfiguration?
-    var privacyMode: RAGPrivacyMode
-}
-
-enum RAGBackendMode: String, Codable, Sendable {
-    case local
-    case custom
-}
-
-enum RAGKeywordProviderKind: String, Codable, Sendable {
-    case fts5
-    case meilisearch
-}
-
-enum RAGVectorProviderKind: String, Codable, Sendable {
-    case sqlite
-    case qdrant
-}
-
-enum RAGRerankProviderKind: String, Codable, Sendable {
-    case off
-    case cloud
-    case local
+    var keywordBackend: RAGKeywordBackend = .sqliteFTS5
+    var vectorBackend: RAGVectorBackend = .sqlite
+    var fallbackToSQLite = true
+    var meilisearch = RAGMeilisearchConfiguration()
+    var qdrant = RAGQdrantConfiguration()
 }
 
 struct RAGMeilisearchConfiguration: Codable, Sendable {
-    var endpoint: URL
-    var apiKeyReference: String?
+    var endpoint: String
     var indexName: String
-    var semanticRatio: Double?
 }
 
 struct RAGQdrantConfiguration: Codable, Sendable {
-    var endpoint: URL
-    var apiKeyReference: String?
+    var endpoint: String
     var collectionName: String
     var vectorName: String
-}
-
-enum RAGPrivacyMode: String, Codable, Sendable {
-    case localOnly
-    case allowCloudEmbedding
-    case allowRemoteRAGProviders
 }
 ```
 
 交互规则:
 
-- 默认 `backendMode = local`,普通用户不需要配置外部服务。
+- 默认 keyword/vector 都走 SQLite，普通用户不需要配置外部服务。
 - Meilisearch / Qdrant 放在高级设置,用户自行部署后填写 endpoint 和 key。
 - API key 只存 Keychain,配置里只保存 reference。
 - 点击“测试连接”必须检查 endpoint、认证、index/collection 是否存在、维度是否匹配。
 - provider 切换后,如果索引不可复用,Settings 显示“需要重建 RAG 索引”。
-- 私有 repo 安全模式默认 `localOnly`,不上传代码内容到云 embedding 或远程 RAG provider。
-- 如果用户启用远程 provider,UI 必须提示哪些内容会被发送到该服务。
+- Meilisearch/Qdrant 只同步公开知识库 repo；私有 repo 继续走本地检索。
+- embedding/chat 仍使用用户在 Settings 明确选择的 BYOK provider，隐私提示沿用 AI 设置契约。
 
 Settings -> Storage 建议增加:
 
@@ -2195,19 +2178,19 @@ Settings -> Storage 建议增加:
 - 默认 backend 是 Local。
 - Meilisearch 配置缺 endpoint / index 时 validation 失败。
 - Qdrant 配置缺 endpoint / collection / vectorName 时 validation 失败。
-- provider API key 只保存 Keychain reference。
+- provider API key 只保存到 Keychain，普通配置不保存 key 内容。
 - health check 失败时回退本地 provider。
-- provider 切换后索引状态进入 needs_rebuild。
-- privacyMode = localOnly 时禁止把代码内容发送到远程 provider。
+- provider 切换后 Settings 显示需要重建索引提示。
+- 外部 RAG provider 不同步私有 repo chunks。
 
 ### 15.6 Remote Context tests
 
 - 没有 remote request 时不调用 `KnowledgeRAGRemoteContextProvider`。
-- remote provider 只接收 Retriever 选出的 top repo bundles。
+- remote provider 只接收知识库 SQL 筛选后的 top repo candidates。
 - issues provider 输出 LLM 友好的文本块,不透传 raw JSON。
 - issues provider 遵守 maxRepos / perRepoLimit / token budget。
 - rate limit / timeout / forbidden 返回 degradation block,不抛出整轮失败。
-- degradation block 能合并回对应 `RepoContextBundle.remoteContextBlocks`。
+- degradation block 作为独立 ephemeral context 进入最终 prompt。
 - remote context 不写入 `rag_chunks`。
 - structured_only + remote request 必须先有 SQL 候选 repo。
 
@@ -2218,9 +2201,9 @@ Settings -> Storage 建议增加:
 - prompt 区分 local indexed context 与 remote ephemeral context。
 - 使用 remote context 时答案说明其为本轮临时获取的信息。
 - remote degradation 时答案说明对应远程数据不可用。
-- citation parser 只接受本轮 bundle 中的 repo。
-- citation 能绑定到该 repo 的 matched child chunks。
-- 上下文外 repo 引用被过滤。
+- citation parser 只接受本轮本地生成的 `[S<n>]` marker。
+- marker 在生成前已绑定 matched child chunk metadata。
+- 模型创造的 marker 被过滤。
 - 无命中时不调用 chat 或返回明确不足状态。
 
 ### 15.8 UI/ViewModel tests
@@ -2232,14 +2215,14 @@ Settings -> Storage 建议增加:
 - `needs_clarification` 展示追问,不执行检索。
 - `no_candidate_repos` / `no_index` / `no_evidence` 展示不同空状态。
 - retrieval -> remote context -> generation -> completed 状态流。
-- MVP 不展示独立 Remote Context 区域;真实远程上下文启用后可在引用详情内展示 fetchedAt / source URL / degradation。
+- 不展示独立 Remote Context tab；Evidence 页显示 resource / fetchedAt / source URL / degradation。
 - `@repo` mention 能生成 repo context chip。
 - 多个 `@repo` 默认形成 `explicitRepoMode = .only`。
 - 删除 repo context chip 后,执行上下文同步移除 repo id。
 - Planner 提议 issues / releases 远程上下文时,UI 能展示可删除确认 chip。
 - 删除远程上下文 chip 后,执行层跳过对应 remote request。
 - 模型切换只影响本轮 request,不修改全局 Settings。
-- 图片附件遇到不支持 vision 的模型时阻断发送。
+- 图片使用 OpenAI-compatible multimodal content parts；服务端拒绝时展示原始错误。
 - GitHub 链接已入库时转成 repo chip,未入库时不自动进入 RAG。
 - 回答区 GitHub 链接命中 Starcat 本地已有 repo 时新开本地详情页窗口,否则打开外部 GitHub。
 - cancel 能停止 streaming。
@@ -2247,108 +2230,19 @@ Settings -> Storage 建议增加:
 
 ## 16. 实施切片
 
-实施优先级:
+本次按一个整体交付在独立 worktree 中完成，Batch 只用于控制实现顺序，不代表允许部分上线：
 
-- MVP 必做: PR-1、PR-2、PR-3 基础 planner、PR-4、PR-6、PR-7 基础工作台、PR-8 基础历史存储。
-- MVP 后置: PR-5、PR-7 中附件真实解析和远程上下文确认流程、PR-8 中导出与高级 Storage polish。
-- 高级增强: PR-9、PR-10。
+| Batch | 落地内容 | 主要实现 |
+|---|---|---|
+| A | schema、source diff、稳定 chunk、embedding 状态、FTS5/本地向量 | `RAGChunk*`、`KnowledgeRAGIndexBuilder` |
+| B | AI Query Planner、SQL candidates、四种 plan mode、本地校验与降级 | `KnowledgeRAGQueryPlanner`、`RAGRepoCandidateRepository` |
+| C | repo-aware retrieval、RRF fusion、parent packing、streaming 和 citations | `KnowledgeRAGRetriever`、`KnowledgeRAGService`、`KnowledgeRAGPromptBuilder` |
+| D | 真实工作台、`@repo`、模型、附件、历史、远程确认与 GitHub provider | `Features/RAG/UI`、`RAGConversationStore`、`GitHubRAGRemoteContextProvider` |
+| E | Meilisearch/Qdrant、Keychain、连接测试、维度校验和 SQLite 回退 | `RAGExternalSearchProviders`、`AISettingsView` |
+| F | 专项测试、构建、i18n、人工验收和文档同步 | `StarcatTests/RAG*`、专项 checklist |
 
-### PR-1: DB 与 chunk repository [MVP 必做]
-
-- 新增 `RAGChunk` model。
-- 新增 `rag_chunks` migration。
-- 新增 `RAGChunkRepository`。
-- 覆盖 upsert/fetch/delete/coverage tests。
-
-### PR-2: Chunk builder 与索引器 [MVP 必做]
-
-- 新增 `RAGChunkBuilder`。
-- 新增 `RAGIndexBuilder`。
-- 只处理知识库 repo。
-- Settings 显示索引状态。
-
-### PR-3: Query Planner 与执行状态机 [MVP 必做 / 远程上下文后置]
-
-- 新增 `KnowledgeRAGQueryPlanner`。
-- AI Planner 输出 `RAGQueryPlan` JSON。
-- schema validation / retry / fallback。
-- 支持 semantic_only / filtered_semantic / structured_only / needs_clarification。
-- 输出 userVisiblePlan chips。
-- 单测覆盖 planner mode、降级和无结果状态。
-
-### PR-4: Retriever [MVP 必做]
-
-- 新增 `KnowledgeRAGRetriever`。
-- 新增 `RAGKeywordSearchProvider` / `RAGVectorSearchProvider` / `RAGHybridFusionEngine`。
-- 接收 Query Planner 输出的 candidate repo ids。
-- FTS5 keyword search + local vector search + hybrid fusion + source weight。
-- child hits 按 repo 聚合并计算 repoScore。
-- 输出 `RepoContextBundle`,而不是直接把 flat top chunks 交给 Generator。
-- 单测覆盖知识库边界。
-
-### PR-5: Remote Ephemeral Context [MVP 后置]
-
-- MVP 只提示需要 GitHub 临时上下文但当前版本暂未启用,不实际拉取远程数据。
-- 新增 `KnowledgeRAGRemoteContextProvider`。
-- 支持 GitHub issues / PR / releases 的第一批 provider。
-- Provider 只接收 top `RepoContextBundle`,不访问全量知识库。
-- raw GitHub response 转成 LLM 友好的 `RAGRemoteContextBlock`。
-- 支持 TTL cache、timeout、rate limit、permission 降级。
-- 将 remote blocks 合并回 `RepoContextBundle.remoteContextBlocks`。
-- 单测覆盖 issues 格式化、预算限制和降级。
-
-### PR-6: Generator [MVP 必做]
-
-- 新增 `KnowledgeRAGPromptBuilder`。
-- 新增 `KnowledgeRAGService` streaming。
-- 新增 citation parser。
-- Prompt context 使用 repo bundle: metadata / notes / summary / matched children / section parent / remote context。
-- 无命中 / API key 缺失 / 取消处理。
-
-### PR-7: Workspace UI [MVP 必做 / 部分后置]
-
-- 新增 `KnowledgeRAGWorkspaceView`。
-- 新增 `RAGCommandComposerView`。
-- 新增 `RAGMentionPicker`。
-- 新增 `RAGContextChip`。
-- 接入 toolbar / Debug gate。
-- 展示 Query Plan chips 和 clarification / no result 状态。
-- 支持 `@repo` mention 和多 repo context chips。
-- 支持输入框模型下拉。
-- 支持 Planner 远程上下文确认 chips。
-- 支持附件 chip 的第一版 UI 和模型能力校验。
-- 支持 GitHub 链接识别: 本地已有 repo 新开详情页窗口,外部 repo 打开 GitHub。
-- 中间问答流 + 右侧单一引用 Inspector。
-- MVP 不展示独立 Remote Context 区域;真实远程上下文启用后在引用详情内展示降级原因。
-- citation chip 打开 repo。
-
-### PR-8: 历史、Storage 与 polish [MVP 必做 / 部分后置]
-
-- 本地会话历史。
-- 保存完整问答历史和 citation metadata。
-- citation 不保存完整 chunk content snapshot。
-- chunk 清理后历史 citation 展示“引用片段已清理或需要重建索引”。
-- 复制/导出回答。
-- Settings 增加 RAG Backend / Provider 配置。
-- Storage 清理入口。
-- 覆盖率与错误文案完善。
-
-### PR-9: 自托管检索 Provider [高级增强]
-
-- 新增 Meilisearch keyword provider。
-- 新增 Qdrant vector provider。
-- Settings 支持 endpoint / API key / index / collection / vectorName。
-- Provider health check。
-- 连接失败回退本地 provider。
-- provider 切换后标记索引需要重建。
-
-### PR-10: Agent / MCP 后续联动 [高级增强]
-
-- Agent runtime 可把 `KnowledgeRAGRetriever` 作为只读 tool。
-- Agent Artifact 可引用 RAG citations。
-- RAG 回答中的“生成对比报告”可转入 Agent Workspace。
-- MCP 可暴露只读 RAG evidence 查询能力。
-- 所有写入建议仍必须走用户确认。
+`RAGDemoData` 已删除。Code RAG、Agent/MCP 联动和 reranker 继续留在独立专项，不在当前运行时预留
+未被使用的协议或设置项。
 
 ## 17. 不做范围
 

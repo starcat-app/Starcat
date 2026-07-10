@@ -25,13 +25,30 @@ struct DatabaseMigrationsV1Tests {
         let expectedTables = [
             "repos", "starred_repos", "tags", "repo_tags",
             "repo_notes", "readmes", "saved_searches", "smart_collections",
-            "sync_state", "tag_stats_cache", "open_ssf_scores"
+            "sync_state", "tag_stats_cache", "open_ssf_scores",
+            "rag_chunks", "rag_chunks_fts", "rag_conversations",
+            "rag_messages", "rag_message_citations"
         ]
         try db.read { db in
             for table in expectedTables {
                 let exists = try db.tableExists(table)
                 #expect(exists, "Table \(table) should exist")
             }
+        }
+    }
+
+    @Test("知识库 RAG 应建出 chunk FTS 与同步触发器")
+    func ragChunkFTSExists() throws {
+        let db = try makeDB()
+        try db.read { db in
+            #expect(try db.tableExists("rag_chunks_fts"))
+            let triggers = try String.fetchAll(
+                db,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
+            )
+            #expect(triggers.contains("rag_chunks_ai"))
+            #expect(triggers.contains("rag_chunks_ad"))
+            #expect(triggers.contains("rag_chunks_au"))
         }
     }
 

@@ -226,7 +226,18 @@ struct OpenAIClient: AIClientProtocol {
                 messages.append(.assistant(.init(content: .textContent(message.content))))
             }
         }
-        messages.append(.user(.init(content: .string(request.userPrompt))))
+        if request.images.isEmpty {
+            messages.append(.user(.init(content: .string(request.userPrompt))))
+        } else {
+            var parts: [ChatQuery.ChatCompletionMessageParam.UserMessageParam.Content.ContentPart] = [
+                .text(.init(text: request.userPrompt))
+            ]
+            for image in request.images {
+                let dataURL = "data:\(image.contentType);base64,\(image.data.base64EncodedString())"
+                parts.append(.image(.init(imageUrl: .init(url: dataURL, detail: .auto))))
+            }
+            messages.append(.user(.init(content: .contentParts(parts))))
+        }
 
         return ChatQuery(
             messages: messages,
