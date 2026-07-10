@@ -247,7 +247,7 @@ if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
 
   if [ "$NOTARY_EXIT" -ne 0 ]; then
     if [ -n "$SUBMISSION_ID" ]; then
-      fail "notarization 等待失败；Submission ID 已保存到 $NOTARY_SUBMISSION_PATH。Accepted 后可用 STARCAT_NOTARY_SUBMISSION_ID=$SUBMISSION_ID 续跑 release-direct.sh"
+      fail "notarization 等待失败；Submission ID 已保存到 ${NOTARY_SUBMISSION_PATH}。Accepted 后可用 STARCAT_NOTARY_SUBMISSION_ID=$SUBMISSION_ID 续跑 release-direct.sh"
     fi
     fail "notarization 提交或等待失败，完整输出: $NOTARY_OUTPUT_PATH"
   fi
