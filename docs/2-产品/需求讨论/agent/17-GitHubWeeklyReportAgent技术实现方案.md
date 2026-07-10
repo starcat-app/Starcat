@@ -1,8 +1,8 @@
 # GitHub Weekly Report Agent 技术实现方案
 
 > **文档定位**: `GitHub Weekly Report Agent` 作为 Starcat Agent 底层平台的首个接入实例的技术实现方案。本文只写该 Agent 的实现边界、工具接入、上下文注入、Artifact schema、UI 细节、测试与分期；底层 Runtime / Workspace / Tool / Artifact 通用设计以 [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md) 为准。
-> **状态**: 技术方案稿(2026-06-28);可用版本首轮落地(2026-07-07)。
-> **实现状态**: 已接入 Starcat 本地仓库快照、read-only Weekly tools、可审计 trace、现有 AI Provider / Keychain / OpenAIClient Markdown 生成;AI 未配置时明确失败,不生成 sample artifact。写 tag / note / status / star 操作仍不在本轮范围。
+> **状态**: Cline-style 正式版本已于 2026-07-11 落地。
+> **实现状态**: 已接入模型驱动 tool-calling loop、冻结的本地仓库上下文、可选 External Search、消息链审计和单 Markdown artifact;AI 未配置时明确失败,不生成 sample artifact。写 tag / note / status / star 操作仍不在本轮范围。
 > **关联文档**:
 > - [`08-Weekly-Trending解读方案.md`](08-Weekly-Trending解读方案.md):产品与交互方案
 > - [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md):Agent 底层平台方案
@@ -10,7 +10,29 @@
 
 ---
 
-## 一、实现目标
+## 当前正式实现(2026-07-11)
+
+本节是本文的当前事实源。后续章节保留 2026-06 的原始产品设想和目录草案;如有冲突,以本节与 [`AgentClineLoop专项/checklist.md`](../../../4-工程进度/AgentClineLoop专项/checklist.md) 为准。
+
+### GitHub Weekly Report
+
+- 正式工具 allowlist 为 `agent_parse_goal`、`context_resolve_repos`、`external_search`、`repo_cluster_topics`、`artifact_build_weekly_report`。
+- 模型自主决定工具调用顺序和参数,Runtime 负责 schema、allowlist、权限、重试、超时与预算校验;不存在固定 Trending / Weekly 工具链。
+- run 启动时冻结用户选择和本地仓库快照,避免执行中数据库变化导致上下文漂移。
+- `external_search` 复用设置页 Provider、API Key、隐私开关和缓存;关闭时返回 skipped tool-result,搜索失败时把错误作为可审计结果回灌给模型,本地链路仍可继续。
+- `artifact_build_weekly_report` 是终止工具,输出一份 Markdown 周刊并持久化;结果位于执行时间线底部,可在 Inspector 预览、复制和导出。
+
+### Repo Insight 复用
+
+Repo Insight 使用同一套 Prompt、Message、Tool、Loop、Approval、Repository 和 Workspace,其 allowlist 为 `agent_parse_repo_insight_goal`、`context_select_repo`、`external_search`、`artifact_build_repo_insight`。它不是第二套 Agent Runtime。
+
+### 当前不做
+
+多产物继续对话、小红书卡片、HTML、视频文案、图片生成、定时运行、自动发布和自动写用户数据均未交付,不在本次正式版本范围。
+
+---
+
+## 一、原始实现目标(历史提案)
 
 `GitHub Weekly Report Agent` 的目标不是单独建一个周刊页面,而是在 Agent 底层平台上验证第一条完整链路:
 
