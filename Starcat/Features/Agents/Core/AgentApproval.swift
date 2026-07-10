@@ -18,6 +18,18 @@ enum AgentApprovalStatus: String, Codable, Hashable, Sendable {
     case executed
     case failed
     case cancelled
+
+    var localizedTitle: String {
+        switch self {
+        case .pending: return String.l10n("agent.approval.status.pending")
+        case .approved: return String.l10n("agent.approval.status.approved")
+        case .rejected: return String.l10n("agent.approval.status.rejected")
+        case .executing: return String.l10n("agent.approval.status.executing")
+        case .executed: return String.l10n("agent.approval.status.executed")
+        case .failed: return String.l10n("agent.approval.status.failed")
+        case .cancelled: return String.l10n("agent.approval.status.cancelled")
+        }
+    }
 }
 
 struct AgentApprovalRequest: Codable, Hashable, Sendable, Identifiable {

@@ -26,7 +26,7 @@ final class AgentWorkspaceViewModel {
     let agents: [AgentDefinition]
     var selectedAgentID: String
     var prompt: String
-    var runTitle: String = "Ready"
+    var runTitle: String = String.l10n("agent.workspace.status.ready")
     var status: AgentRunStatus = .idle
     var approvals: [AgentApprovalRequest] = []
     var messages: [AgentMessage] = []

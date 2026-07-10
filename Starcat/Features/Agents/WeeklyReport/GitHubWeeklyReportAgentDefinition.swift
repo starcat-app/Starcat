@@ -16,7 +16,11 @@ enum BuiltInAgents {
         title: String.l10n("agent.definition.githubWeeklyReport.title"),
         subtitle: String.l10n("agent.definition.githubWeeklyReport.subtitle"),
         systemImage: "newspaper",
-        capabilityLabels: ["trending", "report", "artifact"],
+        capabilityLabels: [
+            String.l10n("agent.capability.trending"),
+            String.l10n("agent.capability.report"),
+            String.l10n("agent.capability.artifact")
+        ],
         defaultPrompt: String.l10n("agent.definition.githubWeeklyReport.defaultPrompt"),
         isEnabled: true,
         toolIDs: [
@@ -34,7 +38,11 @@ enum BuiltInAgents {
         title: String.l10n("agent.definition.repoInsight.title"),
         subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
         systemImage: "doc.text.magnifyingglass",
-        capabilityLabels: ["repo", "analysis", "artifact"],
+        capabilityLabels: [
+            String.l10n("agent.capability.repository"),
+            String.l10n("agent.capability.analysis"),
+            String.l10n("agent.capability.artifact")
+        ],
         defaultPrompt: String.l10n("agent.definition.repoInsight.defaultPrompt"),
         isEnabled: true,
         toolIDs: [
@@ -54,7 +62,11 @@ enum BuiltInAgents {
             title: String.l10n("agent.definition.repoAlternatives.title"),
             subtitle: String.l10n("agent.definition.repoAlternatives.subtitle"),
             systemImage: "arrow.triangle.branch",
-            capabilityLabels: ["compare", "github", "table"],
+            capabilityLabels: [
+                String.l10n("agent.capability.compare"),
+                String.l10n("agent.capability.github"),
+                String.l10n("agent.capability.table")
+            ],
             defaultPrompt: String.l10n("agent.definition.repoAlternatives.defaultPrompt"),
             isEnabled: false
         ),
@@ -63,7 +75,11 @@ enum BuiltInAgents {
             title: String.l10n("agent.definition.overlapScan.title"),
             subtitle: String.l10n("agent.definition.overlapScan.subtitle"),
             systemImage: "rectangle.3.group",
-            capabilityLabels: ["cluster", "cleanup", "confirm"],
+            capabilityLabels: [
+                String.l10n("agent.capability.cluster"),
+                String.l10n("agent.capability.cleanup"),
+                String.l10n("agent.capability.confirm")
+            ],
             defaultPrompt: String.l10n("agent.definition.overlapScan.defaultPrompt"),
             isEnabled: false
         ),
@@ -72,7 +88,11 @@ enum BuiltInAgents {
             title: String.l10n("agent.definition.recallSearch.title"),
             subtitle: String.l10n("agent.definition.recallSearch.subtitle"),
             systemImage: "quote.bubble",
-            capabilityLabels: ["fts", "semantic", "citation"],
+            capabilityLabels: [
+                String.l10n("agent.capability.fts"),
+                String.l10n("agent.capability.semantic"),
+                String.l10n("agent.capability.citation")
+            ],
             defaultPrompt: String.l10n("agent.definition.recallSearch.defaultPrompt"),
             isEnabled: false
         ),
@@ -81,7 +101,11 @@ enum BuiltInAgents {
             title: String.l10n("agent.definition.untaggedTidy.title"),
             subtitle: String.l10n("agent.definition.untaggedTidy.subtitle"),
             systemImage: "tag",
-            capabilityLabels: ["taxonomy", "queue", "review"],
+            capabilityLabels: [
+                String.l10n("agent.capability.taxonomy"),
+                String.l10n("agent.capability.queue"),
+                String.l10n("agent.capability.review")
+            ],
             defaultPrompt: String.l10n("agent.definition.untaggedTidy.defaultPrompt"),
             isEnabled: false
         ),
@@ -90,7 +114,10 @@ enum BuiltInAgents {
             title: String.l10n("agent.definition.releaseWatcher.title"),
             subtitle: String.l10n("agent.definition.releaseWatcher.subtitle"),
             systemImage: "bell.badge",
-            capabilityLabels: ["release", "watch"],
+            capabilityLabels: [
+                String.l10n("agent.capability.release"),
+                String.l10n("agent.capability.watch")
+            ],
             defaultPrompt: String.l10n("agent.definition.releaseWatcher.defaultPrompt"),
             isEnabled: false
         )

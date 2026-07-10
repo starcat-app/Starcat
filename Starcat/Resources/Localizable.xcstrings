@@ -2923,6 +2923,110 @@
         }
       }
     },
+    "agent.approval.status.approved" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Approved" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已批准" } } }
+    },
+    "agent.approval.status.cancelled" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancelled" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已取消" } } }
+    },
+    "agent.approval.status.executed" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Executed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已执行" } } }
+    },
+    "agent.approval.status.executing" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Executing" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行中" } } }
+    },
+    "agent.approval.status.failed" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行失败" } } }
+    },
+    "agent.approval.status.pending" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending approval" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待审批" } } }
+    },
+    "agent.approval.status.rejected" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Rejected" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已拒绝" } } }
+    },
+    "agent.capability.analysis" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "analysis" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析" } } }
+    },
+    "agent.capability.artifact" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "artifact" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "产出物" } } }
+    },
+    "agent.capability.citation" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "citation" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "引用" } } }
+    },
+    "agent.capability.cleanup" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "cleanup" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清理" } } }
+    },
+    "agent.capability.cluster" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "cluster" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "聚类" } } }
+    },
+    "agent.capability.compare" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "compare" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "对比" } } }
+    },
+    "agent.capability.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "confirm" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "确认" } } }
+    },
+    "agent.capability.fts" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "FTS" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全文检索" } } }
+    },
+    "agent.capability.github" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub" } } }
+    },
+    "agent.capability.queue" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "queue" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "队列" } } }
+    },
+    "agent.capability.release" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "release" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发布" } } }
+    },
+    "agent.capability.report" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "report" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "报告" } } }
+    },
+    "agent.capability.repository" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "repository" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } } }
+    },
+    "agent.capability.review" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "review" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复核" } } }
+    },
+    "agent.capability.semantic" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "semantic" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语义" } } }
+    },
+    "agent.capability.table" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "table" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "表格" } } }
+    },
+    "agent.capability.taxonomy" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "taxonomy" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分类" } } }
+    },
+    "agent.capability.trending" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "trending" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "趋势" } } }
+    },
+    "agent.capability.watch" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "watch" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关注" } } }
+    },
     "agent.context.source.empty" : {
       "localizations" : {
         "en" : {
@@ -3713,6 +3817,42 @@
           }
         }
       }
+    },
+    "agent.tool.permission.highCost" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "High cost" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "高成本" } } }
+    },
+    "agent.tool.permission.readOnly" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Read only" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "只读" } } }
+    },
+    "agent.tool.permission.requiresConfirmation" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Requires confirmation" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要确认" } } }
+    },
+    "agent.tool.status.completed" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成" } } }
+    },
+    "agent.tool.status.failed" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } } }
+    },
+    "agent.tool.status.pending" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待执行" } } }
+    },
+    "agent.tool.status.rejected" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Rejected" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已拒绝" } } }
+    },
+    "agent.tool.status.skipped" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Skipped" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已跳过" } } }
+    },
+    "agent.tool.status.timedOut" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Timed out" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已超时" } } }
     },
     "agent.workspace.assistant.completedFallback" : {
       "localizations" : {

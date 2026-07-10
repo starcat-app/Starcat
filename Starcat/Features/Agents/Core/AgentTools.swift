@@ -18,6 +18,14 @@ enum AgentToolPermission: String, Codable, Hashable, Sendable {
     case readOnly
     case requiresConfirmation
     case highCost
+
+    var localizedTitle: String {
+        switch self {
+        case .readOnly: return String.l10n("agent.tool.permission.readOnly")
+        case .requiresConfirmation: return String.l10n("agent.tool.permission.requiresConfirmation")
+        case .highCost: return String.l10n("agent.tool.permission.highCost")
+        }
+    }
 }
 
 /// 工具级重试策略。只有无副作用工具可以声明自动重试。

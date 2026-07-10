@@ -40,6 +40,16 @@ enum AgentToolResultStatus: String, Codable, Hashable, Sendable {
     case failed
     case timedOut
     case rejected
+
+    var localizedTitle: String {
+        switch self {
+        case .completed: return String.l10n("agent.tool.status.completed")
+        case .skipped: return String.l10n("agent.tool.status.skipped")
+        case .failed: return String.l10n("agent.tool.status.failed")
+        case .timedOut: return String.l10n("agent.tool.status.timedOut")
+        case .rejected: return String.l10n("agent.tool.status.rejected")
+        }
+    }
 }
 
 /// 单次工具执行尝试的持久化审计事实。

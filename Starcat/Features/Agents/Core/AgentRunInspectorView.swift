@@ -77,7 +77,7 @@ struct AgentRunInspectorView: View {
                 inspectorSection(
                     title: String.l10n("agent.workspace.inspector.approval.permission"),
                     icon: "lock.shield",
-                    content: approval.permission.rawValue
+                    content: approval.permission.localizedTitle
                 )
                 inspectorSection(
                     title: String.l10n("agent.workspace.timeline.input"),
