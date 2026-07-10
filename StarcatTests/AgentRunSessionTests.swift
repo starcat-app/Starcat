@@ -86,7 +86,15 @@ struct AgentRunSessionTests {
     func gatesMessagesWhileWaitingForApproval() async throws {
         let runID = UUID()
         let session = AgentRunSession(runID: runID)
-        try await session.markWaitingForConfirmation()
+        let approvalID = UUID()
+        try await session.requestApproval(AgentApprovalRequest(
+            id: approvalID,
+            runID: runID,
+            toolCallID: "call-1",
+            toolName: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            permission: .requiresConfirmation
+        ))
 
         await #expect(throws: AgentRunSessionError.waitingForConfirmation) {
             _ = try await session.append(role: .assistant, turn: 0, parts: [.text("blocked")])
@@ -94,11 +102,13 @@ struct AgentRunSessionTests {
         let ignoredCommand = await session.apply(.cancel(runID: UUID()))
         let resumed = await session.apply(.decideApproval(
             runID: runID,
-            approvalID: UUID(),
+            approvalID: approvalID,
             decision: .approved
         ))
         #expect(!ignoredCommand)
         #expect(resumed)
+        let snapshot = await session.snapshot()
+        #expect(snapshot.pendingApproval?.status == .approved)
         _ = try await session.append(role: .assistant, turn: 0, parts: [.text("resumed")])
     }
 }

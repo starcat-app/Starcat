@@ -137,7 +137,7 @@
 ### 5.6 Run Session 与 Loop Runtime
 
 - [x] 新增 `AgentRunLimits`: maxIterations/maxToolCalls/maxTokens/maxDuration/toolTimeout。
-- [ ] 新增 `AgentRunSession` actor,持有 runID、messages、iteration、usage、pendingApproval、terminalState 和 command channel。
+- [x] 新增 `AgentRunSession` actor,持有 runID、messages、iteration、usage、pendingApproval、terminalState 和 command channel。
 - [ ] 新增模型驱动 `LoopAgentRuntime`,直接替换线性 `DefaultAgentRuntime` 执行路径。
 - [ ] Runtime 创建并持久化 user message,使用 PromptBuilder 发起第一轮模型调用。
 - [ ] 每轮持久化 assistant message、reasoning、usage 和 tool calls。
@@ -166,7 +166,7 @@
 
 ### 5.8 Approval 闭环
 
-- [ ] 新增 `AgentPendingApproval`: runID/toolCallID/toolName/input/policy/sequence/status。
+- [x] 新增 `AgentApprovalRequest`: runID/toolCallID/toolName/input/policy/status/createdAt/decidedAt。
 - [ ] 新增 `waitingForConfirmation` run 状态和 Runtime 事件。
 - [ ] `requiresConfirmation` 工具在执行前暂停 session 并持久化 pending approval。
 - [ ] approve 命令只执行原 toolCallID 对应工具,执行成功后写入 tool-result 并继续同一 run。

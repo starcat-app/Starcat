@@ -59,6 +59,7 @@ struct AgentRunSessionSnapshot: Equatable, Sendable {
     var iteration: Int
     var toolCallCount: Int
     var usage: AgentUsage
+    var pendingApproval: AgentApprovalRequest?
     var state: AgentRunSessionState
     var nextSequence: Int
     var startedAt: Date
@@ -103,6 +104,7 @@ actor AgentRunSession {
     private var iteration = 0
     private var toolCallCount = 0
     private var usage = AgentUsage.zero
+    private var pendingApproval: AgentApprovalRequest?
     private var state: AgentRunSessionState = .running
     private var nextSequence = 0
 
@@ -174,17 +176,18 @@ actor AgentRunSession {
         usage = next
     }
 
-    func markWaitingForConfirmation() throws {
+    func requestApproval(_ approval: AgentApprovalRequest) throws {
         try ensureRunnable()
+        guard approval.runID == runID else {
+            throw AgentRunSessionError.invalidRunID(approval.runID)
+        }
+        pendingApproval = approval
         state = .waitingForConfirmation
     }
 
-    func resumeAfterConfirmation() throws {
-        guard state == .waitingForConfirmation else {
-            if state.isTerminal { throw AgentRunSessionError.terminal(state) }
-            return
-        }
-        state = .running
+    func clearResolvedApproval() {
+        guard pendingApproval?.status != .pending else { return }
+        pendingApproval = nil
     }
 
     @discardableResult
@@ -201,10 +204,15 @@ actor AgentRunSession {
         case .cancel:
             state = .cancelled
             return true
-        case .decideApproval:
-            // 审批 ID 与决策匹配由 ApprovalStore 负责；Session 只负责命令所属 run
-            // 与状态切换，避免在底层状态机复制审批事实。
-            guard state == .waitingForConfirmation else { return false }
+        case .decideApproval(_, let approvalID, let decision):
+            guard state == .waitingForConfirmation,
+                  var approval = pendingApproval,
+                  approval.id == approvalID,
+                  approval.status == .pending
+            else { return false }
+            approval.status = decision == .approved ? .approved : .rejected
+            approval.decidedAt = now()
+            pendingApproval = approval
             state = .running
             return true
         }
@@ -217,6 +225,7 @@ actor AgentRunSession {
             iteration: iteration,
             toolCallCount: toolCallCount,
             usage: usage,
+            pendingApproval: pendingApproval,
             state: state,
             nextSequence: nextSequence,
             startedAt: startedAt
