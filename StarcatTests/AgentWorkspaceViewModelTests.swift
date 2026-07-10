@@ -368,6 +368,58 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.assistantOutput.isEmpty)
     }
 
+    @Test("重启后打开 pending approval 只恢复等待态且不会自动决策")
+    func openPendingApprovalRestoresWaitingStateWithoutAutoDecision() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID(uuidString: "00000000-0000-0000-0000-000000001020")!
+        let run = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "等待审批",
+            context: AgentRunContext(sourceDescription: "Unit"),
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        let call = AgentToolCall(
+            id: "pending-call",
+            name: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            sequence: 1
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("等待审批")]),
+            runStatus: .running
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.toolCall(call)]),
+            runStatus: .running
+        )
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: .requiresConfirmation,
+            sequence: call.sequence
+        )
+        try await repository.saveApproval(approval, runStatus: .waitingForConfirmation)
+        let recorder = RestartApprovalRecorder()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: RestartApprovalRuntime(approval: approval, recorder: recorder)
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.openHistoryRun(run)
+        try await waitUntil {
+            let resumeCount = await recorder.resumeCount()
+            return viewModel.status == .waitingForConfirmation && resumeCount == 1
+        }
+
+        #expect(viewModel.approvals == [approval])
+        #expect(await recorder.commands().isEmpty)
+        #expect(viewModel.messages.map(\.sequence) == [0, 1])
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 500_000_000,
         _ predicate: @escaping @MainActor () async -> Bool
@@ -430,6 +482,46 @@ private struct CommandRecordingAgentRuntime: AgentRuntime {
     func send(_ command: AgentRunCommand) async {
         await recorder.record(command)
     }
+}
+
+private struct RestartApprovalRuntime: AgentRuntime {
+    let approval: AgentApprovalRequest
+    let recorder: RestartApprovalRecorder
+
+    func run(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func resumePendingRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            Task {
+                await recorder.recordResume()
+                continuation.yield(.approvalUpdated(approval))
+                continuation.finish()
+            }
+        }
+    }
+
+    func send(_ command: AgentRunCommand) async {
+        await recorder.record(command)
+    }
+}
+
+private actor RestartApprovalRecorder {
+    private var resumes = 0
+    private var recordedCommands: [AgentRunCommand] = []
+
+    func recordResume() { resumes += 1 }
+    func record(_ command: AgentRunCommand) { recordedCommands.append(command) }
+    func resumeCount() -> Int { resumes }
+    func commands() -> [AgentRunCommand] { recordedCommands }
 }
 
 private actor AgentCommandRecorder {
