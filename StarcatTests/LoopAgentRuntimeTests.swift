@@ -133,6 +133,50 @@ struct LoopAgentRuntimeTests {
         #expect((await recorder.recordedRequests()).count == 2)
     }
 
+    @Test("只读模式隐藏写工具且宿主拒绝 Provider 越权调用")
+    func readonlyModeHidesAndRejectsWriteTool() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-write", name: "write_tag", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "写工具不可用", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let readTool = RuntimeStubTool(name: "read_repo", result: "read")
+        let writeTool = RuntimeStubTool(
+            name: "write_tag",
+            result: "written",
+            permission: .requiresConfirmation
+        )
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [readTool, writeTool]),
+            mode: .readonlyPlanning
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["read_repo", "write_tag"]),
+            prompt: "只读检查",
+            context: .empty
+        ))
+        let requests = await recorder.recordedRequests()
+        let result = try #require(events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first)
+
+        #expect(requests.first?.tools.map(\.name) == ["read_repo"])
+        #expect(result.status == .failed)
+        #expect(result.output.jsonDescription.contains("write_tag"))
+        #expect(await writeTool.executionCount() == 0)
+    }
+
     @Test("非法参数不会执行工具并作为失败结果回灌")
     func invalidArgumentsBecomeToolResult() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -424,7 +468,8 @@ struct LoopAgentRuntimeTests {
         let tool = RuntimeStubTool(name: "write_tag", result: "written", permission: .requiresConfirmation)
         let runtime = LoopAgentRuntime(
             modelClient: RecordedAgentModelClient(recorder: recorder),
-            toolRegistry: try AgentToolRegistry(tools: [tool])
+            toolRegistry: try AgentToolRegistry(tools: [tool]),
+            mode: .approvedAction
         )
         var events: [AgentRunEvent] = []
 
@@ -459,7 +504,8 @@ struct LoopAgentRuntimeTests {
         let tool = RuntimeStubTool(name: "write_tag", result: "unused", permission: .requiresConfirmation)
         let runtime = LoopAgentRuntime(
             modelClient: RecordedAgentModelClient(recorder: recorder),
-            toolRegistry: try AgentToolRegistry(tools: [tool])
+            toolRegistry: try AgentToolRegistry(tools: [tool]),
+            mode: .approvedAction
         )
 
         for await event in runtime.run(
@@ -492,7 +538,8 @@ struct LoopAgentRuntimeTests {
         let tool = RuntimeStubTool(name: "write_tag", result: "unused", permission: .requiresConfirmation)
         let runtime = LoopAgentRuntime(
             modelClient: RecordedAgentModelClient(recorder: recorder),
-            toolRegistry: try AgentToolRegistry(tools: [tool])
+            toolRegistry: try AgentToolRegistry(tools: [tool]),
+            mode: .approvedAction
         )
         var cancelled = false
 
@@ -557,7 +604,8 @@ struct LoopAgentRuntimeTests {
         let runtime = LoopAgentRuntime(
             modelClient: RecordedAgentModelClient(recorder: recorder),
             toolRegistry: try AgentToolRegistry(tools: [tool]),
-            runRepository: repository
+            runRepository: repository,
+            mode: .approvedAction
         )
 
         var events: [AgentRunEvent] = []

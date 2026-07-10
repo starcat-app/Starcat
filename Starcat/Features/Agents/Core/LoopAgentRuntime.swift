@@ -17,6 +17,7 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case approvalRequired(String)
     case contextUnavailable
     case repositoryContextEmpty
+    case toolNotVisible(String)
 
     var errorDescription: String? {
         switch self {
@@ -30,6 +31,8 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             return String.l10n("agent.loop.error.contextUnavailable")
         case .repositoryContextEmpty:
             return String.l10n("agent.loop.error.repositoryContextEmpty")
+        case .toolNotVisible(let toolName):
+            return String(format: String.l10n("agent.loop.error.toolNotVisibleFormat"), toolName)
         }
     }
 }
@@ -267,8 +270,10 @@ struct LoopAgentRuntime: AgentRuntime {
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws {
         try Task.checkCancellation()
-        let allowedTools = try toolRegistry.tools(named: definition.toolIDs)
+        let registeredTools = try toolRegistry.tools(named: definition.toolIDs)
+        let allowedTools = visibleTools(from: registeredTools)
         let toolDefinitions = allowedTools.map(\.definition)
+        let visibleToolNames = Set(toolDefinitions.map(\.name))
         let promptContext = AgentPromptContext(
             definition: definition,
             runContext: context,
@@ -296,6 +301,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 prompt: prompt,
                 context: context,
                 values: values,
+                visibleToolNames: visibleToolNames,
                 continuation: continuation
             )
             AppLog.ai.info("[AgentRuntime] tool.restored runID=\(runID.uuidString, privacy: .public) turn=\(restored.turn, privacy: .public) sequence=\(restored.call.sequence, privacy: .public) toolCallID=\(restored.call.id, privacy: .public) tool=\(restored.call.name, privacy: .public) status=\(restored.execution.status.rawValue, privacy: .public)")
@@ -422,6 +428,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     context: context,
                     values: values,
                     payload: payload,
+                    visibleToolNames: visibleToolNames,
                     continuation: continuation
                 )
                 AppLog.ai.info("[AgentRuntime] tool.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) sequence=\(call.sequence, privacy: .public) toolCallID=\(call.id, privacy: .public) tool=\(call.name, privacy: .public) status=\(execution.status.rawValue, privacy: .public) attempts=\(execution.attempts.count, privacy: .public)")
@@ -554,9 +561,17 @@ struct LoopAgentRuntime: AgentRuntime {
         context: AgentRunContext,
         values: [String: String],
         payload: AgentToolPayload,
+        visibleToolNames: Set<String>,
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws -> ToolExecution {
         do {
+            guard visibleToolNames.contains(call.name) else {
+                return .failure(
+                    call: call,
+                    message: LoopAgentRuntimeError.toolNotVisible(call.name).localizedDescription,
+                    status: .failed
+                )
+            }
             let tool = try toolRegistry.validatedTool(for: call)
             let input = AgentToolInput(
                 toolCallID: call.id,
@@ -672,6 +687,7 @@ struct LoopAgentRuntime: AgentRuntime {
         prompt: String,
         context: AgentRunContext,
         values: [String: String],
+        visibleToolNames: Set<String>,
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws -> RestoredApprovalExecution {
         guard let approval = snapshot.approvals.last(where: { $0.status == .pending }) else {
@@ -689,6 +705,9 @@ struct LoopAgentRuntime: AgentRuntime {
               call.input == approval.input
         else {
             throw LoopAgentRuntimeError.approvalRequired(approval.toolName)
+        }
+        guard visibleToolNames.contains(call.name) else {
+            throw LoopAgentRuntimeError.toolNotVisible(call.name)
         }
 
         let tool = try toolRegistry.validatedTool(for: call)
@@ -810,6 +829,15 @@ struct LoopAgentRuntime: AgentRuntime {
             id: "required-artifact",
             content: "Before the final answer, create the required artifact with one of: \(submitTools.joined(separator: ", "))."
         )]
+    }
+
+    private func visibleTools(from tools: [any AgentTool]) -> [any AgentTool] {
+        switch mode {
+        case .approvedAction:
+            return tools
+        case .readonlyPlanning, .reportGeneration, .backgroundDigest:
+            return tools.filter { $0.permission == .readOnly }
+        }
     }
 
     private static func validateRequiredContext(

@@ -2887,6 +2887,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前 Agent Runtime 无法恢复待审批运行。" } }
       }
     },
+    "agent.loop.error.toolNotVisibleFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool %@ is not available to this Agent in the current execution mode." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具 %@ 在当前 Agent 与执行模式下不可用。" } }
+      }
+    },
     "agent.loop.error.toolTimeoutFormat" : {
       "extractionState" : "manual",
       "localizations" : {

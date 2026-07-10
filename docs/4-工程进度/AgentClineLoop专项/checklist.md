@@ -53,8 +53,8 @@
 - [ ] `AgentRunSession` 使用 actor 或等价串行隔离维护 loop 状态,UI 通过命令通道发送 cancel/approve/reject。
 - [ ] 所有持久化事件拥有单调递增 `sequence`,历史恢复严格按 sequence 重建 timeline。
 - [ ] 所有工具必须声明模型可见 `name`、`description`、`inputSchema`、`permission`、`completesRun`、`timeout` 和 `retryPolicy`。
-- [ ] Runtime 在调用宿主工具前强制校验工具可见性、参数 schema 和权限,不能依赖工具自行保护。
-- [ ] 模型可见工具集合由 Agent 定义、execution mode 和产品权限共同决定。
+- [x] Runtime 在调用宿主工具前强制校验工具可见性、参数 schema 和权限,不能依赖工具自行保护。
+- [x] 模型可见工具集合由 Agent 定义和 execution mode 共同决定;External Search 产品开关保留工具可见性,由结构化 skipped result 向模型反馈禁用状态。
 - [ ] AI Provider 不支持 tool-calling 时明确失败,不能静默回退到固定工具序列或伪造结果。
 - [ ] 流式 tool-call 必须按 choice/index/callID 聚合参数 delta,完整 JSON 形成后才能执行。
 - [ ] Runtime 同时限制 max iterations、总工具调用数、总 token、上下文长度、总耗时和单工具超时。
