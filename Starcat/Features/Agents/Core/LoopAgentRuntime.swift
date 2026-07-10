@@ -1010,8 +1010,6 @@ struct LoopAgentRuntime: AgentRuntime {
             return .skipped
         case .failed:
             return .failed
-        case .requiresConfirmation:
-            return .rejected
         }
     }
 

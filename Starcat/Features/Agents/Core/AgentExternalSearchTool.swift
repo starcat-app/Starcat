@@ -247,8 +247,6 @@ struct ExternalSearchAgentTool: AgentTool {
             return "skipped"
         case .failed:
             return "failed"
-        case .requiresConfirmation:
-            return "requires confirmation"
         }
     }
 

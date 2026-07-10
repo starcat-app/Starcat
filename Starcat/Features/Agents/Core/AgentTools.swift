@@ -12,8 +12,8 @@ import Foundation
 
 /// Agent tool 的权限边界。
 ///
-/// 当前只实现只读工具。写入、高成本和确认型工具先建立状态语义,后续接 tag/note/star
-/// 时必须走确认流,不能把写操作混进自动 loop。
+/// Runtime 已实现写入与高成本工具的执行前审批闭环;当前正式 Weekly 和 Repo Insight
+/// 只注册只读工具。后续接 tag/note/star 时必须声明对应权限,不能把写操作混进自动 loop。
 enum AgentToolPermission: String, Codable, Hashable, Sendable {
     case readOnly
     case requiresConfirmation
@@ -79,7 +79,6 @@ enum AgentToolStatus: String, Codable, Hashable, Sendable {
     case completed
     case skipped
     case failed
-    case requiresConfirmation
 
     var stepStatus: AgentStepStatus {
         switch self {
@@ -89,8 +88,6 @@ enum AgentToolStatus: String, Codable, Hashable, Sendable {
             return .skipped
         case .failed:
             return .failed
-        case .requiresConfirmation:
-            return .pending
         }
     }
 }
