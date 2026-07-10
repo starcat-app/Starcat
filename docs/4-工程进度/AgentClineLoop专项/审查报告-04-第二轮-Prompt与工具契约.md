@@ -39,3 +39,11 @@
 
 1. 删除旧版 post-execution confirmation 状态。
 2. 更新权限边界注释并运行相关专项测试。
+
+## 5. 修复结果
+
+- `efd378d`:删除工具执行结果中的旧审批状态,更新权限契约注释。
+- 相关测试:AgentToolRegistry、AgentExternalSearchTool、LoopAgentRuntime、AgentProductRuntime 共 31 项通过,0 失败。
+- 测试结果:`build/DerivedData-Agent/Logs/Test/Test-Starcat-2026.07.11_01-00-28-+0800.xcresult`。
+
+本轮发现项已全部关闭,无遗留阻断问题。
