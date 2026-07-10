@@ -57,6 +57,82 @@ struct LoopAgentRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("单轮多个 tool-call 会按确定顺序执行并全部回灌下一轮")
+    func executesMultipleToolCallsAndReturnsEveryResult() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: "需要两个本地工具",
+                toolCalls: [
+                    .init(id: "call-a", name: "tool_a", arguments: "{}"),
+                    .init(id: "call-b", name: "tool_b", arguments: "{}")
+                ],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "已综合两个结果", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let toolA = RuntimeStubTool(name: "tool_a", result: "A")
+        let toolB = RuntimeStubTool(name: "tool_b", result: "B")
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [toolA, toolB])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["tool_a", "tool_b"]),
+            prompt: "执行",
+            context: .empty
+        ))
+        let requests = await recorder.recordedRequests()
+        let results = events.compactMap { event -> AgentMessage? in
+            guard case .messageAppended(let message) = event, message.role == .tool else { return nil }
+            return message
+        }
+
+        #expect(await toolA.executionCount() == 1)
+        #expect(await toolB.executionCount() == 1)
+        #expect(results.map(\.parts).count == 2)
+        #expect(results.map(\.sequence) == results.map(\.sequence).sorted())
+        #expect(requests[1].prompt.messages.filter { $0.role == .tool }.count == 2)
+    }
+
+    @Test("未知工具会形成失败 tool-result 并回灌模型")
+    func unknownToolBecomesFailedToolResult() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-missing", name: "missing_tool", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "已识别工具不可用", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: []),
+            prompt: "执行",
+            context: .empty
+        ))
+        let result = try #require(events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first)
+
+        #expect(result.toolCallID == "call-missing")
+        #expect(result.status == .failed)
+        #expect(result.isError)
+        #expect((await recorder.recordedRequests()).count == 2)
+    }
+
     @Test("非法参数不会执行工具并作为失败结果回灌")
     func invalidArgumentsBecomeToolResult() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -189,6 +265,68 @@ struct LoopAgentRuntimeTests {
             guard case .runFailed(let message) = event else { return false }
             return message == LoopAgentRuntimeError.repositoryContextEmpty.localizedDescription
         }))
+    }
+
+    @Test("迭代预算耗尽会进入失败终态")
+    func iterationBudgetEndsRunAsFailed() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-loop", name: "tool_a", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [RuntimeStubTool(name: "tool_a", result: "A")]),
+            limits: AgentRunLimits(maxIterations: 1)
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["tool_a"]),
+            prompt: "持续执行",
+            context: .empty
+        ))
+
+        #expect(events.contains(where: { event in
+            guard case .runFailed(let message) = event else { return false }
+            return message == AgentRunSessionError.iterationLimit(1).localizedDescription
+        }))
+        #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
+    @Test("cancel 命令会中断模型流并把持久化 run 收敛为 cancelled")
+    func cancellationCommandPersistsCancelledTerminalState() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        let modelRecorder = BlockingModelRecorder()
+        let runtime = LoopAgentRuntime(
+            modelClient: BlockingAgentModelClient(recorder: modelRecorder),
+            toolRegistry: try AgentToolRegistry(tools: []),
+            runRepository: repository
+        )
+        let stream = runtime.run(
+            definition: makeDefinition(toolIDs: []),
+            prompt: "等待模型",
+            context: .empty
+        )
+        let consumer = Task {
+            for await _ in stream {}
+        }
+
+        try await waitUntil { await modelRecorder.hasStarted() }
+        let running = try #require(try await repository.recentRuns(limit: 1).first)
+        let runID = try #require(UUID(uuidString: running.id))
+        await runtime.send(.cancel(runID: runID))
+        try await waitUntil {
+            try await repository.recentRuns(limit: 1).first?.status == AgentRunStatus.cancelled.rawValue
+        }
+
+        let run = try #require(try await repository.recentRuns(limit: 1).first)
+        #expect(run.status == AgentRunStatus.cancelled.rawValue)
+        consumer.cancel()
     }
 
     @Test("Weekly system prompt 注入真实数据与 artifact 专用约束")
@@ -451,6 +589,20 @@ struct LoopAgentRuntimeTests {
         return events
     }
 
+    private func waitUntil(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        _ predicate: @escaping () async throws -> Bool
+    ) async throws {
+        let started = ContinuousClock.now
+        while try await predicate() == false {
+            if started.duration(to: ContinuousClock.now) > .nanoseconds(Int64(timeoutNanoseconds)) {
+                Issue.record("Timed out waiting for Agent runtime condition")
+                return
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
     private func makeDefinition(
         toolIDs: [String],
         artifactTypes: [AgentArtifactType] = []
@@ -512,6 +664,32 @@ private struct RecordedAgentModelClient: AgentLoopModelClient {
                     continuation.finish(throwing: error)
                 }
             }
+        }
+    }
+}
+
+private actor BlockingModelRecorder {
+    private var started = false
+
+    func markStarted() { started = true }
+    func hasStarted() -> Bool { started }
+}
+
+private struct BlockingAgentModelClient: AgentLoopModelClient {
+    let recorder: BlockingModelRecorder
+
+    func stream(request: AgentModelRequest) -> AsyncThrowingStream<AgentModelStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                await recorder.markStarted()
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    continuation.finish(throwing: LoopAgentRuntimeError.emptyModelResponse)
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

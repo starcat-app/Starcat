@@ -34,21 +34,47 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+private actor AgentRuntimeTaskHandle {
+    private var task: Task<Void, Never>?
+    private var cancellationRequested = false
+
+    func install(_ task: Task<Void, Never>) {
+        if cancellationRequested {
+            task.cancel()
+        } else {
+            self.task = task
+        }
+    }
+
+    func cancel() {
+        cancellationRequested = true
+        task?.cancel()
+    }
+}
+
 private actor AgentRuntimeSessionRouter {
     private var activeSession: AgentRunSession?
+    private var activeTaskHandle: AgentRuntimeTaskHandle?
 
-    func activate(_ session: AgentRunSession) {
+    func activate(_ session: AgentRunSession, taskHandle: AgentRuntimeTaskHandle) {
         activeSession = session
+        activeTaskHandle = taskHandle
     }
 
     func deactivate(runID: UUID) async {
         guard let activeSession, activeSession.runID == runID else { return }
         self.activeSession = nil
+        activeTaskHandle = nil
     }
 
     func send(_ command: AgentRunCommand) async -> Bool {
         guard let activeSession else { return false }
-        return await activeSession.apply(command)
+        let accepted = await activeSession.apply(command)
+        if accepted, case .cancel = command {
+            // Session 状态变化本身无法唤醒正在等待网络流的 task，必须同时取消执行任务。
+            await activeTaskHandle?.cancel()
+        }
+        return accepted
     }
 }
 
@@ -97,6 +123,11 @@ struct LoopAgentRuntime: AgentRuntime {
 
     func send(_ command: AgentRunCommand) async {
         guard await sessionRouter.send(command) else { return }
+        if case .cancel(let runID) = command {
+            // 用户取消的持久化不能依赖 Provider 流是否及时响应 Task cancellation。
+            await persistRunStatus(runID: runID, status: .cancelled, finishedAt: Date())
+            AppLog.ai.info("[AgentRuntime] run.cancel.requested runID=\(runID.uuidString, privacy: .public)")
+        }
         _ = await approvalCoordinator.resolve(command)
     }
 
@@ -108,9 +139,10 @@ struct LoopAgentRuntime: AgentRuntime {
         AsyncStream { continuation in
             let runID = UUID()
             let session = AgentRunSession(runID: runID, limits: limits)
+            let taskHandle = AgentRuntimeTaskHandle()
             let task = Task {
                 AppLog.ai.info("[AgentRuntime] run.start runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) mode=\(mode.rawValue, privacy: .public)")
-                await sessionRouter.activate(session)
+                await sessionRouter.activate(session, taskHandle: taskHandle)
                 do {
                     try await execute(
                         runID: runID,
@@ -123,16 +155,22 @@ struct LoopAgentRuntime: AgentRuntime {
                 } catch is CancellationError {
                     await finishCancelled(runID: runID, session: session, continuation: continuation)
                 } catch {
-                    await finishFailed(
-                        runID: runID,
-                        session: session,
-                        message: Self.errorMessage(error),
-                        continuation: continuation
-                    )
+                    let state = await session.snapshot().state
+                    if Task.isCancelled || state == .cancelled {
+                        await finishCancelled(runID: runID, session: session, continuation: continuation)
+                    } else {
+                        await finishFailed(
+                            runID: runID,
+                            session: session,
+                            message: Self.errorMessage(error),
+                            continuation: continuation
+                        )
+                    }
                 }
                 await sessionRouter.deactivate(runID: runID)
                 continuation.finish()
             }
+            Task { await taskHandle.install(task) }
 
             continuation.onTermination = { _ in
                 task.cancel()
@@ -173,9 +211,10 @@ struct LoopAgentRuntime: AgentRuntime {
                 return
             }
 
+            let taskHandle = AgentRuntimeTaskHandle()
             let task = Task {
                 AppLog.ai.info("[AgentRuntime] run.resume runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) approvalID=\(pendingApproval.id.uuidString, privacy: .public)")
-                await sessionRouter.activate(session)
+                await sessionRouter.activate(session, taskHandle: taskHandle)
                 do {
                     try await execute(
                         runID: runID,
@@ -189,16 +228,22 @@ struct LoopAgentRuntime: AgentRuntime {
                 } catch is CancellationError {
                     await finishCancelled(runID: runID, session: session, continuation: continuation)
                 } catch {
-                    await finishFailed(
-                        runID: runID,
-                        session: session,
-                        message: Self.errorMessage(error),
-                        continuation: continuation
-                    )
+                    let state = await session.snapshot().state
+                    if Task.isCancelled || state == .cancelled {
+                        await finishCancelled(runID: runID, session: session, continuation: continuation)
+                    } else {
+                        await finishFailed(
+                            runID: runID,
+                            session: session,
+                            message: Self.errorMessage(error),
+                            continuation: continuation
+                        )
+                    }
                 }
                 await sessionRouter.deactivate(runID: runID)
                 continuation.finish()
             }
+            Task { await taskHandle.install(task) }
 
             continuation.onTermination = { _ in
                 task.cancel()
@@ -487,6 +532,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 completed = response
             }
         }
+        try Task.checkCancellation()
         guard let completed else { throw LoopAgentRuntimeError.emptyModelResponse }
         if streamedText.isEmpty, !completed.text.isEmpty {
             continuation.yield(.assistantDelta(completed.text))
