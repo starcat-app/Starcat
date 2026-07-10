@@ -228,20 +228,27 @@ enum AgentJSONSchemaValidationError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .typeMismatch(let path, let expected):
-            return "Invalid tool input at \(path): expected \(expected.rawValue)"
+            return String(format: String.l10n("agent.schema.error.typeMismatchFormat"), path, expected.rawValue)
         case .missingRequired(let path, let key):
-            return "Invalid tool input at \(path): missing required property \(key)"
+            return String(format: String.l10n("agent.schema.error.missingRequiredFormat"), path, key)
         case .unknownProperty(let path, let key):
-            return "Invalid tool input at \(path): unknown property \(key)"
+            return String(format: String.l10n("agent.schema.error.unknownPropertyFormat"), path, key)
         case .valueNotAllowed(let path):
-            return "Invalid tool input at \(path): value is not in enum"
+            return String(format: String.l10n("agent.schema.error.valueNotAllowedFormat"), path)
         }
     }
 }
 
-enum AgentJSONError: Error, Equatable, Sendable {
+enum AgentJSONError: LocalizedError, Equatable, Sendable {
     case invalidUTF8
     case nonFiniteNumber
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUTF8: return String.l10n("agent.json.error.invalidUTF8")
+        case .nonFiniteNumber: return String.l10n("agent.json.error.nonFiniteNumber")
+        }
+    }
 }
 
 private extension JSONEncoder {

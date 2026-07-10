@@ -324,23 +324,23 @@ enum AgentMessageContractError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .mixedRunIDs:
-            return "Agent message history contains multiple run IDs"
+            return String.l10n("agent.message.error.mixedRunIDs")
         case .nonIncreasingSequence(let sequence):
-            return "Agent message sequence is not increasing at \(sequence)"
+            return String(format: String.l10n("agent.message.error.nonIncreasingSequenceFormat"), sequence)
         case .invalidMessage(let id):
-            return "Agent message is empty or has an invalid turn: \(id.uuidString)"
+            return String(format: String.l10n("agent.message.error.invalidMessageFormat"), id.uuidString)
         case .invalidPartForRole(let role):
-            return "Agent message part is invalid for role \(role.rawValue)"
+            return String(format: String.l10n("agent.message.error.invalidPartForRoleFormat"), role.rawValue)
         case .invalidToolCall(let id):
-            return "Agent tool call has an empty id or name: \(id)"
+            return String(format: String.l10n("agent.message.error.invalidToolCallFormat"), id)
         case .duplicateToolCallID(let id):
-            return "Duplicate Agent tool call id: \(id)"
+            return String(format: String.l10n("agent.message.error.duplicateToolCallFormat"), id)
         case .unknownToolCallID(let id):
-            return "Agent tool result references unknown call id: \(id)"
+            return String(format: String.l10n("agent.message.error.unknownToolCallFormat"), id)
         case .toolNameMismatch(let callID):
-            return "Agent tool result name does not match call id: \(callID)"
+            return String(format: String.l10n("agent.message.error.toolNameMismatchFormat"), callID)
         case .duplicateToolResult(let id):
-            return "Duplicate Agent tool result for call id: \(id)"
+            return String(format: String.l10n("agent.message.error.duplicateToolResultFormat"), id)
         }
     }
 }

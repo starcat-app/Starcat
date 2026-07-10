@@ -125,9 +125,9 @@ private enum AgentExternalSearchRequestError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingQuery:
-            return "external_search requires a non-empty query"
+            return String.l10n("agent.externalSearch.error.missingQuery")
         case .invalidArray(let key):
-            return "external_search argument \(key) has an invalid value"
+            return String(format: String.l10n("agent.externalSearch.error.invalidArgumentFormat"), key)
         }
     }
 }

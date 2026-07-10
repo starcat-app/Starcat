@@ -97,7 +97,7 @@ struct AgentExternalSearchToolTests {
         let result = await tool.execute(AgentToolInput(prompt: "不要拿我当搜索词", context: .empty))
 
         #expect(result.status == .failed)
-        #expect(result.output.log.contains("non-empty query"))
+        #expect(result.output.log.contains(String.l10n("agent.externalSearch.error.missingQuery")))
         #expect(collector.requests.isEmpty)
     }
 

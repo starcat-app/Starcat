@@ -230,13 +230,13 @@ enum AgentToolRegistryError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .invalidToolName(let name):
-            return "Invalid Agent tool name: \(name)"
+            return String(format: String.l10n("agent.tool.registry.invalidNameFormat"), name)
         case .duplicateToolName(let name):
-            return "Duplicate Agent tool name: \(name)"
+            return String(format: String.l10n("agent.tool.registry.duplicateNameFormat"), name)
         case .missingTool(let name):
-            return "Missing Agent tool: \(name)"
+            return String(format: String.l10n("agent.tool.registry.missingToolFormat"), name)
         case .invalidInput(let toolName, let message):
-            return "Invalid input for Agent tool \(toolName): \(message)"
+            return String(format: String.l10n("agent.tool.registry.invalidInputFormat"), toolName, message)
         }
     }
 }

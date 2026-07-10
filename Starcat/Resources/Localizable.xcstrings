@@ -2743,6 +2743,94 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 正在等待用户确认。" } }
       }
     },
+    "agent.externalSearch.error.invalidArgumentFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "external_search argument %@ has an invalid value." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "external_search 参数 %@ 的值无效。" } } }
+    },
+    "agent.externalSearch.error.missingQuery" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "external_search requires a non-empty query." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "external_search 需要非空 query。" } } }
+    },
+    "agent.json.error.invalidUTF8" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent JSON contains invalid UTF-8 text." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent JSON 包含无效的 UTF-8 文本。" } } }
+    },
+    "agent.json.error.nonFiniteNumber" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent JSON contains a non-finite number." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent JSON 包含非有限数值。" } } }
+    },
+    "agent.message.error.duplicateToolCallFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Duplicate Agent tool-call ID: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具调用 ID 重复：%@。" } } }
+    },
+    "agent.message.error.duplicateToolResultFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Duplicate Agent tool result for call ID: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具调用 %@ 存在重复结果。" } } }
+    },
+    "agent.message.error.invalidMessageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent message is empty or has an invalid turn: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 消息为空或轮次无效：%@。" } } }
+    },
+    "agent.message.error.invalidPartForRoleFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent message part is invalid for role %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 消息块不适用于角色 %@。" } } }
+    },
+    "agent.message.error.invalidToolCallFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent tool call has an empty ID or name: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具调用的 ID 或名称为空：%@。" } } }
+    },
+    "agent.message.error.mixedRunIDs" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent message history contains multiple run IDs." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 消息历史包含多个 run ID。" } } }
+    },
+    "agent.message.error.nonIncreasingSequenceFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent message sequence is not increasing at %d." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 消息 sequence 在 %d 处未递增。" } } }
+    },
+    "agent.message.error.toolNameMismatchFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent tool result name does not match call ID: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具结果名称与调用 ID 不匹配：%@。" } } }
+    },
+    "agent.message.error.unknownToolCallFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent tool result references unknown call ID: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具结果引用了未知调用 ID：%@。" } } }
+    },
+    "agent.persistence.error.invalidRecordFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid Agent persistence record: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 持久化记录无效：%@。" } } }
+    },
+    "agent.schema.error.missingRequiredFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid tool input at %1$@: missing required property %2$@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具输入 %1$@ 无效：缺少必填字段 %2$@。" } } }
+    },
+    "agent.schema.error.typeMismatchFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid tool input at %1$@: expected %2$@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具输入 %1$@ 无效：应为 %2$@。" } } }
+    },
+    "agent.schema.error.unknownPropertyFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid tool input at %1$@: unknown property %2$@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具输入 %1$@ 无效：未知字段 %2$@。" } } }
+    },
+    "agent.schema.error.valueNotAllowedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid tool input at %@: value is not allowed." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具输入 %@ 无效：值不在允许范围内。" } } }
+    },
+    "agent.tool.registry.duplicateNameFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Duplicate Agent tool name: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具名称重复：%@。" } } }
+    },
+    "agent.tool.registry.invalidInputFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid input for Agent tool %1$@: %2$@" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具 %1$@ 的输入无效：%2$@" } } }
+    },
+    "agent.tool.registry.invalidNameFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid Agent tool name: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 工具名称无效：%@。" } } }
+    },
+    "agent.tool.registry.missingToolFormat" : {
+      "extractionState" : "manual",
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing Agent tool: %@." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缺少 Agent 工具：%@。" } } }
+    },
     "agent.loop.error.approvalRejected" : {
       "extractionState" : "manual",
       "localizations" : {

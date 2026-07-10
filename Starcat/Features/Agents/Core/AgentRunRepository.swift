@@ -233,7 +233,7 @@ enum AgentRunRepositoryError: Error, LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .invalidRecord(let value):
-            return "Invalid Agent persistence record: \(value)"
+            return String(format: String.l10n("agent.persistence.error.invalidRecordFormat"), value)
         }
     }
 }
