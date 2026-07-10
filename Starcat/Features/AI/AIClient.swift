@@ -72,6 +72,7 @@ struct AIChatToolCall: Equatable, Sendable, Identifiable {
 
 /// 流式响应中一段尚未组装完成的 tool-call。
 struct AIChatToolCallDelta: Equatable, Sendable {
+    var choiceIndex: Int = 0
     var index: Int
     var id: String?
     var name: String?

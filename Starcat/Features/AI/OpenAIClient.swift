@@ -116,6 +116,9 @@ struct OpenAIClient: AIClientProtocol {
                             continuation.yield(.usage(usage))
                         }
                         for choice in chunk.choices {
+                            // Starcat 不请求多候选结果。若兼容 Provider 仍返回多个 choice，
+                            // 只消费主 choice，避免把不同候选的文本和工具调用混成一次执行。
+                            guard choice.index == 0 else { continue }
                             if let delta = choice.delta.content, !delta.isEmpty {
                                 content += delta
                                 continuation.yield(.delta(delta))
@@ -126,6 +129,7 @@ struct OpenAIClient: AIClientProtocol {
                             }
                             for call in choice.delta.toolCalls ?? [] {
                                 let delta = AIChatToolCallDelta(
+                                    choiceIndex: choice.index,
                                     index: call.index,
                                     id: call.id,
                                     name: call.function?.name,

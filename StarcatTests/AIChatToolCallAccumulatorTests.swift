@@ -33,4 +33,38 @@ struct AIChatToolCallAccumulatorTests {
 
         #expect(calls == [AIChatToolCall(id: "host-call-id", name: "repo_detail", arguments: "{}")])
     }
+
+    @Test("相同 tool index 的不同 choice 不会互相拼接")
+    func isolatesCallsByChoiceAndIndex() {
+        var accumulator = AIChatToolCallAccumulator()
+        accumulator.append(.init(
+            choiceIndex: 1,
+            index: 0,
+            id: "alternative-call",
+            name: "external_search",
+            argumentsFragment: "{\"query\":\"alternative\"}"
+        ))
+        accumulator.append(.init(
+            choiceIndex: 0,
+            index: 0,
+            id: "primary-call",
+            name: "context_resolve_repos",
+            argumentsFragment: "{\"limit\":5}"
+        ))
+
+        #expect(accumulator.completedCalls() == [
+            AIChatToolCall(
+                id: "primary-call",
+                name: "context_resolve_repos",
+                arguments: "{\"limit\":5}"
+            )
+        ])
+        #expect(accumulator.completedCalls(choiceIndex: 1) == [
+            AIChatToolCall(
+                id: "alternative-call",
+                name: "external_search",
+                arguments: "{\"query\":\"alternative\"}"
+            )
+        ])
+    }
 }
