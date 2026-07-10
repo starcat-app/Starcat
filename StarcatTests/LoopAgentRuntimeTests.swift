@@ -573,6 +573,59 @@ struct LoopAgentRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("高成本工具必须审批且失败时不会自动重试")
+    func highCostToolRequiresApprovalAndNeverRetries() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: "高成本调用需要确认",
+                toolCalls: [.init(id: "call-cost", name: "high_cost_tool", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "高成本工具失败，停止重试", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let tool = HighCostRuntimeTool()
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool]),
+            mode: .approvedAction
+        )
+        var events: [AgentRunEvent] = []
+
+        for await event in runtime.run(
+            definition: makeDefinition(toolIDs: ["high_cost_tool"]),
+            prompt: "执行高成本工具",
+            context: .empty
+        ) {
+            events.append(event)
+            if case .approvalUpdated(let approval) = event, approval.status == .pending {
+                await runtime.send(.decideApproval(
+                    runID: approval.runID,
+                    approvalID: approval.id,
+                    toolCallID: approval.toolCallID,
+                    decision: .approved
+                ))
+            }
+        }
+        let approvals = events.compactMap { event -> AgentApprovalRequest? in
+            guard case .approvalUpdated(let approval) = event else { return nil }
+            return approval
+        }
+        let result = try #require(events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first)
+
+        #expect(await tool.executionCount() == 1)
+        #expect(approvals.map(\.status) == [.pending, .approved, .executing, .failed])
+        #expect(result.status == .failed)
+        #expect(result.attempts.count == 1)
+    }
+
     @Test("拒绝审批不会执行工具并把 rejected 结果回灌模型")
     func rejectionFeedsToolResultBackWithoutExecution() async throws {
         let recorder = ModelRequestRecorder(responses: approvalResponses())
@@ -948,6 +1001,44 @@ private struct SlowRuntimeTool: AgentTool {
             )
         )
     }
+}
+
+private struct HighCostRuntimeTool: AgentTool {
+    let definition = AgentToolDefinition(
+        name: "high_cost_tool",
+        description: "Always fails after approval",
+        inputSchema: .init(type: .object, additionalProperties: false),
+        permission: .highCost,
+        retryPolicy: AgentToolRetryPolicy(maxRetries: 2, initialBackoffMilliseconds: 0)
+    )
+    private let counter = RuntimeToolCounter()
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        await counter.increment()
+        let output = AgentToolOutput(
+            toolName: definition.name,
+            summary: "failed",
+            detail: "failed",
+            input: "{}",
+            output: "failed",
+            log: "failed"
+        )
+        return AgentToolResult(
+            status: .failed,
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: definition.name,
+                summary: "failed",
+                input: "{}",
+                output: "failed",
+                log: "failed",
+                status: .failed
+            )
+        )
+    }
+
+    func executionCount() async -> Int { await counter.value() }
 }
 
 private extension AgentJSONValue {
