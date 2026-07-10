@@ -72,6 +72,23 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.selectedArtifact?.content == "run log")
     }
 
+    @Test("通用 Inspector 按 Agent 类型生成正确导出文件名")
+    func artifactExportFilenameUsesSelectedAgent() {
+        let viewModel = AgentWorkspaceViewModel(agents: [
+            BuiltInAgents.githubWeeklyReport,
+            BuiltInAgents.repoInsight
+        ])
+        let markdown = AgentArtifact(type: .markdown, title: "Report", content: "# Report")
+        let log = AgentArtifact(type: .log, title: "Log", content: "run log")
+
+        #expect(viewModel.suggestedFilename(for: markdown) == "starcat-weekly-report.md")
+        viewModel.selectedAgentID = BuiltInAgents.repoInsight.id
+        #expect(viewModel.suggestedFilename(for: markdown) == "starcat-repo-insight.md")
+        #expect(viewModel.suggestedFilename(for: log) == "starcat-agent-run.txt")
+        viewModel.selectedAgentID = "future-agent"
+        #expect(viewModel.suggestedFilename(for: markdown) == "starcat-agent-artifact.md")
+    }
+
     @Test("cancel 会立即进入取消状态")
     func cancelMarksWorkspaceAsCancelled() {
         let viewModel = AgentWorkspaceViewModel(

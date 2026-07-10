@@ -331,12 +331,15 @@ final class AgentWorkspaceViewModel {
         }
     }
 
-    private func suggestedFilename(for artifact: AgentArtifact) -> String {
-        switch artifact.type {
-        case .markdown:
+    func suggestedFilename(for artifact: AgentArtifact) -> String {
+        guard artifact.type == .markdown else { return "starcat-agent-run.txt" }
+        switch selectedAgentID {
+        case BuiltInAgents.githubWeeklyReport.id:
             return "starcat-weekly-report.md"
-        case .log:
-            return "starcat-agent-run.txt"
+        case BuiltInAgents.repoInsight.id:
+            return "starcat-repo-insight.md"
+        default:
+            return "starcat-agent-artifact.md"
         }
     }
 
