@@ -34,6 +34,7 @@ final class AgentWorkspaceViewModel {
     var historyRuns: [AgentRunRecord] = []
     var selectedArtifactID: UUID?
     var selectedHistoryRunID: String?
+    var assistantReasoningOutput: String = ""
     var assistantOutput: String = ""
     var errorMessage: String?
 
@@ -119,6 +120,7 @@ final class AgentWorkspaceViewModel {
         usage = .zero
         artifacts = []
         selectedArtifactID = nil
+        assistantReasoningOutput = ""
         assistantOutput = ""
         errorMessage = nil
 
@@ -200,11 +202,14 @@ final class AgentWorkspaceViewModel {
             activeRunID = message.runID
             messages.append(message)
             if message.role == .assistant {
-                // 流式文本只负责显示尚未落库的增量；assistant message 成为事实后立即清空。
+                // 流式缓冲只显示尚未落库的增量；assistant message 成为事实后立即清空。
+                assistantReasoningOutput = ""
                 assistantOutput = ""
             }
         case .usageUpdated(let nextUsage):
             usage = nextUsage
+        case .assistantReasoningDelta(let text):
+            assistantReasoningOutput += text
         case .assistantDelta(let text):
             assistantOutput += text
         case .artifactCreated(let artifact):
@@ -241,6 +246,7 @@ final class AgentWorkspaceViewModel {
         approvals = snapshot.approvals
         artifacts = snapshot.artifacts
         selectedArtifactID = artifacts.first?.id
+        assistantReasoningOutput = ""
         assistantOutput = ""
         errorMessage = snapshot.run.errorMessage
     }

@@ -249,6 +249,7 @@ enum AgentRunEvent: Sendable {
     case approvalUpdated(AgentApprovalRequest)
     case messageAppended(AgentMessage)
     case usageUpdated(AgentUsage)
+    case assistantReasoningDelta(String)
     case assistantDelta(String)
     case artifactCreated(AgentArtifact)
     case runCompleted

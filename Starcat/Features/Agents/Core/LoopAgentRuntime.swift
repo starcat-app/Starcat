@@ -450,6 +450,7 @@ struct LoopAgentRuntime: AgentRuntime {
     ) async throws -> AgentModelResponse {
         var completed: AgentModelResponse?
         var streamedText = ""
+        var streamedReasoning = ""
         let stream = modelClient.stream(request: AgentModelRequest(
             prompt: promptRequest,
             tools: tools,
@@ -461,7 +462,10 @@ struct LoopAgentRuntime: AgentRuntime {
             case .textDelta(let delta):
                 streamedText += delta
                 continuation.yield(.assistantDelta(delta))
-            case .reasoningDelta, .toolCallDelta, .usage:
+            case .reasoningDelta(let delta):
+                streamedReasoning += delta
+                continuation.yield(.assistantReasoningDelta(delta))
+            case .toolCallDelta, .usage:
                 continue
             case .completed(let response):
                 completed = response
@@ -470,6 +474,12 @@ struct LoopAgentRuntime: AgentRuntime {
         guard let completed else { throw LoopAgentRuntimeError.emptyModelResponse }
         if streamedText.isEmpty, !completed.text.isEmpty {
             continuation.yield(.assistantDelta(completed.text))
+        }
+        if streamedReasoning.isEmpty,
+           let reasoning = completed.reasoning,
+           !reasoning.isEmpty {
+            // 非流式 Provider 只在 completed 中返回 reasoning，仍通过相同事件进入 UI。
+            continuation.yield(.assistantReasoningDelta(reasoning))
         }
         return completed
     }

@@ -198,7 +198,7 @@
 ### 5.10 Workspace Timeline 与 Inspector
 
 - [x] 中栏改为统一 message timeline:user 靠右,assistant/tool/artifact 靠左。
-- [~] assistant text 已真实流式追加并在落库后切换到持久化消息;reasoning 实时增量展示待补。
+- [x] assistant reasoning/text 支持真实流式追加,完成后与持久化消息一致。
 - [x] tool-call 节点展示 name、arguments、状态和 sequence,可展开。
 - [~] tool-result 已展示 output/error/elapsed/sources 并关联 tool-call;逐次 retry 审计待补。
 - [x] approval 节点展示等待、批准、拒绝和取消状态。

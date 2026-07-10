@@ -29,14 +29,17 @@ struct AgentMessageTimelineView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    if items.isEmpty, viewModel.assistantOutput.isEmpty, viewModel.errorMessage == nil {
+                    if items.isEmpty,
+                       viewModel.assistantReasoningOutput.isEmpty,
+                       viewModel.assistantOutput.isEmpty,
+                       viewModel.errorMessage == nil {
                         emptyState
                     } else {
                         ForEach(items) { item in
                             timelineRow(item)
                                 .id(item.id)
                         }
-                        if !viewModel.assistantOutput.isEmpty {
+                        if !viewModel.assistantReasoningOutput.isEmpty || !viewModel.assistantOutput.isEmpty {
                             streamingRow
                                 .id("streaming-assistant")
                         }
@@ -53,6 +56,9 @@ struct AgentMessageTimelineView: View {
                 scrollToBottom(proxy)
             }
             .onChange(of: viewModel.assistantOutput) { _, _ in
+                scrollToBottom(proxy)
+            }
+            .onChange(of: viewModel.assistantReasoningOutput) { _, _ in
                 scrollToBottom(proxy)
             }
         }
@@ -263,11 +269,21 @@ struct AgentMessageTimelineView: View {
     private var streamingRow: some View {
         HStack(alignment: .top, spacing: 10) {
             agentIcon
-            Text(viewModel.assistantOutput)
-                .font(interfaceScale.font(.body))
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .lineSpacing(4)
+            VStack(alignment: .leading, spacing: 8) {
+                if !viewModel.assistantReasoningOutput.isEmpty {
+                    Label("agent.workspace.timeline.reasoning", systemImage: "brain")
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    auditText(viewModel.assistantReasoningOutput)
+                }
+                if !viewModel.assistantOutput.isEmpty {
+                    Text(viewModel.assistantOutput)
+                        .font(interfaceScale.font(.body))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .lineSpacing(4)
+                }
+            }
             Spacer()
         }
         .frame(maxWidth: 860, alignment: .leading)
@@ -389,7 +405,8 @@ struct AgentMessageTimelineView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        let target = !viewModel.assistantOutput.isEmpty ? "streaming-assistant" : items.last?.id
+        let hasStreamingOutput = !viewModel.assistantReasoningOutput.isEmpty || !viewModel.assistantOutput.isEmpty
+        let target = hasStreamingOutput ? "streaming-assistant" : items.last?.id
         guard let target else { return }
         withAnimation(.easeOut(duration: 0.16)) {
             proxy.scrollTo(target, anchor: .bottom)

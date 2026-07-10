@@ -90,6 +90,27 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.approvals == [approval])
     }
 
+    @Test("reasoning 与正文增量会分别投影到流式缓冲")
+    func projectsReasoningAndTextDeltasSeparately() async throws {
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+            .assistantReasoningDelta("先检查本地上下文"),
+            .assistantDelta("正在生成周刊"),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.assistantReasoningOutput == "先检查本地上下文")
+        #expect(viewModel.assistantOutput == "正在生成周刊")
+    }
+
     @Test("run 会先冻结 context 再交给 runtime")
     func runPassesContextProviderSnapshotIntoRuntime() async throws {
         let context = AgentRunContext(
