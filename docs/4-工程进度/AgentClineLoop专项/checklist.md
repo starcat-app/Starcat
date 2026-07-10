@@ -113,13 +113,13 @@
 
 - [x] 新增可 Codable/Sendable 的 `AgentJSONValue`。
 - [x] 新增 `AgentJSONSchema`,支持 object/string/number/integer/boolean/array/enum/required/default/description。
-- [ ] 新增 `AgentToolDefinition`: name/description/inputSchema/permission/completesRun/timeout/retryPolicy。
+- [x] 新增 `AgentToolDefinition`: name/description/inputSchema/permission/completesRun/timeout/retryPolicy。
 - [ ] `AgentTool` 改为提供 definition,并按 `AgentToolCall` 执行。
-- [ ] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
+- [x] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
 - [ ] 执行前完成 required、类型、enum 和未知字段校验,非法输入返回 error tool-result。
 - [ ] Runtime 强制执行 readOnly/requiresConfirmation/highCost 策略。
 - [ ] 超时与重试只应用于声明可重试且无副作用的工具,每次尝试进入审计记录。
-- [ ] 迁移所有现有只读工具到 schema 形式。
+- [x] 迁移所有现有只读工具到 schema 形式。
 - [ ] 补 Registry、Schema、权限、超时、重试、unknown tool 和 completesRun 单测。
 
 ### 5.5 LLM Tool Call Adapter

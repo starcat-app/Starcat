@@ -28,7 +28,7 @@ enum GitHubWeeklyReportTools {
         let effectivePrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedGoal = effectivePrompt.isEmpty ? "生成 GitHub 技术周刊 Markdown" : effectivePrompt
         return makeResult(
-            toolName: "agent.parseGoal",
+            toolName: "agent.parse_goal",
             summary: "Markdown Weekly Report",
             input: """
             prompt:
@@ -61,7 +61,7 @@ enum GitHubWeeklyReportTools {
             ? "repos: []"
             : repos.map { "- \($0.displaySummary)" }.joined(separator: "\n")
         return makeResult(
-            toolName: "context.resolveRepos",
+            toolName: "context.resolve_repos",
             summary: "\(repos.count) repos",
             input: """
             source:
@@ -102,7 +102,7 @@ enum GitHubWeeklyReportTools {
         return (
             topicList,
             makeResult(
-                toolName: "report.clusterTopics",
+                toolName: "repo.cluster_topics",
                 summary: "\(topicList.count) topics",
                 input: "repo_count: \(context.repos.count)\nstrategy: language-first clustering",
                 output: output,
@@ -162,7 +162,7 @@ enum GitHubWeeklyReportTools {
         }
 
         let result = makeResult(
-            toolName: "artifact.buildMarkdown",
+            toolName: "artifact.build_weekly_report",
             summary: "\(markdown.count) chars",
             input: "topics: \(topics.count)\nrepo_count: \(context.repos.count)\nexternal_context_chars: \(externalContextMarkdown.count)",
             output: String(markdown.prefix(1_200)),
@@ -230,6 +230,27 @@ enum GitHubWeeklyReportTools {
     }
 }
 
+private func makeReadOnlyToolDefinition(
+    name: String,
+    description: String,
+    properties: [String: AgentJSONSchema] = [:],
+    required: [String] = [],
+    completesRun: Bool = false
+) -> AgentToolDefinition {
+    AgentToolDefinition(
+        name: name,
+        description: description,
+        inputSchema: AgentJSONSchema(
+            type: .object,
+            properties: properties,
+            required: required
+        ),
+        permission: .readOnly,
+        completesRun: completesRun,
+        timeoutMilliseconds: 20_000
+    )
+}
+
 enum GitHubWeeklyReportAgentTools {
     static var all: [any AgentTool] {
         makeAll(externalSearchTool: ExternalSearchAgentTool(collector: DisabledAgentExternalSearchCollector()))
@@ -249,9 +270,11 @@ enum GitHubWeeklyReportAgentTools {
     }
 
     struct ParseGoalTool: AgentTool {
-        let id = "agent.parseGoal"
-        let displayName = "Parse Goal"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "agent.parse_goal",
+            description: "Normalize the user's weekly report goal and record the read-only execution scope.",
+            properties: ["goal": AgentJSONSchema(type: .string, description: "User's report goal")]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             GitHubWeeklyReportTools.parseGoal(prompt: input.prompt, context: input.context).agentToolResult()
@@ -259,9 +282,19 @@ enum GitHubWeeklyReportAgentTools {
     }
 
     struct ResolveReposTool: AgentTool {
-        let id = "context.resolveRepos"
-        let displayName = "Resolve Repositories"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "context.resolve_repos",
+            description: "Resolve repositories from the frozen Starcat run snapshot.",
+            properties: [
+                "maxRepositories": AgentJSONSchema(type: .integer, description: "Maximum repositories to return", defaultValue: .number(40)),
+                "sort": AgentJSONSchema(
+                    type: .string,
+                    description: "Repository ordering",
+                    enumValues: [.string("starred_at"), .string("stars"), .string("name")],
+                    defaultValue: .string("starred_at")
+                )
+            ]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             GitHubWeeklyReportTools.resolveCandidateRepos(context: input.context).agentToolResult()
@@ -269,9 +302,17 @@ enum GitHubWeeklyReportAgentTools {
     }
 
     struct ClusterTopicsTool: AgentTool {
-        let id = "report.clusterTopics"
-        let displayName = "Cluster Topics"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "repo.cluster_topics",
+            description: "Cluster resolved repositories into evidence-backed weekly report topics.",
+            properties: [
+                "repoIDs": AgentJSONSchema(
+                    type: .array,
+                    description: "Repository IDs to cluster",
+                    items: AgentJSONSchema(type: .integer)
+                )
+            ]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             let (topics, result) = GitHubWeeklyReportTools.clusterTopics(context: input.context)
@@ -280,9 +321,15 @@ enum GitHubWeeklyReportAgentTools {
     }
 
     struct BuildMarkdownTool: AgentTool {
-        let id = "artifact.buildMarkdown"
-        let displayName = "Build Markdown Artifact"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "artifact.build_weekly_report",
+            description: "Build a Markdown weekly report draft from resolved repositories, topics, and source evidence.",
+            properties: [
+                "title": AgentJSONSchema(type: .string, description: "Report title"),
+                "style": AgentJSONSchema(type: .string, description: "Requested editorial style"),
+                "includeSources": AgentJSONSchema(type: .boolean, description: "Include source references", defaultValue: .bool(true))
+            ]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             let topics: [WeeklyReportTopic]
@@ -315,9 +362,11 @@ private extension WeeklyReportToolResult {
 
 enum RepoInsightAgentTools {
     struct ParseGoalTool: AgentTool {
-        let id = "agent.parseRepoInsightGoal"
-        let displayName = "Parse Repo Insight Goal"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "agent.parse_repo_insight_goal",
+            description: "Normalize a repository insight goal without creating write-capable actions.",
+            properties: ["goal": AgentJSONSchema(type: .string, description: "Repository analysis goal")]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             let prompt = input.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -344,9 +393,14 @@ enum RepoInsightAgentTools {
     }
 
     struct SelectRepoTool: AgentTool {
-        let id = "context.selectInsightRepo"
-        let displayName = "Select Repository"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "context.select_repo",
+            description: "Select one repository from the frozen Starcat run snapshot.",
+            properties: [
+                "repoID": AgentJSONSchema(type: .integer, description: "Preferred Starcat repository ID"),
+                "fullName": AgentJSONSchema(type: .string, description: "Preferred owner/name when ID is unavailable")
+            ]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             guard let repo = selectRepo(prompt: input.prompt, repos: input.context.repos) else {
@@ -406,9 +460,14 @@ enum RepoInsightAgentTools {
     }
 
     struct BuildMarkdownTool: AgentTool {
-        let id = "artifact.buildRepoInsightMarkdown"
-        let displayName = "Build Repo Insight Artifact"
-        let permission: AgentToolPermission = .readOnly
+        let definition = makeReadOnlyToolDefinition(
+            name: "artifact.build_repo_insight",
+            description: "Build an evidence-oriented Markdown insight artifact for the selected repository.",
+            properties: [
+                "repoID": AgentJSONSchema(type: .integer, description: "Selected Starcat repository ID"),
+                "style": AgentJSONSchema(type: .string, description: "Requested analysis style")
+            ]
+        )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             guard case .repo(let repo) = input.payload else {

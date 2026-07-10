@@ -174,7 +174,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                 }
                 let tools: [any AgentTool]
                 do {
-                    tools = try toolRegistry.tools(for: definition.toolIDs)
+                    tools = try toolRegistry.tools(named: definition.toolIDs)
                 } catch {
                     let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     await Self.persistRunStatus(
@@ -349,7 +349,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     title: executionProfile.artifactTitle,
                     content: markdown
                 )
-                let artifactInput = draftToolOutput?.input ?? "artifact.buildMarkdown"
+                let artifactInput = draftToolOutput?.input ?? "artifact.build_weekly_report"
                 let artifactOutput = draftToolOutput?.output ?? String(markdown.prefix(1_200))
                 let artifactLog = draftToolOutput?.log ?? "Created Markdown artifact from generated output."
                 let artifactTrace = AgentTraceSpan(

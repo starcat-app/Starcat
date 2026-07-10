@@ -42,9 +42,36 @@ struct DisabledAgentExternalSearchCollector: AgentExternalSearchCollecting {
 }
 
 struct ExternalSearchAgentTool: AgentTool {
-    let id = "external.search"
-    let displayName = "External Search"
-    let permission: AgentToolPermission = .readOnly
+    let definition = AgentToolDefinition(
+        name: "external.search",
+        description: "Search configured external providers for public evidence relevant to repositories or the user goal.",
+        inputSchema: AgentJSONSchema(
+            type: .object,
+            properties: [
+                "query": AgentJSONSchema(type: .string, description: "Focused search query"),
+                "maxResults": AgentJSONSchema(type: .integer, description: "Maximum result count", defaultValue: .number(10)),
+                "allowedDomains": AgentJSONSchema(
+                    type: .array,
+                    description: "Optional domain allowlist",
+                    items: AgentJSONSchema(type: .string)
+                ),
+                "recency": AgentJSONSchema(
+                    type: .string,
+                    description: "Optional recency window",
+                    enumValues: [.string("day"), .string("week"), .string("month"), .string("year")]
+                ),
+                "repoIDs": AgentJSONSchema(
+                    type: .array,
+                    description: "Optional Starcat repository IDs",
+                    items: AgentJSONSchema(type: .integer)
+                )
+            ],
+            required: ["query"]
+        ),
+        permission: .readOnly,
+        timeoutMilliseconds: 45_000,
+        retryPolicy: .transientRead
+    )
 
     private let collector: any AgentExternalSearchCollecting
 

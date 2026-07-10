@@ -20,11 +20,11 @@ enum BuiltInAgents {
         defaultPrompt: String.l10n("agent.definition.githubWeeklyReport.defaultPrompt"),
         isEnabled: true,
         toolIDs: [
-            "agent.parseGoal",
-            "context.resolveRepos",
+            "agent.parse_goal",
+            "context.resolve_repos",
             "external.search",
-            "report.clusterTopics",
-            "artifact.buildMarkdown"
+            "repo.cluster_topics",
+            "artifact.build_weekly_report"
         ],
         artifactTypes: [.markdown, .log]
     )
@@ -38,10 +38,10 @@ enum BuiltInAgents {
         defaultPrompt: String.l10n("agent.definition.repoInsight.defaultPrompt"),
         isEnabled: true,
         toolIDs: [
-            "agent.parseRepoInsightGoal",
-            "context.selectInsightRepo",
+            "agent.parse_repo_insight_goal",
+            "context.select_repo",
             "external.search",
-            "artifact.buildRepoInsightMarkdown"
+            "artifact.build_repo_insight"
         ],
         artifactTypes: [.markdown, .log]
     )

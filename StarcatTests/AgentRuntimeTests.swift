@@ -96,7 +96,7 @@ struct AgentRuntimeTests {
         #expect(markdownArtifact?.content.contains("Unit Test") == true)
         #expect(logArtifact?.type == .log)
         #expect(logArtifact?.content.contains("DefaultAgentRuntime read-only tools") == true)
-        #expect(logArtifact?.content.contains("Tool output: artifact.buildMarkdown") == true)
+        #expect(logArtifact?.content.contains("Tool output: artifact.build_weekly_report") == true)
         #expect(didComplete)
     }
 
@@ -232,11 +232,11 @@ struct AgentRuntimeTests {
         }
 
         #expect(toolNames == [
-            "agent.parseGoal",
-            "context.resolveRepos",
+            "agent.parse_goal",
+            "context.resolve_repos",
             "external.search",
-            "report.clusterTopics",
-            "artifact.buildMarkdown"
+            "repo.cluster_topics",
+            "artifact.build_weekly_report"
         ])
         #expect(markdownArtifact?.content.contains("External Search Unit Context") == true)
     }
@@ -285,10 +285,10 @@ struct AgentRuntimeTests {
         }
 
         #expect(toolNames == [
-            "agent.parseRepoInsightGoal",
-            "context.selectInsightRepo",
+            "agent.parse_repo_insight_goal",
+            "context.select_repo",
             "external.search",
-            "artifact.buildRepoInsightMarkdown"
+            "artifact.build_repo_insight"
         ])
         #expect(traceCount == 6)
         #expect(markdownArtifact?.title == BuiltInAgents.repoInsight.title)
@@ -410,11 +410,11 @@ struct AgentRuntimeTests {
         #expect(snapshot?.run.userPrompt == "生成 Swift 周刊")
         #expect(snapshot?.steps.isEmpty == false)
         #expect(snapshot?.toolOutputs.map(\.toolName) == [
-            "agent.parseGoal",
-            "context.resolveRepos",
+            "agent.parse_goal",
+            "context.resolve_repos",
             "external.search",
-            "report.clusterTopics",
-            "artifact.buildMarkdown"
+            "repo.cluster_topics",
+            "artifact.build_weekly_report"
         ])
         #expect(snapshot?.traces.map(\.title).contains("external.search") == true)
         #expect(snapshot?.traces.last?.kind == "Artifact")
@@ -476,9 +476,12 @@ private struct EchoDraftAgentTextGenerator: AgentTextGenerating {
 }
 
 private struct StubExternalSearchTool: AgentTool {
-    let id = "external.search"
-    let displayName = "External Search"
-    let permission: AgentToolPermission = .readOnly
+    let definition = AgentToolDefinition(
+        name: "external.search",
+        description: "External Search",
+        inputSchema: AgentJSONSchema(type: .object, additionalProperties: true),
+        permission: .readOnly
+    )
 
     func execute(_ input: AgentToolInput) async -> AgentToolResult {
         let output = AgentToolOutput(
@@ -506,9 +509,12 @@ private struct StubExternalSearchTool: AgentTool {
 }
 
 private struct FailedExternalSearchTool: AgentTool {
-    let id = "external.search"
-    let displayName = "External Search"
-    let permission: AgentToolPermission = .readOnly
+    let definition = AgentToolDefinition(
+        name: "external.search",
+        description: "External Search",
+        inputSchema: AgentJSONSchema(type: .object, additionalProperties: true),
+        permission: .readOnly
+    )
 
     func execute(_ input: AgentToolInput) async -> AgentToolResult {
         let output = AgentToolOutput(
