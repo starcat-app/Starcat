@@ -87,6 +87,7 @@ struct AgentTimelineProjectionTests {
 
         #expect(items.map(\.kind) == [.user, .assistant, .toolCall, .approval, .toolResult, .artifact])
         #expect(items.first?.text == "真实用户问题")
+        #expect(items.first?.title == String.l10n("agent.workspace.timeline.user"))
         #expect(items.last?.artifact?.id == artifact.id)
         #expect(items.first(where: { $0.kind == .toolResult })?.sources.count == 1)
         #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("elapsed_ms=42") == true)

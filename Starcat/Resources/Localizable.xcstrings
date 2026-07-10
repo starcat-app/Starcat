@@ -4546,6 +4546,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具结果" } }
       }
     },
+    "agent.workspace.timeline.user" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "User" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户" } }
+      }
+    },
     "agent.workspace.meta.inputFormat" : {
       "localizations" : {
         "en" : {

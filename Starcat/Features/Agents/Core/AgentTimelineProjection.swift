@@ -71,7 +71,7 @@ enum AgentTimelineProjection {
                     sequence: message.sequence,
                     order: 0,
                     kind: .user,
-                    title: "User",
+                    title: String.l10n("agent.workspace.timeline.user"),
                     text: displayText,
                     sources: []
                 ))
