@@ -193,7 +193,7 @@
 - [x] `completesRun` 工具成功后以独立 sequence 提交 artifact 并直接结束 run,产物位于 timeline 底部。
 - [x] 缺 AI 配置、核心本地上下文读取失败或 Weekly/Repo Insight 仓库为空时明确失败且不生成 fake artifact。
 - [x] Repo Insight 同步使用 Loop Runtime、参数驱动选仓与结构化 artifact,验证框架不是 Weekly 专用脚本。
-- [ ] 补 Weekly/Repo Insight 模型选工具、search disabled/failed、artifact 顺序、真实数据和缺配置单测。
+- [x] 补 Weekly/Repo Insight 模型选工具、search disabled/failed、artifact 顺序、真实数据和缺配置单测。
 
 ### 5.10 Workspace Timeline 与 Inspector
 
@@ -227,7 +227,7 @@
 - [ ] 新增 LLM Adapter 和流式 tool-call 测试套件。
 - [ ] 新增 Loop Runtime、预算和取消竞争测试套件。
 - [ ] 新增 Approval pause/resume 测试套件。
-- [ ] 新增 Weekly/External Search 端到端 Runtime 测试套件。
+- [x] 新增 Weekly/External Search 端到端 Runtime 测试套件。
 - [ ] 新增 Workspace ViewModel timeline/Inspector 测试套件。
 - [ ] 保留并迁移现有 Agent 有效测试,删除只验证旧固定序列的测试。
 - [ ] 关闭 Xcode 后运行全部 Agent 相关单测。
