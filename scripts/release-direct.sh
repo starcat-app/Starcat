@@ -73,8 +73,8 @@ Starcat Direct 一键发布脚本
   STARCAT_RELEASE_ALLOW_UNNOTARIZED=1
       允许发布未公证 DMG。仅内部临时验证使用，正式公开发布不要设置。
 
-  STARCAT_RELEASE_HOST=aliyun
-      SSH host，默认 aliyun，需要在 ~/.ssh/config 中配置。
+  STARCAT_RELEASE_HOST=aliyun2
+      SSH host，默认 aliyun2，需要在 ~/.ssh/config 中配置。
 
   STARCAT_RELEASE_SSH_KEY=~/.ssh/server
       发布服务器私钥。设置后会透传给 pages/deploy.sh，并用于本脚本的 ssh / rsync。
@@ -145,7 +145,7 @@ NOTARY_SUBMISSION_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.notary-submiss
 
 RELEASE_BRANCH="${STARCAT_RELEASE_BRANCH:-main}"
 RELEASE_REMOTE="${STARCAT_RELEASE_REMOTE:-origin}"
-RELEASE_HOST="${STARCAT_RELEASE_HOST:-aliyun}"
+RELEASE_HOST="${STARCAT_RELEASE_HOST:-aliyun2}"
 RELEASE_SSH_KEY="${STARCAT_RELEASE_SSH_KEY:-${DEPLOY_SSH_KEY:-}}"
 REMOTE_WEB_DIR="${STARCAT_RELEASE_WEB_DIR:-/var/www/starcat}"
 DOWNLOAD_BASE_URL="${STARCAT_DOWNLOAD_BASE_URL:-https://starcat.ink/downloads/}"
