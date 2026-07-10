@@ -114,6 +114,28 @@ struct LoopAgentRuntimeTests {
         #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("Weekly system prompt 注入真实数据与 artifact 专用约束")
+    func weeklyPromptIncludesDefinitionGuardrails() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(text: "无法提交", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        )
+
+        _ = await collect(runtime.run(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成周刊",
+            context: .empty
+        ))
+        let request = try #require((await recorder.recordedRequests()).first)
+
+        #expect(request.prompt.systemPrompt.contains("weekly-local-facts"))
+        #expect(request.prompt.systemPrompt.contains("Do not claim live GitHub trends"))
+        #expect(request.prompt.systemPrompt.contains("submit exactly one structured artifact_build_weekly_report"))
+    }
+
     @Test("completesRun 工具提交 artifact 后直接完成且 artifact sequence 位于底部")
     func completionToolSubmitsBottomArtifactAndFinishes() async throws {
         let recorder = ModelRequestRecorder(responses: [

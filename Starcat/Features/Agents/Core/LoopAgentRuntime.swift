@@ -156,7 +156,7 @@ struct LoopAgentRuntime: AgentRuntime {
             availableTools: toolDefinitions.map {
                 AgentPromptToolSummary(name: $0.name, description: $0.description, permission: $0.permission)
             },
-            rules: rules + artifactRules(toolDefinitions),
+            rules: rules + definitionRules(definition) + artifactRules(toolDefinitions),
             preferredLanguage: preferredLanguage,
             externalSearch: externalSearchPolicy
         )
@@ -552,6 +552,35 @@ struct LoopAgentRuntime: AgentRuntime {
             id: "required-artifact",
             content: "Before the final answer, create the required artifact with one of: \(submitTools.joined(separator: ", "))."
         )]
+    }
+
+    private func definitionRules(_ definition: AgentDefinition) -> [AgentPromptRule] {
+        switch definition.id {
+        case BuiltInAgents.githubWeeklyReport.id:
+            return [
+                AgentPromptRule(
+                    id: "weekly-local-facts",
+                    content: "Treat repository IDs and metadata in Frozen Starcat Context as the only local facts. Do not claim live GitHub trends, releases, activity, README or license data unless a tool result provides that evidence."
+                ),
+                AgentPromptRule(
+                    id: "weekly-artifact-contract",
+                    content: "Use context_resolve_repos and repo_cluster_topics as needed, then submit exactly one structured artifact_build_weekly_report call. Cite only repository IDs returned by the frozen context."
+                )
+            ]
+        case BuiltInAgents.repoInsight.id:
+            return [
+                AgentPromptRule(
+                    id: "repo-insight-selection",
+                    content: "Select the target with context_select_repo using repoID or exact fullName. Base repository facts only on the frozen Starcat context."
+                ),
+                AgentPromptRule(
+                    id: "repo-insight-artifact-contract",
+                    content: "Submit exactly one structured artifact_build_repo_insight call. State missing README, license, maintenance or live activity evidence as limitations rather than inventing it."
+                )
+            ]
+        default:
+            return []
+        }
     }
 
     private func applyPayload(

@@ -80,6 +80,8 @@ struct AgentPromptBuilderTests {
         #expect(!block.contains("owner/repo-2"))
         #expect(block.contains("1 repositories omitted"))
         #expect(block.contains("truncated by Agent context budget"))
+        #expect(block.contains("id=1"))
+        #expect(block.contains("private=false"))
     }
 
     @Test("消息压缩保留首个目标和最近完整 tool turn")

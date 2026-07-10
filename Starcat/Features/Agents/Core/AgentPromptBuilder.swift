@@ -227,7 +227,7 @@ struct AgentContextBudgeter: Sendable {
         guard !repos.isEmpty else { return "- none" }
         let lines = repos.map { repo in
             let description = bounded(repo.description ?? "", limit: budget.maxRepositoryDescriptionCharacters)
-            return "- \(repo.fullName) | language=\(repo.language ?? "Unknown") | stars=\(repo.starsCount) | topics=\(repo.topics.joined(separator: ",")) | description=\(description)"
+            return "- id=\(repo.id) | full_name=\(repo.fullName) | private=\(repo.isPrivate) | language=\(repo.language ?? "Unknown") | stars=\(repo.starsCount) | topics=\(repo.topics.joined(separator: ",")) | description=\(description)"
         }
         let omitted = max(0, context.repos.count - repos.count)
         return omitted == 0
