@@ -172,7 +172,7 @@ private final class StubExternalSearchCollector: AgentExternalSearchCollecting {
 
     func collect(request: AgentExternalSearchRequest, context: AgentRunContext) async -> AgentExternalSearchCollection {
         requests.append(request)
-        collection
+        return collection
     }
 }
 
