@@ -515,95 +515,66 @@ enum RepoInsightAgentTools {
     struct BuildMarkdownTool: AgentTool {
         let definition = makeReadOnlyToolDefinition(
             name: "artifact_build_repo_insight",
-            description: "Build an evidence-oriented Markdown insight artifact for the selected repository.",
+            description: "Submit a structured evidence-oriented insight for one repository from the frozen Starcat context.",
             properties: [
                 "repoID": AgentJSONSchema(type: .integer, description: "Selected Starcat repository ID"),
-                "style": AgentJSONSchema(type: .string, description: "Requested analysis style")
+                "title": AgentJSONSchema(type: .string, description: "Artifact title"),
+                "summary": AgentJSONSchema(type: .string, description: "Concise evidence-based summary"),
+                "positioning": AgentJSONSchema(type: .string, description: "Repository positioning and primary use case"),
+                "adoptionFit": AgentJSONSchema(type: .string, description: "Adoption fit based on available evidence"),
+                "risks": AgentJSONSchema(
+                    type: .array,
+                    description: "Evidence-backed risks",
+                    items: AgentJSONSchema(type: .string)
+                ),
+                "recommendedActions": AgentJSONSchema(
+                    type: .array,
+                    description: "Concrete follow-up actions",
+                    items: AgentJSONSchema(type: .string)
+                ),
+                "limitations": AgentJSONSchema(
+                    type: .array,
+                    description: "Known evidence limitations",
+                    items: AgentJSONSchema(type: .string)
+                ),
+                "includeSources": AgentJSONSchema(type: .boolean, description: "Include External Search references", defaultValue: .bool(true))
+            ],
+            required: [
+                "repoID", "title", "summary", "positioning", "adoptionFit",
+                "risks", "recommendedActions", "limitations"
             ],
             completesRun: true
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
-            guard case .repo(let repo) = input.payload else {
-                let output = AgentToolOutput(
-                    toolName: id,
-                    summary: "missing repo",
-                    detail: "Repo Insight requires a selected repository payload.",
-                    input: "payload: \(input.payload)",
-                    output: "artifact: null",
-                    log: "Selected repo payload is missing."
+            do {
+                let request = try RepoInsightArtifactRequest(arguments: input.arguments)
+                let markdown = try RepoInsightArtifactBuilder.build(
+                    request: request,
+                    prompt: input.prompt,
+                    context: input.context,
+                    externalContextMarkdown: input.values["externalContextMarkdown"] ?? ""
                 )
-                return AgentToolResult(
-                    status: .failed,
-                    output: output,
-                    trace: AgentTraceSpan(
-                        kind: "Tool",
-                        title: id,
-                        summary: output.summary,
-                        input: output.input,
-                        output: output.output,
-                        log: output.log,
-                        status: .failed,
-                        relatedToolOutputID: output.id
-                    )
+                let repo = input.context.repos.first(where: { $0.id == request.repoID })!
+                let result = makeResult(
+                    toolName: id,
+                    summary: "\(markdown.count) chars",
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    output: String(markdown.prefix(1_200)),
+                    log: "Validated the repository reference and built the final Repo Insight artifact."
+                )
+                return result.agentToolResult(
+                    payload: .markdown(markdown),
+                    sources: [AgentToolResultSource(title: repo.fullName, url: repo.htmlUrl, provider: "Starcat")]
+                )
+            } catch {
+                return failedAgentToolResult(
+                    toolName: id,
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    message: error.localizedDescription
                 )
             }
-            let markdown = buildMarkdown(
-                prompt: input.prompt,
-                context: input.context,
-                repo: repo,
-                externalContextMarkdown: input.values["externalContextMarkdown"] ?? ""
-            )
-            let result = makeResult(
-                toolName: id,
-                summary: "\(markdown.count) chars",
-                input: "selected_repo: \(repo.fullName)\nexternal_context_chars: \((input.values["externalContextMarkdown"] ?? "").count)",
-                output: String(markdown.prefix(1_200)),
-                log: "Built Repo Insight Markdown artifact from read-only context."
-            )
-            return result.agentToolResult(payload: .markdown(markdown))
         }
-    }
-
-    private static func buildMarkdown(
-        prompt: String,
-        context: AgentRunContext,
-        repo: AgentRepoSnapshot,
-        externalContextMarkdown: String
-    ) -> String {
-        let topics = repo.topics.prefix(8).joined(separator: ", ")
-        let topicsLine = topics.isEmpty ? "暂无 topic" : topics
-        let external = externalContextMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        let externalSection = external.isEmpty ? "> 外部来源：未启用或无结果" : """
-        > 外部来源：External Search
-
-        ## 外部来源摘要
-
-        \(String(external.prefix(2_400)))
-        """
-        return """
-        # Repo Insight: \(repo.fullName)
-
-        > 用户目标：\(prompt)
-        > 数据来源：\(context.sourceDescription)
-        > 只读约束：Agent 不会写入标签、笔记、状态或修改 Star。
-        \(externalSection)
-
-        ## 仓库快照
-
-        \(repoDetail(repo))
-
-        ## 初步分析方向
-
-        - 定位：根据描述、语言、stars 和 topics 判断仓库适合解决的问题。
-        - 采用价值：结合活跃度信号和 Starcat 本地知识库上下文给出采用建议。
-        - 风险：标记需要人工继续核验的 README、License、维护活跃度或替代品风险。
-        - 后续动作：建议继续追问替代品对比、README 深读或接入成本评估。
-
-        ## Topics
-
-        \(topicsLine)
-        """
     }
 
     private static func makeResult(

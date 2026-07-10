@@ -185,13 +185,13 @@
 - [x] 搜索继续复用现有设置/provider/API key/匿名模式/cache/Pro 和隐私边界。
 - [x] 搜索关闭时返回 skipped tool-result;provider 失败时返回 error tool-result并允许本地收敛。
 > 实现: 模型参数经类型化请求直达现有 External Search 编排器;缓存指纹包含筛选条件,Provider 落地域名与时间范围,私有仓库在网络请求前按设置拦截。
-- [ ] 暴露 `repo.cluster_topics`、`artifact.build_weekly_report` 和 `run.submit_artifact`。
+- [x] 暴露 `repo_cluster_topics` 和 `artifact_build_*` 完成工具;由 `completesRun` 工具承担 artifact 提交语义,不重复增加 `run_submit_artifact`。
 - [ ] Weekly Prompt 要求使用真实本地 repo snapshot、列明数据来源、禁止伪造 live GitHub 信息。
 - [x] 周刊 artifact 包含执行范围、模型分析主题、真实仓库条目、来源、限制说明和可追溯引用。
 > 实现: 模型提交结构化摘要/章节/repo IDs/限制,宿主拒绝越界 ID 并用冻结快照的真实 URL、Stars、Topics 和 External Search 来源渲染最终 Markdown。
 - [ ] artifact 按 sequence 在最终提交位置出现于 timeline 底部。
 - [ ] 缺 AI 配置或核心本地上下文失败时明确失败且不生成 fake artifact。
-- [ ] Repo Insight 同步迁移到 Loop Runtime,验证框架不是 Weekly 专用脚本。
+- [x] Repo Insight 同步使用 Loop Runtime、参数驱动选仓与结构化 artifact,验证框架不是 Weekly 专用脚本。
 - [ ] 补 Weekly/Repo Insight 模型选工具、search disabled/failed、artifact 顺序、真实数据和缺配置单测。
 
 ### 5.10 Workspace Timeline 与 Inspector

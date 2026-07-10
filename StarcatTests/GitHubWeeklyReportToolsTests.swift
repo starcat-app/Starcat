@@ -202,11 +202,12 @@ struct GitHubWeeklyReportToolsTests {
 
     @Test("Repo Insight tools 选择提示词命中的仓库并生成分析草稿")
     func repoInsightToolsSelectMentionedRepoAndBuildMarkdown() async throws {
+        let target = repo(fullName: "swiftlang/swift-markdown", language: "Swift", stars: 3_100)
         let context = AgentRunContext(
             sourceDescription: "Unit Snapshot",
             repos: [
                 repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800),
-                repo(fullName: "swiftlang/swift-markdown", language: "Swift", stars: 3_100)
+                target
             ]
         )
         let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
@@ -219,6 +220,7 @@ struct GitHubWeeklyReportToolsTests {
             context: context
         ))
         let markdownResult = await markdownTool.execute(AgentToolInput(
+            arguments: repoInsightArtifactArguments(repoID: target.id),
             prompt: "帮我分析 swift-markdown 的定位和风险",
             context: context,
             values: ["externalContextMarkdown": "<external_context>parser docs</external_context>"],
@@ -228,11 +230,32 @@ struct GitHubWeeklyReportToolsTests {
         #expect(selectResult.output.output.contains("swiftlang/swift-markdown"))
         #expect(markdownResult.output.toolName == "artifact_build_repo_insight")
         if case .markdown(let markdown) = markdownResult.payload {
-            #expect(markdown.contains("# Repo Insight: swiftlang/swift-markdown"))
+            #expect(markdown.contains("# Swift Markdown Adoption Insight"))
+            #expect(markdown.contains("适合作为 Markdown 语法树基础设施"))
+            #expect(markdown.contains("[R1]"))
             #expect(markdown.contains("parser docs"))
         } else {
             Issue.record("Expected Repo Insight markdown payload")
         }
+    }
+
+    @Test("artifact_build_repo_insight 拒绝 run 外仓库")
+    func repoInsightRejectsUnknownRepository() async throws {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+        )
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "artifact_build_repo_insight")
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: repoInsightArtifactArguments(repoID: 999_999),
+            prompt: "分析仓库",
+            context: context
+        ))
+
+        #expect(result.status == .failed)
+        #expect(result.output.log.contains("outside the frozen run context"))
     }
 
     private func repo(
@@ -269,6 +292,20 @@ struct GitHubWeeklyReportToolsTests {
                 ])
             ]),
             "limitations": .array([.string("未读取本周实时 GitHub 活跃度。")]),
+            "includeSources": .bool(true)
+        ])
+    }
+
+    private func repoInsightArtifactArguments(repoID: Int64) -> AgentJSONValue {
+        .object([
+            "repoID": .number(Double(repoID)),
+            "title": .string("Swift Markdown Adoption Insight"),
+            "summary": .string("该仓库提供 Swift 原生 Markdown 解析能力。"),
+            "positioning": .string("适合作为 Markdown 语法树基础设施。"),
+            "adoptionFit": .string("适合需要原生 Swift 解析链路的桌面应用。"),
+            "risks": .array([.string("需要继续核验 API 稳定性。")]),
+            "recommendedActions": .array([.string("用真实 README 样本做兼容性测试。")]),
+            "limitations": .array([.string("没有实时维护活跃度数据。")]),
             "includeSources": .bool(true)
         ])
     }
