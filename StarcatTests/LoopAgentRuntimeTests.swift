@@ -82,8 +82,8 @@ struct LoopAgentRuntimeTests {
         ))
         let toolResult = events.compactMap { event -> AgentToolResultMessage? in
             guard case .messageAppended(let message) = event else { return nil }
-            return message.parts.compactMap {
-                guard case .toolResult(let result) = $0 else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
                 return result
             }.first
         }.first
