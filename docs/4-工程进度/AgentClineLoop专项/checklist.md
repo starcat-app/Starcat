@@ -63,17 +63,17 @@
 - [x] Artifact 只在模型或完成工具明确提交后生成,并按统一 sequence 出现在 timeline 底部。
 - [x] 缺少 AI 配置、模型失败或数据不足时明确失败,不得生成 fake artifact。
 
-## 4. 当前已完成基线
+## 4. 迁移前基线(已替换)
 
 - [x] Agent 与 RAG 已使用独立 workspace window。
 - [x] Agent 工作台具备三栏壳层、左右栏折叠、置顶和自适应输入框。
 - [x] GitHub Weekly Report 和 Repo Insight 可读取真实本地 repo snapshot。
-- [x] 已有 `AgentTool`、Tool Registry 和线性只读工具序列。
+- [x] 迁移前已有 `AgentTool`、Tool Registry 和线性只读工具序列;现已由模型可见 schema 与 `LoopAgentRuntime` 替换。
 - [x] 已复用现有 External Search 设置/provider/cache 链路。
-- [x] 已有 run、step、trace、tool output、artifact 的 v1 持久化和历史查看。
-- [x] 当前 trace 节点可展开查看输入、输出和日志。
+- [x] 迁移前已有 run、step、trace、tool output、artifact v1 持久化;现已收敛为 run/message/approval/artifact 事实表。
+- [x] 迁移前 trace 节点可展开输入、输出和日志;现由 message timeline 投影同一组可审计事实。
 - [x] 缺少 AI 配置时不生成假 artifact。
-- [x] 上述内容只作为迁移基线,不代表 Cline-style Agent 已完成。
+- [x] 上述内容只记录迁移起点,不作为当前 Cline-style 架构事实。
 
 ## 5. 分批实施 checklist
 
