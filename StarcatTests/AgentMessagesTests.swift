@@ -71,6 +71,69 @@ struct AgentMessagesTests {
         }
     }
 
+    @Test("同轮多工具调用可分别关联成功与错误结果")
+    func validatesMultipleToolCallsAndErrorResults() throws {
+        let runID = UUID()
+        let firstCall = AgentToolCall(
+            id: "call-local",
+            name: "context_resolve_repos",
+            input: .object(["limit": .number(5)]),
+            sequence: 2
+        )
+        let secondCall = AgentToolCall(
+            id: "call-search",
+            name: "external_search",
+            input: .object(["query": .string("Swift Agent")]),
+            sequence: 2
+        )
+        let messages = [
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("整理")]),
+            AgentMessage(
+                runID: runID,
+                role: .assistant,
+                turn: 0,
+                sequence: 1,
+                parts: [.reasoning("并列读取证据"), .toolCall(firstCall), .toolCall(secondCall)]
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 2,
+                parts: [.toolResult(AgentToolResultMessage(
+                    toolCallID: firstCall.id,
+                    toolName: firstCall.name,
+                    output: .object(["count": .number(2)]),
+                    isError: false,
+                    status: .completed,
+                    sequence: 2
+                ))]
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 3,
+                parts: [.toolResult(AgentToolResultMessage(
+                    toolCallID: secondCall.id,
+                    toolName: secondCall.name,
+                    output: .object(["error": .string("disabled")]),
+                    isError: true,
+                    status: .skipped,
+                    sequence: 3
+                ))]
+            )
+        ]
+
+        try AgentMessageContract.validate(messages)
+        let data = try JSONEncoder().encode(messages)
+        let decoded = try JSONDecoder().decode([AgentMessage].self, from: data)
+
+        #expect(decoded == messages)
+        #expect(decoded[1].parts.count == 3)
+        #expect(decoded.map(\.sequence) == [0, 1, 2, 3])
+    }
+
     @Test("消息 sequence 必须严格递增且 role 不能承载错误 part")
     func validatesOrderingAndRole() {
         let runID = UUID()
