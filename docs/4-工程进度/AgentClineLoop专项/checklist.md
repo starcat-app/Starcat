@@ -242,7 +242,7 @@
 - [x] 第三轮: LLM Adapter、Loop Runtime、预算、取消和持久化一致性审查。
 - [x] 第四轮: Approval、External Search、Weekly/Repo Insight 功能闭环审查。
 - [x] 第五轮: Workspace timeline、Inspector、artifact 顺序、i18n 和占位清理审查。
-- [ ] 第六轮: 单测、构建、验收步骤、工程进度和提交历史一致性审查。
+- [x] 第六轮: 单测、构建、验收步骤、工程进度和提交历史一致性审查。
 - [ ] 每轮先新增独立审查报告,再逐项修复;每个修复点独立中文 commit。
 - [ ] 所有审查无阻断问题后回填本 checklist 全部适用项。
 - [ ] 更新 `docs/功能实现总览.md` 状态、进度仪表盘和变更日志。
