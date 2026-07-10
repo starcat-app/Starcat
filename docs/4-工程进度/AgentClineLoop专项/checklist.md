@@ -1,12 +1,12 @@
 # Cline-style Agent 全量交付总 checklist
 
-> 状态: 进行中
+> 状态: 实现与自动化验证完成,待验收文档、六轮审查和最终报告
 > 创建: 2026-07-07
 > 重构: 2026-07-10
 > 目标分支: `codex/agent-cline-loop`
 > 独立 worktree: `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-agent-full-delivery`
 > 前置分析: `docs/4-工程进度/AgentCline参考实现专项/Cline-Agent实现分析与Starcat落地方案.md`
-> 当前基线: 线性工具编排 v1;LLM 只能在固定工具序列结束后生成 Markdown,尚未形成模型驱动 Agent loop。
+> 当前基线: 模型驱动 Agent loop 已落地并通过专项与全量回归,正在执行交付审查。
 
 ## 1. 交付约定
 
@@ -21,17 +21,17 @@
 
 ### 2.1 必须完成
 
-- [ ] Prompt Pipeline: 环境、mode、locale、规则、工具可见性、External Search 策略和上下文预算。
-- [ ] Message Contract: `user / assistant / tool` 消息及 text、reasoning、tool-call、tool-result 内容块。
-- [ ] Tool Schema: 模型可见 schema、参数校验、权限、完成语义、超时和重试策略。
-- [ ] LLM Adapter: OpenAI-compatible tools/tool choice/tool-call/usage/流式 delta 解析。
-- [ ] Loop Runtime: `model -> tool-call -> tool-result -> model` 多轮循环。
-- [ ] Run Session: 稳定 runID、命令通道、取消、审批暂停/恢复和终态一致性。
-- [ ] Persistence: messages、tool calls、tool results、usage、approval、artifact 和统一执行顺序持久化。
-- [ ] Approval: 写入型工具暂停、批准、拒绝、恢复和拒绝结果回灌。
-- [ ] External Search: 复用现有设置/provider/API key/cache/privacy,由模型主动调用。
-- [ ] GitHub Weekly Report: 完整迁移到 Loop Runtime,生成真实可审计 artifact。
-- [ ] Agent Workspace: message timeline、可展开输入输出、流式文本、审批和通用 Inspector。
+- [x] Prompt Pipeline: 环境、mode、locale、规则、工具可见性、External Search 策略和上下文预算。
+- [x] Message Contract: `user / assistant / tool` 消息及 text、reasoning、tool-call、tool-result 内容块。
+- [x] Tool Schema: 模型可见 schema、参数校验、权限、完成语义、超时和重试策略。
+- [x] LLM Adapter: OpenAI-compatible tools/tool choice/tool-call/usage/流式 delta 解析。
+- [x] Loop Runtime: `model -> tool-call -> tool-result -> model` 多轮循环。
+- [x] Run Session: 稳定 runID、命令通道、取消、审批暂停/恢复和终态一致性。
+- [x] Persistence: messages、tool calls、tool results、usage、approval、artifact 和统一执行顺序持久化。
+- [x] Approval: 写入型工具暂停、批准、拒绝、恢复和拒绝结果回灌。
+- [x] External Search: 复用现有设置/provider/API key/cache/privacy,由模型主动调用。
+- [x] GitHub Weekly Report: 完整迁移到 Loop Runtime,生成真实可审计 artifact。
+- [x] Agent Workspace: message timeline、可展开输入输出、流式文本、审批和通用 Inspector。
 - [ ] 单测、验收文档、工程进度、多轮审查、修复和最终结果报告。
 
 ### 2.2 明确不做
@@ -47,21 +47,21 @@
 
 ## 3. 架构硬约束
 
-- [ ] `AgentPromptBuilder` 是 system prompt 和 turn request 的唯一构建入口。
-- [ ] `AgentMessage` 是 run 可回放事实源;trace、step、tool output 和 artifact 只能由消息或运行事件投影。
-- [ ] 每个 run 从创建起拥有稳定 runID,Runtime、Repository、Workspace 和 Approval 全程使用同一 ID。
-- [ ] `AgentRunSession` 使用 actor 或等价串行隔离维护 loop 状态,UI 通过命令通道发送 cancel/approve/reject。
-- [ ] 所有持久化事件拥有单调递增 `sequence`,历史恢复严格按 sequence 重建 timeline。
-- [ ] 所有工具必须声明模型可见 `name`、`description`、`inputSchema`、`permission`、`completesRun`、`timeout` 和 `retryPolicy`。
+- [x] `AgentPromptBuilder` 是 system prompt 和 turn request 的唯一构建入口。
+- [x] `AgentMessage` 是 run 可回放事实源;trace、step、tool output 和 artifact 只能由消息或运行事件投影。
+- [x] 每个 run 从创建起拥有稳定 runID,Runtime、Repository、Workspace 和 Approval 全程使用同一 ID。
+- [x] `AgentRunSession` 使用 actor 或等价串行隔离维护 loop 状态,UI 通过命令通道发送 cancel/approve/reject。
+- [x] 所有持久化事件拥有单调递增 `sequence`,历史恢复严格按 sequence 重建 timeline。
+- [x] 所有工具必须声明模型可见 `name`、`description`、`inputSchema`、`permission`、`completesRun`、`timeout` 和 `retryPolicy`。
 - [x] Runtime 在调用宿主工具前强制校验工具可见性、参数 schema 和权限,不能依赖工具自行保护。
 - [x] 模型可见工具集合由 Agent 定义和 execution mode 共同决定;External Search 产品开关保留工具可见性,由结构化 skipped result 向模型反馈禁用状态。
-- [ ] AI Provider 不支持 tool-calling 时明确失败,不能静默回退到固定工具序列或伪造结果。
-- [ ] 流式 tool-call 必须按 choice/index/callID 聚合参数 delta,完整 JSON 形成后才能执行。
-- [ ] Runtime 同时限制 max iterations、总工具调用数、总 token、上下文长度、总耗时和单工具超时。
-- [ ] 错误、跳过、超时、用户拒绝都作为结构化 tool-result 回灌给模型。
-- [ ] 写入型工具在执行前进入 `waitingForConfirmation`,批准前不得产生副作用。
-- [ ] Artifact 只在模型或完成工具明确提交后生成,并按统一 sequence 出现在 timeline 底部。
-- [ ] 缺少 AI 配置、模型失败或数据不足时明确失败,不得生成 fake artifact。
+- [x] AI Provider 不支持 tool-calling 时明确失败,不能静默回退到固定工具序列或伪造结果。
+- [x] 流式 tool-call 必须按 choice/index/callID 聚合参数 delta,完整 JSON 形成后才能执行。
+- [x] Runtime 同时限制 max iterations、总工具调用数、总 token、上下文长度、总耗时和单工具超时。
+- [x] 错误、跳过、超时、用户拒绝都作为结构化 tool-result 回灌给模型。
+- [x] 写入型工具在执行前进入 `waitingForConfirmation`,批准前不得产生副作用。
+- [x] Artifact 只在模型或完成工具明确提交后生成,并按统一 sequence 出现在 timeline 底部。
+- [x] 缺少 AI 配置、模型失败或数据不足时明确失败,不得生成 fake artifact。
 
 ## 4. 当前已完成基线
 
@@ -104,10 +104,10 @@
 - [x] 新增 `AgentToolCall`: id/name/input/sequence。
 - [x] 新增 `AgentToolResultMessage`: toolCallID/toolName/output/isError/status/elapsed/sources/sequence。
 - [x] 新增 `AgentUsage`: input/output/cached/reasoning/total token 和可选成本字段。
-- [ ] 新增 `AgentMessage`、`AgentTurn` 和统一 `AgentTimelineEntry` 投影契约。
+- [x] 新增 `AgentMessage`、`AgentTurn` 和统一 `AgentTimelineItem` 投影契约。
 - [x] 明确 assistant message 可以同时包含 reasoning、text 和多个 tool-call。
 - [x] 保证 tool-result 必须关联已存在的 toolCallID,未知或重复 ID 明确失败。
-- [ ] 补消息编码、关联 ID、多工具调用、错误结果和 sequence 排序单测。
+- [x] 补消息编码、关联 ID、多工具调用、错误结果和 sequence 排序单测。
 
 ### 5.4 Tool Schema 与执行策略
 
@@ -116,11 +116,11 @@
 - [x] 新增 `AgentToolDefinition`: name/description/inputSchema/permission/completesRun/timeout/retryPolicy。
 - [x] `AgentTool` 改为提供 definition,并按 `AgentToolCall` 执行。
 - [x] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
-- [ ] 执行前完成 required、类型、enum 和未知字段校验,非法输入返回 error tool-result。
+- [x] 执行前完成 required、类型、enum 和未知字段校验,非法输入返回 error tool-result。
 - [x] Runtime 强制执行 readOnly/requiresConfirmation/highCost 策略。
 - [x] 超时与重试只允许只读工具自动执行,每次 attempt 的序号、状态、耗时和错误摘要均随 tool-result 持久化。
 - [x] 迁移所有现有只读工具到 schema 形式。
-- [ ] 补 Registry、Schema、权限、超时、重试、unknown tool 和 completesRun 单测。
+- [x] 补 Registry、Schema、权限、超时、重试、unknown tool 和 completesRun 单测。
 
 ### 5.5 LLM Tool Call Adapter
 
@@ -132,7 +132,7 @@
 - [x] 实现流式 tool-call accumulator,正确拼接多个并行 call 的 name 和 JSON arguments。
 - [x] 增加 provider capability 检测;不支持 tool-calling 时返回可读错误。
 - [x] 明确不同 OpenAI-compatible provider 的 finish reason 和 usage 缺失处理。
-- [ ] 补 text-only、单/多 tool-call、流式分片、乱序 delta、非法 JSON、缺 key、provider 错误和不支持能力单测。
+- [x] 补 text-only、单/多 tool-call、流式分片、乱序 delta、非法 JSON、缺 key、provider 错误和不支持能力单测。
 
 ### 5.6 Run Session 与 Loop Runtime
 
@@ -160,9 +160,9 @@
 - [x] 每次 message/tool-result/approval 追加与 run 状态更新保持事务一致。
 - [x] 历史恢复按 sequence 重建完整 message timeline,不依赖 step/trace 猜测顺序。
 - [x] 恢复 completed/failed/cancelled/waitingForConfirmation 状态。
-- [ ] App 重启后可查看 pending approval,但必须由用户明确操作后才能继续执行。
+- [x] App 重启后可查看 pending approval,但必须由用户明确操作后才能继续执行。
 - [x] 删除被新事实表取代的 step/trace/tool-output 投影存储,不保留兼容迁移代码。
-- [ ] 补完整 run、失败 run、取消 run、pending approval、artifact 关联和顺序恢复单测。
+- [x] 补完整 run、失败 run、取消 run、pending approval、artifact 关联和顺序恢复单测。
 
 ### 5.8 Approval 闭环
 
@@ -173,7 +173,7 @@
 - [x] reject 命令写入结构化 error tool-result,再交给模型收敛。
 - [x] 重复、过期、错误 runID/toolCallID 的审批命令明确拒绝。
 - [x] 等待审批期间支持取消,取消后审批命令不再生效。
-- [ ] 中栏显示审批节点,右侧 Inspector 显示参数、风险、批准和拒绝操作。
+- [x] 中栏显示审批节点,右侧 Inspector 显示参数、风险、批准和拒绝操作。
 - [x] 补 requested/approved/rejected/duplicate/cancelled/restored approval 单测。
 > 实现: `resumePendingRun` 从持久化 message/approval/artifact 重建同一 session,保持等待态;批准后只执行原 tool-call 一次,拒绝或取消均不执行。
 
@@ -221,18 +221,18 @@
 
 ### 5.12 测试与验收
 
-- [ ] 新增 Prompt Pipeline 测试套件。
-- [ ] 新增 Message Contract 与持久化测试套件。
-- [ ] 新增 Tool Schema 与权限测试套件。
-- [ ] 新增 LLM Adapter 和流式 tool-call 测试套件。
-- [ ] 新增 Loop Runtime、预算和取消竞争测试套件。
-- [ ] 新增 Approval pause/resume 测试套件。
+- [x] 新增 Prompt Pipeline 测试套件。
+- [x] 新增 Message Contract 与持久化测试套件。
+- [x] 新增 Tool Schema 与权限测试套件。
+- [x] 新增 LLM Adapter 和流式 tool-call 测试套件。
+- [x] 新增 Loop Runtime、预算和取消竞争测试套件。
+- [x] 新增 Approval pause/resume 测试套件。
 - [x] 新增 Weekly/External Search 端到端 Runtime 测试套件。
-- [ ] 新增 Workspace ViewModel timeline/Inspector 测试套件。
-- [ ] 保留并迁移现有 Agent 有效测试,删除只验证旧固定序列的测试。
-- [ ] 关闭 Xcode 后运行全部 Agent 相关单测。
-- [ ] 运行完整 `StarcatTests` 回归测试。
-- [ ] 运行 Debug build;若环境阻断,记录准确命令、错误和已完成的替代验证。
+- [x] 新增 Workspace ViewModel timeline/Inspector 测试套件。
+- [x] 保留并迁移现有 Agent 有效测试,删除只验证旧固定序列的测试。
+- [x] 使用独立 DerivedData 运行全部 Agent 相关单测:98 项通过,0 失败。
+- [x] 运行完整 `StarcatTests` 回归测试:1379 项,0 非预期失败。
+- [x] 运行 Debug build:`Starcat` scheme 编译成功。
 - [ ] 新增完整人工验收步骤,覆盖正常、搜索关闭、搜索失败、审批、取消、恢复和导出。
 
 ### 5.13 多轮审查、修复与报告
