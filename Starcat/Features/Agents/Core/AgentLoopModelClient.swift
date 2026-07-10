@@ -83,7 +83,7 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
 
     func stream(request: AgentModelRequest) -> AsyncThrowingStream<AgentModelStreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let producer = Task {
                 do {
                     let chatRequest = try Self.makeChatRequest(
                         request: request,
@@ -114,6 +114,9 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
                     continuation.finish(throwing: Self.classify(error, model: model))
                 }
             }
+            // AsyncThrowingStream 的 producer Task 不会自动继承消费者后续的取消状态。
+            // 显式传播终止,确保用户停止 run 后底层 Provider 网络流也立即结束。
+            continuation.onTermination = { _ in producer.cancel() }
         }
     }
 

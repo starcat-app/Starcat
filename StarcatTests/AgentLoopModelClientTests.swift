@@ -120,6 +120,40 @@ struct AgentLoopModelClientTests {
         }
     }
 
+    @Test("取消 Adapter 消费时会终止底层 Provider 流")
+    func propagatesConsumerCancellationToProviderStream() async {
+        let probe = AdapterCancellationProbe()
+        let adapter = OpenAIAgentLoopModelClient(
+            client: CancellationTrackingAIClient(probe: probe),
+            model: "test-model",
+            parameters: .summaryDefault
+        )
+        let consumer = Task {
+            do {
+                for try await _ in adapter.stream(request: emptyRequest()) {}
+            } catch is CancellationError {
+                // 消费者主动取消是本测试的预期终态。
+            } catch {
+                Issue.record("Unexpected stream error: \(error)")
+            }
+        }
+
+        for _ in 0..<100 {
+            if await probe.hasStarted() { break }
+            await Task.yield()
+        }
+        #expect(await probe.hasStarted())
+
+        consumer.cancel()
+        _ = await consumer.result
+        for _ in 0..<100 {
+            if await probe.wasCancelled() { break }
+            await Task.yield()
+        }
+
+        #expect(await probe.wasCancelled())
+    }
+
     @MainActor
     @Test("模型工厂在任务 Provider 缺失时明确失败")
     func factoryRejectsMissingProvider() {
@@ -303,6 +337,42 @@ private struct AdapterStubAIClient: AIClientProtocol {
             model: model ?? "test-model",
             parameters: .summaryDefault
         )).content
+    }
+
+    func embedding(input: String, model: String?) async throws -> [Float] { [] }
+    func embeddings(inputs: [String], model: String?) async throws -> [[Float]] { [] }
+    func listModels() async throws -> [AIModelDescriptor] { [] }
+    func testConnection() async throws {}
+}
+
+private actor AdapterCancellationProbe {
+    private var started = false
+    private var cancelled = false
+
+    func markStarted() { started = true }
+    func markCancelled() { cancelled = true }
+    func hasStarted() -> Bool { started }
+    func wasCancelled() -> Bool { cancelled }
+}
+
+private struct CancellationTrackingAIClient: AIClientProtocol {
+    let probe: AdapterCancellationProbe
+
+    func chat(request: AIChatRequest) async throws -> AIChatResponse {
+        AIChatResponse(content: "", model: request.model, finishReason: nil)
+    }
+
+    func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task { await probe.markStarted() }
+            continuation.onTermination = { _ in
+                Task { await probe.markCancelled() }
+            }
+        }
+    }
+
+    func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
+        ""
     }
 
     func embedding(input: String, model: String?) async throws -> [Float] { [] }
