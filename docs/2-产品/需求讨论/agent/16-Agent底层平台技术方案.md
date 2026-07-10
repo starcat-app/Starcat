@@ -1,7 +1,7 @@
 # Agent 底层平台技术方案
 
 > **文档定位**: Starcat 内置 Agent 底层平台方案。本文设计的是后续所有 Agent 共用的运行时、工具系统、AI 接入、UI/UX、存储、权限与扩展边界；`GitHub Weekly Report Agent` 仅作为首个接入实例验证这套底座。
-> **状态**: 技术方案稿(2026-06-28),等 dong4j 拍板。
+> **状态**: Cline-style Agent 底层平台已于 2026-07-11 落地;当前正式启用 GitHub Weekly Report 和 Repo Insight 两个只读 Agent。
 > **关联文档**:
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
 > - [`04-AgentRunKit-Swarm-SwiftAgent-对比分析.md`](04-AgentRunKit-Swarm-SwiftAgent-对比分析.md)
@@ -12,13 +12,27 @@
 
 ---
 
+## 当前实现基线(2026-07-11)
+
+本节是本文的当前事实源。后续章节保留 2026-06 的原始方案和演进设想;如有冲突,以本节与 [`AgentClineLoop专项/checklist.md`](../../../4-工程进度/AgentClineLoop专项/checklist.md) 为准。
+
+- `LoopAgentRuntime` 是唯一正式运行时,按 `model -> tool-call -> tool-result -> model` 循环执行,支持流式输出、多工具调用、取消、超时、重试和预算上限。
+- `AgentPromptBuilder` 统一构建 system prompt、运行模式、上下文、附件和工具规则;`AgentMessage` 是 UI 审计与模型回放的共同事实源。
+- `AgentTool` 向模型暴露 name、description、JSON schema、permission、retry policy 和终止语义,Runtime 在宿主侧再次校验 allowlist、参数和权限。
+- Approval 持久化为 pending / approved / rejected / expired,应用重启后可以恢复待确认工具调用;当前正式 Agent 只开放只读工具,不会制造演示审批。
+- `GRDBAgentRunRepository` 持久化 run、message、approval 和 artifact;不再维护独立 step/log 事实表,时间线与 Inspector 从消息链投影。
+- Workspace 使用独立 macOS window,复用项目已有 AI Provider、Keychain、External Search、仓库快照和领域服务,不新增第二套设置。
+- 当前正式产物是单个 Markdown artifact。shell、任意文件编辑、浏览器自动化、subagent、自动写标签/笔记/状态和自动取消 star 均不在交付范围。
+
+---
+
 ## 一、目标
 
 Starcat Agent 平台要解决的不是单个场景的表单生成,而是一套可持续扩展的内置 Agent 运行体系。
 
 目标:
 
-- 提供覆盖主窗口的 `Agent Workspace`,承载所有内置 Agent
+- 提供独立 macOS window 的 `Agent Workspace`,承载所有内置 Agent
 - 支持自然语言输入、Agent 自主规划、工具调用、步骤展示、产出物管理
 - 把 Starcat 已有能力包装成可复用工具: GitHub / Trending / Weekly / RepoContext / README / Notes / Tags / Search / Export
 - 让每个 Agent 以插件式定义接入,避免每个场景重新写一套 UI 和运行流程
@@ -56,7 +70,7 @@ Starcat Agent 平台要解决的不是单个场景的表单生成,而是一套�
 │ GitHub / Trending / Weekly / RepoContext / Search / Notes   │
 ├─────────────────────────────────────────────────────────────┤
 │ Persistence                                                 │
-│ agent_run / step / artifact / schedule / draft / files      │
+│ agent_run / message / approval / artifact                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,8 +85,8 @@ Starcat Agent 平台要解决的不是单个场景的表单生成,而是一套�
 
 | 现状 | 对方案的影响 |
 |---|---|
-| `OpenAIClient` 已支持 chat / chatStream / JSON responseFormat | 可复用模型配置和流式能力 |
-| 当前 `AIClientProtocol` 没有真正 tool calling 抽象 | 需要新增 tool-capable AI adapter |
+| `OpenAIClient` 与 `AIClientProtocol` 已支持 tool schema、tool call、流式增量和普通响应 | 直接复用现有模型配置与 OpenAI-compatible Provider |
+| `AgentPromptBuilder`、`LoopAgentRuntime`、`AgentRunRepository` 已落地 | Prompt、loop、审批恢复和消息审计已有统一契约 |
 | `RepoAIWindowContentView` 是 repo 级 AI 窗口 | 不作为 Agent Workspace 长期底座 |
 | Weekly / Trending / Manage 已有多选上下文 | 适合注入 Agent run context |
 | `BatchAIQueueService` 已有队列、暂停、取消、Pro gate 经验 | 可借鉴,但 Agent run 需要更通用的 step/event 模型 |
