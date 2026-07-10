@@ -126,6 +126,27 @@ function serveIndex() {
 }
 
 /**
+ * 根域 robots.txt。
+ *
+ * 搜索引擎只会读取域名根路径的 robots.txt；Starcat App Store 站点挂在
+ * /starcat 子路径下，所以这里必须从 Worker 返回 sitemap 入口。
+ */
+function serveRobots() {
+    return new Response(
+        [
+            "User-agent: *",
+            "Allow: /",
+            "Sitemap: https://dong4j.app/starcat/sitemap.xml",
+            "",
+        ].join("\n"),
+        {
+            status: 200,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }
+    );
+}
+
+/**
  * 子应用代理 — 将 /app-path/* 转发到对应 Pages 项目
  * 自动剥离子路径前缀、修正 Location 头和 HTML 中的域名
  */
@@ -198,7 +219,12 @@ export default {
             return serveIndex();
         }
 
-        // 2. 遍历应用路由表，匹配子路径
+        // 2. 搜索引擎入口 — 必须位于域名根路径，而不是 /starcat/robots.txt
+        if (pathname === "/robots.txt") {
+            return serveRobots();
+        }
+
+        // 3. 遍历应用路由表，匹配子路径
         for (const [prefix, app] of Object.entries(APPS)) {
             // 精确匹配 /app-name（无结尾 /）→ 301 重定向到 /app-name/
             // 这样浏览器才能正确解析相对路径的图片/资源
@@ -214,7 +240,7 @@ export default {
             }
         }
 
-        // 3. 未匹配任何路由 — 返回 404
+        // 4. 未匹配任何路由 — 返回 404
         return new Response("404 — Not Found", {
             status: 404,
             headers: { "Content-Type": "text/plain; charset=utf-8" },

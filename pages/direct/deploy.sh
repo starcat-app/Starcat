@@ -17,7 +17,7 @@
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-REMOTE_HOST="aliyun"
+REMOTE_HOST="aliyun2"
 REMOTE_WEB_DIR="/var/www/starcat"
 REMOTE_NGINX_DIR="/etc/nginx/conf.d"
 NGINX_CONF="$SCRIPT_DIR/starcat.ink.conf"
