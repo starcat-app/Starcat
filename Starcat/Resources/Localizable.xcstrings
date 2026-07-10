@@ -2694,6 +2694,55 @@
         }
       }
     },
+    "agent.session.error.durationLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent run exceeded its %.0f second time limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 运行超过 %.0f 秒时限。" } }
+      }
+    },
+    "agent.session.error.invalidRunID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Agent command belongs to a different run." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 命令不属于当前运行。" } }
+      }
+    },
+    "agent.session.error.iterationLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent reached the %d iteration limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 已达到 %d 轮迭代上限。" } }
+      }
+    },
+    "agent.session.error.terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Agent run has already ended." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 运行已经结束。" } }
+      }
+    },
+    "agent.session.error.tokenLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent reached the %d token limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 已达到 %d token 上限。" } }
+      }
+    },
+    "agent.session.error.toolCallLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent reached the %d tool-call limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 已达到 %d 次工具调用上限。" } }
+      }
+    },
+    "agent.session.error.waitingForConfirmation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Agent run is waiting for confirmation." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 正在等待用户确认。" } }
+      }
+    },
     "agent.model.error.invalidToolNameFormat" : {
       "extractionState" : "manual",
       "localizations" : {

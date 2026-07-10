@@ -136,7 +136,7 @@
 
 ### 5.6 Run Session 与 Loop Runtime
 
-- [ ] 新增 `AgentRunLimits`: maxIterations/maxToolCalls/maxTokens/maxDuration/toolTimeout。
+- [x] 新增 `AgentRunLimits`: maxIterations/maxToolCalls/maxTokens/maxDuration/toolTimeout。
 - [ ] 新增 `AgentRunSession` actor,持有 runID、messages、iteration、usage、pendingApproval、terminalState 和 command channel。
 - [ ] 新增模型驱动 `LoopAgentRuntime`,直接替换线性 `DefaultAgentRuntime` 执行路径。
 - [ ] Runtime 创建并持久化 user message,使用 PromptBuilder 发起第一轮模型调用。
