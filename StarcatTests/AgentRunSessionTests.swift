@@ -104,6 +104,7 @@ struct AgentRunSessionTests {
         let resumed = await session.apply(.decideApproval(
             runID: runID,
             approvalID: approvalID,
+            toolCallID: "call-1",
             decision: .approved
         ))
         #expect(!ignoredCommand)

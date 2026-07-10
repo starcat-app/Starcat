@@ -43,11 +43,16 @@ enum AgentApprovalDecision: Equatable, Sendable {
 
 enum AgentRunCommand: Equatable, Sendable {
     case cancel(runID: UUID)
-    case decideApproval(runID: UUID, approvalID: UUID, decision: AgentApprovalDecision)
+    case decideApproval(
+        runID: UUID,
+        approvalID: UUID,
+        toolCallID: String,
+        decision: AgentApprovalDecision
+    )
 
     var runID: UUID {
         switch self {
-        case .cancel(let runID), .decideApproval(let runID, _, _):
+        case .cancel(let runID), .decideApproval(let runID, _, _, _):
             return runID
         }
     }
@@ -204,10 +209,11 @@ actor AgentRunSession {
         case .cancel:
             state = .cancelled
             return true
-        case .decideApproval(_, let approvalID, let decision):
+        case .decideApproval(_, let approvalID, let toolCallID, let decision):
             guard state == .waitingForConfirmation,
                   var approval = pendingApproval,
                   approval.id == approvalID,
+                  approval.toolCallID == toolCallID,
                   approval.status == .pending
             else { return false }
             approval.status = decision == .approved ? .approved : .rejected
@@ -230,6 +236,14 @@ actor AgentRunSession {
             nextSequence: nextSequence,
             startedAt: startedAt
         )
+    }
+
+    func updateApprovalStatus(_ status: AgentApprovalStatus, approvalID: UUID) throws {
+        guard var approval = pendingApproval, approval.id == approvalID else {
+            throw AgentRunSessionError.waitingForConfirmation
+        }
+        approval.status = status
+        pendingApproval = approval
     }
 
     private func ensureRunnable() throws {
