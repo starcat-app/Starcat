@@ -1365,13 +1365,37 @@ enum DatabaseMigrations {
             t.column("fetched_at", .text)
         }
         try db.create(index: "idx_rag_citations_message_rank", on: "rag_message_citations", columns: ["message_id", "rank"])
+        try createRAGRemoteContextAuditSchema(db)
+    }
+
+    /// GitHub 临时上下文不保存正文；历史只需要恢复“本轮查了什么、何时查、是否降级”。
+    private static func createRAGRemoteContextAuditSchema(_ db: Database) throws {
+        try db.create(table: "rag_message_remote_contexts") { t in
+            t.column("id", .text).primaryKey()
+            t.column("message_id", .text).notNull()
+                .references("rag_messages", column: "id", onDelete: .cascade)
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("resource", .text).notNull()
+            t.column("title", .text).notNull()
+            t.column("source_url", .text)
+            t.column("fetched_at", .text).notNull()
+            t.column("error_message", .text)
+        }
+        try db.create(index: "idx_rag_remote_contexts_message", on: "rag_message_remote_contexts", columns: ["message_id"])
     }
 
     /// 产品上线前开发库不会重跑 `v1-initial`，启动时只在表缺失时补齐当前 schema。
     /// 这是开发期 schema 修正，不承载任何旧版本兼容或线上数据迁移语义。
     static func ensurePrelaunchRAGSchema(_ db: Database) throws {
-        guard try !db.tableExists("rag_chunks") else { return }
-        try createRAGSchema(db)
+        guard try db.tableExists("rag_chunks") else {
+            try createRAGSchema(db)
+            return
+        }
+        // 开发期已有数据库可能由较早 RAG schema 创建；仅补齐新增表，不保留兼容分支。
+        if try !db.tableExists("rag_message_remote_contexts") {
+            try createRAGRemoteContextAuditSchema(db)
+        }
     }
 
     // MARK: - release_subscriptions / releases（HOM-47 Release 订阅追踪）

@@ -19518,6 +19518,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "计划" } }
       }
     },
+    "rag.workspace.link.external" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "External GitHub link" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "外部 GitHub 链接" } }
+      }
+    },
+    "rag.workspace.link.knownButNotInLibrary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Known, not in knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已收藏，未入库" } }
+      }
+    },
     "rag.workspace.mention.noDescription" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No description" } },

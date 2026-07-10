@@ -85,7 +85,9 @@
 - [x] citation 包含 repo/chunk/source/section/score/hitKind/sourceURL。
 - [x] 新增 `rag_conversations / rag_messages / rag_message_citations`。
 - [x] 保存完整问题、回答、模型、时间和 citation metadata，不保存 chunk 正文快照。
+- [x] 新增 `rag_message_remote_contexts`，历史只保存 resource/source URL/fetchedAt/降级原因，不保存远程正文。
 - [x] chunk 删除后 citation 的 `chunk_id` 置空，历史仍可恢复 repo/source/section。
+- [x] 多轮消息只保留最近 3 轮原文，更早内容压缩为明确标记的受限背景摘要。
 - [x] 支持新建、继续和删除会话，支持复制与导出 Markdown。
 - [x] 用户数据库切换前取消当前问答并销毁工作台，同时暂停 source 监听并等待所有在途索引任务退出，防止旧账户历史或 chunk 误写新账户数据库。
 
@@ -100,6 +102,7 @@
 - [x] 15 分钟进程内 TTL cache 按 GitHub token 不可逆指纹隔离账户；普通网络缓存清理动作可同时清除。
 - [x] 单 repo/resource 失败返回 degradation block，继续使用已取得的本地证据。
 - [x] Inspector 展示 resource、fetchedAt、source URL、正文摘要或降级原因。
+- [x] 历史恢复时 Inspector 展示远程上下文审计 metadata，不回放临时网络正文。
 
 ## 7. 工作台 UI/UX
 
@@ -109,17 +112,19 @@
 - [x] `@` picker 只列知识库 repo，并搜索 fullName、description、topics、language、tags 和 status。
 - [x] 工作台打开期间监听知识库边界和索引完成事件，实时刷新 `@repo` 列表、选中上下文与覆盖率。
 - [x] 支持多 repo chips 和 only/prefer/exclude 模式切换。
+- [x] `@repo` picker 支持上/下高亮、Enter 插入和 Esc 关闭；范围模式仅由显式菜单改变。
 - [x] 模型下拉只切换本轮 Planner/Generator，不修改全局设置或 embedding model。
 - [x] 附件 chip 显示文件名、MIME、大小和处理方式；可删除并同步执行上下文。
 - [x] 支持文本、源码、JSON、PDF 和图片；单轮 5 个、单文件 10 MB、总计 20 MB。
 - [x] 不支持或超预算附件在发送前阻断。
 - [x] OpenAI-compatible 无统一 vision capability 字段，不按模型名猜测；图片按 multimodal content
   parts 发送，服务端拒绝时展示原始错误。
-- [x] 粘贴已入库 GitHub repo 链接转 repo chip；已知未入库/外部 repo 转链接 chip。
+- [x] 粘贴已入库 GitHub repo 链接转 repo chip；已知未入库链接显示明确状态并打开本地详情，外部链接打开 GitHub。
 - [x] 回答 GitHub 链接优先打开 Starcat 本地详情，不存在时打开浏览器。
 - [x] citation chip 定位 Inspector；展示 chunk、section、score、hitKind 和 truncated 状态。
 - [x] no knowledge/no candidates/no index/no evidence/clarification/error/cancel 均有独立 UI 状态。
 - [x] 固定文案完成 en/zh-Hans i18n。
+- [x] 索引构建与发送问答均在 UI 和 service 装配边界校验 Pro，已有索引不会绕过门禁。
 
 ## 8. Settings、Storage 与自托管后端
 

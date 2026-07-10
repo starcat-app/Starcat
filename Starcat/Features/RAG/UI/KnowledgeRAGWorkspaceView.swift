@@ -420,9 +420,7 @@ struct KnowledgeRAGWorkspaceView: View {
                             }
                         }
                         ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
-                            contextChip(title: "\(reference.owner)/\(reference.repo)", icon: "link") {
-                                viewModel.removeGitHubLink(reference.url)
-                            }
+                            githubLinkChip(reference)
                         }
                     }
                 }
@@ -449,19 +447,38 @@ struct KnowledgeRAGWorkspaceView: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 64, maxHeight: 118)
                     .onKeyPress(.return) {
+                        if viewModel.isMentionPickerPresented, !NSEvent.modifierFlags.contains(.command) {
+                            viewModel.selectHighlightedMention()
+                            return .handled
+                        }
                         if NSEvent.modifierFlags.contains(.command) {
                             viewModel.send()
                             return .handled
                         }
                         return .ignored
                     }
+                    .onKeyPress(.upArrow) {
+                        guard viewModel.isMentionPickerPresented else { return .ignored }
+                        viewModel.moveMentionSelection(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard viewModel.isMentionPickerPresented else { return .ignored }
+                        viewModel.moveMentionSelection(by: 1)
+                        return .handled
+                    }
+                    .onKeyPress(.escape) {
+                        guard viewModel.isMentionPickerPresented else { return .ignored }
+                        viewModel.dismissMentionPicker()
+                        return .handled
+                    }
                     .onChange(of: viewModel.draftQuestion) { _, _ in
-                        viewModel.scheduleGitHubLinkDetection()
+                        viewModel.handleDraftQuestionChanged()
                     }
             }
             .popover(
                 isPresented: Binding(
-                    get: { viewModel.mentionQuery != nil && !viewModel.mentionSuggestions.isEmpty },
+                    get: { viewModel.isMentionPickerPresented },
                     set: { _ in }
                 ),
                 arrowEdge: .bottom
@@ -534,6 +551,29 @@ struct KnowledgeRAGWorkspaceView: View {
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
     }
 
+    private func githubLinkChip(_ reference: RAGGitHubLinkReference) -> some View {
+        HStack(spacing: 5) {
+            Button { viewModel.openGitHubLink(reference) } label: {
+                Label(githubLinkTitle(reference), systemImage: githubLinkIcon(reference))
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(githubLinkOpenHint(reference))
+            Button { viewModel.removeGitHubLink(reference.url) } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("common.remove")
+        }
+        .font(ragFont(.caption, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+    }
+
     private var mentionPicker: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("rag.workspace.mention.title")
@@ -561,6 +601,12 @@ struct KnowledgeRAGWorkspaceView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)
                             .contentShape(Rectangle())
+                            .background(
+                                repo.id == viewModel.highlightedMentionRepoIDValue
+                                    ? Color.accentColor.opacity(0.12)
+                                    : .clear,
+                                in: RoundedRectangle(cornerRadius: 6)
+                            )
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
@@ -743,6 +789,33 @@ struct KnowledgeRAGWorkspaceView: View {
                     .padding(.vertical, 5)
                 }
             }
+
+            if !viewModel.historicalRemoteContextAudits.isEmpty {
+                Divider()
+                Text("rag.workspace.inspector.remoteContext")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                ForEach(viewModel.historicalRemoteContextAudits) { audit in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(audit.title)
+                            .font(ragFont(.callout, weight: .semibold))
+                        if let errorMessage = audit.errorMessage {
+                            Text(errorMessage)
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.orange)
+                        }
+                        inspectorValue("rag.workspace.inspector.fetchedAt", value: audit.fetchedAt)
+                        if let url = audit.sourceURL {
+                            Link(destination: url) {
+                                Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                            }
+                            .font(ragFont(.caption))
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -861,6 +934,31 @@ struct KnowledgeRAGWorkspaceView: View {
         case .prefer: return String.l10n("rag.workspace.repoMode.prefer")
         case .exclude: return String.l10n("rag.workspace.repoMode.exclude")
         }
+    }
+
+    private func githubLinkTitle(_ reference: RAGGitHubLinkReference) -> String {
+        let name = "\(reference.owner)/\(reference.repo)"
+        switch reference.relation {
+        case .inKnowledge:
+            return name
+        case .knownButNotInKnowledge:
+            return "\(name) · \(String.l10n("rag.workspace.link.knownButNotInLibrary"))"
+        case .external:
+            return "\(name) · \(String.l10n("rag.workspace.link.external"))"
+        }
+    }
+
+    private func githubLinkIcon(_ reference: RAGGitHubLinkReference) -> String {
+        switch reference.relation {
+        case .inKnowledge, .knownButNotInKnowledge: return "shippingbox"
+        case .external: return "arrow.up.right.square"
+        }
+    }
+
+    private func githubLinkOpenHint(_ reference: RAGGitHubLinkReference) -> String {
+        reference.relation == .knownButNotInKnowledge
+            ? String.l10n("rag.workspace.inspector.openStarcat")
+            : String.l10n("rag.workspace.inspector.openGitHub")
     }
 
     private func remoteResourceName(_ resource: RAGRemoteContextResource) -> String {

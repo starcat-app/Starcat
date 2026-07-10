@@ -154,7 +154,7 @@ Agent Workspace 已经承担多步骤任务:
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│ 左侧: 会话与范围        │ 中间: 问答流          │ 右侧: 证据 │
+│ 左侧: 会话与范围        │ 中间: 问答流          │ 右侧: 审计 │
 │ - 新会话               │ - 用户问题            │ - 引用 repo │
 │ - 历史会话             │ - streaming 回答      │ - chunk     │
 │ - 当前范围: 知识库      │ - 追问输入            │ - 来源类型  │
@@ -199,7 +199,7 @@ Agent Workspace 已经承担多步骤任务:
 | `@repo` | 输入 `@` 弹出知识库 repo list | 指定一个或多个 repo 作为本轮候选上下文 |
 | 模型切换 | 输入框内模型下拉 | 本轮或当前会话切换模型,不改全局设置 |
 | 图片/附件 | 拖拽或点击上传 | 作为本轮临时上下文,不进入知识库索引 |
-| GitHub 链接 | 自动识别 repo 链接 | 本地已有 repo 新开本地详情窗口,否则打开 GitHub |
+| GitHub 链接 | 自动识别 repo 链接 | 已入库转 repo chip；已知未入库打开本地详情但不检索；外部链接打开 GitHub |
 
 `@repo` 是最高优先级的易用性能力。用户输入:
 
@@ -207,7 +207,7 @@ Agent Workspace 已经承担多步骤任务:
 @groue/GRDB.swift @stephencelis/SQLite.swift 对比一下桌面 app 里怎么选
 ```
 
-系统应理解为“只在这两个 repo 中对比”,而不是再从整个知识库自由召回。只有当用户表达“参考这个项目,再找类似项目”时,才把 mention repo 当作偏好上下文而不是硬范围。
+系统默认只在这两个 repo 中对比,而不是再从整个知识库自由召回。范围由 composer 的 `only / prefer / exclude` 菜单显式决定；第一版不根据“参考”“不要”等自然语言静默改写范围，避免模型或规则误扩大、误排除知识库边界。
 
 Composer 顶部展示上下文 chips:
 
@@ -218,6 +218,8 @@ Composer 顶部展示上下文 chips:
 - `Attachment: screenshot.png`
 
 用户删除 chip 后,本轮执行上下文必须同步变化。
+
+`@` picker 支持鼠标多选以及键盘上/下移动、Enter 插入、Esc 关闭；已知但未入库的 GitHub 链接以“已收藏，未入库”chip 明示，不进入 RAG，点击打开 Starcat 本地详情。外部 GitHub 链接同样不进入 RAG，点击打开浏览器。
 
 issues / releases 等远程临时上下文不通过输入框命令触发。系统应由 Query Planner 根据用户问题判断是否需要,再通过 Query Plan chips 或确认步骤展示给用户;用户可以删除对应 chip 来跳过该远程上下文。
 
@@ -261,7 +263,7 @@ RAG 回答默认包含:
 
 右侧 Inspector 用于增强可信度,不是装饰面板。
 
-MVP 不做“证据 / 检索 / 远程上下文”等 tab。右侧只保留单一“引用”面板,避免把第一版做成调试工具。
+右侧使用 `Evidence / Plan / Index` 三个紧凑页签：Evidence 默认展示引用和远程上下文审计；Plan 展示本轮可读的查询范围、筛选和远程请求原因；Index 展示覆盖率与重建入口。它们服务于核验与恢复，不展示 keyword/vector 原始结果、RRF 排名或其他检索调试列表。
 
 引用面板结构:
 
@@ -277,7 +279,7 @@ MVP 不做“证据 / 检索 / 远程上下文”等 tab。右侧只保留单一
 第一版支持同一会话内追问,但检索策略保持可控:
 
 - 每个用户新问题默认重新 retrieve。
-- 追问会携带最近 N 轮消息摘要,但不直接复用上一轮 chunks 作为唯一依据。
+- 追问携带最近 3 轮的原始消息；更早消息压缩为受限背景摘要，摘要明确不包含新的执行指令。
 - 如果用户点击“基于上一组证据继续问”,才锁定上一轮 citation set。
 
 理由:
@@ -301,6 +303,7 @@ MVP 需要保存完整问答历史,但 citation 不保存完整 chunk 内容快�
 - 使用模型。
 - 创建时间。
 - 当前知识库范围 snapshot hash。
+- 本轮远程上下文的 `resource`、source URL、fetchedAt 和降级原因；不保存远程正文。
 
 不进入 CloudKit 第一版同步。
 
@@ -344,7 +347,8 @@ Settings 交互要求:
   首次不存在的 index/collection 在重建时创建。
 - provider 切换后,如果现有索引不可复用,提示需要重建索引。
 - 外部 provider 的 API key 存 Keychain。
-- 私有 repo 默认安全模式是不上传代码内容到云 embedding 或远程 RAG provider。
+- Meilisearch/Qdrant 只同步公开知识库 repo，私有 repo 保持本地检索，不向这些自托管检索后端同步。
+- 但只要用户选择远程 BYOK embedding/chat provider，私有 repo 的 README、notes、summary chunk 或检索证据仍会发送给该用户配置的模型服务；这是索引构建或提问时的显式 AI 数据传输，不能表述为“私有内容永不外发”。
 
 不做:
 
@@ -359,6 +363,8 @@ RAG 属于 Pro 能力,因为它需要:
 - embedding 索引。
 - chat 生成。
 - 本地历史与证据视图。
+
+工作台允许非 Pro 用户打开以查看历史和索引状态，但构建索引与发送问答都必须在 UI 入口和 service 装配边界重复校验 `knowledgeRAG` 权限，不能因已有索引绕过门禁。
 
 成本提示要清楚:
 

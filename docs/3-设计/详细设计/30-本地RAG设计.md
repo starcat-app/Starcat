@@ -219,7 +219,6 @@ CREATE TABLE rag_messages (
     conversation_id     TEXT NOT NULL REFERENCES rag_conversations(id) ON DELETE CASCADE,
     role                TEXT NOT NULL,
     content             TEXT NOT NULL,
-    citation_ids_json   TEXT NOT NULL DEFAULT '[]',
     model               TEXT,
     created_at          TEXT NOT NULL
 );
@@ -227,13 +226,27 @@ CREATE TABLE rag_messages (
 CREATE TABLE rag_message_citations (
     id              TEXT PRIMARY KEY,
     message_id      TEXT NOT NULL REFERENCES rag_messages(id) ON DELETE CASCADE,
-    chunk_id        INTEGER NOT NULL REFERENCES rag_chunks(id) ON DELETE CASCADE,
+    chunk_id        INTEGER REFERENCES rag_chunks(id) ON DELETE SET NULL,
     repo_id         INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    repo_full_name  TEXT NOT NULL,
     source          TEXT NOT NULL,
     section_title   TEXT NOT NULL DEFAULT '',
     rank            INTEGER NOT NULL,
     score           REAL NOT NULL,
-    hit_kind        TEXT NOT NULL DEFAULT 'hybrid'
+    hit_kind        TEXT NOT NULL DEFAULT 'hybrid',
+    source_url      TEXT,
+    fetched_at      TEXT
+);
+
+CREATE TABLE rag_message_remote_contexts (
+    id              TEXT PRIMARY KEY,
+    message_id      TEXT NOT NULL REFERENCES rag_messages(id) ON DELETE CASCADE,
+    repo_id         INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    resource        TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    source_url      TEXT,
+    fetched_at      TEXT NOT NULL,
+    error_message   TEXT
 );
 ```
 
@@ -241,9 +254,11 @@ CREATE TABLE rag_message_citations (
 
 - 保存完整问答历史: 用户问题、模型回答、使用模型、createdAt / updatedAt。
 - 保存 citation metadata: repo id、chunk id、source、section/title、score、命中方式。
+- 保存远程上下文审计 metadata: resource、repo id、source URL、fetchedAt、降级原因；表中没有正文列。
 - 不保存完整 chunk content snapshot。
 - 如果 chunk 后续被清理,历史里显示“引用片段已清理或需要重建索引”。
 - 会话历史只本地存储,不进 CloudKit。
+- 提问时只把最近 3 轮原文传给 chat model；更早消息按每条 280 字符、总计 1,800 字符压缩为受限背景摘要，避免长会话无限增加 token 成本。
 
 ## 5. Chunk 构建
 
@@ -1508,9 +1523,9 @@ LLM 回答按 repo 组织,但 citation 仍指向 child chunk。这样既能回�
 UI 展示:
 
 - citation chip 主体显示 repo。
-- 右侧 Inspector 默认只显示“引用”面板,不做“证据 / 检索”tab。
-- 引用面板上方显示当前选中 citation 的 matched child、所属 section parent、source、score 和命中方式。
-- 引用面板下方显示本轮回答实际引用过的其它 citations;点击列表项后切换上方详情。
+- 右侧 Inspector 使用 `Evidence / Plan / Index` 三个页签。Evidence 默认显示当前 citation、chunk 预览、其它 citations 和远程上下文审计；Plan 显示本轮结构化范围与远程请求原因；Index 显示覆盖率和重建入口。
+- Evidence 页上方显示当前选中 citation 的 matched child、所属 section parent、source、score 和命中方式；下方显示本轮回答实际引用过的其它 citations，点击后切换上方详情。
+- 不展示 keyword/vector 原始命中、RRF 排名等 Retriever 调试列表，排障信息仅走 Debug gate 或日志。
 
 这避免 citation 退化成“整个 repo 都算引用”,也避免答案只围绕碎片展开。
 
@@ -1857,7 +1872,7 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 | `RAGCommandComposerView` | 用户输入、repo mention、模型下拉、附件 |
 | `RAGMentionPicker` | `@` repo list / command list 弹层 |
 | `RAGContextChip` | 本轮上下文 chip,支持删除 |
-| `RAGEvidenceInspector` | 单一引用面板: 当前 citation 详情、chunk 预览、其它引用列表 |
+| `RAGInspector` | Evidence / Plan / Index：引用与远程审计、查询计划、索引覆盖率 |
 | `RAGCitationChip` | 引用 chip,点击后在右侧切换引用详情 |
 
 ### 11.4 状态
@@ -1951,8 +1966,7 @@ RAG 输入框不应只是普通多行文本框,而应是 `RAGCommandComposerView
 执行语义:
 
 - `@repoA @repoB 对比...` -> `explicitRepoIDs = [repoA, repoB]`, `explicitRepoMode = .only`。
-- `参考 @repoA,再找类似项目` -> `explicitRepoMode = .prefer`。
-- `不要考虑 @repoA` -> `explicitRepoMode = .exclude`。
+- `explicitRepoMode` 由 Composer 的 only/prefer/exclude 菜单显式选择，默认 `.only`；第一版不从“参考”“不要”等自然语言推断范围，避免规则或模型误改边界。
 - `.only` 模式下,SQL candidate 必须限制到这些 repo,即使 Query Planner 生成了更宽的筛选条件也不能越界。
 - 如果 mention 的 repo 已不在知识库,UI 必须提示“不在知识库,默认不参与 RAG”,并让用户选择“打开详情”或“作为本轮临时外部链接”,不能静默加入 RAG。
 
@@ -2005,7 +2019,7 @@ issues / releases / PR 等远程临时上下文由 Query Planner 根据自然语
 | 链接状态 | UI | RAG 行为 |
 |---|---|---|
 | 已存在且已入库 | 转成 repo chip | 加入 `explicitRepoIDs` |
-| 已存在但未入库 | 显示 known repo chip | 默认不参与 RAG,可打开详情或提示入库 |
+| 已存在但未入库 | 显示“已收藏，未入库” known repo chip | 默认不参与 RAG,点击打开本地详情 |
 | Starcat 未知 | 显示 external link chip | 默认只作为外部链接,点击打开 GitHub |
 
 回答区展示 GitHub 链接时:
@@ -2013,7 +2027,7 @@ issues / releases / PR 等远程临时上下文由 Query Planner 根据自然语
 - 如果链接对应 Starcat 本地已有 repo,点击后复用现有能力新开本地 repo 详情页窗口。
 - 如果链接不是 Starcat 本地已有 repo,点击后打开 GitHub。
 - “打开详情”按钮与回答正文 / 中间结果中的 GitHub repo 链接使用同一套分流规则。
-- 对于已 star 未入库 repo,可以展示“加入知识库”动作,但 RAG 本轮回答不能自动修改 libraryState。
+- RAG 工作台第一版不在链接 chip 上提供“加入知识库”写入动作；用户可在本地详情页按既有流程决定是否入库，本轮回答不会修改 `libraryState`。
 
 #### 11.7.6 上下文 chip
 
@@ -2192,6 +2206,7 @@ Settings -> Storage 建议增加:
 - rate limit / timeout / forbidden 返回 degradation block,不抛出整轮失败。
 - degradation block 作为独立 ephemeral context 进入最终 prompt。
 - remote context 不写入 `rag_chunks`。
+- 完成回答后只把 resource/source URL/fetchedAt/降级原因写入 `rag_message_remote_contexts`，表结构不得出现远程正文列。
 - structured_only + remote request 必须先有 SQL 候选 repo。
 
 ### 15.7 Generator tests
@@ -2215,8 +2230,9 @@ Settings -> Storage 建议增加:
 - `needs_clarification` 展示追问,不执行检索。
 - `no_candidate_repos` / `no_index` / `no_evidence` 展示不同空状态。
 - retrieval -> remote context -> generation -> completed 状态流。
-- 不展示独立 Remote Context tab；Evidence 页显示 resource / fetchedAt / source URL / degradation。
+- Inspector 使用 Evidence / Plan / Index 三个页签；Evidence 页显示 resource / fetchedAt / source URL / degradation，历史恢复时只显示远程审计元数据，不回放远程正文。
 - `@repo` mention 能生成 repo context chip。
+- `@repo` picker 支持上/下移动高亮、Enter 插入、Esc 关闭；only/prefer/exclude 只由显式菜单修改。
 - 多个 `@repo` 默认形成 `explicitRepoMode = .only`。
 - 删除 repo context chip 后,执行上下文同步移除 repo id。
 - Planner 提议 issues / releases 远程上下文时,UI 能展示可删除确认 chip。
@@ -2224,9 +2240,12 @@ Settings -> Storage 建议增加:
 - 模型切换只影响本轮 request,不修改全局 Settings。
 - 图片使用 OpenAI-compatible multimodal content parts；服务端拒绝时展示原始错误。
 - GitHub 链接已入库时转成 repo chip,未入库时不自动进入 RAG。
+- 已知未入库链接显示明确状态并打开本地详情；外部链接打开 GitHub；两者均不进入 RAG。
 - 回答区 GitHub 链接命中 Starcat 本地已有 repo 时新开本地详情页窗口,否则打开外部 GitHub。
 - cancel 能停止 streaming。
 - citation 点击回调 repo id。
+- 非 Pro 用户不能构建索引或发送问答；service 装配层同样拒绝绕过 UI 的调用。
+- 多轮历史只保留最近 3 轮原文，更早记录生成受限背景摘要，长度受每条和总预算约束。
 
 ## 16. 实施切片
 

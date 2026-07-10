@@ -27,7 +27,7 @@ struct DatabaseMigrationsV1Tests {
             "repo_notes", "readmes", "saved_searches", "smart_collections",
             "sync_state", "tag_stats_cache", "open_ssf_scores",
             "rag_chunks", "rag_chunks_fts", "rag_conversations",
-            "rag_messages", "rag_message_citations"
+            "rag_messages", "rag_message_citations", "rag_message_remote_contexts"
         ]
         try db.read { db in
             for table in expectedTables {

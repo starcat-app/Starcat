@@ -596,6 +596,71 @@ struct KnowledgeRAGCoreTests {
         #expect(secondBlocks.first?.content.contains("Account A") == false)
     }
 
+    @Test("远程上下文只持久化审计元数据")
+    func remoteContextAuditPersistsMetadataOnly() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 43)
+        let store = GRDBRAGConversationStore(database: database)
+        let conversation = try await store.createConversation()
+        let fetchedAt = Date(timeIntervalSince1970: 1_784_000_000)
+
+        try await store.appendTurn(
+            conversationID: conversation.id,
+            question: "近期 issue 有什么风险？",
+            answer: "有一个待处理问题。",
+            model: "test-model",
+            citations: [],
+            remoteContexts: [RAGRemoteContextBlock(
+                id: "issues-43",
+                repoId: 43,
+                resource: .githubIssues,
+                title: "GitHub Issues",
+                sourceURL: URL(string: "https://github.com/octo/demo-43/issues"),
+                content: "这段远程正文不应写入历史表。",
+                fetchedAt: fetchedAt,
+                errorMessage: nil
+            )]
+        )
+
+        let loaded = try await store.loadConversation(id: conversation.id)
+        let detail = try #require(loaded)
+        let audit = try #require(detail.messages.last?.remoteContextAudits.first)
+        #expect(audit.resource == .githubIssues)
+        #expect(audit.repoID == 43)
+        #expect(audit.sourceURL?.absoluteString == "https://github.com/octo/demo-43/issues")
+        #expect(audit.fetchedAt == ISO8601DateFormatter.shared.string(from: fetchedAt))
+        let columns = try await database.writer.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA table_info(rag_message_remote_contexts)")
+                .map { (row: Row) -> String in row["name"] }
+        }
+        #expect(!columns.contains("content"))
+    }
+
+    @Test("多轮历史保留最近三轮并压缩早期消息")
+    func conversationHistoryIsBounded() {
+        let conversationID = UUID()
+        let messages = (0..<8).map { index in
+            RAGStoredMessage(
+                id: UUID(),
+                conversationID: conversationID,
+                role: index.isMultiple(of: 2) ? .user : .assistant,
+                content: "消息 \(index) " + String(repeating: "内容", count: 200),
+                model: index.isMultiple(of: 2) ? nil : "test-model",
+                citations: [],
+                remoteContextAudits: [],
+                createdAt: "2026-07-11T00:00:0\(index)Z"
+            )
+        }
+
+        let history = RAGConversationHistoryBuilder.build(from: messages)
+        #expect(history.count == 7)
+        #expect(history.first?.role == .user)
+        #expect(history.first?.content.contains("受限摘要") == true)
+        #expect(history.first?.content.contains("消息 0") == true)
+        #expect(history.last?.content.contains("消息 7") == true)
+        #expect(history.dropFirst().allSatisfy { $0.content.count <= 500 })
+    }
+
     private func fixtureChunk(id: Int64, repoID: Int64, source: RAGChunkSource) -> RAGChunk {
         RAGChunk(
             id: id,

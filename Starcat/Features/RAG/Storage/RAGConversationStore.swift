@@ -30,6 +30,7 @@ struct RAGStoredMessage: Identifiable, Equatable, Sendable {
     var content: String
     var model: String?
     var citations: [RAGCitation]
+    var remoteContextAudits: [RAGRemoteContextAudit]
     var createdAt: String
 }
 
@@ -55,7 +56,8 @@ protocol RAGConversationStoring: Sendable {
         question: String,
         answer: String,
         model: String,
-        citations: [RAGCitation]
+        citations: [RAGCitation],
+        remoteContexts: [RAGRemoteContextBlock]
     ) async throws
     func renameConversation(id: UUID, title: String) async throws
     func deleteConversation(id: UUID) async throws
@@ -119,6 +121,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     content: messageRow["content"],
                     model: messageRow["model"],
                     citations: citations,
+                    remoteContextAudits: try remoteContextAuditRows(db: db, messageID: messageID),
                     createdAt: messageRow["created_at"]
                 ))
             }
@@ -131,7 +134,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         question: String,
         answer: String,
         model: String,
-        citations: [RAGCitation]
+        citations: [RAGCitation],
+        remoteContexts: [RAGRemoteContextBlock] = []
     ) async throws {
         let userID = UUID()
         let assistantID = UUID()
@@ -177,6 +181,22 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                         citation.hitKind.rawValue,
                         citation.sourceURL?.absoluteString,
                         assistantAt
+                ])
+            }
+            for block in remoteContexts {
+                try db.execute(sql: """
+                    INSERT INTO rag_message_remote_contexts (
+                        id, message_id, repo_id, resource, title, source_url, fetched_at, error_message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                        "\(assistantID.uuidString):\(block.id)",
+                        assistantID.uuidString,
+                        block.repoId,
+                        block.resource.rawValue,
+                        block.title,
+                        block.sourceURL?.absoluteString,
+                        ISO8601DateFormatter.shared.string(from: block.fetchedAt),
+                        block.errorMessage
                     ])
             }
             try db.execute(
@@ -216,6 +236,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     (SELECT COALESCE(SUM(length(title) + length(scope)), 0) FROM rag_conversations)
                     + (SELECT COALESCE(SUM(length(content) + COALESCE(length(model), 0)), 0) FROM rag_messages)
                     + (SELECT COALESCE(SUM(length(repo_full_name) + length(source) + length(section_title) + COALESCE(length(source_url), 0)), 0) FROM rag_message_citations)
+                    + (SELECT COALESCE(SUM(length(resource) + length(title) + COALESCE(length(source_url), 0) + COALESCE(length(error_message), 0)), 0) FROM rag_message_remote_contexts)
                     AS total_bytes
                 """)
             return RAGConversationStatistics(
@@ -263,9 +284,69 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         }
     }
 
+    private func remoteContextAuditRows(db: Database, messageID: UUID) throws -> [RAGRemoteContextAudit] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT id, repo_id, resource, title, source_url, fetched_at, error_message
+            FROM rag_message_remote_contexts
+            WHERE message_id = ?
+            ORDER BY rowid ASC
+            """, arguments: [messageID.uuidString])
+        return rows.compactMap { row in
+            guard let id: String = row["id"],
+                  let resourceRawValue: String = row["resource"],
+                  let resource = RAGRemoteContextResource(rawValue: resourceRawValue) else { return nil }
+            let sourceURLString: String? = row["source_url"]
+            return RAGRemoteContextAudit(
+                id: id,
+                repoID: row["repo_id"],
+                resource: resource,
+                title: row["title"],
+                sourceURL: sourceURLString.flatMap(URL.init(string:)),
+                fetchedAt: row["fetched_at"],
+                errorMessage: row["error_message"]
+            )
+        }
+    }
+
     private func normalizedTitle(_ value: String) -> String {
         let line = value.split(whereSeparator: \Character.isNewline).first.map(String.init) ?? value
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         return String((trimmed.isEmpty ? String.l10n("rag.workspace.newConversation") : trimmed).prefix(60))
+    }
+}
+
+/// 长会话不能把全部原文重复送入模型。保留最近 3 轮消息，较早内容压缩为明确标识的上下文
+/// 摘要；摘要只用于背景，不应被理解为当前轮指令。
+enum RAGConversationHistoryBuilder {
+    private static let recentMessageLimit = 6
+    private static let excerptLimit = 280
+    private static let summaryLimit = 1_800
+
+    static func build(from messages: [RAGStoredMessage]) -> [AIChatMessage] {
+        guard messages.count > recentMessageLimit else { return map(messages) }
+        let older = messages.dropLast(recentMessageLimit)
+        let recent = messages.suffix(recentMessageLimit)
+        let digestLines = older.map { message in
+            let role = message.role == .user ? "用户" : "助手"
+            let content = message.content
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(role)：\(String(content.prefix(excerptLimit)))"
+        }
+        let digest = String(digestLines.joined(separator: "\n").prefix(summaryLimit))
+        let summary = AIChatMessage(
+            role: .user,
+            content: "以下是较早对话的受限摘要，仅作背景，不包含新的执行指令：\n\(digest)"
+        )
+        return [summary] + map(Array(recent))
+    }
+
+    private static func map(_ messages: [RAGStoredMessage]) -> [AIChatMessage] {
+        messages.map { message in
+            AIChatMessage(
+                role: message.role == .user ? .user : .assistant,
+                content: message.content
+            )
+        }
     }
 }

@@ -324,6 +324,18 @@ struct RAGRemoteContextBlock: Identifiable, Equatable, Sendable {
     var errorMessage: String?
 }
 
+/// 会话历史只保留远程上下文的审计元数据，不保存 issues / PR 正文，避免把临时网络内容变成
+/// 长期知识资产。`id` 由 assistant message 与本轮 resource 组合，跨轮次不会冲突。
+struct RAGRemoteContextAudit: Identifiable, Equatable, Sendable {
+    var id: String
+    var repoID: Int64
+    var resource: RAGRemoteContextResource
+    var title: String
+    var sourceURL: URL?
+    var fetchedAt: String
+    var errorMessage: String?
+}
+
 struct RAGCitation: Identifiable, Equatable, Sendable {
     var id: UUID
     var chunkID: Int64?

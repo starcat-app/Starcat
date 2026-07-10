@@ -41,6 +41,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var githubLinkContexts: [RAGGitHubLinkReference] = []
     var selectedModelID: String?
     var knowledgeRepos: [Repo] = []
+    private var isMentionPickerDismissed = false
+    private var highlightedMentionRepoID: Int64?
     private var knowledgeCandidates: [RAGRepoCandidate] = []
     var indexCoverage = RAGIndexCoverage(
         knowledgeRepoCount: 0,
@@ -71,6 +73,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     var availableModels: [AIModelDescriptor] { dependencies.knowledgeRAGChatModels }
+
+    var historicalRemoteContextAudits: [RAGRemoteContextAudit] {
+        messages.flatMap(\.remoteContextAudits)
+    }
 
     var selectedModelDisplayName: String {
         availableModels.first(where: { $0.id == selectedModelID })?.name
@@ -117,6 +123,18 @@ final class KnowledgeRAGWorkspaceViewModel {
             ].joined(separator: " ")
             return searchable.localizedCaseInsensitiveContains(query)
         }.prefix(12).map(\.repo)
+    }
+
+    var isMentionPickerPresented: Bool {
+        !isMentionPickerDismissed && mentionQuery != nil && !mentionSuggestions.isEmpty
+    }
+
+    var highlightedMentionRepoIDValue: Int64? {
+        let suggestions = mentionSuggestions
+        guard !suggestions.isEmpty else { return nil }
+        return suggestions.contains(where: { $0.id == highlightedMentionRepoID })
+            ? highlightedMentionRepoID
+            : suggestions.first?.id
     }
 
     func bootstrap() async {
@@ -222,6 +240,12 @@ final class KnowledgeRAGWorkspaceViewModel {
     func send() {
         let question = draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isAnswering, composerBlockingReason == nil else { return }
+        do {
+            try dependencies.entitlementGate.requirePro(.knowledgeRAG)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
         answerTask?.cancel()
         answerTask = Task { [weak self] in
             await self?.runQuestion(question)
@@ -261,6 +285,38 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         selectedRepoContexts.append(repo)
         draftQuestion = draftQuestion.trimmingCharacters(in: .whitespaces) + (draftQuestion.isEmpty ? "" : " ")
+        isMentionPickerDismissed = false
+        highlightedMentionRepoID = nil
+    }
+
+    /// `@repo` 候选由输入框持有键盘焦点。这里仅移动高亮，不改变输入内容，Enter 才会
+    /// 写入明确的 repo context，避免方向键意外修改问题文本。
+    func moveMentionSelection(by offset: Int) {
+        let suggestions = mentionSuggestions
+        guard !suggestions.isEmpty else { return }
+        let currentIndex = highlightedMentionRepoIDValue.flatMap { id in
+            suggestions.firstIndex(where: { $0.id == id })
+        } ?? (offset > 0 ? -1 : suggestions.count)
+        let nextIndex = min(max(currentIndex + offset, 0), suggestions.count - 1)
+        highlightedMentionRepoID = suggestions[nextIndex].id
+    }
+
+    func selectHighlightedMention() {
+        guard let id = highlightedMentionRepoIDValue,
+              let repo = mentionSuggestions.first(where: { $0.id == id }) else { return }
+        selectMention(repo)
+    }
+
+    func dismissMentionPicker() {
+        isMentionPickerDismissed = true
+        highlightedMentionRepoID = nil
+    }
+
+    func handleDraftQuestionChanged() {
+        // Esc 只关闭当前这次候选；继续编辑时重新打开，并让高亮回到当前候选集合的首项。
+        isMentionPickerDismissed = false
+        highlightedMentionRepoID = nil
+        scheduleGitHubLinkDetection()
     }
 
     func removeMention(repoID: Int64) {
@@ -315,6 +371,21 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func removeGitHubLink(_ url: URL) {
         githubLinkContexts.removeAll { $0.url == url }
+    }
+
+    func openGitHubLink(_ reference: RAGGitHubLinkReference) {
+        guard reference.relation == .knownButNotInKnowledge,
+              let repoID = reference.matchedRepoID else {
+            NSWorkspace.shared.open(reference.url)
+            return
+        }
+        Task {
+            if let repo = try? await dependencies.repoRepository.findById(repoID) {
+                dependencies.companionActionDispatcher.requestOpenRepo(repo)
+            } else {
+                NSWorkspace.shared.open(reference.url)
+            }
+        }
     }
 
     func copyAnswer(_ content: String) {
@@ -399,12 +470,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func runQuestion(_ question: String) async {
         guard let conversationID = selectedConversationID else { return }
-        let history = messages.map { message in
-            AIChatMessage(
-                role: message.role == .user ? .user : .assistant,
-                content: message.content
-            )
-        }
+        let history = RAGConversationHistoryBuilder.build(from: messages)
         let userMessage = RAGStoredMessage(
             id: UUID(),
             conversationID: conversationID,
@@ -412,6 +478,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             content: question,
             model: nil,
             citations: [],
+            remoteContextAudits: [],
             createdAt: ISO8601DateFormatter.shared.string(from: Date())
         )
         messages.append(userMessage)
@@ -466,7 +533,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     question: question,
                     answer: completedPayload.0,
                     model: completedPayload.1,
-                    citations: completedPayload.2
+                    citations: completedPayload.2,
+                    remoteContexts: remoteBlocks
                 )
             } else if let terminalReply, answerState != .cancelled {
                 try await persistAnswer(
@@ -474,7 +542,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     question: question,
                     answer: terminalReply,
                     model: selectedModelDisplayName,
-                    citations: []
+                    citations: [],
+                    remoteContexts: remoteBlocks
                 )
             } else if answerState == .cancelled {
                 messages.removeAll { $0.id == userMessage.id }
@@ -496,14 +565,16 @@ final class KnowledgeRAGWorkspaceViewModel {
         question: String,
         answer: String,
         model: String,
-        citations: [RAGCitation]
+        citations: [RAGCitation],
+        remoteContexts: [RAGRemoteContextBlock]
     ) async throws {
         try await conversationStore.appendTurn(
             conversationID: conversationID,
             question: question,
             answer: answer,
             model: model,
-            citations: citations
+            citations: citations,
+            remoteContexts: remoteContexts
         )
         if let detail = try await conversationStore.loadConversation(id: conversationID) {
             messages = detail.messages
@@ -511,6 +582,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         conversations = try await conversationStore.listConversations()
         streamingAnswer = ""
+        remoteBlocks = []
         attachments = []
         githubLinkContexts = []
     }

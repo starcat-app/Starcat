@@ -449,6 +449,9 @@ final class AppDependencies {
     /// 按当前输入框选择创建一次问答所需的不可变 runtime。模型切换只影响本轮 Generator /
     /// Planner；embedding 仍固定使用 Settings 的 embedding task，避免同一索引混入不同向量空间。
     func makeKnowledgeRAGService(selectedModelID: String?) throws -> KnowledgeRAGService {
+        // 工作台可在非 Pro 状态下打开以查看历史和索引覆盖，但创建服务就意味着将发起模型调用，
+        // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
+        try entitlementGate.requirePro(.knowledgeRAG)
         let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
         let embeddingSelection = try resolveRAGTaskSelection(task: settings.aiEmbeddingTask)
         let chatClient = try makeRAGClient(
