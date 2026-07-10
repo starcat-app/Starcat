@@ -1,6 +1,6 @@
 # Cline-style Agent 全量交付总 checklist
 
-> 状态: 实现与自动化验证完成,待验收文档、六轮审查和最终报告
+> 状态: 全部完成,实现、自动化验证、验收文档、六轮审查和结果报告已闭环
 > 创建: 2026-07-07
 > 重构: 2026-07-10
 > 目标分支: `codex/agent-cline-loop`
@@ -32,7 +32,7 @@
 - [x] External Search: 复用现有设置/provider/API key/cache/privacy,由模型主动调用。
 - [x] GitHub Weekly Report: 完整迁移到 Loop Runtime,生成真实可审计 artifact。
 - [x] Agent Workspace: message timeline、可展开输入输出、流式文本、审批和通用 Inspector。
-- [ ] 单测、验收文档、工程进度、多轮审查、修复和最终结果报告。
+- [x] 单测、验收文档、工程进度、多轮审查、修复和最终结果报告。
 
 ### 2.2 明确不做
 
@@ -230,8 +230,8 @@
 - [x] 新增 Weekly/External Search 端到端 Runtime 测试套件。
 - [x] 新增 Workspace ViewModel timeline/Inspector 测试套件。
 - [x] 保留并迁移现有 Agent 有效测试,删除只验证旧固定序列的测试。
-- [x] 使用独立 DerivedData 运行全部 Agent 相关单测:98 项通过,0 失败。
-- [x] 运行完整 `StarcatTests` 回归测试:1379 项,0 非预期失败。
+- [x] 使用独立 DerivedData 运行全部 Agent 相关单测:101 项通过,0 失败。
+- [x] 运行完整 `StarcatTests` 回归测试:1382 项,0 非预期失败。
 - [x] 运行 Debug build:`Starcat` scheme 编译成功。
 - [x] 新增完整人工验收步骤,覆盖正常、搜索关闭、搜索失败、审批、取消、恢复和导出。
 
@@ -243,36 +243,36 @@
 - [x] 第四轮: Approval、External Search、Weekly/Repo Insight 功能闭环审查。
 - [x] 第五轮: Workspace timeline、Inspector、artifact 顺序、i18n 和占位清理审查。
 - [x] 第六轮: 单测、构建、验收步骤、工程进度和提交历史一致性审查。
-- [ ] 每轮先新增独立审查报告,再逐项修复;每个修复点独立中文 commit。
-- [ ] 所有审查无阻断问题后回填本 checklist 全部适用项。
-- [ ] 更新 `docs/功能实现总览.md` 状态、进度仪表盘和变更日志。
-- [ ] 新增最终结果报告,列明实现范围、测试证据、提交清单、已知边界和验收入口。
+- [x] 每轮先新增独立审查报告,再逐项修复;每个修复点独立中文 commit。
+- [x] 所有审查无阻断问题后回填本 checklist 全部适用项。
+- [x] 更新 `docs/功能实现总览.md` 状态、进度仪表盘和变更日志。
+- [x] 新增最终结果报告,列明实现范围、测试证据、提交清单、已知边界和验收入口。
 
 ## 6. 最终验收标准
 
-- [ ] LLM 能看到当前 Agent/mode 允许的工具 schema 并主动选择工具。
-- [ ] Runtime 不依赖 `AgentDefinition.toolIDs` 固定顺序完成任务。
-- [ ] 每个 tool-result 都回灌下一轮模型,直到模型或完成工具结束 run。
-- [ ] provider 返回 tool-call-only 响应不会被当作空响应。
-- [ ] user/assistant/tool/tool-result/artifact 按统一 sequence 可持久化、恢复和审计。
-- [ ] 每个 tool-call 和 tool-result 都能展开查看真实输入、输出、错误、耗时和来源。
-- [ ] External Search 由模型主动调用并完全复用现有设置和隐私边界。
-- [ ] External Search 关闭或失败时不伪造来源,模型可基于本地数据继续。
-- [ ] 写入型工具在用户批准前不会执行;拒绝结果会回灌模型。
-- [ ] App 重启后能正确展示 pending approval,不会自动执行。
-- [ ] GitHub Weekly Report 和 Repo Insight 都通过同一 Loop Runtime 运行。
-- [ ] Weekly 生成真实 Markdown artifact,且 artifact 位于执行顺序底部。
-- [ ] 缺 AI 配置、超预算、取消和 provider 失败均有明确终态且不生成假结果。
-- [ ] 工作台没有默认 demo 内容、空操作按钮、固定步骤伪装或人为演示延迟。
-- [ ] Agent 固定 UI 文案完成 en/zh-Hans 国际化。
-- [ ] 新增测试与现有回归测试通过,构建结果有记录。
-- [ ] `docs/功能实现总览.md`、专项 checklist、审查报告、验收步骤和结果报告完全一致。
-- [ ] 所有小功能和审查修复均已中文 commit,且没有 push。
+- [x] LLM 能看到当前 Agent/mode 允许的工具 schema 并主动选择工具。
+- [x] Runtime 不依赖 `AgentDefinition.toolIDs` 固定顺序完成任务。
+- [x] 每个 tool-result 都回灌下一轮模型,直到模型或完成工具结束 run。
+- [x] provider 返回 tool-call-only 响应不会被当作空响应。
+- [x] user/assistant/tool/tool-result/artifact 按统一 sequence 可持久化、恢复和审计。
+- [x] 每个 tool-call 和 tool-result 都能展开查看真实输入、输出、错误、耗时和来源。
+- [x] External Search 由模型主动调用并完全复用现有设置和隐私边界。
+- [x] External Search 关闭或失败时不伪造来源,模型可基于本地数据继续。
+- [x] 写入型工具在用户批准前不会执行;拒绝结果会回灌模型。
+- [x] App 重启后能正确展示 pending approval,不会自动执行。
+- [x] GitHub Weekly Report 和 Repo Insight 都通过同一 Loop Runtime 运行。
+- [x] Weekly 生成真实 Markdown artifact,且 artifact 位于执行顺序底部。
+- [x] 缺 AI 配置、超预算、取消和 provider 失败均有明确终态且不生成假结果。
+- [x] 工作台没有默认 demo 内容、空操作按钮、固定步骤伪装或人为演示延迟。
+- [x] Agent 固定 UI 文案完成 en/zh-Hans 国际化。
+- [x] 新增测试与现有回归测试通过,构建结果有记录。
+- [x] `docs/功能实现总览.md`、专项 checklist、审查报告、验收步骤和结果报告完全一致。
+- [x] 所有小功能和审查修复均已中文 commit,且没有 push。
 
 ## 7. 提交检查
 
-- [ ] 每个 commit 只包含一个可说明、可验证的小功能或审查修复。
-- [ ] commit message 使用中文。
-- [ ] 不提交当前 worktree 之外的其他任务改动。
-- [ ] 不 push。
-- [ ] 最终交付前检查 `git status` 干净并输出完整 Agent 专项提交列表。
+- [x] 每个 commit 只包含一个可说明、可验证的小功能或审查修复。
+- [x] commit message 使用中文。
+- [x] 不提交当前 worktree 之外的其他任务改动。
+- [x] 不 push。
+- [x] 最终交付前检查 `git status` 干净并输出完整 Agent 专项提交列表。
