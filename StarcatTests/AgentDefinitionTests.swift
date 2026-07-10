@@ -18,7 +18,6 @@ struct AgentDefinitionTests {
     func weeklyAgentDeclaresToolSequence() {
         let agent = BuiltInAgents.githubWeeklyReport
 
-        #expect(agent.executionStrategy == .linearToolSequence)
         #expect(agent.toolIDs == [
             "agent_parse_goal",
             "context_resolve_repos",
@@ -34,7 +33,6 @@ struct AgentDefinitionTests {
         let agent = BuiltInAgents.repoInsight
 
         #expect(agent.isEnabled)
-        #expect(agent.executionStrategy == .linearToolSequence)
         #expect(agent.toolIDs == [
             "agent_parse_repo_insight_goal",
             "context_select_repo",

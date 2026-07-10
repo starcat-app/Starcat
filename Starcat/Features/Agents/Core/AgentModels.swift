@@ -23,9 +23,9 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let capabilityLabels: [String]
     let defaultPrompt: String
     let isEnabled: Bool
+    /// 模型在当前 Agent 中可见的工具 allowlist；数组顺序不代表执行顺序。
     let toolIDs: [String]
     let artifactTypes: [AgentArtifactType]
-    let executionStrategy: AgentExecutionStrategy
 
     init(
         id: String,
@@ -36,8 +36,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         defaultPrompt: String,
         isEnabled: Bool,
         toolIDs: [String] = [],
-        artifactTypes: [AgentArtifactType] = [],
-        executionStrategy: AgentExecutionStrategy = .linearToolSequence
+        artifactTypes: [AgentArtifactType] = []
     ) {
         self.id = id
         self.title = title
@@ -48,16 +47,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.isEnabled = isEnabled
         self.toolIDs = toolIDs
         self.artifactTypes = artifactTypes
-        self.executionStrategy = executionStrategy
     }
-}
-
-/// Agent Runtime 如何解释 `toolIDs`。
-///
-/// v1 先只支持线性工具序列,保证执行顺序和审计输出稳定。后续接模型 tool-calling loop
-/// 时可以增加新策略,但不能破坏当前顺序可审计的契约。
-enum AgentExecutionStrategy: String, Hashable, Sendable {
-    case linearToolSequence
 }
 
 /// 一次 Agent run 的状态。
