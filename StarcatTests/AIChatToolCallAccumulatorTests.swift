@@ -67,4 +67,34 @@ struct AIChatToolCallAccumulatorTests {
             )
         ])
     }
+
+    @Test("Provider 复用 choice/index 但更换 callID 时重置旧参数")
+    func resetsReusedSlotWhenCallIDChanges() {
+        var accumulator = AIChatToolCallAccumulator()
+        accumulator.append(.init(
+            index: 0,
+            id: "old-call",
+            name: "context_",
+            argumentsFragment: "{\"limit\":"
+        ))
+        accumulator.append(.init(
+            index: 0,
+            id: "new-call",
+            name: "external_",
+            argumentsFragment: "{\"query\":"
+        ))
+        accumulator.append(.init(
+            index: 0,
+            name: "search",
+            argumentsFragment: "\"Swift\"}"
+        ))
+
+        #expect(accumulator.completedCalls() == [
+            AIChatToolCall(
+                id: "new-call",
+                name: "external_search",
+                arguments: "{\"query\":\"Swift\"}"
+            )
+        ])
+    }
 }
