@@ -237,7 +237,7 @@
 
 ### 5.13 多轮审查、修复与报告
 
-- [ ] 第一轮: checklist、Cline 分析、产品文档和不做范围一致性审查。
+- [x] 第一轮: checklist、Cline 分析、产品文档和不做范围一致性审查。
 - [ ] 第二轮: Prompt Pipeline、Message Contract、Tool Schema 和实现一致性审查。
 - [ ] 第三轮: LLM Adapter、Loop Runtime、预算、取消和持久化一致性审查。
 - [ ] 第四轮: Approval、External Search、Weekly/Repo Insight 功能闭环审查。
