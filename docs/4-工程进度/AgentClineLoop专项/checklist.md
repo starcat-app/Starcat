@@ -180,10 +180,11 @@
 
 - [x] Weekly Agent 使用 `LoopAgentRuntime`,`toolIDs` 仅作为 allowlist,不再声明固定执行顺序。
 - [ ] 暴露 `context.resolve_repos` schema,支持范围、数量和排序参数。
-- [ ] 暴露 `external.search` schema: query/maxResults/allowedDomains/recency/repoIDs。
-- [ ] `external.search` 查询由模型参数驱动,不再固定搜索前 3 个仓库。
-- [ ] 搜索继续复用现有设置/provider/API key/匿名模式/cache/Pro 和隐私边界。
-- [ ] 搜索关闭时返回 skipped tool-result;provider 失败时返回 error tool-result并允许本地收敛。
+- [x] 暴露 `external_search` schema: query/maxResults/allowedDomains/recency/repoIDs。
+- [x] `external_search` 查询由模型参数驱动,不再固定搜索前 3 个仓库。
+- [x] 搜索继续复用现有设置/provider/API key/匿名模式/cache/Pro 和隐私边界。
+- [x] 搜索关闭时返回 skipped tool-result;provider 失败时返回 error tool-result并允许本地收敛。
+> 实现: 模型参数经类型化请求直达现有 External Search 编排器;缓存指纹包含筛选条件,Provider 落地域名与时间范围,私有仓库在网络请求前按设置拦截。
 - [ ] 暴露 `repo.cluster_topics`、`artifact.build_weekly_report` 和 `run.submit_artifact`。
 - [ ] Weekly Prompt 要求使用真实本地 repo snapshot、列明数据来源、禁止伪造 live GitHub 信息。
 - [ ] 周刊 artifact 包含执行范围、主题、仓库条目、来源、限制说明和可追溯引用。

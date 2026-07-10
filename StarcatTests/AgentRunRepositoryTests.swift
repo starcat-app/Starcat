@@ -169,6 +169,7 @@ struct AgentRunRepositoryTests {
             language: "Swift",
             starsCount: 8_000,
             topics: ["sqlite"],
+            isPrivate: false,
             isStarred: true,
             starredAt: nil,
             htmlUrl: "https://github.com/groue/GRDB.swift"

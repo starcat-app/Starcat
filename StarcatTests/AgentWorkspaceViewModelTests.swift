@@ -113,6 +113,7 @@ struct AgentWorkspaceViewModelTests {
                     language: "Swift",
                     starsCount: 7800,
                     topics: ["sqlite"],
+                    isPrivate: false,
                     isStarred: true,
                     starredAt: "2026-07-07T00:00:00Z",
                     htmlUrl: "https://github.com/groue/GRDB.swift"

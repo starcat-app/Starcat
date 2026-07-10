@@ -34,6 +34,32 @@ struct ExternalSearchContextProviderTests {
         #expect(context?.sourceItems.first?.host == "example.com")
     }
 
+    @Test("Agent 结构化查询完整传入现有 Provider")
+    func directRequestPreservesModelFilters() async throws {
+        let settings = makeSettings()
+        enable(.tavily, settings: settings)
+        settings.externalContextProviderSelection = .tavily
+        let recorder = ProviderCallRecorder()
+        let contextProvider = ExternalSearchContextProvider(
+            settings: settings,
+            diskCache: nil,
+            providerFactory: { providerID in StubExternalSearchProvider(providerID: providerID, recorder: recorder) }
+        )
+        let request = ExternalSearchRequest(
+            query: "Swift agent tool calling",
+            purpose: .aiContext,
+            maxResults: 7,
+            freshness: "week",
+            includeDomains: ["github.com", "swift.org"]
+        )
+
+        let context = try await contextProvider.collect(request: request, cacheScopeID: 42)
+
+        #expect(recorder.requests == [request])
+        #expect(context?.sourceItems.count == 1)
+        #expect(context?.sourceItems.first?.provider == .tavily)
+    }
+
     @Test("私有仓库只发送 fullName，不发送 description")
     func privateRepoQueriesOnlyUseFullName() async throws {
         let settings = makeSettings()
@@ -234,14 +260,17 @@ private final class ProviderCallRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var providers: [ExternalSearchProviderID] = []
     private var capturedQueries: [String] = []
+    private var capturedRequests: [ExternalSearchRequest] = []
 
     var providerIDs: [ExternalSearchProviderID] { lock.withLock { providers } }
     var queries: [String] { lock.withLock { capturedQueries } }
+    var requests: [ExternalSearchRequest] { lock.withLock { capturedRequests } }
 
-    func record(providerID: ExternalSearchProviderID, query: String) {
+    func record(providerID: ExternalSearchProviderID, request: ExternalSearchRequest) {
         lock.withLock {
             providers.append(providerID)
-            capturedQueries.append(query)
+            capturedQueries.append(request.query)
+            capturedRequests.append(request)
         }
     }
 }
@@ -256,7 +285,7 @@ private struct StubExternalSearchProvider: ExternalSearchProvider {
     var capabilities: ExternalSearchCapabilities { .capabilities(for: providerID) }
 
     func search(_ request: ExternalSearchRequest) async throws -> ExternalSearchResponse {
-        recorder.record(providerID: providerID, query: request.query)
+        recorder.record(providerID: providerID, request: request)
         if let error { throw error }
         return ExternalSearchResponse(
             hits: hits ?? [

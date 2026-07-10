@@ -182,6 +182,7 @@ struct GitHubWeeklyReportToolsTests {
             language: language,
             starsCount: stars,
             topics: ["agent", "database"],
+            isPrivate: false,
             isStarred: true,
             starredAt: "2026-07-07T00:00:00Z",
             htmlUrl: "https://github.com/\(fullName)"

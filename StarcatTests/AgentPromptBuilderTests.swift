@@ -173,6 +173,7 @@ struct AgentPromptBuilderTests {
             language: "Swift",
             starsCount: 10,
             topics: ["agent"],
+            isPrivate: false,
             isStarred: true,
             starredAt: nil,
             htmlUrl: "https://github.com/owner/repo-\(id)"

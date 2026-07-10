@@ -250,6 +250,7 @@ struct AgentRepoSnapshot: Codable, Identifiable, Hashable, Sendable {
     var language: String?
     var starsCount: Int
     var topics: [String]
+    var isPrivate: Bool
     var isStarred: Bool
     var starredAt: String?
     var htmlUrl: String

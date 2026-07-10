@@ -87,6 +87,7 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
             language: repo.language,
             starsCount: repo.starsCount,
             topics: repo.topicsArray,
+            isPrivate: repo.isPrivate,
             isStarred: repo.isStarred,
             starredAt: repo.starredAt,
             htmlUrl: repo.htmlUrl
