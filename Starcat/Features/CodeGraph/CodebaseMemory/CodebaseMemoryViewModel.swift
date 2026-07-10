@@ -247,7 +247,9 @@ final class CodebaseMemoryViewModel {
                                 setStep(id: step.id, status: .skipped)
                             }
                         }
-                        let port = existing.metadata.lastUIPort ?? pickPort()
+                        // 历史端口不能证明旧 UI 已退出；统一复查端口可用性，避免缓存
+                        // 命中时直接复用被残留子进程占用的端口。
+                        let port = pickPort()
                         let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
                         // 如果旧 UI 进程还在，直接打开；否则 start up
                         if uiProcess == nil || uiProcess?.isRunning == false {

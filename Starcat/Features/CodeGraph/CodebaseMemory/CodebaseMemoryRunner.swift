@@ -76,31 +76,12 @@ final class CodebaseMemoryRunner {
 
     init() {}
 
-    // MARK: - 进程隔离
-
-    /// 清理 Starcat 旧版本遗留的 codebase UI 进程。
-    ///
-    /// codebase-memory-mcp 的 UI 配置由 `--ui=true --port=N` 持久化，旧实现残留的长
-    /// 进程可能继续服务上一个 repo。这里限定只清理 Starcat bundle/container 里的
-    /// codebase 二进制，避免误杀用户自己在终端启动的全局 codebase-memory-mcp。
-    func terminateStaleStarcatUIProcesses(binaryURL: URL) {
-        let currentPID = Int(ProcessInfo.processInfo.processIdentifier)
-        let knownPIDs = Set(activeProcesses.map { Int($0.process.processIdentifier) })
-
-        for entry in Self.runningCodebaseProcesses() {
-            guard entry.pid != currentPID, !knownPIDs.contains(entry.pid) else { continue }
-            guard Self.isStarcatCodebaseCommand(entry.command, binaryURL: binaryURL) else { continue }
-            kill(pid_t(entry.pid), SIGTERM)
-        }
-    }
-
     /// 启动一个经过完整隔离校验的 UI 进程。
     ///
     /// 这是 Starcat 管控内置二进制进程的唯一推荐入口：
     /// 1. 停止本 Runner 仍持有的旧 UI 进程。
-    /// 2. 清理 Starcat 旧版本遗留的 bundle/container 二进制进程。
-    /// 3. 检查端口可用后启动 UI。
-    /// 4. 等待 HTTP server 响应。浏览器打开必须在端口可连通后立刻发生，
+    /// 2. 检查端口可用后启动 UI。
+    /// 3. 等待 HTTP server 响应。浏览器打开必须在端口可连通后立刻发生，
     ///    不能再被后续 CLI 校验挡住，否则用户会看到“启动 UI”长期卡住。
     func startVerifiedUI(
         binaryURL: URL,
@@ -110,7 +91,6 @@ final class CodebaseMemoryRunner {
     ) async throws -> CodebaseMemoryUIProcess {
         AppLog.ui.info("CodebaseMemory startVerifiedUI begin repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public) binary=\(binaryURL.path, privacy: .public)")
         stopAll()
-        terminateStaleStarcatUIProcesses(binaryURL: binaryURL)
 
         if CodebaseMemoryPortAvailability.unavailableMessage(for: port) != nil {
             AppLog.ui.error("CodebaseMemory startVerifiedUI port unavailable repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
@@ -450,47 +430,6 @@ final class CodebaseMemoryRunner {
                 target.removeFirst(target.count - maxBytes)
             }
         }
-    }
-
-    private struct RunningProcess {
-        let pid: Int
-        let command: String
-    }
-
-    private static func runningCodebaseProcesses() -> [RunningProcess] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,command="]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return []
-        }
-
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return output.split(separator: "\n").compactMap { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard let spaceIndex = trimmed.firstIndex(where: { $0 == " " || $0 == "\t" }),
-                  let pid = Int(trimmed[..<spaceIndex]) else {
-                return nil
-            }
-            let command = trimmed[spaceIndex...].trimmingCharacters(in: .whitespaces)
-            guard command.contains("codebase") else { return nil }
-            return RunningProcess(pid: pid, command: command)
-        }
-    }
-
-    private static func isStarcatCodebaseCommand(_ command: String, binaryURL: URL) -> Bool {
-        if command.contains(binaryURL.path) {
-            return true
-        }
-        return command.contains("/Starcat/")
-            && command.contains("/Resources/Codebase/")
-            && command.contains("codebase")
     }
 
     private static func parseProjects(stdout: Data) throws -> [CodebaseMemoryCLIProject] {
