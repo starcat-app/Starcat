@@ -94,6 +94,44 @@ struct LoopAgentRuntimeTests {
         #expect(toolResult?.output.jsonDescription.contains("{not-json") == true)
     }
 
+    @Test("只读工具重试会持久化每次 attempt")
+    func readOnlyRetryPersistsEveryAttempt() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: "先调用可重试工具",
+                toolCalls: [.init(id: "call-retry", name: "retry_tool", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "重试后完成", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let tool = RetryingRuntimeTool()
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["retry_tool"]),
+            prompt: "执行",
+            context: .empty
+        ))
+        let result = events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first
+
+        #expect(await tool.executionCount() == 2)
+        #expect(result?.status == .completed)
+        #expect(result?.attempts.map(\.number) == [1, 2])
+        #expect(result?.attempts.map(\.status) == [.failed, .completed])
+        #expect(result?.attempts.first?.errorSummary == "transient failure")
+    }
+
     @Test("需要 Markdown 产出物的 Agent 不允许纯文本提前结束")
     func requiresArtifactBeforeCompletion() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -478,6 +516,46 @@ private actor RuntimeToolCounter {
     private var count = 0
     func increment() { count += 1 }
     func value() -> Int { count }
+}
+
+private struct RetryingRuntimeTool: AgentTool {
+    let definition = AgentToolDefinition(
+        name: "retry_tool",
+        description: "Fails once before succeeding",
+        inputSchema: .init(type: .object, additionalProperties: false),
+        retryPolicy: AgentToolRetryPolicy(maxRetries: 1, initialBackoffMilliseconds: 0)
+    )
+    private let counter = RuntimeToolCounter()
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        await counter.increment()
+        let attempt = await counter.value()
+        let failed = attempt == 1
+        let summary = failed ? "transient failure" : "completed"
+        let output = AgentToolOutput(
+            toolName: definition.name,
+            summary: summary,
+            detail: summary,
+            input: "{}",
+            output: summary,
+            log: "attempt=\(attempt)"
+        )
+        return AgentToolResult(
+            status: failed ? .failed : .completed,
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: definition.name,
+                summary: summary,
+                input: "{}",
+                output: summary,
+                log: "attempt=\(attempt)",
+                status: failed ? .failed : .completed
+            )
+        )
+    }
+
+    func executionCount() async -> Int { await counter.value() }
 }
 
 private extension AgentJSONValue {

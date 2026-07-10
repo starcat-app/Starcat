@@ -42,6 +42,18 @@ enum AgentToolResultStatus: String, Codable, Hashable, Sendable {
     case rejected
 }
 
+/// 单次工具执行尝试的持久化审计事实。
+///
+/// Runtime 只对只读工具自动重试；每次尝试仍需独立记录，避免历史页面只能看到最终结果，
+/// 无法判断一次成功究竟经历过多少次超时或失败。
+struct AgentToolExecutionAttempt: Codable, Hashable, Sendable, Identifiable {
+    var id: Int { number }
+    var number: Int
+    var status: AgentToolResultStatus
+    var elapsedMilliseconds: Int
+    var errorSummary: String?
+}
+
 /// 工具结果中可单独展示和审计的来源。
 struct AgentToolResultSource: Codable, Hashable, Sendable, Identifiable {
     var id: String
@@ -65,6 +77,7 @@ struct AgentToolResultMessage: Codable, Hashable, Sendable {
     var isError: Bool
     var status: AgentToolResultStatus
     var elapsedMilliseconds: Int
+    var attempts: [AgentToolExecutionAttempt]
     var sources: [AgentToolResultSource]
     var sequence: Int
 
@@ -75,6 +88,7 @@ struct AgentToolResultMessage: Codable, Hashable, Sendable {
         isError: Bool,
         status: AgentToolResultStatus,
         elapsedMilliseconds: Int = 0,
+        attempts: [AgentToolExecutionAttempt] = [],
         sources: [AgentToolResultSource] = [],
         sequence: Int
     ) {
@@ -84,6 +98,7 @@ struct AgentToolResultMessage: Codable, Hashable, Sendable {
         self.isError = isError
         self.status = status
         self.elapsedMilliseconds = elapsedMilliseconds
+        self.attempts = attempts
         self.sources = sources
         self.sequence = sequence
     }

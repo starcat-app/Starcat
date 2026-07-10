@@ -46,6 +46,10 @@ struct AgentTimelineProjectionTests {
             isError: false,
             status: .completed,
             elapsedMilliseconds: 42,
+            attempts: [
+                AgentToolExecutionAttempt(number: 1, status: .failed, elapsedMilliseconds: 12, errorSummary: "temporary"),
+                AgentToolExecutionAttempt(number: 2, status: .completed, elapsedMilliseconds: 30, errorSummary: nil)
+            ],
             sources: [AgentToolResultSource(title: "Source", url: "https://example.com", provider: "Exa")],
             sequence: 0
         )
@@ -86,6 +90,7 @@ struct AgentTimelineProjectionTests {
         #expect(items.last?.artifact?.id == artifact.id)
         #expect(items.first(where: { $0.kind == .toolResult })?.sources.count == 1)
         #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("elapsed_ms=42") == true)
+        #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("attempt_count=2") == true)
         #expect(items.first(where: { $0.kind == .assistant })?.reasoning == "需要外部证据")
     }
 }

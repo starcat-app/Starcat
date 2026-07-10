@@ -168,7 +168,16 @@ enum AgentTimelineProjection {
 
     private static func resultLog(_ result: AgentToolResultMessage) -> String {
         let persistedLog = result.output.objectValue?["log"]?.stringValue ?? ""
-        let metadata = "status=\(result.status.rawValue)\nelapsed_ms=\(result.elapsedMilliseconds)\nsource_count=\(result.sources.count)"
+        let attemptLines = result.attempts.map { attempt in
+            let error = attempt.errorSummary.map { " error=\($0)" } ?? ""
+            return "attempt[\(attempt.number)]=\(attempt.status.rawValue) elapsed_ms=\(attempt.elapsedMilliseconds)\(error)"
+        }
+        let metadata = ([
+            "status=\(result.status.rawValue)",
+            "elapsed_ms=\(result.elapsedMilliseconds)",
+            "attempt_count=\(result.attempts.count)",
+            "source_count=\(result.sources.count)"
+        ] + attemptLines).joined(separator: "\n")
         return persistedLog.isEmpty ? metadata : "\(metadata)\n\(persistedLog)"
     }
 }

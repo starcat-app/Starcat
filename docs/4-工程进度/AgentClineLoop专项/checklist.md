@@ -118,7 +118,7 @@
 - [x] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
 - [ ] 执行前完成 required、类型、enum 和未知字段校验,非法输入返回 error tool-result。
 - [x] Runtime 强制执行 readOnly/requiresConfirmation/highCost 策略。
-- [~] 超时与重试已限制为只读工具策略；逐次 retry attempt 持久化审计待事实表接入后完成。
+- [x] 超时与重试只允许只读工具自动执行,每次 attempt 的序号、状态、耗时和错误摘要均随 tool-result 持久化。
 - [x] 迁移所有现有只读工具到 schema 形式。
 - [ ] 补 Registry、Schema、权限、超时、重试、unknown tool 和 completesRun 单测。
 
@@ -200,7 +200,7 @@
 - [x] 中栏改为统一 message timeline:user 靠右,assistant/tool/artifact 靠左。
 - [x] assistant reasoning/text 支持真实流式追加,完成后与持久化消息一致。
 - [x] tool-call 节点展示 name、arguments、状态和 sequence,可展开。
-- [~] tool-result 已展示 output/error/elapsed/sources 并关联 tool-call;逐次 retry 审计待补。
+- [x] tool-result 节点展示 output/error/elapsed/sources/retry,可展开并关联 tool-call。
 - [x] approval 节点展示等待、批准、拒绝和取消状态。
 - [x] artifact 节点按 sequence 位于实际生成位置,点击联动右侧 Inspector。
 - [x] Inspector 只展示当前选中 artifact、pending approval 或 run summary,不按 Agent 写专用假面板。

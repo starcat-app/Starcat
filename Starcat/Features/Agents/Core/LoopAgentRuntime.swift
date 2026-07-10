@@ -252,6 +252,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 isError: restored.execution.status != .completed && restored.execution.status != .skipped,
                 status: restored.execution.status,
                 elapsedMilliseconds: restored.execution.elapsedMilliseconds,
+                attempts: restored.execution.attempts,
                 sources: restored.execution.sources,
                 sequence: restored.call.sequence
             )
@@ -373,6 +374,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     isError: execution.status != .completed && execution.status != .skipped,
                     status: execution.status,
                     elapsedMilliseconds: execution.elapsedMilliseconds,
+                    attempts: execution.attempts,
                     sources: execution.sources,
                     sequence: call.sequence
                 )
@@ -667,25 +669,48 @@ struct LoopAgentRuntime: AgentRuntime {
         // 覆盖一次调用却可能产生多次副作用。
         let policy = tool.permission == .readOnly ? tool.definition.retryPolicy : .none
         var attempt = 0
+        var attempts: [AgentToolExecutionAttempt] = []
         while attempt <= policy.maxRetries {
+            let attemptStartedAt = Date()
             let outcome = await executeAttempt(
                 tool: tool,
                 input: input,
                 timeoutMilliseconds: max(1, tool.definition.timeoutMilliseconds)
             )
+            let attemptElapsed = Int(Date().timeIntervalSince(attemptStartedAt) * 1_000)
             switch outcome {
             case .completed(let result):
+                let status = Self.resultStatus(result.status)
+                attempts.append(AgentToolExecutionAttempt(
+                    number: attempt + 1,
+                    status: status,
+                    elapsedMilliseconds: attemptElapsed,
+                    errorSummary: status == .failed ? result.output.summary : nil
+                ))
                 let elapsed = Int(Date().timeIntervalSince(startedAt) * 1_000)
                 if result.status != .failed || attempt == policy.maxRetries {
-                    return ToolExecution(result: result, status: Self.resultStatus(result.status), elapsedMilliseconds: elapsed)
+                    return ToolExecution(
+                        result: result,
+                        status: status,
+                        elapsedMilliseconds: elapsed,
+                        attempts: attempts
+                    )
                 }
             case .timedOut:
+                let timeoutMessage = String(format: String.l10n("agent.loop.error.toolTimeoutFormat"), call.name)
+                attempts.append(AgentToolExecutionAttempt(
+                    number: attempt + 1,
+                    status: .timedOut,
+                    elapsedMilliseconds: attemptElapsed,
+                    errorSummary: timeoutMessage
+                ))
                 if attempt == policy.maxRetries {
                     return .failure(
                         call: call,
-                        message: String(format: String.l10n("agent.loop.error.toolTimeoutFormat"), call.name),
+                        message: timeoutMessage,
                         status: .timedOut,
-                        elapsedMilliseconds: Int(Date().timeIntervalSince(startedAt) * 1_000)
+                        elapsedMilliseconds: Int(Date().timeIntervalSince(startedAt) * 1_000),
+                        attempts: attempts
                     )
                 }
             }
@@ -919,12 +944,14 @@ private struct ToolExecution: Sendable {
     var output: AgentJSONValue
     var status: AgentToolResultStatus
     var elapsedMilliseconds: Int
+    var attempts: [AgentToolExecutionAttempt]
     var sources: [AgentToolResultSource]
 
     init(
         result: AgentToolResult,
         status: AgentToolResultStatus,
-        elapsedMilliseconds: Int
+        elapsedMilliseconds: Int,
+        attempts: [AgentToolExecutionAttempt]
     ) {
         self.result = result
         self.output = .object([
@@ -935,6 +962,7 @@ private struct ToolExecution: Sendable {
         ])
         self.status = status
         self.elapsedMilliseconds = elapsedMilliseconds
+        self.attempts = attempts
         self.sources = result.sources
     }
 
@@ -942,7 +970,8 @@ private struct ToolExecution: Sendable {
         call: AgentToolCall,
         message: String,
         status: AgentToolResultStatus,
-        elapsedMilliseconds: Int = 0
+        elapsedMilliseconds: Int = 0,
+        attempts: [AgentToolExecutionAttempt] = []
     ) -> ToolExecution {
         ToolExecution(
             result: nil,
@@ -953,6 +982,7 @@ private struct ToolExecution: Sendable {
             ]),
             status: status,
             elapsedMilliseconds: elapsedMilliseconds,
+            attempts: attempts,
             sources: []
         )
     }
@@ -962,12 +992,14 @@ private struct ToolExecution: Sendable {
         output: AgentJSONValue,
         status: AgentToolResultStatus,
         elapsedMilliseconds: Int,
+        attempts: [AgentToolExecutionAttempt],
         sources: [AgentToolResultSource]
     ) {
         self.result = result
         self.output = output
         self.status = status
         self.elapsedMilliseconds = elapsedMilliseconds
+        self.attempts = attempts
         self.sources = sources
     }
 }
