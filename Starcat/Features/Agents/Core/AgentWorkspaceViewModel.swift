@@ -32,6 +32,7 @@ final class AgentWorkspaceViewModel {
     var toolOutputs: [AgentToolOutput] = []
     var traceSpans: [AgentTraceSpan] = []
     var pendingConfirmations: [AgentConfirmationAction] = []
+    var approvals: [AgentApprovalRequest] = []
     var messages: [AgentMessage] = []
     var usage: AgentUsage = .zero
     var artifacts: [AgentArtifact] = []
@@ -118,6 +119,7 @@ final class AgentWorkspaceViewModel {
         toolOutputs = []
         traceSpans = []
         pendingConfirmations = []
+        approvals = []
         messages = []
         usage = .zero
         artifacts = []
@@ -158,6 +160,14 @@ final class AgentWorkspaceViewModel {
         }
     }
 
+    func approve(_ approval: AgentApprovalRequest) {
+        sendApprovalDecision(approval, decision: .approved)
+    }
+
+    func reject(_ approval: AgentApprovalRequest) {
+        sendApprovalDecision(approval, decision: .rejected)
+    }
+
     func copySelectedArtifact() {
         guard let content = selectedArtifact?.content else { return }
         let pasteboard = NSPasteboard.general
@@ -195,7 +205,17 @@ final class AgentWorkspaceViewModel {
         case .trace(let span):
             upsert(span)
         case .confirmationRequested(let action):
-            pendingConfirmations.append(action)
+            if !pendingConfirmations.contains(where: { $0.id == action.id }) {
+                pendingConfirmations.append(action)
+            }
+        case .approvalUpdated(let approval):
+            upsert(approval)
+            if approval.status == .pending {
+                status = .waitingForConfirmation
+            } else {
+                pendingConfirmations.removeAll { $0.id == approval.id }
+                if status == .waitingForConfirmation { status = .running }
+            }
         case .messageAppended(let message):
             activeRunID = message.runID
             messages.append(message)
@@ -254,7 +274,8 @@ final class AgentWorkspaceViewModel {
         steps = projection.steps
         toolOutputs = projection.outputs
         traceSpans = projection.traces
-        pendingConfirmations = snapshot.approvals.filter { $0.status == .pending }.map { approval in
+        approvals = snapshot.approvals
+        pendingConfirmations = approvals.filter { $0.status == .pending }.map { approval in
             AgentConfirmationAction(
                 id: approval.id,
                 title: approval.toolName,
@@ -317,6 +338,30 @@ final class AgentWorkspaceViewModel {
             )
         }
         return (steps, outputs, traces)
+    }
+
+    private func upsert(_ approval: AgentApprovalRequest) {
+        if let index = approvals.firstIndex(where: { $0.id == approval.id }) {
+            approvals[index] = approval
+        } else {
+            approvals.append(approval)
+        }
+    }
+
+    private func sendApprovalDecision(
+        _ approval: AgentApprovalRequest,
+        decision: AgentApprovalDecision
+    ) {
+        guard approval.status == .pending else { return }
+        let runtime = runtime
+        Task {
+            await runtime.send(.decideApproval(
+                runID: approval.runID,
+                approvalID: approval.id,
+                toolCallID: approval.toolCallID,
+                decision: decision
+            ))
+        }
     }
 
     private static func stepStatus(_ status: AgentToolResultStatus?) -> AgentStepStatus {

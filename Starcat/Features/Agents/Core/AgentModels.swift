@@ -327,6 +327,7 @@ enum AgentRunEvent: Sendable {
     case toolOutput(AgentToolOutput)
     case trace(AgentTraceSpan)
     case confirmationRequested(AgentConfirmationAction)
+    case approvalUpdated(AgentApprovalRequest)
     case messageAppended(AgentMessage)
     case usageUpdated(AgentUsage)
     case assistantDelta(String)

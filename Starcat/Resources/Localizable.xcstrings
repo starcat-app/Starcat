@@ -2743,6 +2743,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 正在等待用户确认。" } }
       }
     },
+    "agent.loop.error.approvalRejected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The user rejected this tool call." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户已拒绝此工具调用。" } }
+      }
+    },
     "agent.loop.error.approvalRequiredFormat" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3766,6 +3773,20 @@
             "value" : "Tools: Registry"
           }
         }
+      }
+    },
+    "agent.workspace.confirmation.approve" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approve" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "批准" } }
+      }
+    },
+    "agent.workspace.confirmation.reject" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reject" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "拒绝" } }
       }
     },
     "agent.workspace.confirmation.placeholder" : {

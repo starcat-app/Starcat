@@ -40,9 +40,9 @@ private actor AgentRuntimeSessionRouter {
         self.activeSession = nil
     }
 
-    func send(_ command: AgentRunCommand) async {
-        guard let activeSession else { return }
-        _ = await activeSession.apply(command)
+    func send(_ command: AgentRunCommand) async -> Bool {
+        guard let activeSession else { return false }
+        return await activeSession.apply(command)
     }
 }
 
@@ -58,6 +58,7 @@ struct LoopAgentRuntime: AgentRuntime {
     private let externalSearchPolicy: AgentExternalSearchPolicy
     private let rules: [AgentPromptRule]
     private let sessionRouter = AgentRuntimeSessionRouter()
+    private let approvalCoordinator = AgentApprovalCoordinator()
 
     init(
         modelClient: any AgentLoopModelClient,
@@ -89,7 +90,8 @@ struct LoopAgentRuntime: AgentRuntime {
     }
 
     func send(_ command: AgentRunCommand) async {
-        await sessionRouter.send(command)
+        guard await sessionRouter.send(command) else { return }
+        _ = await approvalCoordinator.resolve(command)
     }
 
     func run(
@@ -128,7 +130,10 @@ struct LoopAgentRuntime: AgentRuntime {
             continuation.onTermination = { _ in
                 task.cancel()
                 Task {
-                    await sessionRouter.send(.cancel(runID: runID))
+                    let command = AgentRunCommand.cancel(runID: runID)
+                    if await sessionRouter.send(command) {
+                        _ = await approvalCoordinator.resolve(command)
+                    }
                 }
             }
         }
@@ -251,12 +256,15 @@ struct LoopAgentRuntime: AgentRuntime {
             try await session.registerToolCalls(calls.count)
             for call in calls {
                 try Task.checkCancellation()
-                let execution = await executeToolCall(
+                let execution = try await executeToolCall(
                     call,
+                    runID: runID,
+                    session: session,
                     prompt: prompt,
                     context: context,
                     values: values,
-                    payload: payload
+                    payload: payload,
+                    continuation: continuation
                 )
                 let resultMessage = AgentToolResultMessage(
                     toolCallID: call.id,
@@ -331,20 +339,16 @@ struct LoopAgentRuntime: AgentRuntime {
 
     private func executeToolCall(
         _ call: AgentToolCall,
+        runID: UUID,
+        session: AgentRunSession,
         prompt: String,
         context: AgentRunContext,
         values: [String: String],
-        payload: AgentToolPayload
-    ) async -> ToolExecution {
+        payload: AgentToolPayload,
+        continuation: AsyncStream<AgentRunEvent>.Continuation
+    ) async throws -> ToolExecution {
         do {
             let tool = try toolRegistry.validatedTool(for: call)
-            guard tool.permission == .readOnly else {
-                return .failure(
-                    call: call,
-                    message: LoopAgentRuntimeError.approvalRequired(call.name).localizedDescription,
-                    status: .rejected
-                )
-            }
             let input = AgentToolInput(
                 toolCallID: call.id,
                 arguments: call.input,
@@ -353,10 +357,95 @@ struct LoopAgentRuntime: AgentRuntime {
                 values: values,
                 payload: payload
             )
+            if tool.permission != .readOnly {
+                return try await executeApprovedTool(
+                    tool: tool,
+                    input: input,
+                    call: call,
+                    runID: runID,
+                    session: session,
+                    continuation: continuation
+                )
+            }
             return await executeWithPolicy(tool: tool, input: input, call: call)
         } catch {
+            if error is CancellationError { throw error }
             return .failure(call: call, message: Self.errorMessage(error), status: .failed)
         }
+    }
+
+    private func executeApprovedTool(
+        tool: any AgentTool,
+        input: AgentToolInput,
+        call: AgentToolCall,
+        runID: UUID,
+        session: AgentRunSession,
+        continuation: AsyncStream<AgentRunEvent>.Continuation
+    ) async throws -> ToolExecution {
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: tool.permission,
+            sequence: call.sequence
+        )
+        try await session.requestApproval(approval)
+        await approvalCoordinator.prepare(approval)
+        try await persistApproval(approval, runStatus: .waitingForConfirmation)
+        continuation.yield(.approvalUpdated(approval))
+        continuation.yield(.confirmationRequested(AgentConfirmationAction(
+            id: approval.id,
+            title: call.name,
+            detail: tool.permission.rawValue,
+            toolName: call.name,
+            input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}")
+        )))
+
+        switch await approvalCoordinator.wait(for: approval.id) {
+        case .cancelled:
+            try await session.updateApprovalStatus(.cancelled, approvalID: approval.id)
+            var cancelled = approval
+            cancelled.status = .cancelled
+            try await persistApproval(cancelled, runStatus: .cancelled)
+            continuation.yield(.approvalUpdated(cancelled))
+            throw CancellationError()
+        case .rejected:
+            let resolved = try await currentApproval(session: session, id: approval.id)
+            try await persistApproval(resolved, runStatus: .running)
+            continuation.yield(.approvalUpdated(resolved))
+            await session.clearResolvedApproval()
+            return .failure(
+                call: call,
+                message: String.l10n("agent.loop.error.approvalRejected"),
+                status: .rejected
+            )
+        case .approved:
+            var resolved = try await currentApproval(session: session, id: approval.id)
+            try await persistApproval(resolved, runStatus: .running)
+            continuation.yield(.approvalUpdated(resolved))
+
+            try await session.updateApprovalStatus(.executing, approvalID: approval.id)
+            resolved.status = .executing
+            try await persistApproval(resolved, runStatus: .running)
+            continuation.yield(.approvalUpdated(resolved))
+
+            let execution = await executeWithPolicy(tool: tool, input: input, call: call)
+            let finalStatus: AgentApprovalStatus = execution.status == .completed ? .executed : .failed
+            try await session.updateApprovalStatus(finalStatus, approvalID: approval.id)
+            resolved.status = finalStatus
+            try await persistApproval(resolved, runStatus: .running)
+            continuation.yield(.approvalUpdated(resolved))
+            await session.clearResolvedApproval()
+            return execution
+        }
+    }
+
+    private func currentApproval(session: AgentRunSession, id: UUID) async throws -> AgentApprovalRequest {
+        guard let approval = await session.snapshot().pendingApproval, approval.id == id else {
+            throw AgentRunSessionError.waitingForConfirmation
+        }
+        return approval
     }
 
     private func executeWithPolicy(
@@ -365,7 +454,9 @@ struct LoopAgentRuntime: AgentRuntime {
         call: AgentToolCall
     ) async -> ToolExecution {
         let startedAt = Date()
-        let policy = tool.definition.retryPolicy
+        // 写入型和高成本工具即使定义误配 retryPolicy，也只允许执行一次；否则审批只
+        // 覆盖一次调用却可能产生多次副作用。
+        let policy = tool.permission == .readOnly ? tool.definition.retryPolicy : .none
         var attempt = 0
         while attempt <= policy.maxRetries {
             let outcome = await executeAttempt(
@@ -503,6 +594,10 @@ struct LoopAgentRuntime: AgentRuntime {
 
     private func persistMessage(_ message: AgentMessage, runStatus: AgentRunStatus?) async throws {
         try await runRepository?.appendMessage(message, runStatus: runStatus)
+    }
+
+    private func persistApproval(_ approval: AgentApprovalRequest, runStatus: AgentRunStatus) async throws {
+        try await runRepository?.saveApproval(approval, runStatus: runStatus)
     }
 
     private func persistArtifact(_ artifact: AgentArtifact, runID: UUID) async throws {

@@ -117,7 +117,7 @@
 - [x] `AgentTool` 改为提供 definition,并按 `AgentToolCall` 执行。
 - [x] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
 - [ ] 执行前完成 required、类型、enum 和未知字段校验,非法输入返回 error tool-result。
-- [ ] Runtime 强制执行 readOnly/requiresConfirmation/highCost 策略。
+- [x] Runtime 强制执行 readOnly/requiresConfirmation/highCost 策略。
 - [~] 超时与重试已限制为只读工具策略；逐次 retry attempt 持久化审计待事实表接入后完成。
 - [x] 迁移所有现有只读工具到 schema 形式。
 - [ ] 补 Registry、Schema、权限、超时、重试、unknown tool 和 completesRun 单测。
@@ -147,7 +147,7 @@
 - [x] unknown/invalid/failed/skipped/timeout/rejected 结果均回灌模型。
 - [x] `completesRun` 工具提交 artifact 后仍持久化最终 assistant/submit 状态。
 - [x] 达到迭代、工具、token 或时间预算时进入明确失败终态。
-- [ ] cancel 通过 session command channel 生效,只允许写入一次终态。
+- [x] cancel 通过 session command channel 生效,只允许写入一次终态。
 - [x] 删除人为 UI 演示延迟和被替代的固定工具执行逻辑。
 - [ ] 补主动选工具、多轮调用、无工具完成、并行只读调用、错误回灌、预算耗尽、取消和终态竞争单测。
 
@@ -156,7 +156,7 @@
 - [x] 更新 Agent 数据库 schema,以 messages/parts/tool calls/tool results/usage/approvals 为事实表。
 - [x] 所有事实记录保存 runID、turn、sequence、createdAt 和关联 ID。
 - [x] artifact 保存创建它的 toolCallID/messageID/sequence。
-- [ ] pending approval 保存 tool input、policy、状态和决策时间。
+- [x] pending approval 保存 tool input、policy、状态和决策时间。
 - [x] 每次 message/tool-result/approval 追加与 run 状态更新保持事务一致。
 - [x] 历史恢复按 sequence 重建完整 message timeline,不依赖 step/trace 猜测顺序。
 - [x] 恢复 completed/failed/cancelled/waitingForConfirmation 状态。
@@ -167,12 +167,12 @@
 ### 5.8 Approval 闭环
 
 - [x] 新增 `AgentApprovalRequest`: runID/toolCallID/toolName/input/policy/status/createdAt/decidedAt。
-- [ ] 新增 `waitingForConfirmation` run 状态和 Runtime 事件。
-- [ ] `requiresConfirmation` 工具在执行前暂停 session 并持久化 pending approval。
-- [ ] approve 命令只执行原 toolCallID 对应工具,执行成功后写入 tool-result 并继续同一 run。
-- [ ] reject 命令写入结构化 error tool-result,再交给模型收敛。
-- [ ] 重复、过期、错误 runID/toolCallID 的审批命令明确拒绝。
-- [ ] 等待审批期间支持取消,取消后审批命令不再生效。
+- [x] 新增 `waitingForConfirmation` run 状态和 Runtime 事件。
+- [x] `requiresConfirmation` 工具在执行前暂停 session 并持久化 pending approval。
+- [x] approve 命令只执行原 toolCallID 对应工具,执行成功后写入 tool-result 并继续同一 run。
+- [x] reject 命令写入结构化 error tool-result,再交给模型收敛。
+- [x] 重复、过期、错误 runID/toolCallID 的审批命令明确拒绝。
+- [x] 等待审批期间支持取消,取消后审批命令不再生效。
 - [ ] 中栏显示审批节点,右侧 Inspector 显示参数、风险、批准和拒绝操作。
 - [ ] 补 requested/approved/rejected/duplicate/cancelled/restored approval 单测。
 

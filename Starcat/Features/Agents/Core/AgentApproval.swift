@@ -17,6 +17,7 @@ enum AgentApprovalStatus: String, Codable, Hashable, Sendable {
     case executing
     case executed
     case failed
+    case cancelled
 }
 
 struct AgentApprovalRequest: Codable, Hashable, Sendable, Identifiable {

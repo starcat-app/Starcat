@@ -114,6 +114,99 @@ struct LoopAgentRuntimeTests {
         #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("批准后只执行原 tool-call 一次并继续同一 run")
+    func approvalExecutesOriginalToolCallOnce() async throws {
+        let recorder = ModelRequestRecorder(responses: approvalResponses())
+        let tool = RuntimeStubTool(name: "write_tag", result: "written", permission: .requiresConfirmation)
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool])
+        )
+        var events: [AgentRunEvent] = []
+
+        for await event in runtime.run(
+            definition: makeDefinition(toolIDs: ["write_tag"]),
+            prompt: "写入标签",
+            context: .empty
+        ) {
+            events.append(event)
+            if case .approvalUpdated(let approval) = event, approval.status == .pending {
+                await runtime.send(.decideApproval(
+                    runID: approval.runID,
+                    approvalID: approval.id,
+                    toolCallID: approval.toolCallID,
+                    decision: .approved
+                ))
+            }
+        }
+
+        let approvals = events.compactMap { event -> AgentApprovalRequest? in
+            guard case .approvalUpdated(let approval) = event else { return nil }
+            return approval
+        }
+        #expect(await tool.executionCount() == 1)
+        #expect(approvals.map(\.status) == [.pending, .approved, .executing, .executed])
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
+    @Test("拒绝审批不会执行工具并把 rejected 结果回灌模型")
+    func rejectionFeedsToolResultBackWithoutExecution() async throws {
+        let recorder = ModelRequestRecorder(responses: approvalResponses())
+        let tool = RuntimeStubTool(name: "write_tag", result: "unused", permission: .requiresConfirmation)
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool])
+        )
+
+        for await event in runtime.run(
+            definition: makeDefinition(toolIDs: ["write_tag"]),
+            prompt: "写入标签",
+            context: .empty
+        ) {
+            if case .approvalUpdated(let approval) = event, approval.status == .pending {
+                await runtime.send(.decideApproval(
+                    runID: approval.runID,
+                    approvalID: approval.id,
+                    toolCallID: approval.toolCallID,
+                    decision: .rejected
+                ))
+            }
+        }
+        let requests = await recorder.recordedRequests()
+        let rejectedResult = requests[1].prompt.messages.flatMap(\.parts).contains { part in
+            guard case .toolResult(let result) = part else { return false }
+            return result.status == .rejected && result.isError
+        }
+
+        #expect(await tool.executionCount() == 0)
+        #expect(rejectedResult)
+    }
+
+    @Test("等待审批时取消会终止 run 且不执行工具")
+    func cancellationStopsPendingApproval() async throws {
+        let recorder = ModelRequestRecorder(responses: [approvalResponses()[0]])
+        let tool = RuntimeStubTool(name: "write_tag", result: "unused", permission: .requiresConfirmation)
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool])
+        )
+        var cancelled = false
+
+        for await event in runtime.run(
+            definition: makeDefinition(toolIDs: ["write_tag"]),
+            prompt: "写入标签",
+            context: .empty
+        ) {
+            if case .approvalUpdated(let approval) = event, approval.status == .pending {
+                await runtime.send(.cancel(runID: approval.runID))
+            }
+            if case .runCancelled = event { cancelled = true }
+        }
+
+        #expect(cancelled)
+        #expect(await tool.executionCount() == 0)
+    }
+
     private func collect(_ stream: AsyncStream<AgentRunEvent>) async -> [AgentRunEvent] {
         var events: [AgentRunEvent] = []
         for await event in stream { events.append(event) }
@@ -135,6 +228,19 @@ struct LoopAgentRuntimeTests {
             toolIDs: toolIDs,
             artifactTypes: artifactTypes
         )
+    }
+
+    private func approvalResponses() -> [AgentModelResponse] {
+        [
+            .init(
+                text: "",
+                reasoning: "需要用户确认",
+                toolCalls: [.init(id: "call-write", name: "write_tag", arguments: "{\"tag\":\"swift\"}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "处理完成", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ]
     }
 }
 
@@ -177,11 +283,16 @@ private struct RuntimeStubTool: AgentTool {
     private let result: String
     private let counter = RuntimeToolCounter()
 
-    init(name: String, result: String) {
+    init(
+        name: String,
+        result: String,
+        permission: AgentToolPermission = .readOnly
+    ) {
         self.definition = AgentToolDefinition(
             name: name,
             description: "Runtime stub",
-            inputSchema: .init(type: .object)
+            inputSchema: .init(type: .object, additionalProperties: true),
+            permission: permission
         )
         self.result = result
     }

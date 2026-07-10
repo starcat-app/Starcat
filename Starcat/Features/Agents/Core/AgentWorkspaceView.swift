@@ -609,6 +609,26 @@ struct AgentWorkspaceView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
+            if let approval = pendingApproval {
+                HStack(spacing: 8) {
+                    Spacer()
+                    Button {
+                        viewModel.reject(approval)
+                    } label: {
+                        Label("agent.workspace.confirmation.reject", systemImage: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .focusEffectDisabled()
+
+                    Button {
+                        viewModel.approve(approval)
+                    } label: {
+                        Label("agent.workspace.confirmation.approve", systemImage: "checkmark")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .focusEffectDisabled()
+                }
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -761,6 +781,10 @@ struct AgentWorkspaceView: View {
 
     private var waitingForConfirmation: Bool {
         !viewModel.pendingConfirmations.isEmpty
+    }
+
+    private var pendingApproval: AgentApprovalRequest? {
+        viewModel.approvals.first { $0.status == .pending }
     }
 
     private func stepStatusLabel(_ status: AgentStepStatus) -> String {
