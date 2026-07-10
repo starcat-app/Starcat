@@ -208,7 +208,7 @@
 - [x] 删除固定 step kind 猜测、completed fallback、空附件按钮、静态演示延迟和其他占位行为。
 - [x] 附件按钮接入真实 UTF-8 文本选择、大小限制、冻结上下文、持久化和 Prompt budget;不保留空 action。
 - [x] 空工作台不注入 demo prompt、demo plan、demo message 或 demo artifact。
-- [~] 已补 timeline ordering 与历史恢复单测;流式合并、artifact selection、approval 操作和空态覆盖待补。
+- [x] 补 timeline ordering、流式合并、展开数据、artifact selection、approval 操作、历史恢复和空态单测。
 
 ### 5.11 i18n、日志与可观测性
 

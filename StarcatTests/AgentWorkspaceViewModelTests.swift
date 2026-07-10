@@ -48,6 +48,30 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test("selectedArtifactID 会联动 Inspector 当前产出物")
+    func artifactSelectionUsesRealArtifactState() async throws {
+        let first = AgentArtifact(type: .markdown, title: "周刊", content: "# Weekly")
+        let second = AgentArtifact(type: .log, title: "日志", content: "run log")
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .artifactCreated(first),
+            .artifactCreated(second),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+        viewModel.selectedArtifactID = second.id
+
+        #expect(viewModel.selectedArtifact?.id == second.id)
+        #expect(viewModel.selectedArtifact?.content == "run log")
+    }
+
     @Test("cancel 会立即进入取消状态")
     func cancelMarksWorkspaceAsCancelled() {
         let viewModel = AgentWorkspaceViewModel(
@@ -109,6 +133,74 @@ struct AgentWorkspaceViewModelTests {
 
         #expect(viewModel.assistantReasoningOutput == "先检查本地上下文")
         #expect(viewModel.assistantOutput == "正在生成周刊")
+    }
+
+    @Test("assistant 消息落库后会清空临时流式缓冲")
+    func persistedAssistantMessageClearsStreamingBuffers() async throws {
+        let message = AgentMessage(
+            runID: UUID(),
+            role: .assistant,
+            turn: 0,
+            sequence: 1,
+            parts: [.reasoning("已完成分析"), .text("最终正文")]
+        )
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .assistantReasoningDelta("分析中"),
+            .assistantDelta("生成中"),
+            .messageAppended(message),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.assistantReasoningOutput.isEmpty)
+        #expect(viewModel.assistantOutput.isEmpty)
+        #expect(viewModel.messages == [message])
+    }
+
+    @Test("批准操作会向 Runtime 发送精确关联命令")
+    func approveSendsCorrelatedRuntimeCommand() async throws {
+        let approval = AgentApprovalRequest(
+            runID: UUID(),
+            toolCallID: "call-write",
+            toolName: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            permission: .requiresConfirmation,
+            sequence: 1
+        )
+        let recorder = AgentCommandRecorder()
+        let runtime = CommandRecordingAgentRuntime(
+            events: [.runStarted(title: "Run"), .approvalUpdated(approval)],
+            recorder: recorder
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "写入标签"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .waitingForConfirmation }
+        viewModel.approve(approval)
+        try await waitUntil { await recorder.commandCount() == 1 }
+        let commands = await recorder.commands()
+        let command = try #require(commands.first)
+
+        guard case .decideApproval(let runID, let approvalID, let toolCallID, let decision) = command else {
+            Issue.record("Expected decideApproval command")
+            return
+        }
+        #expect(runID == approval.runID)
+        #expect(approvalID == approval.id)
+        #expect(toolCallID == approval.toolCallID)
+        #expect(decision == .approved)
     }
 
     @Test("run 会先冻结 context 再交给 runtime")
@@ -278,10 +370,10 @@ struct AgentWorkspaceViewModelTests {
 
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 500_000_000,
-        _ predicate: @escaping @MainActor () -> Bool
+        _ predicate: @escaping @MainActor () async -> Bool
     ) async throws {
         let start = ContinuousClock.now
-        while !predicate() {
+        while !(await predicate()) {
             if start.duration(to: ContinuousClock.now) > .nanoseconds(Int64(timeoutNanoseconds)) {
                 Issue.record("Timed out waiting for AgentWorkspaceViewModel state")
                 return
@@ -318,6 +410,37 @@ private struct NeverFinishingAgentRuntime: AgentRuntime {
             continuation.yield(.runStarted(title: definition.title))
         }
     }
+}
+
+private struct CommandRecordingAgentRuntime: AgentRuntime {
+    let events: [AgentRunEvent]
+    let recorder: AgentCommandRecorder
+
+    func run(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
+    }
+
+    func send(_ command: AgentRunCommand) async {
+        await recorder.record(command)
+    }
+}
+
+private actor AgentCommandRecorder {
+    private var recordedCommands: [AgentRunCommand] = []
+
+    func record(_ command: AgentRunCommand) {
+        recordedCommands.append(command)
+    }
+
+    func commandCount() -> Int { recordedCommands.count }
+    func commands() -> [AgentRunCommand] { recordedCommands }
 }
 
 private struct StaticAgentRunContextProvider: AgentRunContextProviding {
