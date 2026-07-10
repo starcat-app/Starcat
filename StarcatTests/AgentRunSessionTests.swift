@@ -113,4 +113,57 @@ struct AgentRunSessionTests {
         #expect(snapshot.pendingApproval?.status == .approved)
         _ = try await session.append(role: .assistant, turn: 0, parts: [.text("resumed")])
     }
+
+    @Test("恢复旧审批 run 时不把用户等待计入活跃时长")
+    func restoredApprovalStartsFreshActiveDurationWindow() async throws {
+        let runID = UUID()
+        let approvalID = UUID()
+        let createdAt = Date(timeIntervalSince1970: 100)
+        let resumedAt = Date(timeIntervalSince1970: 10_000)
+        let approval = AgentApprovalRequest(
+            id: approvalID,
+            runID: runID,
+            toolCallID: "call-1",
+            toolName: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            permission: .requiresConfirmation,
+            sequence: 1,
+            createdAt: createdAt
+        )
+        let snapshot = AgentRunSnapshotRecord(
+            run: AgentRunRecord(
+                id: runID.uuidString,
+                agentId: "test-agent",
+                title: "Test Agent",
+                userPrompt: "tag repos",
+                contextSource: "Unit",
+                contextJSON: "{}",
+                status: AgentRunStatus.waitingForConfirmation.rawValue,
+                model: nil,
+                usageJSON: nil,
+                errorMessage: nil,
+                createdAt: ISO8601DateFormatter.shared.string(from: createdAt),
+                updatedAt: ISO8601DateFormatter.shared.string(from: createdAt),
+                finishedAt: nil
+            ),
+            context: .empty,
+            messages: [],
+            approvals: [approval],
+            artifacts: []
+        )
+        let session = try AgentRunSession(
+            restoring: snapshot,
+            pendingApproval: approval,
+            limits: .init(maxDuration: 5),
+            now: { resumedAt }
+        )
+
+        #expect(await session.apply(.decideApproval(
+            runID: runID,
+            approvalID: approvalID,
+            toolCallID: approval.toolCallID,
+            decision: .approved
+        )))
+        #expect(try await session.beginIteration() == 0)
+    }
 }

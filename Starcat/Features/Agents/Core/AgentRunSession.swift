@@ -138,7 +138,9 @@ actor AgentRunSession {
         }
         self.runID = runID
         self.limits = limits
-        self.startedAt = ISO8601DateFormatter.shared.date(from: snapshot.run.createdAt) ?? now()
+        // 用户审批和 App 离线等待不属于 Agent 活跃执行时间。恢复时重新开启 duration 窗口,
+        // 但下面仍从快照恢复 iteration/tool-call/token 预算,不能借重启绕过其他上限。
+        self.startedAt = now()
         self.now = now
         self.messages = snapshot.messages
         self.iteration = (snapshot.messages.filter { $0.role == .assistant }.map(\.turn).max() ?? -1) + 1
