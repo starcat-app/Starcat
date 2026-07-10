@@ -101,56 +101,71 @@ struct GitHubWeeklyReportToolsTests {
         #expect(result.output.output.contains("vercel/next.js") == false)
     }
 
-    @Test("buildMarkdown 从 topic 生成只读 artifact 草稿")
-    func buildMarkdownUsesTopicRepos() {
+    @Test("artifact_build_weekly_report 用模型结构化内容和真实 repo 引用生成 artifact")
+    func buildMarkdownUsesStructuredModelContent() async throws {
         let context = AgentRunContext(
             sourceDescription: "Unit Snapshot",
             repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
         )
-        let topics = [
-            WeeklyReportTopic(
-                title: "Swift 生态项目",
-                reason: "按主要语言聚合。",
-                repos: context.repos
-            )
-        ]
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "artifact_build_weekly_report")
 
-        let (markdown, result) = GitHubWeeklyReportTools.buildMarkdown(
+        let result = await tool.execute(AgentToolInput(
+            arguments: weeklyArtifactArguments(repoIDs: context.repos.map(\.id)),
             prompt: "生成 Swift 周刊",
-            context: context,
-            topics: topics
-        )
+            context: context
+        ))
 
-        #expect(markdown.contains("groue/GRDB.swift"))
-        #expect(markdown.contains("本地仓库快照"))
+        #expect(result.status == .completed)
         #expect(result.output.toolName == "artifact_build_weekly_report")
-        #expect(result.trace.output.contains("# GitHub Weekly Report"))
+        #expect(result.trace.output.contains("# Swift Agent Weekly"))
+        #expect(result.trace.output.contains("本周重点是 Swift 数据层"))
+        #expect(result.trace.output.contains("groue/GRDB.swift"))
+        #expect(result.sources.first?.url.contains("github.com/groue/GRDB.swift") == true)
     }
 
     @Test("buildMarkdown 把外部搜索摘要写入草稿")
-    func buildMarkdownIncludesExternalContext() {
+    func buildMarkdownIncludesExternalContext() async throws {
         let context = AgentRunContext(
             sourceDescription: "Unit Snapshot",
             repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
         )
-        let topics = [
-            WeeklyReportTopic(
-                title: "Swift 生态项目",
-                reason: "按主要语言聚合。",
-                repos: context.repos
-            )
-        ]
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "artifact_build_weekly_report")
 
-        let (markdown, result) = GitHubWeeklyReportTools.buildMarkdown(
+        let result = await tool.execute(AgentToolInput(
+            arguments: weeklyArtifactArguments(repoIDs: context.repos.map(\.id)),
             prompt: "生成 Swift 周刊",
             context: context,
-            topics: topics,
-            externalContextMarkdown: "<external_context>GRDB release notes</external_context>"
-        )
+            values: ["externalContextMarkdown": "<external_context source=\"Exa\">\n- [GRDB release](https://example.com/release)\n</external_context>"]
+        ))
 
-        #expect(markdown.contains("外部来源摘要"))
-        #expect(markdown.contains("GRDB release notes"))
-        #expect(result.output.input.contains("external_context_chars"))
+        guard case .markdown(let markdown) = result.payload else {
+            Issue.record("Expected weekly report markdown")
+            return
+        }
+        #expect(markdown.contains("### External Search"))
+        #expect(markdown.contains("https://example.com/release"))
+        #expect(markdown.contains("<external_context") == false)
+    }
+
+    @Test("artifact_build_weekly_report 拒绝引用 run 之外的 repo ID")
+    func weeklyArtifactRejectsUnknownRepository() async throws {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+        )
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "artifact_build_weekly_report")
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: weeklyArtifactArguments(repoIDs: [999_999]),
+            prompt: "生成周刊",
+            context: context
+        ))
+
+        #expect(result.status == .failed)
+        #expect(result.output.log.contains("outside the frozen run context"))
     }
 
     @Test("Weekly tools 可以通过 AgentToolRegistry 执行")
@@ -168,6 +183,7 @@ struct GitHubWeeklyReportToolsTests {
             context: context
         ))
         let markdownResult = await markdownTool.execute(AgentToolInput(
+            arguments: weeklyArtifactArguments(repoIDs: context.repos.map(\.id)),
             prompt: "生成 Swift 周刊",
             context: context,
             values: ["externalContextMarkdown": "<external_context>GRDB docs</external_context>"],
@@ -239,5 +255,21 @@ struct GitHubWeeklyReportToolsTests {
             starredAt: "2026-07-07T00:00:00Z",
             htmlUrl: "https://github.com/\(fullName)"
         )
+    }
+
+    private func weeklyArtifactArguments(repoIDs: [Int64]) -> AgentJSONValue {
+        .object([
+            "title": .string("Swift Agent Weekly"),
+            "executiveSummary": .string("本周重点是 Swift 数据层与 Agent 工具链。"),
+            "sections": .array([
+                .object([
+                    "heading": .string("Swift 基础设施"),
+                    "analysis": .string("这些仓库覆盖数据持久化与工具调用基础设施。"),
+                    "repoIDs": .array(repoIDs.map { .number(Double($0)) })
+                ])
+            ]),
+            "limitations": .array([.string("未读取本周实时 GitHub 活跃度。")]),
+            "includeSources": .bool(true)
+        ])
     }
 }
