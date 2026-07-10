@@ -254,8 +254,10 @@ struct LoopAgentRuntime: AgentRuntime {
             }
 
             try await session.registerToolCalls(calls.count)
+            var pendingCompletionArtifact: CompletionArtifactDraft?
             for call in calls {
                 try Task.checkCancellation()
+                let completesRun = (try? toolRegistry.tool(named: call.name).definition.completesRun) == true
                 let execution = try await executeToolCall(
                     call,
                     runID: runID,
@@ -288,19 +290,57 @@ struct LoopAgentRuntime: AgentRuntime {
                     applyPayload(result.payload, payload: &payload, values: &values)
                     emitLegacyToolEvents(result, continuation: continuation)
                     if case .markdown(let markdown) = result.payload {
-                        let artifact = AgentArtifact(
-                            type: .markdown,
-                            title: artifactTitle(for: definition),
-                            content: markdown,
-                            toolCallID: call.id,
-                            messageID: toolMessage.id,
-                            sequence: toolMessage.sequence
-                        )
-                        continuation.yield(.artifactCreated(artifact))
-                        try await persistArtifact(artifact, runID: runID)
-                        artifactCount += 1
+                        if completesRun, execution.status == .completed {
+                            // 完成工具的 artifact 延迟到本轮所有 tool-result 都写完后再提交，
+                            // 即使模型并行请求多个工具，最终结果仍严格位于时间线底部。
+                            pendingCompletionArtifact = CompletionArtifactDraft(
+                                content: markdown,
+                                toolCallID: call.id,
+                                messageID: toolMessage.id
+                            )
+                        } else {
+                            let artifact = AgentArtifact(
+                                type: .markdown,
+                                title: artifactTitle(for: definition),
+                                content: markdown,
+                                toolCallID: call.id,
+                                messageID: toolMessage.id,
+                                sequence: try await session.reserveSequence()
+                            )
+                            try await persistArtifact(artifact, runID: runID)
+                            continuation.yield(.artifactCreated(artifact))
+                            artifactCount += 1
+                        }
+                    } else if completesRun, execution.status == .completed {
+                        throw LoopAgentRuntimeError.requiredArtifactMissing
                     }
                 }
+            }
+
+            if let pendingCompletionArtifact {
+                let artifact = AgentArtifact(
+                    type: .markdown,
+                    title: artifactTitle(for: definition),
+                    content: pendingCompletionArtifact.content,
+                    toolCallID: pendingCompletionArtifact.toolCallID,
+                    messageID: pendingCompletionArtifact.messageID,
+                    sequence: try await session.reserveSequence()
+                )
+                try await persistArtifact(artifact, runID: runID)
+                continuation.yield(.artifactCreated(artifact))
+                artifactCount += 1
+
+                guard await session.finish(.completed) else { throw CancellationError() }
+                let completedSnapshot = await session.snapshot()
+                await persistRunStatus(
+                    runID: runID,
+                    status: .completed,
+                    model: response.model,
+                    usage: completedSnapshot.usage,
+                    finishedAt: Date()
+                )
+                continuation.yield(.runCompleted)
+                return
             }
         }
     }
@@ -663,6 +703,12 @@ struct LoopAgentRuntime: AgentRuntime {
 private enum ToolAttemptOutcome: Sendable {
     case completed(AgentToolResult)
     case timedOut
+}
+
+private struct CompletionArtifactDraft: Sendable {
+    var content: String
+    var toolCallID: String
+    var messageID: UUID
 }
 
 private struct ToolExecution: Sendable {

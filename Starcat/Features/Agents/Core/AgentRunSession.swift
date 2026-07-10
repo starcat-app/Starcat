@@ -171,6 +171,16 @@ actor AgentRunSession {
         toolCallCount = nextCount
     }
 
+    /// 为 message 之外的持久化事实保留一个全局 sequence。
+    ///
+    /// Artifact 必须排在产生它的 tool-result 之后，不能复用 tool message 的 sequence；
+    /// 否则历史恢复后只能依赖 UI 的类型排序猜测真实执行顺序。
+    func reserveSequence() throws -> Int {
+        try ensureRunnable()
+        defer { nextSequence += 1 }
+        return nextSequence
+    }
+
     func mergeUsage(_ delta: AgentUsage) throws {
         try ensureRunnable()
         var next = usage

@@ -114,6 +114,57 @@ struct LoopAgentRuntimeTests {
         #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("completesRun 工具提交 artifact 后直接完成且 artifact sequence 位于底部")
+    func completionToolSubmitsBottomArtifactAndFinishes() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: "提交最终产物",
+                toolCalls: [.init(id: "call-submit", name: "submit_report", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let tool = RuntimeStubTool(
+            name: "submit_report",
+            result: "submitted",
+            completesRun: true,
+            payload: .markdown("# Final Report")
+        )
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["submit_report"], artifactTypes: [.markdown]),
+            prompt: "生成报告",
+            context: .empty
+        ))
+        let messages = events.compactMap { event -> AgentMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message
+        }
+        let artifact = try #require(events.compactMap { event -> AgentArtifact? in
+            guard case .artifactCreated(let artifact) = event else { return nil }
+            return artifact
+        }.first)
+        let artifactIndex = try #require(events.firstIndex(where: {
+            if case .artifactCreated = $0 { return true }
+            return false
+        }))
+        let completedIndex = try #require(events.firstIndex(where: {
+            if case .runCompleted = $0 { return true }
+            return false
+        }))
+
+        #expect((await recorder.recordedRequests()).count == 1)
+        #expect(artifact.content == "# Final Report")
+        #expect(artifact.sequence > (messages.map(\.sequence).max() ?? -1))
+        #expect(artifactIndex < completedIndex)
+        #expect(events.suffix(from: artifactIndex).contains(where: { if case .messageAppended = $0 { return true }; return false }) == false)
+    }
+
     @Test("批准后只执行原 tool-call 一次并继续同一 run")
     func approvalExecutesOriginalToolCallOnce() async throws {
         let recorder = ModelRequestRecorder(responses: approvalResponses())
@@ -281,20 +332,25 @@ private struct RecordedAgentModelClient: AgentLoopModelClient {
 private struct RuntimeStubTool: AgentTool {
     let definition: AgentToolDefinition
     private let result: String
+    private let payload: AgentToolPayload
     private let counter = RuntimeToolCounter()
 
     init(
         name: String,
         result: String,
-        permission: AgentToolPermission = .readOnly
+        permission: AgentToolPermission = .readOnly,
+        completesRun: Bool = false,
+        payload: AgentToolPayload = .none
     ) {
         self.definition = AgentToolDefinition(
             name: name,
             description: "Runtime stub",
             inputSchema: .init(type: .object, additionalProperties: true),
-            permission: permission
+            permission: permission,
+            completesRun: completesRun
         )
         self.result = result
+        self.payload = payload
     }
 
     func execute(_ input: AgentToolInput) async -> AgentToolResult {
@@ -316,7 +372,8 @@ private struct RuntimeStubTool: AgentTool {
                 input: output.input,
                 output: result,
                 log: "executed"
-            )
+            ),
+            payload: payload
         )
     }
 

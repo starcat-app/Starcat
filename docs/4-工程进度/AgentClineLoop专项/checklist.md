@@ -189,7 +189,7 @@
 - [ ] Weekly Prompt 要求使用真实本地 repo snapshot、列明数据来源、禁止伪造 live GitHub 信息。
 - [x] 周刊 artifact 包含执行范围、模型分析主题、真实仓库条目、来源、限制说明和可追溯引用。
 > 实现: 模型提交结构化摘要/章节/repo IDs/限制,宿主拒绝越界 ID 并用冻结快照的真实 URL、Stars、Topics 和 External Search 来源渲染最终 Markdown。
-- [ ] artifact 按 sequence 在最终提交位置出现于 timeline 底部。
+- [x] `completesRun` 工具成功后以独立 sequence 提交 artifact 并直接结束 run,产物位于 timeline 底部。
 - [ ] 缺 AI 配置或核心本地上下文失败时明确失败且不生成 fake artifact。
 - [x] Repo Insight 同步使用 Loop Runtime、参数驱动选仓与结构化 artifact,验证框架不是 Weekly 专用脚本。
 - [ ] 补 Weekly/Repo Insight 模型选工具、search disabled/failed、artifact 顺序、真实数据和缺配置单测。
