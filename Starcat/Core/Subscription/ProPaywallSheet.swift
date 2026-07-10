@@ -205,6 +205,11 @@ struct ProPaywallSheet: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(directLicenseManager.isRequestInFlight)
 
+                Button("paywall.direct.buyYearly") {
+                    Task { await openDirectCheckout(.yearly) }
+                }
+                .disabled(directLicenseManager.isRequestInFlight)
+
                 Button("paywall.direct.buyLifetime") {
                     Task { await openDirectCheckout(.lifetime) }
                 }

@@ -283,7 +283,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         switch storedCredential?.plan ?? validationRecord.plan {
         case .lifetime:
             return 7 * 24 * 60 * 60
-        case .monthly, .none:
+        case .monthly, .yearly, .none:
             return 24 * 60 * 60
         }
     }

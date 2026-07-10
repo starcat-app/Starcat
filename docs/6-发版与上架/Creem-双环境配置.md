@@ -33,12 +33,14 @@ Creem 官方文档说明：Test Mode 是完全隔离环境，API、支付、webh
 
 1. 打开 Creem Dashboard。
 2. 左下角切换到 `Test Mode`。
-3. 创建两个 Product：
+3. 创建三个 Product：
    - `Starcat Pro Monthly`：`$9.99/month`
+   - `Starcat Pro Yearly`：`$19.99/year`
    - `Starcat Pro Lifetime`：`$39.99` one-time
 4. 复制 Test Mode 下的：
    - API Key：写入 staging 后端 `CREEM_API_KEY`
    - Monthly Product ID：写入 staging 后端 `CREEM_PRODUCT_MONTHLY_ID`
+   - Yearly Product ID：写入 staging 后端 `CREEM_PRODUCT_YEARLY_ID`
    - Lifetime Product ID：写入 staging 后端 `CREEM_PRODUCT_LIFETIME_ID`
 5. 添加 webhook：
    - URL：`https://starcat-license-api-staging.fly.dev/v1/webhooks/creem`
@@ -62,8 +64,9 @@ Creem 官方文档说明：Test Mode 是完全隔离环境，API、支付、webh
 1. 关闭 `Test Mode`，回到 Live Mode。
 2. 创建同名生产 Product：
    - `Starcat Pro Monthly`：`$9.99/month`
+   - `Starcat Pro Yearly`：`$19.99/year`
    - `Starcat Pro Lifetime`：`$39.99` one-time
-3. 复制 Live Mode 下的 API Key 和两个 Product ID。
+3. 复制 Live Mode 下的 API Key 和三个 Product ID。
 4. 添加生产 webhook：
    - URL：`https://starcat-license-api.fly.dev/v1/webhooks/creem`
    - Secret：复制到生产后端 `CREEM_WEBHOOK_SECRET`
@@ -101,6 +104,7 @@ CREEM_API_BASE_URL=https://api.creem.io/v1
 CREEM_API_KEY=<creem-live-api-key>
 CREEM_WEBHOOK_SECRET=<live-webhook-secret>
 CREEM_PRODUCT_MONTHLY_ID=<live-monthly-product-id>
+CREEM_PRODUCT_YEARLY_ID=<live-yearly-product-id>
 CREEM_PRODUCT_LIFETIME_ID=<live-lifetime-product-id>
 STARCAT_SUCCESS_URL=https://starcat-license-api.fly.dev/payment/success
 ```
@@ -119,7 +123,7 @@ PAYMENT_PROVIDER_FALLBACK_MODE=off
 - `PAYMENT_PROVIDER_FALLBACKS`：逗号分隔的 fallback provider。当前默认留空。
 - `PAYMENT_PROVIDER_FALLBACK_MODE`：默认 `off`。只有在完成第二支付渠道端到端验收后，才允许改成 `auto`。
 - 自动 fallback 只允许发生在 checkout 创建前失败的场景；checkout 一旦在某个 provider 创建，后续成功页、license key 和 webhook 必须继续由同一 provider 完成。
-- `POST /v1/direct/checkout` 是公开入口，因为静态落地页无法安全保存 Bearer key；该接口只接受 `plan=monthly|lifetime`，真实 product id 仍只保存在服务端。`customer-portal`、`subscriptions/cancel`、`licenses/*` 继续要求 `Authorization: Bearer ...`。
+- `POST /v1/direct/checkout` 是公开入口，因为静态落地页无法安全保存 Bearer key；该接口只接受 `plan=monthly|yearly|lifetime`，真实 product id 仍只保存在服务端。`customer-portal`、`subscriptions/cancel`、`licenses/*` 继续要求 `Authorization: Bearer ...`。
 
 Waffo 配置项已预留，但真实 Waffo provider 尚未接入，当前必须保持为空：
 
@@ -127,6 +131,7 @@ Waffo 配置项已预留，但真实 Waffo provider 尚未接入，当前必须�
 WAFFO_API_KEY=
 WAFFO_WEBHOOK_SECRET=
 WAFFO_PRODUCT_MONTHLY_ID=
+WAFFO_PRODUCT_YEARLY_ID=
 WAFFO_PRODUCT_LIFETIME_ID=
 ```
 
@@ -509,7 +514,7 @@ Cardholder name: 任意测试名，例如 Test User
 
 ## 上线前检查
 
-- Creem Live Mode 已创建 Monthly 和 Lifetime 产品。
+- Creem Live Mode 已创建 Monthly、Yearly 和 Lifetime 产品。
 - `supports/starcat-license-api/.env.prod` 已填写 Live Mode 的 API key、product id 和 webhook secret。
 - `starcat-license-api` 生产 Fly app 使用 `https://api.creem.io/v1`。
 - 生产 webhook URL 是 `https://starcat-license-api.fly.dev/v1/webhooks/creem`。

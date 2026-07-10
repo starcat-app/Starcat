@@ -18968,6 +18968,23 @@
         }
       }
     },
+    "paywall.direct.buyYearly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy Yearly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买年付版"
+          }
+        }
+      }
+    },
     "paywall.direct.footer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -32726,6 +32743,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "购买月付版"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.checkout.yearly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy Yearly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买年付版"
           }
         }
       }

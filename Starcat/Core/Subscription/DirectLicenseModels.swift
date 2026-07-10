@@ -32,6 +32,7 @@ enum DirectLicenseStatus: String, Codable, Sendable {
 /// Creem product id。客户端不携带 Creem product id，避免把支付后台 SKU 暴露给 App。
 enum DirectCheckoutPlan: String, Codable, Sendable, CaseIterable {
     case monthly
+    case yearly
     case lifetime
 }
 

@@ -229,6 +229,11 @@ struct ProSettingsTab: View {
                 }
                 .disabled(directLicenseManager.isRequestInFlight)
 
+                Button("settings.pro.direct.checkout.yearly") {
+                    Task { await openDirectCheckout(.yearly) }
+                }
+                .disabled(directLicenseManager.isRequestInFlight)
+
                 Button("settings.pro.direct.checkout.lifetime") {
                     Task { await openDirectCheckout(.lifetime) }
                 }
