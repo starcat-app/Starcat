@@ -239,7 +239,7 @@
 
 - [x] 第一轮: checklist、Cline 分析、产品文档和不做范围一致性审查。
 - [x] 第二轮: Prompt Pipeline、Message Contract、Tool Schema 和实现一致性审查。
-- [ ] 第三轮: LLM Adapter、Loop Runtime、预算、取消和持久化一致性审查。
+- [x] 第三轮: LLM Adapter、Loop Runtime、预算、取消和持久化一致性审查。
 - [ ] 第四轮: Approval、External Search、Weekly/Repo Insight 功能闭环审查。
 - [ ] 第五轮: Workspace timeline、Inspector、artifact 顺序、i18n 和占位清理审查。
 - [ ] 第六轮: 单测、构建、验收步骤、工程进度和提交历史一致性审查。
