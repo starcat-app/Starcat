@@ -57,6 +57,13 @@ struct AgentToolDefinition: Codable, Hashable, Sendable, Identifiable {
         self.timeoutMilliseconds = timeoutMilliseconds
         self.retryPolicy = retryPolicy
     }
+
+    /// OpenAI-compatible function name 的共同约束；Registry 和模型 adapter 必须复用
+    /// 同一判断，避免工具注册成功后才在真实 provider 请求阶段失败。
+    static func isProviderCompatibleName(_ name: String) -> Bool {
+        guard (1...64).contains(name.count) else { return false }
+        return name.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
+    }
 }
 
 /// Agent tool 的执行结果状态。
@@ -165,6 +172,9 @@ struct AgentToolRegistry: Sendable {
         var next: [String: any AgentTool] = [:]
         for tool in tools {
             let name = tool.definition.name
+            guard AgentToolDefinition.isProviderCompatibleName(name) else {
+                throw AgentToolRegistryError.invalidToolName(name)
+            }
             guard next[name] == nil else {
                 throw AgentToolRegistryError.duplicateToolName(name)
             }
@@ -204,12 +214,15 @@ struct AgentToolRegistry: Sendable {
 }
 
 enum AgentToolRegistryError: LocalizedError, Equatable, Sendable {
+    case invalidToolName(String)
     case duplicateToolName(String)
     case missingTool(String)
     case invalidInput(toolName: String, message: String)
 
     var errorDescription: String? {
         switch self {
+        case .invalidToolName(let name):
+            return "Invalid Agent tool name: \(name)"
         case .duplicateToolName(let name):
             return "Duplicate Agent tool name: \(name)"
         case .missingTool(let name):

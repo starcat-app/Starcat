@@ -72,7 +72,7 @@ struct GitHubWeeklyReportToolsTests {
 
         #expect(markdown.contains("groue/GRDB.swift"))
         #expect(markdown.contains("本地仓库快照"))
-        #expect(result.output.toolName == "artifact.build_weekly_report")
+        #expect(result.output.toolName == "artifact_build_weekly_report")
         #expect(result.trace.output.contains("# GitHub Weekly Report"))
     }
 
@@ -109,8 +109,8 @@ struct GitHubWeeklyReportToolsTests {
             repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
         )
         let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
-        let clusterTool = try registry.tool(named: "repo.cluster_topics")
-        let markdownTool = try registry.tool(named: "artifact.build_weekly_report")
+        let clusterTool = try registry.tool(named: "repo_cluster_topics")
+        let markdownTool = try registry.tool(named: "artifact_build_weekly_report")
 
         let clusterResult = await clusterTool.execute(AgentToolInput(
             prompt: "生成 Swift 周刊",
@@ -123,8 +123,8 @@ struct GitHubWeeklyReportToolsTests {
             payload: clusterResult.payload
         ))
 
-        #expect(clusterResult.output.toolName == "repo.cluster_topics")
-        #expect(markdownResult.output.toolName == "artifact.build_weekly_report")
+        #expect(clusterResult.output.toolName == "repo_cluster_topics")
+        #expect(markdownResult.output.toolName == "artifact_build_weekly_report")
         if case .markdown(let markdown) = markdownResult.payload {
             #expect(markdown.contains("groue/GRDB.swift"))
             #expect(markdown.contains("GRDB docs"))
@@ -143,8 +143,8 @@ struct GitHubWeeklyReportToolsTests {
             ]
         )
         let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
-        let selectTool = try registry.tool(named: "context.select_repo")
-        let markdownTool = try registry.tool(named: "artifact.build_repo_insight")
+        let selectTool = try registry.tool(named: "context_select_repo")
+        let markdownTool = try registry.tool(named: "artifact_build_repo_insight")
 
         let selectResult = await selectTool.execute(AgentToolInput(
             prompt: "帮我分析 swift-markdown 的定位和风险",
@@ -158,7 +158,7 @@ struct GitHubWeeklyReportToolsTests {
         ))
 
         #expect(selectResult.output.output.contains("swiftlang/swift-markdown"))
-        #expect(markdownResult.output.toolName == "artifact.build_repo_insight")
+        #expect(markdownResult.output.toolName == "artifact_build_repo_insight")
         if case .markdown(let markdown) = markdownResult.payload {
             #expect(markdown.contains("# Repo Insight: swiftlang/swift-markdown"))
             #expect(markdown.contains("parser docs"))

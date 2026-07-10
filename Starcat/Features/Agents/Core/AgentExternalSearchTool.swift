@@ -35,7 +35,7 @@ struct DisabledAgentExternalSearchCollector: AgentExternalSearchCollecting {
             status: .skipped,
             markdown: "",
             sourceItems: [],
-            querySummary: "external.search=disabled_default_collector",
+            querySummary: "external_search=disabled_default_collector",
             log: "External Search collector is not configured for this runtime."
         )
     }
@@ -43,7 +43,7 @@ struct DisabledAgentExternalSearchCollector: AgentExternalSearchCollecting {
 
 struct ExternalSearchAgentTool: AgentTool {
     let definition = AgentToolDefinition(
-        name: "external.search",
+        name: "external_search",
         description: "Search configured external providers for public evidence relevant to repositories or the user goal.",
         inputSchema: AgentJSONSchema(
             type: .object,

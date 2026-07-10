@@ -349,7 +349,7 @@ struct DefaultAgentRuntime: AgentRuntime {
                     title: executionProfile.artifactTitle,
                     content: markdown
                 )
-                let artifactInput = draftToolOutput?.input ?? "artifact.build_weekly_report"
+                let artifactInput = draftToolOutput?.input ?? "artifact_build_weekly_report"
                 let artifactOutput = draftToolOutput?.output ?? String(markdown.prefix(1_200))
                 let artifactLog = draftToolOutput?.log ?? "Created Markdown artifact from generated output."
                 let artifactTrace = AgentTraceSpan(
@@ -424,7 +424,7 @@ struct DefaultAgentRuntime: AgentRuntime {
     private static func isBlockingFailure(_ tool: any AgentTool) -> Bool {
         // External Search 只是补充来源,不能因为 provider/API 暂时失败阻断本地周刊生成。
         // 核心工具仍保持 fail-fast,否则 artifact 可能基于缺失的本地上下文生成。
-        tool.id != "external.search"
+        tool.id != "external_search"
     }
 
     private static func persistCreateRun(

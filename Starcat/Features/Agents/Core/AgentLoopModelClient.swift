@@ -123,7 +123,7 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
         parameters: AIModelParameters
     ) throws -> AIChatRequest {
         let tools = try request.tools.map { definition in
-            guard isProviderCompatibleToolName(definition.name) else {
+            guard AgentToolDefinition.isProviderCompatibleName(definition.name) else {
                 throw AgentLoopModelError.invalidToolName(definition.name)
             }
             return AIChatTool(
@@ -248,10 +248,6 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
         return AgentLoopModelError.provider(description)
     }
 
-    private static func isProviderCompatibleToolName(_ name: String) -> Bool {
-        guard (1...64).contains(name.count) else { return false }
-        return name.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
-    }
 }
 
 @MainActor

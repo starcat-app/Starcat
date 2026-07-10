@@ -20,11 +20,11 @@ struct AgentDefinitionTests {
 
         #expect(agent.executionStrategy == .linearToolSequence)
         #expect(agent.toolIDs == [
-            "agent.parse_goal",
-            "context.resolve_repos",
-            "external.search",
-            "repo.cluster_topics",
-            "artifact.build_weekly_report"
+            "agent_parse_goal",
+            "context_resolve_repos",
+            "external_search",
+            "repo_cluster_topics",
+            "artifact_build_weekly_report"
         ])
         #expect(agent.artifactTypes == [.markdown, .log])
     }
@@ -36,10 +36,10 @@ struct AgentDefinitionTests {
         #expect(agent.isEnabled)
         #expect(agent.executionStrategy == .linearToolSequence)
         #expect(agent.toolIDs == [
-            "agent.parse_repo_insight_goal",
-            "context.select_repo",
-            "external.search",
-            "artifact.build_repo_insight"
+            "agent_parse_repo_insight_goal",
+            "context_select_repo",
+            "external_search",
+            "artifact_build_repo_insight"
         ])
         #expect(agent.artifactTypes == [.markdown, .log])
     }

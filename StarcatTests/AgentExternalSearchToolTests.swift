@@ -16,7 +16,7 @@ import Testing
 @MainActor
 struct AgentExternalSearchToolTests {
 
-    @Test("external.search 输出来源 trace 和 markdown payload")
+    @Test("external_search 输出来源 trace 和 markdown payload")
     func externalSearchReturnsSourcesAndPayload() async {
         let source = AIExternalContextSource(
             title: "GRDB docs",
@@ -36,7 +36,7 @@ struct AgentExternalSearchToolTests {
         let result = await tool.execute(AgentToolInput(prompt: "生成周刊", context: .empty))
 
         #expect(result.status == .completed)
-        #expect(result.output.toolName == "external.search")
+        #expect(result.output.toolName == "external_search")
         #expect(result.output.summary == "1 sources")
         #expect(result.trace.output.contains("https://example.com/grdb"))
         if case .externalContextMarkdown(let markdown) = result.payload {
@@ -46,7 +46,7 @@ struct AgentExternalSearchToolTests {
         }
     }
 
-    @Test("external.search 关闭时返回 skipped trace")
+    @Test("external_search 关闭时返回 skipped trace")
     func externalSearchDisabledReturnsSkipped() async {
         let tool = ExternalSearchAgentTool(collector: StubExternalSearchCollector(collection: AgentExternalSearchCollection(
             status: .skipped,

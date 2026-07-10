@@ -24,7 +24,7 @@ struct AgentMessagesTests {
                 .reasoning("需要先解析仓库范围"),
                 .toolCall(AgentToolCall(
                     id: "call-1",
-                    name: "context.resolve_repos",
+                    name: "context_resolve_repos",
                     input: .object(["limit": .number(20)]),
                     sequence: 3
                 ))
@@ -47,7 +47,7 @@ struct AgentMessagesTests {
         var unknown = messages
         unknown[2].parts = [.toolResult(AgentToolResultMessage(
             toolCallID: "call-missing",
-            toolName: "external.search",
+            toolName: "external_search",
             output: .object([:]),
             isError: true,
             status: .failed,
@@ -60,7 +60,7 @@ struct AgentMessagesTests {
         var mismatch = messages
         mismatch[2].parts = [.toolResult(AgentToolResultMessage(
             toolCallID: "call-search",
-            toolName: "context.resolve_repos",
+            toolName: "context_resolve_repos",
             output: .object([:]),
             isError: false,
             status: .completed,
@@ -119,7 +119,7 @@ struct AgentMessagesTests {
                 sequence: 2,
                 parts: [.toolCall(AgentToolCall(
                     id: "call-search",
-                    name: "external.search",
+                    name: "external_search",
                     input: .object(["query": .string("Swift Agent")]),
                     sequence: 3
                 ))]
@@ -131,7 +131,7 @@ struct AgentMessagesTests {
                 sequence: 4,
                 parts: [.toolResult(AgentToolResultMessage(
                     toolCallID: "call-search",
-                    toolName: "external.search",
+                    toolName: "external_search",
                     output: .object(["count": .number(2)]),
                     isError: false,
                     status: .completed,

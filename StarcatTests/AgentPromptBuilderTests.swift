@@ -42,7 +42,7 @@ struct AgentPromptBuilderTests {
         )
         context.availableTools = [
             AgentPromptToolSummary(
-                name: "external.search",
+                name: "external_search",
                 description: "Search public web sources",
                 permission: .readOnly
             )
@@ -55,7 +55,7 @@ struct AgentPromptBuilderTests {
 
         #expect(prompt.contains("Simplified Chinese"))
         #expect(prompt.contains("enabled: false"))
-        #expect(prompt.contains("external.search [readOnly]"))
+        #expect(prompt.contains("external_search [readOnly]"))
         #expect(prompt.contains("Do not send private repository metadata"))
     }
 
@@ -106,7 +106,7 @@ struct AgentPromptBuilderTests {
             sequence: 3,
             parts: [.toolCall(AgentToolCall(
                 id: "call-1",
-                name: "external.search",
+                name: "external_search",
                 input: .object(["query": .string("Swift")]),
                 sequence: 4
             ))]
@@ -118,7 +118,7 @@ struct AgentPromptBuilderTests {
             sequence: 5,
             parts: [.toolResult(AgentToolResultMessage(
                 toolCallID: "call-1",
-                toolName: "external.search",
+                toolName: "external_search",
                 output: .string("done"),
                 isError: false,
                 status: .completed,

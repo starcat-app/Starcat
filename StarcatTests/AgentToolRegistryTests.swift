@@ -17,23 +17,30 @@ struct AgentToolRegistryTests {
 
     @Test("registry 可以按模型可见 name 查找工具")
     func resolvesToolByName() throws {
-        let tool = StubAgentTool(name: "agent.stub")
+        let tool = StubAgentTool(name: "agent_stub")
         let registry = try AgentToolRegistry(tools: [tool])
 
-        let resolved = try registry.tool(named: "agent.stub")
+        let resolved = try registry.tool(named: "agent_stub")
 
-        #expect(resolved.id == "agent.stub")
+        #expect(resolved.id == "agent_stub")
         #expect(resolved.definition.description == "Stub Tool")
-        #expect(registry.definitions.map(\.name) == ["agent.stub"])
+        #expect(registry.definitions.map(\.name) == ["agent_stub"])
     }
 
     @Test("registry 拒绝重复 tool name")
     func rejectsDuplicateToolNames() {
-        #expect(throws: AgentToolRegistryError.duplicateToolName("agent.stub")) {
+        #expect(throws: AgentToolRegistryError.duplicateToolName("agent_stub")) {
             _ = try AgentToolRegistry(tools: [
-                StubAgentTool(name: "agent.stub"),
-                StubAgentTool(name: "agent.stub")
+                StubAgentTool(name: "agent_stub"),
+                StubAgentTool(name: "agent_stub")
             ])
+        }
+    }
+
+    @Test("registry 拒绝 provider 不接受的工具名")
+    func rejectsInvalidProviderToolName() {
+        #expect(throws: AgentToolRegistryError.invalidToolName("agent.stub")) {
+            _ = try AgentToolRegistry(tools: [StubAgentTool(name: "agent.stub")])
         }
     }
 
@@ -41,17 +48,17 @@ struct AgentToolRegistryTests {
     func reportsMissingTool() throws {
         let registry = try AgentToolRegistry(tools: [])
 
-        #expect(throws: AgentToolRegistryError.missingTool("agent.missing")) {
-            _ = try registry.tool(named: "agent.missing")
+        #expect(throws: AgentToolRegistryError.missingTool("agent_missing")) {
+            _ = try registry.tool(named: "agent_missing")
         }
     }
 
     @Test("registry 在执行前校验 tool-call schema")
     func validatesToolCallInput() throws {
-        let registry = try AgentToolRegistry(tools: [StubAgentTool(name: "agent.stub")])
+        let registry = try AgentToolRegistry(tools: [StubAgentTool(name: "agent_stub")])
         let valid = AgentToolCall(
             id: "call-1",
-            name: "agent.stub",
+            name: "agent_stub",
             input: .object(["value": .string("ok")]),
             sequence: 1
         )
@@ -60,7 +67,7 @@ struct AgentToolRegistryTests {
 
         let invalid = AgentToolCall(
             id: "call-2",
-            name: "agent.stub",
+            name: "agent_stub",
             input: .object(["value": .number(1)]),
             sequence: 2
         )
