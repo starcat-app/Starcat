@@ -86,14 +86,14 @@
 
 ### 5.2 Prompt Pipeline 与上下文预算
 
-- [ ] 新增 `AgentExecutionMode`: `readonlyPlanning`、`reportGeneration`、`approvedAction`、`backgroundDigest`。
-- [ ] 新增 `AgentPromptEnvironment`: app/version/platform/date/locale/workspace/mode。
-- [ ] 新增 `AgentPromptRule` 和 `AgentPromptContext`: Agent 定义、run context、可用工具、产品规则、语言和 External Search 策略。
-- [ ] 新增 `AgentPromptBuilder`,统一构建 system prompt 与每轮模型请求。
-- [ ] Prompt 注入本地优先、只读默认、确认后写入、真实来源和禁止伪造约束。
-- [ ] Prompt 注入 mode guardrails、preferred language、工具可见性和 External Search 开关/provider/privacy。
-- [ ] 新增 `AgentContextBudgeter`,分别限制 repo snapshot、历史消息、tool-result、外部搜索和 artifact 草稿。
-- [ ] 新增 `AgentMessageCompactor`,超预算时保留 system、最近轮次和 tool-call/tool-result 关联摘要。
+- [x] 新增 `AgentExecutionMode`: `readonlyPlanning`、`reportGeneration`、`approvedAction`、`backgroundDigest`。
+- [x] 新增 `AgentPromptEnvironment`: app/version/platform/date/locale/workspace/mode。
+- [x] 新增 `AgentPromptRule` 和 `AgentPromptContext`: Agent 定义、run context、可用工具、产品规则、语言和 External Search 策略。
+- [x] 新增 `AgentPromptBuilder`,统一构建 system prompt 与每轮模型请求。
+- [x] Prompt 注入本地优先、只读默认、确认后写入、真实来源和禁止伪造约束。
+- [x] Prompt 注入 mode guardrails、preferred language、工具可见性和 External Search 开关/provider/privacy。
+- [x] 新增 `AgentContextBudgeter`,分别限制 repo snapshot、历史消息、tool-result、外部搜索和 artifact 草稿。
+- [x] 新增 `AgentMessageCompactor`,超预算时保留 system、最近轮次和 tool-call/tool-result 关联摘要。
 - [ ] 删除 `OpenAIAgentTextGenerator.systemPrompt(for:)` 中分散的核心提示词。
 - [ ] 补 PromptBuilder/ContextBudgeter/Compactor 单测: mode、locale、search 开关、tool visibility、预算边界和关联消息保留。
 

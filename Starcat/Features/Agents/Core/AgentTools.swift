@@ -14,14 +14,14 @@ import Foundation
 ///
 /// 当前只实现只读工具。写入、高成本和确认型工具先建立状态语义,后续接 tag/note/star
 /// 时必须走确认流,不能把写操作混进自动 loop。
-enum AgentToolPermission: String, Hashable, Sendable {
+enum AgentToolPermission: String, Codable, Hashable, Sendable {
     case readOnly
     case requiresConfirmation
     case highCost
 }
 
 /// Agent tool 的执行结果状态。
-enum AgentToolStatus: String, Hashable, Sendable {
+enum AgentToolStatus: String, Codable, Hashable, Sendable {
     case completed
     case skipped
     case failed
