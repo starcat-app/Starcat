@@ -120,6 +120,52 @@ struct AgentLoopModelClientTests {
         }
     }
 
+    @MainActor
+    @Test("模型工厂在任务 Provider 缺失时明确失败")
+    func factoryRejectsMissingProvider() {
+        let settings = isolatedSettings()
+        settings.aiProviderProfiles = []
+
+        #expect(throws: AgentLoopModelError.missingProvider) {
+            _ = try AgentLoopModelClientFactory.make(
+                settings: settings,
+                keychain: InMemoryKeychain()
+            )
+        }
+    }
+
+    @MainActor
+    @Test("模型工厂在远程 Provider 缺少 API key 时明确失败")
+    func factoryRejectsMissingAPIKey() {
+        let settings = isolatedSettings()
+        let profile = AIProviderProfile(
+            id: "agent-test-provider",
+            provider: .openAICompatible,
+            baseURL: "https://api.example.com/v1",
+            models: [AIModelDescriptor(
+                providerID: "agent-test-provider",
+                name: "test-chat-model",
+                capability: .chat
+            )]
+        )
+        settings.aiProviderProfiles = [profile]
+        settings.aiChatTask = AIModelTaskConfiguration(
+            providerID: profile.id,
+            modelID: "test-chat-model",
+            customModelName: "",
+            useCustomModel: false,
+            parameters: .summaryDefault,
+            prompt: AIDefaultPrompts.chat
+        )
+
+        #expect(throws: AgentLoopModelError.missingAPIKey) {
+            _ = try AgentLoopModelClientFactory.make(
+                settings: settings,
+                keychain: InMemoryKeychain()
+            )
+        }
+    }
+
     @Test("将可审计消息链映射为 provider tool-calling 历史")
     func mapsAgentMessagesToProviderHistory() throws {
         let runID = UUID()
@@ -220,6 +266,12 @@ struct AgentLoopModelClientTests {
             tools: [],
             metadata: [:]
         )
+    }
+
+    @MainActor
+    private func isolatedSettings() -> AppSettings {
+        let defaults = UserDefaults(suiteName: "test.starcat.agent-model.\(UUID().uuidString)")!
+        return AppSettings(defaults: defaults, keychain: InMemoryKeychain())
     }
 }
 
