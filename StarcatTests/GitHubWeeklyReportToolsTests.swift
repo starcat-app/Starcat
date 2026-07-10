@@ -32,6 +32,36 @@ struct GitHubWeeklyReportToolsTests {
         #expect(result.trace.input.contains("Unit Snapshot"))
     }
 
+    @Test("context_resolve_repos 消费模型数量和排序参数")
+    func resolveReposToolUsesModelArguments() async throws {
+        let swiftMarkdown = repo(fullName: "swiftlang/swift-markdown", language: "Swift", stars: 3_100)
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [
+                swiftMarkdown,
+                repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800),
+                repo(fullName: "modelcontextprotocol/swift-sdk", language: "Swift", stars: 1_400)
+            ]
+        )
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "context_resolve_repos")
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: .object([
+                "repoIDs": .array([.number(Double(swiftMarkdown.id))]),
+                "maxRepositories": .number(1),
+                "sort": .string("name")
+            ]),
+            prompt: "ignored for sorting",
+            context: context
+        ))
+
+        #expect(result.output.summary == "1 repos")
+        #expect(result.output.output.contains("swiftlang/swift-markdown"))
+        #expect(result.output.output.contains("groue/GRDB.swift") == false)
+        #expect(result.output.input.contains("sort:\nname"))
+    }
+
     @Test("clusterTopics 按语言生成主题并保留 repo 名称")
     func clusterTopicsGroupsByLanguage() {
         let context = AgentRunContext(
@@ -48,6 +78,27 @@ struct GitHubWeeklyReportToolsTests {
         #expect(topics.map(\.title).contains("Swift 生态项目"))
         #expect(result.output.output.contains("vercel/next.js"))
         #expect(result.trace.output.contains("groue/GRDB.swift"))
+    }
+
+    @Test("repo_cluster_topics 只聚类模型选择的真实 repo IDs")
+    func clusterTopicsToolUsesSelectedRepoIDs() async throws {
+        let swift = repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)
+        let web = repo(fullName: "vercel/next.js", language: "TypeScript", stars: 130_000)
+        let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [swift, web])
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "repo_cluster_topics")
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: .object([
+                "repoIDs": .array([.number(Double(swift.id))]),
+                "maxTopics": .number(1)
+            ]),
+            prompt: "cluster",
+            context: context
+        ))
+
+        #expect(result.output.output.contains("groue/GRDB.swift"))
+        #expect(result.output.output.contains("vercel/next.js") == false)
     }
 
     @Test("buildMarkdown 从 topic 生成只读 artifact 草稿")
@@ -147,7 +198,8 @@ struct GitHubWeeklyReportToolsTests {
         let markdownTool = try registry.tool(named: "artifact_build_repo_insight")
 
         let selectResult = await selectTool.execute(AgentToolInput(
-            prompt: "帮我分析 swift-markdown 的定位和风险",
+            arguments: .object(["fullName": .string("swiftlang/swift-markdown")]),
+            prompt: "提示词故意提到 GRDB,参数应优先",
             context: context
         ))
         let markdownResult = await markdownTool.execute(AgentToolInput(
@@ -174,7 +226,7 @@ struct GitHubWeeklyReportToolsTests {
     ) -> AgentRepoSnapshot {
         let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
         return AgentRepoSnapshot(
-            id: Int64(abs(fullName.hashValue)),
+            id: Int64(fullName.utf8.reduce(0) { ($0 * 31 + Int($1)) % 1_000_000_000 }),
             owner: parts.first ?? "owner",
             name: parts.dropFirst().first ?? "repo",
             fullName: fullName,

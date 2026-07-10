@@ -4,9 +4,8 @@
 //
 //  GitHub Weekly Report Agent 的首批只读工具。
 //
-//  这些工具暂时是本地 Swift 实现，而不是 OpenAI function calling。这样可以先把
-//  Starcat 真实数据、可审计输入输出和 artifact schema 跑通；后续接入模型 tool-calling
-//  时，工具的输入/输出契约可以继续复用。
+//  模型只负责选择工具和提交分析内容；仓库筛选、排序、引用解析与 artifact 校验均由
+//  本地 Swift 工具执行，确保输出只能引用冻结在本次 run 中的真实 Starcat 数据。
 //
 
 import Foundation
@@ -20,6 +19,12 @@ struct WeeklyReportTopic: Hashable, Sendable {
 struct WeeklyReportToolResult: Sendable {
     var output: AgentToolOutput
     var trace: AgentTraceSpan
+}
+
+enum WeeklyReportRepoSort: String, Sendable {
+    case starredAt = "starred_at"
+    case stars
+    case name
 }
 
 enum GitHubWeeklyReportTools {
@@ -47,19 +52,21 @@ enum GitHubWeeklyReportTools {
         )
     }
 
-    static func resolveCandidateRepos(context: AgentRunContext, limit: Int = 12) -> WeeklyReportToolResult {
-        let sorted = context.repos
-            .sorted { lhs, rhs in
-                if lhs.starsCount == rhs.starsCount {
-                    return lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName) == .orderedAscending
-                }
-                return lhs.starsCount > rhs.starsCount
-            }
+    static func resolveCandidateRepos(
+        context: AgentRunContext,
+        repoIDs: [Int64] = [],
+        limit: Int = 12,
+        sort: WeeklyReportRepoSort = .stars
+    ) -> WeeklyReportToolResult {
+        let allowedIDs = Set(repoIDs)
+        let scopedRepos = repoIDs.isEmpty ? context.repos : context.repos.filter { allowedIDs.contains($0.id) }
+        let sorted = scopedRepos
+            .sorted { orderedBefore($0, $1, sort: sort) }
             .prefix(limit)
         let repos = Array(sorted)
         let output = repos.isEmpty
             ? "repos: []"
-            : repos.map { "- \($0.displaySummary)" }.joined(separator: "\n")
+            : repos.map { "- id=\($0.id) | \($0.displaySummary)" }.joined(separator: "\n")
         return makeResult(
             toolName: "context_resolve_repos",
             summary: "\(repos.count) repos",
@@ -67,16 +74,28 @@ enum GitHubWeeklyReportTools {
             source:
             \(context.sourceDescription)
 
+            requested_repo_ids:
+            \(repoIDs)
+
             limit:
             \(limit)
+
+            sort:
+            \(sort.rawValue)
             """,
             output: output,
             log: "Resolved top candidates from frozen AgentRunContext."
         )
     }
 
-    static func clusterTopics(context: AgentRunContext, maxTopics: Int = 4) -> ([WeeklyReportTopic], WeeklyReportToolResult) {
-        let groupedByLanguage = Dictionary(grouping: context.repos) { repo in
+    static func clusterTopics(
+        context: AgentRunContext,
+        repoIDs: [Int64] = [],
+        maxTopics: Int = 4
+    ) -> ([WeeklyReportTopic], WeeklyReportToolResult) {
+        let allowedIDs = Set(repoIDs)
+        let repos = repoIDs.isEmpty ? context.repos : context.repos.filter { allowedIDs.contains($0.id) }
+        let groupedByLanguage = Dictionary(grouping: repos) { repo in
             nonEmpty(repo.language) ?? "Other"
         }
         let unsortedTopics: [WeeklyReportTopic] = groupedByLanguage.map { language, repos in
@@ -104,11 +123,29 @@ enum GitHubWeeklyReportTools {
             makeResult(
                 toolName: "repo_cluster_topics",
                 summary: "\(topicList.count) topics",
-                input: "repo_count: \(context.repos.count)\nstrategy: language-first clustering",
+                input: "repo_count: \(repos.count)\nrepo_ids: \(repos.map(\.id))\nmax_topics: \(maxTopics)\nstrategy: language-first clustering",
                 output: output,
                 log: "Clustered frozen repo snapshots into weekly report topics."
             )
         )
+    }
+
+    private static func orderedBefore(
+        _ lhs: AgentRepoSnapshot,
+        _ rhs: AgentRepoSnapshot,
+        sort: WeeklyReportRepoSort
+    ) -> Bool {
+        switch sort {
+        case .starredAt:
+            let lhsDate = lhs.starredAt ?? ""
+            let rhsDate = rhs.starredAt ?? ""
+            if lhsDate != rhsDate { return lhsDate > rhsDate }
+        case .stars:
+            if lhs.starsCount != rhs.starsCount { return lhs.starsCount > rhs.starsCount }
+        case .name:
+            break
+        }
+        return lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName) == .orderedAscending
     }
 
     static func buildMarkdown(
@@ -251,6 +288,38 @@ private func makeReadOnlyToolDefinition(
     )
 }
 
+private func failedAgentToolResult(toolName: String, input: String, message: String) -> AgentToolResult {
+    let output = AgentToolOutput(
+        toolName: toolName,
+        summary: "failed",
+        detail: message,
+        input: input,
+        output: "error: \(message)",
+        log: message
+    )
+    return AgentToolResult(
+        status: .failed,
+        output: output,
+        trace: AgentTraceSpan(
+            kind: "Tool",
+            title: toolName,
+            summary: output.summary,
+            input: input,
+            output: output.output,
+            log: message,
+            status: .failed,
+            relatedToolOutputID: output.id
+        )
+    )
+}
+
+private extension AgentJSONValue {
+    var integerArrayValue: [Int] {
+        guard case .array(let values) = self else { return [] }
+        return values.compactMap(\.integerValue)
+    }
+}
+
 enum GitHubWeeklyReportAgentTools {
     static var all: [any AgentTool] {
         makeAll(externalSearchTool: ExternalSearchAgentTool(collector: DisabledAgentExternalSearchCollector()))
@@ -273,11 +342,13 @@ enum GitHubWeeklyReportAgentTools {
         let definition = makeReadOnlyToolDefinition(
             name: "agent_parse_goal",
             description: "Normalize the user's weekly report goal and record the read-only execution scope.",
-            properties: ["goal": AgentJSONSchema(type: .string, description: "User's report goal")]
+            properties: ["goal": AgentJSONSchema(type: .string, description: "User's report goal")],
+            required: ["goal"]
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
-            GitHubWeeklyReportTools.parseGoal(prompt: input.prompt, context: input.context).agentToolResult()
+            let goal = input.arguments.objectValue?["goal"]?.stringValue ?? input.prompt
+            return GitHubWeeklyReportTools.parseGoal(prompt: goal, context: input.context).agentToolResult()
         }
     }
 
@@ -286,6 +357,11 @@ enum GitHubWeeklyReportAgentTools {
             name: "context_resolve_repos",
             description: "Resolve repositories from the frozen Starcat run snapshot.",
             properties: [
+                "repoIDs": AgentJSONSchema(
+                    type: .array,
+                    description: "Optional repository IDs that define the report scope",
+                    items: AgentJSONSchema(type: .integer)
+                ),
                 "maxRepositories": AgentJSONSchema(type: .integer, description: "Maximum repositories to return", defaultValue: .number(40)),
                 "sort": AgentJSONSchema(
                     type: .string,
@@ -297,7 +373,24 @@ enum GitHubWeeklyReportAgentTools {
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
-            GitHubWeeklyReportTools.resolveCandidateRepos(context: input.context).agentToolResult()
+            let arguments = input.arguments.objectValue ?? [:]
+            let repoIDs = arguments["repoIDs"]?.integerArrayValue.map(Int64.init) ?? []
+            let unknownIDs = repoIDs.filter { id in !input.context.repos.contains(where: { $0.id == id }) }
+            guard unknownIDs.isEmpty else {
+                return failedAgentToolResult(
+                    toolName: id,
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    message: "Unknown Agent repository IDs: \(unknownIDs.map(String.init).joined(separator: ", "))"
+                )
+            }
+            let limit = min(max(arguments["maxRepositories"]?.integerValue ?? 40, 1), 100)
+            let sort = arguments["sort"]?.stringValue.flatMap(WeeklyReportRepoSort.init(rawValue:)) ?? .starredAt
+            return GitHubWeeklyReportTools.resolveCandidateRepos(
+                context: input.context,
+                repoIDs: repoIDs,
+                limit: limit,
+                sort: sort
+            ).agentToolResult()
         }
     }
 
@@ -310,12 +403,28 @@ enum GitHubWeeklyReportAgentTools {
                     type: .array,
                     description: "Repository IDs to cluster",
                     items: AgentJSONSchema(type: .integer)
-                )
+                ),
+                "maxTopics": AgentJSONSchema(type: .integer, description: "Maximum topic count", defaultValue: .number(4))
             ]
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
-            let (topics, result) = GitHubWeeklyReportTools.clusterTopics(context: input.context)
+            let arguments = input.arguments.objectValue ?? [:]
+            let repoIDs = arguments["repoIDs"]?.integerArrayValue.map(Int64.init) ?? []
+            let unknownIDs = repoIDs.filter { id in !input.context.repos.contains(where: { $0.id == id }) }
+            guard unknownIDs.isEmpty else {
+                return failedAgentToolResult(
+                    toolName: id,
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    message: "Unknown Agent repository IDs: \(unknownIDs.map(String.init).joined(separator: ", "))"
+                )
+            }
+            let maxTopics = min(max(arguments["maxTopics"]?.integerValue ?? 4, 1), 12)
+            let (topics, result) = GitHubWeeklyReportTools.clusterTopics(
+                context: input.context,
+                repoIDs: repoIDs,
+                maxTopics: maxTopics
+            )
             return result.agentToolResult(payload: .topics(topics))
         }
     }
@@ -366,11 +475,13 @@ enum RepoInsightAgentTools {
         let definition = makeReadOnlyToolDefinition(
             name: "agent_parse_repo_insight_goal",
             description: "Normalize a repository insight goal without creating write-capable actions.",
-            properties: ["goal": AgentJSONSchema(type: .string, description: "Repository analysis goal")]
+            properties: ["goal": AgentJSONSchema(type: .string, description: "Repository analysis goal")],
+            required: ["goal"]
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
-            let prompt = input.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let prompt = (input.arguments.objectValue?["goal"]?.stringValue ?? input.prompt)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             let effectivePrompt = prompt.isEmpty ? String.l10n("agent.definition.repoInsight.defaultPrompt") : prompt
             return makeResult(
                 toolName: id,
@@ -404,36 +515,20 @@ enum RepoInsightAgentTools {
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
-            guard let repo = selectRepo(prompt: input.prompt, repos: input.context.repos) else {
-                let output = AgentToolOutput(
+            let arguments = input.arguments.objectValue ?? [:]
+            guard let repo = selectRepo(arguments: arguments, repos: input.context.repos) else {
+                return failedAgentToolResult(
                     toolName: id,
-                    summary: "0 repos",
-                    detail: "No repository snapshot is available for Repo Insight.",
-                    input: "repo_count: 0",
-                    output: "selected_repo: null",
-                    log: "No AgentRunContext repo snapshots available."
-                )
-                return AgentToolResult(
-                    status: .failed,
-                    output: output,
-                    trace: AgentTraceSpan(
-                        kind: "Tool",
-                        title: id,
-                        summary: output.summary,
-                        input: output.input,
-                        output: output.output,
-                        log: output.log,
-                        status: .failed,
-                        relatedToolOutputID: output.id
-                    )
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    message: "No repository matches repoID/fullName in the frozen Agent context."
                 )
             }
             let result = makeResult(
                 toolName: id,
                 summary: repo.fullName,
                 input: """
-                prompt:
-                \(input.prompt)
+                requested:
+                \((try? input.arguments.jsonString()) ?? "{}")
 
                 candidates:
                 \(input.context.repos.map { "- \($0.displaySummary)" }.joined(separator: "\n"))
@@ -444,19 +539,17 @@ enum RepoInsightAgentTools {
             return result.agentToolResult(payload: .repo(repo))
         }
 
-        private func selectRepo(prompt: String, repos: [AgentRepoSnapshot]) -> AgentRepoSnapshot? {
-            let normalizedPrompt = prompt.lowercased()
-            if let mentioned = repos.first(where: { repo in
-                normalizedPrompt.contains(repo.fullName.lowercased()) || normalizedPrompt.contains(repo.name.lowercased())
-            }) {
-                return mentioned
+        private func selectRepo(
+            arguments: [String: AgentJSONValue],
+            repos: [AgentRepoSnapshot]
+        ) -> AgentRepoSnapshot? {
+            if let repoID = arguments["repoID"]?.integerValue {
+                return repos.first(where: { $0.id == Int64(repoID) })
             }
-            return repos.sorted { lhs, rhs in
-                if lhs.starsCount == rhs.starsCount {
-                    return lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName) == .orderedAscending
-                }
-                return lhs.starsCount > rhs.starsCount
-            }.first
+            if let fullName = arguments["fullName"]?.stringValue {
+                return repos.first(where: { $0.fullName.caseInsensitiveCompare(fullName) == .orderedSame })
+            }
+            return nil
         }
     }
 

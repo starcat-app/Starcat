@@ -179,7 +179,7 @@
 ### 5.9 GitHub Weekly Report 与 External Search 迁移
 
 - [x] Weekly Agent 使用 `LoopAgentRuntime`,`toolIDs` 仅作为 allowlist,不再声明固定执行顺序。
-- [ ] 暴露 `context.resolve_repos` schema,支持范围、数量和排序参数。
+- [x] 暴露 `context_resolve_repos` schema,支持 repoIDs 范围、数量和排序参数。
 - [x] 暴露 `external_search` schema: query/maxResults/allowedDomains/recency/repoIDs。
 - [x] `external_search` 查询由模型参数驱动,不再固定搜索前 3 个仓库。
 - [x] 搜索继续复用现有设置/provider/API key/匿名模式/cache/Pro 和隐私边界。
