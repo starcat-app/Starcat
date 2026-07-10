@@ -166,7 +166,7 @@ struct LoopAgentRuntime: AgentRuntime {
             context: promptContext
         )
 
-        await persistCreateRun(
+        try await persistCreateRun(
             runID: runID,
             definition: definition,
             prompt: prompt,
@@ -180,12 +180,12 @@ struct LoopAgentRuntime: AgentRuntime {
             turn: 0,
             parts: [.text(initialRequest.userPrompt)]
         )
+        try await persistMessage(userMessage, runStatus: .running)
         continuation.yield(.messageAppended(userMessage))
 
         var payload: AgentToolPayload = .none
         var values: [String: String] = [:]
         var artifactCount = 0
-        var artifactIndex = 0
 
         while true {
             try Task.checkCancellation()
@@ -225,9 +225,10 @@ struct LoopAgentRuntime: AgentRuntime {
                 parts: parts,
                 usage: response.usage
             )
+            try await persistMessage(assistantMessage, runStatus: .running)
             continuation.yield(.messageAppended(assistantMessage))
-            if let usage = response.usage {
-                continuation.yield(.usageUpdated(usage))
+            if response.usage != nil {
+                continuation.yield(.usageUpdated(await session.snapshot().usage))
             }
 
             if calls.isEmpty {
@@ -235,10 +236,12 @@ struct LoopAgentRuntime: AgentRuntime {
                     throw LoopAgentRuntimeError.requiredArtifactMissing
                 }
                 guard await session.finish(.completed) else { throw CancellationError() }
+                let completedSnapshot = await session.snapshot()
                 await persistRunStatus(
                     runID: runID,
                     status: .completed,
-                    assistantOutput: response.text,
+                    model: response.model,
+                    usage: completedSnapshot.usage,
                     finishedAt: Date()
                 )
                 continuation.yield(.runCompleted)
@@ -270,6 +273,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     turn: turn,
                     parts: [.toolResult(resultMessage)]
                 )
+                try await persistMessage(toolMessage, runStatus: .running)
                 continuation.yield(.messageAppended(toolMessage))
 
                 if let result = execution.result {
@@ -285,8 +289,7 @@ struct LoopAgentRuntime: AgentRuntime {
                             sequence: toolMessage.sequence
                         )
                         continuation.yield(.artifactCreated(artifact))
-                        await persistArtifact(artifact, runID: runID, index: artifactIndex)
-                        artifactIndex += 1
+                        try await persistArtifact(artifact, runID: runID)
                         artifactCount += 1
                     }
                 }
@@ -466,24 +469,21 @@ struct LoopAgentRuntime: AgentRuntime {
         definition: AgentDefinition,
         prompt: String,
         context: AgentRunContext
-    ) async {
-        do {
-            _ = try await runRepository?.createRun(
-                id: runID,
-                definition: definition,
-                prompt: prompt,
-                context: context,
-                createdAt: Date()
-            )
-        } catch {
-            AppLog.database.warning("Agent loop create persistence failed: \(error.localizedDescription, privacy: .public)")
-        }
+    ) async throws {
+        _ = try await runRepository?.createRun(
+            id: runID,
+            definition: definition,
+            prompt: prompt,
+            context: context,
+            createdAt: Date()
+        )
     }
 
     private func persistRunStatus(
         runID: UUID,
         status: AgentRunStatus,
-        assistantOutput: String? = nil,
+        model: String? = nil,
+        usage: AgentUsage? = nil,
         errorMessage: String? = nil,
         finishedAt: Date? = nil
     ) async {
@@ -491,7 +491,8 @@ struct LoopAgentRuntime: AgentRuntime {
             try await runRepository?.updateRunStatus(
                 runID: runID,
                 status: status,
-                assistantOutput: assistantOutput,
+                model: model,
+                usage: usage,
                 errorMessage: errorMessage,
                 finishedAt: finishedAt
             )
@@ -500,12 +501,12 @@ struct LoopAgentRuntime: AgentRuntime {
         }
     }
 
-    private func persistArtifact(_ artifact: AgentArtifact, runID: UUID, index: Int) async {
-        do {
-            try await runRepository?.appendArtifact(artifact, runID: runID, index: index)
-        } catch {
-            AppLog.database.warning("Agent loop artifact persistence failed: \(error.localizedDescription, privacy: .public)")
-        }
+    private func persistMessage(_ message: AgentMessage, runStatus: AgentRunStatus?) async throws {
+        try await runRepository?.appendMessage(message, runStatus: runStatus)
+    }
+
+    private func persistArtifact(_ artifact: AgentArtifact, runID: UUID) async throws {
+        try await runRepository?.appendArtifact(artifact, runID: runID)
     }
 
     private func finishFailed(

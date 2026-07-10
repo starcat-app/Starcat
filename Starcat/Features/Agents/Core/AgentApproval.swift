@@ -26,6 +26,7 @@ struct AgentApprovalRequest: Codable, Hashable, Sendable, Identifiable {
     var toolName: String
     var input: AgentJSONValue
     var permission: AgentToolPermission
+    var sequence: Int
     var status: AgentApprovalStatus
     var createdAt: Date
     var decidedAt: Date?
@@ -37,6 +38,7 @@ struct AgentApprovalRequest: Codable, Hashable, Sendable, Identifiable {
         toolName: String,
         input: AgentJSONValue,
         permission: AgentToolPermission,
+        sequence: Int,
         status: AgentApprovalStatus = .pending,
         createdAt: Date = Date(),
         decidedAt: Date? = nil
@@ -47,6 +49,7 @@ struct AgentApprovalRequest: Codable, Hashable, Sendable, Identifiable {
         self.toolName = toolName
         self.input = input
         self.permission = permission
+        self.sequence = sequence
         self.status = status
         self.createdAt = createdAt
         self.decidedAt = decidedAt

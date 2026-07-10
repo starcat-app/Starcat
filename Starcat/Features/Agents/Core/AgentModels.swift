@@ -61,10 +61,11 @@ enum AgentExecutionStrategy: String, Hashable, Sendable {
 }
 
 /// 一次 Agent run 的状态。
-enum AgentRunStatus: String, Sendable {
+enum AgentRunStatus: String, Codable, Hashable, Sendable {
     case idle
     case planning
     case running
+    case waitingForConfirmation
     case completed
     case failed
     case cancelled
@@ -80,7 +81,7 @@ enum AgentStepStatus: String, Sendable {
 }
 
 /// Agent 产出物类型。
-enum AgentArtifactType: String, Sendable {
+enum AgentArtifactType: String, Codable, Hashable, Sendable {
     case markdown
     case log
 
@@ -228,7 +229,7 @@ struct AgentArtifact: Identifiable, Hashable, Sendable {
 ///
 /// run 开始时冻结上下文，而不是让 Runtime 持有列表的 live binding。这样用户在 Agent
 /// 执行过程中切换筛选、刷新列表或打开别的窗口，都不会污染当前 run 的审计记录。
-struct AgentRunContext: Hashable, Sendable {
+struct AgentRunContext: Codable, Hashable, Sendable {
     var sourceDescription: String
     var generatedAt: Date
     var repos: [AgentRepoSnapshot]
@@ -250,7 +251,7 @@ struct AgentRunContext: Hashable, Sendable {
 ///
 /// 这里只保留生成周刊需要的稳定字段，避免把完整 `Repo` 行直接塞进 Runtime。后续要补
 /// README / note / tag 时，也应继续通过快照字段扩展，而不是让工具层读取 UI 状态。
-struct AgentRepoSnapshot: Identifiable, Hashable, Sendable {
+struct AgentRepoSnapshot: Codable, Identifiable, Hashable, Sendable {
     let id: Int64
     var owner: String
     var name: String

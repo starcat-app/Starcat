@@ -93,7 +93,8 @@ struct AgentRunSessionTests {
             toolCallID: "call-1",
             toolName: "write_tag",
             input: .object(["tag": .string("swift")]),
-            permission: .requiresConfirmation
+            permission: .requiresConfirmation,
+            sequence: 2
         ))
 
         await #expect(throws: AgentRunSessionError.waitingForConfirmation) {

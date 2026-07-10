@@ -39,14 +39,22 @@ struct AgentWorkspaceView: View {
             let externalSearchTool = ExternalSearchAgentTool(
                 collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
             )
-            let toolRegistry = try? AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
-                externalSearchTool: externalSearchTool
-            ))
-            viewModel.configureRuntime(DefaultAgentRuntime(
-                textGenerator: AgentTextGeneratorFactory.make(settings: dependencies.settings),
-                toolRegistry: toolRegistry ?? DefaultAgentRuntime.makeDefaultToolRegistry(),
-                runRepository: dependencies.agentRunRepository
-            ))
+            do {
+                let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+                    externalSearchTool: externalSearchTool
+                ))
+                let modelClient = try AgentLoopModelClientFactory.make(settings: dependencies.settings)
+                viewModel.configureRuntime(LoopAgentRuntime(
+                    modelClient: modelClient,
+                    toolRegistry: toolRegistry,
+                    runRepository: dependencies.agentRunRepository,
+                    localeIdentifier: locale.identifier,
+                    preferredLanguage: locale.language.languageCode?.identifier == "zh" ? "Simplified Chinese" : "English",
+                    externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
+                ))
+            } catch {
+                viewModel.configureRuntime(UnavailableAgentRuntime(message: error.localizedDescription))
+            }
             await viewModel.reloadHistory()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
@@ -247,6 +255,8 @@ struct AgentWorkspaceView: View {
             return String.l10n("agent.workspace.status.planning")
         case .running:
             return String.l10n("agent.workspace.status.running")
+        case .waitingForConfirmation:
+            return String.l10n("agent.workspace.status.waitingForConfirmation")
         case .idle, .none:
             return String.l10n("agent.workspace.status.idle")
         }
@@ -267,7 +277,7 @@ struct AgentWorkspaceView: View {
             return "xmark.circle.fill"
         case .cancelled:
             return "pause.circle.fill"
-        case .planning, .running:
+        case .planning, .running, .waitingForConfirmation:
             return "circle.dotted"
         case .idle, .none:
             return "clock"
@@ -282,7 +292,7 @@ struct AgentWorkspaceView: View {
             return .red
         case .cancelled:
             return .orange
-        case .planning, .running:
+        case .planning, .running, .waitingForConfirmation:
             return .accentColor
         case .idle, .none:
             return .secondary
@@ -1106,6 +1116,8 @@ struct AgentWorkspaceView: View {
             return String.l10n("agent.workspace.status.planning")
         case .running:
             return String.l10n("agent.workspace.status.running")
+        case .waitingForConfirmation:
+            return String.l10n("agent.workspace.status.waitingForConfirmation")
         case .completed:
             return String.l10n("agent.workspace.status.completed")
         case .failed:
@@ -1119,7 +1131,7 @@ struct AgentWorkspaceView: View {
         switch viewModel.status {
         case .idle:
             return "circle"
-        case .planning, .running:
+        case .planning, .running, .waitingForConfirmation:
             return "circle.dotted"
         case .completed:
             return "checkmark.circle.fill"

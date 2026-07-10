@@ -2,10 +2,11 @@
 //  AgentRunRepository.swift
 //  Starcat
 //
-//  Agent run 持久化仓储。
+//  Agent run 的事实型持久化仓储。
 //
-//  这个仓储只保存可复盘的 UI 事件快照,不保存 live binding 或运行时对象。
-//  Runtime 写入它,Workspace 历史列表读取它,后续 resume 可以在同一数据结构上扩展。
+//  `agent_messages` 是 user/assistant/tool/tool-result 的唯一执行事实源；Step、Trace 和
+//  ToolOutput 只允许由消息投影，不能各自落表，否则重启后会出现顺序和状态不一致。
+//  message/approval 写入与 run 状态更新使用同一 GRDB transaction。
 //
 
 import Foundation
@@ -21,16 +22,16 @@ struct AgentRunRecord: Codable, FetchableRecord, PersistableRecord, Identifiable
     var title: String
     var userPrompt: String
     var contextSource: String
+    var contextJSON: String
     var status: String
-    var assistantOutput: String
+    var model: String?
+    var usageJSON: String?
     var errorMessage: String?
     var createdAt: String
     var updatedAt: String
     var finishedAt: String?
 
     enum Columns {
-        static let id = Column("id")
-        static let agentId = Column("agent_id")
         static let createdAt = Column("created_at")
     }
 
@@ -40,8 +41,10 @@ struct AgentRunRecord: Codable, FetchableRecord, PersistableRecord, Identifiable
         case title
         case userPrompt = "user_prompt"
         case contextSource = "context_source"
+        case contextJSON = "context_json"
         case status
-        case assistantOutput = "assistant_output"
+        case model
+        case usageJSON = "usage_json"
         case errorMessage = "error_message"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -49,87 +52,116 @@ struct AgentRunRecord: Codable, FetchableRecord, PersistableRecord, Identifiable
     }
 }
 
-struct AgentRunStepRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
-    static let databaseTableName = "agent_run_steps"
+struct AgentMessageRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
+    static let databaseTableName = "agent_messages"
 
     var id: String
     var runId: String
-    var stepIndex: Int
-    var title: String
-    var detail: String
-    var status: String
-    var updatedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case runId = "run_id"
-        case stepIndex = "step_index"
-        case title
-        case detail
-        case status
-        case updatedAt = "updated_at"
-    }
-}
-
-struct AgentTraceRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
-    static let databaseTableName = "agent_run_traces"
-
-    var id: String
-    var runId: String
-    var traceIndex: Int
-    var kind: String
-    var title: String
-    var summary: String
-    var input: String
-    var output: String
-    var log: String
-    var status: String
-    var relatedToolOutputId: String?
-    var relatedArtifactId: String?
+    var role: String
+    var turn: Int
+    var sequence: Int
+    var partsJSON: String
+    var usageJSON: String?
     var createdAt: String
 
     enum CodingKeys: String, CodingKey {
         case id
         case runId = "run_id"
-        case traceIndex = "trace_index"
-        case kind
-        case title
-        case summary
-        case input
-        case output
-        case log
-        case status
-        case relatedToolOutputId = "related_tool_output_id"
-        case relatedArtifactId = "related_artifact_id"
+        case role
+        case turn
+        case sequence
+        case partsJSON = "parts_json"
+        case usageJSON = "usage_json"
         case createdAt = "created_at"
+    }
+
+    init(message: AgentMessage) throws {
+        id = message.id.uuidString
+        runId = message.runID.uuidString
+        role = message.role.rawValue
+        turn = message.turn
+        sequence = message.sequence
+        partsJSON = try AgentPersistenceJSON.encode(message.parts)
+        usageJSON = try message.usage.map(AgentPersistenceJSON.encode)
+        createdAt = ISO8601DateFormatter.shared.string(from: message.createdAt)
+    }
+
+    func message() throws -> AgentMessage {
+        guard let id = UUID(uuidString: id),
+              let runID = UUID(uuidString: runId),
+              let role = AgentMessageRole(rawValue: role)
+        else { throw AgentRunRepositoryError.invalidRecord("message \(self.id)") }
+        return AgentMessage(
+            id: id,
+            runID: runID,
+            role: role,
+            turn: turn,
+            sequence: sequence,
+            parts: try AgentPersistenceJSON.decode([AgentMessagePart].self, from: partsJSON),
+            usage: try usageJSON.map { try AgentPersistenceJSON.decode(AgentUsage.self, from: $0) },
+            createdAt: ISO8601DateFormatter.shared.date(from: createdAt) ?? Date.distantPast
+        )
     }
 }
 
-struct AgentToolOutputRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
-    static let databaseTableName = "agent_run_tool_outputs"
+struct AgentApprovalRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
+    static let databaseTableName = "agent_approvals"
 
     var id: String
     var runId: String
-    var outputIndex: Int
+    var toolCallId: String
     var toolName: String
-    var summary: String
-    var detail: String
-    var input: String
-    var output: String
-    var log: String
+    var inputJSON: String
+    var permission: String
+    var sequence: Int
+    var status: String
     var createdAt: String
+    var decidedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case runId = "run_id"
-        case outputIndex = "output_index"
+        case toolCallId = "tool_call_id"
         case toolName = "tool_name"
-        case summary
-        case detail
-        case input
-        case output
-        case log
+        case inputJSON = "input_json"
+        case permission
+        case sequence
+        case status
         case createdAt = "created_at"
+        case decidedAt = "decided_at"
+    }
+
+    init(approval: AgentApprovalRequest) throws {
+        id = approval.id.uuidString
+        runId = approval.runID.uuidString
+        toolCallId = approval.toolCallID
+        toolName = approval.toolName
+        inputJSON = try AgentPersistenceJSON.encode(approval.input)
+        permission = approval.permission.rawValue
+        sequence = approval.sequence
+        status = approval.status.rawValue
+        createdAt = ISO8601DateFormatter.shared.string(from: approval.createdAt)
+        decidedAt = approval.decidedAt.map { ISO8601DateFormatter.shared.string(from: $0) }
+    }
+
+    func approval() throws -> AgentApprovalRequest {
+        guard let id = UUID(uuidString: id),
+              let runID = UUID(uuidString: runId),
+              let permission = AgentToolPermission(rawValue: permission),
+              let status = AgentApprovalStatus(rawValue: status)
+        else { throw AgentRunRepositoryError.invalidRecord("approval \(self.id)") }
+        return AgentApprovalRequest(
+            id: id,
+            runID: runID,
+            toolCallID: toolCallId,
+            toolName: toolName,
+            input: try AgentPersistenceJSON.decode(AgentJSONValue.self, from: inputJSON),
+            permission: permission,
+            sequence: sequence,
+            status: status,
+            createdAt: ISO8601DateFormatter.shared.date(from: createdAt) ?? Date.distantPast,
+            decidedAt: decidedAt.flatMap(ISO8601DateFormatter.shared.date)
+        )
     }
 }
 
@@ -138,7 +170,9 @@ struct AgentArtifactRecord: Codable, FetchableRecord, PersistableRecord, Identif
 
     var id: String
     var runId: String
-    var artifactIndex: Int
+    var toolCallId: String?
+    var messageId: String?
+    var sequence: Int
     var type: String
     var title: String
     var content: String
@@ -147,20 +181,61 @@ struct AgentArtifactRecord: Codable, FetchableRecord, PersistableRecord, Identif
     enum CodingKeys: String, CodingKey {
         case id
         case runId = "run_id"
-        case artifactIndex = "artifact_index"
+        case toolCallId = "tool_call_id"
+        case messageId = "message_id"
+        case sequence
         case type
         case title
         case content
         case createdAt = "created_at"
     }
+
+    init(artifact: AgentArtifact, runID: UUID) {
+        id = artifact.id.uuidString
+        runId = runID.uuidString
+        toolCallId = artifact.toolCallID
+        messageId = artifact.messageID?.uuidString
+        sequence = artifact.sequence
+        type = artifact.type.rawValue
+        title = artifact.title
+        content = artifact.content
+        createdAt = ISO8601DateFormatter.shared.string(from: artifact.createdAt)
+    }
+
+    func artifact() throws -> AgentArtifact {
+        guard let id = UUID(uuidString: id), let type = AgentArtifactType(rawValue: type) else {
+            throw AgentRunRepositoryError.invalidRecord("artifact \(self.id)")
+        }
+        return AgentArtifact(
+            id: id,
+            type: type,
+            title: title,
+            content: content,
+            toolCallID: toolCallId,
+            messageID: messageId.flatMap(UUID.init(uuidString:)),
+            sequence: sequence,
+            createdAt: ISO8601DateFormatter.shared.date(from: createdAt) ?? Date.distantPast
+        )
+    }
 }
 
 struct AgentRunSnapshotRecord: Equatable, Sendable {
     var run: AgentRunRecord
-    var steps: [AgentRunStepRecord]
-    var toolOutputs: [AgentToolOutputRecord]
-    var traces: [AgentTraceRecord]
-    var artifacts: [AgentArtifactRecord]
+    var context: AgentRunContext
+    var messages: [AgentMessage]
+    var approvals: [AgentApprovalRequest]
+    var artifacts: [AgentArtifact]
+}
+
+enum AgentRunRepositoryError: Error, LocalizedError, Equatable, Sendable {
+    case invalidRecord(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidRecord(let value):
+            return "Invalid Agent persistence record: \(value)"
+        }
+    }
 }
 
 // MARK: - Repository
@@ -173,17 +248,17 @@ protocol AgentRunRepositoryProtocol: Sendable {
         context: AgentRunContext,
         createdAt: Date
     ) async throws -> AgentRunRecord
+    func appendMessage(_ message: AgentMessage, runStatus: AgentRunStatus?) async throws
+    func saveApproval(_ approval: AgentApprovalRequest, runStatus: AgentRunStatus) async throws
     func updateRunStatus(
         runID: UUID,
         status: AgentRunStatus,
-        assistantOutput: String?,
+        model: String?,
+        usage: AgentUsage?,
         errorMessage: String?,
         finishedAt: Date?
     ) async throws
-    func upsertStep(_ step: AgentRunStep, runID: UUID, index: Int, updatedAt: Date) async throws
-    func appendToolOutput(_ output: AgentToolOutput, runID: UUID, index: Int, createdAt: Date) async throws
-    func appendTrace(_ trace: AgentTraceSpan, runID: UUID, index: Int, createdAt: Date) async throws
-    func appendArtifact(_ artifact: AgentArtifact, runID: UUID, index: Int) async throws
+    func appendArtifact(_ artifact: AgentArtifact, runID: UUID) async throws
     func recentRuns(limit: Int) async throws -> [AgentRunRecord]
     func snapshot(runID: UUID) async throws -> AgentRunSnapshotRecord?
 }
@@ -209,8 +284,10 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
             title: definition.title,
             userPrompt: prompt,
             contextSource: context.sourceDescription,
+            contextJSON: try AgentPersistenceJSON.encode(context),
             status: AgentRunStatus.planning.rawValue,
-            assistantOutput: "",
+            model: nil,
+            usageJSON: nil,
             errorMessage: nil,
             createdAt: iso,
             updatedAt: iso,
@@ -222,110 +299,67 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
         return record
     }
 
+    func appendMessage(_ message: AgentMessage, runStatus: AgentRunStatus?) async throws {
+        let record = try AgentMessageRecord(message: message)
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        try await database.writer.write { db in
+            try record.insert(db)
+            try db.execute(
+                sql: """
+                UPDATE agent_runs
+                SET status = COALESCE(?, status), updated_at = ?
+                WHERE id = ?
+                """,
+                arguments: [runStatus?.rawValue, now, message.runID.uuidString]
+            )
+        }
+    }
+
+    func saveApproval(_ approval: AgentApprovalRequest, runStatus: AgentRunStatus) async throws {
+        let record = try AgentApprovalRecord(approval: approval)
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        try await database.writer.write { db in
+            try record.save(db)
+            try db.execute(
+                sql: "UPDATE agent_runs SET status = ?, updated_at = ? WHERE id = ?",
+                arguments: [runStatus.rawValue, now, approval.runID.uuidString]
+            )
+        }
+    }
+
     func updateRunStatus(
         runID: UUID,
         status: AgentRunStatus,
-        assistantOutput: String?,
+        model: String?,
+        usage: AgentUsage?,
         errorMessage: String?,
         finishedAt: Date?
     ) async throws {
         let now = ISO8601DateFormatter.shared.string(from: Date())
         let finished = finishedAt.map { ISO8601DateFormatter.shared.string(from: $0) }
+        let usageJSON = try usage.map(AgentPersistenceJSON.encode)
         try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE agent_runs
-                SET status = ?, assistant_output = COALESCE(?, assistant_output),
+                SET status = ?, model = COALESCE(?, model), usage_json = COALESCE(?, usage_json),
                     error_message = ?, updated_at = ?, finished_at = COALESCE(?, finished_at)
                 WHERE id = ?
                 """,
-                arguments: [status.rawValue, assistantOutput, errorMessage, now, finished, runID.uuidString]
+                arguments: [status.rawValue, model, usageJSON, errorMessage, now, finished, runID.uuidString]
             )
         }
     }
 
-    func upsertStep(_ step: AgentRunStep, runID: UUID, index: Int, updatedAt: Date = Date()) async throws {
-        let iso = ISO8601DateFormatter.shared.string(from: updatedAt)
-        let record = AgentRunStepRecord(
-            id: step.id.uuidString,
-            runId: runID.uuidString,
-            stepIndex: index,
-            title: step.title,
-            detail: step.detail,
-            status: step.status.rawValue,
-            updatedAt: iso
-        )
+    func appendArtifact(_ artifact: AgentArtifact, runID: UUID) async throws {
+        let record = AgentArtifactRecord(artifact: artifact, runID: runID)
+        let now = ISO8601DateFormatter.shared.string(from: Date())
         try await database.writer.write { db in
+            try record.insert(db)
             try db.execute(
-                sql: """
-                INSERT INTO agent_run_steps (id, run_id, step_index, title, detail, status, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    step_index = excluded.step_index,
-                    title = excluded.title,
-                    detail = excluded.detail,
-                    status = excluded.status,
-                    updated_at = excluded.updated_at
-                """,
-                arguments: [
-                    record.id, record.runId, record.stepIndex, record.title,
-                    record.detail, record.status, record.updatedAt
-                ]
+                sql: "UPDATE agent_runs SET updated_at = ? WHERE id = ?",
+                arguments: [now, runID.uuidString]
             )
-        }
-    }
-
-    func appendTrace(_ trace: AgentTraceSpan, runID: UUID, index: Int, createdAt: Date = Date()) async throws {
-        let record = AgentTraceRecord(
-            id: trace.id.uuidString,
-            runId: runID.uuidString,
-            traceIndex: index,
-            kind: trace.kind,
-            title: trace.title,
-            summary: trace.summary,
-            input: trace.input,
-            output: trace.output,
-            log: trace.log,
-            status: trace.status.rawValue,
-            relatedToolOutputId: trace.relatedToolOutputID?.uuidString,
-            relatedArtifactId: trace.relatedArtifactID?.uuidString,
-            createdAt: ISO8601DateFormatter.shared.string(from: createdAt)
-        )
-        try await database.writer.write { db in
-            try record.insert(db)
-        }
-    }
-
-    func appendToolOutput(_ output: AgentToolOutput, runID: UUID, index: Int, createdAt: Date = Date()) async throws {
-        let record = AgentToolOutputRecord(
-            id: output.id.uuidString,
-            runId: runID.uuidString,
-            outputIndex: index,
-            toolName: output.toolName,
-            summary: output.summary,
-            detail: output.detail,
-            input: output.input,
-            output: output.output,
-            log: output.log,
-            createdAt: ISO8601DateFormatter.shared.string(from: createdAt)
-        )
-        try await database.writer.write { db in
-            try record.insert(db)
-        }
-    }
-
-    func appendArtifact(_ artifact: AgentArtifact, runID: UUID, index: Int) async throws {
-        let record = AgentArtifactRecord(
-            id: artifact.id.uuidString,
-            runId: runID.uuidString,
-            artifactIndex: index,
-            type: artifact.type.rawValue,
-            title: artifact.title,
-            content: artifact.content,
-            createdAt: ISO8601DateFormatter.shared.string(from: artifact.createdAt)
-        )
-        try await database.writer.write { db in
-            try record.insert(db)
         }
     }
 
@@ -340,32 +374,50 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
 
     func snapshot(runID: UUID) async throws -> AgentRunSnapshotRecord? {
         try await database.writer.read { db in
-            guard let run = try AgentRunRecord.fetchOne(db, key: runID.uuidString) else {
-                return nil
-            }
-            let steps = try AgentRunStepRecord
+            guard let run = try AgentRunRecord.fetchOne(db, key: runID.uuidString) else { return nil }
+            let messageRecords = try AgentMessageRecord
                 .filter(Column("run_id") == runID.uuidString)
-                .order(Column("step_index").asc)
+                .order(Column("sequence").asc)
                 .fetchAll(db)
-            let traces = try AgentTraceRecord
+            let approvalRecords = try AgentApprovalRecord
                 .filter(Column("run_id") == runID.uuidString)
-                .order(Column("trace_index").asc)
+                .order(Column("sequence").asc)
                 .fetchAll(db)
-            let toolOutputs = try AgentToolOutputRecord
+            let artifactRecords = try AgentArtifactRecord
                 .filter(Column("run_id") == runID.uuidString)
-                .order(Column("output_index").asc)
+                .order(Column("sequence").asc)
                 .fetchAll(db)
-            let artifacts = try AgentArtifactRecord
-                .filter(Column("run_id") == runID.uuidString)
-                .order(Column("artifact_index").asc)
-                .fetchAll(db)
+            let messages = try messageRecords.map { try $0.message() }
+            try AgentMessageContract.validate(messages)
             return AgentRunSnapshotRecord(
                 run: run,
-                steps: steps,
-                toolOutputs: toolOutputs,
-                traces: traces,
-                artifacts: artifacts
+                context: try AgentPersistenceJSON.decode(AgentRunContext.self, from: run.contextJSON),
+                messages: messages,
+                approvals: try approvalRecords.map { try $0.approval() },
+                artifacts: try artifactRecords.map { try $0.artifact() }
             )
         }
+    }
+}
+
+private enum AgentPersistenceJSON {
+    static func encode<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(value)
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw AgentRunRepositoryError.invalidRecord("non-UTF8 JSON")
+        }
+        return string
+    }
+
+    static func decode<T: Decodable>(_ type: T.Type, from string: String) throws -> T {
+        guard let data = string.data(using: .utf8) else {
+            throw AgentRunRepositoryError.invalidRecord("non-UTF8 JSON")
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(type, from: data)
     }
 }

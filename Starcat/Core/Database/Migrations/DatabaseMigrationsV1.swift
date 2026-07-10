@@ -57,28 +57,9 @@ enum DatabaseMigrations {
     static func registerAll(into migrator: inout DatabaseMigrator) {
         registerV1(into: &migrator)
         registerV2(into: &migrator)
-        registerV3(into: &migrator)
-        registerV4(into: &migrator)
     }
 
-    // MARK: - v4-agent-tool-outputs：Agent 工具输出事件（2026-07-07）
-
-    private static func registerV4(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v4-agent-tool-outputs") { db in
-            try createAgentRunToolOutputs(db)
-        }
-    }
-
-    // MARK: - v3-agent-runs：Agent 运行历史（2026-07-07）
-
-    private static func registerV3(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v3-agent-runs") { db in
-            try createAgentRuns(db)
-            try createAgentRunSteps(db)
-            try createAgentRunTraces(db)
-            try createAgentArtifacts(db)
-        }
-    }
+    // MARK: - Agent run facts
 
     private static func createAgentRuns(_ db: Database) throws {
         try db.create(table: "agent_runs") { t in
@@ -87,8 +68,10 @@ enum DatabaseMigrations {
             t.column("title", .text).notNull()
             t.column("user_prompt", .text).notNull()
             t.column("context_source", .text).notNull()
+            t.column("context_json", .text).notNull()
             t.column("status", .text).notNull()
-            t.column("assistant_output", .text).notNull().defaults(to: "")
+            t.column("model", .text)
+            t.column("usage_json", .text)
             t.column("error_message", .text)
             t.column("created_at", .text).notNull()
             t.column("updated_at", .text).notNull()
@@ -98,55 +81,39 @@ enum DatabaseMigrations {
         try db.create(index: "idx_agent_runs_created", on: "agent_runs", columns: ["created_at"])
     }
 
-    private static func createAgentRunSteps(_ db: Database) throws {
-        try db.create(table: "agent_run_steps") { t in
+    private static func createAgentMessages(_ db: Database) throws {
+        try db.create(table: "agent_messages") { t in
             t.column("id", .text).primaryKey()
             t.column("run_id", .text).notNull()
                 .references("agent_runs", column: "id", onDelete: .cascade)
-            t.column("step_index", .integer).notNull()
-            t.column("title", .text).notNull()
-            t.column("detail", .text).notNull()
-            t.column("status", .text).notNull()
-            t.column("updated_at", .text).notNull()
-        }
-        try db.create(index: "idx_agent_run_steps_run_index", on: "agent_run_steps", columns: ["run_id", "step_index"])
-    }
-
-    private static func createAgentRunTraces(_ db: Database) throws {
-        try db.create(table: "agent_run_traces") { t in
-            t.column("id", .text).primaryKey()
-            t.column("run_id", .text).notNull()
-                .references("agent_runs", column: "id", onDelete: .cascade)
-            t.column("trace_index", .integer).notNull()
-            t.column("kind", .text).notNull()
-            t.column("title", .text).notNull()
-            t.column("summary", .text).notNull()
-            t.column("input", .text).notNull()
-            t.column("output", .text).notNull()
-            t.column("log", .text).notNull()
-            t.column("status", .text).notNull()
-            t.column("related_tool_output_id", .text)
-            t.column("related_artifact_id", .text)
+            t.column("role", .text).notNull()
+            t.column("turn", .integer).notNull()
+            t.column("sequence", .integer).notNull()
+            t.column("parts_json", .text).notNull()
+            t.column("usage_json", .text)
             t.column("created_at", .text).notNull()
+            t.uniqueKey(["run_id", "sequence"])
         }
-        try db.create(index: "idx_agent_run_traces_run_index", on: "agent_run_traces", columns: ["run_id", "trace_index"])
+        try db.create(index: "idx_agent_messages_run_sequence", on: "agent_messages", columns: ["run_id", "sequence"])
     }
 
-    private static func createAgentRunToolOutputs(_ db: Database) throws {
-        try db.create(table: "agent_run_tool_outputs") { t in
+    private static func createAgentApprovals(_ db: Database) throws {
+        try db.create(table: "agent_approvals") { t in
             t.column("id", .text).primaryKey()
             t.column("run_id", .text).notNull()
                 .references("agent_runs", column: "id", onDelete: .cascade)
-            t.column("output_index", .integer).notNull()
+            t.column("tool_call_id", .text).notNull()
             t.column("tool_name", .text).notNull()
-            t.column("summary", .text).notNull()
-            t.column("detail", .text).notNull()
-            t.column("input", .text).notNull()
-            t.column("output", .text).notNull()
-            t.column("log", .text).notNull()
+            t.column("input_json", .text).notNull()
+            t.column("permission", .text).notNull()
+            t.column("sequence", .integer).notNull()
+            t.column("status", .text).notNull()
             t.column("created_at", .text).notNull()
+            t.column("decided_at", .text)
+            t.uniqueKey(["run_id", "tool_call_id"])
         }
-        try db.create(index: "idx_agent_run_tool_outputs_run_index", on: "agent_run_tool_outputs", columns: ["run_id", "output_index"])
+        try db.create(index: "idx_agent_approvals_run_sequence", on: "agent_approvals", columns: ["run_id", "sequence"])
+        try db.create(index: "idx_agent_approvals_status", on: "agent_approvals", columns: ["status"])
     }
 
     private static func createAgentArtifacts(_ db: Database) throws {
@@ -154,13 +121,16 @@ enum DatabaseMigrations {
             t.column("id", .text).primaryKey()
             t.column("run_id", .text).notNull()
                 .references("agent_runs", column: "id", onDelete: .cascade)
-            t.column("artifact_index", .integer).notNull()
+            t.column("tool_call_id", .text)
+            t.column("message_id", .text)
+                .references("agent_messages", column: "id", onDelete: .setNull)
+            t.column("sequence", .integer).notNull()
             t.column("type", .text).notNull()
             t.column("title", .text).notNull()
             t.column("content", .text).notNull()
             t.column("created_at", .text).notNull()
         }
-        try db.create(index: "idx_agent_artifacts_run_index", on: "agent_artifacts", columns: ["run_id", "artifact_index"])
+        try db.create(index: "idx_agent_artifacts_run_sequence", on: "agent_artifacts", columns: ["run_id", "sequence"])
     }
 
     // MARK: - v2-undo-star：Unstar 撤销历史记录（2026-07-05）
@@ -239,6 +209,11 @@ enum DatabaseMigrations {
             try createActivityEvents(db)
             try createActivityAnnouncements(db)
             try createActivitySyncState(db)
+            // Agent 执行事实：run 先建，再按外键顺序建 messages / approvals / artifacts。
+            try createAgentRuns(db)
+            try createAgentMessages(db)
+            try createAgentApprovals(db)
+            try createAgentArtifacts(db)
             // 原 createReadmeTranslations 已删除（2026-06-15 HOM-68 v2 砍 DB 改纯磁盘）。
             // 翻译缓存现走 `DiskReadmeTranslationCache`，详见文件头「原 v7」段说明。
         }

@@ -4200,6 +4200,13 @@
         }
       }
     },
+    "agent.workspace.status.waitingForConfirmation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for Confirmation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待确认" } }
+      }
+    },
     "agent.workspace.status.running" : {
       "localizations" : {
         "en" : {

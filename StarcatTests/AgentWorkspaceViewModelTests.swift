@@ -176,37 +176,6 @@ struct AgentWorkspaceViewModelTests {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBAgentRunRepository(database: database)
         let runID = UUID(uuidString: "00000000-0000-0000-0000-000000001010")!
-        let step = AgentRunStep(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001011")!,
-            title: "历史步骤",
-            detail: "已完成",
-            status: .completed
-        )
-        let trace = AgentTraceSpan(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001012")!,
-            kind: "Tool",
-            title: "history.tool",
-            summary: "ok",
-            input: "input",
-            output: "output",
-            log: "log"
-        )
-        let toolOutput = AgentToolOutput(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001014")!,
-            toolName: "history.tool",
-            summary: "ok",
-            detail: "done",
-            input: "input",
-            output: "output",
-            log: "log"
-        )
-        let artifact = AgentArtifact(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001013")!,
-            type: .markdown,
-            title: "历史产物",
-            content: "# 历史",
-            createdAt: Date(timeIntervalSince1970: 1_788_000_120)
-        )
         let run = try await repository.createRun(
             id: runID,
             definition: BuiltInAgents.githubWeeklyReport,
@@ -214,14 +183,64 @@ struct AgentWorkspaceViewModelTests {
             context: AgentRunContext(sourceDescription: "Unit"),
             createdAt: Date(timeIntervalSince1970: 1_788_000_000)
         )
-        try await repository.upsertStep(step, runID: runID, index: 0, updatedAt: Date())
-        try await repository.appendToolOutput(toolOutput, runID: runID, index: 0, createdAt: Date())
-        try await repository.appendTrace(trace, runID: runID, index: 0, createdAt: Date())
-        try await repository.appendArtifact(artifact, runID: runID, index: 0)
+        let call = AgentToolCall(
+            id: "history-call",
+            name: "history_tool",
+            input: .object(["input": .string("input")]),
+            sequence: 1
+        )
+        let assistant = AgentMessage(
+            runID: runID,
+            role: .assistant,
+            turn: 0,
+            sequence: 1,
+            parts: [.toolCall(call)]
+        )
+        let result = AgentToolResultMessage(
+            toolCallID: call.id,
+            toolName: call.name,
+            output: .object(["value": .string("output")]),
+            isError: false,
+            status: .completed,
+            sequence: 2
+        )
+        let toolMessage = AgentMessage(
+            runID: runID,
+            role: .tool,
+            turn: 0,
+            sequence: 2,
+            parts: [.toolResult(result)]
+        )
+        let final = AgentMessage(
+            runID: runID,
+            role: .assistant,
+            turn: 1,
+            sequence: 3,
+            parts: [.text("# 历史")]
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("打开历史")]),
+            runStatus: .running
+        )
+        try await repository.appendMessage(assistant, runStatus: .running)
+        try await repository.appendMessage(toolMessage, runStatus: .running)
+        try await repository.appendMessage(final, runStatus: .running)
+        let artifact = AgentArtifact(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001013")!,
+            type: .markdown,
+            title: "历史产物",
+            content: "# 历史",
+            toolCallID: call.id,
+            messageID: toolMessage.id,
+            sequence: toolMessage.sequence,
+            createdAt: Date(timeIntervalSince1970: 1_788_000_120)
+        )
+        try await repository.appendArtifact(artifact, runID: runID)
         try await repository.updateRunStatus(
             runID: runID,
             status: .completed,
-            assistantOutput: "# 历史",
+            model: "test-model",
+            usage: .zero,
             errorMessage: nil,
             finishedAt: Date()
         )
@@ -236,9 +255,9 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.selectedHistoryRunID == run.id)
         #expect(viewModel.prompt == "打开历史")
         #expect(viewModel.status == .completed)
-        #expect(viewModel.steps.map(\.title) == ["历史步骤"])
-        #expect(viewModel.toolOutputs.map(\.toolName) == ["history.tool"])
-        #expect(viewModel.traceSpans.map(\.title) == ["history.tool"])
+        #expect(viewModel.steps.map(\.title) == ["history_tool"])
+        #expect(viewModel.toolOutputs.map(\.toolName) == ["history_tool"])
+        #expect(viewModel.traceSpans.map(\.title) == ["history_tool"])
         #expect(viewModel.selectedArtifact?.content == "# 历史")
         #expect(viewModel.assistantOutput == "# 历史")
     }

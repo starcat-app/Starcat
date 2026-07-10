@@ -20,6 +20,7 @@ final class AgentWorkspaceViewModel {
     private var contextProvider: any AgentRunContextProviding
     private var runRepository: (any AgentRunRepositoryProtocol)?
     private var runTask: Task<Void, Never>?
+    private var activeRunID: UUID?
 
     let agents: [AgentDefinition]
     var selectedAgentID: String
@@ -31,6 +32,8 @@ final class AgentWorkspaceViewModel {
     var toolOutputs: [AgentToolOutput] = []
     var traceSpans: [AgentTraceSpan] = []
     var pendingConfirmations: [AgentConfirmationAction] = []
+    var messages: [AgentMessage] = []
+    var usage: AgentUsage = .zero
     var artifacts: [AgentArtifact] = []
     var historyRuns: [AgentRunRecord] = []
     var selectedArtifactID: UUID?
@@ -40,7 +43,7 @@ final class AgentWorkspaceViewModel {
 
     init(
         agents: [AgentDefinition] = BuiltInAgents.all,
-        runtime: any AgentRuntime = DefaultAgentRuntime(),
+        runtime: any AgentRuntime = UnavailableAgentRuntime(),
         contextProvider: any AgentRunContextProviding = EmptyAgentRunContextProvider()
     ) {
         self.agents = agents
@@ -60,7 +63,7 @@ final class AgentWorkspaceViewModel {
     }
 
     var isRunning: Bool {
-        status == .planning || status == .running
+        status == .planning || status == .running || status == .waitingForConfirmation
     }
 
     func selectAgent(_ agent: AgentDefinition) {
@@ -115,6 +118,8 @@ final class AgentWorkspaceViewModel {
         toolOutputs = []
         traceSpans = []
         pendingConfirmations = []
+        messages = []
+        usage = .zero
         artifacts = []
         selectedArtifactID = nil
         assistantOutput = ""
@@ -143,9 +148,14 @@ final class AgentWorkspaceViewModel {
     }
 
     func cancel() {
+        let runtime = runtime
+        let runID = activeRunID
         runTask?.cancel()
         runTask = nil
         status = .cancelled
+        if let runID {
+            Task { await runtime.send(.cancel(runID: runID)) }
+        }
     }
 
     func copySelectedArtifact() {
@@ -186,8 +196,11 @@ final class AgentWorkspaceViewModel {
             upsert(span)
         case .confirmationRequested(let action):
             pendingConfirmations.append(action)
-        case .messageAppended, .usageUpdated:
-            break
+        case .messageAppended(let message):
+            activeRunID = message.runID
+            messages.append(message)
+        case .usageUpdated(let nextUsage):
+            usage = nextUsage
         case .assistantDelta(let text):
             assistantOutput += text
         case .artifactCreated(let artifact):
@@ -231,64 +244,99 @@ final class AgentWorkspaceViewModel {
         prompt = snapshot.run.userPrompt
         status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
         planSteps = []
-        steps = snapshot.steps.map(Self.step(from:))
-        toolOutputs = snapshot.toolOutputs.map(Self.toolOutput(from:))
-        traceSpans = snapshot.traces.map(Self.trace(from:))
-        pendingConfirmations = []
-        artifacts = snapshot.artifacts.map(Self.artifact(from:))
+        messages = snapshot.messages
+        usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in
+            var merged = partial
+            merged.merge(next)
+            return merged
+        }
+        let projection = Self.legacyProjection(from: snapshot.messages)
+        steps = projection.steps
+        toolOutputs = projection.outputs
+        traceSpans = projection.traces
+        pendingConfirmations = snapshot.approvals.filter { $0.status == .pending }.map { approval in
+            AgentConfirmationAction(
+                id: approval.id,
+                title: approval.toolName,
+                detail: approval.permission.rawValue,
+                toolName: approval.toolName,
+                input: (try? approval.input.jsonString()) ?? "{}"
+            )
+        }
+        artifacts = snapshot.artifacts
         selectedArtifactID = artifacts.first?.id
-        assistantOutput = snapshot.run.assistantOutput
+        assistantOutput = Self.finalAssistantText(snapshot.messages)
         errorMessage = snapshot.run.errorMessage
     }
 
-    private static func step(from record: AgentRunStepRecord) -> AgentRunStep {
-        AgentRunStep(
-            id: uuid(record.id),
-            title: record.title,
-            detail: record.detail,
-            status: AgentStepStatus(rawValue: record.status) ?? .pending
-        )
+    private static func legacyProjection(
+        from messages: [AgentMessage]
+    ) -> (steps: [AgentRunStep], outputs: [AgentToolOutput], traces: [AgentTraceSpan]) {
+        let calls = messages.flatMap { message in
+            message.parts.compactMap { part -> AgentToolCall? in
+                guard case .toolCall(let call) = part else { return nil }
+                return call
+            }
+        }
+        let results = Dictionary(uniqueKeysWithValues: messages.flatMap { message in
+            message.parts.compactMap { part -> (String, AgentToolResultMessage)? in
+                guard case .toolResult(let result) = part else { return nil }
+                return (result.toolCallID, result)
+            }
+        })
+        let steps = calls.map { call in
+            let result = results[call.id]
+            return AgentRunStep(
+                title: call.name,
+                detail: result?.status.rawValue ?? "pending",
+                status: stepStatus(result?.status)
+            )
+        }
+        let outputs = calls.compactMap { call -> AgentToolOutput? in
+            guard let result = results[call.id] else { return nil }
+            let output = (try? result.output.jsonString()) ?? "{}"
+            return AgentToolOutput(
+                toolName: call.name,
+                summary: result.status.rawValue,
+                detail: output,
+                input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}"),
+                output: output,
+                log: "elapsed_ms=\(result.elapsedMilliseconds)"
+            )
+        }
+        let traces = outputs.map { output in
+            AgentTraceSpan(
+                kind: "Tool",
+                title: output.toolName,
+                summary: output.summary,
+                input: output.input,
+                output: output.output,
+                log: output.log,
+                status: output.summary == AgentToolResultStatus.completed.rawValue ? .completed : .failed,
+                relatedToolOutputID: output.id
+            )
+        }
+        return (steps, outputs, traces)
     }
 
-    private static func trace(from record: AgentTraceRecord) -> AgentTraceSpan {
-        AgentTraceSpan(
-            id: uuid(record.id),
-            kind: record.kind,
-            title: record.title,
-            summary: record.summary,
-            input: record.input,
-            output: record.output,
-            log: record.log,
-            status: AgentStepStatus(rawValue: record.status) ?? .pending,
-            relatedToolOutputID: record.relatedToolOutputId.flatMap(UUID.init(uuidString:)),
-            relatedArtifactID: record.relatedArtifactId.flatMap(UUID.init(uuidString:))
-        )
+    private static func stepStatus(_ status: AgentToolResultStatus?) -> AgentStepStatus {
+        switch status {
+        case .completed:
+            return .completed
+        case .skipped:
+            return .skipped
+        case .failed, .timedOut, .rejected:
+            return .failed
+        case nil:
+            return .pending
+        }
     }
 
-    private static func toolOutput(from record: AgentToolOutputRecord) -> AgentToolOutput {
-        AgentToolOutput(
-            id: uuid(record.id),
-            toolName: record.toolName,
-            summary: record.summary,
-            detail: record.detail,
-            input: record.input,
-            output: record.output,
-            log: record.log
-        )
-    }
-
-    private static func artifact(from record: AgentArtifactRecord) -> AgentArtifact {
-        AgentArtifact(
-            id: uuid(record.id),
-            type: AgentArtifactType(rawValue: record.type) ?? .log,
-            title: record.title,
-            content: record.content,
-            createdAt: ISO8601DateFormatter.shared.date(from: record.createdAt) ?? Date()
-        )
-    }
-
-    private static func uuid(_ raw: String) -> UUID {
-        UUID(uuidString: raw) ?? UUID()
+    private static func finalAssistantText(_ messages: [AgentMessage]) -> String {
+        messages.reversed().first(where: { $0.role == .assistant })?.parts.compactMap { part in
+            guard case .text(let text) = part else { return nil }
+            return text
+        }.joined(separator: "\n") ?? ""
     }
 
     private func suggestedFilename(for artifact: AgentArtifact) -> String {

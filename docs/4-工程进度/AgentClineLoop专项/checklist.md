@@ -94,7 +94,7 @@
 - [x] Prompt 注入 mode guardrails、preferred language、工具可见性和 External Search 开关/provider/privacy。
 - [x] 新增 `AgentContextBudgeter`,分别限制 repo snapshot、历史消息、tool-result、外部搜索和 artifact 草稿。
 - [x] 新增 `AgentMessageCompactor`,超预算时保留 system、最近轮次和 tool-call/tool-result 关联摘要。
-- [ ] 删除 `OpenAIAgentTextGenerator.systemPrompt(for:)` 中分散的核心提示词。
+- [x] 删除 `OpenAIAgentTextGenerator.systemPrompt(for:)` 中分散的核心提示词。
 - [ ] 补 PromptBuilder/ContextBudgeter/Compactor 单测: mode、locale、search 开关、tool visibility、预算边界和关联消息保留。
 
 ### 5.3 Message Contract 与统一顺序
@@ -138,30 +138,30 @@
 
 - [x] 新增 `AgentRunLimits`: maxIterations/maxToolCalls/maxTokens/maxDuration/toolTimeout。
 - [x] 新增 `AgentRunSession` actor,持有 runID、messages、iteration、usage、pendingApproval、terminalState 和 command channel。
-- [ ] 新增模型驱动 `LoopAgentRuntime`,直接替换线性 `DefaultAgentRuntime` 执行路径。
-- [ ] Runtime 创建并持久化 user message,使用 PromptBuilder 发起第一轮模型调用。
-- [ ] 每轮持久化 assistant message、reasoning、usage 和 tool calls。
+- [x] 新增模型驱动 `LoopAgentRuntime`,直接替换线性 `DefaultAgentRuntime` 执行路径。
+- [x] Runtime 创建并持久化 user message,使用 PromptBuilder 发起第一轮模型调用。
+- [x] 每轮持久化 assistant message、reasoning、usage 和 tool calls。
 - [x] 无 tool-call 时以 assistant 最终响应完成 run。
 - [x] 有 tool-call 时校验并执行工具,追加 tool-result 后进入下一轮模型调用。
 - [x] 多个只读 tool-call 按确定顺序执行;第一版不并行写入工具。
 - [x] unknown/invalid/failed/skipped/timeout/rejected 结果均回灌模型。
-- [~] `completesRun` 工具已按执行顺序提交 artifact；最终 assistant/submit 持久化待事实表接入。
+- [x] `completesRun` 工具提交 artifact 后仍持久化最终 assistant/submit 状态。
 - [x] 达到迭代、工具、token 或时间预算时进入明确失败终态。
 - [ ] cancel 通过 session command channel 生效,只允许写入一次终态。
-- [ ] 删除人为 UI 演示延迟和被替代的固定工具执行逻辑。
+- [x] 删除人为 UI 演示延迟和被替代的固定工具执行逻辑。
 - [ ] 补主动选工具、多轮调用、无工具完成、并行只读调用、错误回灌、预算耗尽、取消和终态竞争单测。
 
 ### 5.7 持久化与历史恢复
 
-- [ ] 更新 Agent 数据库 schema,以 messages/parts/tool calls/tool results/usage/approvals 为事实表。
-- [ ] 所有事实记录保存 runID、turn、sequence、createdAt 和关联 ID。
-- [ ] artifact 保存创建它的 toolCallID/messageID/sequence。
+- [x] 更新 Agent 数据库 schema,以 messages/parts/tool calls/tool results/usage/approvals 为事实表。
+- [x] 所有事实记录保存 runID、turn、sequence、createdAt 和关联 ID。
+- [x] artifact 保存创建它的 toolCallID/messageID/sequence。
 - [ ] pending approval 保存 tool input、policy、状态和决策时间。
-- [ ] 每次 message/tool-result/approval 追加与 run 状态更新保持事务一致。
-- [ ] 历史恢复按 sequence 重建完整 message timeline,不依赖 step/trace 猜测顺序。
-- [ ] 恢复 completed/failed/cancelled/waitingForConfirmation 状态。
+- [x] 每次 message/tool-result/approval 追加与 run 状态更新保持事务一致。
+- [x] 历史恢复按 sequence 重建完整 message timeline,不依赖 step/trace 猜测顺序。
+- [x] 恢复 completed/failed/cancelled/waitingForConfirmation 状态。
 - [ ] App 重启后可查看 pending approval,但必须由用户明确操作后才能继续执行。
-- [ ] 删除被新事实表取代的 v1 投影存储,不保留兼容迁移代码。
+- [x] 删除被新事实表取代的 step/trace/tool-output 投影存储,不保留兼容迁移代码。
 - [ ] 补完整 run、失败 run、取消 run、pending approval、artifact 关联和顺序恢复单测。
 
 ### 5.8 Approval 闭环
