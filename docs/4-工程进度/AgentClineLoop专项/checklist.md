@@ -205,8 +205,8 @@
 - [x] artifact 节点按 sequence 位于实际生成位置,点击联动右侧 Inspector。
 - [x] Inspector 只展示当前选中 artifact、pending approval 或 run summary,不按 Agent 写专用假面板。
 - [ ] 复制、导出、artifact 选择继续使用真实状态并补错误反馈。
-- [~] 已删除固定 step kind 猜测、completed fallback、静态演示延迟和旧 UI 事件;空附件按钮待附件功能闭环。
-- [ ] 没有附件能力前不显示附件按钮;不得保留空 action。
+- [x] 删除固定 step kind 猜测、completed fallback、空附件按钮、静态演示延迟和其他占位行为。
+- [x] 附件按钮接入真实 UTF-8 文本选择、大小限制、冻结上下文、持久化和 Prompt budget;不保留空 action。
 - [x] 空工作台不注入 demo prompt、demo plan、demo message 或 demo artifact。
 - [~] 已补 timeline ordering 与历史恢复单测;流式合并、artifact selection、approval 操作和空态覆盖待补。
 

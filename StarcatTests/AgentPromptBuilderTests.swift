@@ -84,6 +84,34 @@ struct AgentPromptBuilderTests {
         #expect(block.contains("private=false"))
     }
 
+    @Test("文本附件按数量和字符预算进入首轮 prompt")
+    func attachmentBudget() {
+        let budgeter = AgentContextBudgeter(budget: AgentContextBudget(
+            maxRepositories: 1,
+            maxRepositoryDescriptionCharacters: 28,
+            maxUserInputCharacters: 100,
+            maxExternalContextCharacters: 100,
+            maxAttachmentCount: 1,
+            maxAttachmentCharacters: 60,
+            maxToolResultCharacters: 100,
+            maxMessageCharacters: 1_000
+        ))
+        let context = AgentRunContext(
+            sourceDescription: "Unit",
+            attachments: [
+                AgentPromptAttachment(name: "requirements.md", content: String(repeating: "a", count: 200)),
+                AgentPromptAttachment(name: "ignored.txt", content: "ignored")
+            ]
+        )
+
+        let block = budgeter.attachmentSnapshotBlock(context)
+
+        #expect(block.contains("requirements.md"))
+        #expect(block.contains("truncated by Agent context budget"))
+        #expect(block.contains("1 attachments omitted"))
+        #expect(!block.contains("ignored.txt"))
+    }
+
     @Test("消息压缩保留首个目标和最近完整 tool turn")
     func compactsMessagesByTurn() {
         let runID = UUID()

@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 
 @MainActor
 @Observable
@@ -34,6 +35,7 @@ final class AgentWorkspaceViewModel {
     var historyRuns: [AgentRunRecord] = []
     var selectedArtifactID: UUID?
     var selectedHistoryRunID: String?
+    var attachments: [AgentPromptAttachment] = []
     var assistantReasoningOutput: String = ""
     var assistantOutput: String = ""
     var errorMessage: String?
@@ -126,12 +128,15 @@ final class AgentWorkspaceViewModel {
 
         let contextProvider = contextProvider
         let runtime = runtime
+        let promptAttachments = attachments
+        attachments = []
 
         runTask = Task { [weak self] in
-            let context = await contextProvider.makeContext(
+            var context = await contextProvider.makeContext(
                 definition: selectedAgent,
                 prompt: effectivePrompt
             )
+            context.attachments = promptAttachments
             let stream = runtime.run(
                 definition: selectedAgent,
                 prompt: effectivePrompt,
@@ -163,6 +168,35 @@ final class AgentWorkspaceViewModel {
 
     func reject(_ approval: AgentApprovalRequest) {
         sendApprovalDecision(approval, decision: .rejected)
+    }
+
+    func attachTextFiles() {
+        let panel = NSOpenPanel()
+        panel.title = String.l10n("agent.workspace.attachment.panelTitle")
+        panel.allowedContentTypes = [.plainText, .sourceCode, .json]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+
+        do {
+            let additions = try panel.urls.map(Self.loadAttachment)
+            let merged = attachments + additions
+            guard merged.count <= Self.maxAttachmentCount else {
+                throw AgentAttachmentError.tooManyFiles(maximum: Self.maxAttachmentCount)
+            }
+            guard merged.reduce(0, { $0 + $1.byteCount }) <= Self.maxAttachmentTotalBytes else {
+                throw AgentAttachmentError.totalTooLarge(maximumKilobytes: Self.maxAttachmentTotalBytes / 1_024)
+            }
+            attachments = merged
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func removeAttachment(_ attachment: AgentPromptAttachment) {
+        guard !isRunning else { return }
+        attachments.removeAll { $0.id == attachment.id }
     }
 
     func copySelectedArtifact() {
@@ -298,6 +332,52 @@ final class AgentWorkspaceViewModel {
             return "starcat-weekly-report.md"
         case .log:
             return "starcat-agent-run.txt"
+        }
+    }
+
+    private static let maxAttachmentCount = 5
+    private static let maxAttachmentFileBytes = 64 * 1_024
+    private static let maxAttachmentTotalBytes = 128 * 1_024
+
+    private static func loadAttachment(from url: URL) throws -> AgentPromptAttachment {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url, options: .mappedIfSafe)
+        } catch {
+            throw AgentAttachmentError.readFailed(name: url.lastPathComponent, detail: error.localizedDescription)
+        }
+        guard data.count <= maxAttachmentFileBytes else {
+            throw AgentAttachmentError.fileTooLarge(
+                name: url.lastPathComponent,
+                maximumKilobytes: maxAttachmentFileBytes / 1_024
+            )
+        }
+        guard let content = String(data: data, encoding: .utf8) else {
+            throw AgentAttachmentError.notUTF8(name: url.lastPathComponent)
+        }
+        return AgentPromptAttachment(name: url.lastPathComponent, content: content)
+    }
+}
+
+private enum AgentAttachmentError: LocalizedError {
+    case tooManyFiles(maximum: Int)
+    case fileTooLarge(name: String, maximumKilobytes: Int)
+    case totalTooLarge(maximumKilobytes: Int)
+    case notUTF8(name: String)
+    case readFailed(name: String, detail: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .tooManyFiles(let maximum):
+            return String(format: String.l10n("agent.workspace.attachment.tooManyFormat"), maximum)
+        case .fileTooLarge(let name, let maximumKilobytes):
+            return String(format: String.l10n("agent.workspace.attachment.fileTooLargeFormat"), name, maximumKilobytes)
+        case .totalTooLarge(let maximumKilobytes):
+            return String(format: String.l10n("agent.workspace.attachment.totalTooLargeFormat"), maximumKilobytes)
+        case .notUTF8(let name):
+            return String(format: String.l10n("agent.workspace.attachment.notUTF8Format"), name)
+        case .readFailed(let name, let detail):
+            return String(format: String.l10n("agent.workspace.attachment.readFailedFormat"), name, detail)
         }
     }
 }

@@ -139,12 +139,15 @@ struct AgentWorkspaceViewModelTests {
             contextProvider: StaticAgentRunContextProvider(context: context)
         )
         viewModel.prompt = "生成本周 GitHub 热门项目周刊"
+        viewModel.attachments = [AgentPromptAttachment(name: "brief.md", content: "重点关注本地 AI 工具")]
 
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
 
         #expect(viewModel.selectedArtifact?.content.contains("Unit Snapshot: 1 repo") == true)
         #expect(viewModel.selectedArtifact?.content.contains("groue/GRDB.swift") == true)
+        #expect(viewModel.selectedArtifact?.content.contains("brief.md: 重点关注本地 AI 工具") == true)
+        #expect(viewModel.attachments.isEmpty)
     }
 
     @Test("空 prompt 不会自动使用默认 Agent 指令运行")
@@ -336,11 +339,12 @@ private struct ContextEchoAgentRuntime: AgentRuntime {
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
             let repoNames = context.repos.map(\.fullName).joined(separator: ", ")
+            let attachmentText = context.attachments.map { "\($0.name): \($0.content)" }.joined(separator: "\n")
             continuation.yield(.runStarted(title: definition.title))
             continuation.yield(.artifactCreated(AgentArtifact(
                 type: .markdown,
                 title: "Context Echo",
-                content: "\(context.sourceDescription)\n\(repoNames)"
+                content: "\(context.sourceDescription)\n\(repoNames)\n\(attachmentText)"
             )))
             continuation.yield(.runCompleted)
             continuation.finish()

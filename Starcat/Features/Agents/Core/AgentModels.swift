@@ -157,18 +157,39 @@ struct AgentRunContext: Codable, Hashable, Sendable {
     var sourceDescription: String
     var generatedAt: Date
     var repos: [AgentRepoSnapshot]
+    var attachments: [AgentPromptAttachment]
 
     init(
         sourceDescription: String,
         generatedAt: Date = Date(),
-        repos: [AgentRepoSnapshot] = []
+        repos: [AgentRepoSnapshot] = [],
+        attachments: [AgentPromptAttachment] = []
     ) {
         self.sourceDescription = sourceDescription
         self.generatedAt = generatedAt
         self.repos = repos
+        self.attachments = attachments
     }
 
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
+}
+
+/// 用户显式附加到一次 run 的 UTF-8 文本快照。
+///
+/// 只保存文件名和内容，不保存本地绝对路径；历史审计可以回放输入，但不会把用户目录
+/// 结构泄露给模型或写入数据库。
+struct AgentPromptAttachment: Codable, Identifiable, Hashable, Sendable {
+    var id: UUID
+    var name: String
+    var content: String
+
+    init(id: UUID = UUID(), name: String, content: String) {
+        self.id = id
+        self.name = name
+        self.content = content
+    }
+
+    var byteCount: Int { content.utf8.count }
 }
 
 /// Agent 可消费的仓库快照。

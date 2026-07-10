@@ -3709,6 +3709,62 @@
         }
       }
     },
+    "agent.workspace.attachment.fileTooLargeFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$@ exceeds the %2$d KB per-file limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%1$@ 超过单文件 %2$d KB 限制。" } }
+      }
+    },
+    "agent.workspace.attachment.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attach text files" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加文本附件" } }
+      }
+    },
+    "agent.workspace.attachment.notUTF8Format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ is not a UTF-8 text file." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 不是 UTF-8 文本文件。" } }
+      }
+    },
+    "agent.workspace.attachment.panelTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attach Text Files" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加文本附件" } }
+      }
+    },
+    "agent.workspace.attachment.readFailedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not read %1$@: %2$@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法读取 %1$@：%2$@" } }
+      }
+    },
+    "agent.workspace.attachment.remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove attachment" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除附件" } }
+      }
+    },
+    "agent.workspace.attachment.tooManyFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "A run can include at most %d attachments." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每次运行最多添加 %d 个附件。" } }
+      }
+    },
+    "agent.workspace.attachment.totalTooLargeFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attachments exceed the %d KB total limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "附件总大小超过 %d KB 限制。" } }
+      }
+    },
     "agent.workspace.badge.preview" : {
       "localizations" : {
         "en" : {

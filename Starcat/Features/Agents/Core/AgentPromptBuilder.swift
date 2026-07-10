@@ -171,6 +171,7 @@ struct AgentPromptBuilder: AgentPromptBuilding {
         context: AgentPromptContext
     ) -> AgentPromptTurnRequest {
         let boundedRepos = budgeter.repositorySnapshotBlock(context.runContext)
+        let boundedAttachments = budgeter.attachmentSnapshotBlock(context.runContext)
         let compactedMessages = compactor.compact(messages)
         let prompt = messages.isEmpty ? """
         # User Goal
@@ -181,6 +182,9 @@ struct AgentPromptBuilder: AgentPromptBuilding {
         generated_at: \(ISO8601DateFormatter.shared.string(from: context.runContext.generatedAt))
         repositories:
         \(boundedRepos)
+
+        # User Attachments
+        \(boundedAttachments)
 
         Select tools only when they materially advance the goal. Return a final answer only after required evidence is available.
         """ : ""
@@ -210,6 +214,8 @@ struct AgentContextBudget: Hashable, Sendable {
     var maxRepositoryDescriptionCharacters = 400
     var maxUserInputCharacters = 4_000
     var maxExternalContextCharacters = 8_000
+    var maxAttachmentCount = 5
+    var maxAttachmentCharacters = 12_000
     var maxToolResultCharacters = 8_000
     var maxMessageCharacters = 24_000
 }
@@ -233,6 +239,28 @@ struct AgentContextBudgeter: Sendable {
         return omitted == 0
             ? lines.joined(separator: "\n")
             : lines.joined(separator: "\n") + "\n- [\(omitted) repositories omitted by context budget]"
+    }
+
+    func attachmentSnapshotBlock(_ context: AgentRunContext) -> String {
+        let attachments = context.attachments.prefix(max(0, budget.maxAttachmentCount))
+        guard !attachments.isEmpty, budget.maxAttachmentCharacters > 0 else { return "- none" }
+        let perAttachmentLimit = max(1, budget.maxAttachmentCharacters / attachments.count)
+        var remaining = budget.maxAttachmentCharacters
+        var blocks: [String] = []
+
+        for attachment in attachments {
+            guard remaining > 0 else { break }
+            let contentLimit = min(perAttachmentLimit, remaining)
+            let content = bounded(attachment.content, limit: contentLimit)
+            remaining -= content.count
+            blocks.append("## \(attachment.name)\n\(content)")
+        }
+
+        let omitted = max(0, context.attachments.count - attachments.count)
+        if omitted > 0 {
+            blocks.append("[\(omitted) attachments omitted by context budget]")
+        }
+        return blocks.joined(separator: "\n\n")
     }
 
     func bounded(_ text: String, limit: Int) -> String {

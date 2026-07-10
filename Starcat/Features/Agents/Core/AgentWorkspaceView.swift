@@ -398,6 +398,10 @@ struct AgentWorkspaceView: View {
 
     private var agentComposerInputBox: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !viewModel.attachments.isEmpty {
+                attachmentStrip
+            }
+
             TextField(String.l10n("agent.workspace.composer.placeholder"), text: $viewModel.prompt, axis: .vertical)
                 .font(agentFont(.body))
                 .textFieldStyle(.plain)
@@ -409,7 +413,18 @@ struct AgentWorkspaceView: View {
             HStack(spacing: 8) {
                 Spacer()
 
-                composerActionIcon("paperclip")
+                Button {
+                    viewModel.attachTextFiles()
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(agentFont(.caption))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.secondary)
+                .help("agent.workspace.attachment.help")
+                .disabled(viewModel.isRunning)
 
                 Button {
                     viewModel.run()
@@ -448,16 +463,33 @@ struct AgentWorkspaceView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
     }
 
-    private func composerActionIcon(_ icon: String) -> some View {
-        Button {
-        } label: {
-            Image(systemName: icon)
-                .font(agentFont(.caption))
-                .frame(width: 26, height: 26)
+    private var attachmentStrip: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(viewModel.attachments) { attachment in
+                    HStack(spacing: 5) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                        Text(attachment.name)
+                            .lineLimit(1)
+                        Button {
+                            viewModel.removeAttachment(attachment)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help("agent.workspace.attachment.remove")
+                    }
+                    .font(agentFont(.caption))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(.secondary)
+        .scrollIndicators(.hidden)
     }
 
     // MARK: - Helpers
