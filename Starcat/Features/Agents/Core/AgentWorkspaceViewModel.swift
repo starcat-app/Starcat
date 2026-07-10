@@ -203,7 +203,9 @@ final class AgentWorkspaceViewModel {
         guard let content = selectedArtifact?.content else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(content, forType: .string)
+        if !pasteboard.setString(content, forType: .string) {
+            errorMessage = String.l10n("agent.workspace.inspector.copyFailed")
+        }
     }
 
     func exportSelectedArtifact() {
@@ -216,7 +218,10 @@ final class AgentWorkspaceViewModel {
         do {
             try artifact.content.write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = String(
+                format: String.l10n("agent.workspace.inspector.exportFailedFormat"),
+                error.localizedDescription
+            )
         }
     }
 

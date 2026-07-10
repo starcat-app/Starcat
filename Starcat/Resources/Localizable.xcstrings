@@ -4300,6 +4300,13 @@
         }
       }
     },
+    "agent.workspace.inspector.copyFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not copy the selected artifact to the clipboard." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法将当前产出物复制到剪贴板。" } }
+      }
+    },
     "agent.workspace.inspector.export" : {
       "localizations" : {
         "en" : {
@@ -4314,6 +4321,13 @@
             "value" : "导出"
           }
         }
+      }
+    },
+    "agent.workspace.inspector.exportFailedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not export the selected artifact: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法导出当前产出物：%@" } }
       }
     },
     "agent.workspace.inspector.noArtifacts" : {
