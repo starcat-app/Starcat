@@ -111,8 +111,8 @@
 
 ### 5.4 Tool Schema 与执行策略
 
-- [ ] 新增可 Codable/Sendable 的 `AgentJSONValue`。
-- [ ] 新增 `AgentJSONSchema`,支持 object/string/number/integer/boolean/array/enum/required/default/description。
+- [x] 新增可 Codable/Sendable 的 `AgentJSONValue`。
+- [x] 新增 `AgentJSONSchema`,支持 object/string/number/integer/boolean/array/enum/required/default/description。
 - [ ] 新增 `AgentToolDefinition`: name/description/inputSchema/permission/completesRun/timeout/retryPolicy。
 - [ ] `AgentTool` 改为提供 definition,并按 `AgentToolCall` 执行。
 - [ ] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
