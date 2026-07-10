@@ -6084,6 +6084,23 @@
         }
       }
     },
+    "ai.client.error.invalidChatHistoryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid AI chat history: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 对话历史无效：%@"
+          }
+        }
+      }
+    },
     "ai.client.error.missingAPIKey" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -256,6 +256,8 @@ final class ReadmeTranslationService {
                 case .delta(let delta):
                     accumulated += delta
                     onDelta?(accumulated)
+                case .reasoningDelta, .toolCallDelta, .usage:
+                    continue
                 case .completed(let response):
                     return response.content
                 }

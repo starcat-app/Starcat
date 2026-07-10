@@ -364,7 +364,7 @@ final class ReadmeTranslationViewModel {
             switch ai {
             case .missingAPIKey, .invalidBaseURL:
                 return .aiConfiguration
-            case .emptyResponse, .responseTruncated, .modelListRequestFailed:
+            case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed:
                 return .other
             }
         }

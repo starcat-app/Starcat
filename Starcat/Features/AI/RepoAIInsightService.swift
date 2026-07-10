@@ -528,6 +528,8 @@ final class RepoAIInsightService {
             case .delta(let delta):
                 accumulated += delta
                 onDelta?(delta)
+            case .reasoningDelta, .toolCallDelta, .usage:
+                continue
             case .completed(let response):
                 return response.content
             }
@@ -701,6 +703,8 @@ final class RepoAIInsightService {
                 case .delta(let delta):
                     accumulated += delta
                     onDelta?(accumulated)
+                case .reasoningDelta, .toolCallDelta, .usage:
+                    continue
                 case .completed(let response):
                     return response.content
                 }

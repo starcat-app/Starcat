@@ -36,20 +36,62 @@ enum AIChatResponseFormat: Equatable, Sendable {
 
 /// 多轮对话用的单条消息。
 ///
-/// 设计动机（HOM-150）：
-/// - 原 `AIChatRequest` 只能表达"单轮 system + user prompt"，无法承载详情页 AI
-///   助手窗口里的多轮对话（用户连续追问 → 模型基于上下文回答）。
-/// - 这里只加最小够用的字段（role + content），不引入 tool_call / refusal /
-///   audio 等高级特性。Starcat 的 chat UI 目前只展示文本气泡，更多字段会被静默丢弃，
-///   等真有需求再扩展。
+/// assistant tool-call 与对应 tool-result 必须保持独立 role 和 call id，provider 才能在
+/// 下一轮继续推理；把它们拼进文本会破坏 OpenAI-compatible 的消息关联协议。
 struct AIChatMessage: Equatable, Sendable {
     enum Role: String, Sendable {
         case user
         case assistant
+        case tool
     }
 
     var role: Role
-    var content: String
+    var content: String = ""
+    var reasoningContent: String?
+    var toolCalls: [AIChatToolCall] = []
+    var toolCallID: String?
+}
+
+/// OpenAI-compatible function tool 的模型可见声明。
+struct AIChatTool: Equatable, Sendable {
+    var name: String
+    var description: String
+    var inputSchema: AgentJSONSchema
+    var strict: Bool = false
+}
+
+/// 模型生成的一次 function tool-call。
+///
+/// `arguments` 保留 provider 返回的原始 JSON 字符串。模型输出不可信，必须由 Agent
+/// Runtime 解码并按工具 schema 校验，AI adapter 不能提前丢失无效输入的审计证据。
+struct AIChatToolCall: Equatable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var arguments: String
+}
+
+/// 流式响应中一段尚未组装完成的 tool-call。
+struct AIChatToolCallDelta: Equatable, Sendable {
+    var index: Int
+    var id: String?
+    var name: String?
+    var argumentsFragment: String?
+}
+
+enum AIChatToolChoice: Equatable, Sendable {
+    case none
+    case auto
+    case required
+    case tool(String)
+}
+
+/// 单次模型调用的 token 使用量。
+struct AIChatUsage: Equatable, Sendable {
+    var inputTokens: Int
+    var outputTokens: Int
+    var cachedTokens: Int
+    var reasoningTokens: Int
+    var totalTokens: Int
 }
 
 /// 参数化 Chat 请求。
@@ -61,16 +103,24 @@ struct AIChatRequest: Equatable, Sendable {
     /// 为什么单独拆出来而不是把整段历史拼进 `userPrompt`：
     /// - 走原生 messages 数组让模型识别 role，质量明显优于"all-in-one user 字符串"；
     /// - 流式响应和非流式响应都能复用同一份历史，不需要在两条路径上重复字符串拼接；
-    /// - 旧调用方（摘要、标签）传空数组即可，保持二进制兼容。
+    /// - 摘要、标签等单轮功能传空数组，Agent Runtime 则传完整 tool 消息链。
     var history: [AIChatMessage] = []
     var model: String
     var parameters: AIModelParameters
     var responseFormat: AIChatResponseFormat = .text
+    var tools: [AIChatTool] = []
+    var toolChoice: AIChatToolChoice = .auto
+    var parallelToolCalls: Bool = false
+    var metadata: [String: String] = [:]
+    var includeUsage: Bool = false
 }
 
 /// 非流式 Chat 响应。
 struct AIChatResponse: Equatable, Sendable {
     var content: String
+    var reasoningContent: String? = nil
+    var toolCalls: [AIChatToolCall] = []
+    var usage: AIChatUsage? = nil
     var model: String
     var finishReason: String?
 }
@@ -78,6 +128,9 @@ struct AIChatResponse: Equatable, Sendable {
 /// 流式 Chat 事件。
 enum AIChatStreamEvent: Equatable, Sendable {
     case delta(String)
+    case reasoningDelta(String)
+    case toolCallDelta(AIChatToolCallDelta)
+    case usage(AIChatUsage)
     case completed(AIChatResponse)
 }
 
@@ -96,6 +149,7 @@ protocol AIClientProtocol: Sendable {
 enum AIClientError: Error, LocalizedError, Equatable {
     case missingAPIKey
     case invalidBaseURL(String)
+    case invalidChatHistory(String)
     case emptyResponse
     case responseTruncated
     case modelListRequestFailed(String)
@@ -106,6 +160,8 @@ enum AIClientError: Error, LocalizedError, Equatable {
             return String.l10n("ai.client.error.missingAPIKey")
         case .invalidBaseURL(let url):
             return String(format: String.l10n("ai.client.error.invalidBaseURLFormat"), url)
+        case .invalidChatHistory(let message):
+            return String(format: String.l10n("ai.client.error.invalidChatHistoryFormat"), message)
         case .emptyResponse:
             return String.l10n("ai.client.error.emptyResponse")
         case .responseTruncated:

@@ -194,7 +194,7 @@ struct UserFacingError: Equatable, Sendable {
         switch error {
         case .missingAPIKey, .invalidBaseURL:
             return make(kind: .aiConfiguration, operation: operation, service: service, diagnostic: error.localizedDescription)
-        case .emptyResponse, .responseTruncated, .modelListRequestFailed:
+        case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed:
             return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
         }
     }
@@ -311,4 +311,3 @@ struct UserFacingError: Equatable, Sendable {
         )
     }
 }
-
