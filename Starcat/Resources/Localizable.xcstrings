@@ -2694,6 +2694,91 @@
         }
       }
     },
+    "agent.model.error.invalidToolNameFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Agent tool name is not provider-compatible: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent 工具名称不符合服务商协议：%@"
+          }
+        }
+      }
+    },
+    "agent.model.error.missingAPIKey" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure the API key for the Agent model first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先配置 Agent 模型的 API Key。"
+          }
+        }
+      }
+    },
+    "agent.model.error.missingProvider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure an AI provider for the Agent first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先为 Agent 配置 AI 服务商。"
+          }
+        }
+      }
+    },
+    "agent.model.error.providerFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Agent model request failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent 模型请求失败：%@"
+          }
+        }
+      }
+    },
+    "agent.model.error.toolCallingUnsupportedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model %@ does not support the tool calling required by Agent."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型 %@ 不支持 Agent 所需的工具调用。"
+          }
+        }
+      }
+    },
     "agent.artifact.type.log" : {
       "localizations" : {
         "en" : {

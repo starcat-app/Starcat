@@ -127,10 +127,10 @@
 - [x] 扩展 AI 请求模型,支持 messages、tools、tool choice、parallel tool calls 和 model metadata。
 - [x] 扩展非流式响应,支持 text、reasoning、tool calls、usage 和 finish reason。
 - [x] 扩展流式事件,支持 text delta、reasoning delta、tool-call delta、usage 和 completed。
-- [ ] 新增 `AgentLoopModelClient`,复用现有 AI Provider、模型参数、API key 和 OpenAI-compatible client。
+- [x] 新增 `AgentLoopModelClient`,复用现有 AI Provider、模型参数、API key 和 OpenAI-compatible client。
 - [x] `OpenAIClient` 发送工具 schema,不再把 tool-call-only 响应当作 empty response。
 - [x] 实现流式 tool-call accumulator,正确拼接多个并行 call 的 name 和 JSON arguments。
-- [ ] 增加 provider capability 检测;不支持 tool-calling 时返回可读错误。
+- [x] 增加 provider capability 检测;不支持 tool-calling 时返回可读错误。
 - [x] 明确不同 OpenAI-compatible provider 的 finish reason 和 usage 缺失处理。
 - [ ] 补 text-only、单/多 tool-call、流式分片、乱序 delta、非法 JSON、缺 key、provider 错误和不支持能力单测。
 
