@@ -99,14 +99,14 @@
 
 ### 5.3 Message Contract 与统一顺序
 
-- [ ] 新增 `AgentMessageRole`: user/assistant/tool。
-- [ ] 新增 `AgentMessagePart`: text/reasoning/toolCall/toolResult。
-- [ ] 新增 `AgentToolCall`: id/name/input/sequence。
-- [ ] 新增 `AgentToolResultMessage`: toolCallID/toolName/output/isError/status/elapsed/sources/sequence。
-- [ ] 新增 `AgentUsage`: input/output/cached/reasoning/total token 和可选成本字段。
+- [x] 新增 `AgentMessageRole`: user/assistant/tool。
+- [x] 新增 `AgentMessagePart`: text/reasoning/toolCall/toolResult。
+- [x] 新增 `AgentToolCall`: id/name/input/sequence。
+- [x] 新增 `AgentToolResultMessage`: toolCallID/toolName/output/isError/status/elapsed/sources/sequence。
+- [x] 新增 `AgentUsage`: input/output/cached/reasoning/total token 和可选成本字段。
 - [ ] 新增 `AgentMessage`、`AgentTurn` 和统一 `AgentTimelineEntry` 投影契约。
-- [ ] 明确 assistant message 可以同时包含 reasoning、text 和多个 tool-call。
-- [ ] 保证 tool-result 必须关联已存在的 toolCallID,未知或重复 ID 明确失败。
+- [x] 明确 assistant message 可以同时包含 reasoning、text 和多个 tool-call。
+- [x] 保证 tool-result 必须关联已存在的 toolCallID,未知或重复 ID 明确失败。
 - [ ] 补消息编码、关联 ID、多工具调用、错误结果和 sequence 排序单测。
 
 ### 5.4 Tool Schema 与执行策略
