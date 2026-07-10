@@ -155,6 +155,39 @@ struct AgentRunRepositoryTests {
         #expect(snapshot.run.status == AgentRunStatus.running.rawValue)
     }
 
+    @Test("失败和取消终态可从持久化 run 精确恢复", arguments: [AgentRunStatus.failed, .cancelled])
+    func restoresFailedAndCancelledTerminalStates(status: AgentRunStatus) async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        _ = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "terminal",
+            context: AgentRunContext(sourceDescription: "Unit"),
+            createdAt: fixedDate(0)
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("terminal")]),
+            runStatus: .running
+        )
+        let errorMessage = status == .failed ? "provider unavailable" : nil
+        try await repository.updateRunStatus(
+            runID: runID,
+            status: status,
+            model: "test-model",
+            usage: AgentUsage(inputTokens: 4, outputTokens: 1),
+            errorMessage: errorMessage,
+            finishedAt: fixedDate(10)
+        )
+
+        let snapshot = try #require(try await repository.snapshot(runID: runID))
+
+        #expect(snapshot.run.status == status.rawValue)
+        #expect(snapshot.run.errorMessage == errorMessage)
+        #expect(snapshot.run.finishedAt != nil)
+        #expect(snapshot.messages.map(\.sequence) == [0])
+    }
+
     private func fixedDate(_ offset: TimeInterval) -> Date {
         Date(timeIntervalSince1970: 1_788_000_000 + offset)
     }
