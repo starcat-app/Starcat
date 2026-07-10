@@ -214,9 +214,9 @@
 
 - [ ] 新增 Agent 固定 UI 文案全部接入 `Localizable.xcstrings` 的 en/zh-Hans。
 - [ ] 动态模型输出、用户输入、仓库元数据和工具原始错误保持原语义。
-- [ ] 用户可见错误不暴露 API key、Authorization header 或私有仓库敏感正文。
-- [ ] Runtime 日志包含 runID/turn/sequence/toolCallID/status,但不记录密钥和完整敏感输入。
-- [ ] usage、预算终止、provider 能力失败和 approval 决策具备可诊断日志。
+- [x] 用户可见错误统一脱敏 API key、Authorization/Bearer 凭证并限制 Provider 错误长度;私有仓库正文不进入错误路径。
+- [x] Runtime 日志包含 runID/turn/sequence/toolCallID/status,但不记录密钥和完整敏感输入。
+- [x] usage、预算终止、provider 能力失败和 approval 决策具备可诊断日志。
 - [ ] 使用 `jq empty` 校验 `.xcstrings`,并运行 i18n 禁用 API 扫描。
 
 ### 5.12 测试与验收

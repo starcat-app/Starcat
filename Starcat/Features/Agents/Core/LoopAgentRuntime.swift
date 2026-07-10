@@ -109,6 +109,7 @@ struct LoopAgentRuntime: AgentRuntime {
             let runID = UUID()
             let session = AgentRunSession(runID: runID, limits: limits)
             let task = Task {
+                AppLog.ai.info("[AgentRuntime] run.start runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) mode=\(mode.rawValue, privacy: .public)")
                 await sessionRouter.activate(session)
                 do {
                     try await execute(
@@ -173,6 +174,7 @@ struct LoopAgentRuntime: AgentRuntime {
             }
 
             let task = Task {
+                AppLog.ai.info("[AgentRuntime] run.resume runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) approvalID=\(pendingApproval.id.uuidString, privacy: .public)")
                 await sessionRouter.activate(session)
                 do {
                     try await execute(
@@ -251,6 +253,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 values: values,
                 continuation: continuation
             )
+            AppLog.ai.info("[AgentRuntime] tool.restored runID=\(runID.uuidString, privacy: .public) turn=\(restored.turn, privacy: .public) sequence=\(restored.call.sequence, privacy: .public) toolCallID=\(restored.call.id, privacy: .public) tool=\(restored.call.name, privacy: .public) status=\(restored.execution.status.rawValue, privacy: .public)")
             let resultMessage = AgentToolResultMessage(
                 toolCallID: restored.call.id,
                 toolName: restored.call.name,
@@ -315,6 +318,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 tools: toolDefinitions,
                 continuation: continuation
             )
+            AppLog.ai.info("[AgentRuntime] model.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) toolCalls=\(response.toolCalls.count, privacy: .public) tokens=\(response.usage?.totalTokens ?? 0, privacy: .public)")
             let calls = response.toolCalls.enumerated().map { index, modelCall in
                 Self.agentToolCall(from: modelCall, sequence: turn * 1_000 + index)
             }
@@ -355,6 +359,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     usage: completedSnapshot.usage,
                     finishedAt: Date()
                 )
+                AppLog.ai.info("[AgentRuntime] run.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) tokens=\(completedSnapshot.usage.totalTokens, privacy: .public) artifacts=\(artifactCount, privacy: .public)")
                 continuation.yield(.runCompleted)
                 return
             }
@@ -374,6 +379,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     payload: payload,
                     continuation: continuation
                 )
+                AppLog.ai.info("[AgentRuntime] tool.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) sequence=\(call.sequence, privacy: .public) toolCallID=\(call.id, privacy: .public) tool=\(call.name, privacy: .public) status=\(execution.status.rawValue, privacy: .public) attempts=\(execution.attempts.count, privacy: .public)")
                 let resultMessage = AgentToolResultMessage(
                     toolCallID: call.id,
                     toolName: call.name,
@@ -445,6 +451,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     usage: completedSnapshot.usage,
                     finishedAt: Date()
                 )
+                AppLog.ai.info("[AgentRuntime] run.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) tokens=\(completedSnapshot.usage.totalTokens, privacy: .public) artifacts=\(artifactCount, privacy: .public)")
                 continuation.yield(.runCompleted)
                 return
             }
@@ -549,6 +556,7 @@ struct LoopAgentRuntime: AgentRuntime {
         try await session.requestApproval(approval)
         await approvalCoordinator.prepare(approval)
         try await persistApproval(approval, runStatus: .waitingForConfirmation)
+        AppLog.ai.info("[AgentRuntime] approval.pending runID=\(runID.uuidString, privacy: .public) sequence=\(call.sequence, privacy: .public) toolCallID=\(call.id, privacy: .public) tool=\(call.name, privacy: .public) permission=\(tool.permission.rawValue, privacy: .public)")
         continuation.yield(.approvalUpdated(approval))
 
         return try await resolvePreparedApproval(
@@ -571,6 +579,7 @@ struct LoopAgentRuntime: AgentRuntime {
     ) async throws -> ToolExecution {
         switch await approvalCoordinator.wait(for: approval.id) {
         case .cancelled:
+            AppLog.ai.info("[AgentRuntime] approval.cancelled runID=\(approval.runID.uuidString, privacy: .public) toolCallID=\(approval.toolCallID, privacy: .public)")
             try await session.updateApprovalStatus(.cancelled, approvalID: approval.id)
             var cancelled = approval
             cancelled.status = .cancelled
@@ -578,6 +587,7 @@ struct LoopAgentRuntime: AgentRuntime {
             continuation.yield(.approvalUpdated(cancelled))
             throw CancellationError()
         case .rejected:
+            AppLog.ai.info("[AgentRuntime] approval.rejected runID=\(approval.runID.uuidString, privacy: .public) toolCallID=\(approval.toolCallID, privacy: .public)")
             let resolved = try await currentApproval(session: session, id: approval.id)
             try await persistApproval(resolved, runStatus: .running)
             continuation.yield(.approvalUpdated(resolved))
@@ -588,6 +598,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 status: .rejected
             )
         case .approved:
+            AppLog.ai.info("[AgentRuntime] approval.approved runID=\(approval.runID.uuidString, privacy: .public) toolCallID=\(approval.toolCallID, privacy: .public)")
             var resolved = try await currentApproval(session: session, id: approval.id)
             try await persistApproval(resolved, runStatus: .running)
             continuation.yield(.approvalUpdated(resolved))
@@ -881,6 +892,7 @@ struct LoopAgentRuntime: AgentRuntime {
     ) async {
         guard await session.finish(.failed(message)) else { return }
         await persistRunStatus(runID: runID, status: .failed, errorMessage: message, finishedAt: Date())
+        AppLog.ai.error("[AgentRuntime] run.failed runID=\(runID.uuidString, privacy: .public) error=\(message, privacy: .private)")
         continuation.yield(.runFailed(message))
     }
 
@@ -891,6 +903,7 @@ struct LoopAgentRuntime: AgentRuntime {
     ) async {
         _ = await session.finish(.cancelled)
         await persistRunStatus(runID: runID, status: .cancelled, finishedAt: Date())
+        AppLog.ai.info("[AgentRuntime] run.cancelled runID=\(runID.uuidString, privacy: .public)")
         continuation.yield(.runCancelled)
     }
 
@@ -925,7 +938,8 @@ struct LoopAgentRuntime: AgentRuntime {
     }
 
     private static func errorMessage(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        return AgentErrorSanitizer.sanitize(message)
     }
 
     private static func restoredValues(from messages: [AgentMessage]) -> [String: String] {
