@@ -2757,6 +2757,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具 %@ 必须由用户确认后才能执行。" } }
       }
     },
+    "agent.loop.error.contextUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat could not load the local repository context for this run." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 无法为本次运行加载本地仓库上下文。" } }
+      }
+    },
     "agent.loop.error.emptyModelResponse" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2769,6 +2776,13 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "This Agent run has no pending approval to resume." } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此 Agent 运行没有可恢复的待审批操作。" } }
+      }
+    },
+    "agent.loop.error.repositoryContextEmpty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Agent requires at least one repository in the local Starcat knowledge library." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此 Agent 至少需要知识库中存在一个本地仓库。" } }
       }
     },
     "agent.loop.error.requiredArtifactMissing" : {
@@ -2923,6 +2937,13 @@
             "value" : "Starcat 本地仓库快照: 0 repos"
           }
         }
+      }
+    },
+    "agent.context.source.failure" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat local repository snapshot failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 本地仓库快照读取失败" } }
       }
     },
     "agent.context.source.repoCountFormat" : {

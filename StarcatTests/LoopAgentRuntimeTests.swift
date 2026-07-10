@@ -152,6 +152,45 @@ struct LoopAgentRuntimeTests {
         #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("Weekly 缺少仓库上下文时在模型请求前失败且不生成产物")
+    func weeklyFailsBeforeModelWhenRepositoryContextIsEmpty() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        let recorder = ModelRequestRecorder(responses: [])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: []),
+            runRepository: repository
+        )
+        let definition = AgentDefinition(
+            id: BuiltInAgents.githubWeeklyReport.id,
+            title: "Weekly",
+            subtitle: "",
+            systemImage: "newspaper",
+            capabilityLabels: [],
+            defaultPrompt: "",
+            isEnabled: true,
+            toolIDs: [],
+            artifactTypes: [.markdown]
+        )
+
+        let events = await collect(runtime.run(
+            definition: definition,
+            prompt: "生成周刊",
+            context: .empty
+        ))
+        let run = try #require(try await repository.recentRuns(limit: 1).first)
+        let snapshot = try #require(try await repository.snapshot(runID: UUID(uuidString: run.id)!))
+
+        #expect((await recorder.recordedRequests()).isEmpty)
+        #expect(snapshot.run.status == AgentRunStatus.failed.rawValue)
+        #expect(snapshot.artifacts.isEmpty)
+        #expect(events.contains(where: { event in
+            guard case .runFailed(let message) = event else { return false }
+            return message == LoopAgentRuntimeError.repositoryContextEmpty.localizedDescription
+        }))
+    }
+
     @Test("Weekly system prompt 注入真实数据与 artifact 专用约束")
     func weeklyPromptIncludesDefinitionGuardrails() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -165,7 +204,23 @@ struct LoopAgentRuntimeTests {
         _ = await collect(runtime.run(
             definition: BuiltInAgents.githubWeeklyReport,
             prompt: "生成周刊",
-            context: .empty
+            context: AgentRunContext(
+                sourceDescription: "Unit",
+                repos: [AgentRepoSnapshot(
+                    id: 1,
+                    owner: "owner",
+                    name: "repo",
+                    fullName: "owner/repo",
+                    description: "Unit repository",
+                    language: "Swift",
+                    starsCount: 10,
+                    topics: ["agent"],
+                    isPrivate: false,
+                    isStarred: true,
+                    starredAt: nil,
+                    htmlUrl: "https://github.com/owner/repo"
+                )]
+            )
         ))
         let request = try #require((await recorder.recordedRequests()).first)
 

@@ -47,34 +47,38 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         definition: AgentDefinition,
         prompt: String
     ) async -> AgentRunContext {
-        let repos = await loadCandidateRepos()
-        let sourceDescription: String
-        if repos.isEmpty {
-            sourceDescription = String.l10n("agent.context.source.empty")
-        } else {
-            sourceDescription = String(format: String.l10n("agent.context.source.repoCountFormat"), repos.count)
+        do {
+            let repos = try await loadCandidateRepos()
+            let sourceDescription: String
+            if repos.isEmpty {
+                sourceDescription = String.l10n("agent.context.source.empty")
+            } else {
+                sourceDescription = String(format: String.l10n("agent.context.source.repoCountFormat"), repos.count)
+            }
+            return AgentRunContext(
+                sourceDescription: sourceDescription,
+                repos: repos.map(Self.snapshot(from:))
+            )
+        } catch {
+            // 详细数据库错误只进入本地日志；模型和 UI 只收到稳定的通用失败原因。
+            AppLog.general.warning("Agent context snapshot failed: \(error.localizedDescription, privacy: .public)")
+            return AgentRunContext(
+                sourceDescription: String.l10n("agent.context.source.failure"),
+                failureReason: String.l10n("agent.loop.error.contextUnavailable")
+            )
         }
-        return AgentRunContext(
-            sourceDescription: sourceDescription,
-            repos: repos.map(Self.snapshot(from:))
-        )
     }
 
-    private func loadCandidateRepos() async -> [Repo] {
-        do {
-            let starred = try await repository.fetchRecentStarred(limit: limit)
-            if starred.count >= limit {
-                return Array(starred.prefix(limit))
-            }
-
-            let knowledge = try await repository.fetchKnowledgeRepos()
-            var seenIDs = Set(starred.map(\.id))
-            let merged = starred + knowledge.filter { seenIDs.insert($0.id).inserted }
-            return Array(merged.prefix(limit))
-        } catch {
-            AppLog.general.warning("Agent context snapshot failed: \(error.localizedDescription, privacy: .public)")
-            return []
+    private func loadCandidateRepos() async throws -> [Repo] {
+        let starred = try await repository.fetchRecentStarred(limit: limit)
+        if starred.count >= limit {
+            return Array(starred.prefix(limit))
         }
+
+        let knowledge = try await repository.fetchKnowledgeRepos()
+        var seenIDs = Set(starred.map(\.id))
+        let merged = starred + knowledge.filter { seenIDs.insert($0.id).inserted }
+        return Array(merged.prefix(limit))
     }
 
     private static func snapshot(from repo: Repo) -> AgentRepoSnapshot {

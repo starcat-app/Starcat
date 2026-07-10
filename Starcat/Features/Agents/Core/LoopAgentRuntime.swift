@@ -15,6 +15,8 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case emptyModelResponse
     case requiredArtifactMissing
     case approvalRequired(String)
+    case contextUnavailable
+    case repositoryContextEmpty
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +26,10 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             return String.l10n("agent.loop.error.requiredArtifactMissing")
         case .approvalRequired(let toolName):
             return String(format: String.l10n("agent.loop.error.approvalRequiredFormat"), toolName)
+        case .contextUnavailable:
+            return String.l10n("agent.loop.error.contextUnavailable")
+        case .repositoryContextEmpty:
+            return String.l10n("agent.loop.error.repositoryContextEmpty")
         }
     }
 }
@@ -289,6 +295,7 @@ struct LoopAgentRuntime: AgentRuntime {
             )
             try await persistMessage(userMessage, runStatus: .running)
             continuation.yield(.messageAppended(userMessage))
+            try Self.validateRequiredContext(definition: definition, context: context)
         }
 
         while true {
@@ -746,6 +753,22 @@ struct LoopAgentRuntime: AgentRuntime {
             id: "required-artifact",
             content: "Before the final answer, create the required artifact with one of: \(submitTools.joined(separator: ", "))."
         )]
+    }
+
+    private static func validateRequiredContext(
+        definition: AgentDefinition,
+        context: AgentRunContext
+    ) throws {
+        if context.failureReason != nil {
+            throw LoopAgentRuntimeError.contextUnavailable
+        }
+        let requiresRepositories = [
+            BuiltInAgents.githubWeeklyReport.id,
+            BuiltInAgents.repoInsight.id
+        ].contains(definition.id)
+        if requiresRepositories, context.repos.isEmpty {
+            throw LoopAgentRuntimeError.repositoryContextEmpty
+        }
     }
 
     private func definitionRules(_ definition: AgentDefinition) -> [AgentPromptRule] {

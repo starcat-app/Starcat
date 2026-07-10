@@ -158,17 +158,20 @@ struct AgentRunContext: Codable, Hashable, Sendable {
     var generatedAt: Date
     var repos: [AgentRepoSnapshot]
     var attachments: [AgentPromptAttachment]
+    var failureReason: String?
 
     init(
         sourceDescription: String,
         generatedAt: Date = Date(),
         repos: [AgentRepoSnapshot] = [],
-        attachments: [AgentPromptAttachment] = []
+        attachments: [AgentPromptAttachment] = [],
+        failureReason: String? = nil
     ) {
         self.sourceDescription = sourceDescription
         self.generatedAt = generatedAt
         self.repos = repos
         self.attachments = attachments
+        self.failureReason = failureReason
     }
 
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
