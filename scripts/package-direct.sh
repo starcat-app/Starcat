@@ -19,6 +19,10 @@
 #   STARCAT_DOWNLOAD_BASE_URL          appcast 下载前缀，默认 https://starcat.ink/downloads/。
 #   STARCAT_DMG_TOOL=create-dmg|hdiutil
 #                                     默认 create-dmg；仅显式设置 hdiutil 时生成裸 DMG。
+#   STARCAT_DMG_APPLESCRIPT_TIMEOUT_SECONDS
+#                                     create-dmg Finder 美化 AppleScript 超时时间，默认 600 秒。
+#   STARCAT_DMG_RETRY_COUNT           create-dmg 失败重试次数，默认 3。
+#   STARCAT_DMG_RETRY_SLEEP_SECONDS   create-dmg 失败后重试等待秒数，默认 60。
 #
 # 设计约束：
 #   - Direct 包必须包含 Sparkle.framework。
@@ -47,6 +51,7 @@ STAGING_DIR="${DIST_DIR}/staging"
 DOWNLOADS_DIR="${DIST_DIR}/downloads"
 APPCAST_INPUT_DIR="${DIST_DIR}/appcast-input"
 APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
+CODEBASE_BINARY_PATH="${APP_PATH}/Contents/Resources/codebase.bin"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
@@ -117,6 +122,7 @@ fi
 
 [ -d "$APP_PATH" ] || fail "未找到 Direct app: $APP_PATH"
 [ -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ] || fail "Direct 包缺少 Sparkle.framework"
+[ -f "$CODEBASE_BINARY_PATH" ] || fail "Direct 包缺少 CodebaseMemory 二进制: $CODEBASE_BINARY_PATH"
 
 DIST_VALUE=$(/usr/libexec/PlistBuddy -c 'Print :STARCAT_DISTRIBUTION' "$APP_PATH/Contents/Info.plist")
 [ "$DIST_VALUE" = "direct" ] || fail "STARCAT_DISTRIBUTION 应为 direct，实际为 $DIST_VALUE"
@@ -145,19 +151,33 @@ if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   fi
 fi
 
+# `codebase.bin` 位于 Resources，不属于 codesign --deep 稳定识别的嵌套代码目录。
+# 必须先单独签名，再让 App 外层资源封条绑定它；否则下载后的 Direct App 首次启动
+# 子进程时可能被 Gatekeeper 拦截，而 Runner 的启动过程又会因此卡住。
 if [ "$SIGN_IDENTITY" = "-" ]; then
+  codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$CODEBASE_BINARY_PATH" >/dev/null
   codesign --force --deep --sign "$SIGN_IDENTITY" --timestamp=none "$APP_PATH" >/dev/null
 else
-  codesign --force --deep --sign "$SIGN_IDENTITY" --timestamp "$APP_PATH" >/dev/null
+  codesign --force --options runtime --sign "$SIGN_IDENTITY" --timestamp "$CODEBASE_BINARY_PATH" >/dev/null
+  codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" --timestamp "$APP_PATH" >/dev/null
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+codesign --verify --strict --verbose=2 "$CODEBASE_BINARY_PATH"
+
+if [ "$SIGN_IDENTITY" != "-" ]; then
+  CODEBASE_SIGNATURE="$(codesign -dvvv "$CODEBASE_BINARY_PATH" 2>&1)"
+  grep -q '^Authority=Developer ID Application:' <<<"$CODEBASE_SIGNATURE" \
+    || fail "CodebaseMemory 二进制未使用 Developer ID Application 签名"
+  grep -q 'flags=.*runtime' <<<"$CODEBASE_SIGNATURE" \
+    || fail "CodebaseMemory 二进制未启用 hardened runtime"
+fi
 
 log "生成 DMG"
 mkdir -p "$STAGING_DIR"
 cp -R "$APP_PATH" "$STAGING_DIR/"
 
 if [ "$DMG_TOOL" = "create-dmg" ]; then
-  create-dmg \
+  "${SCRIPT_DIR}/create-dmg-with-retry.sh" \
     --volname "Starcat ${VERSION}" \
     --background "$DMG_BACKGROUND_PATH" \
     --window-pos 200 120 \

@@ -109,7 +109,17 @@ dist/direct/xcodebuild-direct.log
 - `CFBundleVersion` 等于本次 Direct 打包 build number
 - Direct 包包含 `Sparkle.framework`
 - Direct 包不包含 `com.apple.security.app-sandbox`
+- 内置 `codebase.bin` 使用 Developer ID + hardened runtime 签名
 - DMG 生成后有 SHA256
+
+`create-dmg` 会调用 Finder AppleScript 写入背景图、图标位置和窗口大小。Finder 偶发繁忙时可能报 `AppleEvent已超时 (-1712)`；项目脚本默认把 Finder AppleScript timeout 提升到 600 秒，并重试 3 次。必要时可临时加长：
+
+```bash
+STARCAT_DMG_APPLESCRIPT_TIMEOUT_SECONDS=1200 \
+STARCAT_DMG_RETRY_COUNT=5 \
+STARCAT_DMG_RETRY_SLEEP_SECONDS=90 \
+./scripts/package-direct.sh 1.0.0
+```
 
 ## 4. 正式公开发版
 

@@ -117,7 +117,7 @@ final class CodebaseMemoryRunner {
             throw CodebaseMemoryError.portExhausted
         }
 
-        let process = try startUI(
+        let process = try await startUI(
             binaryURL: binaryURL,
             port: port,
             cacheDir: cacheDir,
@@ -257,33 +257,25 @@ final class CodebaseMemoryRunner {
         port: Int,
         cacheDir: URL,
         repositoryFullName: String
-    ) throws -> Process {
+    ) async throws -> Process {
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         AppLog.ui.info("CodebaseMemory startUI config repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public)")
 
-        // Step 1: 写入 ui 配置（一次性，立即退出）
-        let configProcess = Process()
-        configProcess.executableURL = binaryURL
-        configProcess.arguments = ["--ui=true", "--port=\(port)"]
-        configProcess.currentDirectoryURL = cacheDir
-        configProcess.environment = ProcessInfo.processInfo.environment.merging([
-            "CBM_CACHE_DIR": cacheDir.path
-        ]) { _, new in new }
-        // stdin = /dev/null → 立即退出
-        configProcess.standardInput = FileHandle.nullDevice
-        let configStderrPipe = Pipe()
-        configProcess.standardError = configStderrPipe
-        try configProcess.run()
-        configProcess.waitUntilExit()
-        AppLog.ui.info("CodebaseMemory UI config exited repo=\(repositoryFullName, privacy: .public) status=\(configProcess.terminationStatus, privacy: .public)")
-        if configProcess.terminationStatus != 0 {
-            let stderrData = configStderrPipe.fileHandleForReading.readDataToEndOfFile()
-            let message = Self.processErrorMessage(
-                stderr: stderrData,
-                fallback: "ui config process exited with \(configProcess.terminationStatus)"
+        // Step 1: 写入 UI 配置。Runner 与 ViewModel 都在 MainActor，不能用
+        // waitUntilExit() 阻塞主线程；复用 runCLI 的持续 drain 和超时保护，避免
+        // Gatekeeper 或上游二进制异常时直接把整个 App 卡成彩虹圈。
+        do {
+            _ = try await runCLI(
+                binaryURL: binaryURL,
+                arguments: ["--ui=true", "--port=\(port)"],
+                cacheDir: cacheDir,
+                timeout: 15,
+                failureContext: "ui configuration"
             )
-            throw CodebaseMemoryError.uiStartFailed(underlying: message)
+        } catch {
+            throw CodebaseMemoryError.uiStartFailed(underlying: error.localizedDescription)
         }
+        AppLog.ui.info("CodebaseMemory UI config succeeded repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
 
         // Step 2: 启动 MCP 长进程（stdin 通过 Pipe 保持打开）
         let process = Process()
