@@ -186,6 +186,8 @@ final class AgentWorkspaceViewModel {
             upsert(span)
         case .confirmationRequested(let action):
             pendingConfirmations.append(action)
+        case .messageAppended, .usageUpdated:
+            break
         case .assistantDelta(let text):
             assistantOutput += text
         case .artifactCreated(let artifact):

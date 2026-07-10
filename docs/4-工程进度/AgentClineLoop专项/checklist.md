@@ -114,11 +114,11 @@
 - [x] 新增可 Codable/Sendable 的 `AgentJSONValue`。
 - [x] 新增 `AgentJSONSchema`,支持 object/string/number/integer/boolean/array/enum/required/default/description。
 - [x] 新增 `AgentToolDefinition`: name/description/inputSchema/permission/completesRun/timeout/retryPolicy。
-- [ ] `AgentTool` 改为提供 definition,并按 `AgentToolCall` 执行。
+- [x] `AgentTool` 改为提供 definition,并按 `AgentToolCall` 执行。
 - [x] Tool Registry 按 name 查找,拒绝重复 name 和未知工具。
 - [ ] 执行前完成 required、类型、enum 和未知字段校验,非法输入返回 error tool-result。
 - [ ] Runtime 强制执行 readOnly/requiresConfirmation/highCost 策略。
-- [ ] 超时与重试只应用于声明可重试且无副作用的工具,每次尝试进入审计记录。
+- [~] 超时与重试已限制为只读工具策略；逐次 retry attempt 持久化审计待事实表接入后完成。
 - [x] 迁移所有现有只读工具到 schema 形式。
 - [ ] 补 Registry、Schema、权限、超时、重试、unknown tool 和 completesRun 单测。
 
@@ -141,12 +141,12 @@
 - [ ] 新增模型驱动 `LoopAgentRuntime`,直接替换线性 `DefaultAgentRuntime` 执行路径。
 - [ ] Runtime 创建并持久化 user message,使用 PromptBuilder 发起第一轮模型调用。
 - [ ] 每轮持久化 assistant message、reasoning、usage 和 tool calls。
-- [ ] 无 tool-call 时以 assistant 最终响应完成 run。
-- [ ] 有 tool-call 时校验并执行工具,追加 tool-result 后进入下一轮模型调用。
-- [ ] 多个只读 tool-call 按确定顺序执行;第一版不并行写入工具。
-- [ ] unknown/invalid/failed/skipped/timeout/rejected 结果均回灌模型。
-- [ ] `completesRun` 工具提交 artifact 后仍需持久化最终 assistant/submit 状态。
-- [ ] 达到迭代、工具、token 或时间预算时进入明确失败终态。
+- [x] 无 tool-call 时以 assistant 最终响应完成 run。
+- [x] 有 tool-call 时校验并执行工具,追加 tool-result 后进入下一轮模型调用。
+- [x] 多个只读 tool-call 按确定顺序执行;第一版不并行写入工具。
+- [x] unknown/invalid/failed/skipped/timeout/rejected 结果均回灌模型。
+- [~] `completesRun` 工具已按执行顺序提交 artifact；最终 assistant/submit 持久化待事实表接入。
+- [x] 达到迭代、工具、token 或时间预算时进入明确失败终态。
 - [ ] cancel 通过 session command channel 生效,只允许写入一次终态。
 - [ ] 删除人为 UI 演示延迟和被替代的固定工具执行逻辑。
 - [ ] 补主动选工具、多轮调用、无工具完成、并行只读调用、错误回灌、预算耗尽、取消和终态竞争单测。

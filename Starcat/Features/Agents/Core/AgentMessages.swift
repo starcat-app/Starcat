@@ -21,12 +21,15 @@ struct AgentToolCall: Codable, Hashable, Sendable, Identifiable {
     var id: String
     var name: String
     var input: AgentJSONValue
+    /// Provider 返回的原始 arguments；非法 JSON 也必须保留，供 Inspector 审计。
+    var rawInput: String?
     var sequence: Int
 
-    init(id: String, name: String, input: AgentJSONValue, sequence: Int) {
+    init(id: String, name: String, input: AgentJSONValue, rawInput: String? = nil, sequence: Int) {
         self.id = id
         self.name = name
         self.input = input
+        self.rawInput = rawInput
         self.sequence = sequence
     }
 }

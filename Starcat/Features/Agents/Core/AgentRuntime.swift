@@ -17,6 +17,11 @@ protocol AgentRuntime: Sendable {
         prompt: String,
         context: AgentRunContext
     ) -> AsyncStream<AgentRunEvent>
+    func send(_ command: AgentRunCommand) async
+}
+
+extension AgentRuntime {
+    func send(_ command: AgentRunCommand) async {}
 }
 
 /// Runtime 的轻量执行配置。

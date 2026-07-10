@@ -328,7 +328,8 @@ enum GitHubWeeklyReportAgentTools {
                 "title": AgentJSONSchema(type: .string, description: "Report title"),
                 "style": AgentJSONSchema(type: .string, description: "Requested editorial style"),
                 "includeSources": AgentJSONSchema(type: .boolean, description: "Include source references", defaultValue: .bool(true))
-            ]
+            ],
+            completesRun: true
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
@@ -466,7 +467,8 @@ enum RepoInsightAgentTools {
             properties: [
                 "repoID": AgentJSONSchema(type: .integer, description: "Selected Starcat repository ID"),
                 "style": AgentJSONSchema(type: .string, description: "Requested analysis style")
-            ]
+            ],
+            completesRun: true
         )
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {

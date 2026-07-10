@@ -172,7 +172,7 @@ struct AgentPromptBuilder: AgentPromptBuilding {
     ) -> AgentPromptTurnRequest {
         let boundedRepos = budgeter.repositorySnapshotBlock(context.runContext)
         let compactedMessages = compactor.compact(messages)
-        let prompt = """
+        let prompt = messages.isEmpty ? """
         # User Goal
         \(budgeter.bounded(userInput, limit: budgeter.budget.maxUserInputCharacters))
 
@@ -183,7 +183,7 @@ struct AgentPromptBuilder: AgentPromptBuilding {
         \(boundedRepos)
 
         Select tools only when they materially advance the goal. Return a final answer only after required evidence is available.
-        """
+        """ : ""
         return AgentPromptTurnRequest(
             systemPrompt: buildSystemPrompt(environment: environment, context: context),
             userPrompt: prompt,

@@ -198,6 +198,9 @@ struct AgentArtifact: Identifiable, Hashable, Sendable {
     let type: AgentArtifactType
     var title: String
     var content: String
+    var toolCallID: String?
+    var messageID: UUID?
+    var sequence: Int
     var createdAt: Date
 
     init(
@@ -205,12 +208,18 @@ struct AgentArtifact: Identifiable, Hashable, Sendable {
         type: AgentArtifactType,
         title: String,
         content: String,
+        toolCallID: String? = nil,
+        messageID: UUID? = nil,
+        sequence: Int = 0,
         createdAt: Date = Date()
     ) {
         self.id = id
         self.type = type
         self.title = title
         self.content = content
+        self.toolCallID = toolCallID
+        self.messageID = messageID
+        self.sequence = sequence
         self.createdAt = createdAt
     }
 }
@@ -317,6 +326,8 @@ enum AgentRunEvent: Sendable {
     case toolOutput(AgentToolOutput)
     case trace(AgentTraceSpan)
     case confirmationRequested(AgentConfirmationAction)
+    case messageAppended(AgentMessage)
+    case usageUpdated(AgentUsage)
     case assistantDelta(String)
     case artifactCreated(AgentArtifact)
     case runCompleted

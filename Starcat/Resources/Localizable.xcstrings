@@ -2743,6 +2743,34 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 正在等待用户确认。" } }
       }
     },
+    "agent.loop.error.approvalRequiredFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool %@ requires user approval before execution." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具 %@ 必须由用户确认后才能执行。" } }
+      }
+    },
+    "agent.loop.error.emptyModelResponse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Agent model returned neither text nor tool calls." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 模型没有返回文本或工具调用。" } }
+      }
+    },
+    "agent.loop.error.requiredArtifactMissing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Agent ended before creating the required artifact." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 在创建必需产出物前结束了运行。" } }
+      }
+    },
+    "agent.loop.error.toolTimeoutFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool %@ timed out." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具 %@ 执行超时。" } }
+      }
+    },
     "agent.model.error.invalidToolNameFormat" : {
       "extractionState" : "manual",
       "localizations" : {

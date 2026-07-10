@@ -103,7 +103,14 @@ struct ExternalSearchAgentTool: AgentTool {
                 status: collection.status.stepStatus,
                 relatedToolOutputID: output.id
             ),
-            payload: collection.markdown.isEmpty ? .none : .externalContextMarkdown(collection.markdown)
+            payload: collection.markdown.isEmpty ? .none : .externalContextMarkdown(collection.markdown),
+            sources: collection.sourceItems.map {
+                AgentToolResultSource(
+                    title: $0.title,
+                    url: $0.url.absoluteString,
+                    provider: $0.provider.displayName
+                )
+            }
         )
     }
 

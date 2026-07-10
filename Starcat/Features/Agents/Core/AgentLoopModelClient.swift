@@ -30,7 +30,7 @@ struct AgentModelResponse: Equatable, Sendable {
     var text: String
     var reasoning: String?
     var toolCalls: [AgentModelToolCall]
-    var usage: AgentUsage?
+    var usage: AgentUsage? = nil
     var model: String
     var finishReason: String?
 }
@@ -157,7 +157,11 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
             case .assistant:
                 let calls = try message.parts.compactMap { part -> AIChatToolCall? in
                     guard case .toolCall(let call) = part else { return nil }
-                    return AIChatToolCall(id: call.id, name: call.name, arguments: try call.input.jsonString())
+                    return AIChatToolCall(
+                        id: call.id,
+                        name: call.name,
+                        arguments: try call.rawInput ?? call.input.jsonString()
+                    )
                 }
                 result.append(.init(
                     role: .assistant,
