@@ -165,6 +165,61 @@ struct AgentPromptBuilderTests {
         #expect(compacted.map(\.id).contains(result.id))
     }
 
+    @Test("超大 tool-result 只在模型副本中截断并保留调用关联")
+    func compactsLargeToolResultWithoutBreakingCorrelation() throws {
+        let runID = UUID()
+        let first = AgentMessage(
+            runID: runID,
+            role: .user,
+            turn: 0,
+            sequence: 0,
+            parts: [.text("goal")]
+        )
+        let call = AgentMessage(
+            runID: runID,
+            role: .assistant,
+            turn: 1,
+            sequence: 1,
+            parts: [.toolCall(AgentToolCall(
+                id: "call-large",
+                name: "external_search",
+                input: .object(["query": .string("Swift")]),
+                sequence: 0
+            ))]
+        )
+        let originalOutput = String(repeating: "source", count: 2_000)
+        let result = AgentMessage(
+            runID: runID,
+            role: .tool,
+            turn: 1,
+            sequence: 2,
+            parts: [.toolResult(AgentToolResultMessage(
+                toolCallID: "call-large",
+                toolName: "external_search",
+                output: .object(["detail": .string(originalOutput)]),
+                isError: false,
+                status: .completed,
+                sequence: 0
+            ))]
+        )
+
+        let compacted = AgentMessageCompactor(
+            maxCharacters: 1_500,
+            maxToolResultCharacters: 800,
+            maxExternalContextCharacters: 400
+        ).compact([first, call, result])
+
+        #expect(compacted.map(\.id) == [first.id, call.id, result.id])
+        let compactedResult = try #require(compacted.last?.parts.compactMap { part -> AgentToolResultMessage? in
+            guard case .toolResult(let result) = part else { return nil }
+            return result
+        }.first)
+        #expect(compactedResult.output.objectValue?["truncated"] == .bool(true))
+        #expect(try compactedResult.output.jsonString().contains("truncated by Agent message budget"))
+        #expect(result.parts.first != compacted.last?.parts.first)
+        try AgentMessageContract.validate(compacted)
+    }
+
     private func environment(mode: AgentExecutionMode) -> AgentPromptEnvironment {
         AgentPromptEnvironment(
             appName: "Starcat",

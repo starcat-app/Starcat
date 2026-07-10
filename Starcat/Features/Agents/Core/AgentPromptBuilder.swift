@@ -273,13 +273,25 @@ struct AgentContextBudgeter: Sendable {
 /// 长 run 只保留首个用户目标和最近的完整 turn，tool-call/tool-result 不拆开裁剪。
 struct AgentMessageCompactor: Sendable {
     private let maxCharacters: Int
+    private let maxToolResultCharacters: Int
+    private let maxExternalContextCharacters: Int
 
-    init(maxCharacters: Int = AgentContextBudget().maxMessageCharacters) {
+    init(
+        maxCharacters: Int = AgentContextBudget().maxMessageCharacters,
+        maxToolResultCharacters: Int = AgentContextBudget().maxToolResultCharacters,
+        maxExternalContextCharacters: Int = AgentContextBudget().maxExternalContextCharacters
+    ) {
         self.maxCharacters = maxCharacters
+        self.maxToolResultCharacters = maxToolResultCharacters
+        self.maxExternalContextCharacters = maxExternalContextCharacters
     }
 
     func compact(_ messages: [AgentMessage]) -> [AgentMessage] {
-        guard estimatedCharacters(messages) > maxCharacters, let first = messages.first else { return messages }
+        let boundedMessages = messages.map { boundedToolResults(in: $0) }
+        guard estimatedCharacters(boundedMessages) > maxCharacters,
+              let originalFirst = messages.first
+        else { return boundedMessages }
+        let first = boundedText(in: boundedToolResults(in: originalFirst), limit: max(1, maxCharacters / 2))
         let groups = Dictionary(grouping: messages, by: \.turn)
             .sorted { $0.key < $1.key }
             .map(\.value)
@@ -287,17 +299,76 @@ struct AgentMessageCompactor: Sendable {
         var used = estimatedCharacters(selected)
 
         for group in groups.reversed() {
-            let candidates = group.filter { $0.id != first.id }
+            let originals = group.filter { $0.id != first.id }
+            let candidates = originals.map { boundedToolResults(in: $0) }
             guard !candidates.isEmpty else { continue }
             let size = estimatedCharacters(candidates)
             if used + size <= maxCharacters {
                 selected.append(contentsOf: candidates)
                 used += size
+            } else if selected.count == 1 {
+                // 最近一轮即使包含超大工具输出也必须成组保留；只进一步缩小模型副本，
+                // 持久化事实不变，tool-call/tool-result 关联也不会被拆开。
+                let available = max(1, maxCharacters - used)
+                let resultCount = max(1, toolResultCount(in: originals))
+                let tighterLimit = max(64, available / resultCount / 2)
+                let tightened = originals.map { boundedToolResults(in: $0, overrideLimit: tighterLimit) }
+                if used + estimatedCharacters(tightened) <= maxCharacters {
+                    selected.append(contentsOf: tightened)
+                    used += estimatedCharacters(tightened)
+                }
             }
         }
         return Dictionary(uniqueKeysWithValues: selected.map { ($0.id, $0) })
             .values
             .sorted { $0.sequence < $1.sequence }
+    }
+
+    private func boundedToolResults(
+        in message: AgentMessage,
+        overrideLimit: Int? = nil
+    ) -> AgentMessage {
+        var copy = message
+        copy.parts = message.parts.map { part in
+            guard case .toolResult(var result) = part else { return part }
+            let configuredLimit = result.toolName == "external_search"
+                ? maxExternalContextCharacters
+                : maxToolResultCharacters
+            let limit = max(1, min(configuredLimit, overrideLimit ?? configuredLimit))
+            guard let encoded = try? result.output.jsonString(), encoded.count > limit else {
+                return part
+            }
+            result.output = .object([
+                "truncated": .bool(true),
+                "preview": .string(bounded(encoded, limit: limit))
+            ])
+            return .toolResult(result)
+        }
+        return copy
+    }
+
+    private func boundedText(in message: AgentMessage, limit: Int) -> AgentMessage {
+        var copy = message
+        copy.parts = message.parts.map { part in
+            switch part {
+            case .text(let text): return .text(bounded(text, limit: limit))
+            case .reasoning(let reasoning): return .reasoning(bounded(reasoning, limit: limit))
+            case .toolCall, .toolResult: return part
+            }
+        }
+        return copy
+    }
+
+    private func bounded(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let marker = "\n[truncated by Agent message budget]"
+        return String(text.prefix(max(0, limit - marker.count))) + marker
+    }
+
+    private func toolResultCount(in messages: [AgentMessage]) -> Int {
+        messages.reduce(0) { count, message in
+            count + message.parts.filter { if case .toolResult = $0 { return true }; return false }.count
+        }
     }
 
     private func estimatedCharacters(_ messages: [AgentMessage]) -> Int {

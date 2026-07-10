@@ -95,7 +95,7 @@
 - [x] 新增 `AgentContextBudgeter`,分别限制 repo snapshot、历史消息、tool-result、外部搜索和 artifact 草稿。
 - [x] 新增 `AgentMessageCompactor`,超预算时保留 system、最近轮次和 tool-call/tool-result 关联摘要。
 - [x] 删除 `OpenAIAgentTextGenerator.systemPrompt(for:)` 中分散的核心提示词。
-- [ ] 补 PromptBuilder/ContextBudgeter/Compactor 单测: mode、locale、search 开关、tool visibility、预算边界和关联消息保留。
+- [x] 补 PromptBuilder/ContextBudgeter/Compactor 单测: mode、locale、search 开关、tool visibility、预算边界和关联消息保留。
 
 ### 5.3 Message Contract 与统一顺序
 
