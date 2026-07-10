@@ -758,7 +758,11 @@ struct LoopAgentRuntime: AgentRuntime {
             let outcome = await executeAttempt(
                 tool: tool,
                 input: input,
-                timeoutMilliseconds: max(1, tool.definition.timeoutMilliseconds)
+                // 工具可以声明更短 deadline，但不能突破本次 run 的全局单工具上限。
+                timeoutMilliseconds: max(
+                    1,
+                    min(tool.definition.timeoutMilliseconds, limits.defaultToolTimeoutMilliseconds)
+                )
             )
             let attemptElapsed = Int(Date().timeIntervalSince(attemptStartedAt) * 1_000)
             switch outcome {

@@ -292,6 +292,41 @@ struct LoopAgentRuntimeTests {
         #expect(feedback)
     }
 
+    @Test("run 级单工具上限会约束工具声明的更长 timeout")
+    func runLevelToolTimeoutCapsToolDefinition() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-capped", name: "slow_tool", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "已按 run 上限终止", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [SlowRuntimeTool(timeoutMilliseconds: 1_000)]),
+            limits: AgentRunLimits(defaultToolTimeoutMilliseconds: 5)
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["slow_tool"]),
+            prompt: "执行",
+            context: .empty
+        ))
+        let result = try #require(events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first)
+
+        #expect(result.status == .timedOut)
+        #expect(result.attempts.map(\.status) == [.timedOut])
+    }
+
     @Test("需要 Markdown 产出物的 Agent 不允许纯文本提前结束")
     func requiresArtifactBeforeCompletion() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -880,12 +915,16 @@ private struct RetryingRuntimeTool: AgentTool {
 }
 
 private struct SlowRuntimeTool: AgentTool {
-    let definition = AgentToolDefinition(
-        name: "slow_tool",
-        description: "Exceeds its execution deadline",
-        inputSchema: .init(type: .object, additionalProperties: false),
-        timeoutMilliseconds: 5
-    )
+    let definition: AgentToolDefinition
+
+    init(timeoutMilliseconds: Int = 5) {
+        definition = AgentToolDefinition(
+            name: "slow_tool",
+            description: "Exceeds its execution deadline",
+            inputSchema: .init(type: .object, additionalProperties: false),
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+    }
 
     func execute(_ input: AgentToolInput) async -> AgentToolResult {
         try? await Task.sleep(nanoseconds: 100_000_000)
