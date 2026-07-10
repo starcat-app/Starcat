@@ -30,7 +30,7 @@ enum BuiltInAgents {
             "repo_cluster_topics",
             "artifact_build_weekly_report"
         ],
-        artifactTypes: [.markdown, .log]
+        artifactTypes: [.markdown]
     )
 
     static let repoInsight = AgentDefinition(
@@ -51,7 +51,7 @@ enum BuiltInAgents {
             "external_search",
             "artifact_build_repo_insight"
         ],
-        artifactTypes: [.markdown, .log]
+        artifactTypes: [.markdown]
     )
 
     static let all: [AgentDefinition] = [
