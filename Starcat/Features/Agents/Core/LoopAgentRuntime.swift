@@ -139,12 +139,78 @@ struct LoopAgentRuntime: AgentRuntime {
         }
     }
 
+    func resumePendingRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            guard snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
+                  let runID = UUID(uuidString: snapshot.run.id),
+                  let pendingApproval = snapshot.approvals.last(where: { $0.status == .pending })
+            else {
+                continuation.yield(.runFailed(String.l10n("agent.loop.error.noPendingApproval")))
+                continuation.finish()
+                return
+            }
+
+            let session: AgentRunSession
+            do {
+                session = try AgentRunSession(
+                    restoring: snapshot,
+                    pendingApproval: pendingApproval,
+                    limits: limits
+                )
+            } catch {
+                continuation.yield(.runFailed(Self.errorMessage(error)))
+                continuation.finish()
+                return
+            }
+
+            let task = Task {
+                await sessionRouter.activate(session)
+                do {
+                    try await execute(
+                        runID: runID,
+                        session: session,
+                        definition: definition,
+                        prompt: snapshot.run.userPrompt,
+                        context: snapshot.context,
+                        restoration: snapshot,
+                        continuation: continuation
+                    )
+                } catch is CancellationError {
+                    await finishCancelled(runID: runID, session: session, continuation: continuation)
+                } catch {
+                    await finishFailed(
+                        runID: runID,
+                        session: session,
+                        message: Self.errorMessage(error),
+                        continuation: continuation
+                    )
+                }
+                await sessionRouter.deactivate(runID: runID)
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+                Task {
+                    let command = AgentRunCommand.cancel(runID: runID)
+                    if await sessionRouter.send(command) {
+                        _ = await approvalCoordinator.resolve(command)
+                    }
+                }
+            }
+        }
+    }
+
     private func execute(
         runID: UUID,
         session: AgentRunSession,
         definition: AgentDefinition,
         prompt: String,
         context: AgentRunContext,
+        restoration: AgentRunSnapshotRecord? = nil,
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws {
         try Task.checkCancellation()
@@ -164,33 +230,66 @@ struct LoopAgentRuntime: AgentRuntime {
             mode: mode,
             locale: Locale(identifier: localeIdentifier)
         )
-        let initialRequest = promptBuilder.buildTurnRequest(
-            userInput: prompt,
-            messages: [],
-            environment: environment,
-            context: promptContext
-        )
-
-        try await persistCreateRun(
-            runID: runID,
-            definition: definition,
-            prompt: prompt,
-            context: context
-        )
-        await persistRunStatus(runID: runID, status: .running)
-        continuation.yield(.runStarted(title: definition.title))
-
-        let userMessage = try await session.append(
-            role: .user,
-            turn: 0,
-            parts: [.text(initialRequest.userPrompt)]
-        )
-        try await persistMessage(userMessage, runStatus: .running)
-        continuation.yield(.messageAppended(userMessage))
-
         var payload: AgentToolPayload = .none
-        var values: [String: String] = [:]
-        var artifactCount = 0
+        var values = Self.restoredValues(from: restoration?.messages ?? [])
+        var artifactCount = restoration?.artifacts.count ?? 0
+
+        if let restoration {
+            continuation.yield(.runStarted(title: definition.title))
+            let restored = try await resolveRestoredApproval(
+                snapshot: restoration,
+                runID: runID,
+                session: session,
+                prompt: prompt,
+                context: context,
+                values: values,
+                continuation: continuation
+            )
+            let resultMessage = AgentToolResultMessage(
+                toolCallID: restored.call.id,
+                toolName: restored.call.name,
+                output: restored.execution.output,
+                isError: restored.execution.status != .completed && restored.execution.status != .skipped,
+                status: restored.execution.status,
+                elapsedMilliseconds: restored.execution.elapsedMilliseconds,
+                sources: restored.execution.sources,
+                sequence: restored.call.sequence
+            )
+            let toolMessage = try await session.append(
+                role: .tool,
+                turn: restored.turn,
+                parts: [.toolResult(resultMessage)]
+            )
+            try await persistMessage(toolMessage, runStatus: .running)
+            continuation.yield(.messageAppended(toolMessage))
+            if let result = restored.execution.result {
+                applyPayload(result.payload, payload: &payload, values: &values)
+                emitLegacyToolEvents(result, continuation: continuation)
+            }
+        } else {
+            let initialRequest = promptBuilder.buildTurnRequest(
+                userInput: prompt,
+                messages: [],
+                environment: environment,
+                context: promptContext
+            )
+            try await persistCreateRun(
+                runID: runID,
+                definition: definition,
+                prompt: prompt,
+                context: context
+            )
+            await persistRunStatus(runID: runID, status: .running)
+            continuation.yield(.runStarted(title: definition.title))
+
+            let userMessage = try await session.append(
+                role: .user,
+                turn: 0,
+                parts: [.text(initialRequest.userPrompt)]
+            )
+            try await persistMessage(userMessage, runStatus: .running)
+            continuation.yield(.messageAppended(userMessage))
+        }
 
         while true {
             try Task.checkCancellation()
@@ -442,6 +541,24 @@ struct LoopAgentRuntime: AgentRuntime {
             input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}")
         )))
 
+        return try await resolvePreparedApproval(
+            approval: approval,
+            tool: tool,
+            input: input,
+            call: call,
+            session: session,
+            continuation: continuation
+        )
+    }
+
+    private func resolvePreparedApproval(
+        approval: AgentApprovalRequest,
+        tool: any AgentTool,
+        input: AgentToolInput,
+        call: AgentToolCall,
+        session: AgentRunSession,
+        continuation: AsyncStream<AgentRunEvent>.Continuation
+    ) async throws -> ToolExecution {
         switch await approvalCoordinator.wait(for: approval.id) {
         case .cancelled:
             try await session.updateApprovalStatus(.cancelled, approvalID: approval.id)
@@ -479,6 +596,64 @@ struct LoopAgentRuntime: AgentRuntime {
             await session.clearResolvedApproval()
             return execution
         }
+    }
+
+    private func resolveRestoredApproval(
+        snapshot: AgentRunSnapshotRecord,
+        runID: UUID,
+        session: AgentRunSession,
+        prompt: String,
+        context: AgentRunContext,
+        values: [String: String],
+        continuation: AsyncStream<AgentRunEvent>.Continuation
+    ) async throws -> RestoredApprovalExecution {
+        guard let approval = snapshot.approvals.last(where: { $0.status == .pending }) else {
+            throw LoopAgentRuntimeError.approvalRequired("missing pending approval")
+        }
+        let callAndTurn = snapshot.messages.lazy.compactMap { message -> (AgentToolCall, Int)? in
+            for part in message.parts {
+                guard case .toolCall(let call) = part, call.id == approval.toolCallID else { continue }
+                return (call, message.turn)
+            }
+            return nil
+        }.first
+        guard let (call, turn) = callAndTurn,
+              call.name == approval.toolName,
+              call.input == approval.input
+        else {
+            throw LoopAgentRuntimeError.approvalRequired(approval.toolName)
+        }
+
+        let tool = try toolRegistry.validatedTool(for: call)
+        guard tool.permission != .readOnly, tool.permission == approval.permission else {
+            throw LoopAgentRuntimeError.approvalRequired(approval.toolName)
+        }
+        let input = AgentToolInput(
+            toolCallID: call.id,
+            arguments: call.input,
+            prompt: prompt,
+            context: context,
+            values: values
+        )
+
+        await approvalCoordinator.prepare(approval)
+        continuation.yield(.approvalUpdated(approval))
+        continuation.yield(.confirmationRequested(AgentConfirmationAction(
+            id: approval.id,
+            title: call.name,
+            detail: tool.permission.rawValue,
+            toolName: call.name,
+            input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}")
+        )))
+        let execution = try await resolvePreparedApproval(
+            approval: approval,
+            tool: tool,
+            input: input,
+            call: call,
+            session: session,
+            continuation: continuation
+        )
+        return RestoredApprovalExecution(call: call, turn: turn, execution: execution)
     }
 
     private func currentApproval(session: AgentRunSession, id: UUID) async throws -> AgentApprovalRequest {
@@ -727,6 +902,22 @@ struct LoopAgentRuntime: AgentRuntime {
     private static func errorMessage(_ error: Error) -> String {
         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
+
+    private static func restoredValues(from messages: [AgentMessage]) -> [String: String] {
+        var values: [String: String] = [:]
+        for message in messages where message.role == .tool {
+            for part in message.parts {
+                guard case .toolResult(let result) = part,
+                      result.toolName == "external_search",
+                      result.status == .completed,
+                      let detail = result.output.objectValue?["detail"]?.stringValue,
+                      detail.contains("external_context")
+                else { continue }
+                values["externalContextMarkdown"] = detail
+            }
+        }
+        return values
+    }
 }
 
 private enum ToolAttemptOutcome: Sendable {
@@ -738,6 +929,12 @@ private struct CompletionArtifactDraft: Sendable {
     var content: String
     var toolCallID: String
     var messageID: UUID
+}
+
+private struct RestoredApprovalExecution: Sendable {
+    var call: AgentToolCall
+    var turn: Int
+    var execution: ToolExecution
 }
 
 private struct ToolExecution: Sendable {

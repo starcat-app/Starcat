@@ -280,6 +280,78 @@ struct LoopAgentRuntimeTests {
         #expect(await tool.executionCount() == 0)
     }
 
+    @Test("重启恢复 pending approval 后只在批准时执行原调用并继续同一 run")
+    func restoredApprovalExecutesOnceAndContinuesSameRun() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAgentRunRepository(database: database)
+        let definition = makeDefinition(toolIDs: ["write_tag"])
+        let runID = UUID()
+        _ = try await repository.createRun(
+            id: runID,
+            definition: definition,
+            prompt: "写入标签",
+            context: .empty,
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("写入标签")]),
+            runStatus: .running
+        )
+        let call = AgentToolCall(
+            id: "restored-call",
+            name: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            rawInput: "{\"tag\":\"swift\"}",
+            sequence: 1
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.toolCall(call)]),
+            runStatus: .running
+        )
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: .requiresConfirmation,
+            sequence: call.sequence
+        )
+        try await repository.saveApproval(approval, runStatus: .waitingForConfirmation)
+        let persisted = try #require(try await repository.snapshot(runID: runID))
+
+        let recorder = ModelRequestRecorder(responses: [
+            .init(text: "写入完成", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let tool = RuntimeStubTool(name: "write_tag", result: "written", permission: .requiresConfirmation)
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool]),
+            runRepository: repository
+        )
+
+        var events: [AgentRunEvent] = []
+        for await event in runtime.resumePendingRun(snapshot: persisted, definition: definition) {
+            events.append(event)
+            if case .approvalUpdated(let pending) = event, pending.status == .pending {
+                await runtime.send(.decideApproval(
+                    runID: pending.runID,
+                    approvalID: pending.id,
+                    toolCallID: pending.toolCallID,
+                    decision: .approved
+                ))
+            }
+        }
+        let restored = try #require(try await repository.snapshot(runID: runID))
+
+        #expect(await tool.executionCount() == 1)
+        #expect((await recorder.recordedRequests()).count == 1)
+        #expect(restored.run.status == AgentRunStatus.completed.rawValue)
+        #expect(restored.messages.map(\.sequence) == [0, 1, 2, 3])
+        #expect(restored.messages.map(\.role) == [.user, .assistant, .tool, .assistant])
+        #expect(restored.approvals.map(\.status) == [.executed])
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
     private func collect(_ stream: AsyncStream<AgentRunEvent>) async -> [AgentRunEvent] {
         var events: [AgentRunEvent] = []
         for await event in stream { events.append(event) }

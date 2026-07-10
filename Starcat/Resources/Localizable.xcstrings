@@ -2764,11 +2764,25 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 模型没有返回文本或工具调用。" } }
       }
     },
+    "agent.loop.error.noPendingApproval" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This Agent run has no pending approval to resume." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此 Agent 运行没有可恢复的待审批操作。" } }
+      }
+    },
     "agent.loop.error.requiredArtifactMissing" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "The Agent ended before creating the required artifact." } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 在创建必需产出物前结束了运行。" } }
+      }
+    },
+    "agent.loop.error.resumeUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The current Agent runtime cannot resume a pending run." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前 Agent Runtime 无法恢复待审批运行。" } }
       }
     },
     "agent.loop.error.toolTimeoutFormat" : {

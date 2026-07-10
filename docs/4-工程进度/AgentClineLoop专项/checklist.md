@@ -174,7 +174,8 @@
 - [x] 重复、过期、错误 runID/toolCallID 的审批命令明确拒绝。
 - [x] 等待审批期间支持取消,取消后审批命令不再生效。
 - [ ] 中栏显示审批节点,右侧 Inspector 显示参数、风险、批准和拒绝操作。
-- [ ] 补 requested/approved/rejected/duplicate/cancelled/restored approval 单测。
+- [x] 补 requested/approved/rejected/duplicate/cancelled/restored approval 单测。
+> 实现: `resumePendingRun` 从持久化 message/approval/artifact 重建同一 session,保持等待态;批准后只执行原 tool-call 一次,拒绝或取消均不执行。
 
 ### 5.9 GitHub Weekly Report 与 External Search 迁移
 

@@ -16,11 +16,25 @@ protocol AgentRuntime: Sendable {
         prompt: String,
         context: AgentRunContext
     ) -> AsyncStream<AgentRunEvent>
+    func resumePendingRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent>
     func send(_ command: AgentRunCommand) async
 }
 
 extension AgentRuntime {
     func send(_ command: AgentRunCommand) async {}
+
+    func resumePendingRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            continuation.yield(.runFailed(String.l10n("agent.loop.error.resumeUnavailable")))
+            continuation.finish()
+        }
+    }
 }
 
 struct UnavailableAgentRuntime: AgentRuntime {

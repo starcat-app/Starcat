@@ -125,6 +125,38 @@ actor AgentRunSession {
         self.now = now
     }
 
+    /// 从事实存储恢复等待审批的 run。只重建状态，不执行任何工具；恢复后 Session 仍处于
+    /// `waitingForConfirmation`，必须收到匹配 run/approval/toolCall 的命令才会继续。
+    init(
+        restoring snapshot: AgentRunSnapshotRecord,
+        pendingApproval: AgentApprovalRequest,
+        limits: AgentRunLimits = AgentRunLimits(),
+        now: @escaping @Sendable () -> Date = Date.init
+    ) throws {
+        guard let runID = UUID(uuidString: snapshot.run.id), pendingApproval.runID == runID else {
+            throw AgentRunSessionError.invalidRunID(pendingApproval.runID)
+        }
+        self.runID = runID
+        self.limits = limits
+        self.startedAt = ISO8601DateFormatter.shared.date(from: snapshot.run.createdAt) ?? now()
+        self.now = now
+        self.messages = snapshot.messages
+        self.iteration = (snapshot.messages.filter { $0.role == .assistant }.map(\.turn).max() ?? -1) + 1
+        self.toolCallCount = snapshot.messages.reduce(0) { count, message in
+            count + message.parts.filter { if case .toolCall = $0 { return true }; return false }.count
+        }
+        self.usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in
+            var merged = partial
+            merged.merge(next)
+            return merged
+        }
+        self.pendingApproval = pendingApproval
+        self.state = .waitingForConfirmation
+        let maxMessageSequence = snapshot.messages.map(\.sequence).max() ?? -1
+        let maxArtifactSequence = snapshot.artifacts.map(\.sequence).max() ?? -1
+        self.nextSequence = max(maxMessageSequence, maxArtifactSequence) + 1
+    }
+
     func append(
         role: AgentMessageRole,
         turn: Int,

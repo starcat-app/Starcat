@@ -101,6 +101,11 @@ final class AgentWorkspaceViewModel {
         do {
             guard let snapshot = try await runRepository.snapshot(runID: runID) else { return }
             apply(snapshot)
+            if snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
+               let definition = agents.first(where: { $0.id == snapshot.run.agentId }),
+               snapshot.approvals.contains(where: { $0.status == .pending }) {
+                resumePendingRun(snapshot, definition: definition)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -258,6 +263,7 @@ final class AgentWorkspaceViewModel {
     }
 
     private func apply(_ snapshot: AgentRunSnapshotRecord) {
+        activeRunID = UUID(uuidString: snapshot.run.id)
         selectedHistoryRunID = snapshot.run.id
         selectedAgentID = snapshot.run.agentId
         runTitle = snapshot.run.title
@@ -288,6 +294,23 @@ final class AgentWorkspaceViewModel {
         selectedArtifactID = artifacts.first?.id
         assistantOutput = Self.finalAssistantText(snapshot.messages)
         errorMessage = snapshot.run.errorMessage
+    }
+
+    /// 打开等待审批的历史 run 时只重建暂停状态。Runtime 会先发出 pending 事件并等待，
+    /// 不会因为 App 重启或用户打开历史记录就自动执行原工具。
+    private func resumePendingRun(
+        _ snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) {
+        let runtime = runtime
+        runTask?.cancel()
+        runTask = Task { [weak self] in
+            let stream = runtime.resumePendingRun(snapshot: snapshot, definition: definition)
+            for await event in stream {
+                await MainActor.run { self?.apply(event) }
+            }
+            await self?.reloadHistory()
+        }
     }
 
     private static func legacyProjection(
