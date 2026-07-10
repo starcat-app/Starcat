@@ -252,6 +252,46 @@ struct LoopAgentRuntimeTests {
         #expect(result?.attempts.first?.errorSummary == "transient failure")
     }
 
+    @Test("单工具超时会形成 timedOut result 并回灌下一轮")
+    func toolTimeoutFeedsStructuredResultBackToModel() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-timeout", name: "slow_tool", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "已识别工具超时", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [SlowRuntimeTool()])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["slow_tool"]),
+            prompt: "执行",
+            context: .empty
+        ))
+        let result = try #require(events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first)
+        let requests = await recorder.recordedRequests()
+        let feedback = requests[1].prompt.messages.flatMap(\.parts).contains { part in
+            guard case .toolResult(let next) = part else { return false }
+            return next.toolCallID == "call-timeout" && next.status == .timedOut && next.isError
+        }
+
+        #expect(result.status == .timedOut)
+        #expect(result.attempts.map(\.status) == [.timedOut])
+        #expect(feedback)
+    }
+
     @Test("需要 Markdown 产出物的 Agent 不允许纯文本提前结束")
     func requiresArtifactBeforeCompletion() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -837,6 +877,38 @@ private struct RetryingRuntimeTool: AgentTool {
     }
 
     func executionCount() async -> Int { await counter.value() }
+}
+
+private struct SlowRuntimeTool: AgentTool {
+    let definition = AgentToolDefinition(
+        name: "slow_tool",
+        description: "Exceeds its execution deadline",
+        inputSchema: .init(type: .object, additionalProperties: false),
+        timeoutMilliseconds: 5
+    )
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let output = AgentToolOutput(
+            toolName: definition.name,
+            summary: "late",
+            detail: "late",
+            input: "{}",
+            output: "late",
+            log: "late"
+        )
+        return AgentToolResult(
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: definition.name,
+                summary: "late",
+                input: "{}",
+                output: "late",
+                log: "late"
+            )
+        )
+    }
 }
 
 private extension AgentJSONValue {
