@@ -186,7 +186,7 @@ struct GitHubWeeklyReportToolsTests {
             arguments: weeklyArtifactArguments(repoIDs: context.repos.map(\.id)),
             prompt: "生成 Swift 周刊",
             context: context,
-            values: ["externalContextMarkdown": "<external_context>GRDB docs</external_context>"],
+            values: ["externalContextMarkdown": externalContext("GRDB docs")],
             payload: clusterResult.payload
         ))
 
@@ -223,7 +223,7 @@ struct GitHubWeeklyReportToolsTests {
             arguments: repoInsightArtifactArguments(repoID: target.id),
             prompt: "帮我分析 swift-markdown 的定位和风险",
             context: context,
-            values: ["externalContextMarkdown": "<external_context>parser docs</external_context>"],
+            values: ["externalContextMarkdown": externalContext("parser docs")],
             payload: selectResult.payload
         ))
 
@@ -278,6 +278,14 @@ struct GitHubWeeklyReportToolsTests {
             starredAt: "2026-07-07T00:00:00Z",
             htmlUrl: "https://github.com/\(fullName)"
         )
+    }
+
+    private func externalContext(_ content: String) -> String {
+        """
+        <external_context>
+        \(content)
+        </external_context>
+        """
     }
 
     private func weeklyArtifactArguments(repoIDs: [Int64]) -> AgentJSONValue {

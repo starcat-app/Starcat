@@ -137,7 +137,9 @@ enum WeeklyReportArtifactBuilder {
         let references = Dictionary(uniqueKeysWithValues: referencedIDs.enumerated().map { index, id in
             (id, "R\(index + 1)")
         })
-        let sectionMarkdown = request.sections.enumerated().map { index, section in
+        // 显式固定为 String，避免同模块的 GRDB.SQL 字符串插值参与泛型推断，
+        // 否则最终 Markdown 会意外写入 SQL(elements: ...) 的调试描述。
+        let sectionMarkdown: String = request.sections.enumerated().map { index, section -> String in
             let repoLines = section.repoIDs.compactMap { id -> String? in
                 guard let repo = reposByID[id], let reference = references[id] else { return nil }
                 return repoLine(repo, reference: reference)
