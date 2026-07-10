@@ -49,6 +49,8 @@ final class AppDependencies {
     let directLicenseManager: DirectLicenseManager
     /// StoreKit + Direct License 的聚合权益真相源。
     let proEntitlementProvider: CompositeProEntitlementProvider
+    /// App Store / Direct 构建渠道能力门控。它只判断构建渠道，不判断 Pro 权益。
+    let distributionGate: DistributionGate
     /// Direct 版 Sparkle 自动更新协调器。App Store 构建中保持 no-op。
     let directUpdateController: DirectUpdateController
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
@@ -517,6 +519,7 @@ final class AppDependencies {
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
         let distributionChannel = DistributionChannel.current
+        self.distributionGate = DistributionGate(channel: distributionChannel)
         let subscriptions = SubscriptionManager(
             settings: settings,
             startTransactionListener: distributionChannel.isAppStore

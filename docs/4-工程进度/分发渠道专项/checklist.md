@@ -33,6 +33,10 @@
   > 实现：两个渠道都写入 `STARCAT_DISTRIBUTION`，Direct 额外写入 Sparkle appcast 配置。
 - [x] 渠道读取单测 — `StarcatTests/DistributionChannelTests.swift` — 2026-07-04
   > 实现：覆盖缺省、Direct 大小写/空白归一化、非法值回退。
+- [x] 渠道能力门控 — `Starcat/Core/Distribution/DistributionGate.swift` — 2026-07-10
+  > 实现：新增 `DistributionGate` 区分构建渠道能力和 Pro 权益；App Store 拒绝 Direct-only 能力，Direct 统一放行。
+- [x] 渠道能力门控规范 — `docs/5-规范/分发渠道能力门控规范.md` — 2026-07-10
+  > 实现：单独沉淀 Direct-only 功能写法、禁止写法和新增能力 checklist，详细设计只保留引用。
 
 ---
 
