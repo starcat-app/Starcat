@@ -153,10 +153,10 @@ targets:
           set -euo pipefail
 
           # App 内 Release Notes 根据用户首选语言读取 bundle 里的更新日志。
-          # Release notes 由 supports/starcat-pro 作为单一来源维护，避免根目录重复存放。
+          # App Store 包只打包主仓库内的审核安全更新日志，避免混入 Direct-only 分发说明。
           mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
+          cp "${SRCROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+          cp "${SRCROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
@@ -254,6 +254,7 @@ targets:
         script: |
           set -euo pipefail
 
+          # Direct 包继续使用公开 starcat-pro 更新日志，保留 Direct-only 分发与更新说明。
           mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
           cp "${SRCROOT}/supports/starcat-pro/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
           cp "${SRCROOT}/supports/starcat-pro/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"

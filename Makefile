@@ -43,7 +43,7 @@ help: ## 列出所有可用命令
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
 	@echo "  make build-dmg VERSION=0.1.0 打包 Release DMG（调用 scripts/build-dmg.sh）"
-	@echo "  make release VERSION=v0.1.0  Store 历史发版入口：tag + DMG + push tag（调用 scripts/release-store.sh）"
+	@echo "  make release-store VERSION=v0.1.0  Store 历史发版入口：tag + DMG + push tag（调用 scripts/release-store.sh）"
 	@echo "  make release-dry-run VERSION=v0.1.0  演练发版流程，不实际改动"
 	@echo "  make pr-helper              PR 自动化：dev → main 创建/合并/清理（要求工作区干净）"
 	@echo "  make bump-version           手动调试版本号脚本（正常由 Xcode build phase 调用）"
@@ -80,11 +80,11 @@ build-dmg:
 	@bash scripts/build-dmg.sh "$(VERSION)"
 
 ## 发版总入口（VERSION=v0.1.0 RELEASE_FLAGS="--skip-push"）
-release: 
+release-store: 
 	# release-store.sh 会打本地 tag、构建 DMG，并按参数决定是否 push tag。
 	# 这是发版动作，必须显式传 VERSION，避免误用默认 0.0.1 发版。
 	@if [ "$(origin VERSION)" = "file" ]; then \
-		echo "请显式传版本号，例如：make release VERSION=v0.1.0"; \
+		echo "请显式传版本号，例如：make release-store VERSION=v0.1.0"; \
 		exit 1; \
 	fi
 	@bash scripts/release-store.sh "$(VERSION)" $(RELEASE_FLAGS)
