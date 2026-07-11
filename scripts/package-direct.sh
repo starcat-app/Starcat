@@ -127,6 +127,9 @@ fi
 DIST_VALUE=$(/usr/libexec/PlistBuddy -c 'Print :STARCAT_DISTRIBUTION' "$APP_PATH/Contents/Info.plist")
 [ "$DIST_VALUE" = "direct" ] || fail "STARCAT_DISTRIBUTION 应为 direct，实际为 $DIST_VALUE"
 
+LICENSE_API_ENV=$(/usr/libexec/PlistBuddy -c 'Print :STARCAT_LICENSE_API_ENVIRONMENT' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+[ "$LICENSE_API_ENV" = "live" ] || fail "Direct Release 必须连接生产 License API，实际 STARCAT_LICENSE_API_ENVIRONMENT=$LICENSE_API_ENV"
+
 APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")
 [ "$APP_VERSION" = "$VERSION" ] || fail "CFBundleShortVersionString 应为 $VERSION，实际为 $APP_VERSION"
 

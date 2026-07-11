@@ -71,7 +71,8 @@ Starcat Direct 一键发布脚本
       默认已使用 Starcat 当前 Developer ID 证书，通常无需手动传。
 
   STARCAT_RELEASE_ALLOW_UNNOTARIZED=1
-      允许发布未公证 DMG。仅内部临时验证使用，正式公开发布不要设置。
+      允许发布未公证 DMG，并忽略环境变量或本地文件中的旧 Submission ID。
+      仅内部临时验证使用，正式公开发布不要设置。
 
   STARCAT_RELEASE_HOST=aliyun2
       SSH host，默认 aliyun2，需要在 ~/.ssh/config 中配置。
@@ -98,10 +99,11 @@ Starcat Direct 一键发布脚本
       跳过创建和推送 tag。用于 tag 已存在时重跑发布。
 
   STARCAT_RELEASE_SKIP_NGINX=1
-      跳过 nginx 配置部署。
+      兼容旧变量；由于 pages/direct/deploy.sh 已合并 nginx 与静态资源部署，
+      设置后会跳过整个官网部署。
 
   STARCAT_RELEASE_SKIP_SITE=1
-      跳过官网 changelog 生成和静态页部署。
+      跳过官网 changelog 生成、nginx 和静态页部署。
 
   STARCAT_RELEASE_SKIP_BRANCH_CHECK=1
       跳过 main 分支检查。仅临时排查使用。
@@ -222,16 +224,6 @@ create_and_push_tag() {
   run_or_print git push "$RELEASE_REMOTE" "$TAG_NAME"
 }
 
-deploy_nginx() {
-  if [ "${STARCAT_RELEASE_SKIP_NGINX:-0}" = "1" ]; then
-    log "跳过 nginx 配置部署"
-    return
-  fi
-
-  log "部署 nginx 配置"
-  run_or_print "${PAGES_DIR}/deploy.sh" -n
-}
-
 require_notarization_policy() {
   if [ "$DRY_RUN" = "1" ]; then
     return
@@ -250,24 +242,34 @@ require_notarization_policy() {
 }
 
 deploy_site() {
+  if [ "${STARCAT_RELEASE_SKIP_NGINX:-0}" = "1" ]; then
+    log "跳过官网部署：deploy.sh 已合并 nginx + 静态资源，STARCAT_RELEASE_SKIP_NGINX=1 时不单独部署静态页"
+    return
+  fi
   if [ "${STARCAT_RELEASE_SKIP_SITE:-0}" = "1" ]; then
-    log "跳过官网 changelog 生成和静态页部署"
+    log "跳过官网 changelog 生成、nginx 和静态页部署"
     return
   fi
 
   log "生成官网 changelog 页面"
   run_or_print python3 "${PAGES_DIR}/generate-changelog.py"
 
-  log "部署官网静态页"
+  log "部署官网 nginx 配置和静态页"
   run_or_print "${PAGES_DIR}/deploy.sh"
 }
 
 package_direct() {
-  local submission_id
-  submission_id="$(existing_notary_submission_id)"
-  if [ -n "$submission_id" ]; then
-    resume_notarized_package "$submission_id"
-    return
+  if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
+    local submission_id
+    submission_id="$(existing_notary_submission_id)"
+    if [ -n "$submission_id" ]; then
+      resume_notarized_package "$submission_id"
+      return
+    fi
+  elif [ "${STARCAT_RELEASE_ALLOW_UNNOTARIZED:-0}" = "1" ]; then
+    # 临时未公证模式必须忽略残留 ID，否则旧任务会抢先进入续跑分支，
+    # 导致 Apple 已清理的 Submission 阻断后续打包和上传流程。
+    log "未公证模式：忽略已有 notarization Submission ID"
   fi
 
   log "本地打包并生成 Sparkle appcast: ${VERSION}"
@@ -419,24 +421,20 @@ merge_appcast() {
 }
 
 verify_remote_urls() {
-  if [ "$DRY_RUN" = "1" ]; then
-    log "DRY RUN 完成，未执行线上校验"
-    return
-  fi
-
   local appcast_url="https://starcat.ink/appcast.xml"
   local dmg_url="${DOWNLOAD_BASE_URL%/}/Starcat-${VERSION}-arm64.dmg"
   local changelog_url="https://starcat.ink/changelog.html"
 
-  log "校验线上 appcast: $appcast_url"
-  curl -fsSI "$appcast_url" >/dev/null || fail "appcast 线上不可访问: $appcast_url"
-
-  log "校验线上 DMG: $dmg_url"
-  curl -fsSI "$dmg_url" >/dev/null || fail "DMG 线上不可访问: $dmg_url"
+  verify_public_url "appcast" "$appcast_url"
+  verify_public_url "DMG" "$dmg_url"
 
   if [ "${STARCAT_RELEASE_SKIP_SITE:-0}" != "1" ]; then
-    log "校验线上 changelog: $changelog_url"
-    curl -fsSI "$changelog_url" >/dev/null || fail "changelog 线上不可访问: $changelog_url"
+    verify_public_url "changelog" "$changelog_url"
+  fi
+
+  if [ "$DRY_RUN" = "1" ]; then
+    log "DRY RUN 完成，未执行线上校验"
+    return
   fi
 
   log "完成"
@@ -446,12 +444,26 @@ verify_remote_urls() {
   log "changelog: $changelog_url"
 }
 
+verify_public_url() {
+  local label="$1"
+  local url="$2"
+  local remote_command
+
+  # 本机网络可能被 TUN / Fake-IP / 代理分流接管，从发布服务器校验可避免本地 TLS 误判。
+  printf -v remote_command \
+    'curl -fsSI --connect-timeout 15 --retry 3 --retry-delay 2 --retry-all-errors %q >/dev/null' \
+    "$url"
+
+  log "从发布服务器校验线上 ${label}: $url"
+  run_or_print "${SSH_CMD[@]}" "$RELEASE_HOST" "$remote_command" \
+    || fail "${label} 线上不可访问: $url"
+}
+
 main() {
   require_command git
   require_command python3
   require_command rsync
   require_command ssh
-  require_command curl
 
   cd "$PROJECT_ROOT"
 
@@ -459,7 +471,6 @@ main() {
   require_clean_worktree
   require_notarization_policy
   create_and_push_tag
-  deploy_nginx
   deploy_site
   package_direct
   verify_local_artifacts

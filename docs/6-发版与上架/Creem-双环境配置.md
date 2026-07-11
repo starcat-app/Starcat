@@ -6,8 +6,8 @@
 
 > 状态: 进行中。目标是把 Creem 试用、License seat、支付成功页、取消订阅、落地页 checkout 和 Direct/App Store 文案边界一次性收口。
 
-- [x] **14 天 Pro 试用文案** — Monthly subscription 在 Creem Dashboard 配置 14 天 trial；落地页 Pricing / FAQ 明确说明试用期包含全部 Pro 功能，到期后按 $9.99/月续费。
-- [x] **许可证 seat 展示** — 当前 License Keys activation limit 暂定 1 台 Mac；后端标准化返回 `activationLimit/activationUsed`，App 已可接收，落地页和成功页都明确展示。
+- [x] **14 天 Pro 试用文案** — Monthly subscription 在 Creem Dashboard 配置 14 天 trial；落地页 Pricing / FAQ 明确说明试用期包含全部 Pro 功能，到期后按 $3.99/月续费。
+- [x] **许可证 seat 展示** — 当前 License Keys activation limit 暂定 2 台 Mac；后端标准化返回 `activationLimit/activationUsed`，App 已可接收，落地页和成功页都明确展示。
 - [x] **支付成功页重做** — 成功页属于 `supports/starcat-license-api`，不是 `pages`；生产环境只展示 Order、License Key 和许可证可用数，测试环境折叠显示 checkout/subscription/customer 等调试信息。
 - [~] **Monthly → Lifetime 保护** — Lifetime 权益优先级高于 Monthly；成功页 deep link 会保留旧月订阅 id，App 已提供取消入口，自动化提示待补。
 - [x] **App 内取消订阅入口** — Direct 版 Pro 设置页添加“取消月订阅”入口，调用 Starcat License API；后端再调用 Creem `POST /v1/subscriptions/{id}/cancel`，默认 `mode=scheduled`、`onExecute=cancel`。
@@ -34,8 +34,8 @@ Creem 官方文档说明：Test Mode 是完全隔离环境，API、支付、webh
 1. 打开 Creem Dashboard。
 2. 左下角切换到 `Test Mode`。
 3. 创建三个 Product：
-   - `Starcat Pro Monthly`：`$9.99/month`
-   - `Starcat Pro Yearly`：`$19.99/year`
+   - `Starcat Pro Monthly`：`$3.99/month`
+   - `Starcat Pro Yearly`：`$29.99/year`
    - `Starcat Pro Lifetime`：`$39.99` one-time
 4. 复制 Test Mode 下的：
    - API Key：写入 staging 后端 `CREEM_API_KEY`
@@ -63,8 +63,8 @@ Creem 官方文档说明：Test Mode 是完全隔离环境，API、支付、webh
 
 1. 关闭 `Test Mode`，回到 Live Mode。
 2. 创建同名生产 Product：
-   - `Starcat Pro Monthly`：`$9.99/month`
-   - `Starcat Pro Yearly`：`$19.99/year`
+   - `Starcat Pro Monthly`：`$3.99/month`
+   - `Starcat Pro Yearly`：`$29.99/year`
    - `Starcat Pro Lifetime`：`$39.99` one-time
 3. 复制 Live Mode 下的 API Key 和三个 Product ID。
 4. 添加生产 webhook：
@@ -235,16 +235,21 @@ curl -fsS https://starcat-license-api.fly.dev/healthz
 
 #### 2.3.1 部署落地页
 
+测试 / 生产落地页已经拆成两套域名和两套静态目录，完整说明见 [`Direct-测试与生产环境隔离.md`](Direct-测试与生产环境隔离.md)。
+
 落地页部署脚本默认使用 `~/.ssh/config` 里的 `aliyun` alias。如果本机 alias 绑定了错误私钥，可以用 `DEPLOY_SSH_KEY` 显式指定：
 
 ```bash
-cd pages
-
+# 测试环境：test.starcat.ink -> starcat-license-api-staging
+cd pages/direct-test
 DEPLOY_SSH_KEY="$HOME/.ssh/server" ./deploy.sh
-DEPLOY_SSH_KEY="$HOME/.ssh/server" ./deploy.sh -n
+
+# 生产环境：starcat.ink -> starcat-license-api
+cd ../direct
+DEPLOY_SSH_KEY="$HOME/.ssh/server" ./deploy.sh
 ```
 
-第一条同步静态资源，第二条同步 `starcat.ink.conf` 并执行 `nginx -t && systemctl reload nginx`。Nginx 配置必须包含 `connect-src https://starcat-license-api.fly.dev`，否则浏览器会拦截 checkout 请求。
+执行 `deploy.sh` 会先同步对应 nginx 配置并执行 `nginx -t && systemctl reload nginx`，再同步对应静态资源。生产目录 `pages/direct` 固定 production checkout，测试目录 `pages/direct-test` 固定 staging checkout。
 
 #### 2.4 Production checkout smoke test
 
@@ -437,7 +442,7 @@ network / timeout / 5xx / temporary malformed response:
   "productID": "...",
   "instanceID": "...",
   "activationUsed": 1,
-  "activationLimit": 1,
+  "activationLimit": 2,
   "validatedAt": "..."
 }
 ```

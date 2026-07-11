@@ -58,6 +58,11 @@ if ! /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PATH/Contents/Info.plis
   echo "ERROR: Direct Info.plist 缺少 SUFeedURL，拒绝启动。"
   exit 1
 fi
+LICENSE_API_ENV=$(/usr/libexec/PlistBuddy -c "Print :STARCAT_LICENSE_API_ENVIRONMENT" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+if [ "$LICENSE_API_ENV" != "test" ]; then
+  echo "ERROR: Direct Debug 必须连接测试 License API，当前 STARCAT_LICENSE_API_ENVIRONMENT=$LICENSE_API_ENV"
+  exit 1
+fi
 if [ ! -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
   echo "ERROR: Direct 构建产物缺少 Sparkle.framework，拒绝启动。"
   exit 1
@@ -66,6 +71,7 @@ fi
 echo "==> 签名摘要:"
 codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: direct"
+echo "    license api: test"
 echo "    preferences: ~/Library/Preferences/com.starcat.app.direct.plist"
 echo "    data: ~/Library/Application Support/com.starcat.app"
 echo "    app support: ~/Library/Application Support/com.starcat.app"

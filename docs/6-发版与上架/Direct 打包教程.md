@@ -137,6 +137,22 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
 2. `xcrun stapler staple`
 3. `spctl --assess --type open`
 
+仅需临时走通后续发布流程时，可以显式允许未公证 DMG：
+
+```bash
+STARCAT_RELEASE_ALLOW_UNNOTARIZED=1 \
+STARCAT_RELEASE_SKIP_TAG=1 \
+./scripts/release-direct.sh 1.0.0
+```
+
+对应的 Make 快捷入口：
+
+```bash
+make release-direct-unnotarized VERSION=1.0.0
+```
+
+未公证模式会忽略 `STARCAT_NOTARY_SUBMISSION_ID` 和本地残留的 `.notary-submission-id`，重新生成 DMG 与 appcast。该产物只用于内部临时验证，不能作为正式公开发布包。
+
 ## 5. 发布 Direct 更新
 
 正式发布或端到端测试时，使用发布编排脚本。脚本内置 `--help`，忘记用法时先看帮助：
@@ -153,12 +169,12 @@ dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和
 1. 确认当前分支是 `main` 且工作区干净。
 2. 创建并推送 `v1.0.0` annotated tag。
 3. 生成并部署官网 changelog 页面。
-4. 部署 `pages/starcat.ink.conf` 并 reload nginx。
+4. 部署 `pages/direct/starcat.ink.conf` 并 reload nginx。
 5. 调用 `scripts/package-direct.sh 1.0.0` 完成本地 Direct 打包。
 6. 生成 Sparkle appcast。
 7. 上传 `pages/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
 8. 上传 DMG / SHA256 到 `https://starcat.ink/downloads/`。
-9. 用 `curl -I` 校验线上 appcast、DMG 和 changelog 可访问。
+9. 通过 `STARCAT_RELEASE_HOST` 在发布服务器上执行 `curl -I`，校验线上 appcast、DMG 和 changelog 可访问，避免本机 TUN / Fake-IP / 代理分流造成 TLS 误判。
 
 如果 `notarytool --wait` 在拿到 Submission ID 后网络超时，先等 Apple 状态变成 `Accepted`，再复用已有 DMG 续跑：
 
@@ -187,7 +203,7 @@ STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.0.0
 STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.0.0
 ```
 
-如果只重跑 Direct 更新文件发布，跳过 tag、nginx 和官网静态页部署：
+如果只重跑 Direct 更新文件发布，跳过 tag 和官网部署：
 
 ```bash
 STARCAT_RELEASE_SKIP_TAG=1 \
@@ -272,4 +288,5 @@ STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.0.1
 - 使用 `scripts/release-direct.sh` 发布，或单独运行 `package-direct.sh` 时设置 `STARCAT_GENERATE_APPCAST=1`
 - `STARCAT_DOWNLOAD_BASE_URL` 以 `/downloads/` 结尾
 - DMG 已 notarize/staple 后再生成 appcast
-- nginx 已部署 `pages/starcat.ink.conf` 中 `/appcast.xml` 的 no-cache 规则
+- nginx 已部署 `pages/direct/starcat.ink.conf` 中 `/appcast.xml` 的 no-cache 规则
+- 测试 / 生产落地页部署方式见 `docs/6-发版与上架/Direct-测试与生产环境隔离.md`

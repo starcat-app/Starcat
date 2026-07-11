@@ -29,12 +29,17 @@ DEBUG_APP_SUPPORT := $(HOME)/Library/Application Support/com.starcat.app
 VERSION ?= 0.0.1
 RELEASE_FLAGS ?=
 LINGUIST_ARGS ?=
+APPSTORE_TEAM ?= 8WCUMGCWMB
+NOTARY_PROFILE ?= starcat-notary
+SUBMISSION_ID ?=
+
+APPSTORE_ARCHIVE := $(CURDIR)/dist/appstore/Starcat-AppStore.xcarchive
 
 # --- 默认 target：不带参数跑 `make` 时显示帮助，避免误触 reset-db ---
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run-appstore run-direct test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-nginx
+.PHONY: help run-appstore run-direct test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -42,6 +47,19 @@ help: ## 列出所有可用命令
 	@echo "  make run-appstore           执行 scripts/run-debug-appstore.sh（App Store / 沙盒 Debug）"
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
+	@echo ""
+	@echo "App Store："
+	@echo "  make package-appstore       生成 App Store archive，不上传"
+	@echo "  make open-appstore-archive  打开 App Store archive，交给 Xcode Organizer 上传"
+	@echo ""
+	@echo "Direct："
+	@echo "  make package-direct VERSION=0.1.0             生成未公证 Direct DMG，不上传"
+	@echo "  make package-direct-notarized VERSION=0.1.0   生成并公证 Direct DMG，不上传"
+	@echo "  make release-direct VERSION=0.1.0             完整正式发布 Direct 版本"
+	@echo "  make release-direct-retry VERSION=0.1.0 SUBMISSION_ID=<id>  续跑已有公证任务"
+	@echo "  make release-direct-unnotarized VERSION=0.1.0 临时发布未公证 Direct DMG"
+	@echo ""
+	@echo "Legacy："
 	@echo "  make build-dmg VERSION=0.1.0 打包 Release DMG（调用 scripts/build-dmg.sh）"
 	@echo "  make release-store VERSION=v0.1.0  Store 历史发版入口：tag + DMG + push tag（调用 scripts/release-store.sh）"
 	@echo "  make release-dry-run VERSION=v0.1.0  演练发版流程，不实际改动"
@@ -57,8 +75,8 @@ help: ## 列出所有可用命令
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing / recommend / discovery）"
 	@echo "  make sync-fly-secrets              从 supports 各 API .env 并行同步 secrets 到 Fly.io"
 	@echo "  make setup-production-api-keys    从 supports 各 API .env 写入 Configs/Secrets.xcconfig（每服务独立 key）"
-	@echo "  make deploy-pages                部署 pages/ 静态资源到 aliyun:/var/www/starcat/"
-	@echo "  make deploy-nginx                上传 nginx 配置到 aliyun 并重载 nginx"
+	@echo "  make deploy-pages                部署生产 nginx + 静态页到 https://starcat.ink"
+	@echo "  make deploy-pages-test           部署测试 nginx + 静态页到 https://test.starcat.ink"
 	@echo ""
 
 run-appstore: ## App Store / 沙盒 Debug
@@ -96,6 +114,77 @@ release-dry-run:
 		exit 1; \
 	fi
 	@bash scripts/release-store.sh "$(VERSION)" --dry-run $(RELEASE_FLAGS)
+
+## 生成 App Store archive，不自动上传
+package-appstore:
+	@STARCAT_DEVELOPMENT_TEAM="$(APPSTORE_TEAM)" bash scripts/package-appstore.sh
+
+## 打开 App Store archive，交给 Xcode Organizer 上传
+open-appstore-archive:
+	@if [ ! -d "$(APPSTORE_ARCHIVE)" ]; then \
+		echo "未找到 App Store archive，请先执行：make package-appstore"; \
+		exit 1; \
+	fi
+	@open "$(APPSTORE_ARCHIVE)"
+
+## 生成未公证 Direct DMG，不执行发布上传（VERSION=0.1.0）
+package-direct:
+	@if [ "$(origin VERSION)" = "file" ]; then \
+		echo "请显式传版本号，例如：make package-direct VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@bash scripts/package-direct.sh "$(VERSION)"
+
+## 生成并公证 Direct DMG，不执行发布上传（VERSION=0.1.0）
+package-direct-notarized:
+	@if [ "$(origin VERSION)" = "file" ]; then \
+		echo "请显式传版本号，例如：make package-direct-notarized VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@STARCAT_NOTARIZE=1 \
+	STARCAT_NOTARY_PROFILE="$(NOTARY_PROFILE)" \
+	bash scripts/package-direct.sh "$(VERSION)"
+
+## 完整正式发布 Direct 版本（VERSION=0.1.0）
+release-direct:
+	@if [ "$(origin VERSION)" = "file" ]; then \
+		echo "请显式传版本号，例如：make release-direct VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@STARCAT_NOTARIZE=1 \
+	STARCAT_NOTARY_PROFILE="$(NOTARY_PROFILE)" \
+	bash scripts/release-direct.sh "$(VERSION)"
+
+## 使用已有 Submission ID 续跑 Direct 正式发布（VERSION=0.1.0 SUBMISSION_ID=<id>）
+release-direct-retry:
+	@if [ "$(origin VERSION)" = "file" ]; then \
+		echo "请显式传版本号，例如：make release-direct-retry VERSION=0.1.0 SUBMISSION_ID=<id>"; \
+		exit 1; \
+	fi
+	@if [ -z "$(SUBMISSION_ID)" ]; then \
+		echo "请显式传 Submission ID，例如：make release-direct-retry VERSION=$(VERSION) SUBMISSION_ID=<id>"; \
+		exit 1; \
+	fi
+	@STARCAT_NOTARIZE=1 \
+	STARCAT_NOTARY_PROFILE="$(NOTARY_PROFILE)" \
+	STARCAT_NOTARY_SUBMISSION_ID="$(SUBMISSION_ID)" \
+	STARCAT_RELEASE_SKIP_TAG=1 \
+	bash scripts/release-direct.sh "$(VERSION)"
+
+## 临时发布未公证 Direct DMG（VERSION=0.1.0）
+release-direct-unnotarized:
+	# 该入口只用于 Apple Notary 不可用时走通后续流程；产物不能作为正式公开发布包。
+	@if [ "$(origin VERSION)" = "file" ]; then \
+		echo "请显式传版本号，例如：make release-direct-unnotarized VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@STARCAT_RELEASE_ALLOW_UNNOTARIZED=1 \
+	STARCAT_RELEASE_SKIP_BRANCH_CHECK=1 \
+	STARCAT_RELEASE_SKIP_NGINX=1 \
+	STARCAT_RELEASE_SKIP_SITE=1 \
+	STARCAT_RELEASE_SKIP_DIRTY_CHECK=1 \
+	STARCAT_RELEASE_SKIP_TAG=1 \
+	bash scripts/release-direct.sh "$(VERSION)"
 
 pr-helper: ## PR 自动化脚本（要求 dev 分支 + 工作区干净）
 	# 会推送 dev、创建 PR、尝试合并并清理远端 dev；运行前请确认当前分支与工作区状态。
@@ -161,8 +250,8 @@ sync-fly-secrets: ## 从 supports 各 API .env 同步 fly secrets
 setup-production-api-keys: ## 从 supports 各 API .env 写入 Secrets.xcconfig（每服务独立 key）
 	@bash scripts/sync-production-api-keys-from-env.sh
 
-deploy-pages: ## 部署 pages/ 静态资源到 aliyun:/var/www/starcat/
-	@cd pages && ./deploy.sh
+deploy-pages: ## 部署生产 nginx + 静态页到 https://starcat.ink
+	@cd pages/direct && ./deploy.sh
 
-deploy-nginx: ## 上传 nginx 配置到 aliyun 并重载 nginx
-	@cd pages && ./deploy.sh -n
+deploy-pages-test: ## 部署测试 nginx + 静态页到 https://test.starcat.ink
+	@cd pages/direct-test && ./deploy.sh

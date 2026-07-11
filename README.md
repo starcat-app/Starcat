@@ -126,7 +126,8 @@ cd /Users/dong4j/Developer/1.AI/ai-Incubator/Starcat && \
 | 方案 | 价格 | 说明 |
 |------|------|------|
 | 免费版 | $0 | GitHub OAuth 与 Stars 同步、本地 SQLite 离线缓存、未分类 / 标签 / 语言视图、过滤、README 预览、Clone URL 与 GitHub 快捷入口、私有笔记、状态管理、本地全文搜索、HTML / Markdown 导出、分享卡片；免费额度为 20 标签 / 4 智能集合 / 5 Release |
-| Pro Monthly | $9.99/月 | 不限标签 / 集合 / Release，Release 轮询与通知，AI 摘要、AI 标签推荐、AI Chat、README 翻译、自动 AI 整理、Embedding 语义搜索、LLM 友好的网页上下文、RepoContextPacker、CodeFlow、Trending AI 推荐、BYOK Provider 配置 |
+| Pro Monthly | $3.99/月 | 不限标签 / 集合 / Release，Release 轮询与通知，AI 摘要、AI 标签推荐、AI Chat、README 翻译、自动 AI 整理、Embedding 语义搜索、LLM 友好的网页上下文、RepoContextPacker、CodeFlow、Trending AI 推荐、BYOK Provider 配置 |
+| Pro Yearly | $29.99/年 | 包含 Pro Monthly 全部功能；相比月付节省约 37%，适合长期持续使用 |
 | Pro Lifetime | $39.99 买断 | 包含 Pro Monthly 全部功能；一次性付款，终身解锁当前 Pro 功能，无需每月续费 |
 | 自建服务 | 免费 | 使用自己的服务器 |
 
