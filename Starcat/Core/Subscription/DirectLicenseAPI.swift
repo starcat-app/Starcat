@@ -54,6 +54,10 @@ struct DirectLicenseAPI: Sendable {
         try await send(path: AppEndpoints.DirectLicense.Paths.deactivate, body: request)
     }
 
+    func devices(_ request: DirectLicenseDevicesRequest) async throws -> DirectLicenseSnapshot {
+        try await send(path: AppEndpoints.DirectLicense.Paths.devices, body: request)
+    }
+
     private func send<Request: Encodable, Response: Decodable>(
         path: String,
         body: Request

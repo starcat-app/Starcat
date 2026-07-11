@@ -33,6 +33,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
     private(set) var lastSnapshot: DirectLicenseSnapshot?
     private(set) var lastSubscriptionSnapshot: DirectSubscriptionSnapshot?
+    private(set) var licenseDevices: [DirectLicenseDevice] = []
     private(set) var lastErrorMessage: String?
     private(set) var isRequestInFlight = false
 
@@ -42,7 +43,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         api: DirectLicenseAPI = DirectLicenseAPI(),
         store: DirectLicenseStore = DirectLicenseStore(),
         appVersionProvider: @escaping @MainActor () -> String = { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0" },
-        deviceIDProvider: @escaping @MainActor () -> String = { AppConstants.bundleIdentifier },
+        deviceIDProvider: @escaping @MainActor () -> String = { DirectLicenseManager.defaultDeviceName(store: DirectLicenseStore()) },
         nowProvider: @escaping @MainActor () -> Date = { Date() }
     ) {
         self.api = api
@@ -169,17 +170,64 @@ final class DirectLicenseManager: ProEntitlementProviding {
     @discardableResult
     func deactivateStoredLicense() async -> Bool {
         guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
-        let didRemainActive = await perform {
-            let snapshot = try await api.deactivate(DirectLicenseDeactivationRequest(
+        return await deactivateLicenseDevice(instanceID: credential.instanceID)
+    }
+
+    @discardableResult
+    func refreshLicenseDevices() async -> Bool {
+        guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
+        isRequestInFlight = true
+        defer { isRequestInFlight = false }
+
+        do {
+            let snapshot = try await api.devices(DirectLicenseDevicesRequest(
                 licenseKey: credential.licenseKey,
                 instanceID: credential.instanceID,
                 deviceID: deviceIDProvider()
             ))
-            try? store.deleteCredential()
-            storedCredential = nil
-            return snapshot
+            applyValidatedSnapshot(snapshot, credential: credential)
+            lastErrorMessage = nil
+            return true
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            AppLog.general.error("[direct-license] refresh devices failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
-        return didRemainActive
+    }
+
+    @discardableResult
+    func deactivateLicenseDevice(instanceID: String) async -> Bool {
+        guard let credential = storedCredential ?? (try? store.loadCredential()),
+              let targetInstanceID = directLicenseTrimmed(instanceID)
+        else { return false }
+
+        isRequestInFlight = true
+        defer { isRequestInFlight = false }
+
+        do {
+            let snapshot = try await api.deactivate(DirectLicenseDeactivationRequest(
+                licenseKey: credential.licenseKey,
+                instanceID: targetInstanceID,
+                deviceID: deviceIDProvider()
+            ))
+            lastSnapshot = snapshot
+            licenseDevices = snapshot.devices ?? licenseDevices.filter { $0.instanceID != targetInstanceID }
+            lastErrorMessage = nil
+
+            if targetInstanceID == credential.instanceID {
+                try? store.deleteCredential()
+                storedCredential = nil
+                validationRecord = .empty
+                runtimeState = .none
+                entitlement = .inactive
+                licenseDevices = []
+            }
+            return true
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            AppLog.general.error("[direct-license] deactivate device failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 
     @discardableResult
@@ -239,11 +287,46 @@ final class DirectLicenseManager: ProEntitlementProviding {
         }
     }
 
+    /// 创建 Creem customer portal URL。
+    ///
+    /// 客户端只把支付成功页保存下来的 `customerID` 交给 Starcat License API；真正的
+    /// Creem API Key 和 portal 创建逻辑仍留在服务端。没有 `customerID` 时不猜测邮箱，
+    /// 避免在本机缺少订单上下文时误打开错误客户的账单页。
+    func createCustomerPortalURL() async -> URL? {
+        guard let credential = storedCredential ?? (try? store.loadCredential()),
+              let customerID = directLicenseTrimmed(credential.customerID)
+        else {
+            lastErrorMessage = String.l10n("settings.pro.direct.portal.missingCustomer")
+            return nil
+        }
+
+        isRequestInFlight = true
+        defer { isRequestInFlight = false }
+
+        do {
+            let response = try await api.customerPortal(DirectCustomerPortalRequest(
+                customerID: customerID,
+                email: nil
+            ))
+            guard let url = URL(string: response.url) else {
+                lastErrorMessage = DirectLicenseAPIError.invalidResponse.localizedDescription
+                return nil
+            }
+            lastErrorMessage = nil
+            return url
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            AppLog.general.error("[direct-license] customer portal failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     func clearStoredCredential() {
         try? store.deleteCredential()
         storedCredential = nil
         lastSnapshot = nil
         lastSubscriptionSnapshot = nil
+        licenseDevices = []
         validationRecord = .empty
         runtimeState = .none
         entitlement = .inactive
@@ -290,6 +373,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
     private func applyValidatedSnapshot(_ snapshot: DirectLicenseSnapshot, credential: DirectLicenseCredential) {
         lastSnapshot = snapshot
+        licenseDevices = snapshot.devices ?? licenseDevices
         updateValidationRecord { record in
             record.plan = credential.plan ?? record.plan
             record.runtimeState = snapshot.status.grantsPro ? .verifiedActive : state(for: snapshot.status)
@@ -363,6 +447,12 @@ final class DirectLicenseManager: ProEntitlementProviding {
         case .revoked, .inactive:
             return .revoked
         }
+    }
+
+    private static func defaultDeviceName(store: DirectLicenseStore) -> String {
+        let hostName = directLicenseTrimmed(Host.current().localizedName) ?? "Mac"
+        let installID = (try? store.loadOrCreateInstallID()) ?? UUID().uuidString
+        return "\(hostName) · Starcat \(installID.prefix(4).uppercased())"
     }
 }
 

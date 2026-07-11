@@ -110,6 +110,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 action: #selector(syncStars),
                 imageName: "arrow.triangle.2.circlepath"
             ))
+            if dependencies.directUpdateController.isDirectBuild {
+                let updateItem = actionItem(
+                    title: String.l10n("menubar.checkForUpdates"),
+                    action: #selector(checkForUpdates),
+                    imageName: "arrow.down.circle"
+                )
+                updateItem.isEnabled = dependencies.directUpdateController.canCheckForUpdates
+                menu.addItem(updateItem)
+            }
         }
 
         let resetItem = actionItem(
@@ -256,6 +265,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return
         }
         dependencies.syncManager.performFullSync(userID: user.id, force: true)
+    }
+
+    @objc private func checkForUpdates() {
+        dependencies?.directUpdateController.checkForUpdates()
     }
 
     @objc private func resetListPreferences() {

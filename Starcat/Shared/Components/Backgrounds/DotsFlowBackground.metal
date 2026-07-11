@@ -66,3 +66,102 @@ using namespace metal;
     float3 col = mix(bg, fg, intensity);
     return half4(half3(col), 1.0h);
 }
+
+// Plasma 样式同样来自 ShipSwift `SWDotsPlasma.metal`。它仍是平面网格，
+// 不消耗 3D 参数，适合做比 flow 更密集、更有能量感的静态区域底纹。
+[[ stitchable ]] half4 swDotsPlasma(float2 position,
+                                    half4  color,
+                                    float4 boundingRect,
+                                    float  time,
+                                    float  speed,
+                                    float  brightness,
+                                    half4  tint,
+                                    half4  background,
+                                    float  dotSize,
+                                    float  gridDensity,
+                                    float  patternScale,
+                                    float  vignette,
+                                    float  horizon,
+                                    float  amplitude,
+                                    float  depthFade) {
+    (void)horizon;
+    (void)amplitude;
+    (void)depthFade;
+
+    float2 size = boundingRect.zw;
+    float2 uv   = (position - 0.5 * size) / size.y;
+    float  t    = time * speed;
+
+    float  grid      = 0.018 / max(gridDensity, 0.01);
+    float2 cell      = round(uv / grid) * grid;
+    float  distToDot = length(uv - cell);
+    float  pxR       = (1.6 / size.y) * dotSize;
+    float  mask      = smoothstep(pxR * 1.4, pxR * 0.6, distToDot);
+
+    float v = sin(cell.x * 8.0 * patternScale + t * 1.3) +
+              sin(cell.y * 8.0 * patternScale + t * 1.1) +
+              sin((cell.x + cell.y) * 6.0 * patternScale + t * 1.5) +
+              sin(length(cell) * 10.0 * patternScale - t * 1.8);
+    v = v * 0.25;
+    float bright = clamp(0.5 + 0.5 * v, 0.0, 1.0);
+    bright = pow(bright, 2.5);
+
+    float2 vUV  = (position - 0.5 * size) / size;
+    float  vig  = clamp(1.0 - dot(vUV, vUV) * 0.9 * vignette, 0.0, 1.0);
+    float  intensity = mask * bright * vig;
+
+    float3 bg  = float3(background.rgb);
+    float3 fg  = float3(tint.rgb) * brightness;
+    float3 col = mix(bg, fg, intensity);
+    return half4(half3(col), 1.0h);
+}
+
+// Snake 样式来自 ShipSwift `SWDotsSnake.metal`。亮点沿 flow phase 移动，
+// 比 plasma 更像有方向的轨迹，适合通行证预览的“活卡面”效果。
+[[ stitchable ]] half4 swDotsSnake(float2 position,
+                                   half4  color,
+                                   float4 boundingRect,
+                                   float  time,
+                                   float  speed,
+                                   float  brightness,
+                                   half4  tint,
+                                   half4  background,
+                                   float  dotSize,
+                                   float  gridDensity,
+                                   float  patternScale,
+                                   float  vignette,
+                                   float  horizon,
+                                   float  amplitude,
+                                   float  depthFade) {
+    (void)horizon;
+    (void)amplitude;
+    (void)depthFade;
+
+    float2 size = boundingRect.zw;
+    float2 uv   = (position - 0.5 * size) / size.y;
+    float  t    = time * speed;
+
+    float  grid      = 0.018 / max(gridDensity, 0.01);
+    float2 cell      = round(uv / grid) * grid;
+    float  distToDot = length(uv - cell);
+    float  pxR       = (1.5 / size.y) * dotSize;
+    float  mask      = smoothstep(pxR * 1.4, pxR * 0.6, distToDot);
+
+    float angle = sin(cell.x * 4.0 * patternScale + t * 0.6) * 1.2 +
+                  cos(cell.y * 4.0 * patternScale - t * 0.5) * 1.2 +
+                  sin((cell.x + cell.y) * 3.0 * patternScale + t * 0.9);
+    float2 flow = float2(cos(angle), sin(angle));
+
+    float phase  = dot(cell, flow) * 12.0 * patternScale - t * 4.0;
+    float bright = 0.5 + 0.5 * sin(phase);
+    bright = pow(bright, 4.0);
+
+    float2 vUV   = (position - 0.5 * size) / size;
+    float  vig   = clamp(1.0 - dot(vUV, vUV) * 0.7 * vignette, 0.0, 1.0);
+    float  intensity = mask * (0.10 + 1.1 * bright) * vig;
+
+    float3 bg  = float3(background.rgb);
+    float3 fg  = float3(tint.rgb) * brightness;
+    float3 col = mix(bg, fg, intensity);
+    return half4(half3(col), 1.0h);
+}

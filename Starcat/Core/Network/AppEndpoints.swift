@@ -298,6 +298,8 @@ enum AppEndpoints {
             static let validate = "/v1/direct/licenses/validate"
             /// `POST /v1/direct/licenses/deactivate` —— 解绑当前设备 license。
             static let deactivate = "/v1/direct/licenses/deactivate"
+            /// `POST /v1/direct/licenses/devices` —— 读取当前 license 的设备实例列表。
+            static let devices = "/v1/direct/licenses/devices"
         }
 
         static func url(_ path: String) -> URL {

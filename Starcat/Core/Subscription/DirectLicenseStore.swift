@@ -30,6 +30,7 @@ struct DirectLicenseStore: Sendable {
         static let customer = "direct_license_customer_id"
         static let product = "direct_license_product_id"
         static let plan = "direct_license_plan"
+        static let installID = "direct_license_install_id"
         static let validationRuntimeState = "direct_license_validation_runtime_state"
         static let validationLastAttemptAt = "direct_license_validation_last_attempt_at"
         static let validationLastSuccessAt = "direct_license_validation_last_success_at"
@@ -111,6 +112,19 @@ struct DirectLicenseStore: Sendable {
         try keychain.deleteServiceAPIKey(forService: Key.validationLastFailureAt)
         try keychain.deleteServiceAPIKey(forService: Key.validationLastErrorCode)
         try keychain.deleteServiceAPIKey(forService: Key.validationLastRemoteStatus)
+    }
+
+    /// 返回本机 Direct 授权安装 ID。
+    ///
+    /// 这个 ID 只用于生成 Creem instance_name 的可读尾号，不是硬件序列号，也不作为授权
+    /// 真相源。删除 license credential 时不删除它，避免同一台 Mac 重新激活后名字频繁变化。
+    func loadOrCreateInstallID() throws -> String {
+        if let existing = try keychain.loadServiceAPIKey(forService: Key.installID) {
+            return existing
+        }
+        let installID = UUID().uuidString
+        try keychain.storeServiceAPIKey(installID, forService: Key.installID)
+        return installID
     }
 
     private func storeOptional(_ value: String?, forService service: String) throws {

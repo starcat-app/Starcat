@@ -3,10 +3,10 @@
 //  Starcat
 //
 //  从 ShipSwift（`refer/ShipSwift/ShipSwift/SWPackage/SWAnimation/SWMetal/SWDots.swift`）
-//  移植，**仅保留 `.flow` 平面网格样式**，作为页面 / sheet 装饰背景使用。
-//  配套 Metal stitchable shader 在同目录的 `DotsFlowBackground.metal`，函数名
-//  保持原 `swDotsFlow`，因为 `ShaderLibrary.default` 是按函数名查找的——
-//  Swift 端类型名可改，但 Metal 端导出符号一旦改了 Swift 端就找不到。
+//  移植，保留适合 Starcat 运行时装饰的平面网格样式，作为页面 / sheet /
+//  通行证预览背景使用。配套 Metal stitchable shader 在同目录的
+//  `DotsFlowBackground.metal`，函数名必须和 Swift 端 `shaderName` 严格一致——
+//  `ShaderLibrary.default` 是按函数名查找的，Metal 端导出符号改错会静默失效。
 //
 //  **为什么放在 Shared/Components/Backgrounds/**：
 //      Metal shader 背景是跨 feature 可复用的视觉装饰，等级与 `ToastOverlay` /
@@ -15,7 +15,9 @@
 //      Metal 组件天然是 .swift + .metal 文件对，扁平放在 Shared/Components/ 会乱。
 //
 //  **相对 ShipSwift 原版精简了什么**：
-//      - 7 种 style 只保留 `.flow`（其余 6 个需要再移植对应 .metal）
+//      - 7 种 style 先保留 `.flow / .plasma / .snake` 三个平面网格样式；
+//        其余 3D perspective 样式需要 horizon / amplitude / depthFade 调参，
+//        暂不引入，避免页面背景和通行证预览承担过多视觉复杂度。
 //      - 删去 `showsControls` 调参 sheet 路径（demo only：`SWDotsControlled` /
 //        `SWDotsControlsSheet` / `SliderRow` 共 ~150 行）
 //      - 删去 iOS-only 分支（项目 macOS-only，少一层 `#if os(iOS)`）
@@ -65,13 +67,34 @@
 
 import SwiftUI
 
-/// 平面网格 flow 样式 Metal 背景，可作为 sheet / 页面装饰背景。
+/// 平面网格 Metal 背景样式。
+enum DotsFlowBackgroundStyle {
+    case flow
+    case plasma
+    case snake
+
+    /// Metal `stitchable` 函数名。这里保留 ShipSwift 原符号名，避免改动 shader
+    /// 入口后 SwiftUI `ShaderLibrary.default` 找不到函数。
+    var shaderName: String {
+        switch self {
+        case .flow: "swDotsFlow"
+        case .plasma: "swDotsPlasma"
+        case .snake: "swDotsSnake"
+        }
+    }
+}
+
+/// 平面网格 Metal 背景，可作为 sheet / 页面 / 通行证预览装饰背景。
 ///
 /// 调用方负责限定大小（通常通过 `.background { ... }` 让其撑满宿主 view 的 bounds），
 /// 本组件不主动 `ignoresSafeArea`，避免在 sheet 这种"模态无 safe area"语境下做无用功。
 struct DotsFlowBackground: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    /// 点阵样式。默认 `.flow` 保持旧调用方视觉不变；通行证预览使用 `.snake`
+    /// 获得更明确的流动轨迹。
+    var style: DotsFlowBackgroundStyle = .flow
 
     /// 点和高光的颜色。
     /// 做 sheet 背景时建议用 `.accentColor` 或品牌色（暗亮模式都能识别），
@@ -124,7 +147,7 @@ struct DotsFlowBackground: View {
         background
             .colorEffect(
                 Shader(
-                    function: ShaderFunction(library: .default, name: "swDotsFlow"),
+                    function: ShaderFunction(library: .default, name: style.shaderName),
                     arguments: [
                         .boundingRect,
                         .float(elapsed),

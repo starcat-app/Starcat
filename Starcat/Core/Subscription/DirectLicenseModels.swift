@@ -122,6 +122,7 @@ struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
     var licenseKeySuffix: String?
     var expiresAt: Date?
     var validatedAt: Date
+    var devices: [DirectLicenseDevice]?
 
     func proEntitlement() -> ProEntitlement {
         ProEntitlement(
@@ -132,6 +133,16 @@ struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
             source: status.grantsPro ? .directLicense : .none
         )
     }
+}
+
+struct DirectLicenseDevice: Codable, Equatable, Identifiable, Sendable {
+    var instanceID: String
+    var name: String?
+    var status: String
+    var createdAt: Date?
+    var isCurrentDevice: Bool
+
+    var id: String { instanceID }
 }
 
 struct DirectLicenseActivationRequest: Codable, Equatable, Sendable {
@@ -148,6 +159,12 @@ struct DirectLicenseValidationRequest: Codable, Equatable, Sendable {
 }
 
 struct DirectLicenseDeactivationRequest: Codable, Equatable, Sendable {
+    var licenseKey: String
+    var instanceID: String
+    var deviceID: String
+}
+
+struct DirectLicenseDevicesRequest: Codable, Equatable, Sendable {
     var licenseKey: String
     var instanceID: String
     var deviceID: String

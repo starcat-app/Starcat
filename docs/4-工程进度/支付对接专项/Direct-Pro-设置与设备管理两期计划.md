@@ -1,6 +1,6 @@
 # Direct Pro 设置与设备管理两期计划
 
-> 状态：计划确认中。本文只记录 Direct 版 Pro 设置、许可证通行证、设备管理和 Sparkle 更新入口的实施边界，不包含代码改动。
+> 状态：第一期、第二期均已落地。本文记录 Direct 版 Pro 设置、许可证通行证、设备管理和 Sparkle 更新入口的实施边界。
 
 ## 目标
 
@@ -67,6 +67,8 @@ Creem License Keys 支持：
 
 目标：不等待完整设备列表能力，先把 Direct 版 Pro 设置页变成可用、可信、好理解的授权中心。
 
+状态：已完成。实现入口见 `Starcat/Features/Settings/ProSettingsView.swift`、`Starcat/Core/Updates/DirectUpdateController.swift`、`Starcat/Core/Subscription/DirectLicenseManager.swift`、`Starcat/App/StatusBarController.swift`。
+
 ### 交付项
 
 1. 重做 Direct Pro 区域
@@ -115,6 +117,8 @@ Creem License Keys 支持：
 ## 第二期：完整设备管理
 
 目标：让 Direct 用户可以查看许可证下的所有激活设备，并解绑指定设备。
+
+状态：已完成。后端通过 Creem validate 响应里的 `instance` 数组标准化设备列表，客户端在 Direct Pro Pass 弹窗中展示设备并支持解绑指定实例。
 
 ### 后端交付项
 

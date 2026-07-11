@@ -58,6 +58,48 @@ final class DirectUpdateController {
         #endif
     }
 
+    /// Sparkle 是否按计划自动检查更新。
+    ///
+    /// 只在 Direct 且 Sparkle 已配置时读写真实 updater；App Store 构建或未配置公钥时固定
+    /// 为 `false`，避免 Settings UI 把不可用能力展示成可切换状态。
+    var automaticallyChecksForUpdates: Bool {
+        get {
+            guard isDirectBuild, isConfigured else { return false }
+            #if canImport(Sparkle)
+            return updaterController?.updater.automaticallyChecksForUpdates ?? false
+            #else
+            return false
+            #endif
+        }
+        set {
+            guard isDirectBuild, isConfigured else { return }
+            #if canImport(Sparkle)
+            updaterController?.updater.automaticallyChecksForUpdates = newValue
+            #endif
+        }
+    }
+
+    /// Sparkle 是否在后台自动下载可用更新。
+    ///
+    /// Sparkle 的语义是“自动下载 / 准备更新”，最终安装仍可能需要用户确认或重启，
+    /// 所以 UI 文案不能承诺完全静默安装。
+    var automaticallyDownloadsUpdates: Bool {
+        get {
+            guard isDirectBuild, isConfigured else { return false }
+            #if canImport(Sparkle)
+            return updaterController?.updater.automaticallyDownloadsUpdates ?? false
+            #else
+            return false
+            #endif
+        }
+        set {
+            guard isDirectBuild, isConfigured else { return }
+            #if canImport(Sparkle)
+            updaterController?.updater.automaticallyDownloadsUpdates = newValue
+            #endif
+        }
+    }
+
     /// 打开 Sparkle 标准检查更新流程。
     ///
     /// 这里不自绘更新 UI，保持 Sparkle 负责签名校验、下载、安装和错误展示。
