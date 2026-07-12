@@ -2373,6 +2373,10 @@ private struct SearchRemoteRepoDetailView: View {
     /// 搜索详情不是本地 Repo 详情页，打开 sheet 时拿到的 `isStarred` 是一次性快照。
     /// Star/Unstar 成功后用本地覆盖值驱动按钮状态，避免用户需要关掉弹窗再打开才看到变化。
     @State private var starredOverride: Bool?
+    /// 详情卡的 `starsCount` 同样来自搜索结果快照；Star/Unstar API 成功后本地 ±1，
+    /// 让元数据行立刻反映「我刚贡献/撤销的那一颗星」，不必关卡重开或再打 GitHub。
+    /// 下限钳到 0，避免 unstar 时出现负数（搜索快照本身可能已滞后于真实计数）。
+    @State private var starsCountOverride: Int?
     /// Search Center 的候选卡同样是一次性快照；知识库状态写入成功后用本地覆盖值
     /// 驱动 ❤️ 空心/实心，避免必须关闭再打开详情卡才能看到变化。
     @State private var libraryOverride: Bool?
@@ -2407,6 +2411,11 @@ private struct SearchRemoteRepoDetailView: View {
 
     private var effectiveIsStarred: Bool {
         starredOverride ?? isStarred
+    }
+
+    /// stats 行星标数：优先用 Star/Unstar 成功后的本地覆盖值。
+    private func effectiveStarsCount(for repo: Repo) -> Int {
+        starsCountOverride ?? repo.starsCount
     }
 
     private var effectiveIsInLibrary: Bool {
@@ -2632,7 +2641,7 @@ private struct SearchRemoteRepoDetailView: View {
 
     private func statsRow(repo: Repo) -> some View {
         HStack(spacing: 14) {
-            statItem(systemImage: "star", value: "\(repo.starsCount)", iconColor: .star)
+            statItem(systemImage: "star", value: "\(effectiveStarsCount(for: repo))", iconColor: .star)
             statItem(systemImage: "tuningfork", value: "\(repo.forksCount)", iconColor: .fork)
 
             // open_issues_count 在 GitHub 设计里是 "issue + PR 合计"，tooltip 提示
@@ -2914,7 +2923,15 @@ private struct SearchRemoteRepoDetailView: View {
         Task { @MainActor in
             defer { isStarToggleInFlight = false }
             do {
-                starredOverride = try await onToggleStar()
+                // API 成功才改 UI（与 StarStatChipButton「不做乐观 UI」一致）：
+                // 先记下点击前状态，成功后再用 Bool 差驱动 starsCount ±1。
+                let wasStarred = effectiveIsStarred
+                let nowStarred = try await onToggleStar()
+                starredOverride = nowStarred
+                if wasStarred != nowStarred, let repo = candidate.displayRepo {
+                    let base = starsCountOverride ?? repo.starsCount
+                    starsCountOverride = max(0, base + (nowStarred ? 1 : -1))
+                }
             } catch {
                 AppLog.network.error("Search detail star toggle failed: \(error.localizedDescription, privacy: .public)")
             }
