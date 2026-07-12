@@ -19503,14 +19503,8 @@
     },
     "rag.workspace.index.rebuild" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Build RAG index" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "构建 RAG 索引" } }
-      }
-    },
-    "rag.workspace.index.rebuilding" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Building index..." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在构建索引..." } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh index" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新索引" } }
       }
     },
     "rag.workspace.inspector.chunkMissing" : {
@@ -20217,6 +20211,36 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } }
+      }
+    },
+    "rag.browser.retrieval.hint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No chat completion" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不生成 LLM 回答" } }
+      }
+    },
+    "rag.browser.retrieval.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieved chunk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "命中分片详情" } }
+      }
+    },
+    "rag.browser.retrieval.placeholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a question to inspect retrieved chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输入问题，查看命中的分片" } }
+      }
+    },
+    "rag.browser.retrieval.run" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Test retrieval" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "测试召回" } }
+      }
+    },
+    "rag.browser.retrieval.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieval test" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "召回测试" } }
       }
     },
     "rag.browser.source.metadata" : {

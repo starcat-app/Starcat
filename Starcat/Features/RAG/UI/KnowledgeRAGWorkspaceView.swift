@@ -940,11 +940,7 @@ struct KnowledgeRAGWorkspaceView: View {
                 } label: {
                     HStack(spacing: 6) {
                         rebuildIndexIcon
-                        if viewModel.isIndexing {
-                            Text("rag.workspace.index.rebuilding")
-                        } else {
-                            Text("rag.workspace.index.rebuild")
-                        }
+                        Text("rag.workspace.index.rebuild")
                     }
                 }
                 .disabled(viewModel.isIndexing)

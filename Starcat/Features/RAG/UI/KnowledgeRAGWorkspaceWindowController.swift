@@ -157,6 +157,9 @@ private final class KnowledgeRAGBrowserViewModel {
     var chunks: [RAGManagedChunk] = []
     var isLoading = false
     var isIndexing = false
+    var retrievalQuery = ""
+    var retrievalHits: [RAGChildHit] = []
+    var isTestingRetrieval = false
     var errorMessage: String?
 
     init(dependencies: AppDependencies) { self.dependencies = dependencies }
@@ -165,7 +168,7 @@ private final class KnowledgeRAGBrowserViewModel {
     var selectedCandidate: RAGRepoCandidate? { candidates.first(where: { $0.repo.id == selectedRepoID }) }
     var selectedIndex: RAGKnowledgeRepositoryIndex? { selectedRepoID.flatMap { indexes[$0] } }
 
-    func bootstrap() async { await refresh() }
+    func bootstrap() async { await refresh(showsLoading: true) }
 
     func observeIndexChanges() async {
         for await _ in NotificationCenter.default.notifications(named: .knowledgeRAGIndexDidChange) {
@@ -185,17 +188,38 @@ private final class KnowledgeRAGBrowserViewModel {
         isIndexing = true
         Task { [weak self] in
             guard let self else { return }
-            defer { isIndexing = false }
+            let clock = ContinuousClock()
+            let startedAt = clock.now
             do {
                 try await dependencies.knowledgeRAGIndexBuilder.rebuildKnowledgeBase()
                 await refresh()
             } catch { errorMessage = error.localizedDescription }
+            await KnowledgeRAGIndexRefreshPresentation.waitForMinimumDuration(startedAt: startedAt, clock: clock)
+            isIndexing = false
         }
     }
 
     func openSelectedRepository() {
         guard let repo = selectedCandidate?.repo else { return }
         dependencies.companionActionDispatcher.requestOpenRepo(repo)
+    }
+
+    func runRetrievalTest() {
+        let query = retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !isTestingRetrieval else { return }
+        isTestingRetrieval = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isTestingRetrieval = false }
+            do {
+                let service = try dependencies.makeKnowledgeRAGService(selectedModelID: nil)
+                retrievalHits = try await service.testRetrieval(query: query).childHits.sorted { $0.score > $1.score }
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func repositoryName(for id: Int64) -> String {
+        candidates.first(where: { $0.repo.id == id })?.repo.fullName ?? "#\(id)"
     }
 
     func saveChunk(_ managed: RAGManagedChunk, title: String, sectionPath: String, content: String) async {
@@ -222,9 +246,10 @@ private final class KnowledgeRAGBrowserViewModel {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    private func refresh() async {
-        isLoading = true
-        defer { isLoading = false }
+    /// 仅首次打开显示中央加载态；后续刷新保留当前内容，避免按钮操作造成视觉跳动。
+    private func refresh(showsLoading: Bool = false) async {
+        if showsLoading { isLoading = true }
+        defer { if showsLoading { isLoading = false } }
         do {
             let plan = RAGQueryPlan(mode: .semanticOnly, semanticQuery: "knowledge")
             async let loadedCoverage = dependencies.ragChunkRepository.coverage(model: embeddingModel)
@@ -250,11 +275,14 @@ private final class KnowledgeRAGBrowserViewModel {
 /// 左侧选择仓库，右侧只显示持久化的分片与当前 embedding 模型下的索引状态。
 private struct KnowledgeRAGBrowserView: View {
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var editingChunk: RAGManagedChunk?
+    @State private var inspectingHit: RAGRetrievalHitInspection?
+    @State private var hoveredRetrievalHitID: Int64?
 
     var body: some View {
         HSplitView {
-            repositoryList.frame(minWidth: 270, idealWidth: 310, maxWidth: 350)
+            repositoryList.frame(minWidth: 210, idealWidth: 240, maxWidth: 300)
             detail
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -268,6 +296,10 @@ private struct KnowledgeRAGBrowserView: View {
                 await viewModel.saveChunk(chunk, title: title, sectionPath: sectionPath, content: content)
             }
             .appLocaleEnvironment()
+        }
+        .sheet(item: $inspectingHit) { hit in
+            KnowledgeRAGRetrievalHitDetail(hit: hit)
+                .appLocaleEnvironment()
         }
     }
 
@@ -297,6 +329,7 @@ private struct KnowledgeRAGBrowserView: View {
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                retrievalTest
                 overview
                 Divider()
                 if let candidate = viewModel.selectedCandidate { repositoryDetail(candidate) }
@@ -320,6 +353,71 @@ private struct KnowledgeRAGBrowserView: View {
                 stat("rag.workspace.status.pendingChunks", value: "\(viewModel.coverage.pendingChunks)", color: .orange)
                 stat("rag.workspace.status.failedChunks", value: "\(viewModel.coverage.failedChunks)", color: .red)
                 stat("rag.workspace.status.staleChunks", value: "\(viewModel.coverage.staleChunks)", color: .purple)
+            }
+        }
+    }
+
+    private var retrievalTest: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("rag.browser.retrieval.title").font(.headline)
+                Spacer()
+                Text("rag.browser.retrieval.hint").font(.caption).foregroundStyle(.secondary)
+            }
+            ZStack(alignment: .bottomTrailing) {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $viewModel.retrievalQuery)
+                        .font(.body)
+                        .scrollContentBackground(.hidden)
+                        // 为右下角操作预留输入空间，避免第二行文本被按钮覆盖。
+                        .padding(.trailing, 104)
+                        .padding(.bottom, 28)
+                    if viewModel.retrievalQuery.isEmpty {
+                        Text("rag.browser.retrieval.placeholder")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            // 与 TextEditor 的原生首行基线匹配，避免占位文本与光标错行。
+                            .padding(.leading, 5)
+                            .padding(.top, 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                Button("rag.browser.retrieval.run") { viewModel.runRetrievalTest() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isTestingRetrieval)
+                    .padding(8)
+            }
+            .frame(height: 72)
+            .padding(.horizontal, 7)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
+            if viewModel.isTestingRetrieval { ProgressView().controlSize(.small) }
+            ForEach(viewModel.retrievalHits, id: \.chunk.id) { hit in
+                Button {
+                    inspectingHit = RAGRetrievalHitInspection(hit: hit, repositoryName: viewModel.repositoryName(for: hit.chunk.repoId))
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(viewModel.repositoryName(for: hit.chunk.repoId)).font(.caption.weight(.semibold))
+                        Text(sourceKey(hit.chunk.source)).font(.caption).foregroundStyle(.secondary)
+                        Text(hit.chunk.sectionPath.isEmpty ? hit.chunk.title : hit.chunk.sectionPath).font(.caption).lineLimit(1)
+                        Spacer()
+                        Text(hit.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
+                        Text(String(format: "%.3f", hit.score)).font(.caption.monospaced()).foregroundStyle(.primary)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        hoveredRetrievalHitID == hit.chunk.id ? Color.accentColor.opacity(0.08) : .clear,
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+                .onHover { isHovering in
+                    hoveredRetrievalHitID = isHovering ? hit.chunk.id : nil
+                }
             }
         }
     }
@@ -366,7 +464,10 @@ private struct KnowledgeRAGBrowserView: View {
                 Text("rag.browser.chunks").font(.headline)
                 Spacer()
                 Button { viewModel.rebuildIndex() } label: {
-                    Label(viewModel.isIndexing ? "rag.workspace.index.rebuilding" : "rag.workspace.index.rebuild", systemImage: "arrow.triangle.2.circlepath")
+                    HStack(spacing: 6) {
+                        refreshIndexIcon
+                        Text("rag.workspace.index.rebuild")
+                    }
                 }
                 .buttonStyle(.bordered).disabled(viewModel.isIndexing)
             }
@@ -410,9 +511,21 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private func stat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .center, spacing: 4) {
             HStack(spacing: 5) { Circle().fill(color).frame(width: 7, height: 7); Text(key).font(.caption) }
+                .frame(maxWidth: .infinity, alignment: .center)
             Text(value).font(.callout.weight(.semibold).monospaced())
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private var refreshIndexIcon: some View {
+        if reduceMotion {
+            Image(systemName: "arrow.triangle.2.circlepath")
+        } else {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
         }
     }
 
@@ -447,6 +560,40 @@ private struct KnowledgeRAGBrowserView: View {
     private func effectiveStatus(for chunk: RAGChunk) -> RAGEmbeddingStatus {
         if chunk.embeddingStatus == .ready, chunk.embeddingModel != viewModel.embeddingModel { return .stale }
         return chunk.embeddingStatus
+    }
+}
+
+private struct RAGRetrievalHitInspection: Identifiable {
+    let id = UUID()
+    let hit: RAGChildHit
+    let repositoryName: String
+}
+
+/// 召回命中详情只读展示完整分片与评分，避免测试列表为了预览而截断关键信息。
+private struct KnowledgeRAGRetrievalHitDetail: View {
+    @Environment(\.dismiss) private var dismiss
+    let hit: RAGRetrievalHitInspection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("rag.browser.retrieval.detail").font(.headline)
+                Spacer()
+                SheetCloseButton(action: { dismiss() })
+            }
+            HStack(spacing: 8) {
+                Text(hit.repositoryName).font(.callout.weight(.semibold))
+                Text(hit.hit.chunk.source.rawValue).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text(hit.hit.kind.rawValue).font(.caption).foregroundStyle(.secondary)
+                Text(String(format: "%.3f", hit.hit.score)).font(.caption.monospaced())
+            }
+            Text(hit.hit.chunk.sectionPath.isEmpty ? hit.hit.chunk.title : hit.hit.chunk.sectionPath)
+                .font(.subheadline.weight(.semibold))
+            ScrollView { Text(hit.hit.chunk.content).font(.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+        }
+        .padding(18)
+        .frame(width: 680, height: 500)
     }
 }
 

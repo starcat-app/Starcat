@@ -98,6 +98,9 @@ enum RAGConversationTitleGenerationResult: Sendable {
 }
 
 struct KnowledgeRAGService: Sendable {
+    /// 召回测试用于人工核验而非构造回答；固定上限避免调试窗口被低分尾部结果淹没。
+    private static let retrievalTestMaxHits = 10
+
     private let planner: any KnowledgeRAGQueryPlanning
     private let candidateRepository: any RAGRepoCandidateRepositoryProtocol
     private let retriever: KnowledgeRAGRetriever
@@ -420,6 +423,31 @@ struct KnowledgeRAGService: Sendable {
             }
             return .failed(debugEvents: debugEvents)
         }
+    }
+
+    /// 面向知识库管理器的召回验证入口：绕过 Planner 与回答生成，只复用真实混合检索。
+    func testRetrieval(query: String) async throws -> RAGRetrievalResult {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return RAGRetrievalResult(candidates: [], bundles: [], childHits: []) }
+        let candidates = try await candidateRepository.fetchCandidates(
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: normalized),
+            explicitRepoIDs: [],
+            explicitMode: .only
+        )
+        guard try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) else {
+            return RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
+        }
+        let result = try await retriever.retrieve(
+            semanticQuery: normalized,
+            candidates: candidates,
+            explicitMode: .only,
+            explicitRepoIDs: []
+        )
+        return RAGRetrievalResult(
+            candidates: result.candidates,
+            bundles: result.bundles,
+            childHits: Array(result.childHits.prefix(Self.retrievalTestMaxHits))
+        )
     }
 
     private static let conversationTitleSystemPrompt = """

@@ -218,10 +218,10 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         }
     }
 
-    /// 修正上线前本地开发库遗留的 schema 缺口。
+    /// 开发期 / 未发布功能的 schema 补齐（当前主要用于 RAG）。
     ///
-    /// 正式版后的 schema 变更必须走 `registerVN` 迁移；这里只保留对历史开发库
-    ///（已跑过旧版 v1-initial、缺附属表）的一次性补齐，不再往这里堆新字段。
+    /// 正式版已发布功能的 schema 变更必须走 `registerVN`；这里只服务尚未随正式版
+    /// 发出的功能草稿，以及历史开发库缺口。RAG 收口进正式版后应改为单次迁移并收掉。
     private static func repairPrelaunchDevelopmentSchema(on writer: any DatabaseWriter) throws {
         try writer.write { db in
             try DatabaseMigrations.ensurePrelaunchRAGSchema(db)

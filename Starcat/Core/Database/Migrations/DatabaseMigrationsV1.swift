@@ -8,13 +8,16 @@
 //
 //  1. **v1-initial 已冻结**：上线前曾把历史变更摊平进 v1；此后禁止再改已落地的
 //     v1 建表 SQL 来「偷偷加字段」。已发布用户的库不会重跑 v1。
-//  2. **正式版后只追加迁移**：加字段 / 建表 / 加索引一律 `registerVN(into:)`，
-//     用 `ALTER TABLE` / `CREATE TABLE` / `CREATE INDEX`；由 GRDB DatabaseMigrator
-//     按名称顺序执行。禁止要求用户删 sqlite 重建。
-//  3. **不支持降级**（见 `docs/1-立项/开发前问题清单.md` §5.2）。
-//  4. GRDB 迁移名采用语义化字符串（如 `"v5-rag-conversation-pin"`）。
-//  5. 表创建顺序遵循外键依赖：先 repos / tags，再依赖它们的关联 / 缓存表。
-//  6. FTS5 触发器与 repos 表同步：外部内容模式 `content='repos', content_rowid='id'`
+//  2. **正式版后只追加迁移**：已随正式版发出的 schema，加字段 / 建表 / 加索引一律
+//     `registerVN(into:)`；禁止回改已落地的 `v1-initial`，禁止要求用户删库重建。
+//  3. **未发布功能（如 RAG）开发期例外**：功能尚未随正式版发出时，可直接改该功能的
+//     建表草稿 SQL，并由 `ensurePrelaunchRAGSchema` 补齐本机/预览库；功能收口进正式版时
+//     再压成单次 `registerVN`，并从 v1/ensure 收口。开发期迁移若依赖未建表，必须对
+//    「表不存在」做 no-op（见 `v5-rag-conversation-pin`），避免炸死仅有 1.0.0 schema 的用户。
+//  4. **不支持降级**（见 `docs/1-立项/开发前问题清单.md` §5.2）。
+//  5. GRDB 迁移名采用语义化字符串（如 `"v5-rag-conversation-pin"`）。
+//  6. 表创建顺序遵循外键依赖：先 repos / tags，再依赖它们的关联 / 缓存表。
+//  7. FTS5 触发器与 repos 表同步：外部内容模式 `content='repos', content_rowid='id'`
 //     + tokenize `unicode61 remove_diacritics 2`。
 //
 //  ---
@@ -55,10 +58,16 @@ enum DatabaseMigrations {
 
     // MARK: - v5-rag-conversation-pin：RAG 会话置顶（2026-07-12）
 
+    /// RAG 尚未随正式版发布：开发期表结构仍可能变动。
+    /// 本迁移只服务「库里已经有 `rag_conversations`」的开发/预览包；
+    /// App Store `1.0.0` 等尚未建 RAG 表的用户必须整段跳过，否则会炸迁移。
+    /// RAG 功能收口进正式版时，应另落一条整包 `vN-knowledge-rag`，再从 v1/ensure 收口。
     private static func registerV5(into migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v5-rag-conversation-pin") { db in
+            guard try db.tableExists("rag_conversations") else { return }
+
             // 幂等：本机若曾被开发期补丁加过列，跳过 ADD，避免正式迁移失败。
-            let columns = try db.columns(on: "rag_conversations").map(\.name)
+            let columns = try db.columns(in: "rag_conversations").map(\.name)
             if !columns.contains("is_pinned") {
                 try db.alter(table: "rag_conversations") { t in
                     // 置顶排在列表最前；不改 updated_at，避免置顶本身影响「最近活跃」语义。
@@ -1347,10 +1356,17 @@ enum DatabaseMigrations {
             t.column("id", .text).primaryKey()
             t.column("title", .text).notNull()
             t.column("scope", .text).notNull().defaults(to: "knowledge")
+            // RAG 未随正式版发布前，开发期直接改此建表 SQL；收口时再压进单次 registerVN。
+            t.column("is_pinned", .boolean).notNull().defaults(to: false)
             t.column("created_at", .text).notNull()
             t.column("updated_at", .text).notNull()
         }
         try db.create(index: "idx_rag_conversations_updated", on: "rag_conversations", columns: ["updated_at"])
+        try db.create(
+            index: "idx_rag_conversations_pinned_updated",
+            on: "rag_conversations",
+            columns: ["is_pinned", "updated_at"]
+        )
 
         try db.create(table: "rag_messages") { t in
             t.column("id", .text).primaryKey()
@@ -1401,19 +1417,38 @@ enum DatabaseMigrations {
         try db.create(index: "idx_rag_remote_contexts_message", on: "rag_message_remote_contexts", columns: ["message_id"])
     }
 
-    /// 产品上线前开发库不会重跑 `v1-initial`，启动时只在表缺失时补齐当前 schema。
-    /// 这是开发期 schema 修正，不承载任何旧版本兼容或线上数据迁移语义。
+    /// RAG 尚未随正式版发布时的开发期 schema 补齐。
+    ///
+    /// - 已跑过旧版 `v1-initial` 的开发库不会重跑 v1，这里在表缺失时补齐当前 RAG 草稿 schema。
+    /// - **不是**正式版演进通道；RAG 功能收口进正式版时，应改为单次 `registerVN` 并收掉这里的补丁。
+    /// - 已发布、非 RAG 的正式版用户（如 App Store 1.0.0）若升到含 RAG 开发包，也走这里建表。
     static func ensurePrelaunchRAGSchema(_ db: Database) throws {
         guard try db.tableExists("rag_chunks") else {
             try createRAGSchema(db)
             return
         }
-        // 仅补齐上线前开发库缺失的附属表。正式版后的列/索引变更走 registerVN，不在这里加。
         if try !db.tableExists("rag_message_remote_contexts") {
             try createRAGRemoteContextAuditSchema(db)
         }
         if try !db.tableExists("rag_chunk_overrides") {
             try createRAGChunkOverrideSchema(db)
+        }
+        // migrator 先于 ensure 执行：v5 在无表时会 no-op，因此这里补 is_pinned 给「刚被 ensure 建出的旧形态表」。
+        if try db.tableExists("rag_conversations") {
+            let columns = try db.columns(in: "rag_conversations").map(\.name)
+            if !columns.contains("is_pinned") {
+                try db.alter(table: "rag_conversations") { t in
+                    t.add(column: "is_pinned", .boolean).notNull().defaults(to: false)
+                }
+            }
+            let indexes = try db.indexes(on: "rag_conversations").map(\.name)
+            if !indexes.contains("idx_rag_conversations_pinned_updated") {
+                try db.create(
+                    index: "idx_rag_conversations_pinned_updated",
+                    on: "rag_conversations",
+                    columns: ["is_pinned", "updated_at"]
+                )
+            }
         }
     }
 

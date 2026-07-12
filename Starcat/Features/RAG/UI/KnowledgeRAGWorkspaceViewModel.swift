@@ -13,6 +13,20 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
+/// 刷新操作可能立即完成；保留最短可见时长，才能让用户确认点击已被接收。
+enum KnowledgeRAGIndexRefreshPresentation {
+    static let minimumVisibleDuration: Duration = .milliseconds(600)
+
+    static func waitForMinimumDuration(
+        startedAt: ContinuousClock.Instant,
+        clock: ContinuousClock
+    ) async {
+        let elapsed = startedAt.duration(to: clock.now)
+        guard elapsed < minimumVisibleDuration else { return }
+        try? await Task.sleep(for: minimumVisibleDuration - elapsed)
+    }
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGWorkspaceViewModel {
@@ -547,12 +561,15 @@ final class KnowledgeRAGWorkspaceViewModel {
         errorMessage = nil
         Task { [weak self] in
             guard let self else { return }
+            let clock = ContinuousClock()
+            let startedAt = clock.now
             do {
                 try await dependencies.knowledgeRAGIndexBuilder.rebuildKnowledgeBase()
                 try await refreshIndexCoverage()
             } catch {
                 errorMessage = error.localizedDescription
             }
+            await KnowledgeRAGIndexRefreshPresentation.waitForMinimumDuration(startedAt: startedAt, clock: clock)
             isIndexing = false
         }
     }
