@@ -70,6 +70,15 @@ protocol RAGConversationStoring: Sendable {
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock]
     ) async throws
+    /// 仅落库用户消息（停止时尚未产生任何助手文本）。
+    func appendUserMessage(
+        conversationID: UUID,
+        messageID: UUID,
+        question: String,
+        createdAt: String
+    ) async throws
+    /// 删除单条消息（编辑后重发前清掉「仅用户、无回答」的孤儿消息）。
+    func deleteMessage(id: UUID) async throws
     func renameConversation(id: UUID, title: String) async throws
     /// 置顶 / 取消置顶；不更新 `updated_at`，避免置顶打乱「最近活跃」排序。
     func setConversationPinned(id: UUID, isPinned: Bool) async throws
@@ -229,6 +238,52 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
             try db.execute(
                 sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
                 arguments: [assistantAt, conversationID.uuidString]
+            )
+        }
+    }
+
+    func appendUserMessage(
+        conversationID: UUID,
+        messageID: UUID,
+        question: String,
+        createdAt: String
+    ) async throws {
+        try await database.writer.write { db in
+            let messageCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM rag_messages WHERE conversation_id = ?",
+                arguments: [conversationID.uuidString]
+            ) ?? 0
+            if messageCount == 0 {
+                try db.execute(
+                    sql: "UPDATE rag_conversations SET title = ? WHERE id = ?",
+                    arguments: [normalizedTitle(question), conversationID.uuidString]
+                )
+            }
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO rag_messages (id, conversation_id, role, content, model, created_at)
+                VALUES (?, ?, 'user', ?, NULL, ?)
+                """, arguments: [messageID.uuidString, conversationID.uuidString, question, createdAt])
+            try db.execute(
+                sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
+                arguments: [createdAt, conversationID.uuidString]
+            )
+        }
+    }
+
+    func deleteMessage(id: UUID) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "DELETE FROM rag_message_citations WHERE message_id = ?",
+                arguments: [id.uuidString]
+            )
+            try db.execute(
+                sql: "DELETE FROM rag_message_remote_contexts WHERE message_id = ?",
+                arguments: [id.uuidString]
+            )
+            try db.execute(
+                sql: "DELETE FROM rag_messages WHERE id = ?",
+                arguments: [id.uuidString]
             )
         }
     }

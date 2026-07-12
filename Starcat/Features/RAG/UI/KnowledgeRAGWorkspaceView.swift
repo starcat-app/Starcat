@@ -33,6 +33,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var renameGroupTarget: RAGConversationGroup?
     @State private var renameGroupDraft = ""
     @State private var conversationDropTarget: RAGConversationDropTarget?
+    @State private var expandedIndexIssueKind: RAGIndexIssueKind?
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
@@ -506,6 +507,7 @@ struct KnowledgeRAGWorkspaceView: View {
                         assistantMessage(
                             content: viewModel.streamingAnswer,
                             citations: [],
+                            createdAt: nil,
                             showsActions: false
                         )
                             .id("streaming-answer")
@@ -544,26 +546,26 @@ struct KnowledgeRAGWorkspaceView: View {
     @ViewBuilder
     private func messageView(_ message: RAGStoredMessage) -> some View {
         if message.role == .user {
-            HStack(alignment: .top, spacing: 8) {
-                Spacer(minLength: 80)
-                Text(message.content)
-                    .font(ragFont(.body))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
-                    .frame(maxWidth: 680, alignment: .trailing)
-                // 用户侧用当前登录 GitHub 头像，与 AI 侧 Starcat 图标对称。
-                RemoteAvatar(
-                    urlString: authSession.state.user?.avatarUrl,
-                    size: 22,
-                    showBorder: false
-                )
-            }
+            RAGUserMessageBlock(
+                message: message,
+                avatarURL: authSession.state.user?.avatarUrl,
+                isEditing: viewModel.editingUserMessageID == message.id,
+                showsPendingActions: viewModel.pendingActionUserMessageID == message.id
+                    && viewModel.editingUserMessageID != message.id,
+                editingDraft: $viewModel.editingUserDraft,
+                onCopyToComposer: {
+                    viewModel.copyQuestionToComposerAndPasteboard(message.content)
+                },
+                onBeginEdit: { viewModel.beginEditUserMessage(message.id) },
+                onCancelEdit: { viewModel.cancelEditUserMessage() },
+                onSubmitEdit: { viewModel.submitEditedUserMessage() },
+                timeLabel: messageTimeLabel(message.createdAt)
+            )
         } else {
             assistantMessage(
                 content: message.content,
                 citations: message.citations,
+                createdAt: message.createdAt,
                 showsActions: true
             )
         }
@@ -573,11 +575,13 @@ struct KnowledgeRAGWorkspaceView: View {
     private func assistantMessage(
         content: String,
         citations: [RAGCitation],
+        createdAt: String?,
         showsActions: Bool
     ) -> some View {
         RAGAssistantMessageBlock(
             content: content,
             citations: citations,
+            createdAtLabel: createdAt.map(messageTimeLabel),
             showsActions: showsActions,
             onSelectCitation: { citation in
                 viewModel.selectCitation(citation)
@@ -585,6 +589,14 @@ struct KnowledgeRAGWorkspaceView: View {
             },
             onExport: { viewModel.exportAnswer(content) }
         )
+    }
+
+    /// 消息气泡时间戳：只显示短时间，避免挤占中栏。
+    private func messageTimeLabel(_ iso8601: String) -> String {
+        let date = ISO8601DateFormatter.shared.date(from: iso8601)
+            ?? ISO8601DateFormatter().date(from: iso8601)
+        guard let date else { return "" }
+        return date.formatted(Date.FormatStyle(time: .shortened).locale(locale))
     }
 
     private var workingIndicator: some View {
@@ -1211,9 +1223,9 @@ struct KnowledgeRAGWorkspaceView: View {
         VStack(alignment: .leading, spacing: 13) {
             coverageRow("rag.workspace.status.repos", value: "\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)", color: .blue)
             coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexCoverage.readyChunks)", color: .green)
-            coverageRow("rag.workspace.status.pendingChunks", value: "\(viewModel.indexCoverage.pendingChunks)", color: .orange)
-            coverageRow("rag.workspace.status.failedChunks", value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
-            coverageRow("rag.workspace.status.staleChunks", value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
+            indexIssueRow(.pending, value: "\(viewModel.indexCoverage.pendingChunks)", color: .orange)
+            indexIssueRow(.failed, value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
+            indexIssueRow(.stale, value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
             Divider()
             VStack(alignment: .trailing, spacing: 6) {
                 HStack(spacing: 8) {
@@ -1382,6 +1394,114 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
+    private func indexIssueRow(_ kind: RAGIndexIssueKind, value: String, color: Color) -> some View {
+        let isExpanded = expandedIndexIssueKind == kind
+        return VStack(alignment: .leading, spacing: 7) {
+            Button {
+                if isExpanded {
+                    expandedIndexIssueKind = nil
+                } else {
+                    expandedIndexIssueKind = kind
+                    Task { await viewModel.loadIndexIssueChunks(kind) }
+                }
+            } label: {
+                HStack(spacing: 9) {
+                    Circle().fill(color).frame(width: 8, height: 8)
+                    Text(indexIssueTitle(kind)).font(ragFont(.callout))
+                    Spacer()
+                    Text(value)
+                        .font(ragFont(.callout, weight: .semibold, design: .monospaced))
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isExpanded {
+                indexIssueDrawer(kind, color: color)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func indexIssueDrawer(_ kind: RAGIndexIssueKind, color: Color) -> some View {
+        let chunks = viewModel.indexIssueChunks(for: kind)
+        VStack(alignment: .leading, spacing: 8) {
+            if viewModel.isLoadingIndexIssue(kind), chunks.isEmpty {
+                ProgressView().controlSize(.small)
+            } else if chunks.isEmpty {
+                Text("rag.workspace.index.issues.empty")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(chunks, id: \.id) { chunk in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+                                .font(ragFont(.caption, weight: .semibold))
+                            Text(indexIssueSourceTitle(chunk.source))
+                                .font(ragFont(.caption2))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath)
+                                .font(ragFont(.caption2))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        indexIssueReason(kind, chunk: chunk)
+                            .font(ragFont(.caption2))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+            if viewModel.hasMoreIndexIssueChunks(kind) {
+                Button("rag.workspace.index.issues.loadMore") {
+                    Task { await viewModel.loadIndexIssueChunks(kind, append: true) }
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(color)
+            }
+        }
+        .padding(9)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    @ViewBuilder
+    private func indexIssueReason(_ kind: RAGIndexIssueKind, chunk: RAGChunk) -> some View {
+        switch kind {
+        case .pending:
+            Text("rag.workspace.index.issues.pendingReason")
+        case .failed:
+            Text(chunk.embeddingError?.isEmpty == false ? chunk.embeddingError! : String.l10n("rag.workspace.index.issues.failedReason"))
+        case .stale:
+            Text("rag.workspace.index.issues.staleReason")
+            Text("\(chunk.embeddingModel ?? "-") → \(viewModel.embeddingModel)")
+        }
+    }
+
+    private func indexIssueTitle(_ kind: RAGIndexIssueKind) -> LocalizedStringKey {
+        switch kind {
+        case .pending: return "rag.workspace.status.pendingChunks"
+        case .failed: return "rag.workspace.status.failedChunks"
+        case .stale: return "rag.workspace.status.staleChunks"
+        }
+    }
+
+    private func indexIssueSourceTitle(_ source: RAGChunkSource) -> LocalizedStringKey {
+        switch source {
+        case .readme: return "rag.browser.source.readme"
+        case .notes: return "rag.browser.source.notes"
+        case .summary: return "rag.browser.source.summary"
+        case .metadata: return "rag.browser.source.metadata"
+        }
+    }
+
     @ViewBuilder
     private var rebuildIndexIcon: some View {
         if reduceMotion {
@@ -1394,47 +1514,37 @@ struct KnowledgeRAGWorkspaceView: View {
 
     @ViewBuilder
     private var indexProgressLabel: some View {
-        switch viewModel.indexingStatus {
-        case .fetchingReadmes(let processed, let total):
-            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total, color: .blue)
-        case .building(let processed, let total):
-            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total, color: .orange)
-        case .embedding(let processed, let total):
-            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total, color: .purple)
-        case .completed:
-            completedIndexResult
-        case .idle, .failed:
+        if let summary = viewModel.indexRefreshSummary {
+            HStack(spacing: 5) {
+                if let completedAt = summary.completedAt {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
+                        .monospacedDigit()
+                        .foregroundStyle(.green)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                }
+                Text(verbatim: "|").foregroundStyle(.secondary)
+                indexProgressSegment("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
+                Text(verbatim: "|").foregroundStyle(.secondary)
+                indexProgressSegment("rag.workspace.index.chunksShort", value: "\(summary.chunksProcessed)/\(summary.totalRepos)", color: .orange)
+            }
+            .font(ragFont(.caption2))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+        } else {
             EmptyView()
         }
     }
 
-    private func compactIndexProgress(
-        _ title: LocalizedStringKey,
-        processed: Int,
-        total: Int,
-        color: Color
-    ) -> some View {
-        HStack(spacing: 4) {
-            Text(title)
-            Text("\(processed)/\(total)").monospacedDigit()
+    private func indexProgressSegment(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+            Text(value).monospacedDigit()
         }
-        .font(ragFont(.caption2))
         .foregroundStyle(color)
-    }
-
-    private var completedIndexResult: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "checkmark.circle.fill")
-            Text("rag.workspace.index.completed")
-            if let refreshedAt = viewModel.lastIndexRefreshAt {
-                Text("·")
-                Text("rag.workspace.index.lastRefreshed")
-                Text(refreshedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
-                    .monospacedDigit()
-            }
-        }
-        .font(ragFont(.caption2))
-        .foregroundStyle(.green)
     }
 
     private var composerNSFont: NSFont {
@@ -1609,6 +1719,182 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 }
 
+/// 用户 / AI 消息头像统一边长，保证两侧视觉对称。
+private enum RAGMessageAvatarMetrics {
+    static let size: CGFloat = 20
+    static let cornerRadius: CGFloat = 5
+}
+
+/// 用户气泡：头像与气泡垂直居中；底部左侧时间戳；悬停复制预留占位（与 AI 一致）。
+/// 停止且无 AI 输出时，复制（回填输入框）+ 编辑常显。
+private struct RAGUserMessageBlock: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    let message: RAGStoredMessage
+    let avatarURL: String?
+    let isEditing: Bool
+    let showsPendingActions: Bool
+    @Binding var editingDraft: String
+    let onCopyToComposer: () -> Bool
+    let onBeginEdit: () -> Void
+    let onCancelEdit: () -> Void
+    let onSubmitEdit: () -> Void
+    let timeLabel: String
+
+    @State private var isHovered = false
+    @State private var isCopyFeedbackPinned = false
+    @State private var copyFeedbackPinTask: Task<Void, Never>?
+
+    private var areHoverActionsRevealed: Bool {
+        isHovered || isCopyFeedbackPinned
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: 80)
+            VStack(alignment: .trailing, spacing: 6) {
+                if isEditing {
+                    HStack(alignment: .center, spacing: 8) {
+                        userMessageEditor
+                        messageAvatar
+                    }
+                } else {
+                    // 头像只与问题气泡垂直居中，footer 单独铺在气泡下方。
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(message.content)
+                            .font(interfaceScale.font(.body))
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
+                            .frame(maxWidth: 680, alignment: .trailing)
+                        messageAvatar
+                    }
+                    userFooter
+                        .frame(maxWidth: 680)
+                        // 给右侧头像让出宽度，让时间戳贴齐气泡左缘。
+                        .padding(.trailing, RAGMessageAvatarMetrics.size + 8)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard !isEditing, !showsPendingActions else { return }
+            isHovered = hovering
+        }
+        .onDisappear {
+            copyFeedbackPinTask?.cancel()
+            copyFeedbackPinTask = nil
+        }
+    }
+
+    private var messageAvatar: some View {
+        RemoteAvatar(
+            urlString: avatarURL,
+            size: RAGMessageAvatarMetrics.size,
+            showBorder: false
+        )
+    }
+
+    private var userMessageEditor: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            TextEditor(text: $editingDraft)
+                .font(interfaceScale.font(.body))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 72, maxHeight: 220)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
+
+            HStack(spacing: 8) {
+                Button("rag.workspace.message.editCancel", action: onCancelEdit)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                Button("rag.workspace.message.editSend", action: onSubmitEdit)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(editingDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .frame(maxWidth: 680, alignment: .trailing)
+    }
+
+    private var userFooter: some View {
+        HStack(spacing: 10) {
+            if !timeLabel.isEmpty {
+                Text(timeLabel)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+
+            if showsPendingActions {
+                CopyFeedbackButton(
+                    performCopy: {
+                        let ok = onCopyToComposer()
+                        if ok { pinActionsForCopyFeedback() }
+                        return ok
+                    },
+                    tooltip: "rag.workspace.message.copyQuestion"
+                ) { didCopy in
+                    copyIcon(didCopy: didCopy)
+                }
+                Button(action: onBeginEdit) {
+                    Image(systemName: "pencil")
+                        .font(interfaceScale.font(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.message.editQuestion")
+            } else {
+                // 与 AI 一致：始终占位，悬停显形；复制只写剪贴板。
+                CopyFeedbackButton(
+                    performCopy: {
+                        let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return false }
+                        NSPasteboard.general.clearContents()
+                        let ok = NSPasteboard.general.setString(trimmed, forType: .string)
+                        if ok { pinActionsForCopyFeedback() }
+                        return ok
+                    },
+                    tooltip: "rag.workspace.message.copyQuestion.clipboard"
+                ) { didCopy in
+                    copyIcon(didCopy: didCopy)
+                }
+                .opacity(areHoverActionsRevealed ? 1 : 0)
+                .allowsHitTesting(areHoverActionsRevealed)
+                .accessibilityHidden(!areHoverActionsRevealed)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areHoverActionsRevealed)
+            }
+        }
+    }
+
+    private func copyIcon(didCopy: Bool) -> some View {
+        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+            .font(interfaceScale.font(size: 12, weight: .medium))
+            .foregroundStyle(didCopy ? Color.green : .secondary)
+            .frame(width: 20, height: 20)
+    }
+
+    private func pinActionsForCopyFeedback() {
+        isCopyFeedbackPinned = true
+        copyFeedbackPinTask?.cancel()
+        copyFeedbackPinTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            isCopyFeedbackPinned = false
+        }
+    }
+}
+
 /// 助手回答块：动作条在整块底部（引用下方）；始终占位，悬停才显形，避免布局跳动。
 /// 复制反馈播放期间强制保持可见，避免鼠标移开后看不到绿色 ✓。
 private struct RAGAssistantMessageBlock: View {
@@ -1617,6 +1903,7 @@ private struct RAGAssistantMessageBlock: View {
 
     let content: String
     let citations: [RAGCitation]
+    let createdAtLabel: String?
     let showsActions: Bool
     let onSelectCitation: (RAGCitation) -> Void
     let onExport: () -> Void
@@ -1633,13 +1920,13 @@ private struct RAGAssistantMessageBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
-                // AI 侧用 Starcat App Icon，替代通用 sparkles。
+                // AI 侧用 Starcat App Icon，与用户头像同尺寸。
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 18, height: 18)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .frame(width: RAGMessageAvatarMetrics.size, height: RAGMessageAvatarMetrics.size)
+                    .clipShape(RoundedRectangle(cornerRadius: RAGMessageAvatarMetrics.cornerRadius, style: .continuous))
                 Text("rag.workspace.message.assistant")
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -1673,40 +1960,51 @@ private struct RAGAssistantMessageBlock: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if showsActions {
+            // 底部行：左侧复制/导出预留占位（悬停显），右侧时间戳常显。
+            if showsActions || !(createdAtLabel ?? "").isEmpty {
                 HStack(spacing: 10) {
-                    CopyFeedbackButton(
-                        performCopy: {
-                            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !trimmed.isEmpty else { return false }
-                            NSPasteboard.general.clearContents()
-                            let ok = NSPasteboard.general.setString(trimmed, forType: .string)
-                            if ok { pinActionsForCopyFeedback() }
-                            return ok
-                        },
-                        tooltip: "rag.workspace.answer.copy"
-                    ) { didCopy in
-                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                            .font(interfaceScale.font(size: 12, weight: .medium))
-                            .foregroundStyle(didCopy ? Color.green : .secondary)
-                            .frame(width: 20, height: 20)
+                    if showsActions {
+                        HStack(spacing: 10) {
+                            CopyFeedbackButton(
+                                performCopy: {
+                                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !trimmed.isEmpty else { return false }
+                                    NSPasteboard.general.clearContents()
+                                    let ok = NSPasteboard.general.setString(trimmed, forType: .string)
+                                    if ok { pinActionsForCopyFeedback() }
+                                    return ok
+                                },
+                                tooltip: "rag.workspace.answer.copy"
+                            ) { didCopy in
+                                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                                    .font(interfaceScale.font(size: 12, weight: .medium))
+                                    .foregroundStyle(didCopy ? Color.green : .secondary)
+                                    .frame(width: 20, height: 20)
+                            }
+                            Button(action: onExport) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(interfaceScale.font(size: 12, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 20, height: 20)
+                            }
+                            .buttonStyle(.plain)
+                            .focusEffectDisabled()
+                            .help("rag.workspace.answer.export")
+                        }
+                        .opacity(areActionsRevealed ? 1 : 0)
+                        .allowsHitTesting(areActionsRevealed)
+                        .accessibilityHidden(!areActionsRevealed)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areActionsRevealed)
                     }
-                    Button(action: onExport) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(interfaceScale.font(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help("rag.workspace.answer.export")
+
                     Spacer(minLength: 0)
+
+                    if let createdAtLabel, !createdAtLabel.isEmpty {
+                        Text(createdAtLabel)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                // 始终占位：只切透明度 / 命中，避免悬停时把下方内容顶开。
-                .opacity(areActionsRevealed ? 1 : 0)
-                .allowsHitTesting(areActionsRevealed)
-                .accessibilityHidden(!areActionsRevealed)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areActionsRevealed)
             }
         }
         .contentShape(Rectangle())

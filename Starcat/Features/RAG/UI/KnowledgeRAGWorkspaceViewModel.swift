@@ -4,8 +4,9 @@
 //
 //  知识库 RAG 工作台状态协调器。
 //
-//  关键约束：输入框的 @repo / 模型 / 附件是确定上下文，不从自然语言反推；会话只有在
-//  得到完整回答或明确早停答复后才原子写入一轮，取消中的半截流不会污染历史。
+//  关键约束：输入框的 @repo / 模型 / 附件是确定上下文，不从自然语言反推。
+//  停止生成时必须保留用户问题；若已有流式文本则落库为未完成回答，若尚无输出则
+//  仅保留用户消息并提供复制 / 原地编辑。
 //
 
 import AppKit
@@ -46,6 +47,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     var draftQuestion = ""
     var streamingAnswer = ""
     var answerState: RAGAnswerState = .idle
+    /// 用户气泡原地编辑：非 nil 时该消息进入图 4 编辑态。
+    var editingUserMessageID: UUID?
+    var editingUserDraft = ""
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
     var remoteBlocks: [RAGRemoteContextBlock] = []
@@ -79,10 +83,15 @@ final class KnowledgeRAGWorkspaceViewModel {
         failedChunks: 0,
         staleChunks: 0
     )
+    var indexIssueChunks: [RAGIndexIssueKind: [RAGChunk]] = [:]
+    var indexIssueHasMore: Set<RAGIndexIssueKind> = []
+    var loadingIndexIssueKinds: Set<RAGIndexIssueKind> = []
     var isIndexing = false
     /// 直接透出 builder 的状态，让工作台显示真实构建阶段与数字进度。
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
-    var lastIndexRefreshAt: Date? { dependencies.knowledgeRAGIndexBuilder.lastSuccessfulRefreshAt }
+    /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
+    var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
+    var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
     var errorMessage: String?
     /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {
@@ -135,6 +144,13 @@ final class KnowledgeRAGWorkspaceViewModel {
         case .planning, .retrieving, .awaitingRemoteContextConfirmation, .fetchingRemoteContext, .generating: return true
         default: return false
         }
+    }
+
+    /// 「停止且尚无 AI 输出」时，末条用户消息常显复制 / 编辑。
+    var pendingActionUserMessageID: UUID? {
+        guard !isAnswering, streamingAnswer.isEmpty else { return nil }
+        guard let last = messages.last, last.role == .user else { return nil }
+        return last.id
     }
 
     var availableModels: [AIModelDescriptor] { dependencies.knowledgeRAGChatModels }
@@ -429,6 +445,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             errorMessage = error.localizedDescription
             return
         }
+        editingUserMessageID = nil
+        editingUserDraft = ""
         answerTask?.cancel()
         answerTask = Task { [weak self] in
             await self?.runQuestion(question)
@@ -438,7 +456,56 @@ final class KnowledgeRAGWorkspaceViewModel {
     func cancelAnswer() {
         answerTask?.cancel()
         answerTask = nil
-        if isAnswering { answerState = .cancelled }
+        // 主动停止不是失败，清掉可能残留的错误弹窗。
+        if isAnswering {
+            answerState = .cancelled
+            errorMessage = nil
+        }
+    }
+
+    /// 复制停止态问题：写入剪贴板并回填底部输入框。
+    @discardableResult
+    func copyQuestionToComposerAndPasteboard(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        draftQuestion = trimmed
+        NSPasteboard.general.clearContents()
+        return NSPasteboard.general.setString(trimmed, forType: .string)
+    }
+
+    func beginEditUserMessage(_ messageID: UUID) {
+        guard messages.contains(where: { $0.id == messageID && $0.role == .user }) else { return }
+        guard let message = messages.first(where: { $0.id == messageID }) else { return }
+        editingUserMessageID = messageID
+        editingUserDraft = message.content
+    }
+
+    func cancelEditUserMessage() {
+        editingUserMessageID = nil
+        editingUserDraft = ""
+    }
+
+    /// 编辑态「发送」：删掉旧的无回答用户消息，用改后文案重新提问。
+    func submitEditedUserMessage() {
+        guard let messageID = editingUserMessageID else { return }
+        let question = editingUserDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isAnswering else { return }
+        do {
+            try dependencies.entitlementGate.requirePro(.knowledgeRAG)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+        editingUserMessageID = nil
+        editingUserDraft = ""
+        messages.removeAll { $0.id == messageID }
+        answerTask?.cancel()
+        answerTask = Task { [weak self] in
+            guard let self else { return }
+            try? await conversationStore.deleteMessage(id: messageID)
+            conversations = (try? await conversationStore.listConversations()) ?? conversations
+            await runQuestion(question)
+        }
     }
 
     func toggleRemoteResource(_ resource: RAGRemoteContextResource) {
@@ -681,6 +748,45 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    func loadIndexIssueChunks(_ kind: RAGIndexIssueKind, append: Bool = false) async {
+        guard !loadingIndexIssueKinds.contains(kind) else { return }
+        loadingIndexIssueKinds.insert(kind)
+        defer { loadingIndexIssueKinds.remove(kind) }
+        do {
+            let existing = indexIssueChunks[kind, default: []]
+            let page = try await dependencies.ragChunkRepository.fetchIndexIssueChunks(
+                kind: kind,
+                model: dependencies.settings.aiEmbeddingTask.resolvedModelName,
+                limit: append ? 10 : 5,
+                offset: append ? existing.count : 0
+            )
+            indexIssueChunks[kind] = append ? existing + page.chunks : page.chunks
+            if page.hasMore {
+                indexIssueHasMore.insert(kind)
+            } else {
+                indexIssueHasMore.remove(kind)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func indexIssueChunks(for kind: RAGIndexIssueKind) -> [RAGChunk] {
+        indexIssueChunks[kind, default: []]
+    }
+
+    func isLoadingIndexIssue(_ kind: RAGIndexIssueKind) -> Bool {
+        loadingIndexIssueKinds.contains(kind)
+    }
+
+    func hasMoreIndexIssueChunks(_ kind: RAGIndexIssueKind) -> Bool {
+        indexIssueHasMore.contains(kind)
+    }
+
+    func knowledgeRepositoryName(for id: Int64) -> String {
+        knowledgeRepos.first(where: { $0.id == id })?.fullName ?? "#\(id)"
+    }
+
     func selectCitation(_ citation: RAGCitation) {
         selectedCitation = citation
         selectedCitationChunk = nil
@@ -829,19 +935,164 @@ final class KnowledgeRAGWorkspaceViewModel {
                     remoteContexts: remoteBlocks
                 )
             } else if answerState == .cancelled {
-                messages.removeAll { $0.id == userMessage.id }
+                scheduleFinalizeCancelledTurn(
+                    conversationID: conversationID,
+                    userMessage: userMessage,
+                    question: question,
+                    isFirstTurn: isFirstTurn,
+                    service: service
+                )
             }
         } catch is CancellationError {
             answerState = .cancelled
-            messages.removeAll { $0.id == userMessage.id }
+            scheduleFinalizeCancelledTurn(
+                conversationID: conversationID,
+                userMessage: userMessage,
+                question: question,
+                isFirstTurn: isFirstTurn,
+                service: nil
+            )
         } catch {
-            answerState = .failed(error.localizedDescription)
-            errorMessage = error.localizedDescription
-            messages.removeAll { $0.id == userMessage.id }
+            // 停止按钮会 cancel Task；部分底层 API 不抛 CancellationError 而是带上
+            // Task.isCancelled，不能当成「RAG 请求失败」弹窗。
+            if Task.isCancelled {
+                answerState = .cancelled
+                scheduleFinalizeCancelledTurn(
+                    conversationID: conversationID,
+                    userMessage: userMessage,
+                    question: question,
+                    isFirstTurn: isFirstTurn,
+                    service: nil
+                )
+            } else {
+                answerState = .failed(error.localizedDescription)
+                errorMessage = error.localizedDescription
+                messages.removeAll { $0.id == userMessage.id }
+            }
         }
         finishDebugTrace(debugTraceID, state: debugTraceState(for: answerState))
         remoteContextConsent = nil
         answerTask = nil
+    }
+
+    /// 在已取消的回答 Task 之外落库：否则 `appendUserMessage` 等 await 会再抛
+    /// `CancellationError`，被误写成 errorMessage 弹出「RAG 请求失败」。
+    private func scheduleFinalizeCancelledTurn(
+        conversationID: UUID,
+        userMessage: RAGStoredMessage,
+        question: String,
+        isFirstTurn: Bool,
+        service: KnowledgeRAGService?
+    ) {
+        let partial = streamingAnswer
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // 若调度时流式文本已被清空，用快照补回，避免竞态丢半截回答。
+            if streamingAnswer.isEmpty, !partial.isEmpty {
+                streamingAnswer = partial
+            }
+            await finalizeCancelledTurn(
+                conversationID: conversationID,
+                userMessage: userMessage,
+                question: question,
+                isFirstTurn: isFirstTurn,
+                service: service
+            )
+        }
+    }
+
+    /// 停止生成：保留用户问题；已有流式文本则落库半截回答，否则只落库用户消息。
+    private func finalizeCancelledTurn(
+        conversationID: UUID,
+        userMessage: RAGStoredMessage,
+        question: String,
+        isFirstTurn: Bool,
+        service: KnowledgeRAGService?
+    ) async {
+        let partial = streamingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if partial.isEmpty {
+            // 尚无 AI 输出：保留气泡，落库用户消息，供复制 / 编辑。
+            do {
+                try await conversationStore.appendUserMessage(
+                    conversationID: conversationID,
+                    messageID: userMessage.id,
+                    question: question,
+                    createdAt: userMessage.createdAt
+                )
+                if let detail = try await conversationStore.loadConversation(id: conversationID) {
+                    messages = detail.messages
+                }
+                conversations = try await conversationStore.listConversations()
+                if isFirstTurn, let service {
+                    generateConversationTitle(
+                        using: service,
+                        conversationID: conversationID,
+                        firstQuestion: question
+                    )
+                }
+            } catch is CancellationError {
+                // 忽略：停止路径不应弹失败窗。
+            } catch {
+                // 落库失败仍保留内存中的用户气泡，避免「停止后问题消失」。
+                errorMessage = error.localizedDescription
+            }
+            streamingAnswer = ""
+        } else {
+            do {
+                try await persistAnswer(
+                    conversationID: conversationID,
+                    question: question,
+                    answer: partial,
+                    model: selectedModelDisplayName,
+                    citations: [],
+                    remoteContexts: remoteBlocks
+                )
+                if isFirstTurn, let service {
+                    generateConversationTitle(
+                        using: service,
+                        conversationID: conversationID,
+                        firstQuestion: question
+                    )
+                }
+            } catch is CancellationError {
+                // 忽略：停止路径不应弹失败窗；半截文本仍挂到时间线。
+                let assistant = RAGStoredMessage(
+                    id: UUID(),
+                    conversationID: conversationID,
+                    role: .assistant,
+                    content: partial,
+                    model: selectedModelDisplayName,
+                    citations: [],
+                    remoteContextAudits: [],
+                    createdAt: ISO8601DateFormatter.shared.string(from: Date())
+                )
+                if !messages.contains(where: { $0.id == userMessage.id }) {
+                    messages.append(userMessage)
+                }
+                if !messages.contains(where: { $0.role == .assistant && $0.content == partial }) {
+                    messages.append(assistant)
+                }
+                streamingAnswer = ""
+            } catch {
+                // 落库失败时至少把半截流式文本挂成助手气泡，避免只剩用户问题。
+                let assistant = RAGStoredMessage(
+                    id: UUID(),
+                    conversationID: conversationID,
+                    role: .assistant,
+                    content: partial,
+                    model: selectedModelDisplayName,
+                    citations: [],
+                    remoteContextAudits: [],
+                    createdAt: ISO8601DateFormatter.shared.string(from: Date())
+                )
+                if !messages.contains(where: { $0.id == userMessage.id }) {
+                    messages.append(userMessage)
+                }
+                messages.append(assistant)
+                streamingAnswer = ""
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
     /// 标题请求从回答任务中拆开：回答一旦落库即可立即交互，标题网络慢或失败都不能阻塞它。
@@ -972,12 +1223,16 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func refreshIndexCoverage() async throws {
         indexCoverage = try await dependencies.knowledgeRAGIndexBuilder.coverage()
+        indexIssueChunks = [:]
+        indexIssueHasMore = []
     }
 
     private func resetTurnState() {
         draftQuestion = ""
         streamingAnswer = ""
         answerState = .idle
+        editingUserMessageID = nil
+        editingUserDraft = ""
         queryPlan = nil
         retrieval = nil
         remoteBlocks = []

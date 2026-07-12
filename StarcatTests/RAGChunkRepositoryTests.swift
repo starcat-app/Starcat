@@ -137,6 +137,32 @@ struct RAGChunkRepositoryTests {
         #expect(coverage.failedChunks == 1)
     }
 
+    @Test("索引问题分片按待处理失败过期分类读取")
+    func indexIssueChunksAreFilteredByStatus() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let result = try await repository.replaceSource(
+            repoId: 21,
+            source: .readme,
+            drafts: [
+                draft(repoId: 21, key: "readme:stale:0", content: "Stale"),
+                draft(repoId: 21, key: "readme:failed:0", content: "Failed"),
+                draft(repoId: 21, key: "readme:pending:0", content: "Pending")
+            ]
+        )
+        try await repository.markReady([result.pendingChunkIDs[0]: [1, 0]], model: "embed-old")
+        try await repository.markFailed(chunkIDs: [result.pendingChunkIDs[1]], error: "quota")
+
+        let pending = try await repository.fetchIndexIssueChunks(kind: .pending, model: "embed-new", limit: 5, offset: 0)
+        let failed = try await repository.fetchIndexIssueChunks(kind: .failed, model: "embed-new", limit: 5, offset: 0)
+        let stale = try await repository.fetchIndexIssueChunks(kind: .stale, model: "embed-new", limit: 5, offset: 0)
+
+        #expect(pending.chunks.map(\.chunkKey) == ["readme:pending:0"])
+        #expect(failed.chunks.map(\.embeddingError) == ["quota"])
+        #expect(stale.chunks.map(\.chunkKey) == ["readme:stale:0"])
+    }
+
     @Test("知识库浏览器按仓库聚合索引状态且隔离非知识库数据")
     func knowledgeBrowserIndexAndChunksRespectLibraryBoundary() async throws {
         let (database, repository) = try makeRepository()

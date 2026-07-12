@@ -19513,34 +19513,46 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新索引" } }
       }
     },
-    "rag.workspace.index.fetchingReadmes" : {
+    "rag.workspace.index.readmeShort" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetching README" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "补齐 README" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
       }
     },
-    "rag.workspace.index.buildingChunks" : {
+    "rag.workspace.index.chunksShort" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Building chunks" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "构建分片" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分片" } }
       }
     },
-    "rag.workspace.index.embeddingChunks" : {
+    "rag.workspace.index.issues.empty" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Embedding" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成向量" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No matching chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无匹配分片" } }
       }
     },
-    "rag.workspace.index.completed" : {
+    "rag.workspace.index.issues.loadMore" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh complete" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新完成" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load more" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载更多" } }
       }
     },
-    "rag.workspace.index.lastRefreshed" : {
+    "rag.workspace.index.issues.pendingReason" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last refreshed" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上次刷新" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for embedding" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待生成向量" } }
+      }
+    },
+    "rag.workspace.index.issues.failedReason" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Embedding request failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成向量失败" } }
+      }
+    },
+    "rag.workspace.index.issues.staleReason" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Embedding model changed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向量模型已变更" } }
       }
     },
     "rag.workspace.inspector.chunkMissing" : {
@@ -19661,6 +19673,42 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat" } }
+      }
+    },
+    "rag.workspace.message.user" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "User" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户" } }
+      }
+    },
+    "rag.workspace.message.copyQuestion" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy question to clipboard and input" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制到剪贴板并回填输入框" } }
+      }
+    },
+    "rag.workspace.message.copyQuestion.clipboard" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy question" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制问题" } }
+      }
+    },
+    "rag.workspace.message.editQuestion" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit question" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑问题" } }
+      }
+    },
+    "rag.workspace.message.editCancel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } }
+      }
+    },
+    "rag.workspace.message.editSend" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Send" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送" } }
       }
     },
     "rag.workspace.remote.confirmTitle" : {
@@ -19817,12 +19865,6 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Export entire conversation" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导出全部对话" } }
-      }
-    },
-    "rag.workspace.message.user" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "User" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户" } }
       }
     },
     "settings.rag.backends.apiKey" : {

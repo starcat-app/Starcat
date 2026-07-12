@@ -24,6 +24,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func markStaleForOtherModels(currentModel: String) async throws
     func coverage(model: String) async throws -> RAGIndexCoverage
     func knowledgeRepositoryIndexes(model: String) async throws -> [RAGKnowledgeRepositoryIndex]
+    func fetchIndexIssueChunks(kind: RAGIndexIssueKind, model: String, limit: Int, offset: Int) async throws -> RAGIndexIssueChunkPage
     func fetchKnowledgeChunks(repoId: Int64) async throws -> [RAGChunk]
     func fetchManagedKnowledgeChunks(repoId: Int64, limit: Int, offset: Int) async throws -> RAGManagedChunkPage
     func saveKnowledgeChunkOverride(id: Int64, title: String, sectionPath: String, content: String) async throws
@@ -56,6 +57,19 @@ struct RAGManagedChunk: Identifiable, Equatable, Sendable {
 /// 管理器按页读取分片，避免仅为了显示少量预览就在内存中加载整个仓库。
 struct RAGManagedChunkPage: Equatable, Sendable {
     var chunks: [RAGManagedChunk]
+    var hasMore: Bool
+}
+
+/// 索引面板可展开查看的非 ready 分片分类。过期同时覆盖显式 stale 与旧 embedding 模型。
+enum RAGIndexIssueKind: Hashable, Sendable {
+    case pending
+    case failed
+    case stale
+}
+
+/// 按状态分页读取异常分片，避免 Inspector 展开时一次性加载整个知识库。
+struct RAGIndexIssueChunkPage: Equatable, Sendable {
+    var chunks: [RAGChunk]
     var hasMore: Bool
 }
 
@@ -384,6 +398,46 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     staleChunks: row["stale_chunks"]
                 )
             }
+        }
+    }
+
+    func fetchIndexIssueChunks(
+        kind: RAGIndexIssueKind,
+        model: String,
+        limit: Int,
+        offset: Int
+    ) async throws -> RAGIndexIssueChunkPage {
+        precondition(limit > 0 && offset >= 0)
+        let predicate: String
+        switch kind {
+        case .pending:
+            predicate = "c.embedding_status = 'pending'"
+        case .failed:
+            predicate = "c.embedding_status = 'failed'"
+        case .stale:
+            predicate = "c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?)"
+        }
+
+        return try await database.writer.read { db in
+            var values: [any DatabaseValueConvertible] = [limit + 1, offset]
+            if kind == .stale {
+                values.insert(model, at: 0)
+            }
+            // values 仅包含 String / Int，均可绑定；GRDB 的可失败初始化在此不会失败。
+            let arguments = StatementArguments(values)!
+            let chunks = try RAGChunk.fetchAll(db, sql: """
+                SELECT c.*
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                WHERE (\(predicate))
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                ORDER BY c.updated_at DESC
+                LIMIT ? OFFSET ?
+                """, arguments: arguments)
+            return RAGIndexIssueChunkPage(
+                chunks: Array(chunks.prefix(limit)),
+                hasMore: chunks.count > limit
+            )
         }
     }
 
