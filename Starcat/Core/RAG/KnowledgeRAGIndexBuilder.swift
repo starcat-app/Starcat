@@ -4,8 +4,8 @@
 //
 //  知识库范围的 source 级增量索引器。
 //
-//  索引器只读取 `fetchKnowledgeRepos()` 或显式确认仍为 `.inLibrary` 的 repo。README、notes、
-//  summary、metadata 分别 replace，避免一处变化导致整个 repo 重建。embedding 统一批量提交，
+//  索引器只读取 `fetchKnowledgeRepos()` 或显式确认仍为 `.inLibrary` 的 repo。全量构建会先补齐
+//  缺失的 README Markdown，再分别 replace README、notes、summary、metadata；embedding 统一批量
 //  失败时只标记当前 batch，不删除已经 ready 的其它 chunks。
 //
 
@@ -14,6 +14,7 @@ import Observation
 
 enum RAGIndexingStatus: Equatable, Sendable {
     case idle
+    case fetchingReadmes(processedRepos: Int, totalRepos: Int)
     case building(processedRepos: Int, totalRepos: Int)
     case embedding(processedChunks: Int, totalChunks: Int)
     case completed(RAGIndexCoverage)
@@ -26,6 +27,7 @@ final class KnowledgeRAGIndexBuilder {
     private let chunkRepository: any RAGChunkRepositoryProtocol
     private let repoRepository: any RepoRepositoryProtocol
     private let readmeRepository: ReadmeRepository
+    private let readmeAPI: ReadmeAPI
     private let noteRepository: any RepoNoteRepositoryProtocol
     private let summaryRepository: any AISummaryRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
@@ -34,6 +36,9 @@ final class KnowledgeRAGIndexBuilder {
     private let keychain: any KeychainManaging
     private let builder: RAGChunkBuilder
     private let embeddingBatchSize: Int
+
+    /// README HTML 与 Markdown 各自独立请求；限制单次请求，避免离线网络阻塞整轮索引。
+    private static let readmeRequestTimeout: TimeInterval = 15
 
     private(set) var status: RAGIndexingStatus = .idle
     private var indexingTask: Task<Void, Never>?
@@ -47,6 +52,7 @@ final class KnowledgeRAGIndexBuilder {
         chunkRepository: any RAGChunkRepositoryProtocol,
         repoRepository: any RepoRepositoryProtocol,
         readmeRepository: ReadmeRepository,
+        readmeAPI: ReadmeAPI,
         noteRepository: any RepoNoteRepositoryProtocol,
         summaryRepository: any AISummaryRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
@@ -59,6 +65,7 @@ final class KnowledgeRAGIndexBuilder {
         self.chunkRepository = chunkRepository
         self.repoRepository = repoRepository
         self.readmeRepository = readmeRepository
+        self.readmeAPI = readmeAPI
         self.noteRepository = noteRepository
         self.summaryRepository = summaryRepository
         self.repoTagRepository = repoTagRepository
@@ -170,6 +177,7 @@ final class KnowledgeRAGIndexBuilder {
         try entitlementGate.requirePro(.knowledgeRAG)
         let repos = try await repoRepository.fetchKnowledgeRepos()
         let summaries = try await summaryRepository.fetchLatestPerRepo()
+        try await fetchMissingReadmes(for: repos)
         for (index, repo) in repos.enumerated() {
             try Task.checkCancellation()
             status = .building(processedRepos: index, totalRepos: repos.count)
@@ -270,6 +278,40 @@ final class KnowledgeRAGIndexBuilder {
         if sources.contains(.metadata) {
             _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .metadata, drafts: output.metadata)
         }
+    }
+
+    /// 仅补齐本地没有 Markdown 的 README。索引器不能假设详情页或后台预拉已经访问过仓库，
+    /// 否则知识库会退化成只有 metadata 的分片；单仓库失败则保留 metadata 并继续下一项。
+    private func fetchMissingReadmes(for repos: [Repo]) async throws {
+        for (index, repo) in repos.enumerated() {
+            try Task.checkCancellation()
+            status = .fetchingReadmes(processedRepos: index, totalRepos: repos.count)
+
+            if let cachedMarkdown = try await readmeRepository.findContent(repoId: repo.id),
+               !cachedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                continue
+            }
+
+            let htmlResult = await readmeAPI.refreshReadme(
+                for: repo,
+                requestTimeout: Self.readmeRequestTimeout
+            )
+            switch htmlResult {
+            case .updated, .notModified:
+                let markdownResult = await readmeAPI.refreshMarkdownIfNeeded(
+                    for: repo,
+                    requestTimeout: Self.readmeRequestTimeout
+                )
+                if case .failed(let error) = markdownResult {
+                    AppLog.network.warning("RAG README Markdown fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            case .notFound:
+                continue
+            case .failed(let error):
+                AppLog.network.warning("RAG README HTML fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        status = .fetchingReadmes(processedRepos: repos.count, totalRepos: repos.count)
     }
 
     private func embedPendingChunks() async throws {

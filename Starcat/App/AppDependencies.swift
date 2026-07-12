@@ -845,6 +845,7 @@ final class AppDependencies {
             chunkRepository: ragChunkRepo,
             repoRepository: repo,
             readmeRepository: readmeRepo,
+            readmeAPI: self.readmeAPI,
             noteRepository: self.repoNoteRepository,
             summaryRepository: summaryRepo,
             repoTagRepository: repoTagRepo,

@@ -213,10 +213,10 @@ private final class CountingMockClient: GitHubAPIClientProtocol, @unchecked Send
     func unstar(owner: String, repo: String) async throws { /* noop */ }
     func star(owner: String, repo: String) async throws { /* noop */ }
     func getCurrentUser() async throws -> GitHubUserDTO { fatalError("not used") }
-    func readmeHTML(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?) async throws -> BytesResponse {
+    func readmeHTML(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?, requestTimeout: TimeInterval?) async throws -> BytesResponse {
         fatalError("not used")
     }
-    func readmeMarkdown(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?) async throws -> BytesResponse {
+    func readmeMarkdown(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?, requestTimeout: TimeInterval?) async throws -> BytesResponse {
         fatalError("not used")
     }
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO {

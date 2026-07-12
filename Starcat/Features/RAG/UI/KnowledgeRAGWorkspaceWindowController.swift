@@ -182,6 +182,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoading = false
     var isLoadingMoreChunks = false
     var isIndexing = false
+    /// 浏览器与 RAG 工作台复用同一 index builder，避免展示两份不同的进度口径。
+    var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
     var isTestingRetrieval = false
@@ -524,6 +526,7 @@ private struct KnowledgeRAGBrowserView: View {
             }
             HStack {
                 Text("rag.browser.chunks").font(.headline)
+                indexProgressLabel
                 Spacer()
                 Button { viewModel.rebuildIndex() } label: {
                     HStack(spacing: 6) {
@@ -624,6 +627,29 @@ private struct KnowledgeRAGBrowserView: View {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
         }
+    }
+
+    @ViewBuilder
+    private var indexProgressLabel: some View {
+        switch viewModel.indexingStatus {
+        case .fetchingReadmes(let processed, let total):
+            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total)
+        case .building(let processed, let total):
+            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total)
+        case .embedding(let processed, let total):
+            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total)
+        case .idle, .completed, .failed:
+            EmptyView()
+        }
+    }
+
+    private func compactIndexProgress(_ title: LocalizedStringKey, processed: Int, total: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+            Text("\(processed)/\(total)").monospacedDigit()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     private func sourceKey(_ source: RAGChunkSource) -> LocalizedStringKey {

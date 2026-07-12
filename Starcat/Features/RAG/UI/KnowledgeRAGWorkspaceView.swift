@@ -243,6 +243,7 @@ struct KnowledgeRAGWorkspaceView: View {
                         .font(iconFont(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
+                indexProgressLabel
                 HStack {
                     Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), locale: locale, viewModel.indexCoverage.readyChunks))
                     Spacer()
@@ -471,7 +472,30 @@ struct KnowledgeRAGWorkspaceView: View {
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             }
-            Spacer()
+            Spacer(minLength: 8)
+            // 会话标题右侧：复制 / 导出全部对话（右对齐）。
+            if !viewModel.messages.isEmpty {
+                CopyFeedbackButton(
+                    providesContent: { viewModel.conversationTranscriptMarkdown },
+                    tooltip: "rag.workspace.conversation.copyAll"
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(iconFont(size: 13, weight: .medium))
+                        .foregroundStyle(didCopy ? Color.green : .secondary)
+                        .frame(width: 24, height: 24)
+                }
+                Button {
+                    viewModel.exportConversation()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(iconFont(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.conversation.exportAll")
+            }
             if viewModel.isAnswering {
                 ProgressView()
                     .controlSize(.small)
@@ -493,7 +517,11 @@ struct KnowledgeRAGWorkspaceView: View {
                             .id(message.id)
                     }
                     if !viewModel.streamingAnswer.isEmpty {
-                        assistantMessage(content: viewModel.streamingAnswer, citations: [])
+                        assistantMessage(
+                            content: viewModel.streamingAnswer,
+                            citations: [],
+                            showsActions: false
+                        )
                             .id("streaming-answer")
                     } else if viewModel.isAnswering {
                         workingIndicator
@@ -541,57 +569,30 @@ struct KnowledgeRAGWorkspaceView: View {
                     .frame(maxWidth: 680, alignment: .trailing)
             }
         } else {
-            assistantMessage(content: message.content, citations: message.citations)
+            assistantMessage(
+                content: message.content,
+                citations: message.citations,
+                showsActions: true
+            )
         }
     }
 
-    private func assistantMessage(content: String, citations: [RAGCitation]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.purple)
-                Text("rag.workspace.message.assistant")
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button { viewModel.copyAnswer(content) } label: {
-                    Image(systemName: "doc.on.doc").frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .foregroundStyle(.secondary)
-                .help("rag.workspace.answer.copy")
-                Button { viewModel.exportAnswer(content) } label: {
-                    Image(systemName: "square.and.arrow.up").frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .foregroundStyle(.secondary)
-                .help("rag.workspace.answer.export")
-            }
-            RAGMarkdownText(content: content)
-                .font(ragFont(.body))
-                .textSelection(.enabled)
-                .frame(maxWidth: 900, alignment: .leading)
-            if !citations.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 7) {
-                        ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
-                            Button {
-                                viewModel.selectCitation(citation)
-                                inspectorTab = .evidence
-                            } label: {
-                                Label("S\(index + 1) · \(citation.repoFullName)", systemImage: "quote.opening")
-                                    .font(ragFont(.caption, weight: .semibold))
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-            }
-        }
+    /// 单条助手回答。复制 / 导出放在正文下方，仅悬停显示；流式中关闭动作条。
+    private func assistantMessage(
+        content: String,
+        citations: [RAGCitation],
+        showsActions: Bool
+    ) -> some View {
+        RAGAssistantMessageBlock(
+            content: content,
+            citations: citations,
+            showsActions: showsActions,
+            onSelectCitation: { citation in
+                viewModel.selectCitation(citation)
+                inspectorTab = .evidence
+            },
+            onExport: { viewModel.exportAnswer(content) }
+        )
     }
 
     private var workingIndicator: some View {
@@ -647,22 +648,36 @@ struct KnowledgeRAGWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 8) {
             // chip 放在输入框外（对齐 Agent），并按中栏宽度自动换行。
             if hasContextChips {
-                RAGFlowLayout(spacing: 7) {
-                    ForEach(viewModel.selectedRepoContexts) { repo in
-                        contextChip(title: "@\(repo.fullName)", icon: "shippingbox") {
-                            viewModel.removeMention(repoID: repo.id)
+                HStack(alignment: .top, spacing: 8) {
+                    RAGFlowLayout(spacing: 7) {
+                        ForEach(viewModel.selectedRepoContexts) { repo in
+                            contextChip(title: "@\(repo.fullName)", icon: "shippingbox") {
+                                viewModel.removeMention(repoID: repo.id)
+                            }
+                        }
+                        ForEach(viewModel.attachments) { attachment in
+                            contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
+                                viewModel.removeAttachment(attachment.id)
+                            }
+                        }
+                        ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
+                            githubLinkChip(reference)
                         }
                     }
-                    ForEach(viewModel.attachments) { attachment in
-                        contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
-                            viewModel.removeAttachment(attachment.id)
-                        }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button {
+                        viewModel.clearComposerContext()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(iconFont(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 24)
                     }
-                    ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
-                        githubLinkChip(reference)
-                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.workspace.composer.clearContext")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
             }
 
@@ -1379,6 +1394,29 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
+    @ViewBuilder
+    private var indexProgressLabel: some View {
+        switch viewModel.indexingStatus {
+        case .fetchingReadmes(let processed, let total):
+            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total)
+        case .building(let processed, let total):
+            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total)
+        case .embedding(let processed, let total):
+            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total)
+        case .idle, .completed, .failed:
+            EmptyView()
+        }
+    }
+
+    private func compactIndexProgress(_ title: LocalizedStringKey, processed: Int, total: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+            Text("\(processed)/\(total)").monospacedDigit()
+        }
+        .font(ragFont(.caption2))
+        .foregroundStyle(.secondary)
+    }
+
     private var composerNSFont: NSFont {
         NSFont.systemFont(ofSize: 13 * interfaceScale.multiplier)
     }
@@ -1438,9 +1476,16 @@ struct KnowledgeRAGWorkspaceView: View {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
     }
 
+    /// 右侧「证据」列表：按相关度降序，同分再按仓库名稳定排序。
     private var allCitations: [RAGCitation] {
         var seen = Set<UUID>()
-        return viewModel.messages.flatMap(\.citations).filter { seen.insert($0.id).inserted }
+        return viewModel.messages
+            .flatMap(\.citations)
+            .filter { seen.insert($0.id).inserted }
+            .sorted {
+                if $0.score != $1.score { return $0.score > $1.score }
+                return $0.repoFullName.localizedStandardCompare($1.repoFullName) == .orderedAscending
+            }
     }
 
     // MARK: - Display helpers
@@ -1541,6 +1586,88 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private func iconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         interfaceScale.font(size: size, weight: weight)
+    }
+}
+
+/// 助手回答块：动作条挂在正文下方，仅鼠标悬停时显示（流式关闭）。
+private struct RAGAssistantMessageBlock: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    let content: String
+    let citations: [RAGCitation]
+    let showsActions: Bool
+    let onSelectCitation: (RAGCitation) -> Void
+    let onExport: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                Text("rag.workspace.message.assistant")
+                    .font(interfaceScale.font(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+
+            RAGMarkdownText(content: content)
+                .font(interfaceScale.font(.body))
+                .textSelection(.enabled)
+                .frame(maxWidth: 900, alignment: .leading)
+
+            if showsActions, isHovered {
+                HStack(spacing: 10) {
+                    CopyFeedbackButton(
+                        providesContent: { content },
+                        tooltip: "rag.workspace.answer.copy"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(interfaceScale.font(size: 12, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : .secondary)
+                            .frame(width: 20, height: 20)
+                    }
+                    Button(action: onExport) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(interfaceScale.font(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.workspace.answer.export")
+                    Spacer(minLength: 0)
+                }
+                .transition(reduceMotion ? .identity : .opacity)
+            }
+
+            if !citations.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 7) {
+                        ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
+                            Button {
+                                onSelectCitation(citation)
+                            } label: {
+                                Label("S\(index + 1) · \(citation.repoFullName)", systemImage: "quote.opening")
+                                    .font(interfaceScale.font(.caption, weight: .semibold))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard showsActions else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
     }
 }
 

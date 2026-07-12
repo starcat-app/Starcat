@@ -151,7 +151,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         owner: String,
         repo: String,
         ifNoneMatch: String?,
-        ifModifiedSince: String?
+        ifModifiedSince: String?,
+        requestTimeout: TimeInterval?
     ) async throws -> BytesResponse {
         _readmeHTMLCalls.withLock { $0.append((owner, repo, ifNoneMatch, ifModifiedSince)) }
         guard let handler = readmeHTMLHandler else {
@@ -164,7 +165,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         owner: String,
         repo: String,
         ifNoneMatch: String?,
-        ifModifiedSince: String?
+        ifModifiedSince: String?,
+        requestTimeout: TimeInterval?
     ) async throws -> BytesResponse {
         _readmeMarkdownCalls.withLock { $0.append((owner, repo, ifNoneMatch, ifModifiedSince)) }
         guard let handler = readmeMarkdownHandler else {

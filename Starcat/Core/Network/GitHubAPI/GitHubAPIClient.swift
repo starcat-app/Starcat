@@ -270,9 +270,13 @@ actor GitHubAPIClient {
         path: String,
         accept: String,
         ifNoneMatch: String? = nil,
-        ifModifiedSince: String? = nil
+        ifModifiedSince: String? = nil,
+        requestTimeout: TimeInterval? = nil
     ) async throws -> BytesResponse {
         var request = try buildRequest(method: "GET", path: path, queryItems: [], accept: accept, body: nil)
+        if let requestTimeout {
+            request.timeoutInterval = requestTimeout
+        }
         if let etag = ifNoneMatch, !etag.isEmpty {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }

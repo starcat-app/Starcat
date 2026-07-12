@@ -74,7 +74,8 @@ protocol GitHubAPIClientProtocol: Sendable {
         owner: String,
         repo: String,
         ifNoneMatch: String?,
-        ifModifiedSince: String?
+        ifModifiedSince: String?,
+        requestTimeout: TimeInterval?
     ) async throws -> BytesResponse
 
     /// 拉取 README 原始 Markdown 文本（决策 E3：按需懒补全）。
@@ -92,7 +93,8 @@ protocol GitHubAPIClientProtocol: Sendable {
         owner: String,
         repo: String,
         ifNoneMatch: String?,
-        ifModifiedSince: String?
+        ifModifiedSince: String?,
+        requestTimeout: TimeInterval?
     ) async throws -> BytesResponse
 
     // MARK: - Subscription (Watch)
@@ -124,6 +126,39 @@ protocol GitHubAPIClientProtocol: Sendable {
 
     /// 拉取单个仓库的 Security Advisory 列表（可能为空数组）。
     func securityAdvisories(owner: String, repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]>
+}
+
+extension GitHubAPIClientProtocol {
+    /// 未指定超时的既有调用保持默认 URLSession 策略；RAG 构建会显式传入短超时。
+    func readmeHTML(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> BytesResponse {
+        try await readmeHTML(
+            owner: owner,
+            repo: repo,
+            ifNoneMatch: ifNoneMatch,
+            ifModifiedSince: ifModifiedSince,
+            requestTimeout: nil
+        )
+    }
+
+    func readmeMarkdown(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> BytesResponse {
+        try await readmeMarkdown(
+            owner: owner,
+            repo: repo,
+            ifNoneMatch: ifNoneMatch,
+            ifModifiedSince: ifModifiedSince,
+            requestTimeout: nil
+        )
+    }
 }
 
 // MARK: - Conformance

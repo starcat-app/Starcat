@@ -23,13 +23,15 @@ extension GitHubAPIClient {
         owner: String,
         repo: String,
         ifNoneMatch: String? = nil,
-        ifModifiedSince: String? = nil
+        ifModifiedSince: String? = nil,
+        requestTimeout: TimeInterval? = nil
     ) async throws -> BytesResponse {
         try await getBytes(
             path: AppEndpoints.GitHubREST.Paths.repoReadme(owner: owner, repo: repo),
             accept: "application/vnd.github.html",
             ifNoneMatch: ifNoneMatch,
-            ifModifiedSince: ifModifiedSince
+            ifModifiedSince: ifModifiedSince,
+            requestTimeout: requestTimeout
         )
     }
 
@@ -42,13 +44,15 @@ extension GitHubAPIClient {
         owner: String,
         repo: String,
         ifNoneMatch: String? = nil,
-        ifModifiedSince: String? = nil
+        ifModifiedSince: String? = nil,
+        requestTimeout: TimeInterval? = nil
     ) async throws -> BytesResponse {
         try await getBytes(
             path: AppEndpoints.GitHubREST.Paths.repoReadme(owner: owner, repo: repo),
             accept: "application/vnd.github.raw",
             ifNoneMatch: ifNoneMatch,
-            ifModifiedSince: ifModifiedSince
+            ifModifiedSince: ifModifiedSince,
+            requestTimeout: requestTimeout
         )
     }
 }

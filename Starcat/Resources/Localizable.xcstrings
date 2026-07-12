@@ -19429,6 +19429,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加附件" } }
       }
     },
+    "rag.workspace.composer.clearContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear all attachments and repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空全部附件与仓库" } }
+      }
+    },
     "rag.workspace.composer.cancel" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop generating" } },
@@ -19505,6 +19511,24 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh index" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新索引" } }
+      }
+    },
+    "rag.workspace.index.fetchingReadmes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetching README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "补齐 README" } }
+      }
+    },
+    "rag.workspace.index.buildingChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Building chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "构建分片" } }
+      }
+    },
+    "rag.workspace.index.embeddingChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Embedding" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成向量" } }
       }
     },
     "rag.workspace.inspector.chunkMissing" : {
@@ -19771,6 +19795,24 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导出 Markdown" } }
       }
     },
+    "rag.workspace.conversation.copyAll" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy entire conversation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制全部对话" } }
+      }
+    },
+    "rag.workspace.conversation.exportAll" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Export entire conversation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导出全部对话" } }
+      }
+    },
+    "rag.workspace.message.user" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "User" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户" } }
+      }
+    },
     "settings.rag.backends.apiKey" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "API Key (optional for local services)" } },
@@ -19871,6 +19913,12 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Rebuild" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重建" } }
+      }
+    },
+    "settings.rag.index.readmesFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetching README %d / %d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在补齐 README %d / %d" } }
       }
     },
     "settings.rag.index.reposFormat" : {

@@ -1162,7 +1162,7 @@ struct AISettingsTab: View {
                 .monospacedDigit()
             Spacer()
             switch builder.status {
-            case .building, .embedding:
+            case .fetchingReadmes, .building, .embedding:
                 Button("settings.rag.index.pause") { builder.cancel() }
             case .idle, .completed, .failed:
                 Button {
@@ -1177,6 +1177,8 @@ struct AISettingsTab: View {
     private func ragIndexStatusText(_ status: RAGIndexingStatus) -> String {
         switch status {
         case .idle: return String.l10n("settings.rag.index.idle")
+        case .fetchingReadmes(let processed, let total):
+            return String(format: String.l10n("settings.rag.index.readmesFormat"), processed, total)
         case .building(let processed, let total):
             return String(format: String.l10n("settings.rag.index.reposFormat"), processed, total)
         case .embedding(let processed, let total):

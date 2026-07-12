@@ -66,6 +66,23 @@ struct GitHubAPIClientTests {
         )
     }
 
+    @Test("README 字节请求使用调用方指定的超时")
+    func readmeRequestUsesSpecifiedTimeout() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            (httpResponse(200, request.url!), Data("# README".utf8))
+        }
+
+        _ = try await client.readmeMarkdown(
+            owner: "owner",
+            repo: "repo",
+            requestTimeout: 15
+        )
+
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.timeoutInterval == 15)
+    }
+
     // MARK: - perform<T> 成功路径
 
     @Test("get<T>: 200 + valid JSON → 解码成功 + Bearer 注入")

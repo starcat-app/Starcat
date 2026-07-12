@@ -222,9 +222,9 @@ struct ReadmeAPI {
     ///
     /// - Parameter repo: 目标仓库
     /// - Returns: `ReadmeRefreshResult` —— `.updated` / `.notModified` / `.notFound` / `.failed`
-    func refreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
+    func refreshReadme(for repo: Repo, requestTimeout: TimeInterval? = nil) async -> ReadmeRefreshResult {
         await inflightTracker.dedupeManage(repoId: repo.id) {
-            await self.performRefreshReadme(for: repo)
+            await self.performRefreshReadme(for: repo, requestTimeout: requestTimeout)
         }
     }
 
@@ -233,7 +233,7 @@ struct ReadmeAPI {
     /// HOM-201 P2-3:各终态末尾 record metrics(refresh200 / 304 / 404 / failed)。
     /// 调用 `refreshUnconditional` 兜底时不在本方法 record(让兜底自身 record),
     /// 避免一次刷新计入两次。
-    private func performRefreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
+    private func performRefreshReadme(for repo: Repo, requestTimeout: TimeInterval?) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
             existing = try await repository.find(repoId: repo.id)
@@ -248,7 +248,8 @@ struct ReadmeAPI {
                 owner: repo.owner,
                 repo: repo.name,
                 ifNoneMatch: existing?.etag,
-                ifModifiedSince: existing?.lastModified
+                ifModifiedSince: existing?.lastModified,
+                requestTimeout: requestTimeout
             )
         } catch NetworkError.notFound {
             // GitHub 返回 404 意味该 repo 没有 README；清掉本地旧缓存（防止误显示）
@@ -268,7 +269,7 @@ struct ReadmeAPI {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
                 // 不在此处 record,refreshUnconditional 自己处理
                 AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(repo.fullName, privacy: .public)")
-                return await refreshUnconditional(repo: repo)
+                return await refreshUnconditional(repo: repo, requestTimeout: requestTimeout)
             }
             let now = Date()
             var refreshed = cached
@@ -465,14 +466,14 @@ struct ReadmeAPI {
     ///
     /// - Returns: `.updated(readme)` 表示落库成功；`.notFound` 表示 GitHub 没有该 README；
     ///   `.notModified` 表示已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
-    func refreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
+    func refreshMarkdownIfNeeded(for repo: Repo, requestTimeout: TimeInterval? = nil) async -> ReadmeRefreshResult {
         await inflightTracker.dedupeMarkdown(repoId: repo.id) {
-            await self.performRefreshMarkdownIfNeeded(for: repo)
+            await self.performRefreshMarkdownIfNeeded(for: repo, requestTimeout: requestTimeout)
         }
     }
 
     /// `refreshMarkdownIfNeeded(for:)` 的真实实现，由 `ReadmeInflightTracker` 合并同 repo 并发请求。
-    private func performRefreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
+    private func performRefreshMarkdownIfNeeded(for repo: Repo, requestTimeout: TimeInterval?) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
             existing = try await repository.find(repoId: repo.id)
@@ -505,7 +506,8 @@ struct ReadmeAPI {
                 owner: repo.owner,
                 repo: repo.name,
                 ifNoneMatch: nil,           // 强制拿原文，不与 HTML 路径共用 ETag
-                ifModifiedSince: nil
+                ifModifiedSince: nil,
+                requestTimeout: requestTimeout
             )
         } catch NetworkError.notFound {
             return .notFound
@@ -537,14 +539,15 @@ struct ReadmeAPI {
 
     /// 不带 validator 的强制刷新（304 但本地缓存丢失时的兜底）。
     /// 所有错误同样包到 `.failed`，保持与 `refreshReadme` 一致的语义。
-    private func refreshUnconditional(repo: Repo) async -> ReadmeRefreshResult {
+    private func refreshUnconditional(repo: Repo, requestTimeout: TimeInterval?) async -> ReadmeRefreshResult {
         let raw: BytesResponse
         do {
             raw = try await client.readmeHTML(
                 owner: repo.owner,
                 repo: repo.name,
                 ifNoneMatch: nil,
-                ifModifiedSince: nil
+                ifModifiedSince: nil,
+                requestTimeout: requestTimeout
             )
         } catch NetworkError.notFound {
             await metrics.recordRefresh404()

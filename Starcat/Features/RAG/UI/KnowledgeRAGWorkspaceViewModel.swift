@@ -80,6 +80,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         staleChunks: 0
     )
     var isIndexing = false
+    /// 直接透出 builder 的状态，让工作台显示真实构建阶段与数字进度。
+    var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
     var errorMessage: String?
     /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {
@@ -510,6 +512,13 @@ final class KnowledgeRAGWorkspaceViewModel {
         selectedRepoContexts.removeAll { $0.id == repoID }
     }
 
+    /// 清空输入框上方全部上下文 chip：已选仓库、附件、GitHub 链接。
+    func clearComposerContext() {
+        selectedRepoContexts = []
+        attachments = []
+        githubLinkContexts = []
+    }
+
     func chooseAttachments() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
@@ -594,9 +603,14 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    func copyAnswer(_ content: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(content, forType: .string)
+    /// 当前会话全文（用户 / Starcat 分段），供顶部「复制全部 / 导出全部」使用。
+    var conversationTranscriptMarkdown: String {
+        messages.map { message in
+            let roleLabel = message.role == .user
+                ? String.l10n("rag.workspace.message.user")
+                : String.l10n("rag.workspace.message.assistant")
+            return "## \(roleLabel)\n\n\(message.content)"
+        }.joined(separator: "\n\n")
     }
 
     func clearDebugTraces() {
@@ -627,9 +641,18 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func exportAnswer(_ content: String) {
+        exportMarkdown(content, suggestedName: "Starcat-RAG.md")
+    }
+
+    /// 导出当前会话全部对话。
+    func exportConversation() {
+        exportMarkdown(conversationTranscriptMarkdown, suggestedName: "Starcat-RAG-Conversation.md")
+    }
+
+    private func exportMarkdown(_ content: String, suggestedName: String) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        panel.nameFieldStringValue = "Starcat-RAG.md"
+        panel.nameFieldStringValue = suggestedName
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try Data(content.utf8).write(to: url, options: .atomic)
