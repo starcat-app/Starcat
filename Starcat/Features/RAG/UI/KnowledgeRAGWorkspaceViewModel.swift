@@ -305,6 +305,21 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 用户手动重命名：立刻写库并刷新列表；若正在打字机生成标题则取消，避免覆盖。
+    func renameConversation(id: UUID, title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if selectedConversationID == id { conversationTitleTask?.cancel() }
+        do {
+            try await conversationStore.renameConversation(id: id, title: trimmed)
+            updateConversationTitle(title: trimmed, for: id)
+            // 列表按 updated_at 排序；重命名后刷新顺序，避免停留在旧位置。
+            conversations = try await conversationStore.listConversations()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func send() {
         let question = draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isAnswering, composerBlockingReason == nil else { return }

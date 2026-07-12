@@ -21,6 +21,8 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var inspectorTab: RAGInspectorTab = .evidence
     @State private var composerContentHeight: CGFloat = 0
     @State private var expandedDebugTraceIDs: Set<UUID> = []
+    @State private var renameTarget: RAGConversationSummary?
+    @State private var renameDraft = ""
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
@@ -64,6 +66,25 @@ struct KnowledgeRAGWorkspaceView: View {
             Button("common.ok") { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .alert(
+            "rag.workspace.conversation.rename.title",
+            isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )
+        ) {
+            TextField("rag.workspace.conversation.rename.placeholder", text: $renameDraft)
+            Button("common.cancel", role: .cancel) {
+                renameTarget = nil
+            }
+            Button("common.ok") {
+                guard let target = renameTarget else { return }
+                let title = renameDraft
+                renameTarget = nil
+                Task { await viewModel.renameConversation(id: target.id, title: title) }
+            }
+            .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
@@ -203,6 +224,10 @@ struct KnowledgeRAGWorkspaceView: View {
             .focusEffectDisabled()
 
             Menu {
+                Button("rag.workspace.conversation.rename") {
+                    renameTarget = conversation
+                    renameDraft = conversation.title
+                }
                 Button("common.delete", role: .destructive) {
                     Task { await viewModel.deleteConversation(conversation.id) }
                 }

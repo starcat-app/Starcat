@@ -86,19 +86,35 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             for draft in drafts {
                 let identity = Self.identity(sourceId: draft.sourceId, chunkKey: draft.chunkKey)
                 if var row = existingByIdentity[identity] {
+                    guard let rowID = row.id else { continue }
+                    let override = try Row.fetchOne(db, sql: "SELECT * FROM rag_chunk_overrides WHERE chunk_id = ?", arguments: [rowID])
+                    // 源刷新要更新“原始内容”快照，但实际索引内容继续尊重用户覆盖。
+                    if override != nil {
+                        try db.execute(sql: """
+                            UPDATE rag_chunk_overrides
+                            SET original_title = ?, original_section_path = ?, original_content = ?, updated_at = ?
+                            WHERE chunk_id = ?
+                            """, arguments: [draft.title, draft.sectionPath, draft.content, now, rowID])
+                    }
+                    let overrideTitle: String? = override?["override_title"]
+                    let overridePath: String? = override?["override_section_path"]
+                    let overrideContent: String? = override?["override_content"]
+                    let effectiveTitle = overrideTitle ?? draft.title
+                    let effectivePath = overridePath ?? draft.sectionPath
+                    let effectiveContent = overrideContent ?? draft.content
                     let contentChanged = row.contentHash != draft.contentHash
                     row.parentType = draft.parentType
                     row.parentKey = draft.parentKey
                     row.parentTitle = draft.parentTitle
                     row.chunkIndex = draft.chunkIndex
-                    row.sectionPath = draft.sectionPath
-                    row.title = draft.title
-                    row.content = draft.content
-                    row.contentHash = draft.contentHash
-                    row.tokenCount = draft.tokenCount
+                    row.sectionPath = effectivePath
+                    row.title = effectiveTitle
+                    row.content = effectiveContent
+                    row.contentHash = RAGChunk.hash(effectiveContent)
+                    row.tokenCount = overrideContent == nil ? draft.tokenCount : max(1, effectiveContent.count / 4)
                     row.isTruncated = draft.isTruncated
                     row.updatedAt = now
-                    if contentChanged {
+                    if contentChanged && overrideContent == nil {
                         row.embeddingModel = nil
                         row.embeddingDim = nil
                         row.embedding = nil

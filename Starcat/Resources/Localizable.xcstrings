@@ -19447,6 +19447,24 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话操作" } }
       }
     },
+    "rag.workspace.conversation.rename" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重命名" } }
+      }
+    },
+    "rag.workspace.conversation.rename.placeholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversation title" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话标题" } }
+      }
+    },
+    "rag.workspace.conversation.rename.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename Conversation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重命名会话" } }
+      }
+    },
     "rag.workspace.empty.subtitle" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Use @ to select one or more knowledge-base repositories, or ask across the whole knowledge base." } },

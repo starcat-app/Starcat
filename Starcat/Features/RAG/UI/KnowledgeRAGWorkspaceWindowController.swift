@@ -386,7 +386,7 @@ private struct KnowledgeRAGBrowserView: View {
                 Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
                 Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(.accent) }
+                if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
                 if managed.isExcluded { Image(systemName: "eye.slash.fill").foregroundStyle(.secondary) }
                 Text(statusKey(status)).font(.caption2.weight(.semibold)).foregroundStyle(statusColor(status))
                 Menu {

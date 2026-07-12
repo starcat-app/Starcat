@@ -169,6 +169,37 @@ struct RAGChunkRepositoryTests {
         #expect(try await repository.fetchKnowledgeChunks(repoId: 31).isEmpty)
     }
 
+    @Test("人工覆盖与排除在源重建后保留且可恢复")
+    func knowledgeChunkOverrideSurvivesSourceRebuild() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 40)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 40, state: .inLibrary)
+        let first = try await repository.replaceSource(
+            repoId: 40,
+            source: .readme,
+            drafts: [draft(repoId: 40, key: "readme:manual:0", content: "Original")]
+        )
+        let id = try #require(first.pendingChunkIDs.first)
+        try await repository.saveKnowledgeChunkOverride(id: id, title: "Manual", sectionPath: "Manual", content: "Edited")
+        try await repository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
+
+        _ = try await repository.replaceSource(
+            repoId: 40,
+            source: .readme,
+            drafts: [draft(repoId: 40, key: "readme:manual:0", content: "Updated source")]
+        )
+        let managed = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40).first)
+        #expect(managed.chunk.content == "Edited")
+        #expect(managed.isExcluded)
+        #expect(managed.hasOverride)
+
+        try await repository.restoreKnowledgeChunk(id: id)
+        let restored = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40).first)
+        #expect(restored.chunk.content == "Updated source")
+        #expect(!restored.isExcluded)
+        #expect(!restored.hasOverride)
+    }
+
     private func draft(repoId: Int64, key: String, content: String) -> RAGChunkDraft {
         RAGChunkDraft(
             repoId: repoId,
