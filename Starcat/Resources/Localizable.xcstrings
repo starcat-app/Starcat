@@ -20141,6 +20141,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已入库分片" } }
       }
     },
+    "rag.browser.chunks.loadMore" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load more" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载更多" } }
+      }
+    },
+    "rag.browser.chunks.tokenCountFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "≈ %lld tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "约 %lld tokens" } }
+      }
+    },
     "rag.browser.chunk.delete" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Exclude from RAG" } },

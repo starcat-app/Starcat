@@ -187,10 +187,9 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     var mentionSuggestions: [Repo] {
         guard let query = mentionQuery else { return [] }
-        let selectedIDs = Set(selectedRepoContexts.map(\.id))
+        // 多选时保留已选项：列表用 checkmark 展示，方便再次点击取消。
         return knowledgeCandidates.filter { candidate in
             let repo = candidate.repo
-            guard !selectedIDs.contains(repo.id) else { return false }
             guard !query.isEmpty else { return true }
             let searchable = [
                 repo.fullName,
@@ -202,6 +201,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             ].joined(separator: " ")
             return searchable.localizedCaseInsensitiveContains(query)
         }.prefix(12).map(\.repo)
+    }
+
+    func isMentionSelected(_ repo: Repo) -> Bool {
+        selectedRepoContexts.contains { $0.id == repo.id }
     }
 
     var isMentionPickerPresented: Bool {
@@ -386,18 +389,18 @@ final class KnowledgeRAGWorkspaceViewModel {
         Task { await consent?.resolve([]) }
     }
 
-    func selectMention(_ repo: Repo) {
-        if let at = draftQuestion.lastIndex(of: "@") {
-            draftQuestion.removeSubrange(at..<draftQuestion.endIndex)
+    /// 切换 `@` 多选：写入 / 移除 chip，但不清掉输入框里的 `@token`，便于连续勾选。
+    func toggleMention(_ repo: Repo) {
+        if let index = selectedRepoContexts.firstIndex(where: { $0.id == repo.id }) {
+            selectedRepoContexts.remove(at: index)
+        } else {
+            selectedRepoContexts.append(repo)
         }
-        selectedRepoContexts.append(repo)
-        draftQuestion = draftQuestion.trimmingCharacters(in: .whitespaces) + (draftQuestion.isEmpty ? "" : " ")
-        isMentionPickerDismissed = false
-        highlightedMentionRepoID = nil
+        highlightedMentionRepoID = repo.id
     }
 
     /// `@repo` 候选由输入框持有键盘焦点。这里仅移动高亮，不改变输入内容，Enter 才会
-    /// 写入明确的 repo context，避免方向键意外修改问题文本。
+    /// 切换明确的 repo context，避免方向键意外修改问题文本。
     func moveMentionSelection(by offset: Int) {
         let suggestions = mentionSuggestions
         guard !suggestions.isEmpty else { return }
@@ -411,10 +414,17 @@ final class KnowledgeRAGWorkspaceViewModel {
     func selectHighlightedMention() {
         guard let id = highlightedMentionRepoIDValue,
               let repo = mentionSuggestions.first(where: { $0.id == id }) else { return }
-        selectMention(repo)
+        toggleMention(repo)
     }
 
+    /// Esc / 点空白关闭：清掉未完成的 `@token`，已勾选的 chip 保留。
     func dismissMentionPicker() {
+        if let at = draftQuestion.lastIndex(of: "@") {
+            let suffix = draftQuestion[draftQuestion.index(after: at)...]
+            if !suffix.contains(where: \.isWhitespace) {
+                draftQuestion.removeSubrange(at..<draftQuestion.endIndex)
+            }
+        }
         isMentionPickerDismissed = true
         highlightedMentionRepoID = nil
     }

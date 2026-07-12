@@ -155,7 +155,9 @@ private final class KnowledgeRAGBrowserViewModel {
     var indexes: [Int64: RAGKnowledgeRepositoryIndex] = [:]
     var selectedRepoID: Int64?
     var chunks: [RAGManagedChunk] = []
+    var hasMoreChunks = false
     var isLoading = false
+    var isLoadingMoreChunks = false
     var isIndexing = false
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
@@ -181,6 +183,13 @@ private final class KnowledgeRAGBrowserViewModel {
         guard selectedRepoID != id else { return }
         selectedRepoID = id
         await loadChunks()
+    }
+
+    func loadMoreChunks() async {
+        guard !isLoadingMoreChunks, hasMoreChunks, selectedRepoID != nil else { return }
+        isLoadingMoreChunks = true
+        defer { isLoadingMoreChunks = false }
+        await loadChunks(limit: Self.additionalChunkPageSize, append: true)
     }
 
     func rebuildIndex() {
@@ -265,9 +274,32 @@ private final class KnowledgeRAGBrowserViewModel {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    private static let initialChunkPageSize = 5
+    private static let additionalChunkPageSize = 10
+
     private func loadChunks() async {
-        guard let selectedRepoID else { chunks = []; return }
-        do { chunks = try await dependencies.ragChunkRepository.fetchManagedKnowledgeChunks(repoId: selectedRepoID) }
+        await loadChunks(limit: Self.initialChunkPageSize, append: false)
+    }
+
+    private func loadChunks(limit: Int, append: Bool) async {
+        guard let selectedRepoID else {
+            chunks = []
+            hasMoreChunks = false
+            return
+        }
+        do {
+            let page = try await dependencies.ragChunkRepository.fetchManagedKnowledgeChunks(
+                repoId: selectedRepoID,
+                limit: limit,
+                offset: append ? chunks.count : 0
+            )
+            if append {
+                chunks.append(contentsOf: page.chunks)
+            } else {
+                chunks = page.chunks
+            }
+            hasMoreChunks = page.hasMore
+        }
         catch { errorMessage = error.localizedDescription }
     }
 }
@@ -475,8 +507,30 @@ private struct KnowledgeRAGBrowserView: View {
                 ContentUnavailableView("rag.browser.noChunks", systemImage: "doc.text").frame(maxWidth: .infinity, minHeight: 180)
             } else {
                 ForEach(viewModel.chunks) { chunk in chunkRow(chunk) }
+                if viewModel.hasMoreChunks || viewModel.isLoadingMoreChunks {
+                    chunkLoadMore
+                }
             }
         }
+    }
+
+    private var chunkLoadMore: some View {
+        HStack {
+            Spacer()
+            if viewModel.isLoadingMoreChunks {
+                ProgressView().controlSize(.small)
+            } else {
+                Text("rag.browser.chunks.loadMore")
+                    .font(.callout)
+                    .foregroundStyle(Color.accentColor)
+                    .contentShape(Rectangle())
+                    .onTapGesture { Task { await viewModel.loadMoreChunks() } }
+                    .pointerStyle(.link)
+                    .accessibilityAddTraits(.isButton)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 6)
     }
 
     private func chunkRow(_ managed: RAGManagedChunk) -> some View {
@@ -485,6 +539,9 @@ private struct KnowledgeRAGBrowserView: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
+                Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
                 Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }

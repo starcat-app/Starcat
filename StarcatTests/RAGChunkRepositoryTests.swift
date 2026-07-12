@@ -169,6 +169,30 @@ struct RAGChunkRepositoryTests {
         #expect(try await repository.fetchKnowledgeChunks(repoId: 31).isEmpty)
     }
 
+    @Test("知识库浏览器分片按页读取并报告是否还有下一页")
+    func managedKnowledgeChunksArePaginated() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 35)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 35, state: .inLibrary)
+        _ = try await repository.replaceSource(
+            repoId: 35,
+            source: .readme,
+            drafts: [
+                draft(repoId: 35, key: "readme:page:0", content: "One"),
+                draft(repoId: 35, key: "readme:page:1", content: "Two"),
+                draft(repoId: 35, key: "readme:page:2", content: "Three")
+            ]
+        )
+
+        let first = try await repository.fetchManagedKnowledgeChunks(repoId: 35, limit: 2, offset: 0)
+        #expect(first.chunks.count == 2)
+        #expect(first.hasMore)
+
+        let second = try await repository.fetchManagedKnowledgeChunks(repoId: 35, limit: 2, offset: 2)
+        #expect(second.chunks.count == 1)
+        #expect(!second.hasMore)
+    }
+
     @Test("人工覆盖与排除在源重建后保留且可恢复")
     func knowledgeChunkOverrideSurvivesSourceRebuild() async throws {
         let (database, repository) = try makeRepository()
@@ -188,13 +212,13 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 40, key: "readme:manual:0", content: "Updated source")]
         )
-        let managed = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40).first)
+        let managed = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0).chunks.first)
         #expect(managed.chunk.content == "Edited")
         #expect(managed.isExcluded)
         #expect(managed.hasOverride)
 
         try await repository.restoreKnowledgeChunk(id: id)
-        let restored = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40).first)
+        let restored = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0).chunks.first)
         #expect(restored.chunk.content == "Updated source")
         #expect(!restored.isExcluded)
         #expect(!restored.hasOverride)

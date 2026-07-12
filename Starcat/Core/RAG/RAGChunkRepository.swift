@@ -25,7 +25,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func coverage(model: String) async throws -> RAGIndexCoverage
     func knowledgeRepositoryIndexes(model: String) async throws -> [RAGKnowledgeRepositoryIndex]
     func fetchKnowledgeChunks(repoId: Int64) async throws -> [RAGChunk]
-    func fetchManagedKnowledgeChunks(repoId: Int64) async throws -> [RAGManagedChunk]
+    func fetchManagedKnowledgeChunks(repoId: Int64, limit: Int, offset: Int) async throws -> RAGManagedChunkPage
     func saveKnowledgeChunkOverride(id: Int64, title: String, sectionPath: String, content: String) async throws
     func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws
     func restoreKnowledgeChunk(id: Int64) async throws
@@ -51,6 +51,12 @@ struct RAGManagedChunk: Identifiable, Equatable, Sendable {
     var isExcluded: Bool
     var hasOverride: Bool
     var id: Int64 { chunk.id ?? -1 }
+}
+
+/// 管理器按页读取分片，避免仅为了显示少量预览就在内存中加载整个仓库。
+struct RAGManagedChunkPage: Equatable, Sendable {
+    var chunks: [RAGManagedChunk]
+    var hasMore: Bool
 }
 
 struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
@@ -385,8 +391,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
-    func fetchManagedKnowledgeChunks(repoId: Int64) async throws -> [RAGManagedChunk] {
-        try await database.writer.read { db in
+    func fetchManagedKnowledgeChunks(repoId: Int64, limit: Int, offset: Int) async throws -> RAGManagedChunkPage {
+        precondition(limit > 0 && offset >= 0)
+        return try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT c.*, COALESCE(o.is_excluded, 0) AS browser_is_excluded,
                        CASE WHEN o.override_content IS NULL THEN 0 ELSE 1 END AS browser_has_override
@@ -395,14 +402,19 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 LEFT JOIN rag_chunk_overrides o ON o.chunk_id = c.id
                 WHERE c.repo_id = ?
                 ORDER BY c.source, c.parent_title, c.chunk_index
-                """, arguments: [repoId])
-            return try rows.map { row in
+                LIMIT ? OFFSET ?
+                """, arguments: [repoId, limit + 1, offset])
+            let chunks = try rows.map { row in
                 RAGManagedChunk(
                     chunk: try RAGChunk(row: row),
                     isExcluded: row["browser_is_excluded"],
                     hasOverride: row["browser_has_override"]
                 )
             }
+            return RAGManagedChunkPage(
+                chunks: Array(chunks.prefix(limit)),
+                hasMore: chunks.count > limit
+            )
         }
     }
 

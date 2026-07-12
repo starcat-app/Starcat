@@ -23,6 +23,8 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var expandedDebugTraceIDs: Set<UUID> = []
     @State private var renameTarget: RAGConversationSummary?
     @State private var renameDraft = ""
+    /// `@` 候选弹层锚点：相对输入框（NSScrollView）左上角，落在 `@` 字形下方。
+    @State private var mentionCaretAnchor: CGPoint = .zero
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
@@ -95,28 +97,19 @@ struct KnowledgeRAGWorkspaceView: View {
     private var conversationRail: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                Button { viewModel.showKnowledgeBrowser() } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: "text.book.closed.fill")
-                            .font(iconFont(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("rag.workspace.title")
-                                .font(ragFont(.headline, weight: .semibold))
-                            Text("rag.workspace.subtitle")
-                                .font(ragFont(.caption))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.right.square")
-                            .font(iconFont(size: 13, weight: .medium))
+                HStack(spacing: 9) {
+                    Image(systemName: "text.book.closed.fill")
+                        .font(iconFont(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("rag.workspace.title")
+                            .font(ragFont(.headline, weight: .semibold))
+                        Text("rag.workspace.subtitle")
+                            .font(ragFont(.caption))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("rag.browser.open")
 
                 indexSummary
 
@@ -129,8 +122,13 @@ struct KnowledgeRAGWorkspaceView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        // 与会话行同款圆角方形，不用 .bordered 的胶囊形。
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                        // rail 本身是 controlBackground；这里用 textBackground + separator
+                        // 描边做出可见灰底，明暗主题都对比够用，且不是 accent 蓝。
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                        )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -167,6 +165,9 @@ struct KnowledgeRAGWorkspaceView: View {
                     Spacer()
                     Text("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
                         .font(ragFont(.caption, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "arrow.up.right.square")
+                        .font(iconFont(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 // 覆盖率条会在 1/1 时一直满蓝，误读成装饰；只在真正 rebuild 时显示不确定进度。
@@ -461,6 +462,8 @@ struct KnowledgeRAGWorkspaceView: View {
     private var commandComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !viewModel.selectedRepoContexts.isEmpty || !viewModel.attachments.isEmpty || !viewModel.githubLinkContexts.isEmpty {
+                // macOS 15+ 横向 ScrollView 默认带 content margins，会把首个 chip
+                // 顶到光标右侧；清零后与 NSTextView（lineFragmentPadding=0）左缘对齐。
                 ScrollView(.horizontal) {
                     HStack(spacing: 7) {
                         ForEach(viewModel.selectedRepoContexts) { repo in
@@ -478,6 +481,7 @@ struct KnowledgeRAGWorkspaceView: View {
                         }
                     }
                 }
+                .contentMargins(.horizontal, 0, for: .scrollContent)
                 .scrollIndicators(.hidden)
             }
 
@@ -487,28 +491,40 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.orange)
             }
 
+            // 弹层挂在 `@` 字形下方的 1×1 锚点上，而不是整块输入框居中。
             RAGComposerTextEditor(
                 text: $viewModel.draftQuestion,
                 placeholder: String.l10n("rag.workspace.composer.placeholder"),
                 font: composerNSFont,
                 maximumHeight: composerMaximumHeight,
                 onHeightChange: { composerContentHeight = $0 },
+                onMentionAnchorChange: { mentionCaretAnchor = $0 },
                 onCommand: handleComposerCommand
             )
             // AppKit scroll view 在弹性 VStack 中会忽略子视图的最大高度；由外层显式
             // 约束，首帧严格保持两行，文本变多时再增长到既有上限。
             .frame(height: composerEditorHeight)
+            .background(alignment: .topLeading) {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .offset(x: mentionCaretAnchor.x, y: mentionCaretAnchor.y)
+                    .popover(
+                        isPresented: Binding(
+                            get: { viewModel.isMentionPickerPresented },
+                            set: { presented in
+                                if !presented {
+                                    viewModel.dismissMentionPicker()
+                                }
+                            }
+                        ),
+                        attachmentAnchor: .rect(.bounds),
+                        arrowEdge: .top
+                    ) {
+                        mentionPicker
+                    }
+            }
             .onChange(of: viewModel.draftQuestion) { _, _ in
                 viewModel.handleDraftQuestionChanged()
-            }
-            .popover(
-                isPresented: Binding(
-                    get: { viewModel.isMentionPickerPresented },
-                    set: { _ in }
-                ),
-                arrowEdge: .bottom
-            ) {
-                mentionPicker
             }
 
             HStack(spacing: 8) {
@@ -601,48 +617,44 @@ struct KnowledgeRAGWorkspaceView: View {
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
     }
 
+    /// 简易多选列表：单行仓库名 + checkmark；弹层本身锚在 `@` 光标处。
     private var mentionPicker: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("rag.workspace.mention.title")
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(10)
-            Divider()
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(viewModel.mentionSuggestions) { repo in
-                        Button { viewModel.selectMention(repo) } label: {
-                            HStack(spacing: 9) {
-                                Image(systemName: "shippingbox")
-                                    .foregroundStyle(Color.accentColor)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(repo.fullName)
-                                        .font(ragFont(.callout, weight: .semibold))
-                                    Text(repo.description ?? String.l10n("rag.workspace.mention.noDescription"))
-                                        .font(ragFont(.caption))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                                Spacer()
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .contentShape(Rectangle())
-                            .background(
-                                repo.id == viewModel.highlightedMentionRepoIDValue
-                                    ? Color.accentColor.opacity(0.12)
-                                    : .clear,
-                                in: RoundedRectangle(cornerRadius: 6)
-                            )
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(viewModel.mentionSuggestions) { repo in
+                    Button { viewModel.toggleMention(repo) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark")
+                                .font(ragFont(.caption, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .opacity(viewModel.isMentionSelected(repo) ? 1 : 0)
+                                .frame(width: 12, alignment: .center)
+                            Text(repo.fullName)
+                                .font(ragFont(.callout))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
                         }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(
+                            repo.id == viewModel.highlightedMentionRepoIDValue
+                                ? Color.accentColor.opacity(0.12)
+                                : Color.clear
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                 }
-                .padding(5)
             }
         }
-        .frame(width: 360, height: min(CGFloat(viewModel.mentionSuggestions.count) * 54 + 42, 360))
+        .frame(
+            width: 280,
+            height: min(CGFloat(viewModel.mentionSuggestions.count) * 28 + 8, 260)
+        )
+        .padding(.vertical, 4)
     }
 
     private var modelMenu: some View {
@@ -718,14 +730,38 @@ struct KnowledgeRAGWorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 与中栏 answerHeader 同构（headline + caption + 上下 11pt），保证分割线水平对齐。
             // tabs 放在分割线下方，避免把右栏 header 撑高。
-            VStack(alignment: .leading, spacing: 2) {
-                Text("rag.workspace.inspector.title")
-                    .font(ragFont(.headline, weight: .semibold))
-                    .lineLimit(1)
-                Text("rag.workspace.inspector.subtitle")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("rag.workspace.inspector.title")
+                        .font(ragFont(.headline, weight: .semibold))
+                        .lineLimit(1)
+                    Text("rag.workspace.inspector.subtitle")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                #if DEBUG
+                // Debug 总开关放在「引用」右侧；开启后才露出「调试」tab。
+                Toggle(isOn: Binding(
+                    get: { viewModel.isDebugModeEnabled },
+                    set: { enabled in
+                        viewModel.isDebugModeEnabled = enabled
+                        if enabled {
+                            inspectorTab = .debug
+                        } else if inspectorTab == .debug {
+                            inspectorTab = .evidence
+                        }
+                    }
+                )) {
+                    Label("rag.workspace.debug.enabled", systemImage: "ladybug")
+                        .font(ragFont(.caption, weight: .semibold))
+                        .labelStyle(.iconOnly)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("rag.workspace.debug.enabled")
+                #endif
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 18)
@@ -734,7 +770,7 @@ struct KnowledgeRAGWorkspaceView: View {
             Divider()
 
             Picker("", selection: $inspectorTab) {
-                ForEach(RAGInspectorTab.allCases) { tab in
+                ForEach(visibleInspectorTabs) { tab in
                     Text(tab.titleKey).tag(tab)
                 }
             }
@@ -759,6 +795,18 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
+    }
+
+    /// 调试 tab 仅在 DEBUG 且开关打开时出现，避免未开启时占 segmented 宽度。
+    private var visibleInspectorTabs: [RAGInspectorTab] {
+        #if DEBUG
+        if viewModel.isDebugModeEnabled {
+            return Array(RAGInspectorTab.allCases)
+        }
+        return RAGInspectorTab.allCases.filter { $0 != .debug }
+        #else
+        return Array(RAGInspectorTab.allCases)
+        #endif
     }
 
     private var evidenceInspector: some View {
@@ -950,100 +998,82 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     #if DEBUG
+    /// 「调试」tab 内容：开关已在 header，这里只展示已开启后的 trace 列表。
     private var debugInspector: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 调试开关只出现在「调试」tab，避免其它 tab 顶部多出一行错位控件。
-            Toggle(
-                isOn: Binding(
-                    get: { viewModel.isDebugModeEnabled },
-                    set: { viewModel.isDebugModeEnabled = $0 }
-                )
-            ) {
-                Label("rag.workspace.debug.enabled", systemImage: "ladybug")
-                    .font(ragFont(.caption, weight: .semibold))
+            HStack(spacing: 8) {
+                Spacer()
+                CopyFeedbackButton(
+                    providesContent: { viewModel.debugTraceText },
+                    tooltip: "rag.workspace.debug.copyAll"
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                }
+                .disabled(viewModel.debugTraces.isEmpty)
+                Button("rag.workspace.debug.clear") {
+                    viewModel.clearDebugTraces()
+                    expandedDebugTraceIDs = []
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(viewModel.debugTraces.isEmpty)
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
 
-            if !viewModel.isDebugModeEnabled {
-                Text("rag.workspace.debug.disabledHint")
+            if viewModel.debugTraces.isEmpty {
+                Text("rag.workspace.debug.empty")
                     .font(ragFont(.body))
                     .foregroundStyle(.secondary)
             } else {
-                HStack(spacing: 8) {
-                    Spacer()
-                    CopyFeedbackButton(
-                        providesContent: { viewModel.debugTraceText },
-                        tooltip: "rag.workspace.debug.copyAll"
-                    ) { didCopy in
-                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                    }
-                    .disabled(viewModel.debugTraces.isEmpty)
-                    Button("rag.workspace.debug.clear") {
-                        viewModel.clearDebugTraces()
-                        expandedDebugTraceIDs = []
-                    }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(viewModel.debugTraces.isEmpty)
-                }
-
-                if viewModel.debugTraces.isEmpty {
-                    Text("rag.workspace.debug.empty")
-                        .font(ragFont(.body))
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(viewModel.debugTraces.sorted { $0.startedAt < $1.startedAt }) { trace in
-                        DisclosureGroup(
-                            isExpanded: Binding(
-                                get: { expandedDebugTraceIDs.contains(trace.id) },
-                                set: { isExpanded in
-                                    if isExpanded { expandedDebugTraceIDs.insert(trace.id) }
-                                    else { expandedDebugTraceIDs.remove(trace.id) }
-                                }
-                            )
-                        ) {
-                            ForEach(trace.events) { event in
-                                VStack(alignment: .leading, spacing: 7) {
-                                    HStack(spacing: 6) {
-                                        Text(debugStageKey(event.stage))
-                                            .font(ragFont(.caption, weight: .semibold))
-                                        Spacer()
-                                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
-                                            .font(ragFont(.caption2, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                        CopyFeedbackButton(
-                                            providesContent: { event.payload },
-                                            tooltip: "rag.workspace.debug.copy"
-                                        ) { didCopy in
-                                            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                                                .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                                        }
-                                    }
-                                    Text(event.payload)
+                ForEach(viewModel.debugTraces.sorted { $0.startedAt < $1.startedAt }) { trace in
+                    DisclosureGroup(
+                        isExpanded: Binding(
+                            get: { expandedDebugTraceIDs.contains(trace.id) },
+                            set: { isExpanded in
+                                if isExpanded { expandedDebugTraceIDs.insert(trace.id) }
+                                else { expandedDebugTraceIDs.remove(trace.id) }
+                            }
+                        )
+                    ) {
+                        ForEach(trace.events) { event in
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack(spacing: 6) {
+                                    Text(debugStageKey(event.stage))
+                                        .font(ragFont(.caption, weight: .semibold))
+                                    Spacer()
+                                    Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
                                         .font(ragFont(.caption2, design: .monospaced))
-                                        .textSelection(.enabled)
+                                        .foregroundStyle(.secondary)
+                                    CopyFeedbackButton(
+                                        providesContent: { event.payload },
+                                        tooltip: "rag.workspace.debug.copy"
+                                    ) { didCopy in
+                                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                                    }
                                 }
-                                .padding(10)
-                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(debugTraceCategoryKey(trace.category))
-                                    .font(ragFont(.caption, weight: .semibold))
-                                Spacer()
-                                Text(localizedTimestamp(trace.startedAt))
+                                Text(event.payload)
                                     .font(ragFont(.caption2, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                Text(debugTraceStateKey(trace.state))
-                                    .font(ragFont(.caption2, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
+                            .padding(10)
+                            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                         }
-                        .padding(10)
-                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(debugTraceCategoryKey(trace.category))
+                                .font(ragFont(.caption, weight: .semibold))
+                            Spacer()
+                            Text(localizedTimestamp(trace.startedAt))
+                                .font(ragFont(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text(debugTraceStateKey(trace.state))
+                                .font(ragFont(.caption2, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(10)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                 }
             }
         }
@@ -1294,6 +1324,8 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
     let font: NSFont
     let maximumHeight: CGFloat
     let onHeightChange: (CGFloat) -> Void
+    /// `@` 字形相对 NSScrollView 左上角的锚点（弹层挂这里，避免整框居中）。
+    let onMentionAnchorChange: (CGPoint) -> Void
     let onCommand: (Command) -> Bool
 
     func makeCoordinator() -> Coordinator {
@@ -1333,6 +1365,7 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
         // 错报单行高度，导致窗口打开的一帧内输入框跳动。
         DispatchQueue.main.async {
             context.coordinator.reportHeight(for: textView)
+            context.coordinator.reportMentionAnchor(for: textView)
         }
         return scrollView
     }
@@ -1349,6 +1382,7 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
             textView.needsDisplay = true
             context.coordinator.reportHeight(for: textView)
         }
+        context.coordinator.reportMentionAnchor(for: textView)
     }
 
     @MainActor
@@ -1364,6 +1398,7 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
             parent.text = textView.string
             textView.needsDisplay = true
             reportHeight(for: textView)
+            reportMentionAnchor(for: textView)
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -1392,6 +1427,34 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
                 parent.maximumHeight
             )
             parent.onHeightChange(height)
+        }
+
+        /// 把最后一个未完成 `@token` 的字形矩形换算到 scrollView 坐标，供 SwiftUI 弹层锚定。
+        func reportMentionAnchor(for textView: NSTextView) {
+            guard let scrollView = textView.enclosingScrollView,
+                  let at = textView.string.lastIndex(of: "@") else { return }
+            let after = textView.string.index(after: at)
+            let suffix = textView.string[after...]
+            guard !suffix.contains(where: \.isWhitespace) else { return }
+
+            if let layoutManager = textView.layoutManager,
+               let textContainer = textView.textContainer {
+                layoutManager.ensureLayout(for: textContainer)
+            }
+
+            let location = textView.string.utf16.distance(from: textView.string.startIndex, to: at)
+            var actualRange = NSRange(location: 0, length: 0)
+            let screenRect = textView.firstRect(
+                forCharacterRange: NSRange(location: location, length: 1),
+                actualRange: &actualRange
+            )
+            guard let window = textView.window, screenRect != .zero else { return }
+            let windowRect = window.convertFromScreen(screenRect)
+            let local = scrollView.convert(windowRect, from: nil)
+            // AppKit Y 从底向上；SwiftUI topLeading offset 从顶向下，需要翻转。
+            // 锚在 `@` 字形下缘，arrowEdge=.top 时弹层出现在光标正下方。
+            let swiftY = scrollView.bounds.height - local.minY
+            parent.onMentionAnchorChange(CGPoint(x: local.minX, y: swiftY))
         }
     }
 }
