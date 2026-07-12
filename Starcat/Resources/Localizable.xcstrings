@@ -20111,6 +20111,156 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "进行中" } }
       }
     },
+    "rag.browser.chunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Indexed chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已入库分片" } }
+      }
+    },
+    "rag.browser.chunk.delete" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exclude from RAG" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从 RAG 中删除" } }
+      }
+    },
+    "rag.browser.chunk.edit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit chunk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑分片" } }
+      }
+    },
+    "rag.browser.chunk.revert" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Revert manual edit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还原人工编辑" } }
+      }
+    },
+    "rag.browser.chunk.restore" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Restore to RAG" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "恢复到 RAG" } }
+      }
+    },
+    "rag.browser.chunk.section" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Section path" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "章节路径" } }
+      }
+    },
+    "rag.browser.chunk.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chunk title" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分片标题" } }
+      }
+    },
+    "rag.browser.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No repositories in the knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库中还没有仓库" } }
+      }
+    },
+    "rag.browser.noChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No indexed content yet" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该仓库尚未生成分片" } }
+      }
+    },
+    "rag.browser.noDescription" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No description" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无简介" } }
+      }
+    },
+    "rag.browser.open" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Starcat details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 Starcat 详情" } }
+      }
+    },
+    "rag.browser.overview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Index overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "索引概览" } }
+      }
+    },
+    "rag.browser.repositories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } }
+      }
+    },
+    "rag.browser.source.metadata" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Metadata" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "元数据" } }
+      }
+    },
+    "rag.browser.source.notes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Notes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "笔记" } }
+      }
+    },
+    "rag.browser.source.readme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
+      }
+    },
+    "rag.browser.source.summary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摘要" } }
+      }
+    },
+    "rag.browser.status.failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } }
+      }
+    },
+    "rag.browser.status.pending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待处理" } }
+      }
+    },
+    "rag.browser.status.ready" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可用" } }
+      }
+    },
+    "rag.browser.status.stale" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stale" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过期" } }
+      }
+    },
+    "rag.browser.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories and content available to RAG" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看 RAG 当前可检索的仓库与内容" } }
+      }
+    },
+    "rag.browser.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } }
+      }
+    },
+    "rag.browser.totalChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Total chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分片总数" } }
+      }
+    },
+    "rag.browser.window.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } }
+      }
+    },
     "rag.workspace.debug.stage.retrieval" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieval" } },

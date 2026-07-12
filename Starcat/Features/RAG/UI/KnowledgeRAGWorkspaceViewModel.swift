@@ -484,6 +484,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         debugTraces = []
     }
 
+    /// 左侧标题与索引摘要都指向同一真实数据浏览器，避免用户误以为“知识库”只是装饰标签。
+    func showKnowledgeBrowser() {
+        KnowledgeRAGBrowserWindowController.show(dependencies: dependencies)
+    }
+
     var debugTraceText: String {
         debugTraces.sorted { $0.startedAt < $1.startedAt }.map { trace in
             let events = trace.events.map { event in

@@ -23,8 +23,34 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func markFailed(chunkIDs: [Int64], error: String) async throws
     func markStaleForOtherModels(currentModel: String) async throws
     func coverage(model: String) async throws -> RAGIndexCoverage
+    func knowledgeRepositoryIndexes(model: String) async throws -> [RAGKnowledgeRepositoryIndex]
+    func fetchKnowledgeChunks(repoId: Int64) async throws -> [RAGChunk]
+    func fetchManagedKnowledgeChunks(repoId: Int64) async throws -> [RAGManagedChunk]
+    func saveKnowledgeChunkOverride(id: Int64, title: String, sectionPath: String, content: String) async throws
+    func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws
+    func restoreKnowledgeChunk(id: Int64) async throws
     func totalBytes() async throws -> Int64
     func deleteAll() async throws
+}
+
+/// 知识库浏览器的仓库级索引统计。状态按当前 embedding 模型计算，避免旧模型的 ready
+/// 向量被误显示为可用。
+struct RAGKnowledgeRepositoryIndex: Identifiable, Equatable, Sendable {
+    var id: Int64 { repoID }
+    var repoID: Int64
+    var totalChunks: Int
+    var readyChunks: Int
+    var pendingChunks: Int
+    var failedChunks: Int
+    var staleChunks: Int
+}
+
+/// 浏览器使用的分片视图：原始分片仍用于检索，管理状态由覆盖层单独承载。
+struct RAGManagedChunk: Identifiable, Equatable, Sendable {
+    var chunk: RAGChunk
+    var isExcluded: Bool
+    var hasOverride: Bool
+    var id: Int64 { chunk.id ?? -1 }
 }
 
 struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
@@ -162,6 +188,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 WHERE c.repo_id = ? AND c.parent_key = ?
                   AND c.embedding_status = 'ready' AND c.embedding_model = ?
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.chunk_index
                 """, arguments: [repoId, parentKey, model])
         }
@@ -175,6 +202,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 WHERE c.embedding_status IN ('pending', 'failed', 'stale')
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY
                     CASE c.source
                         WHEN 'notes' THEN 0
@@ -201,6 +229,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 WHERE c.embedding_status = 'ready'
                   AND c.embedding_model = ?
                   AND c.repo_id IN (\(placeholders))
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.repo_id, c.source, c.chunk_index
                 """, arguments: StatementArguments(arguments))
         }
@@ -223,6 +252,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                   AND c.embedding_status = 'ready'
                   AND c.embedding_model = ?
                   AND c.repo_id IN (\(placeholders))
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY keyword_rank ASC
                 LIMIT ?
                 """, arguments: StatementArguments(arguments))
@@ -299,6 +329,118 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
+    func knowledgeRepositoryIndexes(model: String) async throws -> [RAGKnowledgeRepositoryIndex] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT
+                    n.repo_id AS repo_id,
+                    COUNT(c.id) AS total_chunks,
+                    SUM(CASE WHEN c.embedding_status = 'ready' AND c.embedding_model = ? THEN 1 ELSE 0 END) AS ready_chunks,
+                    SUM(CASE WHEN c.embedding_status = 'pending' THEN 1 ELSE 0 END) AS pending_chunks,
+                    SUM(CASE WHEN c.embedding_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
+                    SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END) AS stale_chunks
+                FROM repo_notes n
+                LEFT JOIN rag_chunks c ON c.repo_id = n.repo_id
+                WHERE n.library_state = 'in_library'
+                GROUP BY n.repo_id
+                """, arguments: [model, model])
+            return rows.map { row in
+                RAGKnowledgeRepositoryIndex(
+                    repoID: row["repo_id"],
+                    totalChunks: row["total_chunks"],
+                    readyChunks: row["ready_chunks"],
+                    pendingChunks: row["pending_chunks"],
+                    failedChunks: row["failed_chunks"],
+                    staleChunks: row["stale_chunks"]
+                )
+            }
+        }
+    }
+
+    func fetchKnowledgeChunks(repoId: Int64) async throws -> [RAGChunk] {
+        try await database.writer.read { db in
+            try RAGChunk.fetchAll(db, sql: """
+                SELECT c.*
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                WHERE c.repo_id = ?
+                ORDER BY c.source, c.parent_title, c.chunk_index
+                """, arguments: [repoId])
+        }
+    }
+
+    func fetchManagedKnowledgeChunks(repoId: Int64) async throws -> [RAGManagedChunk] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.*, COALESCE(o.is_excluded, 0) AS browser_is_excluded,
+                       CASE WHEN o.override_content IS NULL THEN 0 ELSE 1 END AS browser_has_override
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                LEFT JOIN rag_chunk_overrides o ON o.chunk_id = c.id
+                WHERE c.repo_id = ?
+                ORDER BY c.source, c.parent_title, c.chunk_index
+                """, arguments: [repoId])
+            return try rows.map { row in
+                RAGManagedChunk(
+                    chunk: try RAGChunk(row: row),
+                    isExcluded: row["browser_is_excluded"],
+                    hasOverride: row["browser_has_override"]
+                )
+            }
+        }
+    }
+
+    func saveKnowledgeChunkOverride(id: Int64, title: String, sectionPath: String, content: String) async throws {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanContent.isEmpty else { return }
+        try await database.writer.write { db in
+            try ensureOverrideBaseline(db, chunkID: id)
+            let now = ISO8601DateFormatter.shared.string(from: Date())
+            let tokenCount = max(1, cleanContent.count / 4)
+            try db.execute(sql: """
+                UPDATE rag_chunk_overrides
+                SET override_title = ?, override_section_path = ?, override_content = ?, is_excluded = 0, updated_at = ?
+                WHERE chunk_id = ?
+                """, arguments: [cleanTitle, sectionPath, cleanContent, now, id])
+            try db.execute(sql: """
+                UPDATE rag_chunks
+                SET title = ?, section_path = ?, content = ?, content_hash = ?, token_count = ?,
+                    embedding_model = NULL, embedding_dim = NULL, embedding = NULL,
+                    embedding_status = 'pending', embedding_error = NULL, indexed_at = NULL, updated_at = ?
+                WHERE id = ?
+                """, arguments: [cleanTitle, sectionPath, cleanContent, RAGChunk.hash(cleanContent), tokenCount, now, id])
+        }
+    }
+
+    func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws {
+        try await database.writer.write { db in
+            try ensureOverrideBaseline(db, chunkID: id)
+            try db.execute(sql: "UPDATE rag_chunk_overrides SET is_excluded = ?, updated_at = ? WHERE chunk_id = ?", arguments: [isExcluded, ISO8601DateFormatter.shared.string(from: Date()), id])
+        }
+    }
+
+    func restoreKnowledgeChunk(id: Int64) async throws {
+        try await database.writer.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM rag_chunk_overrides WHERE chunk_id = ?", arguments: [id]) else { return }
+            let originalTitle: String = row["original_title"]
+            let originalPath: String = row["original_section_path"]
+            let originalContent: String = row["original_content"]
+            let hasOverride: Bool = (row["override_content"] as String?) != nil
+            if hasOverride {
+                let now = ISO8601DateFormatter.shared.string(from: Date())
+                try db.execute(sql: """
+                    UPDATE rag_chunks
+                    SET title = ?, section_path = ?, content = ?, content_hash = ?, token_count = ?,
+                        embedding_model = NULL, embedding_dim = NULL, embedding = NULL,
+                        embedding_status = 'pending', embedding_error = NULL, indexed_at = NULL, updated_at = ?
+                    WHERE id = ?
+                    """, arguments: [originalTitle, originalPath, originalContent, RAGChunk.hash(originalContent), max(1, originalContent.count / 4), now, id])
+            }
+            try db.execute(sql: "DELETE FROM rag_chunk_overrides WHERE chunk_id = ?", arguments: [id])
+        }
+    }
+
     func totalBytes() async throws -> Int64 {
         try await database.writer.read { db in
             try Int64.fetchOne(db, sql: """
@@ -316,5 +458,14 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
 
     private static func identity(sourceId: String, chunkKey: String) -> String {
         "\(sourceId)\u{1F}\(chunkKey)"
+    }
+
+    private func ensureOverrideBaseline(_ db: Database, chunkID: Int64) throws {
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        try db.execute(sql: """
+            INSERT INTO rag_chunk_overrides (chunk_id, original_title, original_section_path, original_content, is_excluded, updated_at)
+            SELECT id, title, section_path, content, 0, ? FROM rag_chunks WHERE id = ?
+            ON CONFLICT(chunk_id) DO NOTHING
+            """, arguments: [now, chunkID])
     }
 }

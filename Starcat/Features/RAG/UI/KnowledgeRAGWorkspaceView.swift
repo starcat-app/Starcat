@@ -74,19 +74,28 @@ struct KnowledgeRAGWorkspaceView: View {
     private var conversationRail: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 9) {
-                    Image(systemName: "text.book.closed.fill")
-                        .font(iconFont(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("rag.workspace.title")
-                            .font(ragFont(.headline, weight: .semibold))
-                        Text("rag.workspace.subtitle")
-                            .font(ragFont(.caption))
+                Button { viewModel.showKnowledgeBrowser() } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "text.book.closed.fill")
+                            .font(iconFont(size: 18, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("rag.workspace.title")
+                                .font(ragFont(.headline, weight: .semibold))
+                            Text("rag.workspace.subtitle")
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right.square")
+                            .font(iconFont(size: 13, weight: .medium))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.browser.open")
 
                 indexSummary
 
@@ -95,11 +104,15 @@ struct KnowledgeRAGWorkspaceView: View {
                 } label: {
                     Label("rag.workspace.newConversation", systemImage: "plus")
                         .font(ragFont(.callout, weight: .semibold))
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        // 与会话行同款圆角方形，不用 .bordered 的胶囊形。
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                 }
-                // 不用 .borderedProminent：避免默认蓝底抢焦点，rail 入口保持次级灰色。
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
             .padding(14)
 
@@ -125,34 +138,39 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private var indexSummary: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
-                    .font(ragFont(.caption, weight: .semibold))
-                Spacer()
-                Text("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
-                    .font(ragFont(.caption, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            // 覆盖率条会在 1/1 时一直满蓝，误读成装饰；只在真正 rebuild 时显示不确定进度。
-            if viewModel.isIndexing {
-                ProgressView()
-                    .progressViewStyle(.linear)
-            }
-            HStack {
-                Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), locale: locale, viewModel.indexCoverage.readyChunks))
-                Spacer()
-                if viewModel.indexCoverage.pendingChunks + viewModel.indexCoverage.failedChunks + viewModel.indexCoverage.staleChunks > 0 {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .help("rag.workspace.status.indexIncomplete")
+        Button { viewModel.showKnowledgeBrowser() } label: {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
+                        .font(ragFont(.caption, weight: .semibold))
+                    Spacer()
+                    Text("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
+                        .font(ragFont(.caption, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
                 }
+                // 覆盖率条会在 1/1 时一直满蓝，误读成装饰；只在真正 rebuild 时显示不确定进度。
+                if viewModel.isIndexing {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                }
+                HStack {
+                    Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), locale: locale, viewModel.indexCoverage.readyChunks))
+                    Spacer()
+                    if viewModel.indexCoverage.pendingChunks + viewModel.indexCoverage.failedChunks + viewModel.indexCoverage.staleChunks > 0 {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .help("rag.workspace.status.indexIncomplete")
+                    }
+                }
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
             }
-            .font(ragFont(.caption2))
-            .foregroundStyle(.secondary)
         }
         .padding(10)
         .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("rag.browser.open")
     }
 
     private func conversationRow(_ conversation: RAGConversationSummary) -> some View {
@@ -655,26 +673,36 @@ struct KnowledgeRAGWorkspaceView: View {
     // MARK: - Inspector
 
     private var inspector: some View {
-        // 外层必须 leading：默认 center 会把「标题+tabs」整块居中，和下面左对齐正文错位。
+        // 外层必须 leading：默认 center 会把标题整块居中，和下面左对齐正文错位。
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
+            // 与中栏 answerHeader 同构（headline + caption + 上下 11pt），保证分割线水平对齐。
+            // tabs 放在分割线下方，避免把右栏 header 撑高。
+            VStack(alignment: .leading, spacing: 2) {
                 Text("rag.workspace.inspector.title")
                     .font(ragFont(.headline, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Picker("", selection: $inspectorTab) {
-                    ForEach(RAGInspectorTab.allCases) { tab in
-                        Text(tab.titleKey).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(1)
+                Text("rag.workspace.inspector.subtitle")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, Self.inspectorContentInset)
-            .padding(.top, Self.inspectorContentInset)
-            .padding(.bottom, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
+
             Divider()
+
+            Picker("", selection: $inspectorTab) {
+                ForEach(RAGInspectorTab.allCases) { tab in
+                    Text(tab.titleKey).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, Self.inspectorContentInset)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             ScrollView {
                 switch inspectorTab {

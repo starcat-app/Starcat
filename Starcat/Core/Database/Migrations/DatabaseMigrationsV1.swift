@@ -1294,6 +1294,7 @@ enum DatabaseMigrations {
         try db.create(index: "idx_rag_chunks_parent", on: "rag_chunks", columns: ["repo_id", "parent_type", "parent_key"])
         try db.create(index: "idx_rag_chunks_source", on: "rag_chunks", columns: ["source"])
         try db.create(index: "idx_rag_chunks_model_status", on: "rag_chunks", columns: ["embedding_model", "embedding_status"])
+        try createRAGChunkOverrideSchema(db)
 
         // 外部内容 FTS 只镜像可展示文本；知识库边界在 Retriever 查询时通过 repo_notes join 强制执行。
         try db.execute(sql: """
@@ -1395,6 +1396,26 @@ enum DatabaseMigrations {
         // 开发期已有数据库可能由较早 RAG schema 创建；仅补齐新增表，不保留兼容分支。
         if try !db.tableExists("rag_message_remote_contexts") {
             try createRAGRemoteContextAuditSchema(db)
+        }
+        if try !db.tableExists("rag_chunk_overrides") {
+            try createRAGChunkOverrideSchema(db)
+        }
+    }
+
+    /// 人工编辑与删除不能直接依赖生成分片本身：README/摘要重建会覆写 `rag_chunks`。
+    /// 覆盖层保留源内容与用户意图，重建时可继续投影到可检索分片。
+    private static func createRAGChunkOverrideSchema(_ db: Database) throws {
+        try db.create(table: "rag_chunk_overrides", ifNotExists: true) { t in
+            t.column("chunk_id", .integer).primaryKey()
+                .references("rag_chunks", column: "id", onDelete: .cascade)
+            t.column("original_title", .text).notNull()
+            t.column("original_section_path", .text).notNull()
+            t.column("original_content", .text).notNull()
+            t.column("override_title", .text)
+            t.column("override_section_path", .text)
+            t.column("override_content", .text)
+            t.column("is_excluded", .boolean).notNull().defaults(to: false)
+            t.column("updated_at", .text).notNull()
         }
     }
 

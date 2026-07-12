@@ -137,6 +137,38 @@ struct RAGChunkRepositoryTests {
         #expect(coverage.failedChunks == 1)
     }
 
+    @Test("知识库浏览器按仓库聚合索引状态且隔离非知识库数据")
+    func knowledgeBrowserIndexAndChunksRespectLibraryBoundary() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 30)
+        try await database.insertRepoFixture(id: 31)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 30, state: .inLibrary)
+
+        let library = try await repository.replaceSource(
+            repoId: 30,
+            source: .readme,
+            drafts: [
+                draft(repoId: 30, key: "readme:a:0", content: "Alpha"),
+                draft(repoId: 30, key: "readme:b:0", content: "Beta")
+            ]
+        )
+        _ = try await repository.replaceSource(
+            repoId: 31,
+            source: .readme,
+            drafts: [draft(repoId: 31, key: "readme:outside:0", content: "Outside")]
+        )
+        try await repository.markReady([library.pendingChunkIDs[0]: [1, 0]], model: "embed-v1")
+
+        let indexes = try await repository.knowledgeRepositoryIndexes(model: "embed-v1")
+        #expect(indexes.count == 1)
+        #expect(indexes.first?.repoID == 30)
+        #expect(indexes.first?.totalChunks == 2)
+        #expect(indexes.first?.readyChunks == 1)
+        #expect(indexes.first?.pendingChunks == 1)
+        #expect(try await repository.fetchKnowledgeChunks(repoId: 30).count == 2)
+        #expect(try await repository.fetchKnowledgeChunks(repoId: 31).isEmpty)
+    }
+
     private func draft(repoId: Int64, key: String, content: String) -> RAGChunkDraft {
         RAGChunkDraft(
             repoId: repoId,
