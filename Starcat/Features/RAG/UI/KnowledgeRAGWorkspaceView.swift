@@ -1774,8 +1774,8 @@ private enum RAGMessageAvatarMetrics {
     static let cornerRadius: CGFloat = 5
 }
 
-/// 用户气泡：头像与气泡垂直居中；底部左侧时间戳；悬停复制预留占位（与 AI 一致）。
-/// 停止且无 AI 输出时，复制（回填输入框）+ 编辑常显。
+/// 用户气泡：头像与气泡垂直居中；底部操作为悬停行（左时间戳 / 右复制），预留占位防跳动。
+/// 停止且无 AI 输出时，复制（回填输入框）+ 编辑常显，时间戳仍在左侧。
 private struct RAGUserMessageBlock: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -1904,7 +1904,7 @@ private struct RAGUserMessageBlock: View {
                 .focusEffectDisabled()
                 .help("rag.workspace.message.editQuestion")
             } else {
-                // 与 AI 一致：始终占位，悬停显形；复制只写剪贴板。
+                // 与 AI 一致：整行预留占位，悬停才显形（左时间 / 右复制）。
                 CopyFeedbackButton(
                     performCopy: {
                         let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1918,12 +1918,13 @@ private struct RAGUserMessageBlock: View {
                 ) { didCopy in
                     copyIcon(didCopy: didCopy)
                 }
-                .opacity(areHoverActionsRevealed ? 1 : 0)
-                .allowsHitTesting(areHoverActionsRevealed)
-                .accessibilityHidden(!areHoverActionsRevealed)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areHoverActionsRevealed)
             }
         }
+        // 停止态常显；普通态整行随悬停显隐，避免时间戳一直挂在下一条消息上方。
+        .opacity(showsPendingActions || areHoverActionsRevealed ? 1 : 0)
+        .allowsHitTesting(showsPendingActions || areHoverActionsRevealed)
+        .accessibilityHidden(!(showsPendingActions || areHoverActionsRevealed))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areHoverActionsRevealed)
     }
 
     private func copyIcon(didCopy: Bool) -> some View {
@@ -1944,7 +1945,7 @@ private struct RAGUserMessageBlock: View {
     }
 }
 
-/// 助手回答块：动作条在整块底部（引用下方）；始终占位，悬停才显形，避免布局跳动。
+/// 助手回答块：底部悬停行（左复制/导出，右时间戳）预留占位，避免布局跳动。
 /// 复制反馈播放期间强制保持可见，避免鼠标移开后看不到绿色 ✓。
 private struct RAGAssistantMessageBlock: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -2009,42 +2010,34 @@ private struct RAGAssistantMessageBlock: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // 底部行：左侧复制/导出预留占位（悬停显），右侧时间戳常显。
-            if showsActions || !(createdAtLabel ?? "").isEmpty {
+            // 底部悬停行：左复制/导出，右时间戳；整行预留占位，悬停才显形。
+            if showsActions {
                 HStack(spacing: 10) {
-                    if showsActions {
-                        HStack(spacing: 10) {
-                            CopyFeedbackButton(
-                                performCopy: {
-                                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    guard !trimmed.isEmpty else { return false }
-                                    NSPasteboard.general.clearContents()
-                                    let ok = NSPasteboard.general.setString(trimmed, forType: .string)
-                                    if ok { pinActionsForCopyFeedback() }
-                                    return ok
-                                },
-                                tooltip: "rag.workspace.answer.copy"
-                            ) { didCopy in
-                                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                                    .font(interfaceScale.font(size: 12, weight: .medium))
-                                    .foregroundStyle(didCopy ? Color.green : .secondary)
-                                    .frame(width: 20, height: 20)
-                            }
-                            Button(action: onExport) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(interfaceScale.font(size: 12, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20, height: 20)
-                            }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
-                            .help("rag.workspace.answer.export")
-                        }
-                        .opacity(areActionsRevealed ? 1 : 0)
-                        .allowsHitTesting(areActionsRevealed)
-                        .accessibilityHidden(!areActionsRevealed)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areActionsRevealed)
+                    CopyFeedbackButton(
+                        performCopy: {
+                            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return false }
+                            NSPasteboard.general.clearContents()
+                            let ok = NSPasteboard.general.setString(trimmed, forType: .string)
+                            if ok { pinActionsForCopyFeedback() }
+                            return ok
+                        },
+                        tooltip: "rag.workspace.answer.copy"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(interfaceScale.font(size: 12, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : .secondary)
+                            .frame(width: 20, height: 20)
                     }
+                    Button(action: onExport) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(interfaceScale.font(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.workspace.answer.export")
 
                     Spacer(minLength: 0)
 
@@ -2054,6 +2047,10 @@ private struct RAGAssistantMessageBlock: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .opacity(areActionsRevealed ? 1 : 0)
+                .allowsHitTesting(areActionsRevealed)
+                .accessibilityHidden(!areActionsRevealed)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areActionsRevealed)
             }
         }
         .contentShape(Rectangle())

@@ -182,9 +182,6 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoading = false
     var isLoadingMoreChunks = false
     var isIndexing = false
-    /// 浏览器与 RAG 工作台复用同一 index builder，避免展示两份不同的进度口径。
-    var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
-    var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
     var isTestingRetrieval = false
@@ -341,7 +338,6 @@ private final class KnowledgeRAGBrowserViewModel {
 private struct KnowledgeRAGBrowserView: View {
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    @Environment(\.locale) private var locale
     @State private var editingChunk: RAGManagedChunk?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
@@ -539,7 +535,6 @@ private struct KnowledgeRAGBrowserView: View {
                 if let index = viewModel.selectedIndex {
                     repositoryIndexStatisticsLabel(index)
                 }
-                indexProgressLabel
                 Button { viewModel.rebuildIndex() } label: {
                     HStack(spacing: 6) {
                         refreshIndexIcon
@@ -655,41 +650,6 @@ private struct KnowledgeRAGBrowserView: View {
             Text(value).monospacedDigit()
             Text(label)
         }
-    }
-
-    @ViewBuilder
-    private var indexProgressLabel: some View {
-        if let summary = viewModel.indexRefreshSummary {
-            HStack(spacing: 5) {
-                if let completedAt = summary.completedAt {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text(completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
-                        .monospacedDigit()
-                        .foregroundStyle(.green)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
-                }
-                Text(verbatim: "|").foregroundStyle(.secondary)
-                indexProgressSegment("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
-                Text(verbatim: "|").foregroundStyle(.secondary)
-                indexProgressSegment("rag.workspace.index.chunksShort", value: "\(summary.chunksProcessed)/\(summary.totalRepos)", color: .orange)
-            }
-            .font(.caption)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-        } else {
-            EmptyView()
-        }
-    }
-
-    private func indexProgressSegment(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Text(label)
-            Text(value).monospacedDigit()
-        }
-        .foregroundStyle(color)
     }
 
     private func sourceKey(_ source: RAGChunkSource) -> LocalizedStringKey {
