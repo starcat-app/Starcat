@@ -1598,7 +1598,8 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 }
 
-/// 助手回答块：动作条挂在正文下方，仅鼠标悬停时显示（流式关闭）。
+/// 助手回答块：动作条在整块底部（引用下方）；始终占位，悬停才显形，避免布局跳动。
+/// 复制反馈播放期间强制保持可见，避免鼠标移开后看不到绿色 ✓。
 private struct RAGAssistantMessageBlock: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -1610,6 +1611,13 @@ private struct RAGAssistantMessageBlock: View {
     let onExport: () -> Void
 
     @State private var isHovered = false
+    /// 与 `CopyFeedbackButton` 的 1.5s 反馈窗口对齐：反馈未结束前不因失悬停而隐藏。
+    @State private var isCopyFeedbackPinned = false
+    @State private var copyFeedbackPinTask: Task<Void, Never>?
+
+    private var areActionsRevealed: Bool {
+        isHovered || isCopyFeedbackPinned
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1627,10 +1635,39 @@ private struct RAGAssistantMessageBlock: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: 900, alignment: .leading)
 
-            if showsActions, isHovered {
+            if !citations.isEmpty {
+                // 随中栏宽度自动换行，与输入框上方附件 chip 同一套 FlowLayout。
+                RAGFlowLayout(spacing: 7) {
+                    ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
+                        Button {
+                            onSelectCitation(citation)
+                        } label: {
+                            Text("\(index + 1). \(citation.repoFullName)")
+                                .font(interfaceScale.font(.caption, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if showsActions {
                 HStack(spacing: 10) {
                     CopyFeedbackButton(
-                        providesContent: { content },
+                        performCopy: {
+                            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return false }
+                            NSPasteboard.general.clearContents()
+                            let ok = NSPasteboard.general.setString(trimmed, forType: .string)
+                            if ok { pinActionsForCopyFeedback() }
+                            return ok
+                        },
                         tooltip: "rag.workspace.answer.copy"
                     ) { didCopy in
                         Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
@@ -1649,33 +1686,32 @@ private struct RAGAssistantMessageBlock: View {
                     .help("rag.workspace.answer.export")
                     Spacer(minLength: 0)
                 }
-                .transition(reduceMotion ? .identity : .opacity)
-            }
-
-            if !citations.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 7) {
-                        ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
-                            Button {
-                                onSelectCitation(citation)
-                            } label: {
-                                Label("S\(index + 1) · \(citation.repoFullName)", systemImage: "quote.opening")
-                                    .font(interfaceScale.font(.caption, weight: .semibold))
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
+                // 始终占位：只切透明度 / 命中，避免悬停时把下方内容顶开。
+                .opacity(areActionsRevealed ? 1 : 0)
+                .allowsHitTesting(areActionsRevealed)
+                .accessibilityHidden(!areActionsRevealed)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areActionsRevealed)
             }
         }
         .contentShape(Rectangle())
         .onHover { hovering in
             guard showsActions else { return }
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
+            isHovered = hovering
+        }
+        .onDisappear {
+            copyFeedbackPinTask?.cancel()
+            copyFeedbackPinTask = nil
+        }
+    }
+
+    /// 钉住动作条直到复制反馈结束（与 CopyFeedbackButton 1.5s 窗口一致）。
+    private func pinActionsForCopyFeedback() {
+        isCopyFeedbackPinned = true
+        copyFeedbackPinTask?.cancel()
+        copyFeedbackPinTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            isCopyFeedbackPinned = false
         }
     }
 }
