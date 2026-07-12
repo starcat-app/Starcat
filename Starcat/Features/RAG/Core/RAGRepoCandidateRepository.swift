@@ -1,0 +1,168 @@
+//
+//  RAGRepoCandidateRepository.swift
+//  Starcat
+//
+//  Query Planner 结构化条件的本地 SQL 执行器。
+//
+//  所有查询固定从知识库关系表出发。动态 SQL 只拼接预定义列和操作符，用户值全部走
+//  StatementArguments，避免模型输出进入 SQL 结构位置。
+//
+
+import Foundation
+import GRDB
+
+protocol RAGRepoCandidateRepositoryProtocol: Sendable {
+    func fetchCandidates(
+        plan: RAGQueryPlan,
+        explicitRepoIDs: [Int64],
+        explicitMode: RAGExplicitRepoMode
+    ) async throws -> [RAGRepoCandidate]
+}
+
+struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
+    private let database: any DatabaseManaging
+
+    init(database: any DatabaseManaging) {
+        self.database = database
+    }
+
+    func fetchCandidates(
+        plan: RAGQueryPlan,
+        explicitRepoIDs: [Int64],
+        explicitMode: RAGExplicitRepoMode
+    ) async throws -> [RAGRepoCandidate] {
+        try await database.writer.read { db in
+            var predicates = ["n.library_state = 'in_library'"]
+            var arguments: [any DatabaseValueConvertible] = []
+            let filters = plan.filters
+
+            if let status = filters.status {
+                predicates.append("n.status = ?")
+                arguments.append(status.rawValue)
+            }
+            appendStringSet(filters.languages, column: "r.language", predicates: &predicates, arguments: &arguments)
+            appendStringSet(filters.licenses, column: "r.license", predicates: &predicates, arguments: &arguments)
+            appendBound(filters.minStars, column: "r.stars_count", operation: ">=", predicates: &predicates, arguments: &arguments)
+            appendBound(filters.maxStars, column: "r.stars_count", operation: "<=", predicates: &predicates, arguments: &arguments)
+            appendBound(filters.minForks, column: "r.forks_count", operation: ">=", predicates: &predicates, arguments: &arguments)
+            appendBound(filters.maxForks, column: "r.forks_count", operation: "<=", predicates: &predicates, arguments: &arguments)
+            if filters.includeArchived == false { predicates.append("r.is_archived = 0") }
+            if filters.includeForks == false { predicates.append("r.is_fork = 0") }
+
+            appendDate(filters.starredAfter, column: "r.starred_at", operation: ">=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.starredBefore, column: "r.starred_at", operation: "<=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.libraryUpdatedAfter, column: "n.library_updated_at", operation: ">=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.libraryUpdatedBefore, column: "n.library_updated_at", operation: "<=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.repoCreatedAfter, column: "r.created_at", operation: ">=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.repoCreatedBefore, column: "r.created_at", operation: "<=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.pushedAfter, column: "r.pushed_at", operation: ">=", predicates: &predicates, arguments: &arguments)
+            appendDate(filters.pushedBefore, column: "r.pushed_at", operation: "<=", predicates: &predicates, arguments: &arguments)
+
+            for tagName in filters.tags where !tagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                predicates.append("EXISTS (SELECT 1 FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id WHERE rt.repo_id = r.id AND t.name = ? COLLATE NOCASE)")
+                arguments.append(tagName)
+            }
+
+            if !explicitRepoIDs.isEmpty, explicitMode != .prefer {
+                let placeholders = Array(repeating: "?", count: explicitRepoIDs.count).joined(separator: ",")
+                predicates.append("r.id \(explicitMode == .only ? "IN" : "NOT IN") (\(placeholders))")
+                arguments.append(contentsOf: explicitRepoIDs)
+            }
+
+            // semantic_only 且 Planner 未指定 limit 时必须覆盖整个知识库；显式 limit 仍钳制
+            // 到 1000，避免模型输出异常大值。100_000 仅作为 SQLite LIMIT 的实际无上限哨兵。
+            let limit: Int
+            if plan.mode == .semanticOnly, plan.candidateLimit == nil {
+                limit = 100_000
+            } else {
+                limit = min(max(plan.candidateLimit ?? defaultLimit(for: plan.mode), 1), 1_000)
+            }
+            arguments.append(limit)
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT r.*, n.status AS rag_status, n.library_updated_at AS rag_library_updated_at,
+                       COALESCE((
+                           SELECT GROUP_CONCAT(t.name, '\u{1F}')
+                           FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
+                           WHERE rt.repo_id = r.id
+                       ), '') AS rag_tag_names
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE \(predicates.joined(separator: " AND "))
+                ORDER BY \(orderClause(plan.sort))
+                LIMIT ?
+                """, arguments: StatementArguments(arguments))
+
+            return try rows.map { row in
+                let rawStatus: String = row["rag_status"]
+                let tagString: String = row["rag_tag_names"]
+                return RAGRepoCandidate(
+                    repo: try Repo(row: row),
+                    status: RepoStatus.parse(rawStatus),
+                    libraryUpdatedAt: row["rag_library_updated_at"],
+                    tagNames: tagString.isEmpty ? [] : tagString.components(separatedBy: "\u{1F}")
+                )
+            }
+        }
+    }
+
+    private func defaultLimit(for mode: RAGQueryMode) -> Int {
+        switch mode {
+        // structured_only 可能是计数/统计问题，默认 50 会把“共多少个”错误截断为 50。
+        // Prompt 层只展开预算内的前 50 行，但保留这里的完整候选计数。
+        case .structuredOnly: return 1_000
+        case .filteredSemantic: return 200
+        case .semanticOnly, .needsClarification: return 1_000
+        }
+    }
+
+    private func appendStringSet(
+        _ values: [String],
+        column: String,
+        predicates: inout [String],
+        arguments: inout [any DatabaseValueConvertible]
+    ) {
+        let values = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !values.isEmpty else { return }
+        let placeholders = Array(repeating: "?", count: values.count).joined(separator: ",")
+        predicates.append("\(column) COLLATE NOCASE IN (\(placeholders))")
+        arguments.append(contentsOf: values)
+    }
+
+    private func appendBound(
+        _ value: Int?,
+        column: String,
+        operation: String,
+        predicates: inout [String],
+        arguments: inout [any DatabaseValueConvertible]
+    ) {
+        guard let value else { return }
+        predicates.append("\(column) \(operation) ?")
+        arguments.append(max(value, 0))
+    }
+
+    private func appendDate(
+        _ value: Date?,
+        column: String,
+        operation: String,
+        predicates: inout [String],
+        arguments: inout [any DatabaseValueConvertible]
+    ) {
+        guard let value else { return }
+        predicates.append("\(column) \(operation) ?")
+        arguments.append(ISO8601DateFormatter.shared.string(from: value))
+    }
+
+    private func orderClause(_ sort: RAGRepoSort?) -> String {
+        guard let sort else { return "r.stars_count DESC, r.full_name COLLATE NOCASE ASC" }
+        let column: String
+        switch sort.field {
+        case .stars: column = "r.stars_count"
+        case .forks: column = "r.forks_count"
+        case .pushedAt: column = "r.pushed_at"
+        case .repoCreatedAt: column = "r.created_at"
+        case .libraryUpdatedAt: column = "n.library_updated_at"
+        case .starredAt: column = "r.starred_at"
+        }
+        return "\(column) \(sort.direction == .ascending ? "ASC" : "DESC"), r.full_name COLLATE NOCASE ASC"
+    }
+}

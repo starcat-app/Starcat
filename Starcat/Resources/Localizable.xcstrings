@@ -19411,6 +19411,504 @@
         }
       }
     },
+    "common.delete" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } }
+      }
+    },
+    "common.remove" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除" } }
+      }
+    },
+    "rag.workspace.composer.attach" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add attachment" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加附件" } }
+      }
+    },
+    "rag.workspace.composer.cancel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop generating" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "停止生成" } }
+      }
+    },
+    "rag.workspace.composer.send" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Send" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送" } }
+      }
+    },
+    "rag.workspace.conversation.actions" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversation actions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话操作" } }
+      }
+    },
+    "rag.workspace.empty.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use @ to select one or more knowledge-base repositories, or ask across the whole knowledge base." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "使用 @ 选择一个或多个知识库仓库，或直接面向整个知识库提问。" } }
+      }
+    },
+    "rag.workspace.empty.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask your knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向知识库提问" } }
+      }
+    },
+    "rag.workspace.error.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAG request failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RAG 请求失败" } }
+      }
+    },
+    "rag.workspace.header.knowledge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } }
+      }
+    },
+    "rag.workspace.index.rebuild" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Build RAG index" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "构建 RAG 索引" } }
+      }
+    },
+    "rag.workspace.index.rebuilding" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Building index..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在构建索引..." } }
+      }
+    },
+    "rag.workspace.inspector.chunkMissing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The cited chunk was cleared or requires an index rebuild." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "引用片段已清理或需要重建索引。" } }
+      }
+    },
+    "rag.workspace.inspector.chunkTruncated" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This chunk was truncated during indexing." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该分片在索引时已截断。" } }
+      }
+    },
+    "rag.workspace.inspector.chunkPreview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Matched chunk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "命中的分片" } }
+      }
+    },
+    "rag.workspace.attachment.textContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "temporary text context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "临时文本上下文" } }
+      }
+    },
+    "rag.workspace.attachment.unsupported" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "unsupported" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不可发送" } }
+      }
+    },
+    "rag.workspace.attachment.vision" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "vision input" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "图片输入" } }
+      }
+    },
+    "rag.workspace.inspector.confidence" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Confidence" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "置信度" } }
+      }
+    },
+    "rag.workspace.inspector.noPlan" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The query plan appears after you send a question." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送问题后显示查询计划。" } }
+      }
+    },
+    "rag.workspace.inspector.planMode" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Mode" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模式" } }
+      }
+    },
+    "rag.workspace.inspector.remoteContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remote context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "远程上下文" } }
+      }
+    },
+    "rag.workspace.inspector.semanticQuery" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Optimized query" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "优化后的问题" } }
+      }
+    },
+    "rag.workspace.inspector.tab.evidence" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Evidence" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "证据" } }
+      }
+    },
+    "rag.workspace.inspector.tab.index" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Index" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "索引" } }
+      }
+    },
+    "rag.workspace.inspector.tab.plan" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "计划" } }
+      }
+    },
+    "rag.workspace.link.external" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "External GitHub link" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "外部 GitHub 链接" } }
+      }
+    },
+    "rag.workspace.link.knownButNotInLibrary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Known, not in knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已收藏，未入库" } }
+      }
+    },
+    "rag.workspace.mention.noDescription" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No description" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无描述" } }
+      }
+    },
+    "rag.workspace.mention.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select from the knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从知识库选择仓库" } }
+      }
+    },
+    "rag.workspace.message.assistant" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat" } }
+      }
+    },
+    "rag.workspace.remote.confirmTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use temporary GitHub context for this answer?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本轮回答是否使用 GitHub 临时上下文？" } }
+      }
+    },
+    "rag.workspace.remote.continue" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续" } }
+      }
+    },
+    "rag.workspace.remote.skip" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Skip" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "跳过" } }
+      }
+    },
+    "rag.workspace.repoMode.exclude" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exclude selected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "排除已选仓库" } }
+      }
+    },
+    "rag.workspace.repoMode.only" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Only selected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅已选仓库" } }
+      }
+    },
+    "rag.workspace.repoMode.prefer" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Prefer selected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "优先已选仓库" } }
+      }
+    },
+    "rag.workspace.state.awaitingRemote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for remote context confirmation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待确认远程上下文" } }
+      }
+    },
+    "rag.workspace.state.cancelled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancelled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已取消" } }
+      }
+    },
+    "rag.workspace.state.fetchingRemote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetching GitHub context..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在获取 GitHub 上下文..." } }
+      }
+    },
+    "rag.workspace.state.generating" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Generating answer..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在生成回答..." } }
+      }
+    },
+    "rag.workspace.state.needsClarification" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "More detail is required" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要补充条件" } }
+      }
+    },
+    "rag.workspace.state.noCandidates" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No repositories match the current filters. Remove a condition or select a different repository." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前筛选条件没有匹配的仓库，请减少条件或选择其他仓库。" } }
+      }
+    },
+    "rag.workspace.state.noKnowledgeRepos" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The knowledge base is empty. Add repositories before asking a question." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库中还没有仓库，请先加入项目再提问。" } }
+      }
+    },
+    "rag.workspace.state.noIndex" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Matching repositories do not have a ready RAG index. Build the index before asking again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "符合条件的仓库还没有可用的 RAG 索引，请先构建索引。" } }
+      }
+    },
+    "rag.workspace.state.noRelevantChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No relevant indexed evidence was found. Rebuild the index or refine the question." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有找到相关的已索引证据，请重建索引或调整问题。" } }
+      }
+    },
+    "rag.workspace.state.planning" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Planning query..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在规划查询..." } }
+      }
+    },
+    "rag.workspace.state.retrieving" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieving knowledge..." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在检索知识库..." } }
+      }
+    },
+    "rag.workspace.status.failedChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败分片" } }
+      }
+    },
+    "rag.workspace.status.indexIncomplete" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Some content is pending, stale, or failed." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "部分内容待处理、已过期或处理失败。" } }
+      }
+    },
+    "rag.workspace.status.pendingChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待处理分片" } }
+      }
+    },
+    "rag.workspace.status.readyChunksFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d ready chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个可用分片" } }
+      }
+    },
+    "rag.workspace.status.staleChunks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stale chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过期分片" } }
+      }
+    },
+    "rag.workspace.answer.copy" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy answer" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制回答" } }
+      }
+    },
+    "rag.workspace.answer.export" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Export Markdown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导出 Markdown" } }
+      }
+    },
+    "settings.rag.backends.apiKey" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "API Key (optional for local services)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "API Key（本地服务可留空）" } }
+      }
+    },
+    "settings.rag.backends.collection" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Collection" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Collection" } }
+      }
+    },
+    "settings.rag.backends.connectionSuccess" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connection succeeded and credentials were saved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接成功，凭据已保存。" } }
+      }
+    },
+    "settings.rag.backends.endpoint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Endpoint" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Endpoint" } }
+      }
+    },
+    "settings.rag.backends.fallback" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fall back to SQLite when an external backend is unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "外部后端不可用时回退 SQLite" } }
+      }
+    },
+    "settings.rag.backends.index" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Index" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Index" } }
+      }
+    },
+    "settings.rag.backends.rebuildRequired" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rebuild the RAG index to synchronize the selected backend." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请重建 RAG 索引以同步新选择的后端。" } }
+      }
+    },
+    "settings.rag.backends.keyword" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Keyword search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关键词检索" } }
+      }
+    },
+    "settings.rag.backends.section" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge RAG Backends" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库 RAG 后端" } }
+      }
+    },
+    "settings.rag.backends.testAndSave" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Test and Save" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "测试并保存" } }
+      }
+    },
+    "settings.rag.backends.vector" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vector search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向量检索" } }
+      }
+    },
+    "settings.rag.backends.vectorName" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vector name" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Vector 名称" } }
+      }
+    },
+    "settings.rag.index.chunksFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Embedding chunks %d / %d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在向量化分片 %d / %d" } }
+      }
+    },
+    "settings.rag.index.idle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAG index is idle" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RAG 索引空闲" } }
+      }
+    },
+    "settings.rag.index.pause" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pause" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂停" } }
+      }
+    },
+    "settings.rag.index.readyFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d chunks ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个分片可用" } }
+      }
+    },
+    "settings.rag.index.rebuild" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rebuild" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重建" } }
+      }
+    },
+    "settings.rag.index.reposFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Building repositories %d / %d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在处理仓库 %d / %d" } }
+      }
+    },
+    "settings.storage.clearRAGHistory.confirm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear RAG conversation history?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除 RAG 会话历史？" } }
+      }
+    },
+    "settings.storage.clearRAGHistory.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This deletes local RAG questions, answers, and citation metadata." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这会删除本地 RAG 问题、回答和引用元数据。" } }
+      }
+    },
+    "settings.storage.clearRAGIndex.confirm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear the RAG index?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除 RAG 索引？" } }
+      }
+    },
+    "settings.storage.clearRAGIndex.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This only deletes rebuildable chunks and embeddings. Repository data, README, notes, summaries, and library state are unchanged." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅删除可重建的分片和向量；仓库数据、README、笔记、摘要和知识库状态不受影响。" } }
+      }
+    },
+    "settings.storage.ragHistory" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAG conversation history" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RAG 会话历史" } }
+      }
+    },
+    "settings.storage.ragHistory.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local questions, answers, and citation metadata. Full chunk snapshots are not stored." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地问题、回答和引用元数据，不保存完整分片快照。" } }
+      }
+    },
+    "settings.storage.ragHistory.usageFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d conversations · %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个会话 · %@" } }
+      }
+    },
+    "settings.storage.ragIndex" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge RAG index" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库 RAG 索引" } }
+      }
+    },
+    "settings.storage.ragIndex.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rebuildable README, notes, summary, metadata chunks, and embeddings." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可重建的 README、笔记、摘要、元数据分片与向量。" } }
+      }
+    },
+    "subscription.feature.knowledgeRAG" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Base RAG" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库 RAG" } }
+      }
+    },
     "rag.workspace.composer.model" : {
       "localizations" : {
         "en" : {
@@ -19635,6 +20133,12 @@
         }
       }
     },
+    "rag.workspace.inspector.matchType" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Match type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "命中方式" } }
+      }
+    },
     "rag.workspace.inspector.openGitHub" : {
       "localizations" : {
         "en" : {
@@ -19697,6 +20201,12 @@
             "value" : "相关度"
           }
         }
+      }
+    },
+    "rag.workspace.inspector.fetchedAt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetched at" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "抓取时间" } }
       }
     },
     "rag.workspace.inspector.source" : {
@@ -41286,6 +41796,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你明确加入 Starcat 私有知识库的仓库。"
+          }
+        }
+      }
+    },
+    "smartCollections.library.openRAG" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库问答"
           }
         }
       }

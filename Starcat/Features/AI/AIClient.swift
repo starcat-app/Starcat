@@ -52,6 +52,12 @@ struct AIChatMessage: Equatable, Sendable {
     var content: String
 }
 
+/// 当前轮用户消息附带的图片。仅保存在请求内，不进入历史、日志或数据库。
+struct AIChatImageInput: Equatable, Sendable {
+    var data: Data
+    var contentType: String
+}
+
 /// 参数化 Chat 请求。
 struct AIChatRequest: Equatable, Sendable {
     var systemPrompt: String
@@ -63,6 +69,8 @@ struct AIChatRequest: Equatable, Sendable {
     /// - 流式响应和非流式响应都能复用同一份历史，不需要在两条路径上重复字符串拼接；
     /// - 旧调用方（摘要、标签）传空数组即可，保持二进制兼容。
     var history: [AIChatMessage] = []
+    /// OpenAI-compatible vision content parts。非视觉模型由服务端返回明确能力错误。
+    var images: [AIChatImageInput] = []
     var model: String
     var parameters: AIModelParameters
     var responseFormat: AIChatResponseFormat = .text

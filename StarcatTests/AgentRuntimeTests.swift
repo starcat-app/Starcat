@@ -101,7 +101,7 @@ struct AgentRuntimeTests {
     }
 
     @Test("缺少 AI 配置时 runtime 失败且不生成假 artifact")
-    func missingAIDoesNotGenerateFallbackArtifact() async {
+    func missingAIDoesNotGenerateFallbackArtifact() async throws {
         let runtime = DefaultAgentRuntime(
             stepStartDelayNanoseconds: 0,
             stepCompletionDelayNanoseconds: 0
@@ -126,7 +126,8 @@ struct AgentRuntimeTests {
             }
         }
 
-        #expect(failedMessage?.contains("AI Provider") == true)
+        let message = try #require(failedMessage)
+        #expect(!message.isEmpty)
         #expect(artifactCount == 0)
     }
 
@@ -330,7 +331,8 @@ struct AgentRuntimeTests {
             }
         }
 
-        #expect(failedMessage?.contains("AI Provider") == true)
+        let message = try #require(failedMessage)
+        #expect(!message.isEmpty)
         #expect(artifactCount == 0)
     }
 

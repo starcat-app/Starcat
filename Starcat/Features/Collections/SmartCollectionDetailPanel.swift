@@ -188,6 +188,16 @@ struct SmartCollectionDetailPanel: View {
                 ProgressView()
                     .controlSize(.mini)
             }
+
+            if activeSystemCollectionKind == .library {
+                Button {
+                    KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies)
+                } label: {
+                    Label("smartCollections.library.openRAG", systemImage: "text.book.closed")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)

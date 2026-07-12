@@ -28,6 +28,7 @@ enum ProFeature: String, CaseIterable, Sendable {
     case autoOrganize
     case readmeTranslation
     case semanticSearch
+    case knowledgeRAG
     case repoContext
     case releaseSubscription
     case tagCreation
@@ -52,6 +53,7 @@ enum ProFeature: String, CaseIterable, Sendable {
         case .autoOrganize: return String.l10n("subscription.feature.autoOrganize")
         case .readmeTranslation: return String.l10n("subscription.feature.readmeTranslation")
         case .semanticSearch: return String.l10n("subscription.feature.semanticSearch")
+        case .knowledgeRAG: return String.l10n("subscription.feature.knowledgeRAG")
         case .repoContext: return String.l10n("subscription.feature.repoContext")
         case .releaseSubscription: return String.l10n("subscription.feature.releaseSubscription")
         case .tagCreation: return String.l10n("subscription.feature.tagCreation")

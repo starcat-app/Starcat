@@ -114,6 +114,14 @@ final class AppDependencies {
     let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
     /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
     let semanticSearchService: SemanticSearchService
+    /// 知识库 RAG child chunk 缓存与检索仓储。
+    let ragChunkRepository: any RAGChunkRepositoryProtocol
+    /// Query Planner 结构化条件的知识库候选查询仓储。
+    let ragCandidateRepository: any RAGRepoCandidateRepositoryProtocol
+    /// 知识库 RAG 本地会话历史。
+    let ragConversationStore: any RAGConversationStoring
+    /// README / notes / summary / metadata 的增量 RAG 索引构建器。
+    let knowledgeRAGIndexBuilder: KnowledgeRAGIndexBuilder
     /// 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务（Settings 触发）。
     let semanticIndexBuilder: SemanticIndexBuilder
     /// W6 AI：单仓 AI 摘要缓存。
@@ -426,6 +434,155 @@ final class AppDependencies {
         }
     }
 
+    // MARK: - Knowledge RAG runtime
+
+    /// 工作台模型下拉只展示已启用的 chat 模型。返回 descriptor id（provider::model）给
+    /// composer 保存，本方法在真正调用前再解析 provider 和 API key。
+    var knowledgeRAGChatModels: [AIModelDescriptor] {
+        settings.aiProviderProfiles
+            .filter(\.isVerifiedConfiguration)
+            .flatMap(\.models)
+            .filter { $0.isEnabled && $0.capability != .embedding }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// 按当前输入框选择创建一次问答所需的不可变 runtime。模型切换只影响本轮 Generator /
+    /// Planner；embedding 仍固定使用 Settings 的 embedding task，避免同一索引混入不同向量空间。
+    func makeKnowledgeRAGService(selectedModelID: String?) throws -> KnowledgeRAGService {
+        // 工作台可在非 Pro 状态下打开以查看历史和索引覆盖，但创建服务就意味着将发起模型调用，
+        // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
+        try entitlementGate.requirePro(.knowledgeRAG)
+        let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
+        let embeddingSelection = try resolveRAGTaskSelection(task: settings.aiEmbeddingTask)
+        let chatClient = try makeRAGClient(
+            profile: chatSelection.profile,
+            chatModel: chatSelection.modelName,
+            embeddingModel: embeddingSelection.modelName,
+            timeout: chatSelection.parameters.timeoutSeconds
+        )
+        let embeddingClient = try makeRAGClient(
+            profile: embeddingSelection.profile,
+            chatModel: chatSelection.modelName,
+            embeddingModel: embeddingSelection.modelName,
+            timeout: embeddingSelection.parameters.timeoutSeconds
+        )
+        let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
+        let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
+        let backendConfiguration = settings.ragBackendConfiguration
+
+        let keywordProvider: any RAGKeywordSearchProvider
+        if backendConfiguration.keywordBackend == .meilisearch,
+           backendConfiguration.meilisearch.validationMessage == nil {
+            let external = MeilisearchRAGProvider(
+                configuration: backendConfiguration.meilisearch,
+                apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
+                repository: ragChunkRepository
+            )
+            keywordProvider = backendConfiguration.fallbackToSQLite
+                ? FallbackRAGKeywordSearchProvider(primary: external, fallback: localKeyword)
+                : external
+        } else {
+            keywordProvider = localKeyword
+        }
+
+        let vectorProvider: any RAGVectorSearchProvider
+        if backendConfiguration.vectorBackend == .qdrant,
+           backendConfiguration.qdrant.validationMessage == nil {
+            let external = QdrantRAGProvider(
+                configuration: backendConfiguration.qdrant,
+                apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
+                repository: ragChunkRepository
+            )
+            vectorProvider = backendConfiguration.fallbackToSQLite
+                ? FallbackRAGVectorSearchProvider(primary: external, fallback: localVector)
+                : external
+        } else {
+            vectorProvider = localVector
+        }
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: ragChunkRepository,
+            keywordProvider: keywordProvider,
+            vectorProvider: vectorProvider,
+            // 自托管 provider 永远不接收私有 repo id 或查询。私有知识库内容仍参与
+            // 本轮问答，但 keyword/vector 两路都固定走 SQLite。
+            privateRepoKeywordProvider: localKeyword,
+            privateRepoVectorProvider: localVector,
+            embeddingClient: embeddingClient,
+            embeddingModel: embeddingSelection.modelName
+        )
+        let planner = KnowledgeRAGQueryPlanner(
+            client: chatClient,
+            model: chatSelection.modelName,
+            parameters: chatSelection.parameters
+        )
+        let githubToken = try? KeychainManager.shared.loadGithubToken()
+        return KnowledgeRAGService(
+            planner: planner,
+            candidateRepository: ragCandidateRepository,
+            retriever: retriever,
+            remoteContextProvider: GitHubRAGRemoteContextProvider(token: githubToken),
+            generatorClient: chatClient,
+            generatorModel: chatSelection.modelName,
+            generatorParameters: chatSelection.parameters
+        )
+    }
+
+    private struct RAGModelSelection {
+        var profile: AIProviderProfile
+        var modelName: String
+        var parameters: AIModelParameters
+    }
+
+    private func resolveRAGChatSelection(selectedModelID: String?) throws -> RAGModelSelection {
+        if let selectedModelID {
+            for profile in settings.aiProviderProfiles where profile.isEnabled {
+                if let model = profile.models.first(where: { $0.id == selectedModelID && $0.isEnabled && $0.capability != .embedding }) {
+                    return RAGModelSelection(
+                        profile: profile,
+                        modelName: model.name,
+                        parameters: model.parameters ?? settings.effectiveParameters(for: settings.aiChatTask)
+                    )
+                }
+            }
+        }
+        return try resolveRAGTaskSelection(task: settings.aiChatTask)
+    }
+
+    private func resolveRAGTaskSelection(task: AIModelTaskConfiguration) throws -> RAGModelSelection {
+        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID && $0.isEnabled }) else {
+            throw SemanticSearchError.missingAPIKey
+        }
+        let modelName = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelName.isEmpty else { throw AIClientError.emptyResponse }
+        return RAGModelSelection(
+            profile: profile,
+            modelName: modelName,
+            parameters: settings.effectiveParameters(for: task)
+        )
+    }
+
+    private func makeRAGClient(
+        profile: AIProviderProfile,
+        chatModel: String,
+        embeddingModel: String,
+        timeout: TimeInterval
+    ) throws -> any AIClientProtocol {
+        let apiKey = try KeychainManager.shared.loadAIKey(forProvider: profile.id)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
+            throw SemanticSearchError.missingAPIKey
+        }
+        return try OpenAIClient(configuration: AIClientConfiguration(
+            providerID: profile.id,
+            provider: profile.provider,
+            apiKey: apiKey,
+            baseURL: profile.baseURL,
+            chatModel: chatModel,
+            embeddingModel: embeddingModel,
+            timeoutInterval: timeout
+        ))
+    }
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -678,6 +835,23 @@ final class AppDependencies {
         )
         self.semanticSearchService = semantic
 
+        // 知识库 RAG：chunk 与会话跟随当前用户数据库。索引 builder 只消费
+        // `fetchKnowledgeRepos()`，不会把全部 starred repo 意外纳入问答范围。
+        let ragChunkRepo = GRDBRAGChunkRepository(database: db)
+        self.ragChunkRepository = ragChunkRepo
+        self.ragCandidateRepository = GRDBRAGRepoCandidateRepository(database: db)
+        self.ragConversationStore = GRDBRAGConversationStore(database: db)
+        self.knowledgeRAGIndexBuilder = KnowledgeRAGIndexBuilder(
+            chunkRepository: ragChunkRepo,
+            repoRepository: repo,
+            readmeRepository: readmeRepo,
+            noteRepository: self.repoNoteRepository,
+            summaryRepository: summaryRepo,
+            repoTagRepository: repoTagRepo,
+            settings: self.settings,
+            entitlementGate: self.entitlementGate
+        )
+
         let mcpFacade = StarcatMCPFacade(
             repoRepository: repo,
             readmeRepository: readmeRepo,
@@ -717,6 +891,8 @@ final class AppDependencies {
                 await semantic?.refreshIndexIfChanged(for: repo)
             }
         }
+
+        self.knowledgeRAGIndexBuilder.startObservingSourceChanges()
 
         // 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务。
         // 由 Settings → "AI 索引" Section 的「开始预拉 / 暂停 / 全量重建」按钮驱动；
@@ -984,11 +1160,12 @@ final class AppDependencies {
 
         // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
         // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
-        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session] in
+        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder] in
             await bootstrapper.reload()
             if let login = session.state.user?.login {
                 await starListSyncService.sync(login: login)
             }
+            await ragIndexBuilder.refreshMetadataForKnowledgeRepos()
         }
 
         // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry
@@ -1007,6 +1184,8 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            KnowledgeRAGWorkspaceWindowController.closeForUserDatabaseChange()
+            await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()
             do {
                 try await self.switchUserDatabase(to: userId)
             } catch {
@@ -1014,6 +1193,7 @@ final class AppDependencies {
                     "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
             }
+            self.knowledgeRAGIndexBuilder.resumeAfterUserDatabaseChange()
 
             // HOM-199 B1：DB 切到新用户后立即 reload StarredRegistry。
             //

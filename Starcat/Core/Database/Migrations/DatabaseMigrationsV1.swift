@@ -225,6 +225,7 @@ enum DatabaseMigrations {
             try createDiscoveryBulkMeta(db)
             try createRepoEmbeddings(db)
             try createAISummaries(db)
+            try createRAGSchema(db)
             try createReleaseSubscriptions(db)
             try createReleases(db)
             // R-06.4（2026-06-15）：Weekly 渐进式 SWR 双轨制专用 bulk 缓存表。
@@ -1251,6 +1252,150 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_ai_summaries_repo", on: "ai_summaries", columns: ["repo_id"])
+    }
+
+    // MARK: - Knowledge RAG（chunk 索引 + 本地会话）
+
+    /// 创建知识库 RAG 的派生索引与本地会话表。
+    ///
+    /// `rag_chunks` 是可重建缓存，`rag_conversations` / `rag_messages` /
+    /// `rag_message_citations` 是用户可见历史。citation 的 `chunk_id` 故意允许为空并使用
+    /// `ON DELETE SET NULL`：清理索引后仍保留历史回答及引用元数据，Inspector 再提示
+    /// “引用片段已清理”，不能级联删除用户历史。
+    private static func createRAGSchema(_ db: Database) throws {
+        try db.create(table: "rag_chunks") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("source", .text).notNull()
+            t.column("source_id", .text).notNull().defaults(to: "")
+            t.column("parent_type", .text).notNull().defaults(to: "repo")
+            t.column("parent_key", .text).notNull()
+            t.column("parent_title", .text).notNull().defaults(to: "")
+            t.column("chunk_key", .text).notNull()
+            t.column("chunk_index", .integer).notNull()
+            t.column("section_path", .text).notNull().defaults(to: "")
+            t.column("title", .text).notNull().defaults(to: "")
+            t.column("content", .text).notNull()
+            t.column("content_hash", .text).notNull()
+            t.column("token_count", .integer).notNull()
+            t.column("is_truncated", .boolean).notNull().defaults(to: false)
+            t.column("embedding_model", .text)
+            t.column("embedding_dim", .integer)
+            t.column("embedding", .blob)
+            t.column("embedding_status", .text).notNull().defaults(to: "pending")
+            t.column("embedding_error", .text)
+            t.column("indexed_at", .text)
+            t.column("created_at", .text).notNull()
+            t.column("updated_at", .text).notNull()
+            t.uniqueKey(["repo_id", "source", "source_id", "chunk_key"])
+        }
+        try db.create(index: "idx_rag_chunks_repo", on: "rag_chunks", columns: ["repo_id"])
+        try db.create(index: "idx_rag_chunks_parent", on: "rag_chunks", columns: ["repo_id", "parent_type", "parent_key"])
+        try db.create(index: "idx_rag_chunks_source", on: "rag_chunks", columns: ["source"])
+        try db.create(index: "idx_rag_chunks_model_status", on: "rag_chunks", columns: ["embedding_model", "embedding_status"])
+
+        // 外部内容 FTS 只镜像可展示文本；知识库边界在 Retriever 查询时通过 repo_notes join 强制执行。
+        try db.execute(sql: """
+            CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(
+                title,
+                section_path,
+                content,
+                content='rag_chunks',
+                content_rowid='id',
+                tokenize='unicode61 remove_diacritics 2'
+            )
+            """)
+        try db.execute(sql: """
+            CREATE TRIGGER rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
+                INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
+                VALUES (new.id, new.title, new.section_path, new.content);
+            END
+            """)
+        try db.execute(sql: """
+            CREATE TRIGGER rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
+                INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
+                VALUES ('delete', old.id, old.title, old.section_path, old.content);
+            END
+            """)
+        try db.execute(sql: """
+            CREATE TRIGGER rag_chunks_au AFTER UPDATE ON rag_chunks BEGIN
+                INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
+                VALUES ('delete', old.id, old.title, old.section_path, old.content);
+                INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
+                VALUES (new.id, new.title, new.section_path, new.content);
+            END
+            """)
+
+        try db.create(table: "rag_conversations") { t in
+            t.column("id", .text).primaryKey()
+            t.column("title", .text).notNull()
+            t.column("scope", .text).notNull().defaults(to: "knowledge")
+            t.column("created_at", .text).notNull()
+            t.column("updated_at", .text).notNull()
+        }
+        try db.create(index: "idx_rag_conversations_updated", on: "rag_conversations", columns: ["updated_at"])
+
+        try db.create(table: "rag_messages") { t in
+            t.column("id", .text).primaryKey()
+            t.column("conversation_id", .text).notNull()
+                .references("rag_conversations", column: "id", onDelete: .cascade)
+            t.column("role", .text).notNull()
+            t.column("content", .text).notNull()
+            t.column("model", .text)
+            t.column("created_at", .text).notNull()
+        }
+        try db.create(index: "idx_rag_messages_conversation_created", on: "rag_messages", columns: ["conversation_id", "created_at"])
+
+        try db.create(table: "rag_message_citations") { t in
+            t.column("id", .text).primaryKey()
+            t.column("message_id", .text).notNull()
+                .references("rag_messages", column: "id", onDelete: .cascade)
+            t.column("chunk_id", .integer)
+                .references("rag_chunks", column: "id", onDelete: .setNull)
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("repo_full_name", .text).notNull()
+            t.column("source", .text).notNull()
+            t.column("section_title", .text).notNull().defaults(to: "")
+            t.column("rank", .integer).notNull()
+            t.column("score", .double).notNull()
+            t.column("hit_kind", .text).notNull().defaults(to: "hybrid")
+            t.column("source_url", .text)
+            t.column("fetched_at", .text)
+        }
+        try db.create(index: "idx_rag_citations_message_rank", on: "rag_message_citations", columns: ["message_id", "rank"])
+        try createRAGRemoteContextAuditSchema(db)
+    }
+
+    /// GitHub 临时上下文不保存正文；历史只需要恢复“本轮查了什么、何时查、是否降级”。
+    private static func createRAGRemoteContextAuditSchema(_ db: Database) throws {
+        try db.create(table: "rag_message_remote_contexts") { t in
+            t.column("id", .text).primaryKey()
+            t.column("message_id", .text).notNull()
+                .references("rag_messages", column: "id", onDelete: .cascade)
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("resource", .text).notNull()
+            t.column("title", .text).notNull()
+            t.column("source_url", .text)
+            t.column("fetched_at", .text).notNull()
+            t.column("error_message", .text)
+        }
+        try db.create(index: "idx_rag_remote_contexts_message", on: "rag_message_remote_contexts", columns: ["message_id"])
+    }
+
+    /// 产品上线前开发库不会重跑 `v1-initial`，启动时只在表缺失时补齐当前 schema。
+    /// 这是开发期 schema 修正，不承载任何旧版本兼容或线上数据迁移语义。
+    static func ensurePrelaunchRAGSchema(_ db: Database) throws {
+        guard try db.tableExists("rag_chunks") else {
+            try createRAGSchema(db)
+            return
+        }
+        // 开发期已有数据库可能由较早 RAG schema 创建；仅补齐新增表，不保留兼容分支。
+        if try !db.tableExists("rag_message_remote_contexts") {
+            try createRAGRemoteContextAuditSchema(db)
+        }
     }
 
     // MARK: - release_subscriptions / releases（HOM-47 Release 订阅追踪）

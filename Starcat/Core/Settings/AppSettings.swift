@@ -826,6 +826,12 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiChatTask, value: aiChatTask) }
     }
 
+    /// 知识库 RAG 的 keyword/vector 后端。默认 SQLite；Meilisearch/Qdrant 只在用户
+    /// 自行部署并显式选择后启用，API key 另存 Keychain。
+    var ragBackendConfiguration: RAGBackendConfiguration {
+        didSet { persistJSON(key: Keys.ragBackendConfiguration, value: ragBackendConfiguration) }
+    }
+
     /// AI 对话历史存储后端。默认 `.jsonFiles`，保留当前 metadata + chunks 写入路径；
     /// 选择 `.sqlite` 后，下一次创建 `DiskChatHistoryStore.shared` 会使用独立 SQLite 文件。
     ///
@@ -1461,6 +1467,11 @@ final class AppSettings {
             modelName: resolvedAIChatModel
         )
         self.aiChatTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiChatTask, defaults: defaults) ?? defaultChatTask
+        self.ragBackendConfiguration = Self.decodeJSON(
+            RAGBackendConfiguration.self,
+            key: Keys.ragBackendConfiguration,
+            defaults: defaults
+        ) ?? RAGBackendConfiguration()
         let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
         self.chatHistoryStorageKind = chatHistoryStorageRaw.flatMap(ChatHistoryStorageKind.init(rawValue:)) ?? .jsonFiles
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
@@ -1665,6 +1676,7 @@ final class AppSettings {
         aiEmbeddingTask = Self.makeDefaultTask(task: .embedding, profileID: defaultProfile.id, modelName: embeddingModel)
         aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
         aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
+        ragBackendConfiguration = RAGBackendConfiguration()
 
         chatHistoryStorageKind = .jsonFiles
         smartSearchMode = .keyword
@@ -1974,6 +1986,7 @@ final class AppSettings {
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
+        static let ragBackendConfiguration = "settings.ai.rag.backends.v1"
         static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
         static let smartSearchMode = "settings.search.mode"
         static let externalSearchIncludeInAll = "settings.externalSearch.includeInAll.v1"
@@ -2053,6 +2066,7 @@ final class AppSettings {
             aiEmbeddingTask,
             aiTranslationTask,
             aiChatTask,
+            ragBackendConfiguration,
             chatHistoryStorageKind,
             smartSearchMode,
             externalSearchIncludeInAll,

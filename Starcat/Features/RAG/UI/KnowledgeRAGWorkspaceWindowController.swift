@@ -7,7 +7,7 @@
 //  设计约束:
 //  - RAG 问答和证据核验是长时间工作流,需要完整 macOS 窗口语义。
 //  - 不使用主窗口 overlay,避免遮住系统红黄绿按钮和继承底层内容的 cursor rect。
-//  - 当前 RAG 内容仍是 UI 原型,窗口承载方式先按正式 workspace 形态落地。
+//  - 内容由真实 KnowledgeRAGWorkspaceViewModel 驱动，窗口 controller 持有其 SwiftUI 根视图。
 //
 
 import AppKit
@@ -25,6 +25,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
 
     private static var shared: KnowledgeRAGWorkspaceWindowController?
     private let chromeState: WorkspaceChromeState
+    private let viewModel: KnowledgeRAGWorkspaceViewModel
 
     /// 显示知识库 RAG 工作台窗口。
     @MainActor
@@ -49,11 +50,22 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// 用户数据库切换前销毁旧工作台，避免旧账户的内存历史继续显示，或在切库后把
+    /// 未完成回答写进新账户数据库。
+    @MainActor
+    static func closeForUserDatabaseChange() {
+        shared?.viewModel.cancelAnswer()
+        shared?.close()
+        shared = nil
+    }
+
     private init(dependencies: AppDependencies) {
         let chromeState = WorkspaceChromeState()
+        let viewModel = KnowledgeRAGWorkspaceViewModel(dependencies: dependencies)
         self.chromeState = chromeState
+        self.viewModel = viewModel
 
-        let content = KnowledgeRAGWorkspaceView(chromeState: chromeState)
+        let content = KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
         .appHostEnvironment(dependencies)
 
         let hostingController = NSHostingController(rootView: content)
@@ -90,6 +102,8 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     }
 
     func windowWillClose(_ notification: Notification) {
+        viewModel.cancelAnswer()
         window?.resignKey()
+        Self.shared = nil
     }
 }

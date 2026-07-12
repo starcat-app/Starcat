@@ -2,47 +2,38 @@
 //  KnowledgeRAGWorkspaceView.swift
 //  Starcat
 //
-//  知识库 RAG 工作台的迁移期 UI 验证视图。
+//  知识库 RAG 的真实三栏工作台：会话历史、问答时间线、证据/计划/索引 Inspector。
 //
-//  这个文件暂时不接 RAG 后端,但 UI 字段按后续真实数据契约设计:repo 元信息
-//  来自现有本地库,引用证据来自未来 rag_chunks / Retriever。迁移验证阶段不展示
-//  拿不到或只适合调试的检索内部字段。
+//  工作台遵循主窗口与 Agent Workspace 的同一视觉契约。输入框显式承载 @repo、模型和
+//  附件；Issues 等远程上下文只在 Planner 命中后进入确认流程，不提供 slash command。
 //
 
 import AppKit
 import SwiftUI
 
 struct KnowledgeRAGWorkspaceView: View {
-
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     let chromeState: WorkspaceChromeState
-
-    @State private var selectedConversationID: RAGDemoConversation.ID = RAGDemoData.conversations[0].id
-    @State private var selectedCitationID: RAGDemoCitation.ID = RAGDemoData.citations[0].id
-    @State private var draftQuestion: String = ""
-    @State private var draftQuestionEditorHeight = RAGComposerEditorMetrics.defaultHeight
-    @State private var isStreaming: Bool = true
-    @State private var didSendDemoQuestion: Bool = false
-
-    private var selectedCitation: RAGDemoCitation {
-        RAGDemoData.citations.first { $0.id == selectedCitationID } ?? RAGDemoData.citations[0]
-    }
+    @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
+    @State private var inspectorTab: RAGInspectorTab = .evidence
 
     var body: some View {
         HStack(spacing: 0) {
             if !chromeState.isLeftColumnCollapsed {
                 conversationRail
-                    .frame(width: 318)
+                    .frame(width: 286)
                 Divider()
             }
+
             answerSurface
                 .layoutPriority(1)
+
             if !chromeState.isRightColumnCollapsed {
                 Divider()
-                citationInspector
-                    .frame(minWidth: 390, idealWidth: 420, maxWidth: 460)
+                inspector
+                    .frame(minWidth: 320, idealWidth: 356, maxWidth: 400)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -50,181 +41,169 @@ struct KnowledgeRAGWorkspaceView: View {
         .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
+        .task { await viewModel.bootstrap() }
+        .task { await viewModel.observeKnowledgeBoundaryChanges() }
+        .task { await viewModel.observeIndexChanges() }
+        .environment(\.openURL, OpenURLAction { url in
+            viewModel.handleLink(url)
+            return .handled
+        })
+        .alert(
+            "rag.workspace.error.title",
+            isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )
+        ) {
+            Button("common.ok") { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }
 
-    // MARK: - Conversation Rail
+    // MARK: - Conversation rail
 
     private var conversationRail: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                railTitle
-                statusBlock
-                newConversationButton
+                HStack(spacing: 9) {
+                    Image(systemName: "text.book.closed.fill")
+                        .font(iconFont(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("rag.workspace.title")
+                            .font(ragFont(.headline, weight: .semibold))
+                        Text("rag.workspace.subtitle")
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                indexSummary
+
+                Button {
+                    Task { await viewModel.newConversation() }
+                } label: {
+                    Label("rag.workspace.newConversation", systemImage: "plus")
+                        .font(ragFont(.callout, weight: .semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
             .padding(14)
 
+            Divider()
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: 5) {
                     Text("rag.workspace.recentConversations")
                         .font(ragFont(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
 
-                    ForEach(RAGDemoData.conversations) { conversation in
+                    ForEach(viewModel.conversations) { conversation in
                         conversationRow(conversation)
                     }
                 }
-                .padding(.bottom, 18)
+                .padding(.bottom, 12)
             }
-
-            Spacer(minLength: 0)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
     }
 
-    private var railTitle: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "books.vertical")
-                .font(ragIconFont(size: 18, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 30, height: 30)
-                .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("rag.workspace.title")
-                    .font(ragFont(.headline, weight: .semibold))
-                Text("rag.workspace.subtitle")
-                    .font(ragFont(.caption))
+    private var indexSummary: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
+                    .font(ragFont(.caption, weight: .semibold))
+                Spacer()
+                Text("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
+                    .font(ragFont(.caption, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
-            Spacer()
-        }
-    }
-
-    private var statusBlock: some View {
-        VStack(spacing: 10) {
-            statusRow(icon: "scope", label: String.l10n("rag.workspace.status.scope"), value: String.l10n("rag.workspace.status.knowledgeBase"))
-            statusRow(icon: "shippingbox", label: String.l10n("rag.workspace.status.repos"), value: "126 repos")
-
-            VStack(alignment: .leading, spacing: 6) {
-                statusRow(icon: "square.stack.3d.up", label: String.l10n("rag.workspace.status.readyChunks"), value: "1,248")
-                ProgressView(value: 0.92)
-                    .tint(Color.accentColor)
-                    .controlSize(.small)
-            }
-
-            statusRow(icon: "doc.text.magnifyingglass", label: String.l10n("rag.workspace.status.sources"), value: String.l10n("rag.workspace.status.sourcesValue"))
-            statusRow(icon: "lock", label: String.l10n("rag.workspace.status.mode"), value: String.l10n("rag.workspace.status.readOnly"))
-        }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func statusRow(icon: String, label: String, value: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(ragIconFont(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            Text(label)
-                .font(ragFont(.caption))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(.primary)
-        }
-    }
-
-    private var newConversationButton: some View {
-        Button {
-            selectedConversationID = RAGDemoData.conversations[0].id
-            selectedCitationID = RAGDemoData.citations[0].id
-            draftQuestion = ""
-            didSendDemoQuestion = false
-            isStreaming = true
-        } label: {
-            Label("rag.workspace.newConversation", systemImage: "plus.circle.fill")
-                .font(ragFont(.callout, weight: .semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(.white)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func conversationRow(_ conversation: RAGDemoConversation) -> some View {
-        let isSelected = conversation.id == selectedConversationID
-        return Button {
-            selectedConversationID = conversation.id
-            selectedCitationID = RAGDemoData.citations[conversation.citationIndex].id
-        } label: {
-            HStack(spacing: 9) {
-                Image(systemName: "bubble.left")
-                    .font(ragIconFont(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                    .frame(width: 18)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(conversation.title)
-                        .font(ragFont(.callout, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(conversation.subtitle)
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            ProgressView(value: viewModel.indexCoverage.fraction)
+                .progressViewStyle(.linear)
+            HStack {
+                Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), viewModel.indexCoverage.readyChunks))
+                Spacer()
+                if viewModel.indexCoverage.pendingChunks + viewModel.indexCoverage.failedChunks + viewModel.indexCoverage.staleChunks > 0 {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help("rag.workspace.status.indexIncomplete")
                 }
-
-                Spacer(minLength: 8)
-                Text(conversation.time)
-                    .font(ragFont(.caption2))
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .contentShape(Rectangle())
-            .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.accentColor.opacity(0.25) : Color.clear, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .font(ragFont(.caption2))
+            .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .padding(.horizontal, 10)
+        .padding(10)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: - Answer Surface
+    private func conversationRow(_ conversation: RAGConversationSummary) -> some View {
+        let selected = conversation.id == viewModel.selectedConversationID
+        return HStack(spacing: 0) {
+            Button {
+                Task { await viewModel.selectConversation(conversation.id) }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "bubble.left")
+                        .font(iconFont(size: 13, weight: .medium))
+                        .foregroundStyle(selected ? Color.accentColor : .secondary)
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(conversation.title)
+                            .font(ragFont(.callout, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(String(conversation.updatedAt.prefix(10)))
+                            .font(ragFont(.caption2))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .contentShape(Rectangle())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            Menu {
+                Button("common.delete", role: .destructive) {
+                    Task { await viewModel.deleteConversation(conversation.id) }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(iconFont(size: 13, weight: .medium))
+                    .frame(width: 26, height: 26)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .foregroundStyle(.secondary)
+            .help("rag.workspace.conversation.actions")
+            .padding(.trailing, 6)
+        }
+        .background(selected ? Color.accentColor.opacity(0.11) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .padding(.horizontal, 8)
+    }
+
+    // MARK: - Answer surface
 
     private var answerSurface: some View {
         VStack(spacing: 0) {
             answerHeader
             Divider()
-            GeometryReader { proxy in
-                let userMessageWidth = messageWidthLimit(proxy.size.width, ratio: 0.72, cap: 640)
-                let assistantMessageWidth = messageWidthLimit(proxy.size.width, ratio: 0.78, cap: 920)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        questionBubble(maxWidth: userMessageWidth)
-                        answerBlock(maxWidth: assistantMessageWidth)
-                        if didSendDemoQuestion {
-                            pendingQuestionBlock(maxWidth: userMessageWidth)
-                        }
-                    }
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            messageTimeline
+            if !viewModel.pendingRemoteRequests.isEmpty {
+                Divider()
+                remoteConfirmation
             }
             Divider()
             commandComposer
@@ -233,726 +212,870 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private var answerHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("rag.workspace.title")
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.conversations.first(where: { $0.id == viewModel.selectedConversationID })?.title ?? String.l10n("rag.workspace.newConversation"))
                     .font(ragFont(.headline, weight: .semibold))
-                Text("rag.workspace.header.subtitle")
+                    .lineLimit(1)
+                Text(stateText(viewModel.answerState))
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             }
-
             Spacer()
-
-            headerChip("Knowledge", systemImage: "books.vertical", tint: .blue)
-            headerChip("GPT-4.1", systemImage: "sparkles", tint: .purple)
-            headerChip(String.l10n(isStreaming ? "rag.workspace.header.streaming" : "rag.workspace.header.ready"), systemImage: "dot.radiowaves.left.and.right", tint: .green)
-
-            Button(action: { isStreaming.toggle() }) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(ragIconFont(size: 14, weight: .medium))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(.secondary)
-
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 13)
-    }
-
-    private func headerChip(_ text: String, systemImage: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage)
-            Text(text)
-        }
-        .font(ragFont(.caption, weight: .semibold))
-        .foregroundStyle(tint)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(tint.opacity(0.20), lineWidth: 1)
-        )
-    }
-
-    private func questionBubble(maxWidth: CGFloat) -> some View {
-        HStack(alignment: .top) {
-            Spacer(minLength: 90)
-            VStack(alignment: .trailing, spacing: 6) {
-                Text("rag.workspace.demo.question")
-                    .font(ragFont(.body))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
-                Text("09:41")
-                    .font(ragFont(.caption2))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: maxWidth, alignment: .trailing)
-        }
-    }
-
-    private func answerBlock(maxWidth: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "cat")
-                .font(ragIconFont(size: 18, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 30, height: 30)
-                .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 16) {
-                Text("rag.workspace.demo.answer.intro")
-                    .font(ragFont(.body))
-                    .foregroundStyle(.primary)
-                    .lineSpacing(3)
-
-                repoBundleList
-
-                Text("rag.workspace.demo.answer.recommendation")
-                    .font(ragFont(.body))
-                    .foregroundStyle(.primary)
-                    .lineSpacing(3)
-
-                citationChips
-
-                HStack(spacing: 10) {
-                    iconAction("doc.on.doc")
-                    iconAction("hand.thumbsup")
-                    iconAction("hand.thumbsdown")
-                    Spacer()
-                    Text("09:41")
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(18)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            )
-        }
-        .frame(maxWidth: maxWidth, alignment: .leading)
-    }
-
-    private var repoBundleList: some View {
-        VStack(spacing: 10) {
-            ForEach(RAGDemoData.repoBundles) { bundle in
-                repoBundleRow(bundle)
+            headerChip(String.l10n("rag.workspace.header.knowledge"), icon: "books.vertical", tint: .blue)
+            headerChip(viewModel.selectedModelDisplayName, icon: "sparkles", tint: .purple)
+            if viewModel.isAnswering {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
     }
 
-    private func repoBundleRow(_ bundle: RAGDemoRepoBundle) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: bundle.localDetailAvailable ? "shippingbox.fill" : "globe")
-                    .font(ragIconFont(size: 14, weight: .semibold))
-                    .foregroundStyle(bundle.localDetailAvailable ? Color.accentColor : .secondary)
-                    .frame(width: 24, height: 24)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+    private func headerChip(_ title: String, icon: String, tint: Color) -> some View {
+        Label(title, systemImage: icon)
+            .font(ragFont(.caption, weight: .semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+    }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(bundle.fullName)
-                        .font(ragFont(.callout, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(bundle.description)
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 10)
-                Text(bundle.status)
-                    .font(ragFont(.caption2, weight: .semibold))
-                    .foregroundStyle(bundle.localDetailAvailable ? Color.accentColor : .secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background((bundle.localDetailAvailable ? Color.accentColor : Color.primary).opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
-            }
-
-            HStack(spacing: 8) {
-                metadataPill(bundle.language, systemImage: "circle.fill")
-                metadataPill("\(bundle.stars) stars", systemImage: "star")
-                metadataPill(bundle.sources.joined(separator: " / "), systemImage: "doc.text")
-                Spacer()
-            }
-
-            HStack(spacing: 6) {
-                ForEach(bundle.citationIDs, id: \.self) { citationID in
-                    if let citation = RAGDemoData.citations.first(where: { $0.id == citationID }) {
-                        citationButton(citation)
+    private var messageTimeline: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    if viewModel.messages.isEmpty && viewModel.streamingAnswer.isEmpty {
+                        emptyConversation
+                    }
+                    ForEach(viewModel.messages) { message in
+                        messageView(message)
+                            .id(message.id)
+                    }
+                    if !viewModel.streamingAnswer.isEmpty {
+                        assistantMessage(content: viewModel.streamingAnswer, citations: [])
+                            .id("streaming-answer")
+                    } else if viewModel.isAnswering {
+                        workingIndicator
+                            .id("working-indicator")
                     }
                 }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onChange(of: viewModel.streamingAnswer) { _, _ in
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                    proxy.scrollTo("streaming-answer", anchor: .bottom)
+                }
+            }
+            .onChange(of: viewModel.messages.count) { _, _ in
+                if let id = viewModel.messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
             }
         }
-        .padding(12)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
     }
 
-    private func metadataPill(_ text: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-            Text(text)
-                .lineLimit(1)
+    private var emptyConversation: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: "text.magnifyingglass")
+                .font(iconFont(size: 26, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+            Text("rag.workspace.empty.title")
+                .font(ragFont(.headline, weight: .semibold))
+            Text("rag.workspace.empty.subtitle")
+                .font(ragFont(.body))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(ragFont(.caption2, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .frame(maxWidth: 520, alignment: .leading)
+        .padding(.top, 36)
     }
 
-    private var citationChips: some View {
-        HStack(spacing: 8) {
-            ForEach(RAGDemoData.citations) { citation in
-                Button {
-                    selectedCitationID = citation.id
-                } label: {
-                    citationChipContent(citation)
+    @ViewBuilder
+    private func messageView(_ message: RAGStoredMessage) -> some View {
+        if message.role == .user {
+            HStack {
+                Spacer(minLength: 80)
+                Text(message.content)
+                    .font(ragFont(.body))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
+                    .frame(maxWidth: 680, alignment: .trailing)
+            }
+        } else {
+            assistantMessage(content: message.content, citations: message.citations)
+        }
+    }
+
+    private func assistantMessage(content: String, citations: [RAGCitation]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                Text("rag.workspace.message.assistant")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { viewModel.copyAnswer(content) } label: {
+                    Image(systemName: "doc.on.doc").frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .foregroundStyle(.secondary)
+                .help("rag.workspace.answer.copy")
+                Button { viewModel.exportAnswer(content) } label: {
+                    Image(systemName: "square.and.arrow.up").frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.secondary)
+                .help("rag.workspace.answer.export")
+            }
+            RAGMarkdownText(content: content)
+                .font(ragFont(.body))
+                .textSelection(.enabled)
+                .frame(maxWidth: 900, alignment: .leading)
+            if !citations.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 7) {
+                        ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
+                            Button {
+                                viewModel.selectCitation(citation)
+                                inspectorTab = .evidence
+                            } label: {
+                                Label("S\(index + 1) · \(citation.repoFullName)", systemImage: "quote.opening")
+                                    .font(ragFont(.caption, weight: .semibold))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
             }
         }
     }
 
-    private func citationButton(_ citation: RAGDemoCitation) -> some View {
-        Button {
-            selectedCitationID = citation.id
-        } label: {
-            citationChipContent(citation)
+    private var workingIndicator: some View {
+        HStack(spacing: 9) {
+            ProgressView()
+                .controlSize(.small)
+            Text(stateText(viewModel.answerState))
+                .font(ragFont(.callout))
+                .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .padding(.vertical, 8)
     }
 
-    private func citationChipContent(_ citation: RAGDemoCitation) -> some View {
-        HStack(spacing: 5) {
-            Text("[\(citation.rank)]")
-                .font(ragFont(.caption2, weight: .bold, design: .monospaced))
-            Text(citation.source)
-                .lineLimit(1)
-            Text("\(Int(citation.score * 100))%")
-                .foregroundStyle(citation.id == selectedCitationID ? Color.accentColor : .secondary)
+    private var remoteConfirmation: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("rag.workspace.remote.confirmTitle", systemImage: "network")
+                    .font(ragFont(.callout, weight: .semibold))
+                Spacer()
+                Button("rag.workspace.remote.skip") { viewModel.skipRemoteContext() }
+                    .buttonStyle(.borderless)
+                Button("rag.workspace.remote.continue") { viewModel.confirmRemoteContext() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.approvedRemoteResources.isEmpty)
+            }
+            RAGFlowLayout(spacing: 7) {
+                ForEach(viewModel.pendingRemoteRequests, id: \.resource) { request in
+                    let enabled = viewModel.approvedRemoteResources.contains(request.resource)
+                    Button {
+                        viewModel.toggleRemoteResource(request.resource)
+                    } label: {
+                        Label(remoteResourceName(request.resource), systemImage: enabled ? "checkmark.circle.fill" : "circle")
+                            .font(ragFont(.caption, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(enabled ? .orange : .gray)
+                    .help(request.reason)
+                }
+            }
         }
-        .font(ragFont(.caption2, weight: .semibold))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(citation.id == selectedCitationID ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(citation.id == selectedCitationID ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(Color.orange.opacity(0.07))
     }
 
-    private func iconAction(_ systemName: String) -> some View {
-        Button {} label: {
-            Image(systemName: systemName)
-                .font(ragIconFont(size: 13, weight: .medium))
-                .frame(width: 24, height: 24)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(.secondary)
-    }
-
-    private func pendingQuestionBlock(maxWidth: CGFloat) -> some View {
-        HStack(alignment: .top) {
-            Spacer(minLength: 90)
-            Text(draftQuestion.isEmpty ? String.l10n("rag.workspace.demo.pendingQuestion") : draftQuestion)
-                .font(ragFont(.body))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: maxWidth, alignment: .trailing)
-        }
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-    }
+    // MARK: - Composer
 
     private var commandComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                composerChip(String.l10n("rag.workspace.composer.scope"), systemImage: "books.vertical")
-                composerChip(String.l10n("rag.workspace.composer.sources"), systemImage: "doc.text.magnifyingglass")
-                composerChip(String.l10n("rag.workspace.composer.model"), systemImage: "sparkles")
-                Spacer()
+            if !viewModel.selectedRepoContexts.isEmpty || !viewModel.attachments.isEmpty || !viewModel.githubLinkContexts.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 7) {
+                        ForEach(viewModel.selectedRepoContexts) { repo in
+                            contextChip(title: "@\(repo.fullName)", icon: "shippingbox") {
+                                viewModel.removeMention(repoID: repo.id)
+                            }
+                        }
+                        ForEach(viewModel.attachments) { attachment in
+                            contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
+                                viewModel.removeAttachment(attachment.id)
+                            }
+                        }
+                        ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
+                            githubLinkChip(reference)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
             }
 
-            ragComposerInputBox
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
+            if let reason = viewModel.composerBlockingReason {
+                Label(reason, systemImage: "exclamationmark.triangle.fill")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.orange)
+            }
 
-    private var ragComposerInputBox: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RAGComposerTextEditor(
-                text: $draftQuestion,
-                placeholder: String.l10n("rag.workspace.composer.placeholder"),
-                onHeightChange: { draftQuestionEditorHeight = $0 },
-                onSubmit: sendDemoQuestion
-            )
-            .frame(maxWidth: .infinity, minHeight: draftQuestionEditorHeight, maxHeight: draftQuestionEditorHeight)
+            ZStack(alignment: .topLeading) {
+                if viewModel.draftQuestion.isEmpty {
+                    Text("rag.workspace.composer.placeholder")
+                        .font(ragFont(.body))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $viewModel.draftQuestion)
+                    .font(ragFont(.body))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 64, maxHeight: 118)
+                    .onKeyPress(.return) {
+                        if viewModel.isMentionPickerPresented, !NSEvent.modifierFlags.contains(.command) {
+                            viewModel.selectHighlightedMention()
+                            return .handled
+                        }
+                        if NSEvent.modifierFlags.contains(.command) {
+                            viewModel.send()
+                            return .handled
+                        }
+                        return .ignored
+                    }
+                    .onKeyPress(.upArrow) {
+                        guard viewModel.isMentionPickerPresented else { return .ignored }
+                        viewModel.moveMentionSelection(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard viewModel.isMentionPickerPresented else { return .ignored }
+                        viewModel.moveMentionSelection(by: 1)
+                        return .handled
+                    }
+                    .onKeyPress(.escape) {
+                        guard viewModel.isMentionPickerPresented else { return .ignored }
+                        viewModel.dismissMentionPicker()
+                        return .handled
+                    }
+                    .onChange(of: viewModel.draftQuestion) { _, _ in
+                        viewModel.handleDraftQuestionChanged()
+                    }
+            }
+            .popover(
+                isPresented: Binding(
+                    get: { viewModel.isMentionPickerPresented },
+                    set: { _ in }
+                ),
+                arrowEdge: .bottom
+            ) {
+                mentionPicker
+            }
 
             HStack(spacing: 8) {
-                Spacer()
-
-                Button {} label: {
+                Button { viewModel.chooseAttachments() } label: {
                     Image(systemName: "paperclip")
-                        .font(ragIconFont(size: 13, weight: .medium))
-                        .frame(width: 26, height: 26)
+                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .foregroundStyle(.secondary)
+                .help("rag.workspace.composer.attach")
 
-                Button(action: sendDemoQuestion) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(ragIconFont(size: 21, weight: .semibold))
-                        .foregroundStyle(ragComposerSendDisabled ? .secondary : Color.accentColor)
+                modelMenu
+
+                if !viewModel.selectedRepoContexts.isEmpty {
+                    explicitModeMenu
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .disabled(ragComposerSendDisabled)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-    }
 
-    private var ragComposerSendDisabled: Bool {
-        draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func messageWidthLimit(_ availableWidth: CGFloat, ratio: CGFloat, cap: CGFloat) -> CGFloat {
-        // 宽屏时消息不铺满整栏，窄屏时仍保留可读宽度；用户和 AI 分别使用不同上限。
-        max(280, min(cap, availableWidth * ratio))
-    }
-
-    private func composerChip(_ text: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-            Text(text)
-        }
-        .font(ragFont(.caption2, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-    }
-
-    private func sendDemoQuestion() {
-        guard !draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-            didSendDemoQuestion = true
-            isStreaming = false
-        }
-    }
-
-    // MARK: - Citation Inspector
-
-    private var citationInspector: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            inspectorHeader
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    selectedCitationSummary
-                    chunkPreview
-                    otherCitations
-                }
-                .padding(16)
-            }
-        }
-        .background(Color(nsColor: .controlBackgroundColor))
-    }
-
-    private var inspectorHeader: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("rag.workspace.inspector.title")
-                    .font(ragFont(.headline, weight: .semibold))
-                Text("rag.workspace.inspector.subtitle")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-    }
-
-    private var selectedCitationSummary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    .font(ragIconFont(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 28, height: 28)
-                    .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 7))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedCitation.repo)
-                        .font(ragFont(.subheadline, weight: .semibold))
-                    Text(selectedCitation.fullName)
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                }
                 Spacer()
-            }
 
-            inspectorFact(String.l10n("rag.workspace.inspector.source"), selectedCitation.source, badgeTint: .blue)
-            inspectorFact(String.l10n("rag.workspace.inspector.location"), selectedCitation.sectionPath, badgeTint: .primary, isNeutral: true)
-            inspectorFact(String.l10n("rag.workspace.inspector.relevance"), "\(Int(selectedCitation.score * 100))%", badgeTint: .green)
-            inspectorFact(String.l10n("rag.workspace.inspector.detailPage"), selectedCitation.localDetailAvailable ? String.l10n("rag.workspace.inspector.starcatDetail") : "GitHub", badgeTint: selectedCitation.localDetailAvailable ? .accentColor : .secondary)
-
-            Button {
-                NSWorkspace.shared.open(selectedCitation.githubURL)
-            } label: {
-                HStack {
-                    Text(String.l10n(selectedCitation.localDetailAvailable ? "rag.workspace.inspector.openStarcat" : "rag.workspace.inspector.openGitHub"))
-                    Spacer()
-                    Image(systemName: "arrow.up.right.square")
+                if viewModel.isAnswering {
+                    Button { viewModel.cancelAnswer() } label: {
+                        Image(systemName: "stop.fill")
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("rag.workspace.composer.cancel")
+                } else {
+                    Button { viewModel.send() } label: {
+                        Image(systemName: "arrow.up")
+                            .font(iconFont(size: 13, weight: .bold))
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || viewModel.composerBlockingReason != nil
+                    )
+                    .help("rag.workspace.composer.send")
                 }
-                .font(ragFont(.callout, weight: .semibold))
+            }
+        }
+        .padding(10)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func contextChip(title: String, icon: String, onRemove: @escaping () -> Void) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+            Text(title).lineLimit(1)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+            .help("common.remove")
         }
-        .padding(14)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .font(ragFont(.caption, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private func inspectorFact(_ label: String, _ value: String, badgeTint: Color, isNeutral: Bool = false) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(ragFont(.caption))
-                .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .leading)
-            Text(value)
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(isNeutral ? AnyShapeStyle(.primary) : AnyShapeStyle(badgeTint))
-                .lineLimit(1)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background((isNeutral ? Color.primary : badgeTint).opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
-        }
-    }
-
-    private var chunkPreview: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("rag.workspace.inspector.citationSnippet")
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Spacer()
-                Text(selectedCitation.sourceDetail)
-                    .font(ragFont(.caption2))
-                    .foregroundStyle(.secondary)
+    private func githubLinkChip(_ reference: RAGGitHubLinkReference) -> some View {
+        HStack(spacing: 5) {
+            Button { viewModel.openGitHubLink(reference) } label: {
+                Label(githubLinkTitle(reference), systemImage: githubLinkIcon(reference))
                     .lineLimit(1)
-                    .truncationMode(.head)
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(githubLinkOpenHint(reference))
+            Button { viewModel.removeGitHubLink(reference.url) } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("common.remove")
+        }
+        .font(ragFont(.caption, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(selectedCitation.title)
-                        .font(ragFont(.callout, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text(selectedCitation.parentTitle)
-                        .font(ragFont(.caption2))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
+    private var mentionPicker: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("rag.workspace.mention.title")
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(10)
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(viewModel.mentionSuggestions) { repo in
+                        Button { viewModel.selectMention(repo) } label: {
+                            HStack(spacing: 9) {
+                                Image(systemName: "shippingbox")
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(repo.fullName)
+                                        .font(ragFont(.callout, weight: .semibold))
+                                    Text(repo.description ?? String.l10n("rag.workspace.mention.noDescription"))
+                                        .font(ragFont(.caption))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .contentShape(Rectangle())
+                            .background(
+                                repo.id == viewModel.highlightedMentionRepoIDValue
+                                    ? Color.accentColor.opacity(0.12)
+                                    : .clear,
+                                in: RoundedRectangle(cornerRadius: 6)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                    }
                 }
+                .padding(5)
+            }
+        }
+        .frame(width: 360, height: min(CGFloat(viewModel.mentionSuggestions.count) * 54 + 42, 360))
+    }
 
-                Text(selectedCitation.snippet)
-                    .font(ragFont(.caption, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if selectedCitation.isTruncated {
-                    Label("rag.workspace.inspector.truncated", systemImage: "scissors")
-                        .font(ragFont(.caption2, weight: .semibold))
-                        .foregroundStyle(.secondary)
+    private var modelMenu: some View {
+        Menu {
+            ForEach(viewModel.availableModels) { model in
+                Button {
+                    viewModel.selectedModelID = model.id
+                } label: {
+                    if viewModel.selectedModelID == model.id {
+                        Label(model.name, systemImage: "checkmark")
+                    } else {
+                        Text(model.name)
+                    }
                 }
             }
-            .padding(10)
-            .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 7))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+        } label: {
+            Label(viewModel.selectedModelDisplayName, systemImage: "sparkles")
+                .font(ragFont(.caption, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("rag.workspace.composer.model")
+    }
+
+    private var explicitModeMenu: some View {
+        Menu {
+            modeButton(.only, key: "rag.workspace.repoMode.only")
+            modeButton(.prefer, key: "rag.workspace.repoMode.prefer")
+            modeButton(.exclude, key: "rag.workspace.repoMode.exclude")
+        } label: {
+            Label(repoModeName(viewModel.explicitRepoMode), systemImage: "scope")
+                .font(ragFont(.caption, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func modeButton(_ mode: RAGExplicitRepoMode, key: String) -> some View {
+        Button {
+            viewModel.explicitRepoMode = mode
+        } label: {
+            if viewModel.explicitRepoMode == mode {
+                Label(key, systemImage: "checkmark")
+            } else {
+                Text(key)
+            }
         }
     }
 
-    private var otherCitations: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    // MARK: - Inspector
+
+    private var inspector: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("rag.workspace.inspector.title")
+                    .font(ragFont(.headline, weight: .semibold))
+                Picker("", selection: $inspectorTab) {
+                    ForEach(RAGInspectorTab.allCases) { tab in
+                        Text(tab.titleKey).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .padding(14)
+            Divider()
+
+            ScrollView {
+                switch inspectorTab {
+                case .evidence: evidenceInspector
+                case .plan: planInspector
+                case .index: indexInspector
+                }
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
+    }
+
+    private var evidenceInspector: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let citation = viewModel.selectedCitation {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text(citation.repoFullName)
+                        .font(ragFont(.subheadline, weight: .semibold))
+                    inspectorValue("rag.workspace.inspector.source", value: citation.source.rawValue)
+                    inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
+                    inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
+                    inspectorValue("rag.workspace.inspector.relevance", value: String(format: "%.3f", citation.score))
+                    if let chunk = viewModel.selectedCitationChunk {
+                        Text("rag.workspace.inspector.chunkPreview")
+                            .font(ragFont(.caption, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text(chunk.content)
+                            .font(ragFont(.caption))
+                            .textSelection(.enabled)
+                            .lineLimit(12)
+                        if chunk.isTruncated {
+                            Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    if citation.chunkID == nil {
+                        Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.orange)
+                    }
+                    HStack {
+                        Button("rag.workspace.inspector.openStarcat") { viewModel.openCitation(citation) }
+                        Button("rag.workspace.inspector.openGitHub") { viewModel.openGitHub(citation) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.bottom, 2)
+                Divider()
+            }
+
             Text("rag.workspace.inspector.otherCitations")
                 .font(ragFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
-
-            ForEach(RAGDemoData.citations) { citation in
+            ForEach(allCitations) { citation in
                 Button {
-                    selectedCitationID = citation.id
+                    viewModel.selectCitation(citation)
                 } label: {
-                    HStack(spacing: 9) {
-                        Text("\(citation.rank)")
-                            .font(ragFont(.caption2, weight: .bold, design: .monospaced))
-                            .foregroundStyle(citation.id == selectedCitationID ? .white : .secondary)
-                            .frame(width: 20, height: 20)
-                            .background(citation.id == selectedCitationID ? Color.accentColor : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(citation.sectionPath)
-                                .font(ragFont(.caption, weight: .semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Text("\(citation.fullName) · \(citation.source)")
-                                .font(ragFont(.caption2))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        Spacer()
-                        Text("\(Int(citation.score * 100))%")
-                            .font(ragFont(.caption, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(citation.id == selectedCitationID ? Color.accentColor : .secondary)
-                            .frame(width: 38, alignment: .trailing)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(citation.repoFullName)
+                            .font(ragFont(.callout, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text("\(citation.source.rawValue) · \(citation.sectionTitle)")
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
-                    .padding(9)
-                    .background(citation.id == selectedCitationID ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
             }
+
+            if !viewModel.remoteBlocks.isEmpty {
+                Divider()
+                Text("rag.workspace.inspector.remoteContext")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                ForEach(viewModel.remoteBlocks, id: \.id) { block in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(block.title)
+                            .font(ragFont(.callout, weight: .semibold))
+                        Text(block.errorMessage ?? block.content)
+                            .font(ragFont(.caption))
+                            .foregroundStyle(block.errorMessage == nil
+                                ? Color(nsColor: .secondaryLabelColor)
+                                : Color.orange)
+                            .lineLimit(6)
+                        inspectorValue(
+                            "rag.workspace.inspector.fetchedAt",
+                            value: block.fetchedAt.formatted(date: .abbreviated, time: .shortened)
+                        )
+                        if let url = block.sourceURL {
+                            Link(destination: url) {
+                                Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                            }
+                            .font(ragFont(.caption))
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
+            }
+
+            if !viewModel.historicalRemoteContextAudits.isEmpty {
+                Divider()
+                Text("rag.workspace.inspector.remoteContext")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                ForEach(viewModel.historicalRemoteContextAudits) { audit in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(audit.title)
+                            .font(ragFont(.callout, weight: .semibold))
+                        if let errorMessage = audit.errorMessage {
+                            Text(errorMessage)
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.orange)
+                        }
+                        inspectorValue("rag.workspace.inspector.fetchedAt", value: audit.fetchedAt)
+                        if let url = audit.sourceURL {
+                            Link(destination: url) {
+                                Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                            }
+                            .font(ragFont(.caption))
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var planInspector: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let plan = viewModel.queryPlan {
+                inspectorValue("rag.workspace.inspector.planMode", value: plan.mode.rawValue)
+                inspectorValue("rag.workspace.inspector.semanticQuery", value: plan.semanticQuery)
+                inspectorValue("rag.workspace.inspector.confidence", value: plan.confidence.rawValue)
+                if !plan.userVisiblePlan.chips.isEmpty {
+                    RAGFlowLayout(spacing: 7) {
+                        ForEach(plan.userVisiblePlan.chips, id: \.self) { chip in
+                            Text(chip)
+                                .font(ragFont(.caption, weight: .semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+                }
+                if !plan.remoteContextRequests.isEmpty {
+                    Divider()
+                    ForEach(plan.remoteContextRequests, id: \.resource) { request in
+                        Label(remoteResourceName(request.resource), systemImage: "network")
+                            .font(ragFont(.callout, weight: .semibold))
+                        Text(request.reason)
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text("rag.workspace.inspector.noPlan")
+                    .font(ragFont(.body))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var indexInspector: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            coverageRow("rag.workspace.status.repos", value: "\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)", color: .blue)
+            coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexCoverage.readyChunks)", color: .green)
+            coverageRow("rag.workspace.status.pendingChunks", value: "\(viewModel.indexCoverage.pendingChunks)", color: .orange)
+            coverageRow("rag.workspace.status.failedChunks", value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
+            coverageRow("rag.workspace.status.staleChunks", value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
+            Divider()
+            HStack {
+                Spacer()
+                Button {
+                    viewModel.rebuildIndex()
+                } label: {
+                    Label(
+                        viewModel.isIndexing ? "rag.workspace.index.rebuilding" : "rag.workspace.index.rebuild",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                }
+                .disabled(viewModel.isIndexing)
+            }
+        }
+        .padding(14)
+    }
+
+    private func inspectorValue(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Text(value.isEmpty ? "-" : value)
+                .font(ragFont(.callout, weight: .semibold))
+                .textSelection(.enabled)
         }
     }
 
-    // MARK: - Typography
+    private func coverageRow(_ label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 9) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(ragFont(.callout))
+            Spacer()
+            Text(value)
+                .font(ragFont(.callout, weight: .semibold, design: .monospaced))
+        }
+    }
+
+    private var allCitations: [RAGCitation] {
+        var seen = Set<UUID>()
+        return viewModel.messages.flatMap(\.citations).filter { seen.insert($0.id).inserted }
+    }
+
+    // MARK: - Display helpers
+
+    private func stateText(_ state: RAGAnswerState) -> String {
+        switch state {
+        case .idle, .completed: return String.l10n("rag.workspace.header.ready")
+        case .planning: return String.l10n("rag.workspace.state.planning")
+        case .needsClarification: return String.l10n("rag.workspace.state.needsClarification")
+        case .noKnowledgeRepos: return String.l10n("rag.workspace.state.noKnowledgeRepos")
+        case .noCandidates: return String.l10n("rag.workspace.state.noCandidates")
+        case .noIndex: return String.l10n("rag.workspace.state.noIndex")
+        case .noRelevantChunks: return String.l10n("rag.workspace.state.noRelevantChunks")
+        case .retrieving: return String.l10n("rag.workspace.state.retrieving")
+        case .awaitingRemoteContextConfirmation: return String.l10n("rag.workspace.state.awaitingRemote")
+        case .fetchingRemoteContext: return String.l10n("rag.workspace.state.fetchingRemote")
+        case .generating: return String.l10n("rag.workspace.state.generating")
+        case .cancelled: return String.l10n("rag.workspace.state.cancelled")
+        case .failed(let message): return message
+        }
+    }
+
+    private func repoModeName(_ mode: RAGExplicitRepoMode) -> String {
+        switch mode {
+        case .only: return String.l10n("rag.workspace.repoMode.only")
+        case .prefer: return String.l10n("rag.workspace.repoMode.prefer")
+        case .exclude: return String.l10n("rag.workspace.repoMode.exclude")
+        }
+    }
+
+    private func githubLinkTitle(_ reference: RAGGitHubLinkReference) -> String {
+        let name = "\(reference.owner)/\(reference.repo)"
+        switch reference.relation {
+        case .inKnowledge:
+            return name
+        case .knownButNotInKnowledge:
+            return "\(name) · \(String.l10n("rag.workspace.link.knownButNotInLibrary"))"
+        case .external:
+            return "\(name) · \(String.l10n("rag.workspace.link.external"))"
+        }
+    }
+
+    private func githubLinkIcon(_ reference: RAGGitHubLinkReference) -> String {
+        switch reference.relation {
+        case .inKnowledge, .knownButNotInKnowledge: return "shippingbox"
+        case .external: return "arrow.up.right.square"
+        }
+    }
+
+    private func githubLinkOpenHint(_ reference: RAGGitHubLinkReference) -> String {
+        reference.relation == .knownButNotInKnowledge
+            ? String.l10n("rag.workspace.inspector.openStarcat")
+            : String.l10n("rag.workspace.inspector.openGitHub")
+    }
+
+    private func remoteResourceName(_ resource: RAGRemoteContextResource) -> String {
+        switch resource {
+        case .githubIssues: return "GitHub Issues"
+        case .githubPullRequests: return "GitHub Pull Requests"
+        case .githubReleases: return "GitHub Releases"
+        case .githubContributors: return "GitHub Contributors"
+        case .githubCommitActivity: return "GitHub Commit Activity"
+        case .githubSecurityAdvisories: return "GitHub Security Advisories"
+        }
+    }
+
+    private func attachmentChipTitle(_ attachment: RAGComposerAttachment) -> String {
+        let size = ByteCountFormatter.string(fromByteCount: attachment.sizeInBytes, countStyle: .file)
+        let handling: String
+        switch attachment.handling {
+        case .textContext: handling = String.l10n("rag.workspace.attachment.textContext")
+        case .vision: handling = String.l10n("rag.workspace.attachment.vision")
+        case .unsupported: handling = String.l10n("rag.workspace.attachment.unsupported")
+        }
+        return "\(attachment.filename) · \(attachment.contentType) · \(handling) · \(size)"
+    }
+
+    private func attachmentIcon(_ attachment: RAGComposerAttachment) -> String {
+        switch attachment.handling {
+        case .textContext: return "doc"
+        case .vision: return "photo"
+        case .unsupported: return "exclamationmark.triangle"
+        }
+    }
 
     private enum RAGFontRole {
-        case headline
-        case subheadline
-        case body
-        case callout
-        case caption
-        case caption2
+        case headline, subheadline, body, callout, caption, caption2
 
-        /// Maps local workspace roles onto the shared `DESIGN.md` typography tokens.
         var typography: StarcatTypography {
             switch self {
-            case .headline:    return .panelTitle
+            case .headline: return .panelTitle
             case .subheadline: return .rowTitle
-            case .body:        return .body
-            case .callout:     return .bodyEmphasis
-            case .caption:     return .caption
-            case .caption2:    return .captionSmall
+            case .body: return .body
+            case .callout: return .bodyEmphasis
+            case .caption: return .caption
+            case .caption2: return .captionSmall
             }
         }
     }
 
-    private func ragFont(
-        _ role: RAGFontRole,
-        weight: Font.Weight? = nil,
-        design: Font.Design = .default
-    ) -> Font {
+    private func ragFont(_ role: RAGFontRole, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
         interfaceScale.font(role.typography, weight: weight, design: design)
     }
 
-    private func ragIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    private func iconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         interfaceScale.font(size: size, weight: weight)
     }
 }
 
-private struct RAGComposerTextEditor: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    let onHeightChange: (CGFloat) -> Void
-    let onSubmit: () -> Void
+private enum RAGInspectorTab: String, CaseIterable, Identifiable {
+    case evidence
+    case plan
+    case index
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
+    var id: String { rawValue }
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .evidence: return "rag.workspace.inspector.tab.evidence"
+        case .plan: return "rag.workspace.inspector.tab.plan"
+        case .index: return "rag.workspace.inspector.tab.index"
+        }
+    }
+}
+
+private struct RAGMarkdownText: View {
+    let content: String
+
+    var body: some View {
+        if let attributed = try? AttributedString(markdown: content) {
+            Text(attributed)
+        } else {
+            Text(content)
+        }
+    }
+}
+
+/// 少量 query/context chips 的紧凑换行布局，避免固定 HStack 在右侧 Inspector 中截断。
+private struct RAGFlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal: proposal, subviews: subviews).size
     }
 
-    func makeNSView(context: Context) -> RAGComposerIntrinsicScrollView {
-        let scrollView = RAGComposerIntrinsicScrollView()
-        let textView = RAGComposerNSTextView()
-
-        textView.delegate = context.coordinator
-        textView.string = text
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .controlAccentColor
-        textView.textContainerInset = NSSize(width: 0, height: 2)
-        textView.textContainer?.lineFragmentPadding = 0
-        // 这里是本次修复的关键：RAG 第一次打开时 SwiftUI 纵向 TextField
-        // 会用错误的 text container 宽度换行；NSTextView 明确跟随可视宽度后不会出现预热差异。
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.placeholder = placeholder
-        textView.setAccessibilityLabel(placeholder)
-
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.onHeightChange = onHeightChange
-        scrollView.connect(textView: textView)
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: RAGComposerIntrinsicScrollView, context: Context) {
-        context.coordinator.parent = self
-        scrollView.onHeightChange = onHeightChange
-        guard let textView = scrollView.documentView as? RAGComposerNSTextView else { return }
-
-        if textView.string != text {
-            textView.string = text
-            textView.needsDisplay = true
-            scrollView.textDidChange()
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let arrangement = arrange(proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews)
+        for (index, point) in arrangement.points.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), proposal: .unspecified)
         }
     }
 
-    @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: RAGComposerTextEditor
-
-        init(parent: RAGComposerTextEditor) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-            textView.needsDisplay = true
-            (textView.enclosingScrollView as? RAGComposerIntrinsicScrollView)?.textDidChange()
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-            if modifiers.contains(.shift) {
-                textView.insertNewlineIgnoringFieldEditor(nil)
-            } else {
-                parent.onSubmit()
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, points: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var points: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var usedWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += lineHeight + spacing
+                lineHeight = 0
             }
-            return true
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+            usedWidth = max(usedWidth, x - spacing)
         }
-    }
-}
-
-private enum RAGComposerEditorMetrics {
-    static let minimumLines: CGFloat = 2
-    static let maximumLines: CGFloat = 6
-    static let verticalInset: CGFloat = 4
-
-    static var defaultHeight: CGFloat {
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        return ceil(NSLayoutManager().defaultLineHeight(for: font) * minimumLines + verticalInset)
-    }
-}
-
-private final class RAGComposerIntrinsicScrollView: NSScrollView {
-    private weak var managedTextView: NSTextView?
-    private var measuredHeight = RAGComposerEditorMetrics.defaultHeight
-    var onHeightChange: ((CGFloat) -> Void)?
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: measuredHeight)
-    }
-
-    override func layout() {
-        super.layout()
-        guard let textView = managedTextView else { return }
-        let availableWidth = contentSize.width
-        if abs(textView.frame.width - availableWidth) >= 0.5 {
-            textView.setFrameSize(NSSize(width: availableWidth, height: max(textView.frame.height, measuredHeight)))
-            textDidChange()
-        }
-    }
-
-    func connect(textView: NSTextView) {
-        managedTextView = textView
-        textDidChange()
-    }
-
-    func textDidChange() {
-        guard let textView = managedTextView,
-              let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
-
-        layoutManager.ensureLayout(for: textContainer)
-        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? .systemFont(ofSize: NSFont.systemFontSize))
-        let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
-        let minimumHeight = lineHeight * RAGComposerEditorMetrics.minimumLines + RAGComposerEditorMetrics.verticalInset
-        let maximumHeight = lineHeight * RAGComposerEditorMetrics.maximumLines + RAGComposerEditorMetrics.verticalInset
-        let nextHeight = min(max(contentHeight, minimumHeight), maximumHeight)
-        let documentHeight = max(contentHeight, nextHeight)
-
-        if abs(textView.frame.height - documentHeight) >= 0.5 {
-            textView.setFrameSize(NSSize(width: textView.frame.width, height: documentHeight))
-        }
-        guard abs(nextHeight - measuredHeight) >= 0.5 else { return }
-        measuredHeight = nextHeight
-        invalidateIntrinsicContentSize()
-        DispatchQueue.main.async { [weak self] in
-            self?.onHeightChange?(nextHeight)
-        }
-    }
-}
-
-private final class RAGComposerNSTextView: NSTextView {
-    var placeholder = ""
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard string.isEmpty, !placeholder.isEmpty else { return }
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
-            .foregroundColor: NSColor.placeholderTextColor
-        ]
-        placeholder.draw(
-            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
-            withAttributes: attributes
-        )
+        return (CGSize(width: min(usedWidth, maxWidth), height: y + lineHeight), points)
     }
 }

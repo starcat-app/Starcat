@@ -109,6 +109,13 @@ struct AISettingsTab: View {
     /// 这里通过 computed `effectiveAdvancedExpanded` 处理）。
     @SceneStorage("settings.ai.aiIndex.advancedExpanded") private var isAIIndexAdvancedExpanded: Bool = false
 
+    /// 知识库 RAG 自托管检索后端默认折叠；SQLite 默认路径无需任何配置。
+    @SceneStorage("settings.ai.ragBackends.expanded") private var isRAGBackendsExpanded: Bool = false
+    @State private var meilisearchAPIKey: String = ""
+    @State private var qdrantAPIKey: String = ""
+    @State private var testingRAGBackend: String?
+    @State private var ragBackendStatusMessage: String?
+
     /// 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：「AI 代码上下文」分组的展开偏好。
     /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
     /// 用户主动点开后偏好持久化（SceneStorage 跨设置窗口打开周期保留）。
@@ -156,6 +163,7 @@ struct AISettingsTab: View {
             // 2026-06-12 向量索引改进：AI 索引（向量化）配置，放在自动整理之后
             // 因为索引依赖摘要 / README 等上游配置就绪。
             aiIndexSection
+            ragBackendSection
             // 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：AI 代码上下文配置。
             // 放在 aiIndexSection 与 privacySection 之间——与「索引」性质相同（消费上游配置的
             // 高级 AI 能力），且紧贴 privacySection 形成「先看功能再看隐私」的阅读节奏。
@@ -178,6 +186,7 @@ struct AISettingsTab: View {
         .task {
             ensureSelection()
             loadAPIKeys()
+            loadRAGBackendKeys()
         }
         // HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
         // SwiftUI macOS Settings scene 关闭窗口后不一定销毁 view 树,
@@ -1078,6 +1087,236 @@ struct AISettingsTab: View {
             } label: {
                 disclosureLabel("settings.aiIndex.section", isExpanded: $isAIIndexExpanded)
             }
+        }
+    }
+
+    // MARK: - Knowledge RAG backends
+
+    /// SQLite 始终可用；Meilisearch / Qdrant 只作为用户自行部署后的高级 REST provider。
+    /// 选择外部后端后，工作台重建索引会同步数据；连接失败时可按开关回退 SQLite。
+    private var ragBackendSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isRAGBackendsExpanded) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ragIndexControlRow
+                    Divider()
+                    Picker("settings.rag.backends.keyword", selection: ragKeywordBackendBinding) {
+                        Text("SQLite FTS5").tag(RAGKeywordBackend.sqliteFTS5)
+                        Text("Meilisearch").tag(RAGKeywordBackend.meilisearch)
+                    }
+                    .pickerStyle(.menu)
+
+                    if settings.ragBackendConfiguration.keywordBackend == .meilisearch {
+                        ragField("settings.rag.backends.endpoint", text: ragMeilisearchEndpointBinding)
+                        ragField("settings.rag.backends.index", text: ragMeilisearchIndexBinding)
+                        SecureField("settings.rag.backends.apiKey", text: $meilisearchAPIKey)
+                            .textFieldStyle(.roundedBorder)
+                        ragBackendActionRow(
+                            id: "meilisearch",
+                            label: "settings.rag.backends.testAndSave"
+                        ) { await testMeilisearch() }
+                    }
+
+                    Divider()
+
+                    Picker("settings.rag.backends.vector", selection: ragVectorBackendBinding) {
+                        Text("SQLite BLOB").tag(RAGVectorBackend.sqlite)
+                        Text("Qdrant").tag(RAGVectorBackend.qdrant)
+                    }
+                    .pickerStyle(.menu)
+
+                    if settings.ragBackendConfiguration.vectorBackend == .qdrant {
+                        ragField("settings.rag.backends.endpoint", text: ragQdrantEndpointBinding)
+                        ragField("settings.rag.backends.collection", text: ragQdrantCollectionBinding)
+                        ragField("settings.rag.backends.vectorName", text: ragQdrantVectorNameBinding)
+                        SecureField("settings.rag.backends.apiKey", text: $qdrantAPIKey)
+                            .textFieldStyle(.roundedBorder)
+                        ragBackendActionRow(
+                            id: "qdrant",
+                            label: "settings.rag.backends.testAndSave"
+                        ) { await testQdrant() }
+                    }
+
+                    Toggle("settings.rag.backends.fallback", isOn: ragFallbackBinding)
+
+                    if let ragBackendStatusMessage {
+                        Text(ragBackendStatusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+                .padding(.vertical, 4)
+            } label: {
+                disclosureLabel("settings.rag.backends.section", isExpanded: $isRAGBackendsExpanded)
+            }
+        }
+    }
+
+    private var ragIndexControlRow: some View {
+        let builder = dependencies.knowledgeRAGIndexBuilder
+        return HStack(spacing: 10) {
+            Text(ragIndexStatusText(builder.status))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer()
+            switch builder.status {
+            case .building, .embedding:
+                Button("settings.rag.index.pause") { builder.cancel() }
+            case .idle, .completed, .failed:
+                Button {
+                    builder.startRebuild()
+                } label: {
+                    Label("settings.rag.index.rebuild", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+        }
+    }
+
+    private func ragIndexStatusText(_ status: RAGIndexingStatus) -> String {
+        switch status {
+        case .idle: return String.l10n("settings.rag.index.idle")
+        case .building(let processed, let total):
+            return String(format: String.l10n("settings.rag.index.reposFormat"), processed, total)
+        case .embedding(let processed, let total):
+            return String(format: String.l10n("settings.rag.index.chunksFormat"), processed, total)
+        case .completed(let coverage):
+            return String(format: String.l10n("settings.rag.index.readyFormat"), coverage.readyChunks)
+        case .failed(let message): return message
+        }
+    }
+
+    private func ragField(_ label: LocalizedStringKey, text: Binding<String>) -> some View {
+        LabeledContent(label) {
+            TextField("", text: text)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 220)
+        }
+    }
+
+    private func ragBackendActionRow(
+        id: String,
+        label: LocalizedStringKey,
+        action: @escaping @MainActor () async -> Void
+    ) -> some View {
+        HStack {
+            Spacer()
+            if testingRAGBackend == id {
+                ProgressView().controlSize(.small)
+            }
+            Button(label) {
+                Task { await action() }
+            }
+            .disabled(testingRAGBackend != nil)
+        }
+    }
+
+    private var ragKeywordBackendBinding: Binding<RAGKeywordBackend> {
+        Binding(
+            get: { settings.ragBackendConfiguration.keywordBackend },
+            set: { value in
+                var configuration = settings.ragBackendConfiguration
+                configuration.keywordBackend = value
+                settings.ragBackendConfiguration = configuration
+                ragBackendStatusMessage = String.l10n("settings.rag.backends.rebuildRequired")
+            }
+        )
+    }
+
+    private var ragVectorBackendBinding: Binding<RAGVectorBackend> {
+        Binding(
+            get: { settings.ragBackendConfiguration.vectorBackend },
+            set: { value in
+                var configuration = settings.ragBackendConfiguration
+                configuration.vectorBackend = value
+                settings.ragBackendConfiguration = configuration
+                ragBackendStatusMessage = String.l10n("settings.rag.backends.rebuildRequired")
+            }
+        )
+    }
+
+    private var ragFallbackBinding: Binding<Bool> {
+        ragBackendBinding(\.fallbackToSQLite)
+    }
+
+    private var ragMeilisearchEndpointBinding: Binding<String> {
+        ragBackendBinding(\.meilisearch.endpoint)
+    }
+
+    private var ragMeilisearchIndexBinding: Binding<String> {
+        ragBackendBinding(\.meilisearch.indexName)
+    }
+
+    private var ragQdrantEndpointBinding: Binding<String> {
+        ragBackendBinding(\.qdrant.endpoint)
+    }
+
+    private var ragQdrantCollectionBinding: Binding<String> {
+        ragBackendBinding(\.qdrant.collectionName)
+    }
+
+    private var ragQdrantVectorNameBinding: Binding<String> {
+        ragBackendBinding(\.qdrant.vectorName)
+    }
+
+    private func ragBackendBinding<Value>(_ keyPath: WritableKeyPath<RAGBackendConfiguration, Value>) -> Binding<Value> {
+        Binding(
+            get: { settings.ragBackendConfiguration[keyPath: keyPath] },
+            set: { value in
+                var configuration = settings.ragBackendConfiguration
+                configuration[keyPath: keyPath] = value
+                settings.ragBackendConfiguration = configuration
+            }
+        )
+    }
+
+    private func loadRAGBackendKeys() {
+        meilisearchAPIKey = (try? KeychainManager.shared.loadAIKey(
+            forProvider: RAGBackendConfiguration.meilisearchKeychainID
+        )) ?? ""
+        qdrantAPIKey = (try? KeychainManager.shared.loadAIKey(
+            forProvider: RAGBackendConfiguration.qdrantKeychainID
+        )) ?? ""
+    }
+
+    private func testMeilisearch() async {
+        testingRAGBackend = "meilisearch"
+        defer { testingRAGBackend = nil }
+        do {
+            try KeychainManager.shared.storeAIKey(
+                meilisearchAPIKey,
+                forProvider: RAGBackendConfiguration.meilisearchKeychainID
+            )
+            let provider = MeilisearchRAGProvider(
+                configuration: settings.ragBackendConfiguration.meilisearch,
+                apiKey: meilisearchAPIKey,
+                repository: dependencies.ragChunkRepository
+            )
+            try await provider.testConnection()
+            ragBackendStatusMessage = String.l10n("settings.rag.backends.connectionSuccess")
+        } catch {
+            ragBackendStatusMessage = error.localizedDescription
+        }
+    }
+
+    private func testQdrant() async {
+        testingRAGBackend = "qdrant"
+        defer { testingRAGBackend = nil }
+        do {
+            try KeychainManager.shared.storeAIKey(
+                qdrantAPIKey,
+                forProvider: RAGBackendConfiguration.qdrantKeychainID
+            )
+            let provider = QdrantRAGProvider(
+                configuration: settings.ragBackendConfiguration.qdrant,
+                apiKey: qdrantAPIKey,
+                repository: dependencies.ragChunkRepository
+            )
+            try await provider.testConnection()
+            ragBackendStatusMessage = String.l10n("settings.rag.backends.connectionSuccess")
+        } catch {
+            ragBackendStatusMessage = error.localizedDescription
         }
     }
 

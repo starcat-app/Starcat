@@ -30,9 +30,14 @@ import GRDB
 struct ReadmeRepository {
 
     private let database: any DatabaseManaging
+    private let notificationCenter: NotificationCenter
 
-    init(database: any DatabaseManaging) {
+    init(
+        database: any DatabaseManaging,
+        notificationCenter: NotificationCenter = .default
+    ) {
         self.database = database
+        self.notificationCenter = notificationCenter
     }
 
     // MARK: - 查询
@@ -85,6 +90,9 @@ struct ReadmeRepository {
             _ = try Readme.deleteAll(db)
             _ = try ReadmeContent.deleteAll(db)
         }
+        // 清空缓存会让所有 README source 失效；不逐 repo 发事件，避免一次清理触发
+        // 大量并发 embedding。RAG 索引器收到无 repoId 的事件后统一做一次 source diff。
+        notificationCenter.post(name: .readmeContentDidChange, object: nil)
     }
 
     // MARK: - readme_contents(HOM-201 P2-2)
@@ -107,7 +115,8 @@ struct ReadmeRepository {
     func upsertContent(repoId: Int64, content: String, at date: Date) async throws {
         let iso = ISO8601DateFormatter.shared.string(from: date)
         let size = content.utf8.count
-        try await database.writer.write { db in
+        let contentChanged = try await database.writer.write { db -> Bool in
+            let previous = try ReadmeContent.fetchOne(db, key: repoId)?.content
             var row = ReadmeContent(
                 repoId: repoId,
                 content: content,
@@ -115,7 +124,14 @@ struct ReadmeRepository {
                 size: size
             )
             try row.upsert(db)
+            return previous != content
         }
+        guard contentChanged else { return }
+        notificationCenter.post(
+            name: .readmeContentDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
     }
 
     // MARK: - W4-4 D4：缓存统计
@@ -134,4 +150,10 @@ struct ReadmeRepository {
             try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(size), 0) FROM readmes") ?? 0
         }
     }
+}
+
+extension Notification.Name {
+    /// raw Markdown 已变化。带 `repoId` 表示单 repo 更新；不带表示全量缓存已清空。
+    /// 事件由 Repository 在事务成功后发送，确保详情页、后台预取和索引补全走同一入口。
+    static let readmeContentDidChange = Notification.Name("StarcatReadmeContentDidChange")
 }
