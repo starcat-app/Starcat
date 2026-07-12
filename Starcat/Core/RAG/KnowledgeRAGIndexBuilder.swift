@@ -21,7 +21,7 @@ enum RAGIndexingStatus: Equatable, Sendable {
     case failed(String)
 }
 
-/// 用户手动刷新时展示的阶段汇总。阶段切换后仍保留已完成阶段的数据，避免快速刷新让用户错过过程。
+/// 用户手动刷新全库时展示的阶段汇总。阶段切换后仍保留已完成阶段的数据，避免快速刷新让用户错过过程。
 struct RAGIndexRefreshSummary: Equatable, Sendable {
     let totalRepos: Int
     var readmesProcessed: Int
@@ -49,8 +49,10 @@ final class KnowledgeRAGIndexBuilder {
     private static let readmeRequestTimeout: TimeInterval = 15
 
     private(set) var status: RAGIndexingStatus = .idle
-    /// 仅由显式的全量/仓库刷新创建；自动 source 更新不能覆盖用户刚完成的刷新结果。
+    /// 仅由显式的全库刷新创建；自动 source 更新与单仓库刷新不能覆盖用户刚完成的全局结果。
     private(set) var refreshSummary: RAGIndexRefreshSummary?
+    /// 单仓库刷新只影响知识库浏览器自己的时间戳，不能覆盖工作台的全局构建汇总。
+    private(set) var repositoryRefreshDates: [Int64: Date] = [:]
     private var indexingTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
@@ -192,7 +194,8 @@ final class KnowledgeRAGIndexBuilder {
                 totalRepos: repos.count,
                 readmesProcessed: 0,
                 chunksProcessed: 0,
-                completedAt: nil
+                // 刷新中继续显示上一轮完成时间；新时间只在本轮真正完成时替换，避免布局跳动。
+                completedAt: refreshSummary?.completedAt
             )
         }
         let summaries = try await summaryRepository.fetchLatestPerRepo()
@@ -219,19 +222,13 @@ final class KnowledgeRAGIndexBuilder {
         try entitlementGate.requirePro(.knowledgeRAG)
         guard try await noteRepository.fetchLibraryState(repoId: repo.id) == .inLibrary else { return }
 
-        refreshSummary = RAGIndexRefreshSummary(
-            totalRepos: 1,
-            readmesProcessed: 0,
-            chunksProcessed: 0,
-            completedAt: nil
-        )
         let summaries = try await summaryRepository.fetchLatestPerRepo()
-        try await fetchMissingReadmes(for: [repo], recordsRefreshSummary: true)
+        try await fetchMissingReadmes(for: [repo], recordsRefreshSummary: false)
         status = .building(processedRepos: 0, totalRepos: 1)
         try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
         status = .building(processedRepos: 1, totalRepos: 1)
-        updateRefreshSummary(chunksProcessed: 1)
-        try await embedPendingChunks(recordsRefreshSummary: true)
+        try await embedPendingChunks()
+        repositoryRefreshDates[repo.id] = Date()
     }
 
     /// 单 source 更新入口。调用方在 README / notes / summary / metadata 变化后使用；移出知识库

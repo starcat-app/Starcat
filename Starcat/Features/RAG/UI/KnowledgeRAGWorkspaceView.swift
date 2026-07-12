@@ -890,8 +890,9 @@ struct KnowledgeRAGWorkspaceView: View {
                         .foregroundStyle(.secondary)
                 }
                 Text(viewModel.selectedModelDisplayName)
+                    .lineLimit(1)
             }
-            .font(ragFont(.caption, weight: .semibold))
+            .ragComposerCapsuleChip(font: ragFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -909,15 +910,16 @@ struct KnowledgeRAGWorkspaceView: View {
             .labelsHidden()
             .pickerStyle(.inline)
         } label: {
-            Label {
-                Text(repoModeKey(viewModel.explicitRepoMode))
-            } icon: {
+            HStack(spacing: 6) {
                 Image(systemName: "scope")
+                Text(repoModeKey(viewModel.explicitRepoMode))
+                    .lineLimit(1)
             }
-            .font(ragFont(.caption, weight: .semibold))
+            .ragComposerCapsuleChip(font: ragFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .help("rag.workspace.composer.scope")
     }
 
     /// 模型的 providerID 是配置 profile 的 ID，不是 AIServiceProvider 的 rawValue；
@@ -1188,9 +1190,21 @@ struct KnowledgeRAGWorkspaceView: View {
     private var planInspector: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let plan = viewModel.queryPlan {
-                inspectorValue("rag.workspace.inspector.planMode", value: plan.mode.rawValue)
-                inspectorValue("rag.workspace.inspector.semanticQuery", value: plan.semanticQuery)
-                inspectorValue("rag.workspace.inspector.confidence", value: plan.confidence.rawValue)
+                inspectorValue("rag.workspace.inspector.planMode", value: localizedPlanMode(plan.mode))
+                if plan.mode == .needsClarification {
+                    // 澄清态没有可执行的检索词；展示 Planner 已校验过的追问，避免把空查询误称为优化结果。
+                    inspectorValue(
+                        "rag.workspace.inspector.clarificationQuestion",
+                        value: plan.clarificationQuestion ?? String.l10n("rag.workspace.inspector.clarificationFallback")
+                    )
+                    inspectorValue(
+                        "rag.workspace.inspector.planStatus",
+                        value: String.l10n("rag.workspace.inspector.planStatus.awaitingClarification")
+                    )
+                } else {
+                    inspectorValue("rag.workspace.inspector.semanticQuery", value: plan.semanticQuery)
+                    inspectorValue("rag.workspace.inspector.confidence", value: localizedPlanConfidence(plan.confidence))
+                }
                 if !plan.userVisiblePlan.chips.isEmpty {
                     RAGFlowLayout(spacing: 7) {
                         ForEach(plan.userVisiblePlan.chips, id: \.self) { chip in
@@ -1220,6 +1234,23 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func localizedPlanMode(_ mode: RAGQueryMode) -> String {
+        switch mode {
+        case .semanticOnly: return String.l10n("rag.workspace.inspector.planMode.semanticOnly")
+        case .filteredSemantic: return String.l10n("rag.workspace.inspector.planMode.filteredSemantic")
+        case .structuredOnly: return String.l10n("rag.workspace.inspector.planMode.structuredOnly")
+        case .needsClarification: return String.l10n("rag.workspace.inspector.planMode.needsClarification")
+        }
+    }
+
+    private func localizedPlanConfidence(_ confidence: RAGQueryPlanConfidence) -> String {
+        switch confidence {
+        case .high: return String.l10n("rag.workspace.inspector.confidence.high")
+        case .medium: return String.l10n("rag.workspace.inspector.confidence.medium")
+        case .needsClarification: return String.l10n("rag.workspace.inspector.confidence.needsClarification")
+        }
     }
 
     private var indexInspector: some View {
@@ -1566,16 +1597,13 @@ struct KnowledgeRAGWorkspaceView: View {
         if let summary = viewModel.indexRefreshSummary {
             HStack(spacing: 5) {
                 if let completedAt = summary.completedAt {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
                     Text(completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
                         .monospacedDigit()
                         .foregroundStyle(.green)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.18), value: completedAt)
+                    Text(verbatim: "|").foregroundStyle(.secondary)
                 }
-                Text(verbatim: "|").foregroundStyle(.secondary)
                 indexProgressSegment("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
                 Text(verbatim: "|").foregroundStyle(.secondary)
                 indexProgressSegment("rag.workspace.index.chunksShort", value: "\(summary.chunksProcessed)/\(summary.totalRepos)", color: .orange)
@@ -1768,6 +1796,18 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 }
 
+/// 输入框底栏模型 / 范围菜单：与附件 chip 同款 thinMaterial 胶囊。
+private extension View {
+    func ragComposerCapsuleChip(font: Font) -> some View {
+        self
+            .font(font)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
 /// 用户 / AI 消息头像统一边长，保证两侧视觉对称。
 private enum RAGMessageAvatarMetrics {
     static let size: CGFloat = 20
@@ -1875,14 +1915,14 @@ private struct RAGUserMessageBlock: View {
     }
 
     private var userFooter: some View {
+        // 右对齐：时间戳紧挨复制图标左侧，不要被 Spacer 甩到最左边。
         HStack(spacing: 10) {
+            Spacer(minLength: 0)
             if !timeLabel.isEmpty {
                 Text(timeLabel)
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
-
             if showsPendingActions {
                 CopyFeedbackButton(
                     performCopy: {
@@ -1904,7 +1944,6 @@ private struct RAGUserMessageBlock: View {
                 .focusEffectDisabled()
                 .help("rag.workspace.message.editQuestion")
             } else {
-                // 与 AI 一致：整行预留占位，悬停才显形（左时间 / 右复制）。
                 CopyFeedbackButton(
                     performCopy: {
                         let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2010,7 +2049,7 @@ private struct RAGAssistantMessageBlock: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // 底部悬停行：左复制/导出，右时间戳；整行预留占位，悬停才显形。
+            // 底部悬停行：复制/导出与时间戳紧挨成组（时间在图标右侧），不要 Spacer 拉开。
             if showsActions {
                 HStack(spacing: 10) {
                     CopyFeedbackButton(
@@ -2039,13 +2078,13 @@ private struct RAGAssistantMessageBlock: View {
                     .focusEffectDisabled()
                     .help("rag.workspace.answer.export")
 
-                    Spacer(minLength: 0)
-
                     if let createdAtLabel, !createdAtLabel.isEmpty {
                         Text(createdAtLabel)
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                     }
+
+                    Spacer(minLength: 0)
                 }
                 .opacity(areActionsRevealed ? 1 : 0)
                 .allowsHitTesting(areActionsRevealed)

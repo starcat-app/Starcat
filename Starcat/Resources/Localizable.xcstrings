@@ -19627,6 +19627,36 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "置信度" } }
       }
     },
+    "rag.workspace.inspector.confidence.high" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "High" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "高" } }
+      }
+    },
+    "rag.workspace.inspector.confidence.medium" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Medium" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "中" } }
+      }
+    },
+    "rag.workspace.inspector.confidence.needsClarification" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Need more details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要补充信息" } }
+      }
+    },
+    "rag.workspace.inspector.clarificationFallback" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Please add your goal, repository, or technical keyword in the input." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请在输入框补充目标、仓库或技术关键词。" } }
+      }
+    },
+    "rag.workspace.inspector.clarificationQuestion" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Question to clarify" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要补充的问题" } }
+      }
+    },
     "rag.workspace.inspector.noPlan" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "The query plan appears after you send a question." } },
@@ -19637,6 +19667,42 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Mode" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模式" } }
+      }
+    },
+    "rag.workspace.inspector.planMode.filteredSemantic" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Filtered semantic retrieval" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "筛选后语义检索" } }
+      }
+    },
+    "rag.workspace.inspector.planMode.needsClarification" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Need more details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要补充信息" } }
+      }
+    },
+    "rag.workspace.inspector.planMode.semanticOnly" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Semantic retrieval" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语义检索" } }
+      }
+    },
+    "rag.workspace.inspector.planMode.structuredOnly" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Structured query" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "结构化查询" } }
+      }
+    },
+    "rag.workspace.inspector.planStatus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "状态" } }
+      }
+    },
+    "rag.workspace.inspector.planStatus.awaitingClarification" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for more details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待补充信息" } }
       }
     },
     "rag.workspace.inspector.remoteContext" : {

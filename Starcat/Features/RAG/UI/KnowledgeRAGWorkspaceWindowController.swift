@@ -182,6 +182,11 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoading = false
     var isLoadingMoreChunks = false
     var isIndexing = false
+    /// 每个仓库单独保存完成时间，切换仓库时不能借用其它仓库或全局刷新的时间。
+    var selectedRepositoryRefreshAt: Date? {
+        guard let selectedRepoID else { return nil }
+        return dependencies.knowledgeRAGIndexBuilder.repositoryRefreshDates[selectedRepoID]
+    }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
     var isTestingRetrieval = false
@@ -338,6 +343,7 @@ private final class KnowledgeRAGBrowserViewModel {
 private struct KnowledgeRAGBrowserView: View {
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var editingChunk: RAGManagedChunk?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
@@ -535,6 +541,7 @@ private struct KnowledgeRAGBrowserView: View {
                 if let index = viewModel.selectedIndex {
                     repositoryIndexStatisticsLabel(index)
                 }
+                repositoryRefreshTime
                 Button { viewModel.rebuildIndex() } label: {
                     HStack(spacing: 6) {
                         refreshIndexIcon
@@ -649,6 +656,19 @@ private struct KnowledgeRAGBrowserView: View {
         HStack(spacing: 3) {
             Text(value).monospacedDigit()
             Text(label)
+        }
+    }
+
+    /// 刷新中保留旧时间；仅在本仓库刷新完成后用数字过渡替换，避免状态图标切换推挤文字。
+    @ViewBuilder
+    private var repositoryRefreshTime: some View {
+        if let refreshedAt = viewModel.selectedRepositoryRefreshAt {
+            Text(refreshedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.green)
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.18), value: refreshedAt)
         }
     }
 
