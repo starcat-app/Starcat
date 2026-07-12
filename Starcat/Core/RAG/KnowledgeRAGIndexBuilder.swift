@@ -254,6 +254,15 @@ final class KnowledgeRAGIndexBuilder {
         try await chunkRepository.coverage(model: resolvedEmbeddingModel())
     }
 
+    /// 人工编辑会把分片置为 pending；仅补向量，不重拉 README 或重建其它 source，避免编辑后
+    /// 还要用户手动点击刷新才能重新参与召回。
+    func embedEditedChunks() async throws {
+        guard beginOperation() else { throw CancellationError() }
+        defer { endOperation() }
+        try entitlementGate.requirePro(.knowledgeRAG)
+        try await embedPendingChunks()
+    }
+
     /// GitHub stars 同步完成后批量刷新 metadata source，再统一补 embedding。
     /// 数值字段已在 RAGChunkBuilder 中 bucket 化，未跨 bucket 的变化会复用原向量。
     func refreshMetadataForKnowledgeRepos() async {

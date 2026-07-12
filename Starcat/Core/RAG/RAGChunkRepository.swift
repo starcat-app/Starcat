@@ -29,6 +29,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchManagedKnowledgeChunks(repoId: Int64, limit: Int, offset: Int) async throws -> RAGManagedChunkPage
     func saveKnowledgeChunkOverride(id: Int64, title: String, sectionPath: String, content: String) async throws
     func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws
+    func permanentlyDeleteKnowledgeChunk(id: Int64) async throws
     func restoreKnowledgeChunk(id: Int64) async throws
     func totalBytes() async throws -> Int64
     func deleteAll() async throws
@@ -87,6 +88,14 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
     ) async throws -> RAGChunkSyncResult {
         precondition(drafts.allSatisfy { $0.repoId == repoId && $0.source == source })
         return try await database.writer.write { db in
+            let tombstoneRows = try Row.fetchAll(
+                db,
+                sql: "SELECT source_id, chunk_key FROM rag_chunk_tombstones WHERE repo_id = ? AND source = ?",
+                arguments: [repoId, source.rawValue]
+            )
+            let tombstonedIdentities = Set(tombstoneRows.map { row in
+                Self.identity(sourceId: row["source_id"], chunkKey: row["chunk_key"])
+            })
             let existing = try RAGChunk.fetchAll(
                 db,
                 sql: "SELECT * FROM rag_chunks WHERE repo_id = ? AND source = ?",
@@ -96,6 +105,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 (Self.identity(sourceId: $0.sourceId, chunkKey: $0.chunkKey), $0)
             })
             let incomingIdentities = Set(drafts.map { Self.identity(sourceId: $0.sourceId, chunkKey: $0.chunkKey) })
+                .subtracting(tombstonedIdentities)
             let now = ISO8601DateFormatter.shared.string(from: Date())
 
             var inserted = 0
@@ -105,6 +115,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
 
             for draft in drafts {
                 let identity = Self.identity(sourceId: draft.sourceId, chunkKey: draft.chunkKey)
+                // 已永久删除的稳定 source identity 不会被 README / metadata 重建重新写回。
+                guard !tombstonedIdentities.contains(identity) else { continue }
                 if var row = existingByIdentity[identity] {
                     guard let rowID = row.id else { continue }
                     let override = try Row.fetchOne(db, sql: "SELECT * FROM rag_chunk_overrides WHERE chunk_id = ?", arguments: [rowID])
@@ -462,7 +474,11 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 LEFT JOIN rag_chunk_overrides o ON o.chunk_id = c.id
-                WHERE c.repo_id = ? AND COALESCE(o.is_excluded, 0) = 0
+                LEFT JOIN rag_chunk_tombstones t ON t.repo_id = c.repo_id
+                    AND t.source = c.source
+                    AND t.source_id = c.source_id
+                    AND t.chunk_key = c.chunk_key
+                WHERE c.repo_id = ? AND t.repo_id IS NULL
                 ORDER BY c.source, c.parent_title, c.chunk_index
                 LIMIT ? OFFSET ?
                 """, arguments: [repoId, limit + 1, offset])
@@ -507,6 +523,22 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         try await database.writer.write { db in
             try ensureOverrideBaseline(db, chunkID: id)
             try db.execute(sql: "UPDATE rag_chunk_overrides SET is_excluded = ?, updated_at = ? WHERE chunk_id = ?", arguments: [isExcluded, ISO8601DateFormatter.shared.string(from: Date()), id])
+        }
+    }
+
+    /// 第二次删除写入 tombstone 后再删除索引行，保留“不可恢复”的用户意图而不保留可召回数据。
+    func permanentlyDeleteKnowledgeChunk(id: Int64) async throws {
+        try await database.writer.write { db in
+            guard let chunk = try RAGChunk.fetchOne(db, key: id) else { return }
+            try db.execute(
+                sql: "DELETE FROM rag_chunk_tombstones WHERE repo_id = ? AND source = ? AND source_id = ? AND chunk_key = ?",
+                arguments: [chunk.repoId, chunk.source.rawValue, chunk.sourceId, chunk.chunkKey]
+            )
+            try db.execute(
+                sql: "INSERT INTO rag_chunk_tombstones (repo_id, source, source_id, chunk_key, removed_at) VALUES (?, ?, ?, ?, ?)",
+                arguments: [chunk.repoId, chunk.source.rawValue, chunk.sourceId, chunk.chunkKey, ISO8601DateFormatter.shared.string(from: Date())]
+            )
+            try db.execute(sql: "DELETE FROM rag_chunks WHERE id = ?", arguments: [id])
         }
     }
 

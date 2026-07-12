@@ -1331,6 +1331,7 @@ enum DatabaseMigrations {
         try db.create(index: "idx_rag_chunks_source", on: "rag_chunks", columns: ["source"])
         try db.create(index: "idx_rag_chunks_model_status", on: "rag_chunks", columns: ["embedding_model", "embedding_status"])
         try createRAGChunkOverrideSchema(db)
+        try createRAGChunkTombstoneSchema(db)
 
         // 外部内容 FTS 只镜像可展示文本；知识库边界在 Retriever 查询时通过 repo_notes join 强制执行。
         try db.execute(sql: """
@@ -1466,6 +1467,9 @@ enum DatabaseMigrations {
         if try !db.tableExists("rag_chunk_overrides") {
             try createRAGChunkOverrideSchema(db)
         }
+        if try !db.tableExists("rag_chunk_tombstones") {
+            try createRAGChunkTombstoneSchema(db)
+        }
         // migrator 先于 ensure 执行：v5 在无表时会 no-op，因此这里补 is_pinned 给「刚被 ensure 建出的旧形态表」。
         if try db.tableExists("rag_conversations") {
             let columns = try db.columns(in: "rag_conversations").map(\.name)
@@ -1536,6 +1540,19 @@ enum DatabaseMigrations {
             t.column("override_content", .text)
             t.column("is_excluded", .boolean).notNull().defaults(to: false)
             t.column("updated_at", .text).notNull()
+        }
+    }
+
+    /// 物理删除的分片不能只删 `rag_chunks`：README 下次重建会再次生成它。
+    /// Tombstone 不设外键，才能在源分片已被删掉后仍保留用户“永不入库”的意图。
+    private static func createRAGChunkTombstoneSchema(_ db: Database) throws {
+        try db.create(table: "rag_chunk_tombstones", ifNotExists: true) { t in
+            t.column("repo_id", .integer).notNull()
+            t.column("source", .text).notNull()
+            t.column("source_id", .text).notNull().defaults(to: "")
+            t.column("chunk_key", .text).notNull()
+            t.column("removed_at", .text).notNull()
+            t.primaryKey(["repo_id", "source", "source_id", "chunk_key"])
         }
     }
 

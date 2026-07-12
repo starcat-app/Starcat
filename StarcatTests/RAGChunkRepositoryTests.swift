@@ -238,8 +238,8 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 40, key: "readme:manual:0", content: "Updated source")]
         )
-        let excluded = try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0)
-        #expect(excluded.chunks.isEmpty)
+        let disabled = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0).chunks.first)
+        #expect(disabled.isExcluded)
 
         try await repository.restoreKnowledgeChunk(id: id)
         let restored = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0).chunks.first)
@@ -248,8 +248,8 @@ struct RAGChunkRepositoryTests {
         #expect(!restored.hasOverride)
     }
 
-    @Test("排除分片后不再出现在浏览器分页与索引统计中")
-    func excludedChunkIsHiddenFromBrowserAndIndexStatistics() async throws {
+    @Test("停用分片保留在浏览器管理列表但不计入可召回索引")
+    func disabledChunkRemainsVisibleButIsExcludedFromIndexStatistics() async throws {
         let (database, repository) = try makeRepository()
         try await database.insertRepoFixture(id: 41)
         try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 41, state: .inLibrary)
@@ -262,9 +262,27 @@ struct RAGChunkRepositoryTests {
         try await repository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
 
         let page = try await repository.fetchManagedKnowledgeChunks(repoId: 41, limit: 5, offset: 0)
-        #expect(page.chunks.isEmpty)
+        #expect(page.chunks.count == 1)
+        #expect(page.chunks.first?.isExcluded == true)
         #expect(try await repository.coverage(model: "embed-v1").totalChunks == 0)
         #expect(try await repository.knowledgeRepositoryIndexes(model: "embed-v1").first?.totalChunks == 0)
+    }
+
+    @Test("永久删除分片会阻止后续 source 重建重新生成它")
+    func permanentlyDeletedChunkStaysRemovedAfterSourceRebuild() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 42)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 42, state: .inLibrary)
+        let source = draft(repoId: 42, key: "readme:removed:0", content: "Removed")
+        let first = try await repository.replaceSource(repoId: 42, source: .readme, drafts: [source])
+        let id = try #require(first.pendingChunkIDs.first)
+
+        try await repository.permanentlyDeleteKnowledgeChunk(id: id)
+        #expect(try await repository.fetchManagedKnowledgeChunks(repoId: 42, limit: 5, offset: 0).chunks.isEmpty)
+
+        let rebuilt = try await repository.replaceSource(repoId: 42, source: .readme, drafts: [source])
+        #expect(rebuilt.inserted == 0)
+        #expect(try await repository.fetchManagedKnowledgeChunks(repoId: 42, limit: 5, offset: 0).chunks.isEmpty)
     }
 
     private func draft(repoId: Int64, key: String, content: String) -> RAGChunkDraft {

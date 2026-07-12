@@ -20373,6 +20373,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从 RAG 中删除" } }
       }
     },
+    "rag.browser.chunk.disable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disable chunk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "停用分片" } }
+      }
+    },
     "rag.browser.chunk.edit" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit chunk" } },
@@ -20383,6 +20389,30 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Revert manual edit" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还原人工编辑" } }
+      }
+    },
+    "rag.browser.chunk.permanentDelete" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permanently delete chunk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "永久删除分片" } }
+      }
+    },
+    "rag.browser.chunk.permanentDelete.action" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete permanently" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "永久删除" } }
+      }
+    },
+    "rag.browser.chunk.permanentDelete.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This chunk will no longer appear in the list or be retrieved, even after the index is refreshed." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此分片将不再出现在列表中或参与召回，即使刷新索引也不会重新生成。" } }
+      }
+    },
+    "rag.browser.chunk.permanentDelete.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permanently delete this chunk?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "永久删除此分片？" } }
       }
     },
     "rag.browser.chunk.restore" : {
@@ -20539,6 +20569,12 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Stale" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过期" } }
+      }
+    },
+    "rag.browser.status.unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不可用" } }
       }
     },
     "rag.browser.subtitle" : {

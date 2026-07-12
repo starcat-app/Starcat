@@ -264,14 +264,37 @@ private final class KnowledgeRAGBrowserViewModel {
         do {
             try await dependencies.ragChunkRepository.saveKnowledgeChunkOverride(id: id, title: title, sectionPath: sectionPath, content: content)
             await refresh()
+            // 保存先恢复“可用”管理状态，再后台补 embedding；完成事件会让浏览器自动从 pending 更新到 ready。
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await dependencies.knowledgeRAGIndexBuilder.embedEditedChunks()
+                    await refresh()
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func excludeChunk(_ managed: RAGManagedChunk) async {
+    /// 首次删除仅下架：仍显示在管理列表且可编辑，但 SQL 召回会立即排除它。
+    func disableChunk(_ managed: RAGManagedChunk) async {
         guard let id = managed.chunk.id else { return }
         do {
             try await dependencies.ragChunkRepository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
-            // 删除只影响当前项；整页 refresh 会丢掉“加载更多”已有的数据并回到第一页。
+            // 下架只更新当前项；整页 refresh 会丢掉“加载更多”已有的数据并回到第一页。
+            if let index = chunks.firstIndex(where: { $0.id == id }) {
+                chunks[index].isExcluded = true
+            }
+            try await refreshIndexStatistics()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// 对已下架项的第二次删除才是永久删除：写 tombstone 并移除索引行，后续 source 重建也不会复活。
+    func permanentlyDeleteChunk(_ managed: RAGManagedChunk) async {
+        guard let id = managed.chunk.id else { return }
+        do {
+            try await dependencies.ragChunkRepository.permanentlyDeleteKnowledgeChunk(id: id)
             chunks.removeAll { $0.id == id }
             try await refreshIndexStatistics()
         } catch { errorMessage = error.localizedDescription }
@@ -347,6 +370,8 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var editingChunk: RAGManagedChunk?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
+    @State private var hoveredChunkID: Int64?
+    @State private var permanentlyDeletingChunk: RAGManagedChunk?
 
     var body: some View {
         HSplitView {
@@ -375,6 +400,22 @@ private struct KnowledgeRAGBrowserView: View {
         .sheet(item: $inspectingHit) { hit in
             KnowledgeRAGRetrievalHitDetail(hit: hit)
                 .appLocaleEnvironment()
+        }
+        .alert(
+            "rag.browser.chunk.permanentDelete.title",
+            isPresented: Binding(
+                get: { permanentlyDeletingChunk != nil },
+                set: { if !$0 { permanentlyDeletingChunk = nil } }
+            )
+        ) {
+            Button("common.cancel", role: .cancel) { permanentlyDeletingChunk = nil }
+            Button("rag.browser.chunk.permanentDelete.action", role: .destructive) {
+                guard let chunk = permanentlyDeletingChunk else { return }
+                permanentlyDeletingChunk = nil
+                Task { await viewModel.permanentlyDeleteChunk(chunk) }
+            }
+        } message: {
+            Text("rag.browser.chunk.permanentDelete.message")
         }
     }
 
@@ -583,6 +624,7 @@ private struct KnowledgeRAGBrowserView: View {
     private func chunkRow(_ managed: RAGManagedChunk) -> some View {
         let chunk = managed.chunk
         let status = effectiveStatus(for: chunk)
+        let isHovered = hoveredChunkID == managed.id
         return HStack(alignment: .top, spacing: 8) {
             Button { editingChunk = managed } label: {
                 VStack(alignment: .leading, spacing: 6) {
@@ -607,8 +649,16 @@ private struct KnowledgeRAGBrowserView: View {
             // 状态与删除入口共用标题行高度，避免图标因 28pt 点击框而向下错位。
             HStack(alignment: .center, spacing: 8) {
                 if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
-                Text(statusKey(status)).font(.caption2.weight(.semibold)).foregroundStyle(statusColor(status))
-                Button(role: .destructive) { Task { await viewModel.excludeChunk(managed) } } label: {
+                Text(managedStatusKey(managed, embeddingStatus: status))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(managedStatusColor(managed, embeddingStatus: status))
+                Button(role: .destructive) {
+                    if managed.isExcluded {
+                        permanentlyDeletingChunk = managed
+                    } else {
+                        Task { await viewModel.disableChunk(managed) }
+                    }
+                } label: {
                     Image(systemName: "trash")
                         .font(.callout)
                         .frame(width: 28, height: 16)
@@ -616,12 +666,26 @@ private struct KnowledgeRAGBrowserView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .pointerStyle(.link)
                 .foregroundStyle(.red)
-                .help("rag.browser.chunk.delete")
+                .help(managed.isExcluded ? "rag.browser.chunk.permanentDelete" : "rag.browser.chunk.disable")
             }
             .frame(height: 16)
         }
-        .padding(12).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .padding(12)
+        .background(chunkCardBackground(managed, isHovered: isHovered), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor).opacity(isHovered ? 0.7 : 0.35))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hoveredChunkID = $0 ? managed.id : nil }
+    }
+
+    private func chunkCardBackground(_ managed: RAGManagedChunk, isHovered: Bool) -> Color {
+        if isHovered { return Color.accentColor.opacity(0.10) }
+        if managed.isExcluded { return Color.secondary.opacity(0.10) }
+        return Color(nsColor: .textBackgroundColor)
     }
 
     private func stat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
@@ -697,6 +761,14 @@ private struct KnowledgeRAGBrowserView: View {
         case .failed: return .red
         case .stale: return .purple
         }
+    }
+
+    private func managedStatusKey(_ managed: RAGManagedChunk, embeddingStatus: RAGEmbeddingStatus) -> LocalizedStringKey {
+        managed.isExcluded ? "rag.browser.status.unavailable" : statusKey(embeddingStatus)
+    }
+
+    private func managedStatusColor(_ managed: RAGManagedChunk, embeddingStatus: RAGEmbeddingStatus) -> Color {
+        managed.isExcluded ? .secondary : statusColor(embeddingStatus)
     }
 
     /// 与仓库级统计保持同一语义：旧 embedding 模型即使数据库残留 ready，也不能被标为当前可用。
