@@ -82,6 +82,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     var isIndexing = false
     /// 直接透出 builder 的状态，让工作台显示真实构建阶段与数字进度。
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
+    var lastIndexRefreshAt: Date? { dependencies.knowledgeRAGIndexBuilder.lastSuccessfulRefreshAt }
     var errorMessage: String?
     /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {

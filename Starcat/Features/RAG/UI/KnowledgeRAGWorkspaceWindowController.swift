@@ -184,6 +184,7 @@ private final class KnowledgeRAGBrowserViewModel {
     var isIndexing = false
     /// 浏览器与 RAG 工作台复用同一 index builder，避免展示两份不同的进度口径。
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
+    var lastIndexRefreshAt: Date? { dependencies.knowledgeRAGIndexBuilder.lastSuccessfulRefreshAt }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
     var isTestingRetrieval = false
@@ -218,14 +219,14 @@ private final class KnowledgeRAGBrowserViewModel {
     }
 
     func rebuildIndex() {
-        guard !isIndexing else { return }
+        guard !isIndexing, let repo = selectedCandidate?.repo else { return }
         isIndexing = true
         Task { [weak self] in
             guard let self else { return }
             let clock = ContinuousClock()
             let startedAt = clock.now
             do {
-                try await dependencies.knowledgeRAGIndexBuilder.rebuildKnowledgeBase()
+                try await dependencies.knowledgeRAGIndexBuilder.rebuildRepository(repo)
                 await refresh()
             } catch { errorMessage = error.localizedDescription }
             await KnowledgeRAGIndexRefreshPresentation.waitForMinimumDuration(startedAt: startedAt, clock: clock)
@@ -652,23 +653,45 @@ private struct KnowledgeRAGBrowserView: View {
     private var indexProgressLabel: some View {
         switch viewModel.indexingStatus {
         case .fetchingReadmes(let processed, let total):
-            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total)
+            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total, color: .blue)
         case .building(let processed, let total):
-            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total)
+            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total, color: .orange)
         case .embedding(let processed, let total):
-            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total)
-        case .idle, .completed, .failed:
+            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total, color: .purple)
+        case .completed:
+            completedIndexResult
+        case .idle, .failed:
             EmptyView()
         }
     }
 
-    private func compactIndexProgress(_ title: LocalizedStringKey, processed: Int, total: Int) -> some View {
+    private func compactIndexProgress(
+        _ title: LocalizedStringKey,
+        processed: Int,
+        total: Int,
+        color: Color
+    ) -> some View {
         HStack(spacing: 4) {
             Text(title)
             Text("\(processed)/\(total)").monospacedDigit()
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(color)
+    }
+
+    private var completedIndexResult: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark.circle.fill")
+            Text("rag.workspace.index.completed")
+            if let refreshedAt = viewModel.lastIndexRefreshAt {
+                Text("·")
+                Text("rag.workspace.index.lastRefreshed")
+                Text(refreshedAt, format: .dateTime.hour().minute())
+                    .monospacedDigit()
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.green)
     }
 
     private func sourceKey(_ source: RAGChunkSource) -> LocalizedStringKey {

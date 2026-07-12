@@ -41,6 +41,8 @@ final class KnowledgeRAGIndexBuilder {
     private static let readmeRequestTimeout: TimeInterval = 15
 
     private(set) var status: RAGIndexingStatus = .idle
+    /// 只在整轮索引成功后更新；窗口关闭后重开仍可展示本次 App 会话里的最后结果。
+    private(set) var lastSuccessfulRefreshAt: Date?
     private var indexingTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
@@ -184,6 +186,21 @@ final class KnowledgeRAGIndexBuilder {
             try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
         }
         status = .building(processedRepos: repos.count, totalRepos: repos.count)
+        try await embedPendingChunks()
+    }
+
+    /// 知识库浏览器的刷新只重建当前选中的仓库，避免用户以为是局部操作却触发全库网络请求。
+    func rebuildRepository(_ repo: Repo) async throws {
+        guard beginOperation() else { throw CancellationError() }
+        defer { endOperation() }
+        try entitlementGate.requirePro(.knowledgeRAG)
+        guard try await noteRepository.fetchLibraryState(repoId: repo.id) == .inLibrary else { return }
+
+        let summaries = try await summaryRepository.fetchLatestPerRepo()
+        try await fetchMissingReadmes(for: [repo])
+        status = .building(processedRepos: 0, totalRepos: 1)
+        try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
+        status = .building(processedRepos: 1, totalRepos: 1)
         try await embedPendingChunks()
     }
 
@@ -346,6 +363,7 @@ final class KnowledgeRAGIndexBuilder {
         try await syncExternalBackends(model: model)
         let coverage = try await chunkRepository.coverage(model: model)
         status = .completed(coverage)
+        lastSuccessfulRefreshAt = Date()
         NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
     }
 

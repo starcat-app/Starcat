@@ -19531,6 +19531,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成向量" } }
       }
     },
+    "rag.workspace.index.completed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh complete" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新完成" } }
+      }
+    },
+    "rag.workspace.index.lastRefreshed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last refreshed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上次刷新" } }
+      }
+    },
     "rag.workspace.inspector.chunkMissing" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "The cited chunk was cleared or requires an index rebuild." } },

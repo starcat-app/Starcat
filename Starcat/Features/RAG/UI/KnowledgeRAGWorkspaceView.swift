@@ -16,6 +16,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var authSession
 
     let chromeState: WorkspaceChromeState
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
@@ -543,7 +544,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @ViewBuilder
     private func messageView(_ message: RAGStoredMessage) -> some View {
         if message.role == .user {
-            HStack {
+            HStack(alignment: .top, spacing: 8) {
                 Spacer(minLength: 80)
                 Text(message.content)
                     .font(ragFont(.body))
@@ -552,6 +553,12 @@ struct KnowledgeRAGWorkspaceView: View {
                     .padding(.vertical, 10)
                     .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
                     .frame(maxWidth: 680, alignment: .trailing)
+                // 用户侧用当前登录 GitHub 头像，与 AI 侧 Starcat 图标对称。
+                RemoteAvatar(
+                    urlString: authSession.state.user?.avatarUrl,
+                    size: 22,
+                    showBorder: false
+                )
             }
         } else {
             assistantMessage(
@@ -1208,10 +1215,13 @@ struct KnowledgeRAGWorkspaceView: View {
             coverageRow("rag.workspace.status.failedChunks", value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
             coverageRow("rag.workspace.status.staleChunks", value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
             Divider()
-            HStack {
-                Spacer()
-                globalIndexStatisticsLabel
-                indexProgressLabel
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack(spacing: 8) {
+                    Spacer()
+                    indexProgressLabel
+                }
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 Button {
                     viewModel.rebuildIndex()
                 } label: {
@@ -1222,6 +1232,7 @@ struct KnowledgeRAGWorkspaceView: View {
                 }
                 .disabled(viewModel.isIndexing)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(Self.inspectorContentInset)
     }
@@ -1381,49 +1392,49 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
-    private var globalIndexStatisticsLabel: some View {
-        HStack(spacing: 8) {
-            statisticValue(
-                "\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)",
-                label: "rag.workspace.status.repos"
-            )
-            statisticValue(
-                "\(viewModel.indexCoverage.readyChunks)",
-                label: "rag.workspace.status.readyChunks"
-            )
-        }
-        .font(ragFont(.caption2))
-        .foregroundStyle(.secondary)
-    }
-
-    private func statisticValue(_ value: String, label: LocalizedStringKey) -> some View {
-        HStack(spacing: 3) {
-            Text(value).monospacedDigit()
-            Text(label)
-        }
-    }
-
     @ViewBuilder
     private var indexProgressLabel: some View {
         switch viewModel.indexingStatus {
         case .fetchingReadmes(let processed, let total):
-            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total)
+            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total, color: .blue)
         case .building(let processed, let total):
-            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total)
+            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total, color: .orange)
         case .embedding(let processed, let total):
-            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total)
-        case .idle, .completed, .failed:
+            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total, color: .purple)
+        case .completed:
+            completedIndexResult
+        case .idle, .failed:
             EmptyView()
         }
     }
 
-    private func compactIndexProgress(_ title: LocalizedStringKey, processed: Int, total: Int) -> some View {
+    private func compactIndexProgress(
+        _ title: LocalizedStringKey,
+        processed: Int,
+        total: Int,
+        color: Color
+    ) -> some View {
         HStack(spacing: 4) {
             Text(title)
             Text("\(processed)/\(total)").monospacedDigit()
         }
         .font(ragFont(.caption2))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(color)
+    }
+
+    private var completedIndexResult: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark.circle.fill")
+            Text("rag.workspace.index.completed")
+            if let refreshedAt = viewModel.lastIndexRefreshAt {
+                Text("·")
+                Text("rag.workspace.index.lastRefreshed")
+                Text(refreshedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
+                    .monospacedDigit()
+            }
+        }
+        .font(ragFont(.caption2))
+        .foregroundStyle(.green)
     }
 
     private var composerNSFont: NSFont {
@@ -1622,8 +1633,13 @@ private struct RAGAssistantMessageBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.purple)
+                // AI 侧用 Starcat App Icon，替代通用 sparkles。
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 18, height: 18)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 Text("rag.workspace.message.assistant")
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
