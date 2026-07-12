@@ -426,15 +426,17 @@ struct IntegrationSettingsTab: View {
         foregroundStyle: Color,
         isHovering: Bool
     ) -> some View {
+        // 与设置页其它工具图标对齐：走 iconSmall（约 13pt），背景也收一档，
+        // 避免本地 API Key 行的三颗操作钮比 Pro / 通行证入口更抢眼。
         Image(systemName: systemImage)
-            .font(interfaceScale.font(.iconMedium, weight: .medium))
+            .font(interfaceScale.font(.iconSmall, weight: .medium))
             .foregroundStyle(foregroundStyle)
-            .frame(width: 36, height: 28)
+            .frame(width: 24, height: 22)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.secondary.opacity(isHovering ? 0.14 : 0.10))
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private func rotateLocalAPIKey() {
