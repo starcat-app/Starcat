@@ -669,6 +669,16 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 证据列表手风琴：再点同一条则收起。
+    func toggleCitation(_ citation: RAGCitation) {
+        if selectedCitation?.id == citation.id {
+            selectedCitation = nil
+            selectedCitationChunk = nil
+            return
+        }
+        selectCitation(citation)
+    }
+
     func openCitation(_ citation: RAGCitation) {
         selectCitation(citation)
         Task {

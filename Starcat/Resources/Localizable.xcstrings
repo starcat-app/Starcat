@@ -20571,6 +20571,38 @@
         }
       }
     },
+    "rag.workspace.inspector.citations" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Citations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引用"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.noCitations" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No citations for this answer yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮回答暂无引用。"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.otherCitations" : {
       "localizations" : {
         "en" : {

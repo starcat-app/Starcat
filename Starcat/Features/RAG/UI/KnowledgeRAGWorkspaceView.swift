@@ -1004,72 +1004,65 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private var evidenceInspector: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let citation = viewModel.selectedCitation {
-                VStack(alignment: .leading, spacing: 9) {
-                    Text(citation.repoFullName)
-                        .font(ragFont(.subheadline, weight: .semibold))
-                    inspectorValue("rag.workspace.inspector.source", value: citation.source.rawValue)
-                    inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
-                    inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
-                    inspectorValue("rag.workspace.inspector.relevance", value: String(format: "%.3f", locale: locale, citation.score))
-                    if let chunk = viewModel.selectedCitationChunk {
-                        Text("rag.workspace.inspector.chunkPreview")
-                            .font(ragFont(.caption, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        Text(chunk.content)
-                            .font(ragFont(.caption))
-                            .textSelection(.enabled)
-                            .lineLimit(12)
-                        if chunk.isTruncated {
-                            Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
-                                .font(ragFont(.caption))
-                                .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: 10) {
+            if allCitations.isEmpty {
+                Text("rag.workspace.inspector.noCitations")
+                    .font(ragFont(.body))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("rag.workspace.inspector.citations")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                // 手风琴：引用列表在上，点一条在该行下方展开细节。
+                ForEach(allCitations) { citation in
+                    let isExpanded = viewModel.selectedCitation?.id == citation.id
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button {
+                            viewModel.toggleCitation(citation)
+                        } label: {
+                            HStack(alignment: .top, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(citation.repoFullName)
+                                        .font(ragFont(.callout, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("\(citation.source.rawValue) · \(citation.sectionTitle)")
+                                        .font(ragFont(.caption))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                Spacer(minLength: 4)
+                                Image(systemName: "chevron.right")
+                                    .font(iconFont(size: 11, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+
+                        if isExpanded {
+                            citationDetail(citation)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 10)
                         }
                     }
-                    if citation.chunkID == nil {
-                        Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
-                            .font(ragFont(.caption))
-                            .foregroundStyle(.orange)
-                    }
-                    HStack {
-                        Button("rag.workspace.inspector.openStarcat") { viewModel.openCitation(citation) }
-                        Button("rag.workspace.inspector.openGitHub") { viewModel.openGitHub(citation) }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .background(
+                        isExpanded
+                            ? Color.accentColor.opacity(0.08)
+                            : Color(nsColor: .textBackgroundColor).opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
                 }
-                .padding(.bottom, 2)
-                Divider()
-            }
-
-            Text("rag.workspace.inspector.otherCitations")
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            ForEach(allCitations) { citation in
-                Button {
-                    viewModel.selectCitation(citation)
-                } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(citation.repoFullName)
-                            .font(ragFont(.callout, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        Text("\(citation.source.rawValue) · \(citation.sectionTitle)")
-                            .font(ragFont(.caption))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
             }
 
             if !viewModel.remoteBlocks.isEmpty {
-                Divider()
+                Divider().padding(.top, 4)
                 Text("rag.workspace.inspector.remoteContext")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -1100,7 +1093,7 @@ struct KnowledgeRAGWorkspaceView: View {
             }
 
             if !viewModel.historicalRemoteContextAudits.isEmpty {
-                Divider()
+                Divider().padding(.top, 4)
                 Text("rag.workspace.inspector.remoteContext")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -1128,6 +1121,46 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: viewModel.selectedCitation?.id)
+    }
+
+    @ViewBuilder
+    private func citationDetail(_ citation: RAGCitation) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            inspectorValue("rag.workspace.inspector.source", value: citation.source.rawValue)
+            inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
+            inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
+            inspectorValue(
+                "rag.workspace.inspector.relevance",
+                value: String(format: "%.3f", locale: locale, citation.score)
+            )
+            if let chunk = viewModel.selectedCitationChunk, viewModel.selectedCitation?.id == citation.id {
+                Text("rag.workspace.inspector.chunkPreview")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(chunk.content)
+                    .font(ragFont(.caption))
+                    .textSelection(.enabled)
+                    .lineLimit(12)
+                if chunk.isTruncated {
+                    Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.orange)
+                }
+            }
+            if citation.chunkID == nil {
+                Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.orange)
+            }
+            HStack {
+                Button("rag.workspace.inspector.openStarcat") { viewModel.openCitation(citation) }
+                Button("rag.workspace.inspector.openGitHub") { viewModel.openGitHub(citation) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.top, 2)
     }
 
     private var planInspector: some View {
