@@ -114,12 +114,35 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     private static var shared: KnowledgeRAGBrowserWindowController?
 
     @MainActor
-    static func show(dependencies: AppDependencies) {
+    static func show(dependencies: AppDependencies, centeredOver presentingWindow: NSWindow?) {
+        let isNewWindow = shared == nil
         let controller = shared ?? KnowledgeRAGBrowserWindowController(dependencies: dependencies)
         shared = controller
         controller.showWindow(nil)
+        if isNewWindow, let window = controller.window {
+            controller.center(window, over: presentingWindow)
+        }
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// 首次打开时锚定 RAG 工作台，避免浏览器落在上一次应用启动时保存的无关位置。
+    /// 已存在的窗口保留用户手动调整的位置，因此不应在每次前置时重新居中。
+    private func center(_ window: NSWindow, over presentingWindow: NSWindow?) {
+        guard let presentingWindow else {
+            window.center()
+            return
+        }
+
+        let visibleFrame = presentingWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? presentingWindow.frame
+        var frame = window.frame
+        frame.origin = NSPoint(
+            x: presentingWindow.frame.midX - frame.width / 2,
+            y: presentingWindow.frame.midY - frame.height / 2
+        )
+        frame.origin.x = min(max(frame.origin.x, visibleFrame.minX), visibleFrame.maxX - frame.width)
+        frame.origin.y = min(max(frame.origin.y, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        window.setFrameOrigin(frame.origin)
     }
 
     private init(dependencies: AppDependencies) {

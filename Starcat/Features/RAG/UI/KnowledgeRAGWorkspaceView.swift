@@ -230,7 +230,7 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private var indexSummary: some View {
-        Button { viewModel.showKnowledgeBrowser() } label: {
+        Button { viewModel.showKnowledgeBrowser(presentingWindow: NSApp.keyWindow) } label: {
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
@@ -645,123 +645,128 @@ struct KnowledgeRAGWorkspaceView: View {
     // MARK: - Composer
 
     private var commandComposer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !viewModel.selectedRepoContexts.isEmpty || !viewModel.attachments.isEmpty || !viewModel.githubLinkContexts.isEmpty {
-                // macOS 15+ 横向 ScrollView 默认带 content margins，会把首个 chip
-                // 顶到光标右侧；清零后与 NSTextView（lineFragmentPadding=0）左缘对齐。
-                ScrollView(.horizontal) {
-                    HStack(spacing: 7) {
-                        ForEach(viewModel.selectedRepoContexts) { repo in
-                            contextChip(title: "@\(repo.fullName)", icon: "shippingbox") {
-                                viewModel.removeMention(repoID: repo.id)
-                            }
-                        }
-                        ForEach(viewModel.attachments) { attachment in
-                            contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
-                                viewModel.removeAttachment(attachment.id)
-                            }
-                        }
-                        ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
-                            githubLinkChip(reference)
+        let hasContextChips = !viewModel.selectedRepoContexts.isEmpty
+            || !viewModel.attachments.isEmpty
+            || !viewModel.githubLinkContexts.isEmpty
+
+        return VStack(alignment: .leading, spacing: 8) {
+            // chip 放在输入框外（对齐 Agent），并按中栏宽度自动换行。
+            if hasContextChips {
+                RAGFlowLayout(spacing: 7) {
+                    ForEach(viewModel.selectedRepoContexts) { repo in
+                        contextChip(title: "@\(repo.fullName)", icon: "shippingbox") {
+                            viewModel.removeMention(repoID: repo.id)
                         }
                     }
+                    ForEach(viewModel.attachments) { attachment in
+                        contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
+                            viewModel.removeAttachment(attachment.id)
+                        }
+                    }
+                    ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
+                        githubLinkChip(reference)
+                    }
                 }
-                .contentMargins(.horizontal, 0, for: .scrollContent)
-                .scrollIndicators(.hidden)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
             }
 
             if let reason = viewModel.composerBlockingReason {
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(ragFont(.caption))
                     .foregroundStyle(.orange)
+                    .padding(.horizontal, 16)
             }
 
-            // 弹层挂在 `@` 字形下方的 1×1 锚点上，而不是整块输入框居中。
-            RAGComposerTextEditor(
-                text: $viewModel.draftQuestion,
-                placeholder: String.l10n(
-                    settings.aiChatRequiresCommandReturn
-                        ? "rag.workspace.composer.placeholder.commandSend"
-                        : "rag.workspace.composer.placeholder.returnSend"
-                ),
-                font: composerNSFont,
-                maximumHeight: composerMaximumHeight,
-                onHeightChange: { composerContentHeight = $0 },
-                onMentionAnchorChange: { mentionCaretAnchor = $0 },
-                onCommand: handleComposerCommand
-            )
-            // AppKit scroll view 在弹性 VStack 中会忽略子视图的最大高度；由外层显式
-            // 约束，首帧严格保持两行，文本变多时再增长到既有上限。
-            .frame(height: composerEditorHeight)
-            .background(alignment: .topLeading) {
-                Color.clear
-                    .frame(width: 1, height: 1)
-                    .offset(x: mentionCaretAnchor.x, y: mentionCaretAnchor.y)
-                    .popover(
-                        isPresented: Binding(
-                            get: { viewModel.isMentionPickerPresented },
-                            set: { presented in
-                                if !presented {
-                                    viewModel.dismissMentionPicker()
+            // 输入主体：文本区 + 底栏；与上方 chip 分离。
+            VStack(alignment: .leading, spacing: 8) {
+                RAGComposerTextEditor(
+                    text: $viewModel.draftQuestion,
+                    placeholder: String.l10n(
+                        settings.aiChatRequiresCommandReturn
+                            ? "rag.workspace.composer.placeholder.commandSend"
+                            : "rag.workspace.composer.placeholder.returnSend"
+                    ),
+                    font: composerNSFont,
+                    maximumHeight: composerMaximumHeight,
+                    onHeightChange: { composerContentHeight = $0 },
+                    onMentionAnchorChange: { mentionCaretAnchor = $0 },
+                    onCommand: handleComposerCommand
+                )
+                // AppKit scroll view 在弹性 VStack 中会忽略子视图的最大高度；由外层显式
+                // 约束，首帧严格保持两行，文本变多时再增长到既有上限。
+                .frame(height: composerEditorHeight)
+                .background(alignment: .topLeading) {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .offset(x: mentionCaretAnchor.x, y: mentionCaretAnchor.y)
+                        .popover(
+                            isPresented: Binding(
+                                get: { viewModel.isMentionPickerPresented },
+                                set: { presented in
+                                    if !presented {
+                                        viewModel.dismissMentionPicker()
+                                    }
                                 }
-                            }
-                        ),
-                        attachmentAnchor: .rect(.bounds),
-                        arrowEdge: .top
-                    ) {
-                        mentionPicker
+                            ),
+                            attachmentAnchor: .rect(.bounds),
+                            arrowEdge: .top
+                        ) {
+                            mentionPicker
+                        }
+                }
+                .onChange(of: viewModel.draftQuestion) { _, _ in
+                    viewModel.handleDraftQuestionChanged()
+                }
+
+                HStack(alignment: .center, spacing: 8) {
+                    modelMenu
+
+                    if !viewModel.selectedRepoContexts.isEmpty {
+                        explicitModeMenu
                     }
-            }
-            .onChange(of: viewModel.draftQuestion) { _, _ in
-                viewModel.handleDraftQuestionChanged()
-            }
 
-            HStack(spacing: 8) {
-                Button { viewModel.chooseAttachments() } label: {
-                    Image(systemName: "paperclip")
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .foregroundStyle(.secondary)
-                .help("rag.workspace.composer.attach")
+                    Spacer(minLength: 8)
 
-                modelMenu
-
-                if !viewModel.selectedRepoContexts.isEmpty {
-                    explicitModeMenu
-                }
-
-                Spacer()
-
-                if viewModel.isAnswering {
-                    Button { viewModel.cancelAnswer() } label: {
-                        Image(systemName: "stop.circle.fill")
-                            .font(iconFont(size: 22, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                    // 附件在发送按钮左侧，对齐 Agent 输入框。
+                    Button { viewModel.chooseAttachments() } label: {
+                        Image(systemName: "paperclip")
+                            .frame(width: 24, height: 24)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .help("rag.workspace.composer.cancel")
-                } else {
-                    let canSend = !viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        && viewModel.composerBlockingReason == nil
-                    Button { viewModel.send() } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(iconFont(size: 22, weight: .semibold))
-                            .foregroundStyle(canSend ? Color.accentColor : .secondary)
+                    .foregroundStyle(.secondary)
+                    .help("rag.workspace.composer.attach")
+
+                    if viewModel.isAnswering {
+                        Button { viewModel.cancelAnswer() } label: {
+                            Image(systemName: "stop.circle.fill")
+                                .font(iconFont(size: 22, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help("rag.workspace.composer.cancel")
+                    } else {
+                        let canSend = !viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            && viewModel.composerBlockingReason == nil
+                        Button { viewModel.send() } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(iconFont(size: 22, weight: .semibold))
+                                .foregroundStyle(canSend ? Color.accentColor : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .disabled(!canSend)
+                        .help("rag.workspace.composer.send")
                     }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .disabled(!canSend)
-                    .help("rag.workspace.composer.send")
                 }
             }
+            .padding(10)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+            .padding(.horizontal, 16)
         }
-        .padding(10)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
-        .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }
 
@@ -778,9 +783,10 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .font(ragFont(.caption, weight: .semibold))
         .foregroundStyle(.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        // 与 Agent 输入框上方标签一致：thinMaterial 胶囊，避免贴在 window 底上时几乎看不见。
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func githubLinkChip(_ reference: RAGGitHubLinkReference) -> some View {
@@ -801,9 +807,9 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .font(ragFont(.caption, weight: .semibold))
         .foregroundStyle(.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
     }
 
     /// 简易多选列表：单行仓库名 + checkmark；弹层本身锚在 `@` 光标处。
@@ -1475,13 +1481,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private func attachmentChipTitle(_ attachment: RAGComposerAttachment) -> String {
         let size = ByteCountFormatter.string(fromByteCount: attachment.sizeInBytes, countStyle: .file)
-        let handling: String
-        switch attachment.handling {
-        case .textContext: handling = String.l10n("rag.workspace.attachment.textContext")
-        case .vision: handling = String.l10n("rag.workspace.attachment.vision")
-        case .unsupported: handling = String.l10n("rag.workspace.attachment.unsupported")
-        }
-        return "\(attachment.filename) · \(attachment.contentType) · \(handling) · \(size)"
+        return "\(attachment.filename) · \(size)"
     }
 
     private func attachmentIcon(_ attachment: RAGComposerAttachment) -> String {
@@ -1751,7 +1751,7 @@ private struct RAGMarkdownText: View {
     }
 }
 
-/// 少量 query/context chips 的紧凑换行布局，避免固定 HStack 在右侧 Inspector 中截断。
+/// 紧凑换行布局：Inspector chips / 输入框上方的 repo·附件 chip 共用，随容器宽度折行。
 private struct RAGFlowLayout: Layout {
     var spacing: CGFloat
 
@@ -1761,30 +1761,36 @@ private struct RAGFlowLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let arrangement = arrange(proposal: ProposedViewSize(width: bounds.width, height: proposal.height), subviews: subviews)
-        for (index, point) in arrangement.points.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), proposal: .unspecified)
+        for (index, item) in arrangement.items.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + item.origin.x, y: bounds.minY + item.origin.y),
+                proposal: ProposedViewSize(width: item.size.width, height: item.size.height)
+            )
         }
     }
 
-    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, points: [CGPoint]) {
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, items: [(origin: CGPoint, size: CGSize)]) {
         let maxWidth = proposal.width ?? .infinity
-        var points: [CGPoint] = []
+        var items: [(origin: CGPoint, size: CGSize)] = []
         var x: CGFloat = 0
         var y: CGFloat = 0
         var lineHeight: CGFloat = 0
         var usedWidth: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            // 单颗 chip 不应宽过容器，否则无法折行时仍会横向溢出。
+            let size = subview.sizeThatFits(
+                ProposedViewSize(width: maxWidth == .infinity ? nil : maxWidth, height: nil)
+            )
             if x > 0, x + size.width > maxWidth {
                 x = 0
                 y += lineHeight + spacing
                 lineHeight = 0
             }
-            points.append(CGPoint(x: x, y: y))
+            items.append((CGPoint(x: x, y: y), size))
             x += size.width + spacing
             lineHeight = max(lineHeight, size.height)
             usedWidth = max(usedWidth, x - spacing)
         }
-        return (CGSize(width: min(usedWidth, maxWidth), height: y + lineHeight), points)
+        return (CGSize(width: min(usedWidth, maxWidth), height: y + lineHeight), items)
     }
 }

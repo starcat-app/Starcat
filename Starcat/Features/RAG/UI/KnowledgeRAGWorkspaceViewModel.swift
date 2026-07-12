@@ -604,8 +604,11 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     /// 左侧标题与索引摘要都指向同一真实数据浏览器，避免用户误以为“知识库”只是装饰标签。
-    func showKnowledgeBrowser() {
-        KnowledgeRAGBrowserWindowController.show(dependencies: dependencies)
+    func showKnowledgeBrowser(presentingWindow: NSWindow?) {
+        KnowledgeRAGBrowserWindowController.show(
+            dependencies: dependencies,
+            centeredOver: presentingWindow
+        )
     }
 
     var debugTraceText: String {
