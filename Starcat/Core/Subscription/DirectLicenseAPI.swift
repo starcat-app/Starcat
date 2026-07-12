@@ -93,8 +93,13 @@ struct DirectLicenseAPI: Sendable {
         }
         let body = (try? decoder.decode(DirectLicenseErrorResponse.self, from: data)) ?? DirectLicenseErrorResponse()
         let code = body.normalizedCode
+        // 业务错误码优先于 HTTP status：后端可能用 403/409/502 承载同一 code，
+        // 若先按 403→unauthorizedClient 会把「座位已满」误判成客户端鉴权失败。
         if code == "billing_not_ready" {
             return .billingNotReady
+        }
+        if code == "activation_limit_reached" {
+            return .activationLimitReached
         }
         switch http.statusCode {
         case 401, 403:
@@ -160,12 +165,15 @@ enum DirectLicenseAPIError: Error, Equatable {
     case unauthorizedClient
     case licenseNotFound
     case billingNotReady
+    /// 授权码激活席位已满（Creem activation_limit）。后端约定 code=`ACTIVATION_LIMIT_REACHED`。
+    /// 官方正式错误码未确认前，客户端只认这个自家 code，不依赖 Creem message 字符串匹配。
+    case activationLimitReached
     case licenseRejected(code: String)
 
     /// 是否属于不能撤销本地 Pro 的临时失败。
     var preservesLocalEntitlement: Bool {
         switch self {
-        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse, .billingNotReady:
+        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse, .billingNotReady, .activationLimitReached:
             return true
         case .licenseNotFound, .licenseRejected:
             return false
@@ -186,6 +194,8 @@ enum DirectLicenseAPIError: Error, Equatable {
             return "license_not_found"
         case .billingNotReady:
             return "billing_not_ready"
+        case .activationLimitReached:
+            return "activation_limit_reached"
         case let .licenseRejected(code):
             return code
         }
@@ -207,6 +217,8 @@ extension DirectLicenseAPIError: LocalizedError {
             return "License was not found."
         case .billingNotReady:
             return String.l10n("settings.pro.direct.portal.syncing")
+        case .activationLimitReached:
+            return String.l10n("settings.pro.direct.error.activationLimitReached")
         case .licenseRejected:
             return "License is no longer active."
         }

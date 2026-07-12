@@ -173,6 +173,35 @@ struct DirectLicenseAPITests {
         }
     }
 
+    @Test("激活席位已满时优先认 ACTIVATION_LIMIT_REACHED，不被 403 误判成鉴权失败")
+    func activateReportsActivationLimitReached() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.url?.path == "/v1/direct/licenses/activate")
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 403,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (response, Data("{\"code\":\"ACTIVATION_LIMIT_REACHED\",\"message\":\"activation limit reached\"}".utf8))
+        }
+
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: "license-api-key",
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+
+        await #expect(throws: DirectLicenseAPIError.activationLimitReached) {
+            _ = try await api.activate(DirectLicenseActivationRequest(
+                licenseKey: "STARCAT-TEST-KEY",
+                deviceID: "Mac · Starcat ABCD",
+                appVersion: "1.0.0"
+            ))
+        }
+    }
+
     private static func jsonResponse(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,

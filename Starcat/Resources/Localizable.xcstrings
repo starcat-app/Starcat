@@ -47564,6 +47564,23 @@
           }
         }
       }
+    },
+    "settings.pro.direct.error.activationLimitReached": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This license has reached its device limit. Deactivate another Mac, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此授权已达设备数量上限。请先解绑其它 Mac，然后再试。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
