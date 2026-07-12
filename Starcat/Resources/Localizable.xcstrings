@@ -20385,6 +20385,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑分片" } }
       }
     },
+    "rag.browser.chunk.edit.restoreHint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saving this edit will mark it available again" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑保存后重置为可用" } }
+      }
+    },
     "rag.browser.chunk.revert" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Revert manual edit" } },
@@ -20562,6 +20568,12 @@
     "rag.browser.status.ready" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可用" } }
+      }
+    },
+    "rag.browser.status.available" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Available" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可用" } }
       }
     },

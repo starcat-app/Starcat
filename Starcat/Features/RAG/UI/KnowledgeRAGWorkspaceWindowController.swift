@@ -370,12 +370,14 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var editingChunk: RAGManagedChunk?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
+    @State private var hoveredRepositoryID: Int64?
     @State private var hoveredChunkID: Int64?
+    @State private var isRetrievalTestExpanded = false
     @State private var permanentlyDeletingChunk: RAGManagedChunk?
 
     var body: some View {
         HSplitView {
-            repositoryList.frame(minWidth: 210, idealWidth: 240, maxWidth: 300)
+            repositoryList.frame(minWidth: 240, idealWidth: 300, maxWidth: 360)
             detail
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -426,18 +428,27 @@ private struct KnowledgeRAGBrowserView: View {
                 Text("rag.browser.subtitle").font(.caption).foregroundStyle(.secondary)
             }
             .padding(16)
+            VStack(spacing: 8) {
+                knowledgeOverviewCard
+                retrievalTestCard
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+
             Divider()
+            Text("rag.browser.repositories")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 5) {
-                    Text("rag.browser.repositories")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
                     ForEach(viewModel.candidates, id: \.repo.id) { candidate in repositoryRow(candidate) }
                 }
                 .padding(.bottom, 12)
             }
+            .frame(minHeight: 140, maxHeight: .infinity)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
     }
@@ -445,9 +456,6 @@ private struct KnowledgeRAGBrowserView: View {
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                retrievalTest
-                overview
-                Divider()
                 if let candidate = viewModel.selectedCandidate { repositoryDetail(candidate) }
                 else { ContentUnavailableView("rag.browser.empty", systemImage: "books.vertical").frame(maxWidth: .infinity, minHeight: 280) }
             }
@@ -456,30 +464,77 @@ private struct KnowledgeRAGBrowserView: View {
         .overlay { if viewModel.isLoading { ProgressView().controlSize(.small) } }
     }
 
-    private var overview: some View {
+    /// 索引状态属于整个知识库，放在左侧控制台，切换仓库时不重复呈现。
+    private var knowledgeOverviewCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("rag.browser.overview").font(.headline)
-                Spacer()
-                Text(viewModel.embeddingModel).font(.caption.monospaced()).foregroundStyle(.secondary)
+            Text("rag.browser.overview").font(.headline)
+            Text(viewModel.embeddingModel)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                overviewStat("rag.workspace.status.repos", value: "\(viewModel.coverage.indexedRepoCount)/\(viewModel.coverage.knowledgeRepoCount)", color: .blue)
+                overviewStat("rag.workspace.status.readyChunks", value: "\(viewModel.coverage.readyChunks)", color: .green)
+                overviewStat("rag.workspace.status.pendingChunks", value: "\(viewModel.coverage.pendingChunks)", color: .orange)
+                overviewStat("rag.workspace.status.failedChunks", value: "\(viewModel.coverage.failedChunks)", color: .red)
+                overviewStat("rag.workspace.status.staleChunks", value: "\(viewModel.coverage.staleChunks)", color: .purple)
             }
-            HStack(spacing: 18) {
-                stat("rag.workspace.status.repos", value: "\(viewModel.coverage.indexedRepoCount)/\(viewModel.coverage.knowledgeRepoCount)", color: .blue)
-                stat("rag.workspace.status.readyChunks", value: "\(viewModel.coverage.readyChunks)", color: .green)
-                stat("rag.workspace.status.pendingChunks", value: "\(viewModel.coverage.pendingChunks)", color: .orange)
-                stat("rag.workspace.status.failedChunks", value: "\(viewModel.coverage.failedChunks)", color: .red)
-                stat("rag.workspace.status.staleChunks", value: "\(viewModel.coverage.staleChunks)", color: .purple)
+        }
+        .padding(12)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor).opacity(0.35)))
+    }
+
+    private func overviewStat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(key).font(.caption).lineLimit(1)
+                Text(value).font(.callout.weight(.semibold).monospacedDigit())
             }
+            Spacer(minLength: 0)
         }
     }
 
-    private var retrievalTest: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text("rag.browser.retrieval.title").font(.headline)
-                Spacer()
-                Text("rag.browser.retrieval.hint").font(.caption).foregroundStyle(.secondary)
+    private var retrievalTestCard: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isRetrievalTestExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: isRetrievalTestExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("rag.browser.retrieval.title").font(.headline)
+                    Spacer()
+                    Text("rag.browser.retrieval.hint").font(.caption2).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+                .padding(12)
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+
+            if isRetrievalTestExpanded {
+                Divider()
+                retrievalTestContent
+                    .padding(10)
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor).opacity(0.35)))
+    }
+
+    private var retrievalTestContent: some View {
+        VStack(alignment: .leading, spacing: 9) {
             ZStack(alignment: .bottomTrailing) {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $viewModel.retrievalQuery)
@@ -508,38 +563,60 @@ private struct KnowledgeRAGBrowserView: View {
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
             if viewModel.isTestingRetrieval { ProgressView().controlSize(.small) }
-            ForEach(viewModel.retrievalHits, id: \.chunk.id) { hit in
-                Button {
-                    inspectingHit = RAGRetrievalHitInspection(hit: hit, repositoryName: viewModel.repositoryName(for: hit.chunk.repoId))
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(viewModel.repositoryName(for: hit.chunk.repoId)).font(.caption.weight(.semibold))
-                        Text(sourceKey(hit.chunk.source)).font(.caption).foregroundStyle(.secondary)
-                        Text(hit.chunk.sectionPath.isEmpty ? hit.chunk.title : hit.chunk.sectionPath).font(.caption).lineLimit(1)
-                        Spacer()
-                        Text(hit.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
-                        Text(String(format: "%.3f", hit.score)).font(.caption.monospaced()).foregroundStyle(.primary)
+            if !viewModel.retrievalHits.isEmpty {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(viewModel.retrievalHits, id: \.chunk.id) { hit in
+                            retrievalHitRow(hit)
+                        }
                     }
-                    .contentShape(Rectangle())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        hoveredRetrievalHitID == hit.chunk.id ? Color.accentColor.opacity(0.08) : .clear,
-                        in: RoundedRectangle(cornerRadius: 6)
-                    )
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pointerStyle(.link)
-                .onHover { isHovering in
-                    hoveredRetrievalHitID = isHovering ? hit.chunk.id : nil
-                }
+                .frame(maxHeight: 160)
             }
+        }
+    }
+
+    private func retrievalHitRow(_ hit: RAGChildHit) -> some View {
+        Button {
+            inspectingHit = RAGRetrievalHitInspection(hit: hit, repositoryName: viewModel.repositoryName(for: hit.chunk.repoId))
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(viewModel.repositoryName(for: hit.chunk.repoId)).font(.caption.weight(.semibold)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(String(format: "%.3f", hit.score)).font(.caption.monospaced()).foregroundStyle(.primary)
+                }
+                Text(hit.chunk.sectionPath.isEmpty ? hit.chunk.title : hit.chunk.sectionPath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(sourceKey(hit.chunk.source))
+                    Text("·")
+                    Text(hit.kind.rawValue)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .padding(8)
+            .background(
+                hoveredRetrievalHitID == hit.chunk.id ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pointerStyle(.link)
+        .onHover { isHovering in
+            hoveredRetrievalHitID = isHovering ? hit.chunk.id : nil
         }
     }
 
     private func repositoryRow(_ candidate: RAGRepoCandidate) -> some View {
         let selected = candidate.repo.id == viewModel.selectedRepoID
+        let isHovered = hoveredRepositoryID == candidate.repo.id
         let index = viewModel.indexes[candidate.repo.id]
         return Button { Task { await viewModel.selectRepository(candidate.repo.id) } } label: {
             VStack(alignment: .leading, spacing: 4) {
@@ -552,9 +629,32 @@ private struct KnowledgeRAGBrowserView: View {
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-            .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .background(repositoryCardBackground(selected: selected, isHovered: isHovered), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(repositoryCardBorderColor(selected: selected, isHovered: isHovered))
+            )
         }
-        .buttonStyle(.plain).focusEffectDisabled().padding(.horizontal, 8)
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pointerStyle(.link)
+        .padding(.horizontal, 8)
+        .onHover { isHovering in
+            hoveredRepositoryID = isHovering ? candidate.repo.id : nil
+        }
+    }
+
+    /// 仓库列表始终保留卡片边界，避免未选中项在浅色背景中融成一片。
+    private func repositoryCardBackground(selected: Bool, isHovered: Bool) -> Color {
+        if selected { return Color.accentColor.opacity(0.12) }
+        if isHovered { return Color.accentColor.opacity(0.07) }
+        return Color(nsColor: .textBackgroundColor)
+    }
+
+    private func repositoryCardBorderColor(selected: Bool, isHovered: Bool) -> Color {
+        if selected { return Color.accentColor.opacity(0.35) }
+        if isHovered { return Color.accentColor.opacity(0.55) }
+        return Color(nsColor: .separatorColor).opacity(0.35)
     }
 
     private func repositoryDetail(_ candidate: RAGRepoCandidate) -> some View {
@@ -685,7 +785,8 @@ private struct KnowledgeRAGBrowserView: View {
     private func chunkCardBackground(_ managed: RAGManagedChunk, isHovered: Bool) -> Color {
         if isHovered { return Color.accentColor.opacity(0.10) }
         if managed.isExcluded { return Color.secondary.opacity(0.10) }
-        return Color(nsColor: .textBackgroundColor)
+        // 使用 control surface 作为常态，确保每个分片在详情页中保持独立卡片层级。
+        return Color(nsColor: .controlBackgroundColor)
     }
 
     private func stat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
@@ -842,9 +943,42 @@ private struct KnowledgeRAGChunkEditor: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("rag.browser.chunk.contentLabel").font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: $content).font(.body).frame(minHeight: 250)
+                TextEditor(text: $content)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(minHeight: 250)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.55))
+                    )
             }
-            HStack { Spacer(); Button("common.cancel") { dismiss() }; Button("rag.browser.chunk.save") { Task { await onSave(title, sectionPath, content); dismiss() } }.buttonStyle(.borderedProminent).disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            HStack(alignment: .center, spacing: 12) {
+                // 左侧展示管理态（可用/不可用）；不可用时提示保存会重置，与 saveChunk 清 is_excluded 一致。
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(chunk.isExcluded ? "rag.browser.status.unavailable" : "rag.browser.status.available")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if chunk.isExcluded {
+                        Text("rag.browser.chunk.edit.restoreHint")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button("common.cancel") { dismiss() }
+                Button("rag.browser.chunk.save") {
+                    Task {
+                        await onSave(title, sectionPath, content)
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
         .padding(18)
         .frame(width: 680, height: 540)
