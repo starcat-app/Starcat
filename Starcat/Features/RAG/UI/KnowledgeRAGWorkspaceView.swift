@@ -25,6 +25,12 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var renameDraft = ""
     /// `@` 候选弹层锚点：相对输入框（NSScrollView）左上角，落在 `@` 字形下方。
     @State private var mentionCaretAnchor: CGPoint = .zero
+    @State private var expandedGroupIDs: Set<UUID> = []
+    @State private var isCreateGroupPresented = false
+    @State private var createGroupDraft = ""
+    @State private var renameGroupTarget: RAGConversationGroup?
+    @State private var renameGroupDraft = ""
+    @State private var conversationDropTarget: RAGConversationDropTarget?
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
@@ -88,6 +94,44 @@ struct KnowledgeRAGWorkspaceView: View {
             }
             .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .alert(
+            "rag.workspace.group.create.title",
+            isPresented: $isCreateGroupPresented
+        ) {
+            TextField("rag.workspace.group.rename.placeholder", text: $createGroupDraft)
+            Button("common.cancel", role: .cancel) {
+                createGroupDraft = ""
+            }
+            Button("common.ok") {
+                let title = createGroupDraft
+                createGroupDraft = ""
+                Task { await viewModel.createGroup(title: title) }
+            }
+            .disabled(createGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .alert(
+            "rag.workspace.group.rename.title",
+            isPresented: Binding(
+                get: { renameGroupTarget != nil },
+                set: { if !$0 { renameGroupTarget = nil } }
+            )
+        ) {
+            TextField("rag.workspace.group.rename.placeholder", text: $renameGroupDraft)
+            Button("common.cancel", role: .cancel) {
+                renameGroupTarget = nil
+            }
+            Button("common.ok") {
+                guard let target = renameGroupTarget else { return }
+                let title = renameGroupDraft
+                renameGroupTarget = nil
+                Task { await viewModel.renameGroup(id: target.id, title: title) }
+            }
+            .disabled(renameGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .onChange(of: viewModel.conversationGroups.map(\.id)) { _, ids in
+            // 新建分组默认展开，避免用户找不到刚创建的目录。
+            expandedGroupIDs.formUnion(ids)
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }
@@ -139,14 +183,42 @@ struct KnowledgeRAGWorkspaceView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 5) {
-                    Text("rag.workspace.recentConversations")
-                        .font(ragFont(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                    HStack(spacing: 6) {
+                        Text("rag.workspace.recentConversations")
+                            .font(ragFont(.caption, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                        Spacer(minLength: 4)
+                        Button {
+                            createGroupDraft = String.l10n("rag.workspace.group.newTitle")
+                            isCreateGroupPresented = true
+                        } label: {
+                            Image(systemName: "folder.badge.plus")
+                                .font(iconFont(size: 13, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help("rag.workspace.group.create")
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .onDrop(
+                        of: [.plainText],
+                        isTargeted: Binding(
+                            get: { conversationDropTarget == .ungrouped },
+                            set: { conversationDropTarget = $0 ? .ungrouped : nil }
+                        )
+                    ) { providers in
+                        handleConversationDrop(providers, toGroupID: nil)
+                    }
 
-                    ForEach(viewModel.conversations) { conversation in
+                    ForEach(viewModel.conversationGroups) { group in
+                        groupSection(group)
+                    }
+
+                    ForEach(viewModel.conversations(inGroupID: nil)) { conversation in
                         conversationRow(conversation)
                     }
                 }
@@ -193,6 +265,97 @@ struct KnowledgeRAGWorkspaceView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help("rag.browser.open")
+    }
+
+    private func groupSection(_ group: RAGConversationGroup) -> some View {
+        let isSelected = viewModel.selectedGroupID == group.id
+        let isExpanded = expandedGroupIDs.contains(group.id)
+        let isDropTarget = conversationDropTarget == .group(group.id)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 0) {
+                Button {
+                    if isExpanded {
+                        expandedGroupIDs.remove(group.id)
+                    } else {
+                        expandedGroupIDs.insert(group.id)
+                    }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 28)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .padding(.leading, 6)
+
+                Button {
+                    viewModel.selectGroup(group.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder.fill")
+                            .font(iconFont(size: 13, weight: .medium))
+                            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                            .frame(width: 18)
+                        Text(group.title)
+                            .font(ragFont(.callout, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text("\(viewModel.conversations(inGroupID: group.id).count)")
+                            .font(ragFont(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.trailing, 4)
+                    .padding(.vertical, 7)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+
+                Menu {
+                    Button("rag.workspace.group.rename") {
+                        renameGroupTarget = group
+                        renameGroupDraft = group.title
+                    }
+                    Button("common.delete", role: .destructive) {
+                        Task { await viewModel.deleteGroup(id: group.id) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(iconFont(size: 13, weight: .medium))
+                        .frame(width: 26, height: 26)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .foregroundStyle(.secondary)
+                .help("rag.workspace.group.actions")
+                .padding(.trailing, 6)
+            }
+            .background(
+                isDropTarget
+                    ? Color.accentColor.opacity(0.18)
+                    : (isSelected ? Color.accentColor.opacity(0.11) : Color.clear)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, 8)
+            .onDrop(
+                of: [.plainText],
+                isTargeted: Binding(
+                    get: { conversationDropTarget == .group(group.id) },
+                    set: { conversationDropTarget = $0 ? .group(group.id) : nil }
+                )
+            ) { providers in
+                handleConversationDrop(providers, toGroupID: group.id)
+            }
+
+            if isExpanded {
+                ForEach(viewModel.conversations(inGroupID: group.id)) { conversation in
+                    conversationRow(conversation)
+                        .padding(.leading, 14)
+                }
+            }
+        }
     }
 
     private func conversationRow(_ conversation: RAGConversationSummary) -> some View {
@@ -245,6 +408,18 @@ struct KnowledgeRAGWorkspaceView: View {
                     renameTarget = conversation
                     renameDraft = conversation.title
                 }
+                Menu("rag.workspace.conversation.moveToGroup") {
+                    Button("rag.workspace.conversation.ungroup") {
+                        Task { await viewModel.moveConversation(id: conversation.id, toGroupID: nil) }
+                    }
+                    .disabled(conversation.groupID == nil)
+                    ForEach(viewModel.conversationGroups) { group in
+                        Button(group.title) {
+                            Task { await viewModel.moveConversation(id: conversation.id, toGroupID: group.id) }
+                        }
+                        .disabled(conversation.groupID == group.id)
+                    }
+                }
                 Button("common.delete", role: .destructive) {
                     Task { await viewModel.deleteConversation(conversation.id) }
                 }
@@ -262,6 +437,21 @@ struct KnowledgeRAGWorkspaceView: View {
         .background(selected ? Color.accentColor.opacity(0.11) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .padding(.horizontal, 8)
+        .draggable(conversation.id.uuidString)
+    }
+
+    /// 从拖拽 payload 解析会话 UUID，再写入目标分组（`nil` = 未分组）。
+    private func handleConversationDrop(_ providers: [NSItemProvider], toGroupID groupID: UUID?) -> Bool {
+        guard let provider = providers.first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let raw = object as? String,
+                  let conversationID = UUID(uuidString: raw) else { return }
+            Task { @MainActor in
+                await viewModel.moveConversation(id: conversationID, toGroupID: groupID)
+                conversationDropTarget = nil
+            }
+        }
+        return true
     }
 
     // MARK: - Answer surface
@@ -1474,6 +1664,11 @@ private final class RAGComposerTextView: NSTextView {
             ]
         )
     }
+}
+
+private enum RAGConversationDropTarget: Equatable {
+    case group(UUID)
+    case ungrouped
 }
 
 private enum RAGInspectorTab: String, CaseIterable, Identifiable {

@@ -2,10 +2,10 @@
 //  RAGConversationStore.swift
 //  Starcat
 //
-//  知识库 RAG 的本地会话历史存储。
+//  知识库 RAG 会话 / 一级分组的本地持久化。
 //
-//  回答正文和 citation metadata 属于用户可见历史；chunk 正文不做快照。索引清理后
-//  chunk_id 会被数据库置空，但 repo/source/title/link 仍可用于解释当时引用了什么。
+//  关键约束：分组只有一层——目录下只能挂会话，不能再嵌套目录；删除分组时会话回
+//  到未分组（`group_id` SET NULL），不级联删会话。
 //
 
 import Foundation
@@ -16,10 +16,20 @@ enum RAGStoredMessageRole: String, Codable, Sendable {
     case assistant
 }
 
+struct RAGConversationGroup: Identifiable, Equatable, Sendable {
+    var id: UUID
+    var title: String
+    var sortOrder: Int
+    var createdAt: String
+    var updatedAt: String
+}
+
 struct RAGConversationSummary: Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
     var isPinned: Bool
+    /// `nil` = 未分组（挂在「最近问答」根级）。
+    var groupID: UUID?
     var createdAt: String
     var updatedAt: String
 }
@@ -49,7 +59,7 @@ struct RAGConversationStatistics: Equatable, Sendable {
 }
 
 protocol RAGConversationStoring: Sendable {
-    func createConversation(title: String?) async throws -> RAGConversationSummary
+    func createConversation(title: String?, groupID: UUID?) async throws -> RAGConversationSummary
     func listConversations() async throws -> [RAGConversationSummary]
     func loadConversation(id: UUID) async throws -> RAGConversationDetail?
     func appendTurn(
@@ -63,9 +73,16 @@ protocol RAGConversationStoring: Sendable {
     func renameConversation(id: UUID, title: String) async throws
     /// 置顶 / 取消置顶；不更新 `updated_at`，避免置顶打乱「最近活跃」排序。
     func setConversationPinned(id: UUID, isPinned: Bool) async throws
+    /// 移动到分组；`groupID == nil` 表示移出到未分组。不更新 `updated_at`。
+    func setConversationGroup(id: UUID, groupID: UUID?) async throws
     func deleteConversation(id: UUID) async throws
     func deleteAll() async throws
     func statistics() async throws -> RAGConversationStatistics
+
+    func createGroup(title: String?) async throws -> RAGConversationGroup
+    func listGroups() async throws -> [RAGConversationGroup]
+    func renameGroup(id: UUID, title: String) async throws
+    func deleteGroup(id: UUID) async throws
 }
 
 struct GRDBRAGConversationStore: RAGConversationStoring {
@@ -75,23 +92,30 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         self.database = database
     }
 
-    func createConversation(title: String? = nil) async throws -> RAGConversationSummary {
+    func createConversation(title: String? = nil, groupID: UUID? = nil) async throws -> RAGConversationSummary {
         let id = UUID()
         let now = ISO8601DateFormatter.shared.string(from: Date())
         let title = normalizedTitle(title ?? String.l10n("rag.workspace.newConversation"))
         try await database.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO rag_conversations (id, title, scope, is_pinned, created_at, updated_at)
-                VALUES (?, ?, 'knowledge', 0, ?, ?)
-                """, arguments: [id.uuidString, title, now, now])
+                INSERT INTO rag_conversations (id, title, scope, is_pinned, group_id, created_at, updated_at)
+                VALUES (?, ?, 'knowledge', 0, ?, ?, ?)
+                """, arguments: [id.uuidString, title, groupID?.uuidString, now, now])
         }
-        return RAGConversationSummary(id: id, title: title, isPinned: false, createdAt: now, updatedAt: now)
+        return RAGConversationSummary(
+            id: id,
+            title: title,
+            isPinned: false,
+            groupID: groupID,
+            createdAt: now,
+            updatedAt: now
+        )
     }
 
     func listConversations() async throws -> [RAGConversationSummary] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT id, title, is_pinned, created_at, updated_at
+                SELECT id, title, is_pinned, group_id, created_at, updated_at
                 FROM rag_conversations
                 ORDER BY is_pinned DESC, updated_at DESC
                 """)
@@ -102,7 +126,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func loadConversation(id: UUID) async throws -> RAGConversationDetail? {
         try await database.writer.read { db in
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT id, title, is_pinned, created_at, updated_at
+                SELECT id, title, is_pinned, group_id, created_at, updated_at
                 FROM rag_conversations WHERE id = ?
                 """, arguments: [id.uuidString]),
                   let summary = Self.summary(row: row) else { return nil }
@@ -227,6 +251,15 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         }
     }
 
+    func setConversationGroup(id: UUID, groupID: UUID?) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET group_id = ? WHERE id = ?",
+                arguments: [groupID?.uuidString, id.uuidString]
+            )
+        }
+    }
+
     func deleteConversation(id: UUID) async throws {
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM rag_conversations WHERE id = ?", arguments: [id.uuidString])
@@ -236,6 +269,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func deleteAll() async throws {
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM rag_conversations")
+            try db.execute(sql: "DELETE FROM rag_conversation_groups")
         }
     }
 
@@ -259,13 +293,72 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         }
     }
 
+    func createGroup(title: String? = nil) async throws -> RAGConversationGroup {
+        let id = UUID()
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        let title = normalizedGroupTitle(title ?? String.l10n("rag.workspace.group.newTitle"))
+        let sortOrder = try await database.writer.write { db -> Int in
+            let next = (try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM rag_conversation_groups") ?? 0)
+            try db.execute(sql: """
+                INSERT INTO rag_conversation_groups (id, title, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [id.uuidString, title, next, now, now])
+            return next
+        }
+        return RAGConversationGroup(id: id, title: title, sortOrder: sortOrder, createdAt: now, updatedAt: now)
+    }
+
+    func listGroups() async throws -> [RAGConversationGroup] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT id, title, sort_order, created_at, updated_at
+                FROM rag_conversation_groups
+                ORDER BY sort_order ASC, created_at ASC
+                """)
+            return rows.compactMap(Self.group(row:))
+        }
+    }
+
+    func renameGroup(id: UUID, title: String) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversation_groups SET title = ?, updated_at = ? WHERE id = ?",
+                arguments: [normalizedGroupTitle(title), ISO8601DateFormatter.shared.string(from: Date()), id.uuidString]
+            )
+        }
+    }
+
+    func deleteGroup(id: UUID) async throws {
+        // 显式清空 group_id：SQLite ALTER 加的 REFERENCES 不一定强制 ON DELETE。
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET group_id = NULL WHERE group_id = ?",
+                arguments: [id.uuidString]
+            )
+            try db.execute(sql: "DELETE FROM rag_conversation_groups WHERE id = ?", arguments: [id.uuidString])
+        }
+    }
+
     private static func summary(row: Row) -> RAGConversationSummary? {
         guard let id = UUID(uuidString: row["id"]) else { return nil }
         let isPinned: Bool = row["is_pinned"]
+        let groupIDString: String? = row["group_id"]
         return RAGConversationSummary(
             id: id,
             title: row["title"],
             isPinned: isPinned,
+            groupID: groupIDString.flatMap(UUID.init(uuidString:)),
+            createdAt: row["created_at"],
+            updatedAt: row["updated_at"]
+        )
+    }
+
+    private static func group(row: Row) -> RAGConversationGroup? {
+        guard let id = UUID(uuidString: row["id"]) else { return nil }
+        return RAGConversationGroup(
+            id: id,
+            title: row["title"],
+            sortOrder: row["sort_order"],
             createdAt: row["created_at"],
             updatedAt: row["updated_at"]
         )
@@ -326,6 +419,11 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         let line = value.split(whereSeparator: \Character.isNewline).first.map(String.init) ?? value
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         return String((trimmed.isEmpty ? String.l10n("rag.workspace.newConversation") : trimmed).prefix(60))
+    }
+
+    private func normalizedGroupTitle(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String((trimmed.isEmpty ? String.l10n("rag.workspace.group.newTitle") : trimmed).prefix(40))
     }
 }
 

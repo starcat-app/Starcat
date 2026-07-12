@@ -54,6 +54,18 @@ enum DatabaseMigrations {
         registerV3(into: &migrator)
         registerV4(into: &migrator)
         registerV5(into: &migrator)
+        registerV6(into: &migrator)
+    }
+
+    // MARK: - v6-rag-conversation-groups：RAG 会话一级分组（2026-07-12）
+
+    /// 仅一级目录：分组下只能挂会话，不能再嵌套分组。
+    /// 与 v5 相同：无 `rag_conversations` 的正式版用户整段 no-op。
+    private static func registerV6(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v6-rag-conversation-groups") { db in
+            guard try db.tableExists("rag_conversations") else { return }
+            try ensureRAGConversationGroupsSchema(db)
+        }
     }
 
     // MARK: - v5-rag-conversation-pin：RAG 会话置顶（2026-07-12）
@@ -1352,12 +1364,28 @@ enum DatabaseMigrations {
             END
             """)
 
+        try db.create(table: "rag_conversation_groups") { t in
+            t.column("id", .text).primaryKey()
+            t.column("title", .text).notNull()
+            t.column("sort_order", .integer).notNull().defaults(to: 0)
+            t.column("created_at", .text).notNull()
+            t.column("updated_at", .text).notNull()
+        }
+        try db.create(
+            index: "idx_rag_conversation_groups_sort",
+            on: "rag_conversation_groups",
+            columns: ["sort_order", "created_at"]
+        )
+
         try db.create(table: "rag_conversations") { t in
             t.column("id", .text).primaryKey()
             t.column("title", .text).notNull()
             t.column("scope", .text).notNull().defaults(to: "knowledge")
             // RAG 未随正式版发布前，开发期直接改此建表 SQL；收口时再压进单次 registerVN。
             t.column("is_pinned", .boolean).notNull().defaults(to: false)
+            // 一级分组：NULL = 未分组；删除分组时会话回到未分组（ON DELETE SET NULL）。
+            t.column("group_id", .text)
+                .references("rag_conversation_groups", column: "id", onDelete: .setNull)
             t.column("created_at", .text).notNull()
             t.column("updated_at", .text).notNull()
         }
@@ -1366,6 +1394,11 @@ enum DatabaseMigrations {
             index: "idx_rag_conversations_pinned_updated",
             on: "rag_conversations",
             columns: ["is_pinned", "updated_at"]
+        )
+        try db.create(
+            index: "idx_rag_conversations_group_updated",
+            on: "rag_conversations",
+            columns: ["group_id", "updated_at"]
         )
 
         try db.create(table: "rag_messages") { t in
@@ -1449,6 +1482,43 @@ enum DatabaseMigrations {
                     columns: ["is_pinned", "updated_at"]
                 )
             }
+            // v6 同理：无表用户靠 ensure；有旧表则补分组表 + group_id。
+            try ensureRAGConversationGroupsSchema(db)
+        }
+    }
+
+    /// 幂等补齐一级会话分组表与 `group_id`（v6 / ensure 共用）。
+    private static func ensureRAGConversationGroupsSchema(_ db: Database) throws {
+        if try !db.tableExists("rag_conversation_groups") {
+            try db.create(table: "rag_conversation_groups") { t in
+                t.column("id", .text).primaryKey()
+                t.column("title", .text).notNull()
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).notNull()
+                t.column("updated_at", .text).notNull()
+            }
+            try db.create(
+                index: "idx_rag_conversation_groups_sort",
+                on: "rag_conversation_groups",
+                columns: ["sort_order", "created_at"]
+            )
+        }
+
+        guard try db.tableExists("rag_conversations") else { return }
+        let columns = try db.columns(in: "rag_conversations").map(\.name)
+        if !columns.contains("group_id") {
+            try db.alter(table: "rag_conversations") { t in
+                t.add(column: "group_id", .text)
+                    .references("rag_conversation_groups", column: "id", onDelete: .setNull)
+            }
+        }
+        let indexes = try db.indexes(on: "rag_conversations").map(\.name)
+        if !indexes.contains("idx_rag_conversations_group_updated") {
+            try db.create(
+                index: "idx_rag_conversations_group_updated",
+                on: "rag_conversations",
+                columns: ["group_id", "updated_at"]
+            )
         }
     }
 

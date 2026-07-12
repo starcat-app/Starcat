@@ -38,6 +38,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     private var linkDetectionTask: Task<Void, Never>?
 
     var conversations: [RAGConversationSummary] = []
+    var conversationGroups: [RAGConversationGroup] = []
+    /// 点选分组目录时设置；点选会话时清空。新会话写入此分组。
+    var selectedGroupID: UUID?
     var selectedConversationID: UUID?
     var messages: [RAGStoredMessage] = []
     var draftQuestion = ""
@@ -222,12 +225,14 @@ final class KnowledgeRAGWorkspaceViewModel {
     func bootstrap() async {
         do {
             async let loadedConversations = conversationStore.listConversations()
+            async let loadedGroups = conversationStore.listGroups()
             async let loadedCandidates = dependencies.ragCandidateRepository.fetchCandidates(
                 plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "knowledge"),
                 explicitRepoIDs: [],
                 explicitMode: .only
             )
             conversations = try await loadedConversations
+            conversationGroups = try await loadedGroups
             knowledgeCandidates = try await loadedCandidates
             knowledgeRepos = knowledgeCandidates.map(\.repo)
             try await refreshIndexCoverage()
@@ -278,7 +283,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         cancelAnswer()
         conversationTitleTask?.cancel()
         do {
-            let conversation = try await conversationStore.createConversation(title: nil)
+            // 当前选中目录时，新会话直接归入该一级分组。
+            let conversation = try await conversationStore.createConversation(
+                title: nil,
+                groupID: selectedGroupID
+            )
             conversations.insert(conversation, at: 0)
             selectedConversationID = conversation.id
             messages = []
@@ -295,12 +304,23 @@ final class KnowledgeRAGWorkspaceViewModel {
         do {
             guard let detail = try await conversationStore.loadConversation(id: id) else { return }
             selectedConversationID = id
+            // 点选会话时目录选中态让位，避免误以为「新会话仍进目录」。
+            selectedGroupID = nil
             messages = detail.messages
             let initialCitation = messages.reversed().lazy.flatMap(\.citations).first
             resetTurnState()
             if let initialCitation { selectCitation(initialCitation) }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 选中一级分组目录（不高亮具体会话）；再次点同一目录可取消。
+    func selectGroup(_ id: UUID) {
+        if selectedGroupID == id {
+            selectedGroupID = nil
+        } else {
+            selectedGroupID = id
         }
     }
 
@@ -345,6 +365,65 @@ final class KnowledgeRAGWorkspaceViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func moveConversation(id: UUID, toGroupID groupID: UUID?) async {
+        do {
+            try await conversationStore.setConversationGroup(id: id, groupID: groupID)
+            if let index = conversations.firstIndex(where: { $0.id == id }) {
+                conversations[index].groupID = groupID
+            } else {
+                conversations = try await conversationStore.listConversations()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func createGroup(title: String?) async {
+        do {
+            let group = try await conversationStore.createGroup(title: title)
+            conversationGroups.append(group)
+            conversationGroups.sort { lhs, rhs in
+                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+                return lhs.createdAt < rhs.createdAt
+            }
+            selectedGroupID = group.id
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func renameGroup(id: UUID, title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await conversationStore.renameGroup(id: id, title: trimmed)
+            if let index = conversationGroups.firstIndex(where: { $0.id == id }) {
+                conversationGroups[index].title = trimmed
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteGroup(id: UUID) async {
+        do {
+            try await conversationStore.deleteGroup(id: id)
+            conversationGroups.removeAll { $0.id == id }
+            for index in conversations.indices where conversations[index].groupID == id {
+                conversations[index].groupID = nil
+            }
+            if selectedGroupID == id {
+                selectedGroupID = nil
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func conversations(inGroupID groupID: UUID?) -> [RAGConversationSummary] {
+        conversations.filter { $0.groupID == groupID }
     }
 
     func send() {

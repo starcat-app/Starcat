@@ -20649,6 +20649,60 @@
         }
       }
     },
+    "rag.workspace.conversation.moveToGroup" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Move to group" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移动到分组" } }
+      }
+    },
+    "rag.workspace.conversation.ungroup" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove from group" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移出分组" } }
+      }
+    },
+    "rag.workspace.group.actions" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Group actions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分组操作" } }
+      }
+    },
+    "rag.workspace.group.create" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New group" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建分组" } }
+      }
+    },
+    "rag.workspace.group.create.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New Group" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建分组" } }
+      }
+    },
+    "rag.workspace.group.newTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New group" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新分组" } }
+      }
+    },
+    "rag.workspace.group.rename" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重命名" } }
+      }
+    },
+    "rag.workspace.group.rename.placeholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Group name" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分组名称" } }
+      }
+    },
+    "rag.workspace.group.rename.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename Group" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重命名分组" } }
+      }
+    },
     "rag.workspace.newConversation" : {
       "localizations" : {
         "en" : {
