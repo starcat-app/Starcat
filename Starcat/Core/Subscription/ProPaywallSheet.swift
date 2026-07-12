@@ -202,12 +202,13 @@ struct ProPaywallSheet: View {
                 Button("paywall.direct.buyMonthly") {
                     Task { await openDirectCheckout(.monthly) }
                 }
-                .buttonStyle(.borderedProminent)
                 .disabled(directLicenseManager.isRequestInFlight)
 
+                // 与设置页一致：年付为推荐档，用系统默认着重色突出。
                 Button("paywall.direct.buyYearly") {
                     Task { await openDirectCheckout(.yearly) }
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(directLicenseManager.isRequestInFlight)
 
                 Button("paywall.direct.buyLifetime") {
@@ -225,14 +226,25 @@ struct ProPaywallSheet: View {
                 .textFieldStyle(.roundedBorder)
 
             HStack {
-                Button("settings.pro.direct.button.activate") {
+                Spacer()
+
+                Button {
                     Task { await activateDirectLicense() }
+                } label: {
+                    // 与设置页 Direct 激活入口同图标，正向动作语义一致。
+                    Label {
+                        Text("settings.pro.direct.button.activate")
+                    } icon: {
+                        Image(systemName: "checkmark.seal")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                Button("paywall.button.close") {
+                Button {
                     dismiss()
+                } label: {
+                    Label("paywall.button.close", systemImage: "xmark.circle")
                 }
                 .keyboardShortcut(.cancelAction)
             }

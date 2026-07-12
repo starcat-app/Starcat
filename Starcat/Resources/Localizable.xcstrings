@@ -32086,13 +32086,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "BYOK configuration plus summaries, tags, chat, batch cleanup, README translation, and semantic search."
+            "value": "Bring your own API key for summaries, tags, chat, batch tidy, README translation, and semantic search—without routing private prompts through a shared key."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "BYOK 配置，以及摘要、标签、对话、批量整理、README 翻译与语义搜索。"
+            "value": "自带 API Key，完成摘要、标签、对话、批量整理、README 翻译与语义搜索；私有提示词不经过共享密钥。"
           }
         }
       }
@@ -32222,13 +32222,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Track more repositories for release updates and notifications."
+            "value": "Watch more repositories for new Releases, with in-app signals and optional notifications so important version bumps are harder to miss."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "追踪更多仓库的 Release 更新与通知。"
+            "value": "可追踪更多仓库的 Release 更新，应用内信号与可选通知一起用，重要版本发布更不容易漏掉。"
           }
         }
       }
@@ -32256,13 +32256,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RepoContextPacker, CodeFlow, and codebase context workflows for deeper source understanding."
+            "value": "Unlock RepoContextPacker, CodeFlow, and codebase-context workflows so AI answers stay grounded in the actual source tree of the repo you are viewing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "RepoContextPacker、CodeFlow 与仓库上下文工作流，用于更深入理解源码。"
+            "value": "解锁 RepoContextPacker、CodeFlow 与仓库上下文工作流，让 AI 回答贴着当前仓库的真实源码结构展开。"
           }
         }
       }
@@ -32290,13 +32290,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use embeddings and web results for deeper repository discovery."
+            "value": "Combine local embedding search with web results to find starred repos by meaning, not just keywords—useful when you remember the idea but not the name."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用向量索引与网页结果进行更深入的仓库发现。"
+            "value": "本地向量检索叠加网页结果，按含义而不是关键词找回 Star；适合只记得用途、记不清仓库名的场景。"
           }
         }
       }
@@ -32556,6 +32556,74 @@
         }
       }
     },
+    "settings.pro.direct.deactivate.confirm.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deactivate This Mac"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解绑当前 Mac"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.deactivate.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Mac will lose Pro access. You can activate the license again on another Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 Mac 将失去 Pro 权益。你可以在另一台 Mac 上重新激活该许可证。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.deactivate.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deactivate This Mac?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解绑当前 Mac？"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.deactivate.success": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Mac has been deactivated. You can activate the license on another Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前 Mac 已解绑，可在另一台 Mac 上激活许可证。"
+          }
+        }
+      }
+    },
     "settings.pro.direct.button.validate": {
       "extractionState": "manual",
       "localizations": {
@@ -32681,13 +32749,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Opens Creem checkout in your browser. After payment, use the license key from your receipt to activate Pro."
+            "value": "Opens the payment page in your browser. After payment, use the license key from your receipt to activate Pro."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "会在浏览器打开 Creem 支付页。支付后使用收据里的授权码激活 Pro。"
+            "value": "会在浏览器打开支付页。支付后使用收据里的授权码激活 Pro。"
           }
         }
       }
@@ -32807,6 +32875,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "解绑此设备"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.devices.deactivate.confirm.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deactivate Device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解绑此设备"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.devices.deactivate.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device will lose access to Starcat Pro until the license is activated again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此设备将失去 Starcat Pro 权益，直到再次激活该许可证。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.devices.deactivate.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deactivate This Device?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解绑此设备？"
           }
         }
       }
@@ -32936,13 +33055,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Direct license"
+            "value": "No license"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "未激活 Direct 许可证"
+            "value": "未激活许可证"
           }
         }
       }
@@ -33232,23 +33351,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "校验"
-          }
-        }
-      }
-    },
-    "settings.pro.direct.pass.footer": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Device management in this phase covers the current Mac. Full device list management will be added after the Starcat License API exposes license instances."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本阶段只管理当前 Mac。完整设备列表会在 Starcat License API 暴露授权实例后补齐。"
           }
         }
       }

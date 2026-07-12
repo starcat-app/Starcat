@@ -25,16 +25,42 @@ struct ProSettingsTab: View {
 
     @State private var confettiTrigger: Int = 0
     @State private var showSuccessMessage: Bool = false
+    @State private var showDirectDeactivationSuccess = false
     @State private var showCancelSubscriptionSuccess: Bool = false
     @State private var isOfferCodeRedemptionPresented = false
+    @State private var isDirectDeactivationConfirmationPresented = false
     @State private var isDirectPassPresented = false
     @State private var isDirectLicensePresented = false
     @State private var showDirectPassSavedMessage = false
     @State private var directLicenseKey: String = ""
     /// 已激活时默认收起「更换授权码」，避免输入框常驻显得多余。
     @State private var isReplacingLicense = false
+    /// 「校验」成功后短暂切换为绿色 fill 图标；连续点击会重置 1.5s 计时。
+    @State private var didValidateSucceed = false
+    @State private var validateFeedbackTask: Task<Void, Never>?
 
     private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
+
+    /// 顶部 Pro 卡片按当前权益来源展示对应套餐图；免费态不猜测未来会购买的套餐。
+    private var heroArtworkAssetName: String {
+        guard settings.isProUser else { return "ProHeroFree" }
+
+        if isDirectBuild {
+            switch directLicenseManager.storedCredential?.plan ?? directLicenseManager.validationRecord.plan {
+            case .monthly: return "ProHeroMonthly"
+            case .yearly: return "ProHeroYearly"
+            case .lifetime: return "ProHeroLifetime"
+            case .none: return "ProHeroFree"
+            }
+        }
+
+        switch ProProductID(rawValue: subscriptionManager.entitlement.productID ?? "") {
+        case .monthly: return "ProHeroMonthly"
+        case .yearly: return "ProHeroYearly"
+        case .lifetime: return "ProHeroLifetime"
+        case .none: return "ProHeroFree"
+        }
+    }
 
     var body: some View {
         Form {
@@ -75,22 +101,34 @@ struct ProSettingsTab: View {
                 licenseKey: directLicenseManager.storedCredential?.licenseKey,
                 maskedLicenseKey: directLicenseManager.storedCredential.map { maskedLicenseKey($0.licenseKey) },
                 devices: directLicenseManager.licenseDevices,
-                isLoadingDevices: directLicenseManager.isRequestInFlight,
+                isLoadingDevices: directLicenseManager.isRefreshingDevices,
+                isOpeningPortal: directLicenseManager.isOpeningPortal,
+                isDeactivating: directLicenseManager.isDeactivating,
                 portalErrorMessage: directLicenseManager.lastErrorMessage,
                 canOpenPortal: canOpenDirectCustomerPortal,
                 canDeactivateCurrentMac: directLicenseManager.storedCredential != nil,
                 onClose: { isDirectLicensePresented = false },
                 onOpenPortal: { Task { await openCustomerPortal() } },
-                onRefreshDevices: { Task { await directLicenseManager.refreshLicenseDevices() } },
-                onDeactivateCurrentMac: { Task { await deactivateDirectLicense() } },
+                onRefreshDevices: {
+                    await directLicenseManager.refreshLicenseDevices()
+                },
+                onDeactivateCurrentMac: { await deactivateDirectLicense() },
                 onDeactivateDevice: { instanceID in
-                    Task { await directLicenseManager.deactivateLicenseDevice(instanceID: instanceID) }
+                    await directLicenseManager.deactivateLicenseDevice(instanceID: instanceID)
                 }
             )
             .frame(width: 480, height: 420)
             .task {
                 await directLicenseManager.refreshLicenseDevices()
             }
+        }
+        .alert("settings.pro.direct.deactivate.confirm.title", isPresented: $isDirectDeactivationConfirmationPresented) {
+            Button("general.cancel", role: .cancel) {}
+            Button("settings.pro.direct.deactivate.confirm.action", role: .destructive) {
+                Task { _ = await deactivateDirectLicense() }
+            }
+        } message: {
+            Text("settings.pro.direct.deactivate.confirm.message")
         }
         .starcatOfferCodeRedemption(isPresented: $isOfferCodeRedemptionPresented) {
             showSuccessMessage = true
@@ -133,9 +171,10 @@ struct ProSettingsTab: View {
 
     private var heroSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 14) {
-                    ProCrownIcon(size: 48)
+            VStack(alignment: .leading, spacing: 10) {
+                // 顶对齐 + 缩小插图：避免 1:1 大图把整卡撑到远高于文案区。
+                HStack(alignment: .top, spacing: 12) {
+                    ProCrownIcon(size: 40)
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
@@ -150,13 +189,22 @@ struct ProSettingsTab: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
 
-                Label(LocalizedStringKey(settings.isProUser ? "settings.pro.status.active" : "settings.pro.status.free"),
-                      systemImage: settings.isProUser ? "checkmark.seal.fill" : "lock.open")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(settings.isProUser ? .green : .secondary)
+                        Label(LocalizedStringKey(settings.isProUser ? "settings.pro.status.active" : "settings.pro.status.free"),
+                              systemImage: settings.isProUser ? "checkmark.seal.fill" : "lock.open")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(settings.isProUser ? .green : .secondary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Image(heroArtworkAssetName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .accessibilityHidden(true)
+                }
 
                 if let expiration = activeExpirationDate, settings.isProUser {
                     Label {
@@ -173,6 +221,12 @@ struct ProSettingsTab: View {
 
                 if showSuccessMessage {
                     Label("settings.pro.successBanner", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                        .font(.callout.weight(.medium))
+                }
+
+                if showDirectDeactivationSuccess {
+                    Label("settings.pro.direct.deactivate.success", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.callout.weight(.medium))
                 }
@@ -228,8 +282,22 @@ struct ProSettingsTab: View {
                     }
                     .padding(.top, 4)
                 } label: {
-                    Text("settings.pro.direct.replaceLicense")
-                        .font(.body)
+                    // Form(.grouped) 里 DisclosureGroup 的 label 会吞掉 onTapGesture，
+                    // 只有 chevron 默认可点；用 plain Button 才能整行展开/折叠。
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            isReplacingLicense.toggle()
+                        }
+                    } label: {
+                        HStack {
+                            Text("settings.pro.direct.replaceLicense")
+                                .font(.body)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                 }
             } else {
                 // 未激活：只保留首次激活工作流。
@@ -265,17 +333,34 @@ struct ProSettingsTab: View {
         Button {
             Task { await validateDirectLicense() }
         } label: {
-            Label("settings.pro.direct.button.validate", systemImage: "arrow.clockwise")
+            Label {
+                Text("settings.pro.direct.button.validate")
+            } icon: {
+                Image(systemName: didValidateSucceed ? "checkmark.shield.fill" : "checkmark.shield")
+                    .font(.body)
+                    .imageScale(.medium)
+                    .foregroundStyle(didValidateSucceed ? Color.green : Color.primary)
+                    .contentTransition(.symbolEffect(.replace))
+            }
         }
+        .controlSize(.regular)
         .disabled(directLicenseManager.isRequestInFlight)
     }
 
     private var directDeactivateButton: some View {
         Button(role: .destructive) {
-            Task { await deactivateDirectLicense() }
+            isDirectDeactivationConfirmationPresented = true
         } label: {
-            Label("settings.pro.direct.button.deactivate", systemImage: "xmark.circle")
+            Label {
+                Text("settings.pro.direct.button.deactivate")
+            } icon: {
+                Image(systemName: "checkmark.circle.badge.xmark")
+                    .font(.body)
+                    .imageScale(.medium)
+            }
+            .foregroundStyle(Color.red)
         }
+        .controlSize(.regular)
         .disabled(directLicenseManager.isRequestInFlight)
     }
 
@@ -300,8 +385,6 @@ struct ProSettingsTab: View {
             }
         } header: {
             Text("settings.pro.direct.pass.section")
-        } footer: {
-            Text("settings.pro.direct.pass.footer")
         }
     }
 
@@ -340,25 +423,39 @@ struct ProSettingsTab: View {
             HStack {
                 Spacer()
 
+                // 图标色与通行证卡片 accent 对齐：月付 cyan / 年付 green / 终身 orange。
                 Button {
                     Task { await openDirectCheckout(.monthly) }
                 } label: {
-                    Label("settings.pro.direct.checkout.monthly", systemImage: "calendar")
+                    checkoutLabel(
+                        titleKey: "settings.pro.direct.checkout.monthly",
+                        systemImage: "calendar",
+                        accent: .cyan
+                    )
                 }
                 .disabled(directLicenseManager.isRequestInFlight)
 
                 Button {
                     Task { await openDirectCheckout(.yearly) }
                 } label: {
-                    Label("settings.pro.direct.checkout.yearly", systemImage: "calendar.badge.clock")
+                    checkoutLabel(
+                        titleKey: "settings.pro.direct.checkout.yearly",
+                        systemImage: "calendar.badge.clock",
+                        accent: .green
+                    )
                 }
+                // 年付是推荐档：用系统默认着重色突出，不加自定义 tint，避免盖住绿色图标。
                 .buttonStyle(.borderedProminent)
                 .disabled(directLicenseManager.isRequestInFlight)
 
                 Button {
                     Task { await openDirectCheckout(.lifetime) }
                 } label: {
-                    Label("settings.pro.direct.checkout.lifetime", systemImage: "infinity")
+                    checkoutLabel(
+                        titleKey: "settings.pro.direct.checkout.lifetime",
+                        systemImage: "infinity",
+                        accent: .orange
+                    )
                 }
                 .disabled(directLicenseManager.isRequestInFlight)
             }
@@ -366,6 +463,19 @@ struct ProSettingsTab: View {
             Text("settings.pro.direct.checkout.section")
         } footer: {
             Text("settings.pro.direct.checkout.footer")
+        }
+    }
+
+    private func checkoutLabel(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        accent: Color
+    ) -> some View {
+        Label {
+            Text(titleKey)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(accent)
         }
     }
 
@@ -495,13 +605,35 @@ struct ProSettingsTab: View {
     private func validateDirectLicense() async {
         let didActivate = await directLicenseManager.validateStoredLicense()
         guard didActivate else { return }
+        flashValidateSuccess()
         showActivationSuccess()
     }
 
-    private func deactivateDirectLicense() async {
-        _ = await directLicenseManager.deactivateStoredLicense()
+    /// 校验成功图标反馈：1.5 秒后恢复 outline，与复制按钮反馈节奏一致。
+    private func flashValidateSuccess() {
+        validateFeedbackTask?.cancel()
+        didValidateSucceed = true
+        validateFeedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            didValidateSucceed = false
+        }
+    }
+
+    private func deactivateDirectLicense() async -> Bool {
+        let didDeactivate = await directLicenseManager.deactivateStoredLicense()
+        guard didDeactivate else { return false }
+
         directLicenseKey = ""
         isReplacingLicense = false
+        isDirectLicensePresented = false
+        isDirectPassPresented = false
+        showDirectDeactivationSuccess = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            showDirectDeactivationSuccess = false
+        }
+        return true
     }
 
     private func cancelDirectSubscription() async {
@@ -761,15 +893,15 @@ private struct DirectProPassSheet: View {
                     .frame(width: 360, height: 500)
                     .shadow(color: .black.opacity(0.34), radius: 22, y: 16)
 
-                HStack(spacing: 26) {
+                HStack(spacing: 22) {
                     CopyFeedbackButton(
                         performCopy: { onCopyImage(visualStyle) },
                         tooltip: "settings.pro.direct.pass.button.copy"
                     ) { didCopy in
                         Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(didCopy ? Color.green : .secondary)
-                            .frame(width: 26, height: 26)
+                            .frame(width: 20, height: 20)
                     }
                     DirectPassSheetIconButton(
                         titleKey: "settings.pro.direct.pass.button.download",
@@ -803,14 +935,18 @@ private struct DirectLicenseSheet: View {
     let maskedLicenseKey: String?
     let devices: [DirectLicenseDevice]
     let isLoadingDevices: Bool
+    let isOpeningPortal: Bool
+    let isDeactivating: Bool
     let portalErrorMessage: String?
     let canOpenPortal: Bool
     let canDeactivateCurrentMac: Bool
     let onClose: () -> Void
     let onOpenPortal: () -> Void
-    let onRefreshDevices: () -> Void
-    let onDeactivateCurrentMac: () -> Void
-    let onDeactivateDevice: (String) -> Void
+    let onRefreshDevices: () async -> Bool
+    let onDeactivateCurrentMac: () async -> Bool
+    let onDeactivateDevice: (String) async -> Bool
+
+    @State private var isCurrentMacDeactivationConfirmationPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -879,8 +1015,10 @@ private struct DirectLicenseSheet: View {
                 DirectPassDeviceList(
                     devices: devices,
                     isLoading: isLoadingDevices,
+                    isDeactivating: isDeactivating,
                     onRefresh: onRefreshDevices,
-                    onDeactivate: onDeactivateDevice
+                    onDeactivateCurrentMac: onDeactivateCurrentMac,
+                    onDeactivateDevice: onDeactivateDevice
                 )
 
                 if let portalErrorMessage, !portalErrorMessage.isEmpty {
@@ -899,11 +1037,23 @@ private struct DirectLicenseSheet: View {
 
             HStack(spacing: 10) {
                 Spacer()
-                DirectPassToolbarButton(titleKey: "settings.pro.direct.portal.button", systemImage: "creditcard", action: onOpenPortal)
-                    .disabled(!canOpenPortal)
-                    .help(canOpenPortal ? Text("settings.pro.direct.portal.button") : Text("settings.pro.direct.portal.missingCustomer"))
-                DirectPassToolbarButton(titleKey: "settings.pro.direct.pass.button.deactivateMac", systemImage: "xmark.circle", role: .destructive, action: onDeactivateCurrentMac)
-                    .disabled(!canDeactivateCurrentMac)
+                DirectPassToolbarButton(
+                    titleKey: "settings.pro.direct.portal.button",
+                    systemImage: "creditcard",
+                    isLoading: isOpeningPortal,
+                    action: onOpenPortal
+                )
+                .disabled(!canOpenPortal || isOpeningPortal)
+                .help(canOpenPortal ? Text("settings.pro.direct.portal.button") : Text("settings.pro.direct.portal.missingCustomer"))
+                DirectPassToolbarButton(
+                    titleKey: "settings.pro.direct.pass.button.deactivateMac",
+                    systemImage: "checkmark.circle.badge.xmark",
+                    role: .destructive,
+                    isLoading: isDeactivating
+                ) {
+                    isCurrentMacDeactivationConfirmationPresented = true
+                }
+                .disabled(!canDeactivateCurrentMac || isDeactivating)
                 Spacer()
             }
             .padding(12)
@@ -914,6 +1064,14 @@ private struct DirectLicenseSheet: View {
                 RadialGradient(colors: [.green.opacity(0.10), .clear], center: .topLeading, startRadius: 60, endRadius: 420)
             }
         )
+        .alert("settings.pro.direct.deactivate.confirm.title", isPresented: $isCurrentMacDeactivationConfirmationPresented) {
+            Button("general.cancel", role: .cancel) {}
+            Button("settings.pro.direct.deactivate.confirm.action", role: .destructive) {
+                Task { _ = await onDeactivateCurrentMac() }
+            }
+        } message: {
+            Text("settings.pro.direct.deactivate.confirm.message")
+        }
     }
 
     /// 弹窗内的许可证复制入口保持无背景图标样式，反馈状态完全交给共享组件，
@@ -923,12 +1081,26 @@ private struct DirectLicenseSheet: View {
             providesContent: { licenseKey ?? "" },
             tooltip: "settings.pro.direct.copyLicense"
         ) { didCopy in
+            // 与设备区校验按钮对齐：同命中框 + 同 idle 色；字形不同见下方 shield 注释。
             Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                .foregroundStyle(didCopy ? Color.green : .primary)
-                .frame(width: 26, height: 26)
+                .font(.system(size: DirectLicenseSheetIconMetrics.glyphSize, weight: .medium))
+                .foregroundStyle(didCopy ? Color.green : .secondary)
+                .frame(
+                    width: DirectLicenseSheetIconMetrics.hitSize,
+                    height: DirectLicenseSheetIconMetrics.hitSize
+                )
         }
         .disabled(licenseKey == nil)
     }
+}
+
+/// 许可证 sheet 右侧工具图标的统一 metrics。
+///
+/// `doc.on.doc` 比 `checkmark.shield` 更满；shield 略加大 1pt 做光学对齐，命中框保持一致。
+private enum DirectLicenseSheetIconMetrics {
+    static let glyphSize: CGFloat = 15
+    static let shieldGlyphSize: CGFloat = 16
+    static let hitSize: CGFloat = 26
 }
 
 private struct DirectPassDetailRow: View {
@@ -952,8 +1124,40 @@ private struct DirectPassDetailRow: View {
 private struct DirectPassDeviceList: View {
     let devices: [DirectLicenseDevice]
     let isLoading: Bool
-    let onRefresh: () -> Void
-    let onDeactivate: (String) -> Void
+    /// 解绑进行中只禁用行交互，不驱动右上角校验 spinner。
+    let isDeactivating: Bool
+    let onRefresh: () async -> Bool
+    let onDeactivateCurrentMac: () async -> Bool
+    let onDeactivateDevice: (String) async -> Bool
+
+    /// 与设置页「校验」按钮同款：成功后短暂显示绿色 fill。
+    @State private var didValidateSucceed = false
+    @State private var validateFeedbackTask: Task<Void, Never>?
+    /// 设备行点击后先保存目标，确认前绝不将实例 ID 传给后端解绑接口。
+    @State private var pendingDeviceDeactivation: DirectLicenseDevice?
+    @State private var isDeviceDeactivationConfirmationPresented = false
+
+    private var isPendingCurrentDevice: Bool {
+        pendingDeviceDeactivation?.isCurrentDevice == true
+    }
+
+    private var deviceDeactivationTitleKey: LocalizedStringKey {
+        isPendingCurrentDevice
+            ? "settings.pro.direct.deactivate.confirm.title"
+            : "settings.pro.direct.devices.deactivate.confirm.title"
+    }
+
+    private var deviceDeactivationActionKey: LocalizedStringKey {
+        isPendingCurrentDevice
+            ? "settings.pro.direct.deactivate.confirm.action"
+            : "settings.pro.direct.devices.deactivate.confirm.action"
+    }
+
+    private var deviceDeactivationMessageKey: LocalizedStringKey {
+        isPendingCurrentDevice
+            ? "settings.pro.direct.deactivate.confirm.message"
+            : "settings.pro.direct.devices.deactivate.confirm.message"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -964,18 +1168,32 @@ private struct DirectPassDeviceList: View {
 
                 Spacer()
 
-                Button(action: onRefresh) {
+                Button {
+                    Task { await refreshAndFlash() }
+                } label: {
                     if isLoading {
                         ProgressView()
                             .controlSize(.small)
+                            .frame(
+                                width: DirectLicenseSheetIconMetrics.hitSize,
+                                height: DirectLicenseSheetIconMetrics.hitSize
+                            )
                     } else {
-                        Image(systemName: "arrow.clockwise")
+                        // shield 字形偏瘦：比复制图标大 1pt，视觉上与 doc.on.doc 对齐。
+                        Image(systemName: didValidateSucceed ? "checkmark.shield.fill" : "checkmark.shield")
+                            .font(.system(size: DirectLicenseSheetIconMetrics.shieldGlyphSize, weight: .medium))
+                            .foregroundStyle(didValidateSucceed ? Color.green : Color.secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                            .frame(
+                                width: DirectLicenseSheetIconMetrics.hitSize,
+                                height: DirectLicenseSheetIconMetrics.hitSize
+                            )
                     }
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .frame(width: 24, height: 24)
-                .disabled(isLoading)
+                .disabled(isLoading || isDeactivating)
+                .help(Text("settings.pro.direct.button.validate"))
             }
 
             if devices.isEmpty {
@@ -987,8 +1205,10 @@ private struct DirectPassDeviceList: View {
                 VStack(spacing: 5) {
                     ForEach(devices) { device in
                         DirectPassDeviceRow(device: device) {
-                            onDeactivate(device.instanceID)
+                            pendingDeviceDeactivation = device
+                            isDeviceDeactivationConfirmationPresented = true
                         }
+                        .disabled(isLoading || isDeactivating)
                     }
                 }
             }
@@ -1001,6 +1221,36 @@ private struct DirectPassDeviceList: View {
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        }
+        .alert(deviceDeactivationTitleKey, isPresented: $isDeviceDeactivationConfirmationPresented) {
+            Button("general.cancel", role: .cancel) {
+                pendingDeviceDeactivation = nil
+            }
+            Button(deviceDeactivationActionKey, role: .destructive) {
+                guard let device = pendingDeviceDeactivation else { return }
+                pendingDeviceDeactivation = nil
+                Task {
+                    if device.isCurrentDevice {
+                        _ = await onDeactivateCurrentMac()
+                    } else {
+                        _ = await onDeactivateDevice(device.instanceID)
+                    }
+                }
+            }
+        } message: {
+            Text(deviceDeactivationMessageKey)
+        }
+    }
+
+    private func refreshAndFlash() async {
+        let didSucceed = await onRefresh()
+        guard didSucceed else { return }
+        validateFeedbackTask?.cancel()
+        didValidateSucceed = true
+        validateFeedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            didValidateSucceed = false
         }
     }
 }
@@ -1017,7 +1267,7 @@ private struct DirectPassDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: device.isCurrentDevice ? "desktopcomputer.and.macbook" : "desktopcomputer")
+            Image(systemName: device.deviceKind?.systemImageName ?? DirectLicenseDeviceKind.mac.systemImageName)
                 .foregroundStyle(device.isCurrentDevice ? .blue : .secondary)
                 .font(.system(size: 14, weight: .semibold))
                 .frame(width: 20)
@@ -1046,8 +1296,9 @@ private struct DirectPassDeviceRow: View {
             Spacer(minLength: 8)
 
             Button(role: .destructive, action: onDeactivate) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                // 设备行解绑是次要操作，略小于左侧设备图标（14pt），避免抢视觉。
+                Image(systemName: "checkmark.circle.badge.xmark")
+                    .font(.system(size: 11, weight: .medium))
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -1395,13 +1646,20 @@ private struct DirectPassToolbarButton: View {
     let titleKey: LocalizedStringKey
     let systemImage: String
     var role: ButtonRole?
+    var isLoading = false
     let action: () -> Void
 
     var body: some View {
         Button(role: role, action: action) {
             HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .semibold))
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 15, height: 15)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 15, weight: .semibold))
+                }
                 Text(titleKey)
                     .font(.caption.weight(.semibold))
             }
@@ -1440,10 +1698,12 @@ private struct DirectPassSheetIconButton: View {
 
     var body: some View {
         Button(action: action) {
+            // 与通行证 sheet 底部复制按钮同一套 metrics（13pt / 20×20），
+            // 避免三颗工具图标视觉权重不一致。
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
+                .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -1651,14 +1911,19 @@ private struct DirectLicenseKeyRow: View {
 
             Spacer(minLength: 8)
 
+            // 仅图标 bordered 方钮默认比下方 Label 按钮更高、图标更满。
+            // 用显式字号 + 固定 glyph 框压住视觉重量，光学对齐「校验 / 解绑」。
             CopyFeedbackButton(
                 providesContent: { licenseKey },
                 tooltip: "settings.pro.direct.button.copyLicense",
                 style: .bordered
             ) { didCopy in
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(didCopy ? Color.green : .primary)
+                    .frame(width: 14, height: 14)
             }
+            .controlSize(.regular)
         }
         .padding(.vertical, 4)
     }
@@ -1886,8 +2151,7 @@ private struct ProBenefitTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        // 两列网格按内容自适应会让背景高度参差；保留长文案扩展空间的同时统一常规卡片高度。
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+        // 高度跟文案走，避免固定 minHeight 把短说明撑出大块留白。
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(0.05))

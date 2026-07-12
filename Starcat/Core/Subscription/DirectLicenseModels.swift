@@ -5,6 +5,7 @@
 //  Direct 分发授权 DTO 与领域模型。
 //
 
+import Darwin
 import Foundation
 
 /// Direct 授权背后的支付/授权 provider。
@@ -46,6 +47,89 @@ enum DirectLicenseRuntimeState: String, Codable, Equatable, Sendable {
     case verifiedActive
     case revoked
     case expired
+}
+
+/// Direct 授权设备的 Mac 硬件类别。
+///
+/// Creem 只保存客户端提交的实例名，不会识别 Apple 硬件；客户端因此读取 `hw.model`
+/// 并归类后写入实例名。无法识别的新机型使用通用 Mac，避免错误地展示成某个具体型号。
+enum DirectLicenseDeviceKind: String, Codable, Equatable, Sendable {
+    case mac
+    case macBookAir
+    case macBookPro
+    case macMini
+    case macStudio
+    case iMac
+    case macPro
+
+    var instanceNamePrefix: String {
+        switch self {
+        case .mac: return "Mac"
+        case .macBookAir: return "MacBook Air"
+        case .macBookPro: return "MacBook Pro"
+        case .macMini: return "Mac mini"
+        case .macStudio: return "Mac Studio"
+        case .iMac: return "iMac"
+        case .macPro: return "Mac Pro"
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .macBookAir, .macBookPro: return "laptopcomputer.badge.checkmark"
+        case .macMini: return "macmini.badge.checkmark"
+        case .macStudio: return "macstudio.badge.checkmark"
+        case .iMac: return "imac.badge.checkmark"
+        case .macPro: return "macpro.gen3.badge.checkmark"
+        case .mac: return "desktopcomputer.badge.checkmark"
+        }
+    }
+
+    static func currentMac() -> Self {
+        guard let identifier = hardwareModelIdentifier() else { return .mac }
+        return forHardwareModelIdentifier(identifier)
+    }
+
+    static func forHardwareModelIdentifier(_ identifier: String) -> Self {
+        let identifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if identifier.hasPrefix("MacBookAir") { return .macBookAir }
+        if identifier.hasPrefix("MacBookPro") { return .macBookPro }
+        if identifier.hasPrefix("Macmini") { return .macMini }
+        if identifier.hasPrefix("iMac") { return .iMac }
+        if identifier.hasPrefix("MacPro") { return .macPro }
+
+        switch identifier {
+        // Apple silicon 的部分机型使用 `Mac<generation>,<variant>`，需要显式映射。
+        case "Mac13,1", "Mac13,2", "Mac14,13", "Mac14,14":
+            return .macStudio
+        case "Mac14,3", "Mac16,10":
+            return .macMini
+        case "Mac14,2", "Mac14,15", "Mac15,12", "Mac15,13", "Mac16,12", "Mac16,13":
+            return .macBookAir
+        case "Mac14,5", "Mac14,6", "Mac14,7", "Mac15,3", "Mac15,6", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11", "Mac16,1", "Mac16,5", "Mac16,6", "Mac16,7", "Mac16,8":
+            return .macBookPro
+        case "Mac14,4":
+            return .iMac
+        case "Mac14,8":
+            return .macPro
+        default:
+            return .mac
+        }
+    }
+
+    private static func hardwareModelIdentifier() -> String? {
+        var size: size_t = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 1 else { return nil }
+
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        return buffer.withUnsafeMutableBufferPointer { pointer in
+            guard let baseAddress = pointer.baseAddress,
+                  sysctlbyname("hw.model", baseAddress, &size, nil, 0) == 0
+            else { return nil }
+            return String(cString: baseAddress)
+        }
+    }
 }
 
 /// Direct License 远程校验记录。
@@ -141,6 +225,7 @@ struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
 struct DirectLicenseDevice: Codable, Equatable, Identifiable, Sendable {
     var instanceID: String
     var name: String?
+    var deviceKind: DirectLicenseDeviceKind?
     var status: String
     var createdAt: Date?
     var isCurrentDevice: Bool

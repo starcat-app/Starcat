@@ -35,7 +35,26 @@ final class DirectLicenseManager: ProEntitlementProviding {
     private(set) var lastSubscriptionSnapshot: DirectSubscriptionSnapshot?
     private(set) var licenseDevices: [DirectLicenseDevice] = []
     private(set) var lastErrorMessage: String?
-    private(set) var isRequestInFlight = false
+
+    // 各操作独立 in-flight：UI loading 只绑自己的标志，避免门户请求把设备区/解绑一起转圈。
+    private(set) var isActivating = false
+    private(set) var isValidating = false
+    private(set) var isRefreshingDevices = false
+    private(set) var isDeactivating = false
+    private(set) var isCancellingSubscription = false
+    private(set) var isCreatingCheckout = false
+    private(set) var isOpeningPortal = false
+
+    /// 任意 Direct License 请求进行中（表单互斥禁用用，不直接驱动某个按钮 spinner）。
+    var isRequestInFlight: Bool {
+        isActivating
+            || isValidating
+            || isRefreshingDevices
+            || isDeactivating
+            || isCancellingSubscription
+            || isCreatingCheckout
+            || isOpeningPortal
+    }
 
     var onEntitlementDidChange: (@MainActor () -> Void)?
 
@@ -134,8 +153,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
             return entitlement.isActive
         }
 
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isValidating = true
+        defer { isValidating = false }
 
         updateValidationRecord { record in
             record.lastAttemptAt = nowProvider()
@@ -167,8 +186,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
     @discardableResult
     func refreshLicenseDevices() async -> Bool {
         guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isRefreshingDevices = true
+        defer { isRefreshingDevices = false }
 
         do {
             let snapshot = try await api.devices(DirectLicenseDevicesRequest(
@@ -192,8 +211,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
               let targetInstanceID = directLicenseTrimmed(instanceID)
         else { return false }
 
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isDeactivating = true
+        defer { isDeactivating = false }
 
         do {
             let snapshot = try await api.deactivate(DirectLicenseDeactivationRequest(
@@ -206,12 +225,9 @@ final class DirectLicenseManager: ProEntitlementProviding {
             lastErrorMessage = nil
 
             if targetInstanceID == credential.instanceID {
-                try? store.deleteCredential()
-                storedCredential = nil
-                validationRecord = .empty
-                runtimeState = .none
-                entitlement = .inactive
-                licenseDevices = []
+                // 当前 Mac 已从远端实例列表移除，不能保留这张许可证的任何本机展示快照；
+                // 否则通行证会继续显示旧尾号，且重启后验证记录还会带回旧套餐信息。
+                clearStoredCredential()
             }
             return true
         } catch {
@@ -230,8 +246,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
             return false
         }
 
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isCancellingSubscription = true
+        defer { isCancellingSubscription = false }
 
         do {
             // 取消使用 period-end 预约模式，避免用户刚付款就立即失去本期权益。
@@ -255,8 +271,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
     /// 这里不把 Creem product id 传给客户端，只传稳定 plan alias；真实 SKU 映射由
     /// `starcat-license-api` 读取环境变量完成，后续调价或更换支付平台不需要发新版 App。
     func createCheckoutURL(for plan: DirectCheckoutPlan) async -> URL? {
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isCreatingCheckout = true
+        defer { isCreatingCheckout = false }
 
         do {
             let response = try await api.checkout(DirectCheckoutRequest(
@@ -288,8 +304,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
             return nil
         }
 
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isOpeningPortal = true
+        defer { isOpeningPortal = false }
 
         do {
             let response = try await api.customerPortal(DirectCustomerPortalRequest(
@@ -311,6 +327,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
     func clearStoredCredential() {
         try? store.deleteCredential()
+        // 验证记录也属于当前许可证的本机状态，必须持久化清空，避免下次启动恢复旧套餐。
+        try? store.storeValidationRecord(.empty)
         storedCredential = nil
         lastSnapshot = nil
         lastSubscriptionSnapshot = nil
@@ -321,8 +339,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     private func perform(_ operation: () async throws -> DirectLicenseSnapshot) async -> Bool {
-        isRequestInFlight = true
-        defer { isRequestInFlight = false }
+        isActivating = true
+        defer { isActivating = false }
 
         do {
             let snapshot = try await operation()
@@ -448,9 +466,9 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     private static func defaultDeviceName(store: DirectLicenseStore) -> String {
-        let hostName = directLicenseTrimmed(Host.current().localizedName) ?? "Mac"
+        let deviceKind = DirectLicenseDeviceKind.currentMac()
         let installID = (try? store.loadOrCreateInstallID()) ?? UUID().uuidString
-        return "\(hostName) · Starcat \(installID.prefix(4).uppercased())"
+        return "\(deviceKind.instanceNamePrefix) · Starcat \(installID.prefix(4).uppercased())"
     }
 }
 

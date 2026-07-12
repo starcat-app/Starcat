@@ -43,6 +43,15 @@ struct DirectLicenseManagerTests {
         #expect(manager.entitlement == .inactive)
     }
 
+    @Test("Mac 硬件型号映射为授权设备类别")
+    func mapsHardwareModelsToDeviceKinds() {
+        #expect(DirectLicenseDeviceKind.forHardwareModelIdentifier("Mac14,13") == .macStudio)
+        #expect(DirectLicenseDeviceKind.forHardwareModelIdentifier("Mac16,10") == .macMini)
+        #expect(DirectLicenseDeviceKind.forHardwareModelIdentifier("MacBookPro18,3") == .macBookPro)
+        #expect(DirectLicenseDeviceKind.forHardwareModelIdentifier("MacBookAir10,1") == .macBookAir)
+        #expect(DirectLicenseDeviceKind.forHardwareModelIdentifier("unknown") == .mac)
+    }
+
     @Test("支付回跳中的套餐参数不作为可信来源")
     func activationIgnoresTamperedPlanInDeepLink() async throws {
         URLProtocolStub.reset()
@@ -125,6 +134,45 @@ struct DirectLicenseManagerTests {
         #expect(!manager.entitlement.isActive)
         #expect(manager.runtimeState == DirectLicenseRuntimeState.revoked)
         #expect(try store.loadCredential() == nil)
+    }
+
+    @Test("解绑当前 Mac 后清空许可证快照与持久化验证状态")
+    func deactivatingCurrentMacClearsAllLocalLicenseState() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status": "active",
+              "provider": "creem",
+              "plan": "monthly",
+              "productID": "prod_monthly",
+              "instanceID": "inst_123",
+              "licenseKeySuffix": "93FR",
+              "validatedAt": "2026-07-12T00:00:00Z"
+            }
+            """)
+        }
+
+        let store = DirectLicenseStore(keychain: InMemoryKeychain())
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store)
+
+        let didActivate = await manager.activate(licenseKey: "STARCAT-TEST-KEY")
+        #expect(didActivate)
+        #expect(manager.lastSnapshot?.licenseKeySuffix == "93FR")
+
+        let didDeactivate = await manager.deactivateStoredLicense()
+        #expect(didDeactivate)
+        #expect(manager.storedCredential == nil)
+        #expect(manager.lastSnapshot == nil)
+        #expect(manager.lastSubscriptionSnapshot == nil)
+        #expect(manager.validationRecord == .empty)
+        #expect(manager.licenseDevices.isEmpty)
+        #expect(manager.runtimeState == .none)
+        #expect(manager.entitlement == .inactive)
+        #expect(try store.loadCredential() == nil)
+
+        let restoredManager = DirectLicenseManager(store: store)
+        #expect(restoredManager.validationRecord == .empty)
     }
 
     @Test("月订阅 24 小时内启动校验不重复请求后端")
