@@ -40,7 +40,15 @@ final class KnowledgeRAGWorkspaceViewModel {
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var attachments: [RAGComposerAttachment] = []
     var githubLinkContexts: [RAGGitHubLinkReference] = []
-    var selectedModelID: String?
+    /// 切换模型时立刻写入 AppSettings，关闭窗口后再开可恢复。
+    var selectedModelID: String? {
+        didSet {
+            let trimmed = selectedModelID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if dependencies.settings.ragWorkspaceSelectedModelID != trimmed {
+                dependencies.settings.ragWorkspaceSelectedModelID = trimmed
+            }
+        }
+    }
     var knowledgeRepos: [Repo] = []
     private var isMentionPickerDismissed = false
     private var highlightedMentionRepoID: Int64?
@@ -56,21 +64,50 @@ final class KnowledgeRAGWorkspaceViewModel {
     )
     var isIndexing = false
     var errorMessage: String?
-    /// 调试记录只服务当前窗口；关闭开关立即清空，不能混入可持久化的问答历史。
+    /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {
         didSet {
-            if !isDebugModeEnabled { debugEvents = [] }
+            if !isDebugModeEnabled { debugTraces = [] }
+            if dependencies.settings.ragWorkspaceDebugModeEnabled != isDebugModeEnabled {
+                dependencies.settings.ragWorkspaceDebugModeEnabled = isDebugModeEnabled
+            }
         }
     }
-    var debugEvents: [RAGDebugEvent] = []
+    var debugTraces: [RAGDebugTrace] = []
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
         self.conversationStore = dependencies.ragConversationStore
-        self.selectedModelID = dependencies.knowledgeRAGChatModels.first {
-            $0.providerID == dependencies.settings.aiChatTask.providerID
-                && $0.name == dependencies.settings.aiChatTask.resolvedModelName
-        }?.id
+        let resolvedModelID = Self.resolveInitialModelID(
+            savedModelID: dependencies.settings.ragWorkspaceSelectedModelID,
+            availableModels: dependencies.knowledgeRAGChatModels,
+            chatTask: dependencies.settings.aiChatTask
+        )
+        self.selectedModelID = resolvedModelID
+        self.isDebugModeEnabled = dependencies.settings.ragWorkspaceDebugModeEnabled
+        // init 内 didSet 不触发：把解析后的可用模型回写，清掉已删除/禁用的旧 ID。
+        let trimmed = resolvedModelID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if dependencies.settings.ragWorkspaceSelectedModelID != trimmed {
+            dependencies.settings.ragWorkspaceSelectedModelID = trimmed
+        }
+    }
+
+    /// 优先恢复上次选用且仍可用的模型；否则对齐全局 chat task；再否则取列表首项。
+    private static func resolveInitialModelID(
+        savedModelID: String,
+        availableModels: [AIModelDescriptor],
+        chatTask: AIModelTaskConfiguration
+    ) -> String? {
+        let trimmed = savedModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, availableModels.contains(where: { $0.id == trimmed }) {
+            return trimmed
+        }
+        if let matched = availableModels.first(where: {
+            $0.providerID == chatTask.providerID && $0.name == chatTask.resolvedModelName
+        }) {
+            return matched.id
+        }
+        return availableModels.first?.id
     }
 
     var isAnswering: Bool {
@@ -443,15 +480,21 @@ final class KnowledgeRAGWorkspaceViewModel {
         NSPasteboard.general.setString(content, forType: .string)
     }
 
-    func clearDebugEvents() {
-        debugEvents = []
+    func clearDebugTraces() {
+        debugTraces = []
     }
 
     var debugTraceText: String {
-        debugEvents.map { event in
-            """
-            [\(event.stage.rawValue)] +\(String(format: "%.3f", event.elapsedSeconds))s
-            \(event.payload)
+        debugTraces.sorted { $0.startedAt < $1.startedAt }.map { trace in
+            let events = trace.events.map { event in
+                """
+                [\(event.stage.rawValue)] +\(String(format: "%.3f", event.elapsedSeconds))s
+                \(event.payload)
+                """
+            }.joined(separator: "\n\n")
+            return """
+            [\(trace.category.rawValue)] \(trace.startedAt.ISO8601Format())
+            \(events)
             """
         }.joined(separator: "\n\n==========\n\n")
     }
@@ -533,7 +576,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func runQuestion(_ question: String) async {
         guard let conversationID = selectedConversationID else { return }
-        if isDebugModeEnabled { debugEvents = [] }
+        let debugTraceID = isDebugModeEnabled ? beginDebugTrace(category: .questionAnswer) : nil
         let history = RAGConversationHistoryBuilder.build(from: messages)
         let isFirstTurn = history.isEmpty
         let userMessage = RAGStoredMessage(
@@ -590,7 +633,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     approvedRemoteResources = Set(requests.map(\.resource))
                 case .remoteContext(let blocks): remoteBlocks = blocks
                 case .debug(let event):
-                    if isDebugModeEnabled { debugEvents.append(event) }
+                    appendDebugEvent(event, to: debugTraceID)
                 case .delta(let text): streamingAnswer += text
                 case .completed(let answer, let model, let citations, _):
                     completedPayload = (answer, model, citations)
@@ -632,6 +675,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             errorMessage = error.localizedDescription
             messages.removeAll { $0.id == userMessage.id }
         }
+        finishDebugTrace(debugTraceID, state: debugTraceState(for: answerState))
         remoteContextConsent = nil
         answerTask = nil
     }
@@ -645,6 +689,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversationTitleTask?.cancel()
         let debugEnabled = isDebugModeEnabled
         let debugEndpoint = selectedModelEndpoint
+        let debugTraceID = debugEnabled ? beginDebugTrace(category: .conversationTitle) : nil
         conversationTitleTask = Task { [weak self] in
             guard let self else { return }
             let result = await service.generateConversationTitle(
@@ -652,17 +697,58 @@ final class KnowledgeRAGWorkspaceViewModel {
                 isDebugEnabled: debugEnabled,
                 debugEndpoint: debugEndpoint
             )
-            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            guard !Task.isCancelled, selectedConversationID == conversationID else {
+                finishDebugTrace(debugTraceID, state: .cancelled)
+                return
+            }
 
             switch result {
             case .completed(let title, let debugEvents):
-                if debugEnabled, isDebugModeEnabled { self.debugEvents.append(contentsOf: debugEvents) }
+                appendDebugEvents(debugEvents, to: debugTraceID)
+                finishDebugTrace(debugTraceID, state: .completed)
                 await typewriteConversationTitle(title, for: conversationID)
             case .failed(let debugEvents):
-                if debugEnabled, isDebugModeEnabled { self.debugEvents.append(contentsOf: debugEvents) }
+                appendDebugEvents(debugEvents, to: debugTraceID)
+                finishDebugTrace(debugTraceID, state: .failed)
             case .cancelled:
+                finishDebugTrace(debugTraceID, state: .cancelled)
                 break
             }
+        }
+    }
+
+    private func beginDebugTrace(category: RAGDebugTraceCategory) -> UUID {
+        let trace = RAGDebugTrace(
+            id: UUID(),
+            category: category,
+            startedAt: Date(),
+            state: .running,
+            events: []
+        )
+        debugTraces.append(trace)
+        return trace.id
+    }
+
+    private func appendDebugEvent(_ event: RAGDebugEvent, to traceID: UUID?) {
+        guard isDebugModeEnabled, let traceID,
+              let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
+        debugTraces[index].events.append(event)
+    }
+
+    private func appendDebugEvents(_ events: [RAGDebugEvent], to traceID: UUID?) {
+        for event in events { appendDebugEvent(event, to: traceID) }
+    }
+
+    private func finishDebugTrace(_ traceID: UUID?, state: RAGDebugTrace.State) {
+        guard let traceID, let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
+        debugTraces[index].state = state
+    }
+
+    private func debugTraceState(for answerState: RAGAnswerState) -> RAGDebugTrace.State {
+        switch answerState {
+        case .cancelled: return .cancelled
+        case .failed: return .failed
+        default: return .completed
         }
     }
 

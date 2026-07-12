@@ -19997,6 +19997,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制全部调试记录" } }
       }
     },
+    "rag.workspace.debug.category.conversationTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Title generation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标题生成" } }
+      }
+    },
+    "rag.workspace.debug.category.questionAnswer" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge base Q&A" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库问答" } }
+      }
+    },
     "rag.workspace.debug.disabledHint" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Enable RAG debug mode to capture the next question, retrieval, prompt, and LLM response." } },
@@ -20073,6 +20085,30 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Title Response" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标题生成返回" } }
+      }
+    },
+    "rag.workspace.debug.state.cancelled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancelled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已取消" } }
+      }
+    },
+    "rag.workspace.debug.state.completed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成" } }
+      }
+    },
+    "rag.workspace.debug.state.failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } }
+      }
+    },
+    "rag.workspace.debug.state.running" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "进行中" } }
       }
     },
     "rag.workspace.debug.stage.retrieval" : {

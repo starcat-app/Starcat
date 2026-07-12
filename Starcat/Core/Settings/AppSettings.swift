@@ -832,6 +832,19 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.ragBackendConfiguration, value: ragBackendConfiguration) }
     }
 
+    /// RAG 工作台上次选用的聊天模型 ID（`AIModelDescriptor.id`）。
+    ///
+    /// 空字符串表示从未选过，打开工作台时回退到 `aiChatTask` 对齐的模型。
+    /// 只存工作台偏好，不改写全局 chat task，避免 RAG 换模型牵动 AI 助手默认配置。
+    var ragWorkspaceSelectedModelID: String {
+        didSet { persist(key: Keys.ragWorkspaceSelectedModelID, value: ragWorkspaceSelectedModelID) }
+    }
+
+    /// RAG 工作台「调试模式」开关。只持久化开关本身；debug 事件仍只活在当前窗口。
+    var ragWorkspaceDebugModeEnabled: Bool {
+        didSet { persistBool(key: Keys.ragWorkspaceDebugModeEnabled, value: ragWorkspaceDebugModeEnabled) }
+    }
+
     /// AI 对话历史存储后端。默认 `.jsonFiles`，保留当前 metadata + chunks 写入路径；
     /// 选择 `.sqlite` 后，下一次创建 `DiskChatHistoryStore.shared` 会使用独立 SQLite 文件。
     ///
@@ -1472,6 +1485,8 @@ final class AppSettings {
             key: Keys.ragBackendConfiguration,
             defaults: defaults
         ) ?? RAGBackendConfiguration()
+        self.ragWorkspaceSelectedModelID = defaults.string(forKey: Keys.ragWorkspaceSelectedModelID) ?? ""
+        self.ragWorkspaceDebugModeEnabled = defaults.object(forKey: Keys.ragWorkspaceDebugModeEnabled) as? Bool ?? false
         let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
         self.chatHistoryStorageKind = chatHistoryStorageRaw.flatMap(ChatHistoryStorageKind.init(rawValue:)) ?? .jsonFiles
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
@@ -1677,6 +1692,8 @@ final class AppSettings {
         aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
         aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
         ragBackendConfiguration = RAGBackendConfiguration()
+        ragWorkspaceSelectedModelID = ""
+        ragWorkspaceDebugModeEnabled = false
 
         chatHistoryStorageKind = .jsonFiles
         smartSearchMode = .keyword
@@ -1987,6 +2004,8 @@ final class AppSettings {
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let ragBackendConfiguration = "settings.ai.rag.backends.v1"
+        static let ragWorkspaceSelectedModelID = "settings.rag.workspace.selectedModelID.v1"
+        static let ragWorkspaceDebugModeEnabled = "settings.rag.workspace.debugModeEnabled.v1"
         static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
         static let smartSearchMode = "settings.search.mode"
         static let externalSearchIncludeInAll = "settings.externalSearch.includeInAll.v1"
@@ -2067,6 +2086,8 @@ final class AppSettings {
             aiTranslationTask,
             aiChatTask,
             ragBackendConfiguration,
+            ragWorkspaceSelectedModelID,
+            ragWorkspaceDebugModeEnabled,
             chatHistoryStorageKind,
             smartSearchMode,
             externalSearchIncludeInAll,

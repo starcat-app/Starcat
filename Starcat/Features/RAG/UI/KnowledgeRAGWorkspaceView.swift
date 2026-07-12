@@ -20,6 +20,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var inspectorTab: RAGInspectorTab = .evidence
     @State private var composerContentHeight: CGFloat = 0
+    @State private var expandedDebugTraceIDs: Set<UUID> = []
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
@@ -587,13 +588,16 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var modelMenu: some View {
         Menu {
-            ForEach(viewModel.availableModels) { model in
-                Button {
-                    viewModel.selectedModelID = model.id
-                } label: {
-                    modelMenuRow(model)
+            // 用 inline Picker：系统只给当前 selection 打勾，避免手写 checkmark 在
+            // macOS Menu 里被全部渲染成已选状态。
+            Picker("", selection: $viewModel.selectedModelID) {
+                ForEach(viewModel.availableModels) { model in
+                    modelPickerLabel(model)
+                        .tag(Optional(model.id))
                 }
             }
+            .labelsHidden()
+            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 6) {
                 if let provider = viewModel.selectedModelProvider {
@@ -613,37 +617,50 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var explicitModeMenu: some View {
         Menu {
-            modeButton(.only, key: "rag.workspace.repoMode.only")
-            modeButton(.prefer, key: "rag.workspace.repoMode.prefer")
-            modeButton(.exclude, key: "rag.workspace.repoMode.exclude")
+            // Text("key") 走 LocalizedStringKey；勿把 String 字面量传进 Text，否则会显示 raw key。
+            Picker("", selection: $viewModel.explicitRepoMode) {
+                Text("rag.workspace.repoMode.only").tag(RAGExplicitRepoMode.only)
+                Text("rag.workspace.repoMode.prefer").tag(RAGExplicitRepoMode.prefer)
+                Text("rag.workspace.repoMode.exclude").tag(RAGExplicitRepoMode.exclude)
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
         } label: {
-            Label(repoModeName(viewModel.explicitRepoMode), systemImage: "scope")
-                .font(ragFont(.caption, weight: .semibold))
+            Label {
+                Text(repoModeKey(viewModel.explicitRepoMode))
+            } icon: {
+                Image(systemName: "scope")
+            }
+            .font(ragFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
     }
 
-    private func modeButton(_ mode: RAGExplicitRepoMode, key: String) -> some View {
-        Button {
-            viewModel.explicitRepoMode = mode
-        } label: {
-            if viewModel.explicitRepoMode == mode {
-                Label(key, systemImage: "checkmark")
-            } else {
-                Text(key)
+    /// 模型的 providerID 是配置 profile 的 ID，不是 AIServiceProvider 的 rawValue；
+    /// 必须经 ViewModel 映射，才能在多个同类服务商 profile 共存时展示正确 logo。
+    @ViewBuilder
+    private func modelPickerLabel(_ model: AIModelDescriptor) -> some View {
+        if let provider = viewModel.provider(for: model) {
+            Label {
+                Text(model.name)
+            } icon: {
+                AIProviderIconView(provider: provider, size: 15)
             }
+        } else {
+            Label(model.name, systemImage: "sparkles")
         }
     }
 
     // MARK: - Inspector
 
     private var inspector: some View {
-        VStack(spacing: 0) {
-            // 标题与 segmented tabs 共用同一水平 inset，避免视觉左右错位。
+        // 外层必须 leading：默认 center 会把「标题+tabs」整块居中，和下面左对齐正文错位。
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("rag.workspace.inspector.title")
                     .font(ragFont(.headline, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Picker("", selection: $inspectorTab) {
                     ForEach(RAGInspectorTab.allCases) { tab in
                         Text(tab.titleKey).tag(tab)
@@ -651,10 +668,12 @@ struct KnowledgeRAGWorkspaceView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, Self.inspectorContentInset)
             .padding(.top, Self.inspectorContentInset)
             .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
 
             ScrollView {
@@ -667,7 +686,9 @@ struct KnowledgeRAGWorkspaceView: View {
                 #endif
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
     }
 
@@ -893,38 +914,67 @@ struct KnowledgeRAGWorkspaceView: View {
                         Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                             .foregroundStyle(didCopy ? Color.green : Color.secondary)
                     }
-                    .disabled(viewModel.debugEvents.isEmpty)
-                    Button("rag.workspace.debug.clear") { viewModel.clearDebugEvents() }
+                    .disabled(viewModel.debugTraces.isEmpty)
+                    Button("rag.workspace.debug.clear") {
+                        viewModel.clearDebugTraces()
+                        expandedDebugTraceIDs = []
+                    }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .disabled(viewModel.debugEvents.isEmpty)
+                        .disabled(viewModel.debugTraces.isEmpty)
                 }
 
-                if viewModel.debugEvents.isEmpty {
+                if viewModel.debugTraces.isEmpty {
                     Text("rag.workspace.debug.empty")
                         .font(ragFont(.body))
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(viewModel.debugEvents) { event in
-                        VStack(alignment: .leading, spacing: 7) {
+                    ForEach(viewModel.debugTraces.sorted { $0.startedAt < $1.startedAt }) { trace in
+                        DisclosureGroup(
+                            isExpanded: Binding(
+                                get: { expandedDebugTraceIDs.contains(trace.id) },
+                                set: { isExpanded in
+                                    if isExpanded { expandedDebugTraceIDs.insert(trace.id) }
+                                    else { expandedDebugTraceIDs.remove(trace.id) }
+                                }
+                            )
+                        ) {
+                            ForEach(trace.events) { event in
+                                VStack(alignment: .leading, spacing: 7) {
+                                    HStack(spacing: 6) {
+                                        Text(debugStageKey(event.stage))
+                                            .font(ragFont(.caption, weight: .semibold))
+                                        Spacer()
+                                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
+                                            .font(ragFont(.caption2, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                        CopyFeedbackButton(
+                                            providesContent: { event.payload },
+                                            tooltip: "rag.workspace.debug.copy"
+                                        ) { didCopy in
+                                            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                                                .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                                        }
+                                    }
+                                    Text(event.payload)
+                                        .font(ragFont(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                                .padding(10)
+                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                            }
+                        } label: {
                             HStack(spacing: 6) {
-                                Text(debugStageKey(event.stage))
+                                Text(debugTraceCategoryKey(trace.category))
                                     .font(ragFont(.caption, weight: .semibold))
                                 Spacer()
-                                Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
+                                Text(localizedTimestamp(trace.startedAt))
                                     .font(ragFont(.caption2, design: .monospaced))
                                     .foregroundStyle(.secondary)
-                                CopyFeedbackButton(
-                                    providesContent: { event.payload },
-                                    tooltip: "rag.workspace.debug.copy"
-                                ) { didCopy in
-                                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                                }
+                                Text(debugTraceStateKey(trace.state))
+                                    .font(ragFont(.caption2, weight: .semibold))
+                                    .foregroundStyle(.secondary)
                             }
-                            Text(event.payload)
-                                .font(ragFont(.caption2, design: .monospaced))
-                                .textSelection(.enabled)
                         }
                         .padding(10)
                         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
@@ -947,6 +997,22 @@ struct KnowledgeRAGWorkspaceView: View {
         case .titlePrompt: return "rag.workspace.debug.stage.titlePrompt"
         case .titleResponse: return "rag.workspace.debug.stage.titleResponse"
         case .failure: return "rag.workspace.debug.stage.failure"
+        }
+    }
+
+    private func debugTraceCategoryKey(_ category: RAGDebugTraceCategory) -> LocalizedStringKey {
+        switch category {
+        case .questionAnswer: return "rag.workspace.debug.category.questionAnswer"
+        case .conversationTitle: return "rag.workspace.debug.category.conversationTitle"
+        }
+    }
+
+    private func debugTraceStateKey(_ state: RAGDebugTrace.State) -> LocalizedStringKey {
+        switch state {
+        case .running: return "rag.workspace.debug.state.running"
+        case .completed: return "rag.workspace.debug.state.completed"
+        case .failed: return "rag.workspace.debug.state.failed"
+        case .cancelled: return "rag.workspace.debug.state.cancelled"
         }
     }
     #endif
@@ -979,25 +1045,6 @@ struct KnowledgeRAGWorkspaceView: View {
         } else {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
-        }
-    }
-
-    /// 模型的 providerID 是配置 profile 的 ID，不是 AIServiceProvider 的 rawValue；
-    /// 必须经 ViewModel 映射，才能在多个同类服务商 profile 共存时展示正确 logo。
-    private func modelMenuRow(_ model: AIModelDescriptor) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark")
-                .opacity(viewModel.selectedModelID == model.id ? 1 : 0)
-                .frame(width: 14)
-            if let provider = viewModel.provider(for: model) {
-                AIProviderIconView(provider: provider, size: 15)
-                    .frame(width: 16)
-            } else {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-            }
-            Text(model.name)
         }
     }
 
@@ -1074,11 +1121,11 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
-    private func repoModeName(_ mode: RAGExplicitRepoMode) -> String {
+    private func repoModeKey(_ mode: RAGExplicitRepoMode) -> LocalizedStringKey {
         switch mode {
-        case .only: return String.l10n("rag.workspace.repoMode.only")
-        case .prefer: return String.l10n("rag.workspace.repoMode.prefer")
-        case .exclude: return String.l10n("rag.workspace.repoMode.exclude")
+        case .only: return "rag.workspace.repoMode.only"
+        case .prefer: return "rag.workspace.repoMode.prefer"
+        case .exclude: return "rag.workspace.repoMode.exclude"
         }
     }
 

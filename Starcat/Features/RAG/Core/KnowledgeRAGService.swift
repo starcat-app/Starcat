@@ -43,6 +43,27 @@ struct RAGDebugEvent: Identifiable, Sendable {
     let payload: String
 }
 
+/// 一次独立的调试调用。问答与标题生成分别保存，不能共享平铺的事件数组。
+enum RAGDebugTraceCategory: String, Sendable {
+    case questionAnswer = "question_answer"
+    case conversationTitle = "conversation_title"
+}
+
+struct RAGDebugTrace: Identifiable, Sendable {
+    enum State: Sendable {
+        case running
+        case completed
+        case failed
+        case cancelled
+    }
+
+    let id: UUID
+    let category: RAGDebugTraceCategory
+    let startedAt: Date
+    var state: State
+    var events: [RAGDebugEvent]
+}
+
 /// Service 在 Planner 判断需要联网后暂停，工作台用 chip 让用户确认或移除资源。
 /// 轮询式等待天然响应 Task cancellation，避免 continuation 在窗口关闭时悬挂。
 actor RAGRemoteContextConsent {

@@ -10,7 +10,7 @@
 
 import Foundation
 
-enum RAGExplicitRepoMode: String, Codable, Sendable {
+enum RAGExplicitRepoMode: String, Codable, Hashable, Sendable {
     case only
     case prefer
     case exclude
