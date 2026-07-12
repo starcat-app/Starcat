@@ -21,6 +21,14 @@ enum RAGIndexingStatus: Equatable, Sendable {
     case failed(String)
 }
 
+/// 用户手动刷新时展示的阶段汇总。阶段切换后仍保留已完成阶段的数据，避免快速刷新让用户错过过程。
+struct RAGIndexRefreshSummary: Equatable, Sendable {
+    let totalRepos: Int
+    var readmesProcessed: Int
+    var chunksProcessed: Int
+    var completedAt: Date?
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGIndexBuilder {
@@ -41,8 +49,8 @@ final class KnowledgeRAGIndexBuilder {
     private static let readmeRequestTimeout: TimeInterval = 15
 
     private(set) var status: RAGIndexingStatus = .idle
-    /// 只在整轮索引成功后更新；窗口关闭后重开仍可展示本次 App 会话里的最后结果。
-    private(set) var lastSuccessfulRefreshAt: Date?
+    /// 仅由显式的全量/仓库刷新创建；自动 source 更新不能覆盖用户刚完成的刷新结果。
+    private(set) var refreshSummary: RAGIndexRefreshSummary?
     private var indexingTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
@@ -84,7 +92,8 @@ final class KnowledgeRAGIndexBuilder {
         indexingTask = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.rebuildKnowledgeBase()
+                // source 监听触发的后台补建不能改写用户在工作台看到的最后一次手动刷新结果。
+                try await self.rebuildKnowledgeBase(recordsRefreshSummary: false)
             } catch is CancellationError {
                 self.status = .idle
             } catch {
@@ -173,20 +182,34 @@ final class KnowledgeRAGIndexBuilder {
 
     /// 全量重建只表示“重新计算 source diff + 补齐待处理 embedding”，内容未变的 ready chunk
     /// 仍复用原向量。真正强制换向量由 embedding model 变化触发 stale。
-    func rebuildKnowledgeBase() async throws {
+    func rebuildKnowledgeBase(recordsRefreshSummary: Bool = true) async throws {
         guard beginOperation() else { throw CancellationError() }
         defer { endOperation() }
         try entitlementGate.requirePro(.knowledgeRAG)
         let repos = try await repoRepository.fetchKnowledgeRepos()
+        if recordsRefreshSummary {
+            refreshSummary = RAGIndexRefreshSummary(
+                totalRepos: repos.count,
+                readmesProcessed: 0,
+                chunksProcessed: 0,
+                completedAt: nil
+            )
+        }
         let summaries = try await summaryRepository.fetchLatestPerRepo()
-        try await fetchMissingReadmes(for: repos)
+        try await fetchMissingReadmes(for: repos, recordsRefreshSummary: recordsRefreshSummary)
         for (index, repo) in repos.enumerated() {
             try Task.checkCancellation()
             status = .building(processedRepos: index, totalRepos: repos.count)
             try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
+            if recordsRefreshSummary {
+                updateRefreshSummary(chunksProcessed: index + 1)
+            }
         }
         status = .building(processedRepos: repos.count, totalRepos: repos.count)
-        try await embedPendingChunks()
+        if recordsRefreshSummary {
+            updateRefreshSummary(chunksProcessed: repos.count)
+        }
+        try await embedPendingChunks(recordsRefreshSummary: recordsRefreshSummary)
     }
 
     /// 知识库浏览器的刷新只重建当前选中的仓库，避免用户以为是局部操作却触发全库网络请求。
@@ -196,12 +219,19 @@ final class KnowledgeRAGIndexBuilder {
         try entitlementGate.requirePro(.knowledgeRAG)
         guard try await noteRepository.fetchLibraryState(repoId: repo.id) == .inLibrary else { return }
 
+        refreshSummary = RAGIndexRefreshSummary(
+            totalRepos: 1,
+            readmesProcessed: 0,
+            chunksProcessed: 0,
+            completedAt: nil
+        )
         let summaries = try await summaryRepository.fetchLatestPerRepo()
-        try await fetchMissingReadmes(for: [repo])
+        try await fetchMissingReadmes(for: [repo], recordsRefreshSummary: true)
         status = .building(processedRepos: 0, totalRepos: 1)
         try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
         status = .building(processedRepos: 1, totalRepos: 1)
-        try await embedPendingChunks()
+        updateRefreshSummary(chunksProcessed: 1)
+        try await embedPendingChunks(recordsRefreshSummary: true)
     }
 
     /// 单 source 更新入口。调用方在 README / notes / summary / metadata 变化后使用；移出知识库
@@ -299,13 +329,16 @@ final class KnowledgeRAGIndexBuilder {
 
     /// 仅补齐本地没有 Markdown 的 README。索引器不能假设详情页或后台预拉已经访问过仓库，
     /// 否则知识库会退化成只有 metadata 的分片；单仓库失败则保留 metadata 并继续下一项。
-    private func fetchMissingReadmes(for repos: [Repo]) async throws {
+    private func fetchMissingReadmes(for repos: [Repo], recordsRefreshSummary: Bool) async throws {
         for (index, repo) in repos.enumerated() {
             try Task.checkCancellation()
             status = .fetchingReadmes(processedRepos: index, totalRepos: repos.count)
 
             if let cachedMarkdown = try await readmeRepository.findContent(repoId: repo.id),
                !cachedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if recordsRefreshSummary {
+                    updateRefreshSummary(readmesProcessed: index + 1)
+                }
                 continue
             }
 
@@ -323,15 +356,21 @@ final class KnowledgeRAGIndexBuilder {
                     AppLog.network.warning("RAG README Markdown fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 }
             case .notFound:
-                continue
+                break
             case .failed(let error):
                 AppLog.network.warning("RAG README HTML fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
+            if recordsRefreshSummary {
+                updateRefreshSummary(readmesProcessed: index + 1)
+            }
         }
         status = .fetchingReadmes(processedRepos: repos.count, totalRepos: repos.count)
+        if recordsRefreshSummary {
+            updateRefreshSummary(readmesProcessed: repos.count)
+        }
     }
 
-    private func embedPendingChunks() async throws {
+    private func embedPendingChunks(recordsRefreshSummary: Bool = false) async throws {
         let (client, model) = try makeEmbeddingClient()
         try await chunkRepository.markStaleForOtherModels(currentModel: model)
 
@@ -363,8 +402,24 @@ final class KnowledgeRAGIndexBuilder {
         try await syncExternalBackends(model: model)
         let coverage = try await chunkRepository.coverage(model: model)
         status = .completed(coverage)
-        lastSuccessfulRefreshAt = Date()
+        if recordsRefreshSummary {
+            markRefreshSummaryCompleted(at: Date())
+        }
         NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
+    }
+
+    /// Summary 是值类型；每次赋回属性以确保 Observation 能让两个窗口同步刷新。
+    private func updateRefreshSummary(readmesProcessed: Int? = nil, chunksProcessed: Int? = nil) {
+        guard var summary = refreshSummary else { return }
+        if let readmesProcessed { summary.readmesProcessed = readmesProcessed }
+        if let chunksProcessed { summary.chunksProcessed = chunksProcessed }
+        refreshSummary = summary
+    }
+
+    private func markRefreshSummaryCompleted(at date: Date) {
+        guard var summary = refreshSummary else { return }
+        summary.completedAt = date
+        refreshSummary = summary
     }
 
     /// 自托管后端是本地 chunk 的派生副本。每次本地 pending batch 完成后完整 replace，

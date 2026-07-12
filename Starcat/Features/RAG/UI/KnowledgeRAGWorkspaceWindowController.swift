@@ -184,7 +184,7 @@ private final class KnowledgeRAGBrowserViewModel {
     var isIndexing = false
     /// 浏览器与 RAG 工作台复用同一 index builder，避免展示两份不同的进度口径。
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
-    var lastIndexRefreshAt: Date? { dependencies.knowledgeRAGIndexBuilder.lastSuccessfulRefreshAt }
+    var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
     var isTestingRetrieval = false
@@ -341,6 +341,7 @@ private final class KnowledgeRAGBrowserViewModel {
 private struct KnowledgeRAGBrowserView: View {
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var editingChunk: RAGManagedChunk?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
@@ -651,47 +652,37 @@ private struct KnowledgeRAGBrowserView: View {
 
     @ViewBuilder
     private var indexProgressLabel: some View {
-        switch viewModel.indexingStatus {
-        case .fetchingReadmes(let processed, let total):
-            compactIndexProgress("rag.workspace.index.fetchingReadmes", processed: processed, total: total, color: .blue)
-        case .building(let processed, let total):
-            compactIndexProgress("rag.workspace.index.buildingChunks", processed: processed, total: total, color: .orange)
-        case .embedding(let processed, let total):
-            compactIndexProgress("rag.workspace.index.embeddingChunks", processed: processed, total: total, color: .purple)
-        case .completed:
-            completedIndexResult
-        case .idle, .failed:
+        if let summary = viewModel.indexRefreshSummary {
+            HStack(spacing: 5) {
+                if let completedAt = summary.completedAt {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
+                        .monospacedDigit()
+                        .foregroundStyle(.green)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                }
+                Text(verbatim: "|").foregroundStyle(.secondary)
+                indexProgressSegment("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
+                Text(verbatim: "|").foregroundStyle(.secondary)
+                indexProgressSegment("rag.workspace.index.chunksShort", value: "\(summary.chunksProcessed)/\(summary.totalRepos)", color: .orange)
+            }
+            .font(.caption)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+        } else {
             EmptyView()
         }
     }
 
-    private func compactIndexProgress(
-        _ title: LocalizedStringKey,
-        processed: Int,
-        total: Int,
-        color: Color
-    ) -> some View {
-        HStack(spacing: 4) {
-            Text(title)
-            Text("\(processed)/\(total)").monospacedDigit()
+    private func indexProgressSegment(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+            Text(value).monospacedDigit()
         }
-        .font(.caption)
         .foregroundStyle(color)
-    }
-
-    private var completedIndexResult: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "checkmark.circle.fill")
-            Text("rag.workspace.index.completed")
-            if let refreshedAt = viewModel.lastIndexRefreshAt {
-                Text("·")
-                Text("rag.workspace.index.lastRefreshed")
-                Text(refreshedAt, format: .dateTime.hour().minute())
-                    .monospacedDigit()
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.green)
     }
 
     private func sourceKey(_ source: RAGChunkSource) -> LocalizedStringKey {
