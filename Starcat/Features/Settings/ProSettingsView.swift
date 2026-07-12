@@ -41,12 +41,13 @@ struct ProSettingsTab: View {
             heroSection
             benefitsSection
             if isDirectBuild {
-                // 激活在通行证上方：未激活时先完成授权，已激活时先看状态再看通行证卡片。
-                directLicenseSection
-                directPassSection
+                // 未激活时先购买，再激活授权码；已激活时不显示购买区。
                 if !settings.isProUser {
                     directCheckoutSection
                 }
+                // 激活在通行证上方：已激活时先看状态再看通行证卡片。
+                directLicenseSection
+                directPassSection
                 if directLicenseManager.storedCredential?.subscriptionID != nil {
                     directSubscriptionSection
                 }
@@ -597,7 +598,9 @@ struct ProSettingsTab: View {
         guard let snapshot = directLicenseManager.lastSnapshot,
               let used = snapshot.activationUsed
         else {
-            return String.l10n("settings.pro.direct.pass.seats.unknown")
+            return settings.isProUser
+                ? String.l10n("settings.pro.direct.pass.seats.unknown")
+                : String.l10n("settings.pro.direct.pass.seats.free")
         }
         guard let limit = snapshot.activationLimit else {
             return String.l10n("settings.pro.direct.pass.seats.unlimited")
@@ -639,7 +642,7 @@ private struct DirectProPassData {
     let expirationText: String
     let validatedText: String
 
-    var bannerAssetName: String? {
+    var bannerAssetName: String {
         switch plan {
         case .monthly:
             return "DirectPassMonthly"
@@ -648,7 +651,7 @@ private struct DirectProPassData {
         case .lifetime:
             return "DirectPassLifetime"
         case .none:
-            return nil
+            return "DirectPassFree"
         }
     }
 }
@@ -1277,31 +1280,14 @@ private struct DirectProPassArtwork: View {
 
     @ViewBuilder
     private var passHero: some View {
-        if let assetName = data.bannerAssetName {
-            Image(assetName)
-                .resizable()
-                .scaledToFill()
-                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .stroke(passAccentColor.opacity(0.58), lineWidth: 1.2)
-                }
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [.cyan.opacity(0.85), .yellow.opacity(0.92)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                Image(systemName: data.isActive ? "checkmark" : "star.fill")
-                    .font(.system(size: 78, weight: .black))
-                    .foregroundStyle(Color(red: 0.02, green: 0.04, blue: 0.10))
+        Image(data.bannerAssetName)
+            .resizable()
+            .scaledToFill()
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(passAccentColor.opacity(0.58), lineWidth: 1.2)
             }
-            .frame(width: 146, height: 146)
-        }
     }
 
     private var passAccentColor: Color {
@@ -1900,6 +1886,8 @@ private struct ProBenefitTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
+        // 两列网格按内容自适应会让背景高度参差；保留长文案扩展空间的同时统一常规卡片高度。
+        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(0.05))

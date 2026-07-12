@@ -33457,6 +33457,23 @@
         }
       }
     },
+    "settings.pro.direct.pass.seats.free": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock with Pro"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级 Pro 后解锁"
+          }
+        }
+      }
+    },
     "settings.pro.direct.pass.seats.unknown": {
       "extractionState": "manual",
       "localizations": {
