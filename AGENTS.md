@@ -286,6 +286,11 @@ Section {
 > 单一信任源：[`docs/5-规范/UI-Focus-Ring-规范.md`](docs/5-规范/UI-Focus-Ring-规范.md)
 > 使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`。
 
+### UI 规范：折叠/展开整行点击（强制，2026-07-13 起生效）
+
+> 单一信任源：[`docs/5-规范/UI-折叠展开-规范.md`](docs/5-规范/UI-折叠展开-规范.md)
+> 所有折叠/展开标题行必须整行可点击；chevron 只表达状态，不能是唯一触发区。
+
 ### UI 规范：Sheet 关闭图标（强制，2026-06-26 起生效）
 
 > 单一信任源：[`docs/5-规范/UI-Sheet-关闭图标-规范.md`](docs/5-规范/UI-Sheet-关闭图标-规范.md)

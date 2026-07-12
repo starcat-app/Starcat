@@ -28,6 +28,7 @@ struct ActivityReleaseDetailContent: View {
     /// 符合 dong4j 对初始状态的要求。
     @State private var expandedReleaseIDs: Set<Int64> = []
     @State private var expansionSnapshotIDs: [Int64] = []
+    @State private var expandedAssetReleaseIDs: Set<Int64> = []
     /// 折叠/展开前锚定当前 release 卡片，避免 ScrollView 因高度突变乱跳。
     @State private var scrollAnchorReleaseID: Int64?
     /// 展开/折叠布局重算期间暂停向 Scaffold 上报滚动，避免 hero 折叠 progress 跟着抖。
@@ -202,7 +203,16 @@ struct ActivityReleaseDetailContent: View {
     private func assetsSection(_ release: ReleaseRecord) -> some View {
         let assets = ReleaseAssetCodec.decode(release.assetsJson)
         if !assets.isEmpty {
-            DisclosureGroup {
+            let isExpanded = expandedAssetReleaseIDs.contains(release.id)
+            DisclosureGroup(
+                isExpanded: Binding(
+                    get: { isExpanded },
+                    set: { expanded in
+                        if expanded { expandedAssetReleaseIDs.insert(release.id) }
+                        else { expandedAssetReleaseIDs.remove(release.id) }
+                    }
+                )
+            ) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(assets) { asset in
                         ReleaseAssetRowView(asset: asset)
@@ -210,9 +220,20 @@ struct ActivityReleaseDetailContent: View {
                 }
                 .padding(.top, 4)
             } label: {
-                Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button {
+                    if isExpanded { expandedAssetReleaseIDs.remove(release.id) }
+                    else { expandedAssetReleaseIDs.insert(release.id) }
+                } label: {
+                    HStack {
+                        Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
         }
     }

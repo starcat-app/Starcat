@@ -291,7 +291,11 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.aiChatRequiresCommandReturn) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.general.shortcuts.aiCommandReturn.title")
-                        Text("settings.general.shortcuts.aiCommandReturn.description")
+                        Text(
+                            settings.aiChatRequiresCommandReturn
+                                ? "settings.general.shortcuts.aiCommandReturn.description.on"
+                                : "settings.general.shortcuts.aiCommandReturn.description.off"
+                        )
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

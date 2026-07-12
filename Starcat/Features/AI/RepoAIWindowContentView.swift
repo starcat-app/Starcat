@@ -111,6 +111,7 @@ struct RepoAIWindowContentView: View {
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
     @State private var didRunInitialExternalSummaryRequest = false
+    @State private var areExternalContextSourcesExpanded = false
     @State private var hoveredPrepStopStep: PrepStep?
     /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
     /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
@@ -881,7 +882,7 @@ struct RepoAIWindowContentView: View {
     }
 
     private func externalContextSourcesBlock(_ sources: [AIExternalContextSource]) -> some View {
-        DisclosureGroup {
+        DisclosureGroup(isExpanded: $areExternalContextSourcesExpanded) {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(sources) { source in
                     Button {
@@ -910,8 +911,20 @@ struct RepoAIWindowContentView: View {
             }
             .padding(.top, 6)
         } label: {
-            Label("External Context Sources", systemImage: "globe")
-                .font(interfaceScale.font(.caption, weight: .semibold))
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    areExternalContextSourcesExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Label("External Context Sources", systemImage: "globe")
+                        .font(interfaceScale.font(.caption, weight: .semibold))
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
         }
         .padding(.top, 6)
     }

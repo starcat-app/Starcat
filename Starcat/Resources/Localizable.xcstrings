@@ -19955,7 +19955,7 @@
         }
       }
     },
-    "rag.workspace.composer.placeholder" : {
+    "rag.workspace.composer.placeholder.commandSend" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -19967,6 +19967,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向知识库提问 · 输入 @ 选择仓库 · ⌘↩ 发送"
+          }
+        }
+      }
+    },
+    "rag.workspace.composer.placeholder.returnSend" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask your knowledge base · Type @ to select repositories · Return to send"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向知识库提问 · 输入 @ 选择仓库 · Return 发送"
           }
         }
       }
@@ -20183,10 +20199,34 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "章节路径" } }
       }
     },
+    "rag.browser.chunk.sectionLabel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Section path" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "章节路径" } }
+      }
+    },
+    "rag.browser.chunk.save" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存" } }
+      }
+    },
     "rag.browser.chunk.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Chunk title" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分片标题" } }
+      }
+    },
+    "rag.browser.chunk.titleLabel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Title" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标题" } }
+      }
+    },
+    "rag.browser.chunk.contentLabel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chunk content" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分片内容" } }
       }
     },
     "rag.browser.empty" : {
@@ -31080,12 +31120,28 @@
         }
       }
     },
-    "settings.general.shortcuts.aiCommandReturn.description" : {
+    "settings.general.shortcuts.aiCommandReturn.description.off" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Return inserts a newline; Command+Return sends."
+            "value" : "Return sends; ⌘ + Return inserts a newline."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return 发送，⌘ + Return 换行。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.aiCommandReturn.description.on" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return inserts a newline; ⌘ + Return sends."
           }
         },
         "zh-Hans" : {

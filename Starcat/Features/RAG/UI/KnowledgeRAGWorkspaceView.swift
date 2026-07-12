@@ -15,6 +15,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(AppSettings.self) private var settings
 
     let chromeState: WorkspaceChromeState
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
@@ -274,25 +275,19 @@ struct KnowledgeRAGWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 0) {
                 Button {
+                    // 单击目录行：展开/折叠，并选中该一级分组（新会话归入此处）。
                     if isExpanded {
                         expandedGroupIDs.remove(group.id)
                     } else {
                         expandedGroupIDs.insert(group.id)
                     }
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(iconFont(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 28)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .padding(.leading, 6)
-
-                Button {
-                    viewModel.selectGroup(group.id)
+                    viewModel.selectedGroupID = group.id
                 } label: {
                     HStack(spacing: 8) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
                         Image(systemName: "folder.fill")
                             .font(iconFont(size: 13, weight: .medium))
                             .foregroundStyle(isSelected ? Color.accentColor : .secondary)
@@ -307,7 +302,7 @@ struct KnowledgeRAGWorkspaceView: View {
                             .foregroundStyle(.secondary)
                     }
                     .contentShape(Rectangle())
-                    .padding(.trailing, 4)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 7)
                 }
                 .buttonStyle(.plain)
@@ -684,7 +679,11 @@ struct KnowledgeRAGWorkspaceView: View {
             // 弹层挂在 `@` 字形下方的 1×1 锚点上，而不是整块输入框居中。
             RAGComposerTextEditor(
                 text: $viewModel.draftQuestion,
-                placeholder: String.l10n("rag.workspace.composer.placeholder"),
+                placeholder: String.l10n(
+                    settings.aiChatRequiresCommandReturn
+                        ? "rag.workspace.composer.placeholder.commandSend"
+                        : "rag.workspace.composer.placeholder.returnSend"
+                ),
                 font: composerNSFont,
                 maximumHeight: composerMaximumHeight,
                 onHeightChange: { composerContentHeight = $0 },
@@ -933,24 +932,28 @@ struct KnowledgeRAGWorkspaceView: View {
                 Spacer(minLength: 8)
                 #if DEBUG
                 // Debug 总开关放在「引用」右侧；开启后才露出「调试」tab。
-                Toggle(isOn: Binding(
-                    get: { viewModel.isDebugModeEnabled },
-                    set: { enabled in
-                        viewModel.isDebugModeEnabled = enabled
-                        if enabled {
-                            inspectorTab = .debug
-                        } else if inspectorTab == .debug {
-                            inspectorTab = .evidence
+                HStack(spacing: 5) {
+                    Image(systemName: "ladybug")
+                        .font(iconFont(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Toggle("", isOn: Binding(
+                        get: { viewModel.isDebugModeEnabled },
+                        set: { enabled in
+                            viewModel.isDebugModeEnabled = enabled
+                            if enabled {
+                                inspectorTab = .debug
+                            } else if inspectorTab == .debug {
+                                inspectorTab = .evidence
+                            }
                         }
-                    }
-                )) {
-                    Label("rag.workspace.debug.enabled", systemImage: "ladybug")
-                        .font(ragFont(.caption, weight: .semibold))
-                        .labelStyle(.iconOnly)
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
                 .help("rag.workspace.debug.enabled")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("rag.workspace.debug.enabled")
                 #endif
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1216,50 +1219,59 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(viewModel.debugTraces.sorted { $0.startedAt < $1.startedAt }) { trace in
-                    DisclosureGroup(
-                        isExpanded: Binding(
-                            get: { expandedDebugTraceIDs.contains(trace.id) },
-                            set: { isExpanded in
-                                if isExpanded { expandedDebugTraceIDs.insert(trace.id) }
-                                else { expandedDebugTraceIDs.remove(trace.id) }
+                    let isExpanded = expandedDebugTraceIDs.contains(trace.id)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                                if isExpanded { expandedDebugTraceIDs.remove(trace.id) }
+                                else { expandedDebugTraceIDs.insert(trace.id) }
                             }
-                        )
-                    ) {
-                        ForEach(trace.events) { event in
-                            VStack(alignment: .leading, spacing: 7) {
-                                HStack(spacing: 6) {
-                                    Text(debugStageKey(event.stage))
-                                        .font(ragFont(.caption, weight: .semibold))
-                                    Spacer()
-                                    Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
-                                        .font(ragFont(.caption2, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                    CopyFeedbackButton(
-                                        providesContent: { event.payload },
-                                        tooltip: "rag.workspace.debug.copy"
-                                    ) { didCopy in
-                                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                                    }
-                                }
-                                Text(event.payload)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                    .font(ragFont(.caption2, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 12)
+                                Text(debugTraceCategoryKey(trace.category))
+                                    .font(ragFont(.caption, weight: .semibold))
+                                Spacer()
+                                Text(localizedTimestamp(trace.startedAt))
                                     .font(ragFont(.caption2, design: .monospaced))
-                                    .textSelection(.enabled)
+                                    .foregroundStyle(.secondary)
+                                Text(debugTraceStateKey(trace.state))
+                                    .font(ragFont(.caption2, weight: .semibold))
+                                    .foregroundStyle(.secondary)
                             }
-                            .padding(10)
-                            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(debugTraceCategoryKey(trace.category))
-                                .font(ragFont(.caption, weight: .semibold))
-                            Spacer()
-                            Text(localizedTimestamp(trace.startedAt))
-                                .font(ragFont(.caption2, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                            Text(debugTraceStateKey(trace.state))
-                                .font(ragFont(.caption2, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+
+                        if isExpanded {
+                            ForEach(trace.events) { event in
+                                VStack(alignment: .leading, spacing: 7) {
+                                    HStack(spacing: 6) {
+                                        Text(debugStageKey(event.stage))
+                                            .font(ragFont(.caption, weight: .semibold))
+                                        Spacer()
+                                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
+                                            .font(ragFont(.caption2, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                        CopyFeedbackButton(
+                                            providesContent: { event.payload },
+                                            tooltip: "rag.workspace.debug.copy"
+                                        ) { didCopy in
+                                            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                                                .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                                        }
+                                    }
+                                    Text(event.payload)
+                                        .font(ragFont(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                                .padding(10)
+                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                            }
                         }
                     }
                     .padding(10)
@@ -1353,15 +1365,26 @@ struct KnowledgeRAGWorkspaceView: View {
     private func handleComposerCommand(_ command: RAGComposerTextEditor.Command) -> Bool {
         switch command {
         case .returnKey(let modifiers):
-            if viewModel.isMentionPickerPresented, !modifiers.contains(.command) {
+            let flags = modifiers.intersection(.deviceIndependentFlagsMask)
+            // @ 候选打开时：Enter 切换勾选；Cmd+Enter 仍走发送偏好。
+            if viewModel.isMentionPickerPresented, !flags.contains(.command) {
                 viewModel.selectHighlightedMention()
                 return true
             }
-            if modifiers.contains(.command) {
-                viewModel.send()
-                return true
+            // 与设置「需按 ⌘ + 回车键发送 AI 问题」同一偏好：
+            // 开=⌘↩发送 / Return 换行；关=Return 发送 / ⌘↩ 换行。
+            if settings.aiChatRequiresCommandReturn {
+                if flags.contains(.command) {
+                    viewModel.send()
+                    return true
+                }
+                return false
             }
-            return false
+            if flags.contains(.command) {
+                return false
+            }
+            viewModel.send()
+            return true
         case .upArrow:
             guard viewModel.isMentionPickerPresented else { return false }
             viewModel.moveMentionSelection(by: -1)
@@ -1544,6 +1567,10 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.placeholder = placeholder
         textView.setAccessibilityLabel(placeholder)
+        // Cmd+Enter 多数情况下不会进 insertNewline:，必须在 keyDown 拦截。
+        textView.onCommand = { [weak coordinator = context.coordinator] command in
+            coordinator?.parent.onCommand(command) ?? false
+        }
 
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
@@ -1567,6 +1594,9 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
         textView.font = font
         textView.placeholder = placeholder
         textView.setAccessibilityLabel(placeholder)
+        textView.onCommand = { [weak coordinator = context.coordinator] command in
+            coordinator?.parent.onCommand(command) ?? false
+        }
         if textView.string != text {
             textView.string = text
             textView.needsDisplay = true
@@ -1594,7 +1624,9 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
             case #selector(NSResponder.insertNewline(_:)):
-                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                // 去掉 capsLock 等噪声位，否则 .command 判断偶发失败。
+                let modifiers = (NSApp.currentEvent?.modifierFlags ?? [])
+                    .intersection(.deviceIndependentFlagsMask)
                 return parent.onCommand(.returnKey(modifiers))
             case #selector(NSResponder.moveUp(_:)):
                 return parent.onCommand(.upArrow)
@@ -1652,6 +1684,21 @@ private struct RAGComposerTextEditor: NSViewRepresentable {
 /// placeholder 在 NSTextView 自身坐标系中绘制，基线与光标完全一致。
 private final class RAGComposerTextView: NSTextView {
     var placeholder = ""
+    /// 键盘命令回调（Cmd+Enter 发送等）；由 Representable 注入。
+    var onCommand: ((RAGComposerTextEditor.Command) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // 36 = Return，76 = 小键盘 Enter。
+        // Cmd+Enter 通常不会走 insertNewline:，必须在 keyDown 拦下再交给 onCommand
+        // （是否真正发送由设置里的 aiChatRequiresCommandReturn 决定）。
+        if (event.keyCode == 36 || event.keyCode == 76), flags.contains(.command) {
+            if onCommand?(.returnKey(flags)) == true {
+                return
+            }
+        }
+        super.keyDown(with: event)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

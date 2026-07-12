@@ -315,15 +315,6 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 选中一级分组目录（不高亮具体会话）；再次点同一目录可取消。
-    func selectGroup(_ id: UUID) {
-        if selectedGroupID == id {
-            selectedGroupID = nil
-        } else {
-            selectedGroupID = id
-        }
-    }
-
     func deleteConversation(_ id: UUID) async {
         if selectedConversationID == id { conversationTitleTask?.cancel() }
         do {

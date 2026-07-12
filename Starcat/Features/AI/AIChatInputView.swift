@@ -367,6 +367,9 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.setAccessibilityLabel(placeholder)
         textView.placeholder = placeholder
+        textView.onCommandReturn = { [weak coordinator = context.coordinator] in
+            coordinator?.handleCommandReturn() ?? false
+        }
 
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
@@ -385,6 +388,12 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
 
         textView.isEditable = isEnabled
         textView.isSelectable = isEnabled
+        if let chatTextView = textView as? AIChatTextView {
+            chatTextView.placeholder = placeholder
+            chatTextView.onCommandReturn = { [weak coordinator = context.coordinator] in
+                coordinator?.handleCommandReturn() ?? false
+            }
+        }
         scrollView.onHeightChange = onHeightChange
         state.connect(textView)
 
@@ -434,19 +443,31 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            let modifiers = (NSApp.currentEvent?.modifierFlags ?? [])
+                .intersection(.deviceIndependentFlagsMask)
+            // 与设置文案对称：开=⌘↩发送 / Return 换行；关=Return 发送 / ⌘↩ 换行。
             if parent.requiresCommandReturn {
                 if modifiers.contains(.command) {
                     parent.onSubmit()
                 } else {
                     textView.insertNewlineIgnoringFieldEditor(nil)
                 }
-            } else if modifiers.contains(.shift) {
+            } else if modifiers.contains(.command) {
                 textView.insertNewlineIgnoringFieldEditor(nil)
             } else {
                 parent.onSubmit()
             }
             return true
+        }
+
+        /// Cmd+Enter 多数情况不进 insertNewline:；由 TextView.keyDown 回调到这里。
+        func handleCommandReturn() -> Bool {
+            if parent.requiresCommandReturn {
+                parent.onSubmit()
+                return true
+            }
+            // 关闭偏好：⌘↩ 换行，交给 keyDown 的 super 插入。
+            return false
         }
     }
 }
@@ -516,6 +537,18 @@ private final class AIChatIntrinsicScrollView: NSScrollView {
 /// `NSTextView` 没有公开 placeholder API，这个轻量子类只在空内容且未输入时绘制提示。
 private final class AIChatTextView: NSTextView {
     var placeholder = ""
+    /// 返回 true 表示已处理（例如发送）；false 则继续走默认换行。
+    var onCommandReturn: (() -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if (event.keyCode == 36 || event.keyCode == 76), flags.contains(.command) {
+            if onCommandReturn?() == true {
+                return
+            }
+        }
+        super.keyDown(with: event)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

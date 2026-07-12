@@ -8,6 +8,7 @@
 //  和产出物数据；页面结构保持统一，避免 Weekly / 替代品 / 重叠扫描各自长出一套 UI。
 //
 
+import AppKit
 import SwiftUI
 
 struct AgentWorkspaceView: View {
@@ -984,7 +985,11 @@ struct AgentWorkspaceView: View {
     }
 
     private var agentComposerInputBox: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let canSubmit = !viewModel.isRunning
+            && viewModel.selectedAgent?.isEnabled == true
+            && !viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let requiresCommandReturn = dependencies.settings.aiChatRequiresCommandReturn
+        return VStack(alignment: .leading, spacing: 8) {
             TextField(String.l10n("agent.workspace.composer.placeholder"), text: $viewModel.prompt, axis: .vertical)
                 .font(agentFont(.body))
                 .textFieldStyle(.plain)
@@ -992,6 +997,35 @@ struct AgentWorkspaceView: View {
                 // 与 RAG composer 保持同一布局约束，避免纵向 TextField 首次测量时提前换行。
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                 .disabled(viewModel.isRunning)
+                // 纯 Return：开=换行 / 关=发送。⌘↩ 由下方隐藏 Button 承接（onKeyPress 无 modifiers 参数）。
+                .onKeyPress(.return) {
+                    let flags = (NSApp.currentEvent?.modifierFlags ?? [])
+                        .intersection(.deviceIndependentFlagsMask)
+                    if flags.contains(.command) {
+                        return .ignored
+                    }
+                    if requiresCommandReturn {
+                        return .ignored
+                    }
+                    guard canSubmit else { return .handled }
+                    viewModel.run()
+                    return .handled
+                }
+                .background {
+                    // 与设置对称：开=⌘↩发送，关=⌘↩换行。
+                    Button("") {
+                        if requiresCommandReturn {
+                            guard canSubmit else { return }
+                            viewModel.run()
+                        } else {
+                            insertNewlineIntoFocusedFieldEditor()
+                        }
+                    }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
 
             HStack(spacing: 8) {
                 Spacer()
@@ -1003,12 +1037,16 @@ struct AgentWorkspaceView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(agentFont(.title2))
-                        .foregroundStyle(viewModel.isRunning ? .secondary : Color.accentColor)
+                        .foregroundStyle(canSubmit ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(viewModel.isRunning || viewModel.selectedAgent?.isEnabled != true || viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(!canSubmit)
+                .help(
+                    requiresCommandReturn
+                        ? "settings.general.shortcuts.aiCommandReturn.description.on"
+                        : "settings.general.shortcuts.aiCommandReturn.description.off"
+                )
             }
         }
         .padding(.horizontal, 16)
@@ -1021,6 +1059,15 @@ struct AgentWorkspaceView: View {
                 .stroke(Color(nsColor: .separatorColor).opacity(0.44))
         )
         .padding(.horizontal, 18)
+    }
+
+    /// ⌘↩ 换行时写进当前 field editor，尽量落在光标处而不是字符串末尾。
+    private func insertNewlineIntoFocusedFieldEditor() {
+        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView {
+            textView.insertNewline(nil)
+            return
+        }
+        viewModel.prompt += "\n"
     }
 
     private func composerContextChip(_ title: String, icon: String) -> some View {

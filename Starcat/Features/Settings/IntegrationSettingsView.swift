@@ -21,6 +21,7 @@ struct IntegrationSettingsTab: View {
     @State private var externalSearchAPIKeys: [ExternalSearchProviderID: String] = [:]
     @State private var visibleExternalSearchAPIKeys: Set<ExternalSearchProviderID> = []
     @State private var expandedExternalSearchProviders: Set<ExternalSearchProviderID> = []
+    @State private var expandedExternalSearchTechnicalDetails: Set<ExternalSearchProviderID> = []
     @State private var externalSearchAPIKeyTestStates: [ExternalSearchProviderID: ExternalSearchAPIKeyTestState] = [:]
     @State private var pluginConfiguration = CompanionConfiguration.shared
     @State private var localAPIKeyStore = StarcatLocalAPIKeyStore.shared
@@ -762,11 +763,33 @@ struct IntegrationSettingsTab: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
                 if let details {
-                    DisclosureGroup("settings.externalSearch.apiKey.technicalDetails") {
+                    let isExpanded = expandedExternalSearchTechnicalDetails.contains(provider)
+                    DisclosureGroup(
+                        isExpanded: Binding(
+                            get: { isExpanded },
+                            set: { expanded in
+                                if expanded { expandedExternalSearchTechnicalDetails.insert(provider) }
+                                else { expandedExternalSearchTechnicalDetails.remove(provider) }
+                            }
+                        )
+                    ) {
                         Text(details)
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                    } label: {
+                        Button {
+                            if isExpanded { expandedExternalSearchTechnicalDetails.remove(provider) }
+                            else { expandedExternalSearchTechnicalDetails.insert(provider) }
+                        } label: {
+                            HStack {
+                                Text("settings.externalSearch.apiKey.technicalDetails")
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
                     }
                     .font(.caption)
                 }

@@ -536,33 +536,39 @@ private struct KnowledgeRAGBrowserView: View {
     private func chunkRow(_ managed: RAGManagedChunk) -> some View {
         let chunk = managed.chunk
         let status = effectiveStatus(for: chunk)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
-                Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
-                if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
-                if managed.isExcluded { Image(systemName: "eye.slash.fill").foregroundStyle(.secondary) }
-                Text(statusKey(status)).font(.caption2.weight(.semibold)).foregroundStyle(statusColor(status))
-                Menu {
-                    Button("rag.browser.chunk.edit") { editingChunk = managed }
-                    if managed.isExcluded {
-                        Button("rag.browser.chunk.restore") { Task { await viewModel.restoreChunk(managed) } }
-                    } else {
-                        Button("rag.browser.chunk.delete", role: .destructive) { Task { await viewModel.excludeChunk(managed) } }
+        return HStack(alignment: .top, spacing: 8) {
+            Button { editingChunk = managed } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
+                        Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                        Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer()
+                        if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
+                        Text(statusKey(status)).font(.caption2.weight(.semibold)).foregroundStyle(statusColor(status))
                     }
-                    if managed.hasOverride {
-                        Button("rag.browser.chunk.revert") { Task { await viewModel.restoreChunk(managed) } }
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
+                    Text(chunk.content).font(.caption).lineLimit(3)
+                    if let error = chunk.embeddingError, !error.isEmpty { Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            Text(chunk.content).font(.caption).lineLimit(3).textSelection(.enabled)
-            if let error = chunk.embeddingError, !error.isEmpty { Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2) }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+
+            Button(role: .destructive) { Task { await viewModel.excludeChunk(managed) } } label: {
+                Image(systemName: "trash")
+                    .font(.callout)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .foregroundStyle(.red)
+            .help("rag.browser.chunk.delete")
         }
         .padding(12).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -674,12 +680,21 @@ private struct KnowledgeRAGChunkEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("rag.browser.chunk.edit").font(.headline); Spacer(); SheetCloseButton(action: { dismiss() }) }
-            TextField("rag.browser.chunk.title", text: $title)
-            TextField("rag.browser.chunk.section", text: $sectionPath)
-            TextEditor(text: $content).font(.body).frame(minHeight: 260)
-            HStack { Spacer(); Button("common.cancel") { dismiss() }; Button("common.save") { Task { await onSave(title, sectionPath, content); dismiss() } }.buttonStyle(.borderedProminent).disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("rag.browser.chunk.titleLabel").font(.caption).foregroundStyle(.secondary)
+                TextField("rag.browser.chunk.title", text: $title)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("rag.browser.chunk.sectionLabel").font(.caption).foregroundStyle(.secondary)
+                TextField("rag.browser.chunk.section", text: $sectionPath)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("rag.browser.chunk.contentLabel").font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $content).font(.body).frame(minHeight: 250)
+            }
+            HStack { Spacer(); Button("common.cancel") { dismiss() }; Button("rag.browser.chunk.save") { Task { await onSave(title, sectionPath, content); dismiss() } }.buttonStyle(.borderedProminent).disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .padding(18)
-        .frame(width: 620, height: 420)
+        .frame(width: 680, height: 540)
     }
 }

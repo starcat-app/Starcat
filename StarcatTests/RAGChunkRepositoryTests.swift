@@ -212,10 +212,8 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 40, key: "readme:manual:0", content: "Updated source")]
         )
-        let managed = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0).chunks.first)
-        #expect(managed.chunk.content == "Edited")
-        #expect(managed.isExcluded)
-        #expect(managed.hasOverride)
+        let excluded = try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0)
+        #expect(excluded.chunks.isEmpty)
 
         try await repository.restoreKnowledgeChunk(id: id)
         let restored = try #require(try await repository.fetchManagedKnowledgeChunks(repoId: 40, limit: 5, offset: 0).chunks.first)

@@ -217,26 +217,28 @@ struct RepoNotesSection: View {
             notesEditor
                 .padding(.top, 4)
         } label: {
-            HStack(spacing: 8) {
-                Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let edited = viewModel?.note?.editedAt {
-                    Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
+            Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     isNotesExpanded.toggle()
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let edited = viewModel?.note?.editedAt {
+                        Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .accessibilityAddTraits(.isButton)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help(isNotesExpanded ? Text("repo.notesCollapse") : Text("repo.notesExpand"))
         }
         .disclosureGroupStyle(.automatic)
