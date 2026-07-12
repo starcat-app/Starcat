@@ -1422,6 +1422,8 @@ enum DatabaseMigrations {
             t.column("repo_id", .integer).notNull()
                 .references("repos", column: "id", onDelete: .cascade)
             t.column("repo_full_name", .text).notNull()
+            // 与回答正文 `[S1]` 对齐；不能靠 rank+1 反推（引用可能跳号）。
+            t.column("marker", .text).notNull().defaults(to: "")
             t.column("source", .text).notNull()
             t.column("section_title", .text).notNull().defaults(to: "")
             t.column("rank", .integer).notNull()
@@ -1469,6 +1471,15 @@ enum DatabaseMigrations {
         }
         if try !db.tableExists("rag_chunk_tombstones") {
             try createRAGChunkTombstoneSchema(db)
+        }
+        // 开发期补列：旧库已有 citations 表时不会重跑 createRAGSchema。
+        if try db.tableExists("rag_message_citations") {
+            let citationColumns = try db.columns(in: "rag_message_citations").map(\.name)
+            if !citationColumns.contains("marker") {
+                try db.alter(table: "rag_message_citations") { t in
+                    t.add(column: "marker", .text).notNull().defaults(to: "")
+                }
+            }
         }
         // migrator 先于 ensure 执行：v5 在无表时会 no-op，因此这里补 is_pinned 给「刚被 ensure 建出的旧形态表」。
         if try db.tableExists("rag_conversations") {

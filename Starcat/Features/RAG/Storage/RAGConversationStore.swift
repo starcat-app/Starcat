@@ -201,15 +201,16 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
             for (rank, citation) in citations.enumerated() {
                 try db.execute(sql: """
                     INSERT INTO rag_message_citations (
-                        id, message_id, chunk_id, repo_id, repo_full_name, source,
+                        id, message_id, chunk_id, repo_id, repo_full_name, marker, source,
                         section_title, rank, score, hit_kind, source_url, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         citation.id.uuidString,
                         assistantID.uuidString,
                         citation.chunkID,
                         citation.repoID,
                         citation.repoFullName,
+                        citation.marker,
                         citation.source.rawValue,
                         citation.sectionTitle,
                         rank,
@@ -336,7 +337,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     (SELECT COUNT(*) FROM rag_messages) AS message_count,
                     (SELECT COALESCE(SUM(length(title) + length(scope)), 0) FROM rag_conversations)
                     + (SELECT COALESCE(SUM(length(content) + COALESCE(length(model), 0)), 0) FROM rag_messages)
-                    + (SELECT COALESCE(SUM(length(repo_full_name) + length(source) + length(section_title) + COALESCE(length(source_url), 0)), 0) FROM rag_message_citations)
+                    + (SELECT COALESCE(SUM(length(repo_full_name) + length(marker) + length(source) + length(section_title) + COALESCE(length(source_url), 0)), 0) FROM rag_message_citations)
                     + (SELECT COALESCE(SUM(length(resource) + length(title) + COALESCE(length(source_url), 0) + COALESCE(length(error_message), 0)), 0) FROM rag_message_remote_contexts)
                     AS total_bytes
                 """)
@@ -421,8 +422,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
 
     private func citationRows(db: Database, messageID: UUID) throws -> [RAGCitation] {
         let rows = try Row.fetchAll(db, sql: """
-            SELECT id, chunk_id, repo_id, repo_full_name, source, section_title,
-                   score, hit_kind, source_url
+            SELECT id, chunk_id, repo_id, repo_full_name, marker, source, section_title,
+                   rank, score, hit_kind, source_url
             FROM rag_message_citations
             WHERE message_id = ?
             ORDER BY rank ASC
@@ -432,8 +433,13 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                   let source = RAGChunkSource(rawValue: row["source"]),
                   let hitKind = RAGHitKind(rawValue: row["hit_kind"]) else { return nil }
             let sourceURLString: String? = row["source_url"]
+            let storedMarker: String = row["marker"]
+            // ensure 补列后旧行为空串：用 rank+1 仅恢复本机开发会话显示。
+            let rank: Int = row["rank"]
+            let marker = storedMarker.isEmpty ? "S\(rank + 1)" : storedMarker
             return RAGCitation(
                 id: id,
+                marker: marker,
                 chunkID: row["chunk_id"],
                 repoID: row["repo_id"],
                 repoFullName: row["repo_full_name"],

@@ -68,7 +68,12 @@ struct KnowledgeRAGWorkspaceView: View {
         .task { await viewModel.observeKnowledgeBoundaryChanges() }
         .task { await viewModel.observeIndexChanges() }
         .environment(\.openURL, OpenURLAction { url in
-            viewModel.handleLink(url)
+            // 正文 `[S1]` 链到 starcat-rag://citation/<id>；命中后切证据 tab。
+            if viewModel.openCitationLink(url) {
+                inspectorTab = .evidence
+            } else {
+                viewModel.handleLink(url)
+            }
             return .handled
         })
         .sheet(isPresented: Binding(
@@ -587,7 +592,8 @@ struct KnowledgeRAGWorkspaceView: View {
             createdAtLabel: createdAt.map(messageTimeLabel),
             showsActions: showsActions,
             onSelectCitation: { citation in
-                viewModel.selectCitation(citation)
+                // 芯片与正文 `[Sn]` 一致：打开 Starcat 仓库详情，并定位证据。
+                viewModel.openCitation(citation)
                 inspectorTab = .evidence
             },
             onExport: { viewModel.exportAnswer(content) }
@@ -2022,7 +2028,7 @@ private struct RAGAssistantMessageBlock: View {
                 Spacer(minLength: 0)
             }
 
-            RAGMarkdownText(content: content)
+            RAGMarkdownText(content: content, citations: citations)
                 .font(interfaceScale.font(.body))
                 .textSelection(.enabled)
                 .frame(maxWidth: 900, alignment: .leading)
@@ -2030,11 +2036,11 @@ private struct RAGAssistantMessageBlock: View {
             if !citations.isEmpty {
                 // 随中栏宽度自动换行，与输入框上方附件 chip 同一套 FlowLayout。
                 RAGFlowLayout(spacing: 7) {
-                    ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
+                    ForEach(citations) { citation in
                         Button {
                             onSelectCitation(citation)
                         } label: {
-                            Text("\(index + 1). \(citation.repoFullName)")
+                            Text("\(citation.marker) · \(citation.repoFullName)")
                                 .font(interfaceScale.font(.caption, weight: .semibold))
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
@@ -2340,13 +2346,41 @@ private enum RAGInspectorTab: String, CaseIterable, Identifiable {
 
 private struct RAGMarkdownText: View {
     let content: String
+    var citations: [RAGCitation] = []
 
     var body: some View {
-        if let attributed = try? AttributedString(markdown: content) {
+        let rendered = Self.linkifyCitations(in: content, citations: citations)
+        if let attributed = try? AttributedString(markdown: rendered) {
             Text(attributed)
         } else {
             Text(content)
         }
+    }
+
+    /// 把裸 `[S1]` 转成 Markdown 链接，交给上层 `openURL` → `openCitationLink`。
+    /// 已是 `[S1](...)` 形式的不二次改写，避免流式中间态或导出文案被破坏。
+    static func linkifyCitations(in content: String, citations: [RAGCitation]) -> String {
+        guard !citations.isEmpty else { return content }
+        let byMarker = Dictionary(uniqueKeysWithValues: citations.map { ($0.marker, $0) })
+        guard let regex = try? NSRegularExpression(pattern: #"\[(S\d+)\](?!\()"#) else { return content }
+        let nsRange = NSRange(content.startIndex..<content.endIndex, in: content)
+        var result = ""
+        var lastEnd = content.startIndex
+        for match in regex.matches(in: content, range: nsRange) {
+            guard let fullRange = Range(match.range, in: content),
+                  match.numberOfRanges >= 2,
+                  let markerRange = Range(match.range(at: 1), in: content) else { continue }
+            result += content[lastEnd..<fullRange.lowerBound]
+            let marker = String(content[markerRange])
+            if let citation = byMarker[marker] {
+                result += "[\(marker)](starcat-rag://citation/\(citation.id.uuidString))"
+            } else {
+                result += content[fullRange]
+            }
+            lastEnd = fullRange.upperBound
+        }
+        result += content[lastEnd...]
+        return result
     }
 }
 

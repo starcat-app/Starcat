@@ -48,6 +48,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                 if let hit {
                     citations[marker] = RAGCitation(
                         id: UUID(),
+                        marker: marker,
                         chunkID: hit.chunk.id,
                         repoID: bundle.candidate.repo.id,
                         repoFullName: bundle.candidate.repo.fullName,

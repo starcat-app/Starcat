@@ -820,11 +820,26 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 回答正文里的 `starcat-rag://citation/<uuid>`；命中则打开仓库详情并选中证据。
+    /// - Returns: 是否已处理（调用方可据此切到证据 tab）。
+    @discardableResult
+    func openCitationLink(_ url: URL) -> Bool {
+        guard url.scheme == "starcat-rag", url.host == "citation" else { return false }
+        let idString = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let id = UUID(uuidString: idString),
+              let citation = messages.flatMap(\.citations).first(where: { $0.id == id }) else {
+            return false
+        }
+        openCitation(citation)
+        return true
+    }
+
     func openGitHub(_ citation: RAGCitation) {
         if let url = citation.sourceURL { NSWorkspace.shared.open(url) }
     }
 
     func handleLink(_ url: URL) {
+        if openCitationLink(url) { return }
         let host = url.host?.lowercased()
         guard host == "github.com" || host == "www.github.com" else {
             NSWorkspace.shared.open(url)

@@ -425,6 +425,7 @@ struct KnowledgeRAGCoreTests {
             model: "chat",
             citations: [RAGCitation(
                 id: UUID(),
+                marker: "S1",
                 chunkID: chunkID,
                 repoID: 42,
                 repoFullName: "octo/demo-42",
@@ -440,6 +441,7 @@ struct KnowledgeRAGCoreTests {
         let citation = try #require(detail.messages.last?.citations.first)
         #expect(citation.chunkID == nil)
         #expect(citation.repoFullName == "octo/demo-42")
+        #expect(citation.marker == "S1")
     }
 
     @Test("外部后端配置拒绝无效 endpoint")

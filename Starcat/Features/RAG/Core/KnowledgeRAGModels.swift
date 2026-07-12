@@ -342,6 +342,8 @@ struct RAGRemoteContextAudit: Identifiable, Equatable, Sendable {
 
 struct RAGCitation: Identifiable, Equatable, Sendable {
     var id: UUID
+    /// Prompt / 回答正文里的证据编号，形如 `S1`；与 UI 芯片、可点击 `[S1]` 一一对应。
+    var marker: String
     var chunkID: Int64?
     var repoID: Int64
     var repoFullName: String
