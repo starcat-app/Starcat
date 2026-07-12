@@ -201,9 +201,13 @@ struct KnowledgeRAGWorkspaceView: View {
                 Task { await viewModel.selectConversation(conversation.id) }
             } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: "bubble.left")
+                    Image(systemName: conversation.isPinned ? "pin.fill" : "bubble.left")
                         .font(iconFont(size: 13, weight: .medium))
-                        .foregroundStyle(selected ? Color.accentColor : .secondary)
+                        .foregroundStyle(
+                            conversation.isPinned
+                                ? Color.accentColor
+                                : (selected ? Color.accentColor : .secondary)
+                        )
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(conversation.title)
@@ -224,6 +228,18 @@ struct KnowledgeRAGWorkspaceView: View {
             .focusEffectDisabled()
 
             Menu {
+                Button(
+                    conversation.isPinned
+                        ? "rag.workspace.conversation.unpin"
+                        : "rag.workspace.conversation.pin"
+                ) {
+                    Task {
+                        await viewModel.setConversationPinned(
+                            id: conversation.id,
+                            isPinned: !conversation.isPinned
+                        )
+                    }
+                }
                 Button("rag.workspace.conversation.rename") {
                     renameTarget = conversation
                     renameDraft = conversation.title

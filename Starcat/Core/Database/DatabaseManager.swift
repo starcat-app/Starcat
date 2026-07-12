@@ -218,11 +218,10 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         }
     }
 
-    /// 修正未上线阶段本地开发库的 schema 形态。
+    /// 修正上线前本地开发库遗留的 schema 缺口。
     ///
-    /// `repo_health_snapshots` 被并入 v1-initial 后，新库没有问题；但已经跑过 v1-initial
-    /// 的本机开发库不会再次执行该迁移闭包。项目尚未上线、无线上数据，这里直接补齐当前
-    /// 期望表结构，让派生缓存能被重新生成。
+    /// 正式版后的 schema 变更必须走 `registerVN` 迁移；这里只保留对历史开发库
+    ///（已跑过旧版 v1-initial、缺附属表）的一次性补齐，不再往这里堆新字段。
     private static func repairPrelaunchDevelopmentSchema(on writer: any DatabaseWriter) throws {
         try writer.write { db in
             try DatabaseMigrations.ensurePrelaunchRAGSchema(db)

@@ -320,6 +320,16 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 置顶 / 取消置顶后刷新列表（置顶项排在最前）。
+    func setConversationPinned(id: UUID, isPinned: Bool) async {
+        do {
+            try await conversationStore.setConversationPinned(id: id, isPinned: isPinned)
+            conversations = try await conversationStore.listConversations()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func send() {
         let question = draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isAnswering, composerBlockingReason == nil else { return }

@@ -19,6 +19,7 @@ enum RAGStoredMessageRole: String, Codable, Sendable {
 struct RAGConversationSummary: Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
+    var isPinned: Bool
     var createdAt: String
     var updatedAt: String
 }
@@ -60,6 +61,8 @@ protocol RAGConversationStoring: Sendable {
         remoteContexts: [RAGRemoteContextBlock]
     ) async throws
     func renameConversation(id: UUID, title: String) async throws
+    /// 置顶 / 取消置顶；不更新 `updated_at`，避免置顶打乱「最近活跃」排序。
+    func setConversationPinned(id: UUID, isPinned: Bool) async throws
     func deleteConversation(id: UUID) async throws
     func deleteAll() async throws
     func statistics() async throws -> RAGConversationStatistics
@@ -78,19 +81,19 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         let title = normalizedTitle(title ?? String.l10n("rag.workspace.newConversation"))
         try await database.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO rag_conversations (id, title, scope, created_at, updated_at)
-                VALUES (?, ?, 'knowledge', ?, ?)
+                INSERT INTO rag_conversations (id, title, scope, is_pinned, created_at, updated_at)
+                VALUES (?, ?, 'knowledge', 0, ?, ?)
                 """, arguments: [id.uuidString, title, now, now])
         }
-        return RAGConversationSummary(id: id, title: title, createdAt: now, updatedAt: now)
+        return RAGConversationSummary(id: id, title: title, isPinned: false, createdAt: now, updatedAt: now)
     }
 
     func listConversations() async throws -> [RAGConversationSummary] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT id, title, created_at, updated_at
+                SELECT id, title, is_pinned, created_at, updated_at
                 FROM rag_conversations
-                ORDER BY updated_at DESC
+                ORDER BY is_pinned DESC, updated_at DESC
                 """)
             return rows.compactMap(Self.summary(row:))
         }
@@ -99,7 +102,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func loadConversation(id: UUID) async throws -> RAGConversationDetail? {
         try await database.writer.read { db in
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT id, title, created_at, updated_at
+                SELECT id, title, is_pinned, created_at, updated_at
                 FROM rag_conversations WHERE id = ?
                 """, arguments: [id.uuidString]),
                   let summary = Self.summary(row: row) else { return nil }
@@ -215,6 +218,15 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         }
     }
 
+    func setConversationPinned(id: UUID, isPinned: Bool) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET is_pinned = ? WHERE id = ?",
+                arguments: [isPinned, id.uuidString]
+            )
+        }
+    }
+
     func deleteConversation(id: UUID) async throws {
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM rag_conversations WHERE id = ?", arguments: [id.uuidString])
@@ -249,9 +261,11 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
 
     private static func summary(row: Row) -> RAGConversationSummary? {
         guard let id = UUID(uuidString: row["id"]) else { return nil }
+        let isPinned: Bool = row["is_pinned"]
         return RAGConversationSummary(
             id: id,
             title: row["title"],
+            isPinned: isPinned,
             createdAt: row["created_at"],
             updatedAt: row["updated_at"]
         )

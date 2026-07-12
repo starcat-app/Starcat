@@ -19447,6 +19447,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话操作" } }
       }
     },
+    "rag.workspace.conversation.pin" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pin to Top" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "置顶" } }
+      }
+    },
     "rag.workspace.conversation.rename" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename" } },
@@ -19463,6 +19469,12 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename Conversation" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重命名会话" } }
+      }
+    },
+    "rag.workspace.conversation.unpin" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unpin" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消置顶" } }
       }
     },
     "rag.workspace.empty.subtitle" : {

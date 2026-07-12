@@ -2,43 +2,34 @@
 //  DatabaseMigrationsV1.swift
 //  Starcat
 //
-//  数据库初始 schema 迁移，单一 v1-initial 一次性表达 Starcat 的最终 schema。
+//  数据库 schema 迁移注册入口。
 //
-//  设计原则（2026-06-11 大合并后，原 v1~v9 + R-05 共 10 处变更全部摊平进 v1）：
+//  设计原则（2026-07-12 起：正式版已发布）：
 //
-//  1. **单一信任源**：所有表 / 索引 / 触发器 / 字段全部在 v1-initial 一次性建出，
-//     读这一个迁移即可看清 Starcat 当前 schema 全貌，**不需要脑补累加历史 ALTER**。
-//  2. **产品上线前不写 ALTER TABLE 迁移**（dong4j 决策 2026-06-11 16:23 / 16:40）：
-//     产品未发布无用户数据兼容负担，加字段 / 改类型 / 删字段一律直接改本文件建表 SQL；
-//     本地删 sqlite 重建即可生效（DatabaseMigrator 不会重跑已应用的 `v1-initial`）。
-//  3. **产品上线后再恢复 v2+ 迁移**：v2-xxx / v3-xxx 等以追加形式注册到 registerAll，
-//     届时再启用 ALTER TABLE 迁移以保证已发布用户数据不丢。
-//  4. GRDB `DatabaseMigrator` 迁移名采用语义化字符串（"v1-initial"）。
-//  5. 不支持降级（见 `docs/1-立项/开发前问题清单.md` §5.2）。
-//  6. 表创建顺序遵循外键依赖：先 repos / tags，再依赖它们的关联 / 缓存表。
-//  7. FTS5 触发器与 repos 表同步：外部内容模式 `content='repos', content_rowid='id'`
-//     + tokenize `unicode61 remove_diacritics 2`（CJK 按字切分、去重音符，不用 porter
-//     因为 porter 是英文词干算法对中文切碎语义）。
+//  1. **v1-initial 已冻结**：上线前曾把历史变更摊平进 v1；此后禁止再改已落地的
+//     v1 建表 SQL 来「偷偷加字段」。已发布用户的库不会重跑 v1。
+//  2. **正式版后只追加迁移**：加字段 / 建表 / 加索引一律 `registerVN(into:)`，
+//     用 `ALTER TABLE` / `CREATE TABLE` / `CREATE INDEX`；由 GRDB DatabaseMigrator
+//     按名称顺序执行。禁止要求用户删 sqlite 重建。
+//  3. **不支持降级**（见 `docs/1-立项/开发前问题清单.md` §5.2）。
+//  4. GRDB 迁移名采用语义化字符串（如 `"v5-rag-conversation-pin"`）。
+//  5. 表创建顺序遵循外键依赖：先 repos / tags，再依赖它们的关联 / 缓存表。
+//  6. FTS5 触发器与 repos 表同步：外部内容模式 `content='repos', content_rowid='id'`
+//     + tokenize `unicode61 remove_diacritics 2`。
 //
 //  ---
-//  **历史（已合并，仅供 git blame 考古，不再独立存在）**：
+//  **上线前历史（已合并进 v1-initial，仅供 git blame 考古）**：
 //  - 原 v2：sync_state 加 stars_etag                  → 合并进 `createSyncState`
 //  - 原 v3：repos 加 2 个性能复合索引（HOM-46）        → 合并进 `createRepos`
 //  - 原 v4：trending_repos + trending_readmes 两张表  → `createTrendingRepos` / `createTrendingReadmes`
 //  - 原 v5：repo_embeddings + ai_summaries 两张表     → `createRepoEmbeddings` / `createAISummaries`
-//          （2026-06-12 v2 改造：repo_embeddings 用 snapshot_json 替代 content_hash + indexed_text）
 //  - 原 v6：release_subscriptions + releases 两张表   → `createReleaseSubscriptions` / `createReleases`
-//  - 原 v7：readme_translations 一张表（HOM-68）       → **已删除（2026-06-15）**：
-//          翻译缓存改走纯磁盘 `DiskReadmeTranslationCache`（路径
-//          `~/Library/Application Support/com.starcat.app/translations-cache/<owner>/<repo>/<lang>.{html,json}`）。
-//          原因：trending/activity 未 star 撞 FK + CASCADE 删 vs "翻译资产不应跟随
-//          star 削减"的产品语义冲突；CloudKit / FTS / JSON 导入导出全 0 引用，砍掉
-//          无任何业务损失。详见 `ReadmeTranslationRepositoryProtocol` 顶部注释。
-//  - 原 v8：repos / trending_repos 各加 4 列          → 合并进 `createRepos` / `createTrendingRepos`
-//          （StarcatRepoCardDTO v1.2 owner_avatar / subscribers_count / default_branch / open_issues_count）
-//  - 原 v9：trending_repos 加 gh_repo_id              → 合并进 `createTrendingRepos`
-//  - R-05：trending_repos 加 10 详情页字段             → 合并进 `createTrendingRepos`
-//          （watchers/topics/license/homepage/created/updated/pushed/archived/fork/private）
+//  - 原 v7：readme_translations → 已删除（改磁盘缓存）
+//  - 原 v8 / v9 / R-05：trending / repos 列扩展       → 合并进对应 create*
+//
+//  **正式版后的追加迁移（不要与上方「原 vN」混淆）**：
+//  - `v2-undo-star` / `v3-agent-runs` / `v4-agent-tool-outputs` /
+//    `v5-rag-conversation-pin` / …
 //
 
 import Foundation
@@ -52,13 +43,37 @@ enum DatabaseMigrations {
 
     /// 将所有版本的迁移注册到 migrator。
     ///
-    /// 当前只有一个 `v1-initial`（详见文件头部注释「设计原则 2」：产品上线前
-    /// schema 演进直接改 v1，无需追加迁移）。产品上线后再追加 `registerV2(into:)` 等。
+    /// `v1-initial` 已冻结；正式版后的 schema 变更只追加 `registerVN`，
+    /// 详见文件头部「设计原则」。
     static func registerAll(into migrator: inout DatabaseMigrator) {
         registerV1(into: &migrator)
         registerV2(into: &migrator)
         registerV3(into: &migrator)
         registerV4(into: &migrator)
+        registerV5(into: &migrator)
+    }
+
+    // MARK: - v5-rag-conversation-pin：RAG 会话置顶（2026-07-12）
+
+    private static func registerV5(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v5-rag-conversation-pin") { db in
+            // 幂等：本机若曾被开发期补丁加过列，跳过 ADD，避免正式迁移失败。
+            let columns = try db.columns(on: "rag_conversations").map(\.name)
+            if !columns.contains("is_pinned") {
+                try db.alter(table: "rag_conversations") { t in
+                    // 置顶排在列表最前；不改 updated_at，避免置顶本身影响「最近活跃」语义。
+                    t.add(column: "is_pinned", .boolean).notNull().defaults(to: false)
+                }
+            }
+            let indexes = try db.indexes(on: "rag_conversations").map(\.name)
+            if !indexes.contains("idx_rag_conversations_pinned_updated") {
+                try db.create(
+                    index: "idx_rag_conversations_pinned_updated",
+                    on: "rag_conversations",
+                    columns: ["is_pinned", "updated_at"]
+                )
+            }
+        }
     }
 
     // MARK: - v4-agent-tool-outputs：Agent 工具输出事件（2026-07-07）
@@ -1393,7 +1408,7 @@ enum DatabaseMigrations {
             try createRAGSchema(db)
             return
         }
-        // 开发期已有数据库可能由较早 RAG schema 创建；仅补齐新增表，不保留兼容分支。
+        // 仅补齐上线前开发库缺失的附属表。正式版后的列/索引变更走 registerVN，不在这里加。
         if try !db.tableExists("rag_message_remote_contexts") {
             try createRAGRemoteContextAuditSchema(db)
         }
