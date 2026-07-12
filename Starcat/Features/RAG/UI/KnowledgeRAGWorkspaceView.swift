@@ -14,10 +14,15 @@ import SwiftUI
 struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     let chromeState: WorkspaceChromeState
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var inspectorTab: RAGInspectorTab = .evidence
+    @State private var composerContentHeight: CGFloat = 0
+
+    /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
+    private static let inspectorContentInset: CGFloat = 14
 
     var body: some View {
         HStack(spacing: 0) {
@@ -91,7 +96,8 @@ struct KnowledgeRAGWorkspaceView: View {
                         .font(ragFont(.callout, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.borderedProminent)
+                // 不用 .borderedProminent：避免默认蓝底抢焦点，rail 入口保持次级灰色。
+                .buttonStyle(.bordered)
                 .controlSize(.large)
             }
             .padding(14)
@@ -127,10 +133,13 @@ struct KnowledgeRAGWorkspaceView: View {
                     .font(ragFont(.caption, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
-            ProgressView(value: viewModel.indexCoverage.fraction)
-                .progressViewStyle(.linear)
+            // 覆盖率条会在 1/1 时一直满蓝，误读成装饰；只在真正 rebuild 时显示不确定进度。
+            if viewModel.isIndexing {
+                ProgressView()
+                    .progressViewStyle(.linear)
+            }
             HStack {
-                Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), viewModel.indexCoverage.readyChunks))
+                Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), locale: locale, viewModel.indexCoverage.readyChunks))
                 Spacer()
                 if viewModel.indexCoverage.pendingChunks + viewModel.indexCoverage.failedChunks + viewModel.indexCoverage.staleChunks > 0 {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -222,8 +231,6 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            headerChip(String.l10n("rag.workspace.header.knowledge"), icon: "books.vertical", tint: .blue)
-            headerChip(viewModel.selectedModelDisplayName, icon: "sparkles", tint: .purple)
             if viewModel.isAnswering {
                 ProgressView()
                     .controlSize(.small)
@@ -231,15 +238,6 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 11)
-    }
-
-    private func headerChip(_ title: String, icon: String, tint: Color) -> some View {
-        Label(title, systemImage: icon)
-            .font(ragFont(.caption, weight: .semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
     }
 
     private var messageTimeline: some View {
@@ -276,20 +274,16 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
+    /// 新会话空态：与 AI 问答共用 EmptyStateView，水平居中 + 偏上留白。
     private var emptyConversation: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: "text.magnifyingglass")
-                .font(iconFont(size: 26, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-            Text("rag.workspace.empty.title")
-                .font(ragFont(.headline, weight: .semibold))
-            Text("rag.workspace.empty.subtitle")
-                .font(ragFont(.body))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: 520, alignment: .leading)
-        .padding(.top, 36)
+        EmptyStateView(
+            systemImage: "text.book.closed",
+            title: "rag.workspace.empty.title",
+            subtitle: "rag.workspace.empty.subtitle",
+            subtitleHorizontalPadding: 40
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
     }
 
     @ViewBuilder
@@ -433,48 +427,19 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.orange)
             }
 
-            ZStack(alignment: .topLeading) {
-                if viewModel.draftQuestion.isEmpty {
-                    Text("rag.workspace.composer.placeholder")
-                        .font(ragFont(.body))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $viewModel.draftQuestion)
-                    .font(ragFont(.body))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 64, maxHeight: 118)
-                    .onKeyPress(.return) {
-                        if viewModel.isMentionPickerPresented, !NSEvent.modifierFlags.contains(.command) {
-                            viewModel.selectHighlightedMention()
-                            return .handled
-                        }
-                        if NSEvent.modifierFlags.contains(.command) {
-                            viewModel.send()
-                            return .handled
-                        }
-                        return .ignored
-                    }
-                    .onKeyPress(.upArrow) {
-                        guard viewModel.isMentionPickerPresented else { return .ignored }
-                        viewModel.moveMentionSelection(by: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        guard viewModel.isMentionPickerPresented else { return .ignored }
-                        viewModel.moveMentionSelection(by: 1)
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        guard viewModel.isMentionPickerPresented else { return .ignored }
-                        viewModel.dismissMentionPicker()
-                        return .handled
-                    }
-                    .onChange(of: viewModel.draftQuestion) { _, _ in
-                        viewModel.handleDraftQuestionChanged()
-                    }
+            RAGComposerTextEditor(
+                text: $viewModel.draftQuestion,
+                placeholder: String.l10n("rag.workspace.composer.placeholder"),
+                font: composerNSFont,
+                maximumHeight: composerMaximumHeight,
+                onHeightChange: { composerContentHeight = $0 },
+                onCommand: handleComposerCommand
+            )
+            // AppKit scroll view 在弹性 VStack 中会忽略子视图的最大高度；由外层显式
+            // 约束，首帧严格保持两行，文本变多时再增长到既有上限。
+            .frame(height: composerEditorHeight)
+            .onChange(of: viewModel.draftQuestion) { _, _ in
+                viewModel.handleDraftQuestionChanged()
             }
             .popover(
                 isPresented: Binding(
@@ -506,22 +471,24 @@ struct KnowledgeRAGWorkspaceView: View {
 
                 if viewModel.isAnswering {
                     Button { viewModel.cancelAnswer() } label: {
-                        Image(systemName: "stop.fill")
-                            .frame(width: 28, height: 28)
+                        Image(systemName: "stop.circle.fill")
+                            .font(iconFont(size: 22, weight: .semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                     .help("rag.workspace.composer.cancel")
                 } else {
+                    let canSend = !viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && viewModel.composerBlockingReason == nil
                     Button { viewModel.send() } label: {
-                        Image(systemName: "arrow.up")
-                            .font(iconFont(size: 13, weight: .bold))
-                            .frame(width: 28, height: 28)
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(iconFont(size: 22, weight: .semibold))
+                            .foregroundStyle(canSend ? Color.accentColor : .secondary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(
-                        viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || viewModel.composerBlockingReason != nil
-                    )
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .disabled(!canSend)
                     .help("rag.workspace.composer.send")
                 }
             }
@@ -624,16 +591,20 @@ struct KnowledgeRAGWorkspaceView: View {
                 Button {
                     viewModel.selectedModelID = model.id
                 } label: {
-                    if viewModel.selectedModelID == model.id {
-                        Label(model.name, systemImage: "checkmark")
-                    } else {
-                        Text(model.name)
-                    }
+                    modelMenuRow(model)
                 }
             }
         } label: {
-            Label(viewModel.selectedModelDisplayName, systemImage: "sparkles")
-                .font(ragFont(.caption, weight: .semibold))
+            HStack(spacing: 6) {
+                if let provider = viewModel.selectedModelProvider {
+                    AIProviderIconView(provider: provider, size: 14)
+                } else {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.secondary)
+                }
+                Text(viewModel.selectedModelDisplayName)
+            }
+            .font(ragFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -669,6 +640,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var inspector: some View {
         VStack(spacing: 0) {
+            // 标题与 segmented tabs 共用同一水平 inset，避免视觉左右错位。
             VStack(alignment: .leading, spacing: 10) {
                 Text("rag.workspace.inspector.title")
                     .font(ragFont(.headline, weight: .semibold))
@@ -680,7 +652,9 @@ struct KnowledgeRAGWorkspaceView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
-            .padding(14)
+            .padding(.horizontal, Self.inspectorContentInset)
+            .padding(.top, Self.inspectorContentInset)
+            .padding(.bottom, 12)
             Divider()
 
             ScrollView {
@@ -688,6 +662,9 @@ struct KnowledgeRAGWorkspaceView: View {
                 case .evidence: evidenceInspector
                 case .plan: planInspector
                 case .index: indexInspector
+                #if DEBUG
+                case .debug: debugInspector
+                #endif
                 }
             }
         }
@@ -703,7 +680,7 @@ struct KnowledgeRAGWorkspaceView: View {
                     inspectorValue("rag.workspace.inspector.source", value: citation.source.rawValue)
                     inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
                     inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
-                    inspectorValue("rag.workspace.inspector.relevance", value: String(format: "%.3f", citation.score))
+                    inspectorValue("rag.workspace.inspector.relevance", value: String(format: "%.3f", locale: locale, citation.score))
                     if let chunk = viewModel.selectedCitationChunk {
                         Text("rag.workspace.inspector.chunkPreview")
                             .font(ragFont(.caption, weight: .semibold))
@@ -777,7 +754,7 @@ struct KnowledgeRAGWorkspaceView: View {
                             .lineLimit(6)
                         inspectorValue(
                             "rag.workspace.inspector.fetchedAt",
-                            value: block.fetchedAt.formatted(date: .abbreviated, time: .shortened)
+                            value: localizedTimestamp(block.fetchedAt)
                         )
                         if let url = block.sourceURL {
                             Link(destination: url) {
@@ -817,7 +794,7 @@ struct KnowledgeRAGWorkspaceView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -854,7 +831,7 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(14)
+        .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -871,18 +848,110 @@ struct KnowledgeRAGWorkspaceView: View {
                 Button {
                     viewModel.rebuildIndex()
                 } label: {
-                    Label(
-                        viewModel.isIndexing ? "rag.workspace.index.rebuilding" : "rag.workspace.index.rebuild",
-                        systemImage: "arrow.triangle.2.circlepath"
-                    )
+                    HStack(spacing: 6) {
+                        rebuildIndexIcon
+                        if viewModel.isIndexing {
+                            Text("rag.workspace.index.rebuilding")
+                        } else {
+                            Text("rag.workspace.index.rebuild")
+                        }
+                    }
                 }
                 .disabled(viewModel.isIndexing)
             }
         }
-        .padding(14)
+        .padding(Self.inspectorContentInset)
     }
 
-    private func inspectorValue(_ label: String, value: String) -> some View {
+    #if DEBUG
+    private var debugInspector: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 调试开关只出现在「调试」tab，避免其它 tab 顶部多出一行错位控件。
+            Toggle(
+                isOn: Binding(
+                    get: { viewModel.isDebugModeEnabled },
+                    set: { viewModel.isDebugModeEnabled = $0 }
+                )
+            ) {
+                Label("rag.workspace.debug.enabled", systemImage: "ladybug")
+                    .font(ragFont(.caption, weight: .semibold))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            if !viewModel.isDebugModeEnabled {
+                Text("rag.workspace.debug.disabledHint")
+                    .font(ragFont(.body))
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    Spacer()
+                    CopyFeedbackButton(
+                        providesContent: { viewModel.debugTraceText },
+                        tooltip: "rag.workspace.debug.copyAll"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                    }
+                    .disabled(viewModel.debugEvents.isEmpty)
+                    Button("rag.workspace.debug.clear") { viewModel.clearDebugEvents() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(viewModel.debugEvents.isEmpty)
+                }
+
+                if viewModel.debugEvents.isEmpty {
+                    Text("rag.workspace.debug.empty")
+                        .font(ragFont(.body))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.debugEvents) { event in
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(spacing: 6) {
+                                Text(debugStageKey(event.stage))
+                                    .font(ragFont(.caption, weight: .semibold))
+                                Spacer()
+                                Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
+                                    .font(ragFont(.caption2, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                CopyFeedbackButton(
+                                    providesContent: { event.payload },
+                                    tooltip: "rag.workspace.debug.copy"
+                                ) { didCopy in
+                                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                                }
+                            }
+                            Text(event.payload)
+                                .font(ragFont(.caption2, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
+                        .padding(10)
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+            }
+        }
+        .padding(Self.inspectorContentInset)
+    }
+
+    private func debugStageKey(_ stage: RAGDebugEvent.Stage) -> LocalizedStringKey {
+        switch stage {
+        case .request: return "rag.workspace.debug.stage.request"
+        case .plan: return "rag.workspace.debug.stage.plan"
+        case .candidates: return "rag.workspace.debug.stage.candidates"
+        case .retrieval: return "rag.workspace.debug.stage.retrieval"
+        case .remoteContext: return "rag.workspace.debug.stage.remoteContext"
+        case .prompt: return "rag.workspace.debug.stage.prompt"
+        case .response: return "rag.workspace.debug.stage.response"
+        case .titlePrompt: return "rag.workspace.debug.stage.titlePrompt"
+        case .titleResponse: return "rag.workspace.debug.stage.titleResponse"
+        case .failure: return "rag.workspace.debug.stage.failure"
+        }
+    }
+    #endif
+
+    private func inspectorValue(_ label: LocalizedStringKey, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(ragFont(.caption))
@@ -893,7 +962,7 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
-    private func coverageRow(_ label: String, value: String, color: Color) -> some View {
+    private func coverageRow(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
         HStack(spacing: 9) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label).font(ragFont(.callout))
@@ -901,6 +970,83 @@ struct KnowledgeRAGWorkspaceView: View {
             Text(value)
                 .font(ragFont(.callout, weight: .semibold, design: .monospaced))
         }
+    }
+
+    @ViewBuilder
+    private var rebuildIndexIcon: some View {
+        if reduceMotion {
+            Image(systemName: "arrow.triangle.2.circlepath")
+        } else {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
+        }
+    }
+
+    /// 模型的 providerID 是配置 profile 的 ID，不是 AIServiceProvider 的 rawValue；
+    /// 必须经 ViewModel 映射，才能在多个同类服务商 profile 共存时展示正确 logo。
+    private func modelMenuRow(_ model: AIModelDescriptor) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark")
+                .opacity(viewModel.selectedModelID == model.id ? 1 : 0)
+                .frame(width: 14)
+            if let provider = viewModel.provider(for: model) {
+                AIProviderIconView(provider: provider, size: 15)
+                    .frame(width: 16)
+            } else {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+            }
+            Text(model.name)
+        }
+    }
+
+    private var composerNSFont: NSFont {
+        NSFont.systemFont(ofSize: 13 * interfaceScale.multiplier)
+    }
+
+    private var composerMinimumHeight: CGFloat {
+        let lineHeight = composerNSFont.ascender - composerNSFont.descender + composerNSFont.leading
+        return ceil(lineHeight * 2 + RAGComposerTextEditor.verticalInset * 2)
+    }
+
+    private var composerMaximumHeight: CGFloat {
+        118 * interfaceScale.multiplier
+    }
+
+    private var composerEditorHeight: CGFloat {
+        min(max(composerContentHeight, composerMinimumHeight), composerMaximumHeight)
+    }
+
+    private func handleComposerCommand(_ command: RAGComposerTextEditor.Command) -> Bool {
+        switch command {
+        case .returnKey(let modifiers):
+            if viewModel.isMentionPickerPresented, !modifiers.contains(.command) {
+                viewModel.selectHighlightedMention()
+                return true
+            }
+            if modifiers.contains(.command) {
+                viewModel.send()
+                return true
+            }
+            return false
+        case .upArrow:
+            guard viewModel.isMentionPickerPresented else { return false }
+            viewModel.moveMentionSelection(by: -1)
+            return true
+        case .downArrow:
+            guard viewModel.isMentionPickerPresented else { return false }
+            viewModel.moveMentionSelection(by: 1)
+            return true
+        case .escape:
+            guard viewModel.isMentionPickerPresented else { return false }
+            viewModel.dismissMentionPicker()
+            return true
+        }
+    }
+
+    private func localizedTimestamp(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
     }
 
     private var allCitations: [RAGCitation] {
@@ -1015,10 +1161,153 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 }
 
+/// RAG 输入框的 AppKit 桥接层。
+///
+/// SwiftUI `TextEditor` 会在弹性 VStack 中被扩展到远超 `maxHeight`，且 overlay
+/// placeholder 无法与 NSTextView 的 insertion point 共享基线。本组件让 placeholder
+/// 直接由同一个 NSTextView 绘制，并把内容实际高度回传给工作台，保证首帧两行且仍可
+/// 在长问题时增长到调用方规定的上限。
+private struct RAGComposerTextEditor: NSViewRepresentable {
+    static let verticalInset: CGFloat = 4
+
+    enum Command {
+        case returnKey(NSEvent.ModifierFlags)
+        case upArrow
+        case downArrow
+        case escape
+    }
+
+    @Binding var text: String
+    let placeholder: String
+    let font: NSFont
+    let maximumHeight: CGFloat
+    let onHeightChange: (CGFloat) -> Void
+    let onCommand: (Command) -> Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        let textView = RAGComposerTextView()
+
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = font
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
+        textView.textContainerInset = NSSize(width: 0, height: Self.verticalInset)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.placeholder = placeholder
+        textView.setAccessibilityLabel(placeholder)
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+
+        // 首次布局后再计算 usedRect，避免 NSTextLayoutManager 尚未拿到容器宽度时
+        // 错报单行高度，导致窗口打开的一帧内输入框跳动。
+        DispatchQueue.main.async {
+            context.coordinator.reportHeight(for: textView)
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scrollView.documentView as? RAGComposerTextView else { return }
+
+        textView.font = font
+        textView.placeholder = placeholder
+        textView.setAccessibilityLabel(placeholder)
+        if textView.string != text {
+            textView.string = text
+            textView.needsDisplay = true
+            context.coordinator.reportHeight(for: textView)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: RAGComposerTextEditor
+
+        init(parent: RAGComposerTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? RAGComposerTextView else { return }
+            parent.text = textView.string
+            textView.needsDisplay = true
+            reportHeight(for: textView)
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
+                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                return parent.onCommand(.returnKey(modifiers))
+            case #selector(NSResponder.moveUp(_:)):
+                return parent.onCommand(.upArrow)
+            case #selector(NSResponder.moveDown(_:)):
+                return parent.onCommand(.downArrow)
+            case #selector(NSResponder.cancelOperation(_:)):
+                return parent.onCommand(.escape)
+            default:
+                return false
+            }
+        }
+
+        func reportHeight(for textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let usedHeight = layoutManager.usedRect(for: textContainer).height
+            let height = min(
+                ceil(usedHeight + RAGComposerTextEditor.verticalInset * 2),
+                parent.maximumHeight
+            )
+            parent.onHeightChange(height)
+        }
+    }
+}
+
+/// placeholder 在 NSTextView 自身坐标系中绘制，基线与光标完全一致。
+private final class RAGComposerTextView: NSTextView {
+    var placeholder = ""
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        placeholder.draw(
+            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
+            withAttributes: [
+                .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.placeholderTextColor
+            ]
+        )
+    }
+}
+
 private enum RAGInspectorTab: String, CaseIterable, Identifiable {
     case evidence
     case plan
     case index
+    #if DEBUG
+    case debug
+    #endif
 
     var id: String { rawValue }
     var titleKey: LocalizedStringKey {
@@ -1026,6 +1315,9 @@ private enum RAGInspectorTab: String, CaseIterable, Identifiable {
         case .evidence: return "rag.workspace.inspector.tab.evidence"
         case .plan: return "rag.workspace.inspector.tab.plan"
         case .index: return "rag.workspace.inspector.tab.index"
+        #if DEBUG
+        case .debug: return "rag.workspace.inspector.tab.debug"
+        #endif
         }
     }
 }

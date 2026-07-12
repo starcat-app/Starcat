@@ -19555,6 +19555,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "证据" } }
       }
     },
+    "rag.workspace.inspector.tab.debug" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Debug" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "调试" } }
+      }
+    },
     "rag.workspace.inspector.tab.index" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Index" } },
@@ -19920,7 +19926,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Model: GPT-4.1"
+            "value" : "模型：GPT-4.1"
           }
         }
       }
@@ -19930,13 +19936,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ask the knowledge base a follow-up..."
+            "value" : "Ask your knowledge base · Type @ to select repositories · ⌘↩ to send"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "继续追问知识库..."
+            "value" : "向知识库提问 · 输入 @ 选择仓库 · ⌘↩ 发送"
           }
         }
       }
@@ -19968,9 +19974,111 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sources: README / Notes / Summary"
+            "value" : "来源：README / 笔记 / 摘要"
           }
         }
+      }
+    },
+    "rag.workspace.debug.clear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空" } }
+      }
+    },
+    "rag.workspace.debug.copy" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy debug record" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制调试记录" } }
+      }
+    },
+    "rag.workspace.debug.copyAll" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy all debug records" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制全部调试记录" } }
+      }
+    },
+    "rag.workspace.debug.disabledHint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enable RAG debug mode to capture the next question, retrieval, prompt, and LLM response." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开启 RAG 调试模式后，下一轮将记录问题、检索、Prompt 与 LLM 返回。" } }
+      }
+    },
+    "rag.workspace.debug.elapsedFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "+%.3fs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "+%.3f 秒" } }
+      }
+    },
+    "rag.workspace.debug.empty" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Send a question to capture its RAG execution trace." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送一个问题后，将在这里显示本轮 RAG 执行记录。" } }
+      }
+    },
+    "rag.workspace.debug.enabled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAG Debug Mode" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RAG 调试模式" } }
+      }
+    },
+    "rag.workspace.debug.stage.candidates" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Candidates" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "候选仓库" } }
+      }
+    },
+    "rag.workspace.debug.stage.failure" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failure" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } }
+      }
+    },
+    "rag.workspace.debug.stage.plan" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Query Plan" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查询计划" } }
+      }
+    },
+    "rag.workspace.debug.stage.prompt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "LLM Prompt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "LLM Prompt" } }
+      }
+    },
+    "rag.workspace.debug.stage.remoteContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remote Context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "远程上下文" } }
+      }
+    },
+    "rag.workspace.debug.stage.request" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAG Request" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RAG 请求" } }
+      }
+    },
+    "rag.workspace.debug.stage.response" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "LLM Response" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "LLM 返回" } }
+      }
+    },
+    "rag.workspace.debug.stage.titlePrompt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Title Prompt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标题生成 Prompt" } }
+      }
+    },
+    "rag.workspace.debug.stage.titleResponse" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Title Response" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标题生成返回" } }
+      }
+    },
+    "rag.workspace.debug.stage.retrieval" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieval" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检索结果" } }
       }
     },
     "rag.workspace.demo.answer.intro" : {
@@ -20048,7 +20156,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ready"
+            "value" : "已就绪"
           }
         }
       }
@@ -20064,7 +20172,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Streaming"
+            "value" : "正在生成"
           }
         }
       }
@@ -20380,7 +20488,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ready chunks"
+            "value" : "可用分片"
           }
         }
       }

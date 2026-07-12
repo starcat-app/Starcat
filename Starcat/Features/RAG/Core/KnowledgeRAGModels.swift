@@ -59,6 +59,10 @@ struct RAGServiceRequest: Sendable {
     var rawQuestion: String
     var composerContext: RAGComposerContext
     var conversationID: UUID?
+    /// 仅由 Debug 工作台开启；关闭时 Service 不构造或回传任何调试记录。
+    var isDebugEnabled = false
+    /// 仅用于调试面板标识实际调用的 provider endpoint，不参与网络请求构造。
+    var debugEndpoint: String? = nil
 }
 
 enum RAGQueryMode: String, Codable, Sendable {

@@ -19,6 +19,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     private let dependencies: AppDependencies
     private let conversationStore: any RAGConversationStoring
     private var answerTask: Task<Void, Never>?
+    private var conversationTitleTask: Task<Void, Never>?
     private var remoteContextConsent: RAGRemoteContextConsent?
     private var linkDetectionTask: Task<Void, Never>?
 
@@ -55,6 +56,13 @@ final class KnowledgeRAGWorkspaceViewModel {
     )
     var isIndexing = false
     var errorMessage: String?
+    /// 调试记录只服务当前窗口；关闭开关立即清空，不能混入可持久化的问答历史。
+    var isDebugModeEnabled = false {
+        didSet {
+            if !isDebugModeEnabled { debugEvents = [] }
+        }
+    }
+    var debugEvents: [RAGDebugEvent] = []
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
@@ -81,6 +89,26 @@ final class KnowledgeRAGWorkspaceViewModel {
     var selectedModelDisplayName: String {
         availableModels.first(where: { $0.id == selectedModelID })?.name
             ?? dependencies.settings.aiChatTask.resolvedModelName
+    }
+
+    /// 模型记录保存的是 provider profile ID；解析为枚举后，UI 才能复用统一的服务商 logo。
+    var selectedModelProvider: AIServiceProvider? {
+        guard let selectedModel = availableModels.first(where: { $0.id == selectedModelID }) else { return nil }
+        return provider(for: selectedModel)
+    }
+
+    var selectedModelEndpoint: String? {
+        let profileID = availableModels.first(where: { $0.id == selectedModelID })?.providerID
+            ?? dependencies.settings.aiChatTask.providerID
+        return dependencies.settings.aiProviderProfiles
+            .first(where: { $0.id == profileID })?
+            .baseURL
+    }
+
+    func provider(for model: AIModelDescriptor) -> AIServiceProvider? {
+        dependencies.settings.aiProviderProfiles
+            .first(where: { $0.id == model.providerID })?
+            .provider
     }
 
     /// 提前阻断确定不可发送的附件条件。vision 能力在 OpenAI-compatible `/models` 中没有
@@ -194,6 +222,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func newConversation() async {
         cancelAnswer()
+        conversationTitleTask?.cancel()
         do {
             let conversation = try await conversationStore.createConversation(title: nil)
             conversations.insert(conversation, at: 0)
@@ -208,6 +237,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     func selectConversation(_ id: UUID) async {
         guard selectedConversationID != id || messages.isEmpty else { return }
         cancelAnswer()
+        conversationTitleTask?.cancel()
         do {
             guard let detail = try await conversationStore.loadConversation(id: id) else { return }
             selectedConversationID = id
@@ -221,6 +251,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func deleteConversation(_ id: UUID) async {
+        if selectedConversationID == id { conversationTitleTask?.cancel() }
         do {
             try await conversationStore.deleteConversation(id: id)
             conversations.removeAll { $0.id == id }
@@ -329,19 +360,15 @@ final class KnowledgeRAGWorkspaceViewModel {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.prompt = String.l10n("rag.workspace.composer.attach")
+        // 在选文件面板层过滤：不支持的类型直接置灰不可选，而不是选完再报错。
+        panel.allowedContentTypes = Self.composerAttachmentContentTypes
         guard panel.runModal() == .OK else { return }
         for url in panel.urls where !attachments.contains(where: { $0.localURL == url }) {
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey])
             let type = values?.contentType ?? UTType(filenameExtension: url.pathExtension)
-            let handling: RAGAttachmentHandling
-            if type?.conforms(to: .image) == true {
-                handling = .vision
-            } else if type?.conforms(to: .text) == true || type?.conforms(to: .pdf) == true
-                        || type?.conforms(to: .json) == true || type?.conforms(to: .sourceCode) == true {
-                handling = .textContext
-            } else {
-                handling = .unsupported
-            }
+            // 面板已过滤；仍用 conforms 兜底，避免扩展名欺骗。
+            let handling: RAGAttachmentHandling =
+                Self.isAllowedComposerAttachment(type) ? .textContext : .unsupported
             attachments.append(RAGComposerAttachment(
                 id: UUID(),
                 filename: url.lastPathComponent,
@@ -351,6 +378,29 @@ final class KnowledgeRAGWorkspaceViewModel {
                 handling: handling
             ))
         }
+    }
+
+    /// 仅允许纯文本 / Markdown / JSON / 源码；图片、PDF、二进制等不可选。
+    private static let composerAttachmentContentTypes: [UTType] = {
+        var types: [UTType] = [.plainText, .utf8PlainText, .json, .sourceCode]
+        if let markdown = UTType("net.daringfireball.markdown") {
+            types.append(markdown)
+        }
+        if let md = UTType(filenameExtension: "md") {
+            types.append(md)
+        }
+        if let markdown = UTType(filenameExtension: "markdown") {
+            types.append(markdown)
+        }
+        return types
+    }()
+
+    private static func isAllowedComposerAttachment(_ type: UTType?) -> Bool {
+        guard let type else { return false }
+        return composerAttachmentContentTypes.contains { type.conforms(to: $0) }
+            || type.conforms(to: .text)
+            || type.conforms(to: .json)
+            || type.conforms(to: .sourceCode)
     }
 
     func removeAttachment(_ id: UUID) {
@@ -391,6 +441,19 @@ final class KnowledgeRAGWorkspaceViewModel {
     func copyAnswer(_ content: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(content, forType: .string)
+    }
+
+    func clearDebugEvents() {
+        debugEvents = []
+    }
+
+    var debugTraceText: String {
+        debugEvents.map { event in
+            """
+            [\(event.stage.rawValue)] +\(String(format: "%.3f", event.elapsedSeconds))s
+            \(event.payload)
+            """
+        }.joined(separator: "\n\n==========\n\n")
     }
 
     func exportAnswer(_ content: String) {
@@ -470,7 +533,9 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func runQuestion(_ question: String) async {
         guard let conversationID = selectedConversationID else { return }
+        if isDebugModeEnabled { debugEvents = [] }
         let history = RAGConversationHistoryBuilder.build(from: messages)
+        let isFirstTurn = history.isEmpty
         let userMessage = RAGStoredMessage(
             id: UUID(),
             conversationID: conversationID,
@@ -509,7 +574,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                     pastedGitHubLinks: githubLinkContexts,
                     disabledRemoteResources: []
                 ),
-                conversationID: conversationID
+                conversationID: conversationID,
+                isDebugEnabled: isDebugModeEnabled,
+                debugEndpoint: selectedModelEndpoint
             )
             for try await event in service.ask(request: request, history: history, remoteContextConsent: consent) {
                 switch event {
@@ -522,6 +589,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     pendingRemoteRequests = requests
                     approvedRemoteResources = Set(requests.map(\.resource))
                 case .remoteContext(let blocks): remoteBlocks = blocks
+                case .debug(let event):
+                    if isDebugModeEnabled { debugEvents.append(event) }
                 case .delta(let text): streamingAnswer += text
                 case .completed(let answer, let model, let citations, _):
                     completedPayload = (answer, model, citations)
@@ -536,6 +605,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                     citations: completedPayload.2,
                     remoteContexts: remoteBlocks
                 )
+                if isFirstTurn {
+                    generateConversationTitle(
+                        using: service,
+                        conversationID: conversationID,
+                        firstQuestion: question
+                    )
+                }
             } else if let terminalReply, answerState != .cancelled {
                 try await persistAnswer(
                     conversationID: conversationID,
@@ -558,6 +634,63 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         remoteContextConsent = nil
         answerTask = nil
+    }
+
+    /// 标题请求从回答任务中拆开：回答一旦落库即可立即交互，标题网络慢或失败都不能阻塞它。
+    private func generateConversationTitle(
+        using service: KnowledgeRAGService,
+        conversationID: UUID,
+        firstQuestion: String
+    ) {
+        conversationTitleTask?.cancel()
+        let debugEnabled = isDebugModeEnabled
+        let debugEndpoint = selectedModelEndpoint
+        conversationTitleTask = Task { [weak self] in
+            guard let self else { return }
+            let result = await service.generateConversationTitle(
+                firstQuestion: firstQuestion,
+                isDebugEnabled: debugEnabled,
+                debugEndpoint: debugEndpoint
+            )
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+
+            switch result {
+            case .completed(let title, let debugEvents):
+                if debugEnabled, isDebugModeEnabled { self.debugEvents.append(contentsOf: debugEvents) }
+                await typewriteConversationTitle(title, for: conversationID)
+            case .failed(let debugEvents):
+                if debugEnabled, isDebugModeEnabled { self.debugEvents.append(contentsOf: debugEvents) }
+            case .cancelled:
+                break
+            }
+        }
+    }
+
+    /// 动画期间只改内存中的列表标题，完成后才写数据库，避免历史记录被半截文本污染。
+    private func typewriteConversationTitle(_ title: String, for conversationID: UUID) async {
+        updateConversationTitle(title: "", for: conversationID)
+        var displayedTitle = ""
+        for character in title {
+            do {
+                try await Task.sleep(for: .milliseconds(32))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            displayedTitle.append(character)
+            updateConversationTitle(title: displayedTitle, for: conversationID)
+        }
+        guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+        do {
+            try await conversationStore.renameConversation(id: conversationID, title: title)
+        } catch {
+            // 标题失败不应影响已完成的问答；内存标题仍保留，下一次加载会使用数据库旧标题。
+        }
+    }
+
+    private func updateConversationTitle(title: String, for conversationID: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[index].title = title
     }
 
     private func persistAnswer(

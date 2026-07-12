@@ -14,8 +14,33 @@ enum KnowledgeRAGServiceEvent: Sendable {
     case retrieval(RAGRetrievalResult)
     case remoteContextConfirmation([RAGRemoteContextRequest])
     case remoteContext([RAGRemoteContextBlock])
+    case debug(RAGDebugEvent)
     case delta(String)
     case completed(answer: String, model: String, citations: [RAGCitation], plan: RAGQueryPlan)
+}
+
+/// RAG 工作台当前一轮的内存调试记录。
+///
+/// 这不是诊断日志，也不会进入会话持久化；只有 `RAGServiceRequest.isDebugEnabled` 为 true
+/// 时才由 Service 发出，窗口关闭或关闭调试模式后即被释放。
+struct RAGDebugEvent: Identifiable, Sendable {
+    enum Stage: String, Sendable {
+        case request
+        case plan
+        case candidates
+        case retrieval
+        case remoteContext
+        case prompt
+        case response
+        case titlePrompt = "title_prompt"
+        case titleResponse = "title_response"
+        case failure
+    }
+
+    let id = UUID()
+    let stage: Stage
+    let elapsedSeconds: TimeInterval
+    let payload: String
 }
 
 /// Service 在 Planner 判断需要联网后暂停，工作台用 chip 让用户确认或移除资源。
@@ -42,6 +67,13 @@ protocol KnowledgeRAGRemoteContextProviding: Sendable {
 
 struct EmptyKnowledgeRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
     func fetch(requests: [RAGRemoteContextRequest], candidates: [RAGRepoCandidate]) async -> [RAGRemoteContextBlock] { [] }
+}
+
+/// 首轮问答完成后生成会话标题的结果。标题调用独立于 RAG 主链路，因此失败不会影响问答。
+enum RAGConversationTitleGenerationResult: Sendable {
+    case completed(title: String, debugEvents: [RAGDebugEvent])
+    case failed(debugEvents: [RAGDebugEvent])
+    case cancelled
 }
 
 struct KnowledgeRAGService: Sendable {
@@ -84,12 +116,42 @@ struct KnowledgeRAGService: Sendable {
     ) -> AsyncThrowingStream<KnowledgeRAGServiceEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                let startedAt = Date()
+                func emitDebug(_ stage: RAGDebugEvent.Stage, _ payload: @autoclosure () -> String) {
+                    guard request.isDebugEnabled else { return }
+                    continuation.yield(RAGDebugEvent(
+                        stage: stage,
+                        elapsedSeconds: Date().timeIntervalSince(startedAt),
+                        payload: payload()
+                    ).event)
+                }
+
                 do {
+                    emitDebug(.request, """
+                    question:
+                    \(request.rawQuestion)
+
+                    explicitRepoIDs: \(request.composerContext.explicitRepoIDs)
+                    explicitRepoMode: \(request.composerContext.explicitRepoMode.rawValue)
+                    selectedModelID: \(request.composerContext.selectedModelID ?? "<default>")
+                    attachments: \(request.composerContext.attachments.map(\.filename))
+                    pastedGitHubLinks: \(request.composerContext.pastedGitHubLinks.map { $0.url.absoluteString })
+                    history:
+                    \(history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
+                    """)
                     continuation.yield(.state(.planning))
                     var plan = try await planner.plan(question: request.rawQuestion, composerContext: request.composerContext)
                     plan.remoteContextRequests.removeAll {
                         request.composerContext.disabledRemoteResources.contains($0.resource)
                     }
+                    emitDebug(.plan, """
+                    mode: \(plan.mode.rawValue)
+                    semanticQuery: \(plan.semanticQuery)
+                    filters: \(String(reflecting: plan.filters))
+                    candidateLimit: \(plan.candidateLimit.map(String.init) ?? "<default>")
+                    clarificationQuestion: \(plan.clarificationQuestion ?? "<none>")
+                    remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
+                    """)
                     continuation.yield(.plan(plan))
                     if plan.mode == .needsClarification {
                         continuation.yield(.state(.needsClarification(plan.clarificationQuestion ?? "请补充查询条件")))
@@ -102,6 +164,13 @@ struct KnowledgeRAGService: Sendable {
                         explicitRepoIDs: request.composerContext.explicitRepoIDs,
                         explicitMode: request.composerContext.explicitRepoMode
                     )
+                    emitDebug(.candidates, candidates.map { candidate in
+                        """
+                        repo: \(candidate.repo.fullName)
+                        status: \(candidate.status.rawValue)
+                        tags: \(candidate.tagNames.joined(separator: ", "))
+                        """
+                    }.joined(separator: "\n---\n"))
                     guard !candidates.isEmpty else {
                         let hasScope = plan.filters.hasEffectiveConditions || !request.composerContext.explicitRepoIDs.isEmpty
                         continuation.yield(.state(hasScope ? .noCandidates : .noKnowledgeRepos))
@@ -131,6 +200,12 @@ struct KnowledgeRAGService: Sendable {
                             return
                         }
                     }
+                    emitDebug(.retrieval, retrieval.bundles.map { bundle in
+                        let hits = bundle.matchedChildren.map { hit in
+                            "\(hit.kind.rawValue) score=\(hit.score) source=\(hit.chunk.source.rawValue) section=\(hit.chunk.sectionPath)"
+                        }.joined(separator: "\n")
+                        return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
+                    }.joined(separator: "\n---\n"))
                     continuation.yield(.retrieval(retrieval))
 
                     var remoteBlocks: [RAGRemoteContextBlock] = []
@@ -148,6 +223,15 @@ struct KnowledgeRAGService: Sendable {
                             requests: plan.remoteContextRequests,
                             candidates: Array(candidates.prefix(5))
                         )
+                        emitDebug(.remoteContext, remoteBlocks.map { block in
+                            """
+                            title: \(block.title)
+                            sourceURL: \(block.sourceURL?.absoluteString ?? "<none>")
+                            error: \(block.errorMessage ?? "<none>")
+                            content:
+                            \(block.content)
+                            """
+                        }.joined(separator: "\n---\n"))
                         continuation.yield(.remoteContext(remoteBlocks))
                     }
                     var attachmentContexts = try await attachmentProcessor.process(request.composerContext.attachments)
@@ -180,6 +264,21 @@ struct KnowledgeRAGService: Sendable {
                         model: generatorModel,
                         parameters: generatorParameters
                     )
+                    emitDebug(.prompt, """
+                    endpoint: \(request.debugEndpoint ?? "<unknown>")
+                    model: \(chatRequest.model)
+                    parameters: \(String(reflecting: chatRequest.parameters))
+                    images: \(chatRequest.images.map { "\($0.contentType) \($0.data.count) bytes" })
+
+                    systemPrompt:
+                    \(chatRequest.systemPrompt)
+
+                    history:
+                    \(chatRequest.history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
+
+                    userPrompt:
+                    \(chatRequest.userPrompt)
+                    """)
                     var answer = ""
                     var responseModel = chatRequest.model
                     for try await event in generatorClient.chatStream(request: chatRequest) {
@@ -194,13 +293,22 @@ struct KnowledgeRAGService: Sendable {
                         }
                     }
                     let citations = promptBuilder.citationsUsed(in: answer, prompt: prompt)
+                    emitDebug(.response, """
+                    model: \(responseModel)
+                    citations: \(citations.map(\.repoFullName))
+
+                    content:
+                    \(answer)
+                    """)
                     continuation.yield(.state(.completed))
                     continuation.yield(.completed(answer: answer, model: responseModel, citations: citations, plan: plan))
                     continuation.finish()
                 } catch is CancellationError {
+                    emitDebug(.failure, "cancelled")
                     continuation.yield(.state(.cancelled))
                     continuation.finish()
                 } catch {
+                    emitDebug(.failure, error.localizedDescription)
                     continuation.yield(.state(.failed(error.localizedDescription)))
                     continuation.finish(throwing: error)
                 }
@@ -208,4 +316,114 @@ struct KnowledgeRAGService: Sendable {
             continuation.onTermination = { _ in task.cancel() }
         }
     }
+
+    /// 基于首个用户问题生成会话标题。
+    ///
+    /// 这里故意不复用 `ask`：标题不需要 Planner、知识库检索、远程上下文或问答历史，
+    /// 既避免额外的 RAG 成本，也确保不会把知识库内容发送给这次轻量调用。
+    func generateConversationTitle(
+        firstQuestion: String,
+        isDebugEnabled: Bool,
+        debugEndpoint: String?
+    ) async -> RAGConversationTitleGenerationResult {
+        let startedAt = Date()
+        var parameters = generatorParameters
+        parameters.temperature = 0.2
+        parameters.topP = 0.9
+        parameters.maxCompletionTokens = 64
+        parameters.streamEnabled = false
+        let request = AIChatRequest(
+            systemPrompt: Self.conversationTitleSystemPrompt,
+            userPrompt: "用户的第一个问题：\n\(firstQuestion)",
+            model: generatorModel,
+            parameters: parameters
+        )
+        var debugEvents: [RAGDebugEvent] = []
+        if isDebugEnabled {
+            debugEvents.append(RAGDebugEvent(
+                stage: .titlePrompt,
+                elapsedSeconds: 0,
+                payload: """
+                endpoint: \(debugEndpoint ?? "<unknown>")
+                model: \(request.model)
+                parameters: \(String(reflecting: request.parameters))
+
+                systemPrompt:
+                \(request.systemPrompt)
+
+                userPrompt:
+                \(request.userPrompt)
+                """
+            ))
+        }
+
+        do {
+            let response = try await generatorClient.chat(request: request)
+            try Task.checkCancellation()
+            let title = Self.normalizedConversationTitle(response.content)
+            guard !title.isEmpty else {
+                if isDebugEnabled {
+                    debugEvents.append(RAGDebugEvent(
+                        stage: .failure,
+                        elapsedSeconds: Date().timeIntervalSince(startedAt),
+                        payload: "会话标题生成失败：模型返回了空标题"
+                    ))
+                }
+                return .failed(debugEvents: debugEvents)
+            }
+            if isDebugEnabled {
+                debugEvents.append(RAGDebugEvent(
+                    stage: .titleResponse,
+                    elapsedSeconds: Date().timeIntervalSince(startedAt),
+                    payload: """
+                    model: \(response.model)
+
+                    content:
+                    \(response.content)
+
+                    normalizedTitle:
+                    \(title)
+                    """
+                ))
+            }
+            return .completed(title: title, debugEvents: debugEvents)
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            if isDebugEnabled {
+                debugEvents.append(RAGDebugEvent(
+                    stage: .failure,
+                    elapsedSeconds: Date().timeIntervalSince(startedAt),
+                    payload: "会话标题生成失败：\(error.localizedDescription)"
+                ))
+            }
+            return .failed(debugEvents: debugEvents)
+        }
+    }
+
+    private static let conversationTitleSystemPrompt = """
+    你是会话标题生成器。请根据用户的第一个问题生成一个简短、准确的中文标题。
+
+    要求：
+    - 仅输出标题文本，不要解释、不要引号、不要 Markdown、不要句末标点。
+    - 体现用户的核心意图，避免“关于”“请问”“帮我”等无意义前缀。
+    - 长度控制在 8 到 24 个中文字符；必要时可保留技术术语、代码名或英文缩写。
+    - 不得编造问题中不存在的信息。
+    """
+
+    /// 防御性清理模型偶发的引用符、换行和过长输出；不会改写标题语义。
+    private static func normalizedConversationTitle(_ rawTitle: String) -> String {
+        let firstLine = rawTitle
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init) ?? ""
+        let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’`"))
+        return String(trimmed.prefix(48))
+    }
+
+}
+
+private extension RAGDebugEvent {
+    var event: KnowledgeRAGServiceEvent { .debug(self) }
 }

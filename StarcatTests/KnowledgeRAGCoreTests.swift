@@ -241,6 +241,45 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.callCount == 0)
     }
 
+    @Test("会话标题只发送首个问题并清理模型输出")
+    func conversationTitleUsesOnlyFirstQuestion() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "\n“SQLite 与 GRDB 选型比较”\n补充说明")
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "unused")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+
+        let result = await service.generateConversationTitle(
+            firstQuestion: "帮我比较一下这个项目的 SQLite 和 GRDB 选型",
+            isDebugEnabled: true,
+            debugEndpoint: "https://example.com/v1"
+        )
+
+        guard case .completed(let title, let debugEvents) = result else {
+            Issue.record("预期返回标题")
+            return
+        }
+        #expect(title == "SQLite 与 GRDB 选型比较")
+        #expect(debugEvents.map(\.stage) == [.titlePrompt, .titleResponse])
+        #expect(spy.callCount == 1)
+        #expect(spy.lastChatRequest?.history.isEmpty == true)
+        #expect(spy.lastChatRequest?.images.isEmpty == true)
+        #expect(spy.lastChatRequest?.userPrompt == "用户的第一个问题：\n帮我比较一下这个项目的 SQLite 和 GRDB 选型")
+        #expect(spy.lastChatRequest?.parameters.streamEnabled == false)
+    }
+
     @Test("调用方未提供确认器时默认跳过远程上下文")
     func missingConsentDoesNotFetchRemoteContext() async throws {
         let database = try InMemoryDatabaseManager()
@@ -842,15 +881,25 @@ private struct RecordingRemoteContextProvider: KnowledgeRAGRemoteContextProvidin
 private final class SpyRAGAIClient: @unchecked Sendable, AIClientProtocol {
     private let lock = NSLock()
     private var calls = 0
+    private var latestChatRequest: AIChatRequest?
     private let failEmbedding: Bool
+    private let chatResponse: String?
     var callCount: Int { lock.withLock { calls } }
+    var lastChatRequest: AIChatRequest? { lock.withLock { latestChatRequest } }
 
-    init(failEmbedding: Bool = false) {
+    init(failEmbedding: Bool = false, chatResponse: String? = nil) {
         self.failEmbedding = failEmbedding
+        self.chatResponse = chatResponse
     }
 
     func chat(request: AIChatRequest) async throws -> AIChatResponse {
-        lock.withLock { calls += 1 }
+        lock.withLock {
+            calls += 1
+            latestChatRequest = request
+        }
+        if let chatResponse {
+            return AIChatResponse(content: chatResponse, model: request.model, finishReason: "stop")
+        }
         throw AIClientError.emptyResponse
     }
 

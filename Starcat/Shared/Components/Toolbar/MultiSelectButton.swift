@@ -9,9 +9,10 @@
 //  专项 PR-1 抽出，让 Trending / Weekly / Activity 也能复用同款图标 + 快捷键。
 //
 //  关键约束：
-//  - 视觉态由入参 `isActive` 驱动（`checkmark.circle` ↔ `checkmark.circle.fill`），具体激活
+//  - 视觉态由入参 `isActive` 驱动（`list.bullet.circle` ↔ `list.bullet.circle.fill`），具体激活
 //    含义由调用方决定（Manage 用 `HomeViewModel.isMultiSelectMode`、其它场景用
 //    各自的 `MultiSelectionStore.isActive`）；
+//  - 不用 `checkmark.circle`：易与 toolbar 状态 OK / 校验成功同族混淆；
 //  - 键盘快捷键统一 `⌘⇧M`，调用方注入时不重复定义；
 //  - `isDisabled` 由调用方按业务场景注入（典型场景：trending / weekly 未登录态——
 //    批量 star/unstar 必须调 GitHub API 需要 token），禁用时 tooltip 切到
@@ -35,7 +36,7 @@ struct MultiSelectButton: View {
 
     var body: some View {
         Button(action: action) {
-            ToolbarIcon(isActive ? "checkmark.circle.fill" : "checkmark.circle")
+            ToolbarIcon(isActive ? "list.bullet.circle.fill" : "list.bullet.circle")
                 .accessibilityLabel(isActive ? Text("batch.exitMultiSelect") : Text("batch.multiSelect"))
         }
         .disabled(isDisabled)
