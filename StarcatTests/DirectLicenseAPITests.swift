@@ -202,6 +202,36 @@ struct DirectLicenseAPITests {
         }
     }
 
+    @Test("无限席位保留 Creem 的 null 限制")
+    func activatePreservesUnlimitedActivationLimit() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status": "active",
+              "provider": "creem",
+              "activationUsed": 5,
+              "activationLimit": null,
+              "validatedAt": "2026-07-12T00:00:00Z"
+            }
+            """)
+        }
+
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: "license-api-key",
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+        let snapshot = try await api.activate(DirectLicenseActivationRequest(
+            licenseKey: "STARCAT-TEST-KEY",
+            deviceID: "Mac · Starcat ABCD",
+            appVersion: "1.0.0"
+        ))
+
+        #expect(snapshot.activationUsed == 5)
+        #expect(snapshot.activationLimit == nil)
+    }
+
     private static func jsonResponse(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,

@@ -33474,6 +33474,23 @@
         }
       }
     },
+    "settings.pro.direct.pass.seats.unlimited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlimited Macs"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不限台 Mac"
+          }
+        }
+      }
+    },
     "settings.pro.direct.pass.section": {
       "extractionState": "manual",
       "localizations": {

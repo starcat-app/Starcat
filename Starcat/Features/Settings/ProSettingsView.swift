@@ -594,10 +594,15 @@ struct ProSettingsTab: View {
     }
 
     private var directSeatText: String {
-        guard let used = directLicenseManager.lastSnapshot?.activationUsed,
-              let limit = directLicenseManager.lastSnapshot?.activationLimit,
-              limit > 0
+        guard let snapshot = directLicenseManager.lastSnapshot,
+              let used = snapshot.activationUsed
         else {
+            return String.l10n("settings.pro.direct.pass.seats.unknown")
+        }
+        guard let limit = snapshot.activationLimit else {
+            return String.l10n("settings.pro.direct.pass.seats.unlimited")
+        }
+        guard limit > 0 else {
             return String.l10n("settings.pro.direct.pass.seats.unknown")
         }
         return String(format: String.l10n("settings.pro.direct.pass.seats.format"), used, limit)
