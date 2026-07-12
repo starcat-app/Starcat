@@ -19,7 +19,6 @@ import UniformTypeIdentifiers
 struct ProSettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
-    @Environment(AppDependencies.self) private var dependencies
     @Environment(SubscriptionManager.self) private var subscriptionManager
     @Environment(DirectLicenseManager.self) private var directLicenseManager
     @Environment(\.openURL) private var openURL
@@ -32,6 +31,8 @@ struct ProSettingsTab: View {
     @State private var isDirectLicensePresented = false
     @State private var showDirectPassSavedMessage = false
     @State private var directLicenseKey: String = ""
+    /// 已激活时默认收起「更换授权码」，避免输入框常驻显得多余。
+    @State private var isReplacingLicense = false
 
     private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
 
@@ -40,16 +41,15 @@ struct ProSettingsTab: View {
             heroSection
             benefitsSection
             if isDirectBuild {
-                directPassSection
+                // 激活在通行证上方：未激活时先完成授权，已激活时先看状态再看通行证卡片。
                 directLicenseSection
+                directPassSection
                 if !settings.isProUser {
                     directCheckoutSection
                 }
-                directAccountSection
                 if directLicenseManager.storedCredential?.subscriptionID != nil {
                     directSubscriptionSection
                 }
-                directUpdateSection
             } else {
                 productSection
                 actionSection
@@ -61,20 +61,24 @@ struct ProSettingsTab: View {
             DirectProPassSheet(
                 data: directPassData,
                 onClose: { isDirectPassPresented = false },
-                onDownload: { saveDirectPassImage() }
+                onCopyImage: { style in
+                    DirectProPassExporter.copyImage(data: directPassData, style: style)
+                },
+                onDownload: { style in saveDirectPassImage(style: style) }
             )
-            .frame(width: 640, height: 720)
+            .frame(width: 460, height: 620)
         }
         .sheet(isPresented: $isDirectLicensePresented) {
             DirectLicenseSheet(
                 data: directPassData,
+                licenseKey: directLicenseManager.storedCredential?.licenseKey,
                 maskedLicenseKey: directLicenseManager.storedCredential.map { maskedLicenseKey($0.licenseKey) },
                 devices: directLicenseManager.licenseDevices,
                 isLoadingDevices: directLicenseManager.isRequestInFlight,
-                canOpenPortal: directLicenseManager.storedCredential != nil,
+                portalErrorMessage: directLicenseManager.lastErrorMessage,
+                canOpenPortal: canOpenDirectCustomerPortal,
                 canDeactivateCurrentMac: directLicenseManager.storedCredential != nil,
                 onClose: { isDirectLicensePresented = false },
-                onCopyLicense: { copyStoredDirectLicense() },
                 onOpenPortal: { Task { await openCustomerPortal() } },
                 onRefreshDevices: { Task { await directLicenseManager.refreshLicenseDevices() } },
                 onDeactivateCurrentMac: { Task { await deactivateDirectLicense() } },
@@ -82,7 +86,7 @@ struct ProSettingsTab: View {
                     Task { await directLicenseManager.deactivateLicenseDevice(instanceID: instanceID) }
                 }
             )
-            .frame(width: 560, height: 520)
+            .frame(width: 480, height: 420)
             .task {
                 await directLicenseManager.refreshLicenseDevices()
             }
@@ -188,52 +192,90 @@ struct ProSettingsTab: View {
             }
             .padding(.vertical, 2)
         } footer: {
-            Text(LocalizedStringKey(isDirectBuild ? "settings.pro.direct.status.footer" : "settings.pro.status.footer"))
+            // App Store 保留 StoreKit 说明；Direct 不再展示 License API 技术备注。
+            if !isDirectBuild {
+                Text("settings.pro.status.footer")
+            }
         }
     }
 
     private var directLicenseSection: some View {
         Section {
             if let credential = directLicenseManager.storedCredential {
+                // 已激活：只展示状态 + 校验/解绑；换码走折叠入口。
                 DirectLicenseKeyRow(
                     maskedKey: maskedLicenseKey(credential.licenseKey),
-                    suffix: currentLicenseSuffix
-                ) {
-                    copyToPasteboard(credential.licenseKey)
+                    suffix: currentLicenseSuffix,
+                    licenseKey: credential.licenseKey
+                )
+
+                HStack(spacing: 10) {
+                    Spacer()
+                    directValidateButton
+                    directDeactivateButton
+                }
+
+                DisclosureGroup(isExpanded: $isReplacingLicense) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
+                            .textFieldStyle(.roundedBorder)
+
+                        HStack {
+                            Spacer()
+                            directActivateButton
+                        }
+                    }
+                    .padding(.top, 4)
+                } label: {
+                    Text("settings.pro.direct.replaceLicense")
+                        .font(.body)
+                }
+            } else {
+                // 未激活：只保留首次激活工作流。
+                SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    Spacer()
+                    directActivateButton
                 }
             }
-
-            SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
-                .textFieldStyle(.roundedBorder)
-
-            HStack(spacing: 10) {
-                Button {
-                    Task { await activateDirectLicense() }
-                } label: {
-                    Label("settings.pro.direct.button.activate", systemImage: "checkmark.seal")
-                }
-                .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                Button {
-                    Task { await validateDirectLicense() }
-                } label: {
-                    Label("settings.pro.direct.button.validate", systemImage: "arrow.clockwise")
-                }
-                .disabled(directLicenseManager.isRequestInFlight || directLicenseManager.storedCredential == nil)
-
-                Button(role: .destructive) {
-                    Task { await deactivateDirectLicense() }
-                } label: {
-                    Label("settings.pro.direct.button.deactivate", systemImage: "xmark.circle")
-                }
-                .disabled(directLicenseManager.isRequestInFlight || directLicenseManager.storedCredential == nil)
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
         } header: {
             Text("settings.pro.direct.section")
-        } footer: {
-            Text("settings.pro.direct.footer")
         }
+    }
+
+    /// 激活按钮：绿色 seal 图标表示正向动作。
+    private var directActivateButton: some View {
+        Button {
+            Task { await activateDirectLicense() }
+        } label: {
+            Label {
+                Text("settings.pro.direct.button.activate")
+            } icon: {
+                Image(systemName: "checkmark.seal")
+                    .foregroundStyle(.green)
+            }
+        }
+        .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var directValidateButton: some View {
+        Button {
+            Task { await validateDirectLicense() }
+        } label: {
+            Label("settings.pro.direct.button.validate", systemImage: "arrow.clockwise")
+        }
+        .disabled(directLicenseManager.isRequestInFlight)
+    }
+
+    private var directDeactivateButton: some View {
+        Button(role: .destructive) {
+            Task { await deactivateDirectLicense() }
+        } label: {
+            Label("settings.pro.direct.button.deactivate", systemImage: "xmark.circle")
+        }
+        .disabled(directLicenseManager.isRequestInFlight)
     }
 
     private var directPassSection: some View {
@@ -244,6 +286,12 @@ struct ProSettingsTab: View {
                 onOpenLicense: { isDirectLicensePresented = true }
             )
 
+            if let errorMessage = directLicenseManager.lastErrorMessage, !errorMessage.isEmpty {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+            }
+
             if showDirectPassSavedMessage {
                 Label("settings.pro.direct.pass.saved", systemImage: "square.and.arrow.down.fill")
                     .font(.caption.weight(.medium))
@@ -253,64 +301,6 @@ struct ProSettingsTab: View {
             Text("settings.pro.direct.pass.section")
         } footer: {
             Text("settings.pro.direct.pass.footer")
-        }
-    }
-
-    private var directAccountSection: some View {
-        Section {
-            Button {
-                Task { await openCustomerPortal() }
-            } label: {
-                ProAccountActionRow(
-                    titleKey: "settings.pro.direct.portal.button",
-                    systemImage: "creditcard",
-                    trailing: directLicenseManager.isRequestInFlight ? .progress : .externalLink
-                )
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(directLicenseManager.isRequestInFlight || directLicenseManager.storedCredential == nil)
-        } header: {
-            Text("settings.pro.direct.portal.section")
-        } footer: {
-            Text("settings.pro.direct.portal.footer")
-        }
-    }
-
-    private var directUpdateSection: some View {
-        let updateController = dependencies.directUpdateController
-
-        return Section {
-            Button {
-                dependencies.directUpdateController.checkForUpdates()
-            } label: {
-                ProAccountActionRow(
-                    titleKey: "settings.pro.direct.updates.check",
-                    systemImage: "arrow.triangle.2.circlepath",
-                    trailing: .none
-                )
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(!dependencies.directUpdateController.canCheckForUpdates)
-
-            Toggle("settings.pro.direct.updates.autoCheck", isOn: Binding(
-                get: { updateController.automaticallyChecksForUpdates },
-                set: { updateController.automaticallyChecksForUpdates = $0 }
-            ))
-            .disabled(!dependencies.directUpdateController.isConfigured)
-
-            Toggle("settings.pro.direct.updates.autoDownload", isOn: Binding(
-                get: { updateController.automaticallyDownloadsUpdates },
-                set: { updateController.automaticallyDownloadsUpdates = $0 }
-            ))
-            .disabled(!dependencies.directUpdateController.isConfigured || !updateController.automaticallyChecksForUpdates)
-        } header: {
-            Text("settings.pro.direct.updates.section")
-        } footer: {
-            Text(LocalizedStringKey(dependencies.directUpdateController.isConfigured
-                                    ? "settings.pro.direct.updates.footer"
-                                    : "settings.pro.direct.updates.notConfigured"))
         }
     }
 
@@ -437,8 +427,6 @@ struct ProSettingsTab: View {
             }
         } header: {
             Text("settings.pro.benefits.section")
-        } footer: {
-            Text("settings.pro.benefits.footer")
         }
     }
 
@@ -499,6 +487,7 @@ struct ProSettingsTab: View {
         let didActivate = await directLicenseManager.activate(licenseKey: directLicenseKey)
         guard didActivate else { return }
         directLicenseKey = ""
+        isReplacingLicense = false
         showActivationSuccess()
     }
 
@@ -510,6 +499,8 @@ struct ProSettingsTab: View {
 
     private func deactivateDirectLicense() async {
         _ = await directLicenseManager.deactivateStoredLicense()
+        directLicenseKey = ""
+        isReplacingLicense = false
     }
 
     private func cancelDirectSubscription() async {
@@ -542,6 +533,10 @@ struct ProSettingsTab: View {
         isDirectBuild ? directLicenseManager.entitlement.expirationDate : subscriptionManager.entitlement.expirationDate
     }
 
+    private var canOpenDirectCustomerPortal: Bool {
+        directLicenseManager.storedCredential != nil
+    }
+
     private var directPassData: DirectProPassData {
         let expirationText = directLicenseManager.lastSnapshot?.expiresAt.map {
             DateFormatter.starcatLicenseDate.string(from: $0)
@@ -553,6 +548,7 @@ struct ProSettingsTab: View {
 
         return DirectProPassData(
             isActive: settings.isProUser,
+            plan: directLicenseManager.storedCredential?.plan ?? directLicenseManager.validationRecord.plan,
             planText: directPlanText,
             statusText: directRuntimeStateText,
             licenseSuffix: suffix,
@@ -613,18 +609,8 @@ struct ProSettingsTab: View {
         return "\(trimmed.prefix(4))••••\(trimmed.suffix(4))"
     }
 
-    private func copyToPasteboard(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
-    private func copyStoredDirectLicense() {
-        guard let licenseKey = directLicenseManager.storedCredential?.licenseKey else { return }
-        copyToPasteboard(licenseKey)
-    }
-
-    private func saveDirectPassImage() {
-        guard let url = DirectProPassExporter.saveImage(data: directPassData) else { return }
+    private func saveDirectPassImage(style: DirectPassVisualStyle) {
+        guard let url = DirectProPassExporter.saveImage(data: directPassData, style: style) else { return }
         AppLog.ui.info("Direct Pro pass saved: \(url.path, privacy: .public)")
         showDirectPassSavedMessage = true
         Task { @MainActor in
@@ -639,6 +625,7 @@ struct ProSettingsTab: View {
 /// 设置页、弹窗和导出图共用同一个数据快照，避免 UI 上出现不同步的状态文案。
 private struct DirectProPassData {
     let isActive: Bool
+    let plan: DirectCheckoutPlan?
     let planText: String
     let statusText: String
     let licenseSuffix: String?
@@ -646,6 +633,19 @@ private struct DirectProPassData {
     let seatText: String
     let expirationText: String
     let validatedText: String
+
+    var bannerAssetName: String? {
+        switch plan {
+        case .monthly:
+            return "DirectPassMonthly"
+        case .yearly:
+            return "DirectPassYearly"
+        case .lifetime:
+            return "DirectPassLifetime"
+        case .none:
+            return nil
+        }
+    }
 }
 
 /// 设置页里的 Direct Pro Pass 入口。
@@ -658,7 +658,7 @@ private struct DirectProPassPreviewCard: View {
     let onOpenLicense: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 14) {
             HStack(spacing: 14) {
                 DirectPassMiniArtwork(data: data)
                     .frame(width: 92, height: 128)
@@ -676,24 +676,22 @@ private struct DirectProPassPreviewCard: View {
                         DirectPassPill(text: data.seatText, color: .blue)
                     }
                 }
-
-                Spacer()
             }
 
-            HStack(spacing: 10) {
-                Button(action: onOpenPass) {
-                    Label("settings.pro.direct.pass.button.view", systemImage: "rectangle.portrait.and.arrow.right")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .focusEffectDisabled()
+            Spacer(minLength: 10)
 
-                Button(action: onOpenLicense) {
-                    Label("settings.pro.direct.license.button.manage", systemImage: "key.viewfinder")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .focusEffectDisabled()
+            HStack(spacing: 8) {
+                DirectIconActionButton(
+                    titleKey: "settings.pro.direct.pass.button.view",
+                    systemImage: "rectangle.portrait.and.arrow.right",
+                    isPrimary: true,
+                    action: onOpenPass
+                )
+                DirectIconActionButton(
+                    titleKey: "settings.pro.direct.license.button.manage",
+                    systemImage: "key.viewfinder",
+                    action: onOpenLicense
+                )
             }
         }
         .padding(12)
@@ -715,25 +713,28 @@ private struct DirectProPassPreviewCard: View {
 private struct DirectProPassSheet: View {
     let data: DirectProPassData
     let onClose: () -> Void
-    let onDownload: () -> Void
+    let onCopyImage: (DirectPassVisualStyle) -> Bool
+    let onDownload: (DirectPassVisualStyle) -> Void
+
+    @State private var visualStyle: DirectPassVisualStyle = .vibe
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "wallet.pass.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.cyan)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .fill(Color.cyan.opacity(0.16))
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("settings.pro.direct.pass.sheet.title")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                     Text("settings.pro.direct.pass.sheet.subtitle")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
@@ -741,26 +742,42 @@ private struct DirectProPassSheet: View {
 
                 SheetCloseButton(action: onClose)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
             Divider()
 
-            VStack(spacing: 16) {
-                DirectInteractivePassArtwork(data: data)
-                    .frame(width: 326, height: 452)
-                    .shadow(color: .black.opacity(0.34), radius: 24, y: 16)
+            VStack(spacing: 10) {
+                DirectInteractivePassArtwork(data: data, visualStyle: visualStyle)
+                    .frame(width: 360, height: 500)
+                    .shadow(color: .black.opacity(0.34), radius: 22, y: 16)
 
-                Button(action: onDownload) {
-                    Label("settings.pro.direct.pass.button.download", systemImage: "square.and.arrow.down")
-                        .frame(width: 210)
+                HStack(spacing: 26) {
+                    CopyFeedbackButton(
+                        performCopy: { onCopyImage(visualStyle) },
+                        tooltip: "settings.pro.direct.pass.button.copy"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : .secondary)
+                            .frame(width: 26, height: 26)
+                    }
+                    DirectPassSheetIconButton(
+                        titleKey: "settings.pro.direct.pass.button.download",
+                        systemImage: "arrow.down.circle",
+                        action: { onDownload(visualStyle) }
+                    )
+                    DirectPassSheetIconButton(
+                        titleKey: "settings.pro.direct.pass.button.changeStyle",
+                        systemImage: "shuffle",
+                        action: { visualStyle = visualStyle.next }
+                    )
                 }
-                .buttonStyle(.borderedProminent)
-                .focusEffectDisabled()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.vertical, 22)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
         }
         .background(
             ZStack {
@@ -774,13 +791,14 @@ private struct DirectProPassSheet: View {
 
 private struct DirectLicenseSheet: View {
     let data: DirectProPassData
+    let licenseKey: String?
     let maskedLicenseKey: String?
     let devices: [DirectLicenseDevice]
     let isLoadingDevices: Bool
+    let portalErrorMessage: String?
     let canOpenPortal: Bool
     let canDeactivateCurrentMac: Bool
     let onClose: () -> Void
-    let onCopyLicense: () -> Void
     let onOpenPortal: () -> Void
     let onRefreshDevices: () -> Void
     let onDeactivateCurrentMac: () -> Void
@@ -788,35 +806,32 @@ private struct DirectLicenseSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 18) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.cyan.opacity(0.9), .yellow.opacity(0.86)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        Image(systemName: "key.fill")
-                            .font(.system(size: 36, weight: .black))
-                            .foregroundStyle(Color(red: 0.05, green: 0.06, blue: 0.08))
-                    }
-                    .frame(width: 64, height: 64)
+            HStack(alignment: .center, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                    .frame(width: 42, height: 42)
 
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(data.isActive ? "settings.pro.direct.license.sheet.activeTitle" : "settings.pro.direct.license.sheet.freeTitle")
-                            .font(.title.weight(.bold))
+                            .font(.headline.weight(.semibold))
                         Text("settings.pro.direct.license.sheet.subtitle")
-                            .font(.callout.weight(.medium))
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
 
                 Spacer()
 
-                Text(data.isActive ? "settings.pro.direct.pass.badge.active" : "settings.pro.direct.pass.badge.free")
+                HStack(spacing: 5) {
+                    if data.isActive {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption.weight(.semibold))
+                    }
+                    Text(data.isActive ? "settings.pro.direct.pass.badge.active" : "settings.pro.direct.pass.badge.free")
+                }
                     .font(.caption.weight(.bold))
                     .foregroundStyle(data.isActive ? .green : .secondary)
                     .padding(.horizontal, 12)
@@ -826,27 +841,24 @@ private struct DirectLicenseSheet: View {
                 SheetCloseButton(action: onClose)
                     .padding(.leading, 12)
             }
-            .padding(28)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
 
-            VStack(spacing: 16) {
+            Divider()
+
+            VStack(spacing: 12) {
                 HStack(spacing: 12) {
                     Text(maskedLicenseKey ?? data.displayLicense)
-                        .font(.system(.title3, design: .monospaced).weight(.bold))
+                        .font(.system(.body, design: .monospaced).weight(.bold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
 
                     Spacer()
 
-                    Button(action: onCopyLicense) {
-                        Image(systemName: "doc.on.doc")
-                            .frame(width: 30, height: 30)
-                    }
-                    .buttonStyle(.bordered)
-                    .focusEffectDisabled()
-                    .disabled(data.licenseSuffix == nil)
+                    licenseCopyButton
                 }
-                .padding(14)
+                .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.secondary.opacity(0.08))
@@ -862,20 +874,31 @@ private struct DirectLicenseSheet: View {
                     onRefresh: onRefreshDevices,
                     onDeactivate: onDeactivateDevice
                 )
-            }
-            .padding(.horizontal, 28)
 
-            Spacer(minLength: 16)
+                if let portalErrorMessage, !portalErrorMessage.isEmpty {
+                    Label(portalErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+
+            Spacer(minLength: 10)
 
             Divider()
 
             HStack(spacing: 10) {
+                Spacer()
                 DirectPassToolbarButton(titleKey: "settings.pro.direct.portal.button", systemImage: "creditcard", action: onOpenPortal)
                     .disabled(!canOpenPortal)
+                    .help(canOpenPortal ? Text("settings.pro.direct.portal.button") : Text("settings.pro.direct.portal.missingCustomer"))
                 DirectPassToolbarButton(titleKey: "settings.pro.direct.pass.button.deactivateMac", systemImage: "xmark.circle", role: .destructive, action: onDeactivateCurrentMac)
                     .disabled(!canDeactivateCurrentMac)
+                Spacer()
             }
-            .padding(18)
+            .padding(12)
         }
         .background(
             ZStack {
@@ -883,6 +906,20 @@ private struct DirectLicenseSheet: View {
                 RadialGradient(colors: [.green.opacity(0.10), .clear], center: .topLeading, startRadius: 60, endRadius: 420)
             }
         )
+    }
+
+    /// 弹窗内的许可证复制入口保持无背景图标样式，反馈状态完全交给共享组件，
+    /// 避免这块信息行继续维护独立的剪贴板和 1.5 秒复位逻辑。
+    private var licenseCopyButton: some View {
+        CopyFeedbackButton(
+            providesContent: { licenseKey ?? "" },
+            tooltip: "settings.pro.direct.copyLicense"
+        ) { didCopy in
+            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                .foregroundStyle(didCopy ? Color.green : .primary)
+                .frame(width: 26, height: 26)
+        }
+        .disabled(licenseKey == nil)
     }
 }
 
@@ -929,6 +966,7 @@ private struct DirectPassDeviceList: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .frame(width: 24, height: 24)
                 .disabled(isLoading)
             }
 
@@ -938,7 +976,7 @@ private struct DirectPassDeviceList: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: 5) {
                     ForEach(devices) { device in
                         DirectPassDeviceRow(device: device) {
                             onDeactivate(device.instanceID)
@@ -947,7 +985,15 @@ private struct DirectPassDeviceList: View {
                 }
             }
         }
-        .padding(.top, 4)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.055))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        }
     }
 }
 
@@ -965,7 +1011,8 @@ private struct DirectPassDeviceRow: View {
         HStack(spacing: 8) {
             Image(systemName: device.isCurrentDevice ? "desktopcomputer.and.macbook" : "desktopcomputer")
                 .foregroundStyle(device.isCurrentDevice ? .blue : .secondary)
-                .frame(width: 18)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -977,6 +1024,9 @@ private struct DirectPassDeviceRow: View {
                         Text("settings.pro.direct.devices.current")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.blue)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.blue.opacity(0.14)))
                     }
                 }
 
@@ -988,22 +1038,25 @@ private struct DirectPassDeviceRow: View {
             Spacer(minLength: 8)
 
             Button(role: .destructive, action: onDeactivate) {
-                Image(systemName: "xmark.circle")
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("settings.pro.direct.devices.deactivate")
         }
-        .padding(8)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.secondary.opacity(0.06))
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         )
     }
 }
 
 private struct DirectInteractivePassArtwork: View {
     let data: DirectProPassData
+    let visualStyle: DirectPassVisualStyle
 
     @State private var hoverLocation: CGPoint?
     @State private var isHovering = false
@@ -1020,7 +1073,7 @@ private struct DirectInteractivePassArtwork: View {
 
     var body: some View {
         GeometryReader { proxy in
-            DirectProPassArtwork(data: data, isAnimatedPreview: true)
+            DirectProPassArtwork(data: data, visualStyle: visualStyle, isAnimatedPreview: true)
                 .overlay {
                     DirectPassGlare(location: hoverLocation)
                         .opacity(isHovering ? 1 : 0)
@@ -1081,6 +1134,7 @@ private struct DirectProPassArtwork: View {
     static let exportHeight: CGFloat = 1000
 
     let data: DirectProPassData
+    var visualStyle: DirectPassVisualStyle = .vibe
     var isAnimatedPreview = false
 
     var body: some View {
@@ -1102,9 +1156,9 @@ private struct DirectProPassArtwork: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(red: 0.08, green: 0.04, blue: 0.16),
-                            Color(red: 0.03, green: 0.05, blue: 0.12),
-                            Color(red: 0.12, green: 0.05, blue: 0.18)
+                            visualStyle.gradientColors[0],
+                            visualStyle.gradientColors[1],
+                            visualStyle.gradientColors[2]
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -1116,7 +1170,7 @@ private struct DirectProPassArtwork: View {
                 // 因为 ImageRenderer 不会捕获 SwiftUI Metal shader 帧。
                 DotsFlowBackground(
                     style: .snake,
-                    tint: .cyan,
+                    tint: visualStyle.accent,
                     background: .black,
                     speed: 0.32,
                     brightness: 0.9,
@@ -1138,11 +1192,11 @@ private struct DirectProPassArtwork: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("STARCAT")
-                            .font(.system(size: 24, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.cyan)
+                            .font(.system(size: 28, weight: .bold, design: .monospaced))
+                            .foregroundStyle(visualStyle.titleColor)
                             .tracking(8)
                         Text("PRO_PASS")
-                            .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 18, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.55))
                             .tracking(4)
                     }
@@ -1150,47 +1204,36 @@ private struct DirectProPassArtwork: View {
                     Spacer()
 
                     Text(data.licenseSuffix.map { "••\($0)" } ?? "FREE")
-                        .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 18, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.50))
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 28)
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [.cyan.opacity(0.85), .yellow.opacity(0.92)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: data.isActive ? "checkmark" : "star.fill")
-                        .font(.system(size: 70, weight: .black))
-                        .foregroundStyle(Color(red: 0.02, green: 0.04, blue: 0.10))
-                }
-                .frame(width: 132, height: 132)
-                .shadow(color: .cyan.opacity(0.22), radius: 28, y: 10)
+                passHero
+                    .frame(height: 370)
+                    .padding(.horizontal, -8)
+                    .shadow(color: passAccentColor.opacity(0.24), radius: 24, y: 10)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 20)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(data.planText.uppercased())
-                        .font(.system(size: 28, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(.cyan)
+                        .font(.system(size: 36, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(visualStyle.titleColor)
                         .tracking(4)
                     Text("BOARDING_PASS")
-                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 19, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.46))
                         .tracking(6)
                 }
-                .padding(.bottom, 34)
+                .padding(.bottom, 24)
 
-                VStack(alignment: .leading, spacing: 16) {
-                    DirectPassTerminalRow(label: "STATUS", value: data.isActive ? "ACTIVE" : "FREE")
-                    DirectPassTerminalRow(label: "LICENSE", value: data.displayLicense.uppercased())
-                    DirectPassTerminalRow(label: "SEATS", value: data.seatText.uppercased())
-                    DirectPassTerminalRow(label: "CHECKED", value: data.validatedText.uppercased())
+                VStack(alignment: .leading, spacing: 18) {
+                    DirectPassTerminalRow(label: "STATUS", value: data.isActive ? "ACTIVE" : "FREE", valueColor: visualStyle.value)
+                    DirectPassTerminalRow(label: "LICENSE", value: data.displayLicense.uppercased(), valueColor: visualStyle.value)
+                    DirectPassTerminalRow(label: "SEATS", value: data.seatText.uppercased(), valueColor: visualStyle.value)
+                    DirectPassTerminalRow(label: "CHECKED", value: data.validatedText.uppercased(), valueColor: visualStyle.value)
                 }
 
                 Spacer(minLength: 0)
@@ -1212,7 +1255,7 @@ private struct DirectProPassArtwork: View {
                 .foregroundStyle(.white.opacity(0.46))
                 .tracking(2.5)
             }
-            .padding(44)
+            .padding(40)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 34, style: .continuous)
@@ -1224,6 +1267,48 @@ private struct DirectProPassArtwork: View {
                     ),
                     lineWidth: 1.4
                 )
+        }
+    }
+
+    @ViewBuilder
+    private var passHero: some View {
+        if let assetName = data.bannerAssetName {
+            Image(assetName)
+                .resizable()
+                .scaledToFill()
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .stroke(passAccentColor.opacity(0.58), lineWidth: 1.2)
+                }
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.cyan.opacity(0.85), .yellow.opacity(0.92)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: data.isActive ? "checkmark" : "star.fill")
+                    .font(.system(size: 78, weight: .black))
+                    .foregroundStyle(Color(red: 0.02, green: 0.04, blue: 0.10))
+            }
+            .frame(width: 146, height: 146)
+        }
+    }
+
+    private var passAccentColor: Color {
+        switch data.plan {
+        case .monthly:
+            return .cyan
+        case .yearly:
+            return .green
+        case .lifetime:
+            return .orange
+        case .none:
+            return .cyan
         }
     }
 }
@@ -1256,6 +1341,65 @@ private struct DirectPassPill: View {
     }
 }
 
+private enum DirectPassVisualStyle: CaseIterable {
+    case vibe
+    case nebula
+    case amber
+
+    var accent: Color {
+        switch self {
+        case .vibe: return Color(red: 0.86, green: 0.55, blue: 1.0)
+        case .nebula: return .cyan
+        case .amber: return Color(red: 0.98, green: 0.80, blue: 0.42)
+        }
+    }
+
+    var value: Color {
+        switch self {
+        case .vibe: return Color(red: 0.93, green: 0.37, blue: 0.95)
+        case .nebula: return Color(red: 1.0, green: 0.18, blue: 0.42)
+        case .amber: return Color(red: 1.0, green: 0.83, blue: 0.42)
+        }
+    }
+
+    var titleColor: Color {
+        switch self {
+        case .vibe: return Color(red: 0.74, green: 0.55, blue: 1.0)
+        case .nebula: return .cyan
+        case .amber: return Color(red: 1.0, green: 0.56, blue: 0.20)
+        }
+    }
+
+    var gradientColors: [Color] {
+        switch self {
+        case .vibe:
+            return [
+                Color(red: 0.10, green: 0.05, blue: 0.20),
+                Color(red: 0.06, green: 0.04, blue: 0.13),
+                Color(red: 0.12, green: 0.07, blue: 0.17)
+            ]
+        case .nebula:
+            return [
+                Color(red: 0.08, green: 0.04, blue: 0.16),
+                Color(red: 0.03, green: 0.05, blue: 0.12),
+                Color(red: 0.12, green: 0.05, blue: 0.18)
+            ]
+        case .amber:
+            return [
+                Color(red: 0.12, green: 0.06, blue: 0.03),
+                Color(red: 0.05, green: 0.04, blue: 0.10),
+                Color(red: 0.14, green: 0.08, blue: 0.03)
+            ]
+        }
+    }
+
+    var next: DirectPassVisualStyle {
+        let styles = Self.allCases
+        guard let index = styles.firstIndex(of: self) else { return .vibe }
+        return styles[(index + 1) % styles.count]
+    }
+}
+
 private struct DirectPassToolbarButton: View {
     let titleKey: LocalizedStringKey
     let systemImage: String
@@ -1264,31 +1408,76 @@ private struct DirectPassToolbarButton: View {
 
     var body: some View {
         Button(role: role, action: action) {
-            Label(titleKey, systemImage: systemImage)
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(titleKey)
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(role == .destructive ? Color.red : Color.secondary)
+            .padding(.horizontal, 6)
+            .frame(height: 26)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .focusEffectDisabled()
+    }
+}
+
+private struct DirectIconActionButton: View {
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    var isPrimary = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 26, height: 26)
+                .foregroundStyle(isPrimary ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(titleKey))
+    }
+}
+
+private struct DirectPassSheetIconButton: View {
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(titleKey))
     }
 }
 
 private struct DirectPassTerminalRow: View {
     let label: String
     let value: String
+    let valueColor: Color
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 18) {
+        HStack(alignment: .firstTextBaseline, spacing: 20) {
             Text(label)
-                .frame(width: 104, alignment: .leading)
-                .foregroundStyle(.white.opacity(0.34))
+                .frame(width: 130, alignment: .leading)
+                .foregroundStyle(.white.opacity(0.44))
             Text(">")
-                .foregroundStyle(.white.opacity(0.26))
+                .foregroundStyle(.white.opacity(0.34))
             Text(value)
-                .foregroundStyle(.pink.opacity(0.92))
+                .foregroundStyle(valueColor)
                 .lineLimit(1)
-                .minimumScaleFactor(0.56)
+                .minimumScaleFactor(0.68)
         }
-        .font(.system(size: 20, weight: .bold, design: .monospaced))
+        .font(.system(size: 27, weight: .bold, design: .monospaced))
     }
 }
 
@@ -1381,17 +1570,8 @@ private struct DirectPassConstellation: View {
 
 @MainActor
 private enum DirectProPassExporter {
-    static func saveImage(data: DirectProPassData) -> URL? {
-        let content = DirectProPassArtwork(data: data)
-            .frame(width: DirectProPassArtwork.exportWidth, height: DirectProPassArtwork.exportHeight)
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = 2.0
-        renderer.proposedSize = ProposedViewSize(
-            width: DirectProPassArtwork.exportWidth,
-            height: DirectProPassArtwork.exportHeight
-        )
-
-        guard let image = renderer.nsImage,
+    static func saveImage(data: DirectProPassData, style: DirectPassVisualStyle) -> URL? {
+        guard let image = renderedImage(data: data, style: style),
               let pngData = pngData(from: image) else {
             AppLog.ui.error("DirectProPassExporter: failed to render pass image")
             return nil
@@ -1416,6 +1596,37 @@ private enum DirectProPassExporter {
         }
     }
 
+    /// 将 PNG 和 TIFF 两种表示一并写入剪贴板：macOS 原生应用优先 TIFF，聊天工具、浏览器
+    /// 等跨应用目标可直接读取 PNG；只写许可证文本会让用户无法粘贴通行证图片。
+    static func copyImage(data: DirectProPassData, style: DirectPassVisualStyle) -> Bool {
+        guard let image = renderedImage(data: data, style: style),
+              let pngData = pngData(from: image) else {
+            AppLog.ui.error("DirectProPassExporter: failed to render image for pasteboard")
+            return false
+        }
+
+        let item = NSPasteboardItem()
+        item.setData(pngData, forType: .png)
+        if let tiffData = image.tiffRepresentation {
+            item.setData(tiffData, forType: .tiff)
+        }
+
+        NSPasteboard.general.clearContents()
+        return NSPasteboard.general.writeObjects([item])
+    }
+
+    private static func renderedImage(data: DirectProPassData, style: DirectPassVisualStyle) -> NSImage? {
+        let content = DirectProPassArtwork(data: data, visualStyle: style)
+            .frame(width: DirectProPassArtwork.exportWidth, height: DirectProPassArtwork.exportHeight)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2.0
+        renderer.proposedSize = ProposedViewSize(
+            width: DirectProPassArtwork.exportWidth,
+            height: DirectProPassArtwork.exportHeight
+        )
+        return renderer.nsImage
+    }
+
     private static func pngData(from image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff) else {
@@ -1428,7 +1639,7 @@ private enum DirectProPassExporter {
 private struct DirectLicenseKeyRow: View {
     let maskedKey: String
     let suffix: String?
-    let onCopy: () -> Void
+    let licenseKey: String
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1449,12 +1660,14 @@ private struct DirectLicenseKeyRow: View {
 
             Spacer(minLength: 8)
 
-            Button {
-                onCopy()
-            } label: {
-                Label("settings.pro.direct.button.copyLicense", systemImage: "doc.on.doc")
+            CopyFeedbackButton(
+                providesContent: { licenseKey },
+                tooltip: "settings.pro.direct.button.copyLicense",
+                style: .bordered
+            ) { didCopy in
+                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                    .foregroundStyle(didCopy ? Color.green : .primary)
             }
-            .buttonStyle(.bordered)
         }
         .padding(.vertical, 4)
     }

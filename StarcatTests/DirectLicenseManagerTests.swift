@@ -21,7 +21,6 @@ struct DirectLicenseManagerTests {
             licenseKey: "STARCAT-TEST-KEY",
             instanceID: "inst_123",
             subscriptionID: "sub_123",
-            customerID: "cust_123",
             productID: "prod_lifetime",
             plan: .lifetime
         ))
@@ -42,6 +41,35 @@ struct DirectLicenseManagerTests {
 
         #expect(manager.storedCredential == nil)
         #expect(manager.entitlement == .inactive)
+    }
+
+    @Test("支付回跳中的套餐参数不作为可信来源")
+    func activationIgnoresTamperedPlanInDeepLink() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status": "active",
+              "provider": "creem",
+              "plan": "monthly",
+              "productID": "prod_monthly",
+              "instanceID": "inst_123",
+              "validatedAt": "2026-07-08T00:00:00Z"
+            }
+            """)
+        }
+
+        let store = DirectLicenseStore(keychain: InMemoryKeychain())
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store)
+        let url = URL(string: "starcat://license/activate?license_key=STARCAT-TEST-KEY&plan=yearly&product_id=prod_yearly")!
+
+        let result = await manager.activateFromPaymentSuccessURL(url)
+
+        #expect(result)
+        #expect(manager.storedCredential?.plan == .monthly)
+        #expect(manager.storedCredential?.productID == "prod_monthly")
+        #expect(try store.loadCredential()?.plan == .monthly)
+        #expect(try store.loadCredential()?.productID == "prod_monthly")
     }
 
     @Test("后台校验遇到临时服务端错误时保留本地 Pro")
@@ -184,7 +212,6 @@ struct DirectLicenseManagerTests {
             licenseKey: "STARCAT-TEST-KEY",
             instanceID: "inst_123",
             subscriptionID: plan == .monthly ? "sub_123" : nil,
-            customerID: "cust_123",
             productID: productID,
             plan: plan
         ))

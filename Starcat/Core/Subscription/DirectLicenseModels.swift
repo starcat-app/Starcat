@@ -53,7 +53,7 @@ enum DirectLicenseRuntimeState: String, Codable, Equatable, Sendable {
 /// 与授权码一起存在本机安全存储里，用来控制后台校验频率和避免网络抖动误伤 Pro。
 /// `lastErrorCode` 仅供日志/诊断使用，不能作为 UI 文案直接暴露给用户。
 struct DirectLicenseValidationRecord: Equatable, Sendable {
-    var plan: DirectCheckoutPlan?
+    var plan: DirectCheckoutPlan? = nil
     var runtimeState: DirectLicenseRuntimeState
     var lastAttemptAt: Date?
     var lastSuccessAt: Date?
@@ -88,9 +88,12 @@ struct DirectPaymentURLResponse: Codable, Equatable, Sendable {
 }
 
 /// 创建支付平台 customer portal 的请求体。
+///
+/// 只提交本机已激活的授权码与实例；客户归属由 License API 依据已验签 checkout 映射解析，
+/// 客户端不保存或传递 `customerID`。
 struct DirectCustomerPortalRequest: Codable, Equatable, Sendable {
-    var customerID: String?
-    var email: String?
+    var licenseKey: String
+    var instanceID: String
 }
 
 /// 取消 Direct 月订阅的请求体。
@@ -106,7 +109,6 @@ struct DirectSubscriptionSnapshot: Codable, Equatable, Sendable {
     var subscriptionID: String
     var status: String?
     var productID: String?
-    var customerID: String?
     var currentPeriodEnd: String?
     var canceledAt: String?
 }
@@ -115,6 +117,7 @@ struct DirectSubscriptionSnapshot: Codable, Equatable, Sendable {
 struct DirectLicenseSnapshot: Codable, Equatable, Sendable {
     var status: DirectLicenseStatus
     var provider: DirectLicenseProviderID
+    var plan: DirectCheckoutPlan?
     var productID: String?
     var instanceID: String?
     var activationUsed: Int? = nil

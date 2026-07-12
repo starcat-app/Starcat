@@ -423,6 +423,12 @@ struct SettingsView: View {
                 }
             }
 
+            // Sparkle 自动更新只存在于 Direct 分发；App Store 构建必须整段隐藏，
+            // 避免审核包暴露自更新入口（与菜单栏 / Help「检查更新」同一门控）。
+            if DistributionChannel.current.isDirect {
+                directUpdateSection
+            }
+
             Section("settings.general.other") {
                 HStack {
                     Spacer()
@@ -451,6 +457,42 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Direct 版 Sparkle 更新偏好。仅在 `DistributionChannel.current.isDirect` 为真时挂入通用设置。
+    private var directUpdateSection: some View {
+        let updateController = dependencies.directUpdateController
+
+        return Section {
+            // 「检查更新」是一次性动作，按设置页按钮右对齐规范推到右侧。
+            HStack {
+                Spacer()
+                Button {
+                    dependencies.directUpdateController.checkForUpdates()
+                } label: {
+                    Label("settings.pro.direct.updates.check", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!dependencies.directUpdateController.canCheckForUpdates)
+            }
+
+            Toggle("settings.pro.direct.updates.autoCheck", isOn: Binding(
+                get: { updateController.automaticallyChecksForUpdates },
+                set: { updateController.automaticallyChecksForUpdates = $0 }
+            ))
+            .disabled(!dependencies.directUpdateController.isConfigured)
+
+            Toggle("settings.pro.direct.updates.autoDownload", isOn: Binding(
+                get: { updateController.automaticallyDownloadsUpdates },
+                set: { updateController.automaticallyDownloadsUpdates = $0 }
+            ))
+            .disabled(!dependencies.directUpdateController.isConfigured || !updateController.automaticallyChecksForUpdates)
+        } header: {
+            Text("settings.pro.direct.updates.section")
+        } footer: {
+            Text(LocalizedStringKey(dependencies.directUpdateController.isConfigured
+                                    ? "settings.pro.direct.updates.footer"
+                                    : "settings.pro.direct.updates.notConfigured"))
+        }
     }
 
     private func shortcutValidationMessageKey(

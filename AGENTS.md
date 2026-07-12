@@ -294,6 +294,11 @@ Section {
 > 单一信任源：[`docs/5-规范/UI-刷新图标-规范.md`](docs/5-规范/UI-刷新图标-规范.md)
 > 所有 icon-only 刷新触发器走 `SyncIconButton`,`arrow.triangle.2.circlepath`,静止 `.secondary` / 刷新中 `.accentColor` + 旋转。
 
+### UI 规范：复制按钮反馈（强制，2026-07-12 起生效）
+
+> 单一信任源：[`docs/5-规范/UI-复制按钮-规范.md`](docs/5-规范/UI-复制按钮-规范.md)
+> 新增或调整的复制入口走 `CopyFeedbackButton`；成功后显示绿色 `checkmark.circle.fill`，并在 1.5 秒后恢复。
+
 ### UI 规范：禁止 Stepper（强制，2026-06-20 起生效）
 
 > 单一信任源：[`docs/5-规范/UI-禁止Stepper-规范.md`](docs/5-规范/UI-禁止Stepper-规范.md)

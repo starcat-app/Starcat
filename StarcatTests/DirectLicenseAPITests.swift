@@ -92,7 +92,6 @@ struct DirectLicenseAPITests {
               "subscriptionID": "sub_123",
               "status": "active",
               "productID": "prod_monthly",
-              "customerID": "cust_123",
               "currentPeriodEnd": "2026-08-08T00:00:00Z"
             }
             """)
@@ -111,8 +110,67 @@ struct DirectLicenseAPITests {
 
         #expect(response.provider == .creem)
         #expect(response.subscriptionID == "sub_123")
-        #expect(response.customerID == "cust_123")
         #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("账单管理只提交已激活授权码与实例")
+    func customerPortalUsesLicenseContextInsteadOfCustomerID() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/v1/direct/customer-portal")
+            let body = try #require(request.httpBody)
+            let payload = try JSONSerialization.jsonObject(with: body) as? [String: String]
+            #expect(payload?["licenseKey"] == "STARCAT-TEST-KEY")
+            #expect(payload?["instanceID"] == "inst_123")
+            #expect(payload?["customerID"] == nil)
+            return Self.jsonResponse(for: request, body: """
+            {
+              "provider": "creem",
+              "url": "https://creem.io/portal/cust_123"
+            }
+            """)
+        }
+
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: "license-api-key",
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+        let response = try await api.customerPortal(DirectCustomerPortalRequest(
+            licenseKey: "STARCAT-TEST-KEY",
+            instanceID: "inst_123"
+        ))
+
+        #expect(response.url == "https://creem.io/portal/cust_123")
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("账单映射尚未同步时返回可重试提示")
+    func customerPortalReportsBillingNotReady() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (response, Data("{\"code\":\"BILLING_NOT_READY\"}".utf8))
+        }
+
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: "license-api-key",
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+
+        await #expect(throws: DirectLicenseAPIError.billingNotReady) {
+            _ = try await api.customerPortal(DirectCustomerPortalRequest(
+                licenseKey: "STARCAT-TEST-KEY",
+                instanceID: "inst_123"
+            ))
+        }
     }
 
     private static func jsonResponse(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {

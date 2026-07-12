@@ -12,7 +12,6 @@ struct DirectLicenseCredential: Equatable, Sendable {
     var licenseKey: String
     var instanceID: String
     var subscriptionID: String?
-    var customerID: String?
     var productID: String?
     var plan: DirectCheckoutPlan?
 }
@@ -27,7 +26,6 @@ struct DirectLicenseStore: Sendable {
         static let license = "direct_license_key"
         static let instance = "direct_license_instance_id"
         static let subscription = "direct_license_subscription_id"
-        static let customer = "direct_license_customer_id"
         static let product = "direct_license_product_id"
         static let plan = "direct_license_plan"
         static let installID = "direct_license_install_id"
@@ -52,7 +50,6 @@ struct DirectLicenseStore: Sendable {
             licenseKey: licenseKey,
             instanceID: instanceID,
             subscriptionID: try keychain.loadServiceAPIKey(forService: Key.subscription),
-            customerID: try keychain.loadServiceAPIKey(forService: Key.customer),
             productID: try keychain.loadServiceAPIKey(forService: Key.product),
             plan: try loadPlan()
         )
@@ -62,7 +59,6 @@ struct DirectLicenseStore: Sendable {
         try keychain.storeServiceAPIKey(credential.licenseKey, forService: Key.license)
         try keychain.storeServiceAPIKey(credential.instanceID, forService: Key.instance)
         try storeOptional(credential.subscriptionID, forService: Key.subscription)
-        try storeOptional(credential.customerID, forService: Key.customer)
         try storeOptional(credential.productID, forService: Key.product)
         try storeOptional(credential.plan?.rawValue, forService: Key.plan)
     }
@@ -71,7 +67,8 @@ struct DirectLicenseStore: Sendable {
         try keychain.deleteServiceAPIKey(forService: Key.license)
         try keychain.deleteServiceAPIKey(forService: Key.instance)
         try keychain.deleteServiceAPIKey(forService: Key.subscription)
-        try keychain.deleteServiceAPIKey(forService: Key.customer)
+        // 客户归属已迁移到服务端 checkout 映射，主动删除旧本机值，避免残留数据继续被误用。
+        try keychain.deleteServiceAPIKey(forService: "direct_license_customer_id")
         try keychain.deleteServiceAPIKey(forService: Key.product)
         try keychain.deleteServiceAPIKey(forService: Key.plan)
         try deleteValidationRecord()

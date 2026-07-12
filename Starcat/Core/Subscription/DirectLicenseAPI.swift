@@ -93,6 +93,9 @@ struct DirectLicenseAPI: Sendable {
         }
         let body = (try? decoder.decode(DirectLicenseErrorResponse.self, from: data)) ?? DirectLicenseErrorResponse()
         let code = body.normalizedCode
+        if code == "billing_not_ready" {
+            return .billingNotReady
+        }
         switch http.statusCode {
         case 401, 403:
             return .unauthorizedClient
@@ -156,12 +159,13 @@ enum DirectLicenseAPIError: Error, Equatable {
     case temporaryServerFailure(statusCode: Int, code: String?)
     case unauthorizedClient
     case licenseNotFound
+    case billingNotReady
     case licenseRejected(code: String)
 
     /// 是否属于不能撤销本地 Pro 的临时失败。
     var preservesLocalEntitlement: Bool {
         switch self {
-        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse:
+        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse, .billingNotReady:
             return true
         case .licenseNotFound, .licenseRejected:
             return false
@@ -180,6 +184,8 @@ enum DirectLicenseAPIError: Error, Equatable {
             return "unauthorized_client"
         case .licenseNotFound:
             return "license_not_found"
+        case .billingNotReady:
+            return "billing_not_ready"
         case let .licenseRejected(code):
             return code
         }
@@ -199,6 +205,8 @@ extension DirectLicenseAPIError: LocalizedError {
             return "Starcat License API rejected the client key."
         case .licenseNotFound:
             return "License was not found."
+        case .billingNotReady:
+            return String.l10n("settings.pro.direct.portal.syncing")
         case .licenseRejected:
             return "License is no longer active."
         }

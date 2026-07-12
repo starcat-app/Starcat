@@ -72,10 +72,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
     @discardableResult
     func activate(
         licenseKey: String,
-        subscriptionID: String? = nil,
-        customerID: String? = nil,
-        productID: String? = nil,
-        plan: DirectCheckoutPlan? = nil
+        subscriptionID: String? = nil
     ) async -> Bool {
         let trimmed = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -92,9 +89,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
                     licenseKey: trimmed,
                     instanceID: instanceID,
                     subscriptionID: directLicenseTrimmed(subscriptionID) ?? previous?.subscriptionID,
-                    customerID: directLicenseTrimmed(customerID) ?? previous?.customerID,
-                    productID: directLicenseTrimmed(productID) ?? snapshot.productID ?? previous?.productID,
-                    plan: plan ?? previous?.plan
+                    productID: snapshot.productID,
+                    plan: snapshot.plan
                 )
                 try store.storeCredential(credential)
                 storedCredential = credential
@@ -105,9 +101,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
     /// 处理支付成功页 deep link 带回的授权信息。
     ///
-    /// Creem 的 license validate 不返回 subscription id，所以取消月订阅依赖成功页在
-    /// 首次回跳时把 `subscription_id` 交给客户端保存。Lifetime checkout 没有
-    /// subscription id 时保留旧月订阅 id，方便用户升级后立刻取消续费。
+    /// Deep link 只负责把用户从支付成功页带回 App。套餐与 product id 必须来自
+    /// 后端对 Creem License API 的 activate/validate 结果，不能信任 URL 查询参数。
     @discardableResult
     func activateFromPaymentSuccessURL(_ url: URL) async -> Bool {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -118,10 +113,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         }
         return await activate(
             licenseKey: licenseKey,
-            subscriptionID: components.queryItemValue("subscription_id"),
-            customerID: components.queryItemValue("customer_id"),
-            productID: components.queryItemValue("product_id"),
-            plan: components.queryItemValue("plan").flatMap(DirectCheckoutPlan.init(rawValue:))
+            subscriptionID: components.queryItemValue("subscription_id")
         )
     }
 
@@ -146,7 +138,6 @@ final class DirectLicenseManager: ProEntitlementProviding {
         defer { isRequestInFlight = false }
 
         updateValidationRecord { record in
-            record.plan = credential.plan ?? record.plan
             record.lastAttemptAt = nowProvider()
             record.lastErrorCode = nil
         }
@@ -289,13 +280,10 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
     /// 创建 Creem customer portal URL。
     ///
-    /// 客户端只把支付成功页保存下来的 `customerID` 交给 Starcat License API；真正的
-    /// Creem API Key 和 portal 创建逻辑仍留在服务端。没有 `customerID` 时不猜测邮箱，
-    /// 避免在本机缺少订单上下文时误打开错误客户的账单页。
+    /// 授权码和当前实例先由服务端重新校验，再从已验签 checkout 关联到 Customer Portal。
+    /// 因而用户手动输入授权码激活也可管理账单，客户端无需相信或保存 deep link 的客户信息。
     func createCustomerPortalURL() async -> URL? {
-        guard let credential = storedCredential ?? (try? store.loadCredential()),
-              let customerID = directLicenseTrimmed(credential.customerID)
-        else {
+        guard let credential = storedCredential ?? (try? store.loadCredential()) else {
             lastErrorMessage = String.l10n("settings.pro.direct.portal.missingCustomer")
             return nil
         }
@@ -305,8 +293,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
         do {
             let response = try await api.customerPortal(DirectCustomerPortalRequest(
-                customerID: customerID,
-                email: nil
+                licenseKey: credential.licenseKey,
+                instanceID: credential.instanceID
             ))
             guard let url = URL(string: response.url) else {
                 lastErrorMessage = DirectLicenseAPIError.invalidResponse.localizedDescription
@@ -342,6 +330,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
             entitlement = snapshot.proEntitlement()
             runtimeState = snapshot.status.grantsPro ? .verifiedActive : state(for: snapshot.status)
             updateValidationRecord { record in
+                record.plan = snapshot.plan
                 record.runtimeState = runtimeState
                 record.lastRemoteStatus = snapshot.status
                 record.lastSuccessAt = nowProvider()
@@ -375,7 +364,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         lastSnapshot = snapshot
         licenseDevices = snapshot.devices ?? licenseDevices
         updateValidationRecord { record in
-            record.plan = credential.plan ?? record.plan
+            record.plan = snapshot.plan
             record.runtimeState = snapshot.status.grantsPro ? .verifiedActive : state(for: snapshot.status)
             record.lastSuccessAt = nowProvider()
             record.lastFailureAt = nil
@@ -384,6 +373,15 @@ final class DirectLicenseManager: ProEntitlementProviding {
         }
 
         if snapshot.status.grantsPro {
+            let refreshedCredential = DirectLicenseCredential(
+                licenseKey: credential.licenseKey,
+                instanceID: snapshot.instanceID ?? credential.instanceID,
+                subscriptionID: credential.subscriptionID,
+                productID: snapshot.productID,
+                plan: snapshot.plan
+            )
+            storedCredential = refreshedCredential
+            try? store.storeCredential(refreshedCredential)
             runtimeState = .verifiedActive
             entitlement = snapshot.proEntitlement()
             return
