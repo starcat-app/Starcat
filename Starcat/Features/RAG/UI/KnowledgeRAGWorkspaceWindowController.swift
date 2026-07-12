@@ -526,8 +526,11 @@ private struct KnowledgeRAGBrowserView: View {
             }
             HStack {
                 Text("rag.browser.chunks").font(.headline)
-                indexProgressLabel
                 Spacer()
+                if let index = viewModel.selectedIndex {
+                    repositoryIndexStatisticsLabel(index)
+                }
+                indexProgressLabel
                 Button { viewModel.rebuildIndex() } label: {
                     HStack(spacing: 6) {
                         refreshIndexIcon
@@ -626,6 +629,22 @@ private struct KnowledgeRAGBrowserView: View {
         } else {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
+        }
+    }
+
+    private func repositoryIndexStatisticsLabel(_ index: RAGKnowledgeRepositoryIndex) -> some View {
+        HStack(spacing: 8) {
+            statisticValue("\(index.totalChunks)", label: "rag.browser.totalChunks")
+            statisticValue("\(index.readyChunks)", label: "rag.workspace.status.readyChunks")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private func statisticValue(_ value: String, label: LocalizedStringKey) -> some View {
+        HStack(spacing: 3) {
+            Text(value).monospacedDigit()
+            Text(label)
         }
     }
 

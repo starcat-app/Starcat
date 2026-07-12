@@ -236,25 +236,10 @@ struct KnowledgeRAGWorkspaceView: View {
                     Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
                         .font(ragFont(.caption, weight: .semibold))
                     Spacer()
-                    Text("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
-                        .font(ragFont(.caption, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
                     Image(systemName: "arrow.up.right.square")
                         .font(iconFont(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
-                indexProgressLabel
-                HStack {
-                    Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), locale: locale, viewModel.indexCoverage.readyChunks))
-                    Spacer()
-                    if viewModel.indexCoverage.pendingChunks + viewModel.indexCoverage.failedChunks + viewModel.indexCoverage.staleChunks > 0 {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .help("rag.workspace.status.indexIncomplete")
-                    }
-                }
-                .font(ragFont(.caption2))
-                .foregroundStyle(.secondary)
             }
         }
         .padding(10)
@@ -1225,6 +1210,8 @@ struct KnowledgeRAGWorkspaceView: View {
             Divider()
             HStack {
                 Spacer()
+                globalIndexStatisticsLabel
+                indexProgressLabel
                 Button {
                     viewModel.rebuildIndex()
                 } label: {
@@ -1391,6 +1378,28 @@ struct KnowledgeRAGWorkspaceView: View {
         } else {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
+        }
+    }
+
+    private var globalIndexStatisticsLabel: some View {
+        HStack(spacing: 8) {
+            statisticValue(
+                "\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)",
+                label: "rag.workspace.status.repos"
+            )
+            statisticValue(
+                "\(viewModel.indexCoverage.readyChunks)",
+                label: "rag.workspace.status.readyChunks"
+            )
+        }
+        .font(ragFont(.caption2))
+        .foregroundStyle(.secondary)
+    }
+
+    private func statisticValue(_ value: String, label: LocalizedStringKey) -> some View {
+        HStack(spacing: 3) {
+            Text(value).monospacedDigit()
+            Text(label)
         }
     }
 
