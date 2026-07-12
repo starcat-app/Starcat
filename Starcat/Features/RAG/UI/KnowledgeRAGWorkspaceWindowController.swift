@@ -266,7 +266,9 @@ private final class KnowledgeRAGBrowserViewModel {
         guard let id = managed.chunk.id else { return }
         do {
             try await dependencies.ragChunkRepository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
-            await refresh()
+            // 删除只影响当前项；整页 refresh 会丢掉“加载更多”已有的数据并回到第一页。
+            chunks.removeAll { $0.id == id }
+            try await refreshIndexStatistics()
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -284,17 +286,22 @@ private final class KnowledgeRAGBrowserViewModel {
         defer { if showsLoading { isLoading = false } }
         do {
             let plan = RAGQueryPlan(mode: .semanticOnly, semanticQuery: "knowledge")
-            async let loadedCoverage = dependencies.ragChunkRepository.coverage(model: embeddingModel)
             async let loadedCandidates = dependencies.ragCandidateRepository.fetchCandidates(plan: plan, explicitRepoIDs: [], explicitMode: .only)
-            async let loadedIndexes = dependencies.ragChunkRepository.knowledgeRepositoryIndexes(model: embeddingModel)
-            coverage = try await loadedCoverage
+            try await refreshIndexStatistics()
             candidates = try await loadedCandidates
-            indexes = Dictionary(uniqueKeysWithValues: try await loadedIndexes.map { ($0.repoID, $0) })
             if selectedRepoID == nil || !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
                 selectedRepoID = candidates.first?.repo.id
             }
             await loadChunks()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// 分片删除后仅同步统计，保留用户已分页加载到内存中的其他分片。
+    private func refreshIndexStatistics() async throws {
+        async let loadedCoverage = dependencies.ragChunkRepository.coverage(model: embeddingModel)
+        async let loadedIndexes = dependencies.ragChunkRepository.knowledgeRepositoryIndexes(model: embeddingModel)
+        coverage = try await loadedCoverage
+        indexes = Dictionary(uniqueKeysWithValues: try await loadedIndexes.map { ($0.repoID, $0) })
     }
 
     private static let initialChunkPageSize = 5
@@ -569,8 +576,6 @@ private struct KnowledgeRAGBrowserView: View {
                             .foregroundStyle(.secondary)
                         Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
-                        if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
-                        Text(statusKey(status)).font(.caption2.weight(.semibold)).foregroundStyle(statusColor(status))
                     }
                     Text(chunk.content).font(.caption).lineLimit(3)
                     if let error = chunk.embeddingError, !error.isEmpty { Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2) }
@@ -582,16 +587,22 @@ private struct KnowledgeRAGBrowserView: View {
             .focusEffectDisabled()
             .pointerStyle(.link)
 
-            Button(role: .destructive) { Task { await viewModel.excludeChunk(managed) } } label: {
-                Image(systemName: "trash")
-                    .font(.callout)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+            // 状态与删除入口共用标题行高度，避免图标因 28pt 点击框而向下错位。
+            HStack(alignment: .center, spacing: 8) {
+                if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
+                Text(statusKey(status)).font(.caption2.weight(.semibold)).foregroundStyle(statusColor(status))
+                Button(role: .destructive) { Task { await viewModel.excludeChunk(managed) } } label: {
+                    Image(systemName: "trash")
+                        .font(.callout)
+                        .frame(width: 28, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.red)
+                .help("rag.browser.chunk.delete")
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(.red)
-            .help("rag.browser.chunk.delete")
+            .frame(height: 16)
         }
         .padding(12).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }

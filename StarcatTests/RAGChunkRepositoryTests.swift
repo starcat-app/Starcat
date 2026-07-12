@@ -222,6 +222,25 @@ struct RAGChunkRepositoryTests {
         #expect(!restored.hasOverride)
     }
 
+    @Test("排除分片后不再出现在浏览器分页与索引统计中")
+    func excludedChunkIsHiddenFromBrowserAndIndexStatistics() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 41)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 41, state: .inLibrary)
+        let result = try await repository.replaceSource(
+            repoId: 41,
+            source: .readme,
+            drafts: [draft(repoId: 41, key: "readme:excluded:0", content: "Excluded")]
+        )
+        let id = try #require(result.pendingChunkIDs.first)
+        try await repository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
+
+        let page = try await repository.fetchManagedKnowledgeChunks(repoId: 41, limit: 5, offset: 0)
+        #expect(page.chunks.isEmpty)
+        #expect(try await repository.coverage(model: "embed-v1").totalChunks == 0)
+        #expect(try await repository.knowledgeRepositoryIndexes(model: "embed-v1").first?.totalChunks == 0)
+    }
+
     private func draft(repoId: Int64, key: String, content: String) -> RAGChunkDraft {
         RAGChunkDraft(
             repoId: repoId,

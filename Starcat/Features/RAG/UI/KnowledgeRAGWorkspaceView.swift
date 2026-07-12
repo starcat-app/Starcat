@@ -243,11 +243,6 @@ struct KnowledgeRAGWorkspaceView: View {
                         .font(iconFont(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
-                // 覆盖率条会在 1/1 时一直满蓝，误读成装饰；只在真正 rebuild 时显示不确定进度。
-                if viewModel.isIndexing {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                }
                 HStack {
                     Text(String(format: String.l10n("rag.workspace.status.readyChunksFormat"), locale: locale, viewModel.indexCoverage.readyChunks))
                     Spacer()

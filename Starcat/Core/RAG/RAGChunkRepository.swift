@@ -337,6 +337,10 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END) AS stale_chunks
                 FROM repo_notes n
                 LEFT JOIN rag_chunks c ON c.repo_id = n.repo_id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM rag_chunk_overrides o
+                        WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                    )
                 WHERE n.library_state = 'in_library'
                 """, arguments: [model, model, model])
             return RAGIndexCoverage(
@@ -363,6 +367,10 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END) AS stale_chunks
                 FROM repo_notes n
                 LEFT JOIN rag_chunks c ON c.repo_id = n.repo_id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM rag_chunk_overrides o
+                        WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                    )
                 WHERE n.library_state = 'in_library'
                 GROUP BY n.repo_id
                 """, arguments: [model, model])
@@ -400,7 +408,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 LEFT JOIN rag_chunk_overrides o ON o.chunk_id = c.id
-                WHERE c.repo_id = ?
+                WHERE c.repo_id = ? AND COALESCE(o.is_excluded, 0) = 0
                 ORDER BY c.source, c.parent_title, c.chunk_index
                 LIMIT ? OFFSET ?
                 """, arguments: [repoId, limit + 1, offset])
