@@ -19497,8 +19497,38 @@
     },
     "rag.workspace.error.title" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAG request failed" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RAG 请求失败" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't complete this request" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这次没能完成" } }
+      }
+    },
+    "rag.workspace.error.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Something went wrong while talking to the knowledge base. Please try again in a moment. If it keeps happening, tap Feedback and tell us." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向知识库提问时出了点问题，请稍后再试。若反复出现，可点「反馈」告诉我们。" } }
+      }
+    },
+    "rag.workspace.error.feedback" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "反馈" } }
+      }
+    },
+    "rag.workspace.error.feedback.subject" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat RAG feedback" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 知识库问答反馈" } }
+      }
+    },
+    "rag.workspace.error.feedback.bodyIntro" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Please describe what you were doing when this happened (optional).\n\nThe technical details below are included automatically to help diagnose the issue." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可在上方补充你当时在做什么（可选）。\n\n下方技术细节会自动附上，方便排查问题。" } }
+      }
+    },
+    "rag.workspace.error.feedback.noDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "(No technical detail captured.)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "（未捕获到技术细节）" } }
       }
     },
     "rag.workspace.header.knowledge" : {

@@ -34,9 +34,13 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var renameGroupDraft = ""
     @State private var conversationDropTarget: RAGConversationDropTarget?
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
+    @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
+    @State private var isKnowledgeRepositoryRowHovered = false
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
+    /// 所有索引统计行都占用同一操作列；否则展开行的 chevron 会把数字向左推，破坏数值列对齐。
+    private static let indexRowTrailingAffordanceWidth: CGFloat = 16
 
     var body: some View {
         HStack(spacing: 0) {
@@ -67,16 +71,15 @@ struct KnowledgeRAGWorkspaceView: View {
             viewModel.handleLink(url)
             return .handled
         })
-        .alert(
-            "rag.workspace.error.title",
-            isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
+        .sheet(isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            RAGWorkspaceErrorSheet(
+                technicalDetail: viewModel.errorMessage ?? "",
+                onDismiss: { viewModel.errorMessage = nil }
             )
-        ) {
-            Button("common.ok") { viewModel.errorMessage = nil }
-        } message: {
-            Text(viewModel.errorMessage ?? "")
+            .appLocaleEnvironment()
         }
         .alert(
             "rag.workspace.conversation.rename.title",
@@ -1221,7 +1224,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var indexInspector: some View {
         VStack(alignment: .leading, spacing: 13) {
-            coverageRow("rag.workspace.status.repos", value: "\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)", color: .blue)
+            knowledgeRepositoryRow
             coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexCoverage.readyChunks)", color: .green)
             indexIssueRow(.pending, value: "\(viewModel.indexCoverage.pendingChunks)", color: .orange)
             indexIssueRow(.failed, value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
@@ -1384,13 +1387,37 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
+    private var knowledgeRepositoryRow: some View {
+        Button {
+            viewModel.showKnowledgeBrowser(presentingWindow: NSApp.keyWindow)
+        } label: {
+            HStack(spacing: 9) {
+                Circle().fill(Color.blue).frame(width: 8, height: 8)
+                Text("rag.workspace.status.repos").font(ragFont(.callout))
+                Spacer()
+                indexRowValue("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
+                indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
+            }
+            .contentShape(Rectangle())
+            .background(
+                isKnowledgeRepositoryRowHovered ? Color.accentColor.opacity(0.08) : .clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pointerStyle(.link)
+        .help("rag.browser.open")
+        .onHover { isKnowledgeRepositoryRowHovered = $0 }
+    }
+
     private func coverageRow(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
         HStack(spacing: 9) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label).font(ragFont(.callout))
             Spacer()
-            Text(value)
-                .font(ragFont(.callout, weight: .semibold, design: .monospaced))
+            indexRowValue(value)
+            indexRowTrailingAffordance()
         }
     }
 
@@ -1409,20 +1436,42 @@ struct KnowledgeRAGWorkspaceView: View {
                     Circle().fill(color).frame(width: 8, height: 8)
                     Text(indexIssueTitle(kind)).font(ragFont(.callout))
                     Spacer()
-                    Text(value)
-                        .font(ragFont(.callout, weight: .semibold, design: .monospaced))
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(iconFont(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    indexRowValue(value)
+                    indexRowTrailingAffordance(systemImage: isExpanded ? "chevron.down" : "chevron.right")
                 }
                 .contentShape(Rectangle())
+                .background(
+                    hoveredIndexIssueKind == kind ? Color.accentColor.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .pointerStyle(.link)
+            .onHover { hoveredIndexIssueKind = $0 ? kind : nil }
 
             if isExpanded {
                 indexIssueDrawer(kind, color: color)
             }
+        }
+    }
+
+    private func indexRowValue(_ value: String) -> some View {
+        Text(value)
+            .font(ragFont(.callout, weight: .semibold, design: .monospaced))
+            .frame(minWidth: 44, alignment: .trailing)
+    }
+
+    @ViewBuilder
+    private func indexRowTrailingAffordance(systemImage: String? = nil) -> some View {
+        if let systemImage {
+            Image(systemName: systemImage)
+                .font(iconFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: Self.indexRowTrailingAffordanceWidth)
+        } else {
+            Color.clear
+                .frame(width: Self.indexRowTrailingAffordanceWidth)
         }
     }
 

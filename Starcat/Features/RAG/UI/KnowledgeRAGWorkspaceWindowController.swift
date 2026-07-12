@@ -354,9 +354,16 @@ private struct KnowledgeRAGBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await viewModel.bootstrap() }
         .task { await viewModel.observeIndexChanges() }
-        .alert("rag.workspace.error.title", isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })) {
-            Button("common.ok") { viewModel.errorMessage = nil }
-        } message: { Text(viewModel.errorMessage ?? "") }
+        .sheet(isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            RAGWorkspaceErrorSheet(
+                technicalDetail: viewModel.errorMessage ?? "",
+                onDismiss: { viewModel.errorMessage = nil }
+            )
+            .appLocaleEnvironment()
+        }
         .sheet(item: $editingChunk) { chunk in
             KnowledgeRAGChunkEditor(chunk: chunk) { title, sectionPath, content in
                 await viewModel.saveChunk(chunk, title: title, sectionPath: sectionPath, content: content)
