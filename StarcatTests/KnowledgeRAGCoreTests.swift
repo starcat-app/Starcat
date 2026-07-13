@@ -596,6 +596,40 @@ struct KnowledgeRAGCoreTests {
         #expect(history.first?.content.contains("上下文预算") == true)
     }
 
+    @Test("100/200 条会话读取保持固定关联查询路径")
+    func conversationLoadBaseline() async throws {
+        for messageCount in [100, 200] {
+            let database = try InMemoryDatabaseManager()
+            let store = GRDBRAGConversationStore(database: database)
+            let conversation = try await store.createConversation()
+            for index in 0..<(messageCount / 2) {
+                try await store.appendTurn(
+                    conversationID: conversation.id,
+                    question: "问题 \(index)",
+                    answer: "回答 \(index)",
+                    model: "test",
+                    citations: []
+                )
+            }
+
+            var samples: [TimeInterval] = []
+            for _ in 0..<5 {
+                let start = Date.timeIntervalSinceReferenceDate
+                let detail = try #require(try await store.loadConversation(id: conversation.id))
+                samples.append(Date.timeIntervalSinceReferenceDate - start)
+                #expect(detail.messages.count == messageCount)
+            }
+            let sorted = samples.sorted()
+            let p50 = sorted[sorted.count / 2] * 1_000
+            let p95 = sorted[min(Int((Double(sorted.count - 1) * 0.95).rounded(.up)), sorted.count - 1)] * 1_000
+            // `loadConversation` 固定执行会话、消息、citation、remote audit 四次读取；
+            // 此处把 100/200 条样本的实测耗时输出到测试日志，供专项文档记录基线。
+            let p50Text = String(format: "%.3f", p50)
+            let p95Text = String(format: "%.3f", p95)
+            print("RAG_BASELINE history=\(messageCount) queries=4 p50_ms=\(p50Text) p95_ms=\(p95Text)")
+        }
+    }
+
     @Test("citation 只恢复正文可见区域的本轮 marker")
     func citationsIgnoreCodeEscapesLinksAndUnknownMarkers() {
         let builder = KnowledgeRAGPromptBuilder()
