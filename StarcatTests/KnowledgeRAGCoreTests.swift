@@ -64,6 +64,19 @@ struct KnowledgeRAGCoreTests {
         #expect(plan.userVisiblePlan.planningNotes.first?.contains("Swift 并发") == true)
     }
 
+    @Test("Planner: 网络错误不伪装成 semantic fallback")
+    func plannerPropagatesNetworkFailure() async {
+        let planner = KnowledgeRAGQueryPlanner(
+            client: SpyRAGAIClient(streamError: URLError(.notConnectedToInternet)),
+            model: "test-model",
+            parameters: .summaryDefault
+        )
+
+        await #expect(throws: URLError.self) {
+            try await planner.plan(question: "Swift RAG", composerContext: .init())
+        }
+    }
+
     @Test("AI 流式 `<think>` 跨分片时推理与正文分离")
     func reasoningNormalizerSeparatesSplitThinkTag() {
         var normalizer = AIStreamReasoningNormalizer()
@@ -170,6 +183,15 @@ struct KnowledgeRAGCoreTests {
         let contexts = try await RAGAttachmentProcessor().process([attachment])
         #expect(contexts.count == 1)
         #expect(contexts[0].content.count == 40_000)
+    }
+
+    @Test("工作台错误按可恢复操作分类，技术细节不作为普通文案")
+    func workspaceErrorClassification() {
+        #expect(RAGWorkspaceError(error: AIClientError.missingAPIKey).kind == .configuration)
+        #expect(RAGWorkspaceError(error: GitHubRemoteContextError.http(status: 401, message: "bad token")).kind == .authentication)
+        #expect(RAGWorkspaceError(error: URLError(.timedOut)).kind == .timeout)
+        #expect(RAGWorkspaceError(error: RAGAttachmentError.unreadable("notes.pdf")).kind == .attachment)
+        #expect(RAGWorkspaceError(error: AIClientError.emptyResponse).kind == .generation)
     }
 
     @Test("Planner: 日期歧义计划必须带追问")
@@ -1157,12 +1179,14 @@ private final class SpyRAGAIClient: @unchecked Sendable, AIClientProtocol {
     private var latestChatRequest: AIChatRequest?
     private let failEmbedding: Bool
     private let chatResponse: String?
+    private let streamError: Error?
     var callCount: Int { lock.withLock { calls } }
     var lastChatRequest: AIChatRequest? { lock.withLock { latestChatRequest } }
 
-    init(failEmbedding: Bool = false, chatResponse: String? = nil) {
+    init(failEmbedding: Bool = false, chatResponse: String? = nil, streamError: Error? = nil) {
         self.failEmbedding = failEmbedding
         self.chatResponse = chatResponse
+        self.streamError = streamError
     }
 
     func chat(request: AIChatRequest) async throws -> AIChatResponse {
@@ -1179,7 +1203,9 @@ private final class SpyRAGAIClient: @unchecked Sendable, AIClientProtocol {
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
         lock.withLock { calls += 1 }
         return AsyncThrowingStream { continuation in
-            if let chatResponse {
+            if let streamError {
+                continuation.finish(throwing: streamError)
+            } else if let chatResponse {
                 continuation.yield(.completed(AIChatResponse(
                     content: chatResponse,
                     model: request.model,

@@ -16,10 +16,124 @@ enum RAGWorkspaceFeedbackMail {
     static let address = "dong4j@gmail.com"
 }
 
+/// 工作台只向用户暴露下一步操作；底层 Provider、HTTP 与数据库细节保留在 `technicalDetail`，
+/// 仅随反馈邮件发送。这样既能恢复问题，也不会把内部错误字符串当成产品文案。
+enum RAGWorkspaceErrorKind: Equatable {
+    case configuration
+    case authentication
+    case network
+    case timeout
+    case planner
+    case attachment
+    case generation
+    case unknown
+}
+
+enum RAGWorkspaceErrorAction: Equatable {
+    case retry
+    case openAISettings
+    case checkNetwork
+    case removeAttachments
+    case dismiss
+}
+
+struct RAGWorkspaceError: Identifiable {
+    let id = UUID()
+    let kind: RAGWorkspaceErrorKind
+    let technicalDetail: String
+
+    init(error: Error) {
+        technicalDetail = error.localizedDescription
+        kind = Self.classify(error: error, detail: technicalDetail)
+    }
+
+    init(technicalDetail: String) {
+        self.technicalDetail = technicalDetail
+        kind = Self.classify(error: nil, detail: technicalDetail)
+    }
+
+    var titleKey: String {
+        switch kind {
+        case .configuration, .authentication: return "rag.workspace.error.configuration.title"
+        case .network, .timeout: return "rag.workspace.error.network.title"
+        case .planner: return "rag.workspace.error.planner.title"
+        case .attachment: return "rag.workspace.error.attachment.title"
+        case .generation: return "rag.workspace.error.generation.title"
+        case .unknown: return "rag.workspace.error.title"
+        }
+    }
+
+    var messageKey: String {
+        switch kind {
+        case .configuration: return "rag.workspace.error.configuration.message"
+        case .authentication: return "rag.workspace.error.authentication.message"
+        case .network: return "rag.workspace.error.network.message"
+        case .timeout: return "rag.workspace.error.timeout.message"
+        case .planner: return "rag.workspace.error.planner.message"
+        case .attachment: return "rag.workspace.error.attachment.message"
+        case .generation: return "rag.workspace.error.generation.message"
+        case .unknown: return "rag.workspace.error.message"
+        }
+    }
+
+    var action: RAGWorkspaceErrorAction {
+        switch kind {
+        case .configuration, .authentication: return .openAISettings
+        case .network: return .checkNetwork
+        case .timeout, .planner, .generation: return .retry
+        case .attachment: return .removeAttachments
+        case .unknown: return .dismiss
+        }
+    }
+
+    var actionKey: String {
+        switch action {
+        case .retry: return "rag.workspace.error.action.retry"
+        case .openAISettings: return "rag.workspace.error.action.openAISettings"
+        case .checkNetwork: return "rag.workspace.error.action.checkNetwork"
+        case .removeAttachments: return "rag.workspace.error.action.removeAttachments"
+        case .dismiss: return "common.close"
+        }
+    }
+
+    private static func classify(error: Error?, detail: String) -> RAGWorkspaceErrorKind {
+        if let error = error as? RAGAttachmentError { return .attachment }
+        if let error = error as? RAGQueryPlannerError { return .planner }
+        if let error = error as? AIClientError {
+            switch error {
+            case .missingAPIKey, .invalidBaseURL: return .configuration
+            case .emptyResponse, .responseTruncated: return .generation
+            case .modelListRequestFailed: return .network
+            }
+        }
+        if let error = error as? GitHubRemoteContextError,
+           case .http(let status, _) = error {
+            if status == 401 || status == 403 { return .authentication }
+            if status == 408 || status == 504 { return .timeout }
+            if status == 429 || status >= 500 { return .network }
+        }
+        if let error = error as? URLError {
+            if error.code == .timedOut { return .timeout }
+            return .network
+        }
+        let normalized = detail.lowercased()
+        if normalized.contains("401") || normalized.contains("403") || normalized.contains("unauthorized") {
+            return .authentication
+        }
+        if normalized.contains("timed out") || normalized.contains("timeout") || normalized.contains("超时") {
+            return .timeout
+        }
+        if normalized.contains("network") || normalized.contains("offline") || normalized.contains("连接") {
+            return .network
+        }
+        return .unknown
+    }
+}
+
 /// 用 sheet 替代系统 alert：标题 + 友好说明 + 关闭 / 邮件反馈。
 struct RAGWorkspaceErrorSheet: View {
-    /// 仅写入反馈邮件正文，不在 UI 上展示。
-    let technicalDetail: String
+    let error: RAGWorkspaceError
+    let onAction: (RAGWorkspaceErrorAction) -> Void
     let onDismiss: () -> Void
 
     var body: some View {
@@ -29,9 +143,9 @@ struct RAGWorkspaceErrorSheet: View {
                     .font(.title2)
                     .foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("rag.workspace.error.title")
+                    Text(LocalizedStringKey(error.titleKey))
                         .font(.headline)
-                    Text("rag.workspace.error.message")
+                    Text(LocalizedStringKey(error.messageKey))
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -41,6 +155,13 @@ struct RAGWorkspaceErrorSheet: View {
             }
 
             HStack(spacing: 10) {
+                if error.action != .dismiss {
+                    Button(LocalizedStringKey(error.actionKey)) {
+                        onAction(error.action)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
                 Button("rag.workspace.error.feedback") {
                     openFeedbackMail()
                 }
@@ -48,10 +169,10 @@ struct RAGWorkspaceErrorSheet: View {
 
                 Spacer(minLength: 0)
 
-                Button("common.close") {
+                Button(error.action == .dismiss ? LocalizedStringKey(error.actionKey) : "common.close") {
                     onDismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .keyboardShortcut(.defaultAction)
             }
         }
@@ -64,7 +185,7 @@ struct RAGWorkspaceErrorSheet: View {
     private func openFeedbackMail() {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        let trimmedDetail = technicalDetail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetail = error.technicalDetail.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = """
         \(String.l10n("rag.workspace.error.feedback.bodyIntro"))
 

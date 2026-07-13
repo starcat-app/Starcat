@@ -19535,6 +19535,102 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向知识库提问时出了点问题，请稍后再试。若反复出现，可点「反馈」告诉我们。" } }
       }
     },
+    "rag.workspace.error.configuration.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Finish AI setup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请完成 AI 配置" } }
+      }
+    },
+    "rag.workspace.error.configuration.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add a valid API key, base URL, and model in AI Settings, then try again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请在 AI 设置中检查 API Key、Base URL 和模型后再试。" } }
+      }
+    },
+    "rag.workspace.error.authentication.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The configured credential was not accepted. Update it in AI Settings, then try again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前凭据未被接受，请在 AI 设置中更新后再试。" } }
+      }
+    },
+    "rag.workspace.error.network.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't reach the service" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂时无法连接服务" } }
+      }
+    },
+    "rag.workspace.error.network.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check your network connection and the provider status, then try again. Your question is still preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请检查网络和服务状态后再试；你的问题已保留。" } }
+      }
+    },
+    "rag.workspace.error.timeout.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The service took too long to respond. Try again in a moment; your question is still preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务响应超时，请稍后重试；你的问题已保留。" } }
+      }
+    },
+    "rag.workspace.error.planner.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't plan this question" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂时无法规划这个问题" } }
+      }
+    },
+    "rag.workspace.error.planner.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try rephrasing the question or try again. Your original question is preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请调整问题表述后重试；原问题已保留。" } }
+      }
+    },
+    "rag.workspace.error.attachment.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't read an attachment" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法读取附件" } }
+      }
+    },
+    "rag.workspace.error.attachment.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove the attachments or choose a supported, readable file, then ask again. Your question is preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请移除附件或换用可读取的支持文件后再问；原问题已保留。" } }
+      }
+    },
+    "rag.workspace.error.generation.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't finish the answer" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回答未能完成" } }
+      }
+    },
+    "rag.workspace.error.generation.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The provider returned an incomplete response. Try again; your question is preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务返回的回答不完整，请重试；你的问题已保留。" } }
+      }
+    },
+    "rag.workspace.error.action.retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
+      }
+    },
+    "rag.workspace.error.action.openAISettings" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open AI Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 AI 设置" } }
+      }
+    },
+    "rag.workspace.error.action.checkNetwork" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry after checking network" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检查网络后重试" } }
+      }
+    },
+    "rag.workspace.error.action.removeAttachments" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove attachments" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除附件" } }
+      }
+    },
     "rag.workspace.error.feedback" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback" } },

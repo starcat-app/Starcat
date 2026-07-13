@@ -113,7 +113,14 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
     var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet {
+            if errorMessage == nil { workspaceError = nil }
+        }
+    }
+    /// 友好错误模型与技术详情分离；错误 Sheet 只渲染前者，后者留在反馈诊断。
+    var workspaceError: RAGWorkspaceError?
+    private var retryQuestion: String?
     /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {
         didSet {
@@ -487,6 +494,30 @@ final class KnowledgeRAGWorkspaceViewModel {
         if isAnswering {
             answerState = .cancelled
             errorMessage = nil
+        }
+    }
+
+    func dismissError() {
+        errorMessage = nil
+        workspaceError = nil
+    }
+
+    /// 错误 Sheet 的动作只改变当前工作台状态，不做任何隐式网络重试或数据删除。
+    func resolveWorkspaceErrorAction(_ action: RAGWorkspaceErrorAction) {
+        switch action {
+        case .retry, .checkNetwork:
+            guard let retryQuestion, !isAnswering else { return }
+            draftQuestion = retryQuestion
+            dismissError()
+            send()
+        case .openAISettings:
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            dismissError()
+        case .removeAttachments:
+            attachments = []
+            dismissError()
+        case .dismiss:
+            dismissError()
         }
     }
 
@@ -1165,7 +1196,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
             } else {
                 answerState = .failed(error.localizedDescription)
-                errorMessage = error.localizedDescription
+                retryQuestion = question
+                presentWorkspaceError(error)
                 // 正常失败也必须与取消路径同样保留问题：用户能直接复制或编辑后重试，
                 // 不能因 Provider / 附件临时故障被迫重新输入。
                 scheduleFinalizeFailedTurn(
@@ -1179,6 +1211,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         remoteContextConsent = nil
         if answerState != .generating { streamingPresentation = nil }
         answerTask = nil
+    }
+
+    private func presentWorkspaceError(_ error: Error) {
+        errorMessage = error.localizedDescription
+        workspaceError = RAGWorkspaceError(error: error)
     }
 
     /// 非取消错误的恢复路径。先尽力把用户问题落库，落库失败时仍保留已显示的气泡；

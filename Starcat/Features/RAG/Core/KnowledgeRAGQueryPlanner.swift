@@ -70,22 +70,21 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             parameters: parameters,
             responseFormat: .jsonObject
         )
+        let firstContent = try await streamedContent(request: request, onReasoningDelta: onReasoningDelta)
         do {
-            let content = try await streamedContent(request: request, onReasoningDelta: onReasoningDelta)
-            return try Self.decodeAndValidate(content, fallbackQuestion: question)
-        } catch is CancellationError {
-            throw CancellationError()
+            return try Self.decodeAndValidate(firstContent, fallbackQuestion: question)
         } catch {
-            // 部分 OpenAI-compatible 服务忽略 response_format 或会在 JSON 外加解释；
-            // 第二次明确要求只返 JSON，仍失败才走 semantic-only。
+            guard Self.isPlanFormatError(error) else { throw error }
+            // 部分 OpenAI-compatible 服务忽略 response_format 或会在 JSON 外加解释；只有
+            // 这种“已经收到但无法解析”的格式失败才值得重试和 semantic fallback。网络、
+            // 认证和配置错误必须交给 UI 的可恢复提示，不能伪装成成功的降级检索。
             var retry = request
             retry.userPrompt += "\n\n上一次输出无法解析。只返回一个符合 schema 的 JSON object，不要 Markdown 代码块或说明。"
+            let retryContent = try await streamedContent(request: retry, onReasoningDelta: onReasoningDelta)
             do {
-                let content = try await streamedContent(request: retry, onReasoningDelta: onReasoningDelta)
-                return try Self.decodeAndValidate(content, fallbackQuestion: question)
-            } catch is CancellationError {
-                throw CancellationError()
+                return try Self.decodeAndValidate(retryContent, fallbackQuestion: question)
             } catch {
+                guard Self.isPlanFormatError(error) else { throw error }
                 return Self.semanticFallback(question)
             }
         }
@@ -204,6 +203,10 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         if let min = filters.minForks, let max = filters.maxForks, min > max {
             throw RAGQueryPlannerError.invalidPlan("minForks 大于 maxForks")
         }
+    }
+
+    private static func isPlanFormatError(_ error: Error) -> Bool {
+        error is RAGQueryPlannerError || error is DecodingError
     }
 
     /// Planner 是不可信输入。这里在用户确认前收敛同一 resource/query 的重复项，并把本轮

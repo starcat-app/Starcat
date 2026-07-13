@@ -43,8 +43,12 @@ struct KnowledgeRAGWorkspaceView: View {
             viewModel.handleLink(url)
             return .handled
         })
-        .sheet(isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })) {
-            RAGWorkspaceErrorSheet(technicalDetail: viewModel.errorMessage ?? "", onDismiss: { viewModel.errorMessage = nil })
+        .sheet(isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.dismissError() } })) {
+            RAGWorkspaceErrorSheet(
+                error: viewModel.workspaceError ?? .init(technicalDetail: viewModel.errorMessage ?? ""),
+                onAction: viewModel.resolveWorkspaceErrorAction,
+                onDismiss: viewModel.dismissError
+            )
                 .appLocaleEnvironment()
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)

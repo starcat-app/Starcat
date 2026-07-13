@@ -453,7 +453,13 @@ private struct KnowledgeRAGBrowserView: View {
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
             RAGWorkspaceErrorSheet(
-                technicalDetail: viewModel.errorMessage ?? "",
+                error: .init(technicalDetail: viewModel.errorMessage ?? ""),
+                onAction: { action in
+                    if action == .openAISettings {
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    }
+                    viewModel.errorMessage = nil
+                },
                 onDismiss: { viewModel.errorMessage = nil }
             )
             .appLocaleEnvironment()
