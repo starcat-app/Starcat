@@ -1446,6 +1446,7 @@ enum DatabaseMigrations {
         }
         try db.create(index: "idx_rag_citations_message_rank", on: "rag_message_citations", columns: ["message_id", "rank"])
         try createRAGRemoteContextAuditSchema(db)
+        try createRAGIndexRefreshSummarySchema(db)
     }
 
     /// GitHub 临时上下文不保存正文；历史只需要恢复“本轮查了什么、何时查、是否降级”。
@@ -1465,6 +1466,21 @@ enum DatabaseMigrations {
         try db.create(index: "idx_rag_remote_contexts_message", on: "rag_message_remote_contexts", columns: ["message_id"])
     }
 
+    /// 全库刷新摘要只服务当前用户数据库的 RAG Inspector；单行持久化使重启后仍能核验上次成功刷新。
+    private static func createRAGIndexRefreshSummarySchema(_ db: Database) throws {
+        try db.create(table: "rag_index_refresh_summary", ifNotExists: true) { t in
+            t.column("id", .integer).primaryKey()
+            t.column("total_repos", .integer).notNull()
+            t.column("readmes_processed", .integer).notNull()
+            t.column("source_repos_processed", .integer).notNull()
+            t.column("embedding_processed", .integer).notNull()
+            t.column("embedding_total", .integer).notNull()
+            t.column("ready_chunks_before_embedding", .integer).notNull()
+            t.column("total_chunks_at_embedding", .integer).notNull()
+            t.column("completed_at", .text).notNull()
+        }
+    }
+
     /// RAG 尚未随正式版发布时的开发期 schema 补齐。
     ///
     /// - 已跑过旧版 `v1-initial` 的开发库不会重跑 v1，这里在表缺失时补齐当前 RAG 草稿 schema。
@@ -1477,6 +1493,9 @@ enum DatabaseMigrations {
         }
         if try !db.tableExists("rag_message_remote_contexts") {
             try createRAGRemoteContextAuditSchema(db)
+        }
+        if try !db.tableExists("rag_index_refresh_summary") {
+            try createRAGIndexRefreshSummarySchema(db)
         }
         if try !db.tableExists("rag_chunk_overrides") {
             try createRAGChunkOverrideSchema(db)

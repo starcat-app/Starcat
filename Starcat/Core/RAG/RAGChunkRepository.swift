@@ -28,6 +28,9 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func markFailed(chunkIDs: [Int64], error: String) async throws
     func markStaleForOtherModels(currentModel: String) async throws
     func coverage(model: String) async throws -> RAGIndexCoverage
+    /// 仅持久化整轮成功的全库刷新摘要；不能与单仓库自动补建共用。
+    func fetchLastIndexRefreshSummary() async throws -> RAGIndexRefreshSummary?
+    func saveLastIndexRefreshSummary(_ summary: RAGIndexRefreshSummary) async throws
     func knowledgeRepositoryIndexes(model: String) async throws -> [RAGKnowledgeRepositoryIndex]
     func fetchIndexIssueChunks(kind: RAGIndexIssueKind, model: String, limit: Int, offset: Int) async throws -> RAGIndexIssueChunkPage
     func fetchKnowledgeChunks(repoId: Int64) async throws -> [RAGChunk]
@@ -515,6 +518,64 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
+    func fetchLastIndexRefreshSummary() async throws -> RAGIndexRefreshSummary? {
+        try await database.writer.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM rag_index_refresh_summary WHERE id = 1"
+            ) else {
+                return nil
+            }
+            let completedAtRaw: String = row["completed_at"]
+            guard let completedAt = ISO8601DateFormatter.shared.date(from: completedAtRaw) else {
+                return nil
+            }
+            return RAGIndexRefreshSummary(
+                totalRepos: row["total_repos"],
+                readmesProcessed: row["readmes_processed"],
+                sourceReposProcessed: row["source_repos_processed"],
+                embeddingProcessed: row["embedding_processed"],
+                embeddingTotal: row["embedding_total"],
+                readyChunksBeforeEmbedding: row["ready_chunks_before_embedding"],
+                totalChunksAtEmbedding: row["total_chunks_at_embedding"],
+                completedAt: completedAt
+            )
+        }
+    }
+
+    func saveLastIndexRefreshSummary(_ summary: RAGIndexRefreshSummary) async throws {
+        guard let completedAt = summary.completedAt else { return }
+        let completedAtRaw = ISO8601DateFormatter.shared.string(from: completedAt)
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO rag_index_refresh_summary (
+                    id, total_repos, readmes_processed, source_repos_processed,
+                    embedding_processed, embedding_total, ready_chunks_before_embedding,
+                    total_chunks_at_embedding, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    total_repos = excluded.total_repos,
+                    readmes_processed = excluded.readmes_processed,
+                    source_repos_processed = excluded.source_repos_processed,
+                    embedding_processed = excluded.embedding_processed,
+                    embedding_total = excluded.embedding_total,
+                    ready_chunks_before_embedding = excluded.ready_chunks_before_embedding,
+                    total_chunks_at_embedding = excluded.total_chunks_at_embedding,
+                    completed_at = excluded.completed_at
+                """, arguments: [
+                    1,
+                    summary.totalRepos,
+                    summary.readmesProcessed,
+                    summary.sourceReposProcessed,
+                    summary.embeddingProcessed,
+                    summary.embeddingTotal,
+                    summary.readyChunksBeforeEmbedding,
+                    summary.totalChunksAtEmbedding,
+                    completedAtRaw
+                ])
+        }
+    }
+
     func knowledgeRepositoryIndexes(model: String) async throws -> [RAGKnowledgeRepositoryIndex] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
@@ -710,6 +771,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
     func deleteAll() async throws {
         try await database.writer.write { db in
             _ = try RAGChunk.deleteAll(db)
+            // 清空知识库后旧统计不再代表当前索引，避免下次打开 Inspector 显示过期的成功摘要。
+            try db.execute(sql: "DELETE FROM rag_index_refresh_summary")
         }
     }
 

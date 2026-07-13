@@ -66,6 +66,7 @@ final class KnowledgeRAGIndexBuilder {
     /// 单仓库刷新只影响知识库浏览器自己的时间戳，不能覆盖工作台的全局构建汇总。
     private(set) var repositoryRefreshDates: [Int64: Date] = [:]
     private var indexingTask: Task<Void, Never>?
+    private var refreshSummaryRestoreTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
     private var isSuspendedForDatabaseChange = false
@@ -98,6 +99,7 @@ final class KnowledgeRAGIndexBuilder {
         self.keychain = keychain
         self.builder = builder
         self.embeddingBatchSize = embeddingBatchSize
+        restorePersistedRefreshSummary()
     }
 
     func startRebuild() {
@@ -127,7 +129,7 @@ final class KnowledgeRAGIndexBuilder {
     /// 刷新，因此还要等待所有已进入索引临界区的操作退出，避免旧账号任务在新 DB 上续写。
     func suspendForUserDatabaseChange() async {
         isSuspendedForDatabaseChange = true
-        let tasks = [indexingTask].compactMap { $0 }
+        let tasks = [indexingTask, refreshSummaryRestoreTask].compactMap { $0 }
             + observationTasks
             + Array(debouncedSourceTasks.values)
         tasks.forEach { $0.cancel() }
@@ -135,16 +137,19 @@ final class KnowledgeRAGIndexBuilder {
             await task.value
         }
         indexingTask = nil
+        refreshSummaryRestoreTask = nil
         observationTasks.removeAll()
         debouncedSourceTasks.removeAll()
         await waitUntilIdle()
         status = .idle
+        refreshSummary = nil
     }
 
     /// 数据库切换无论成功还是失败都恢复 source 监听；失败时仍然服务原数据库。
     func resumeAfterUserDatabaseChange() {
         isSuspendedForDatabaseChange = false
         startObservingSourceChanges()
+        restorePersistedRefreshSummary()
     }
 
     /// 监听索引输入变化。AppDependencies 只调用一次；notes 使用 1.5 秒 debounce，避免
@@ -454,7 +459,7 @@ final class KnowledgeRAGIndexBuilder {
         let coverage = try await chunkRepository.coverage(model: model)
         status = .completed(coverage)
         if recordsRefreshSummary {
-            markRefreshSummaryCompleted(at: Date())
+            await markRefreshSummaryCompleted(at: Date())
         }
         NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
     }
@@ -478,10 +483,31 @@ final class KnowledgeRAGIndexBuilder {
         refreshSummary = summary
     }
 
-    private func markRefreshSummaryCompleted(at date: Date) {
+    private func markRefreshSummaryCompleted(at date: Date) async {
         guard var summary = refreshSummary else { return }
         summary.completedAt = date
         refreshSummary = summary
+        do {
+            try await chunkRepository.saveLastIndexRefreshSummary(summary)
+        } catch {
+            // 索引本身已经成功；摘要写入失败只影响下次展示，不能反过来把一次成功刷新报成失败。
+            AppLog.ai.warning("RAG index refresh summary persistence failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Builder 生命周期跨用户数据库切换；恢复前必须先取消旧读任务，避免旧库结果回填到新账号。
+    private func restorePersistedRefreshSummary() {
+        refreshSummaryRestoreTask?.cancel()
+        refreshSummaryRestoreTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let summary = try await self.chunkRepository.fetchLastIndexRefreshSummary()
+                guard !Task.isCancelled else { return }
+                self.refreshSummary = summary
+            } catch {
+                AppLog.ai.warning("RAG index refresh summary restore failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     /// 自托管后端是本地 chunk 的派生副本。每次本地 pending batch 完成后完整 replace，

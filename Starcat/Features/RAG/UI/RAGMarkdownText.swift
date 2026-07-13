@@ -15,9 +15,13 @@ struct RAGMarkdownText: View {
 
     var body: some View {
         // 与详情页 AI 摘要同一条 MarkdownUI 路线，段落/列表间距由主题控制。
+        //
+        // 关键约束：这里故意不启 `.textSelection(.enabled)`。
+        // macOS 上 textSelection 会把整段变成 I-beam，盖掉 AttributedString link
+        // 自带的 pointing-hand；回答里的外链 / `[S1]` 引用点不开「可点」反馈。
+        // 整段复制走消息底栏 CopyFeedbackButton，不依赖拖选。
         Markdown(Self.prepareForDisplay(content, citations: citations))
             .markdownTheme(Self.ragAnswerTheme)
-            .textSelection(.enabled)
     }
 
     /// 仅影响展示：松散段落 → 链接化引用；不改会话持久化原文。

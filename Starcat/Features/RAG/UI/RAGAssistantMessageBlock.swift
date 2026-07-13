@@ -78,7 +78,6 @@ struct RAGAssistantMessageBlock: View {
             if !content.isEmpty {
                 RAGMarkdownText(content: content, citations: citations)
                     .font(interfaceScale.font(.body))
-                    .textSelection(.enabled)
                     .frame(maxWidth: 900, alignment: .leading)
             }
 

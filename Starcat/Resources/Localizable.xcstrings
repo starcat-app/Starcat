@@ -20409,6 +20409,326 @@
         }
       }
     },
+    "rag.workspace.inspector.planCandidateLimit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Candidate set"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候选范围"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planCandidateLimitFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review up to %lld candidate repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多检查 %lld 个候选仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planExecutionSummary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Execution"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实际执行"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planExecutionSummaryFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reviewed %1$lld candidates · matched %2$lld passages · used evidence from %3$lld repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查 %1$lld 个候选仓库 · 命中 %2$lld 个片段 · 采用 %3$lld 个仓库的证据"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planNotes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规划说明"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.questionUnderstanding": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Question understanding"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题理解"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.remoteSupplement": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live GitHub context"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub 实时补充"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planRemoteBudgetFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to %1$lld repositories · %2$lld items per repository"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %1$lld 个仓库 · 每仓库 %2$lld 条"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.searchScope": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search scope"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索范围"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planScope": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scope"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "范围"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prioritization"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先顺序"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.ascending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ascending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从早到晚"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.descending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "descending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从高到低"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.forks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "forks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fork 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.libraryUpdatedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "library added date"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入知识库时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.pushedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "repository update date"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库更新时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.repoCreatedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "repository creation date"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库创建时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.starredAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "starred date"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSort.stars": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "star count"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Star 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.planSortFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.noPlan": {
       "localizations": {
         "en": {

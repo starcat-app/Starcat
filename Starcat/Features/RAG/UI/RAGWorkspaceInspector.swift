@@ -388,40 +388,95 @@ struct RAGWorkspaceInspector: View {
     var planInspector: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let plan = viewModel.queryPlan {
-                inspectorValue("rag.workspace.inspector.planMode", value: localizedPlanMode(plan.mode))
                 if plan.mode == .needsClarification {
                     // 澄清态没有可执行的检索词；展示 Planner 已校验过的追问，避免把空查询误称为优化结果。
-                    inspectorValue(
-                        "rag.workspace.inspector.clarificationQuestion",
-                        value: plan.clarificationQuestion ?? String.l10n("rag.workspace.inspector.clarificationFallback")
-                    )
-                    inspectorValue(
-                        "rag.workspace.inspector.planStatus",
-                        value: String.l10n("rag.workspace.inspector.planStatus.awaitingClarification")
-                    )
+                    planSection("rag.workspace.inspector.plan.questionUnderstanding") {
+                        inspectorValue(
+                            "rag.workspace.inspector.clarificationQuestion",
+                            value: plan.clarificationQuestion ?? String.l10n("rag.workspace.inspector.clarificationFallback")
+                        )
+                        inspectorValue(
+                            "rag.workspace.inspector.planStatus",
+                            value: String.l10n("rag.workspace.inspector.planStatus.awaitingClarification")
+                        )
+                    }
                 } else {
-                    inspectorValue("rag.workspace.inspector.semanticQuery", value: plan.semanticQuery)
-                    inspectorValue("rag.workspace.inspector.confidence", value: localizedPlanConfidence(plan.confidence))
-                }
-                if !plan.userVisiblePlan.chips.isEmpty {
-                    RAGFlowLayout(spacing: 7) {
-                        ForEach(plan.userVisiblePlan.chips, id: \.self) { chip in
-                            Text(chip)
-                                .font(ragFont(.caption, weight: .semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+                    planSummary(plan)
+
+                    planSection("rag.workspace.inspector.plan.questionUnderstanding") {
+                        inspectorValue("rag.workspace.inspector.semanticQuery", value: plan.userVisiblePlan.semantic)
+                        if !plan.userVisiblePlan.planningNotes.isEmpty {
+                            Text("rag.workspace.inspector.planNotes")
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.secondary)
+                            ForEach(plan.userVisiblePlan.planningNotes, id: \.self) { note in
+                                Label(note, systemImage: "checkmark.circle")
+                                    .font(ragFont(.caption))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
-                }
-                if !plan.remoteContextRequests.isEmpty {
-                    Divider()
-                    ForEach(plan.remoteContextRequests, id: \.resource) { request in
-                        Label(remoteResourceName(request.resource), systemImage: "network")
-                            .font(ragFont(.callout, weight: .semibold))
-                        Text(request.reason)
+
+                    planSection("rag.workspace.inspector.plan.searchScope") {
+                        inspectorValue("rag.workspace.inspector.planScope", value: plan.userVisiblePlan.scope)
+                        if !plan.userVisiblePlan.chips.isEmpty {
+                            RAGFlowLayout(spacing: 7) {
+                                ForEach(plan.userVisiblePlan.chips, id: \.self) { chip in
+                                    planChip(chip)
+                                }
+                            }
+                        }
+                        if let sort = plan.sort {
+                            inspectorValue(
+                                "rag.workspace.inspector.planSort",
+                                value: localizedPlanSort(sort)
+                            )
+                        }
+                        if let candidateLimit = plan.candidateLimit {
+                            inspectorValue(
+                                "rag.workspace.inspector.planCandidateLimit",
+                                value: String(
+                                    format: String.l10n("rag.workspace.inspector.planCandidateLimitFormat"),
+                                    candidateLimit
+                                )
+                            )
+                        }
+                    }
+
+                    if !plan.remoteContextRequests.isEmpty {
+                        planSection("rag.workspace.inspector.plan.remoteSupplement") {
+                            ForEach(plan.remoteContextRequests, id: \.resource) { request in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Label(remoteResourceName(request.resource), systemImage: "network")
+                                        .font(ragFont(.callout, weight: .semibold))
+                                    Text(request.reason)
+                                        .font(ragFont(.caption))
+                                        .foregroundStyle(.secondary)
+                                    Text(String(
+                                        format: String.l10n("rag.workspace.inspector.planRemoteBudgetFormat"),
+                                        request.maxRepos,
+                                        request.perRepoLimit
+                                    ))
+                                    .font(ragFont(.caption2))
+                                    .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    if let retrieval = viewModel.retrieval {
+                        planSection("rag.workspace.inspector.plan.executionSummary") {
+                            Text(String(
+                                format: String.l10n("rag.workspace.inspector.planExecutionSummaryFormat"),
+                                retrieval.candidates.count,
+                                retrieval.childHits.count,
+                                retrieval.bundles.count
+                            ))
                             .font(ragFont(.caption))
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             } else {
@@ -432,6 +487,32 @@ struct RAGWorkspaceInspector: View {
         }
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    func planSection<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            content()
+        }
+    }
+
+    func planSummary(_ plan: RAGQueryPlan) -> some View {
+        Text("\(plan.userVisiblePlan.scope) · \(localizedPlanMode(plan.mode)) · \(localizedPlanConfidence(plan.confidence))")
+            .font(ragFont(.caption, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    func planChip(_ value: String) -> some View {
+        Text(value)
+            .font(ragFont(.caption, weight: .semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
     }
 
     func localizedPlanMode(_ mode: RAGQueryMode) -> String {
@@ -451,6 +532,23 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
+    func localizedPlanSort(_ sort: RAGRepoSort) -> String {
+        let field: String
+        switch sort.field {
+        case .stars: field = String.l10n("rag.workspace.inspector.planSort.stars")
+        case .forks: field = String.l10n("rag.workspace.inspector.planSort.forks")
+        case .pushedAt: field = String.l10n("rag.workspace.inspector.planSort.pushedAt")
+        case .repoCreatedAt: field = String.l10n("rag.workspace.inspector.planSort.repoCreatedAt")
+        case .libraryUpdatedAt: field = String.l10n("rag.workspace.inspector.planSort.libraryUpdatedAt")
+        case .starredAt: field = String.l10n("rag.workspace.inspector.planSort.starredAt")
+        }
+        let direction = switch sort.direction {
+        case .ascending: String.l10n("rag.workspace.inspector.planSort.ascending")
+        case .descending: String.l10n("rag.workspace.inspector.planSort.descending")
+        }
+        return String(format: String.l10n("rag.workspace.inspector.planSortFormat"), field, direction)
+    }
+
     var indexInspector: some View {
         VStack(alignment: .leading, spacing: 13) {
             knowledgeRepositoryRow
@@ -460,7 +558,7 @@ struct RAGWorkspaceInspector: View {
             indexIssueRow(.stale, value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
             embeddingCoverageProgress
             Divider()
-            VStack(alignment: .trailing, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 13) {
                 Button {
                     viewModel.rebuildIndex()
                 } label: {
@@ -1075,12 +1173,19 @@ struct RAGWorkspaceInspector: View {
     @ViewBuilder
     var indexProgressLabel: some View {
         if let summary = viewModel.indexRefreshSummary {
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .leading, spacing: 13) {
                 if let completedAt = summary.completedAt {
                     indexProgressLine(
                         "rag.workspace.index.lastCompleted",
                         value: completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)),
                         color: .green
+                    )
+                } else {
+                    // 首次刷新尚无成功记录也保留整行，避免阶段统计在开始后突然下移。
+                    indexProgressLine(
+                        "rag.workspace.index.lastCompleted",
+                        value: "—",
+                        color: .secondary
                     )
                 }
                 indexProgressLine("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
@@ -1088,6 +1193,7 @@ struct RAGWorkspaceInspector: View {
                 indexProgressLine("rag.workspace.index.embedding", value: embeddingProgressValue(for: summary), color: .green)
             }
             .font(ragFont(.caption2))
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             EmptyView()
         }
@@ -1098,6 +1204,7 @@ struct RAGWorkspaceInspector: View {
         HStack(spacing: 5) {
             Text(label)
                 .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
             Text(value)
                 .monospacedDigit()
                 .foregroundStyle(color)

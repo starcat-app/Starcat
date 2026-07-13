@@ -65,6 +65,7 @@ struct RAGCitationChipsRow: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .pointerStyle(.link)
                 .help(chipHelp(for: citation))
             }
 
@@ -90,6 +91,7 @@ struct RAGCitationChipsRow: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .pointerStyle(.link)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

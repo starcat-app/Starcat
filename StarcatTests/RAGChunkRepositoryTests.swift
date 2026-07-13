@@ -16,6 +16,32 @@ struct RAGChunkRepositoryTests {
         return (database, GRDBRAGChunkRepository(database: database))
     }
 
+    @Test("全库索引刷新摘要会持久化")
+    func lastIndexRefreshSummaryPersists() async throws {
+        let (_, repository) = try makeRepository()
+        let completedAt = Date(timeIntervalSinceReferenceDate: 12_345)
+        let summary = RAGIndexRefreshSummary(
+            totalRepos: 12,
+            readmesProcessed: 12,
+            sourceReposProcessed: 12,
+            embeddingProcessed: 48,
+            embeddingTotal: 48,
+            readyChunksBeforeEmbedding: 120,
+            totalChunksAtEmbedding: 168,
+            completedAt: completedAt
+        )
+
+        try await repository.saveLastIndexRefreshSummary(summary)
+        let restored = try #require(try await repository.fetchLastIndexRefreshSummary())
+
+        #expect(restored.totalRepos == 12)
+        #expect(restored.readmesProcessed == 12)
+        #expect(restored.sourceReposProcessed == 12)
+        #expect(restored.embeddingProcessed == 48)
+        #expect(restored.totalChunksAtEmbedding == 168)
+        #expect(restored.completedAt == completedAt)
+    }
+
     @Test("内容未变复用 embedding，变化后回到 pending")
     func sourceDiffReusesAndInvalidatesEmbedding() async throws {
         let (database, repository) = try makeRepository()
