@@ -148,6 +148,13 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         if plan.userVisiblePlan.scope.isEmpty {
             plan.userVisiblePlan.scope = "知识库"
         }
+        // 这是展示给用户的“思考摘要”，而非模型隐藏推理。限制条数和长度，既保证可扫描，
+        // 也避免兼容 provider 误把长篇说明塞进执行时间线。
+        plan.userVisiblePlan.thinking = plan.userVisiblePlan.thinking
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(3)
+            .map { String($0.prefix(180)) }
         return plan
     }
 
@@ -208,7 +215,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
           "remoteContextRequests":[{"resource":"github_issues","query":"string","reason":"string","maxRepos":5,"perRepoLimit":10}],
           "confidence":"high|medium|needs_clarification",
           "clarificationQuestion":null或string,
-          "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"string"}
+          "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"string","thinking":["面向用户的简短思考说明，最多 3 条"]}
         }
         """
 }

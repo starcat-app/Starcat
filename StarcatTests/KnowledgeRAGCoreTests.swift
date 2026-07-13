@@ -31,6 +31,28 @@ struct KnowledgeRAGCoreTests {
         #expect(!plan.filters.hasEffectiveConditions)
     }
 
+    @Test("Planner: 用户可见思考摘要会被保留并限制长度")
+    func plannerKeepsUserVisibleThinking() throws {
+        let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
+            {
+              "mode":"semantic_only",
+              "semanticQuery":"Swift 并发问题",
+              "filters":{},
+              "remoteContextRequests":[],
+              "confidence":"high",
+              "userVisiblePlan":{
+                "scope":"知识库",
+                "chips":[],
+                "semantic":"Swift 并发问题",
+                "thinking":["先确认问题聚焦 Swift 并发，再从知识库证据中检索。", "优先匹配 README、笔记和摘要中的相关段落。"]
+              }
+            }
+            """, fallbackQuestion: "原问题")
+
+        #expect(plan.userVisiblePlan.thinking.count == 2)
+        #expect(plan.userVisiblePlan.thinking.first?.contains("Swift 并发") == true)
+    }
+
     @Test("Planner: 结构化条件和远程请求执行本地钳制")
     func plannerClampsRemoteRequest() throws {
         let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
@@ -467,6 +489,39 @@ struct KnowledgeRAGCoreTests {
         #expect(citation.marker == "S1")
         #expect(citation.vectorSimilarity == 0.91)
         #expect(citation.scoreBreakdown?.vectorRank == 2)
+    }
+
+    @Test("会话历史保存用户可见执行轨迹，不保存 Debug payload")
+    func executionTracePersistsWithAssistantMessage() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let conversation = try await store.createConversation()
+        let trace = [
+            RAGExecutionStep(
+                kind: .thinking,
+                state: .completed,
+                details: ["先识别问题的检索意图。"],
+                summary: "已规划检索"
+            ),
+            RAGExecutionStep(
+                kind: .generation,
+                state: .completed,
+                details: ["正在根据 2 组证据组织回答"],
+                summary: "回答已生成，使用 2 条引用"
+            )
+        ]
+
+        try await store.appendTurn(
+            conversationID: conversation.id,
+            question: "帮我比较两个项目",
+            answer: "比较结果",
+            model: "test-model",
+            citations: [],
+            executionTrace: trace
+        )
+
+        let detail = try #require(try await store.loadConversation(id: conversation.id))
+        #expect(detail.messages.last?.executionTrace == trace)
     }
 
     @Test("外部后端配置拒绝无效 endpoint")

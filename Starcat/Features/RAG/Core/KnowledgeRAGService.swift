@@ -10,6 +10,7 @@ import Foundation
 
 enum KnowledgeRAGServiceEvent: Sendable {
     case state(RAGAnswerState)
+    case execution(RAGExecutionEvent)
     case plan(RAGQueryPlan)
     case retrieval(RAGRetrievalResult)
     case remoteContextConfirmation([RAGRemoteContextRequest])
@@ -17,6 +18,21 @@ enum KnowledgeRAGServiceEvent: Sendable {
     case debug(RAGDebugEvent)
     case delta(String)
     case completed(answer: String, model: String, citations: [RAGCitation], plan: RAGQueryPlan)
+}
+
+/// 默认会话可见的 RAG 执行事件。
+///
+/// 与 `RAGDebugEvent` 严格分层：这里仅描述用户已触发且可核验的操作结果，不包含完整
+/// prompt、对话历史、模型参数或 provider 原始 reasoning token。
+enum RAGExecutionEvent: Sendable {
+    case started(RAGExecutionStepKind)
+    case thinkingCompleted(RAGQueryPlan)
+    case retrieval(RAGRetrievalProgress)
+    case retrievalCompleted(RAGRetrievalResult)
+    case remoteContextCompleted([RAGRemoteContextBlock])
+    case generationStarted(evidenceCount: Int)
+    case generationCompleted(citationCount: Int)
+    case terminated(RAGExecutionStepKind, summary: String)
 }
 
 /// RAG 工作台当前一轮的内存调试记录。
@@ -164,6 +180,7 @@ struct KnowledgeRAGService: Sendable {
                     \(history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
                     """)
                     continuation.yield(.state(.planning))
+                    continuation.yield(.execution(.started(.thinking)))
                     var plan = try await planner.plan(question: request.rawQuestion, composerContext: request.composerContext)
                     plan.remoteContextRequests.removeAll {
                         request.composerContext.disabledRemoteResources.contains($0.resource)
@@ -177,12 +194,15 @@ struct KnowledgeRAGService: Sendable {
                     remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
                     """)
                     continuation.yield(.plan(plan))
+                    continuation.yield(.execution(.thinkingCompleted(plan)))
                     if plan.mode == .needsClarification {
                         continuation.yield(.state(.needsClarification(plan.clarificationQuestion ?? "请补充查询条件")))
                         continuation.finish()
                         return
                     }
 
+                    continuation.yield(.state(.retrieving))
+                    continuation.yield(.execution(.started(.retrieval)))
                     let candidates = try await candidateRepository.fetchCandidates(
                         plan: plan,
                         explicitRepoIDs: request.composerContext.explicitRepoIDs,
@@ -195,8 +215,17 @@ struct KnowledgeRAGService: Sendable {
                         tags: \(candidate.tagNames.joined(separator: ", "))
                         """
                     }.joined(separator: "\n---\n"))
+                    continuation.yield(.execution(.retrieval(.candidateSelectionCompleted(candidates.count))))
                     guard !candidates.isEmpty else {
                         let hasScope = plan.filters.hasEffectiveConditions || !request.composerContext.explicitRepoIDs.isEmpty
+                        continuation.yield(.execution(.terminated(
+                            .retrieval,
+                            summary: String.l10n(
+                                hasScope
+                                    ? "rag.workspace.execution.noCandidates"
+                                    : "rag.workspace.execution.noKnowledgeRepos"
+                            )
+                        )))
                         continuation.yield(.state(hasScope ? .noCandidates : .noKnowledgeRepos))
                         continuation.finish()
                         return
@@ -206,8 +235,11 @@ struct KnowledgeRAGService: Sendable {
                     if plan.mode == .structuredOnly {
                         retrieval = RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
                     } else {
-                        continuation.yield(.state(.retrieving))
                         guard try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) else {
+                            continuation.yield(.execution(.terminated(
+                                .retrieval,
+                                summary: String.l10n("rag.workspace.execution.noIndex")
+                            )))
                             continuation.yield(.state(.noIndex))
                             continuation.finish()
                             return
@@ -216,9 +248,16 @@ struct KnowledgeRAGService: Sendable {
                             semanticQuery: plan.semanticQuery,
                             candidates: candidates,
                             explicitMode: request.composerContext.explicitRepoMode,
-                            explicitRepoIDs: request.composerContext.explicitRepoIDs
+                            explicitRepoIDs: request.composerContext.explicitRepoIDs,
+                            progress: { progress in
+                                continuation.yield(.execution(.retrieval(progress)))
+                            }
                         )
                         guard !retrieval.bundles.isEmpty else {
+                            continuation.yield(.execution(.terminated(
+                                .retrieval,
+                                summary: String.l10n("rag.workspace.execution.noEvidence")
+                            )))
                             continuation.yield(.state(.noRelevantChunks))
                             continuation.finish()
                             return
@@ -231,15 +270,23 @@ struct KnowledgeRAGService: Sendable {
                         return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
                     }.joined(separator: "\n---\n"))
                     continuation.yield(.retrieval(retrieval))
+                    continuation.yield(.execution(.retrievalCompleted(retrieval)))
 
                     var remoteBlocks: [RAGRemoteContextBlock] = []
                     if !plan.remoteContextRequests.isEmpty {
+                        continuation.yield(.execution(.started(.remoteContext)))
                         continuation.yield(.state(.awaitingRemoteContextConfirmation))
                         continuation.yield(.remoteContextConfirmation(plan.remoteContextRequests))
                         // 非工作台调用方可能没有确认 UI。缺少 consent 时必须默认跳过联网，
                         // 不能因为调用方少传一个参数就静默批准 Issues/PR 等远程请求。
                         let approvedResources = try await remoteContextConsent?.wait() ?? []
                         plan.remoteContextRequests.removeAll { !approvedResources.contains($0.resource) }
+                        if plan.remoteContextRequests.isEmpty {
+                            continuation.yield(.execution(.terminated(
+                                .remoteContext,
+                                summary: String.l10n("rag.workspace.execution.remoteSkipped")
+                            )))
+                        }
                     }
                     if !plan.remoteContextRequests.isEmpty {
                         continuation.yield(.state(.fetchingRemoteContext))
@@ -257,6 +304,7 @@ struct KnowledgeRAGService: Sendable {
                             """
                         }.joined(separator: "\n---\n"))
                         continuation.yield(.remoteContext(remoteBlocks))
+                        continuation.yield(.execution(.remoteContextCompleted(remoteBlocks)))
                     }
                     var attachmentContexts = try await attachmentProcessor.process(request.composerContext.attachments)
                     attachmentContexts.append(contentsOf: request.composerContext.pastedGitHubLinks.map { reference in
@@ -275,6 +323,7 @@ struct KnowledgeRAGService: Sendable {
                     )
 
                     continuation.yield(.state(.generating))
+                    continuation.yield(.execution(.generationStarted(evidenceCount: retrieval.bundles.count)))
                     let chatRequest = AIChatRequest(
                         systemPrompt: prompt.systemPrompt,
                         userPrompt: prompt.userPrompt,
@@ -325,6 +374,7 @@ struct KnowledgeRAGService: Sendable {
                     \(answer)
                     """)
                     continuation.yield(.state(.completed))
+                    continuation.yield(.execution(.generationCompleted(citationCount: citations.count)))
                     continuation.yield(.completed(answer: answer, model: responseModel, citations: citations, plan: plan))
                     continuation.finish()
                 } catch is CancellationError {

@@ -19855,6 +19855,144 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "优先已选仓库" } }
       }
     },
+    "rag.workspace.execution.cancelled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancelled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已取消" } }
+      }
+    },
+    "rag.workspace.execution.failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopped because the request failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请求失败，已停止" } }
+      }
+    },
+    "rag.workspace.execution.noCandidates" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No repositories matched the requested scope" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未找到符合范围的仓库" } }
+      }
+    },
+    "rag.workspace.execution.noEvidence" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No sufficiently relevant knowledge-base evidence was found" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有找到足够相关的知识库证据" } }
+      }
+    },
+    "rag.workspace.execution.noIndex" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Candidate repositories do not have a ready index" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "候选仓库尚未建立可用索引" } }
+      }
+    },
+    "rag.workspace.execution.noKnowledgeRepos" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The knowledge base has no repositories to search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库中没有可查询的仓库" } }
+      }
+    },
+    "rag.workspace.execution.remoteSkipped" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Skipped GitHub context as requested" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已按你的选择跳过 GitHub 上下文" } }
+      }
+    },
+    "rag.workspace.execution.generation.startedFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organizing an answer from %lld evidence groups" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在根据 %lld 组证据组织回答" } }
+      }
+    },
+    "rag.workspace.execution.generation.summaryFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Answer generated with %lld citations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回答已生成，使用 %lld 条引用" } }
+      }
+    },
+    "rag.workspace.execution.generation.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Generate answer" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成回答" } }
+      }
+    },
+    "rag.workspace.execution.remote.summaryFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetched context from %lld sources" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已获取 %lld 条 GitHub 上下文" } }
+      }
+    },
+    "rag.workspace.execution.remote.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetch GitHub context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "获取 GitHub 上下文" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.candidatesFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected %lld candidate repositories from the knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已从知识库筛出 %lld 个候选仓库" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.evidencePackedFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Packed %1$lld hits into evidence for %2$lld repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已将 %1$lld 条命中整理为 %2$lld 个仓库的证据" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.keywordCompletedFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Keyword search found %lld candidate chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关键词检索命中 %lld 个候选分片" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.keywordStarted" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Searching indexed text by keyword" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在按关键词检索已索引文本" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.semanticCompletedFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Semantic search found %lld candidate chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语义检索命中 %lld 个候选分片" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.semanticStarted" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Generating a query vector and matching semantics" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在生成查询向量并匹配语义" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.summaryFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Found evidence in %1$lld repositories (%2$lld hits)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已在 %1$lld 个仓库中找到证据（%2$lld 条命中）" } }
+      }
+    },
+    "rag.workspace.execution.retrieval.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检索知识库" } }
+      }
+    },
+    "rag.workspace.execution.thinking.fallbackFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Understand the question within %1$@ and retrieve around \"%2$@\"." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在%1$@范围内理解问题，并围绕“%2$@”检索。" } }
+      }
+    },
+    "rag.workspace.execution.thinking.summaryFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Planned query: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已规划检索：%@" } }
+      }
+    },
+    "rag.workspace.execution.thinking.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "LLM thinking" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "LLM 思考" } }
+      }
+    },
     "rag.workspace.state.awaitingRemote" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for remote context confirmation" } },

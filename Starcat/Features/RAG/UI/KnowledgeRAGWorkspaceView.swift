@@ -540,6 +540,10 @@ struct KnowledgeRAGWorkspaceView: View {
                             messageView(message)
                                 .id(message.id)
                         }
+                        if !viewModel.executionSteps.isEmpty {
+                            RAGExecutionTimeline(steps: viewModel.executionSteps)
+                                .id("rag-execution-timeline")
+                        }
                         if !viewModel.streamingAnswer.isEmpty {
                             assistantMessage(
                                 content: viewModel.streamingAnswer,
@@ -577,9 +581,11 @@ struct KnowledgeRAGWorkspaceView: View {
                     isMessageNearBottom = isNearBottom
                 }
                 .onChange(of: viewModel.selectedConversationID) { _, _ in
-                    // 切会话后默认跟到底部，避免沿用上一会话的「已离开尾部」状态。
+                    // `selectedConversationID` 先于 messages 写入；延迟到下一轮布局后再强制定位，
+                    // 才能保证历史会话首次打开展示最后一条，而不是复用上一会话的顶部偏移。
                     isMessageNearBottom = true
                     messageTail.resumeFollowing()
+                    forceMessageTailScroll(proxy: proxy)
                 }
                 .onChange(of: viewModel.streamingAnswer) { _, newValue in
                     guard !newValue.isEmpty else { return }
@@ -611,8 +617,8 @@ struct KnowledgeRAGWorkspaceView: View {
                 if showsScrollToBottom {
                     scrollToBottomButton {
                         messageTail.resumeFollowing()
-                        // 不提前把几何状态伪装成“已到底”；等下一轮布局让 sentinel 落位后再滚动。
-                        scheduleMessageTailScroll(proxy: proxy)
+                        // 手动请求优先于旧的用户滚动 phase：本次必须到底，后续 token 才继续自动跟随。
+                        forceMessageTailScroll(proxy: proxy)
                     }
                     .padding(.bottom, 16)
                 }
@@ -662,6 +668,22 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
+    /// 用户明确要求展示最新内容时的强制滚动。
+    ///
+    /// 它故意不检查 `messageTail.isFollowing`：按钮点击时旧的 `.decelerating` 回调可能尚未
+    /// 结束，若沿用自动跟随的二次 guard，点击会被错误取消，表现为按钮消失却没有到底。
+    private func forceMessageTailScroll(proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(Self.messageBottomAnchorID, anchor: .bottom)
+            }
+        }
+    }
+
     /// 新会话空态：放大图标/文案，并在中栏剩余区域上下左右居中。
     private var emptyConversation: some View {
         EmptyStateView(
@@ -700,7 +722,8 @@ struct KnowledgeRAGWorkspaceView: View {
                 content: message.content,
                 citations: message.citations,
                 createdAt: message.createdAt,
-                showsActions: true
+                showsActions: true,
+                executionTrace: message.executionTrace
             )
         }
     }
@@ -710,20 +733,26 @@ struct KnowledgeRAGWorkspaceView: View {
         content: String,
         citations: [RAGCitation],
         createdAt: String?,
-        showsActions: Bool
+        showsActions: Bool,
+        executionTrace: [RAGExecutionStep] = []
     ) -> some View {
-        RAGAssistantMessageBlock(
-            content: content,
-            citations: citations,
-            createdAtLabel: createdAt.map(messageTimeLabel),
-            showsActions: showsActions,
-            onSelectCitation: { citation in
-                // 底部芯片只定位右侧证据，不打开详情窗。
-                viewModel.selectCitation(citation)
-                inspectorTab = .evidence
-            },
-            onExport: { viewModel.exportAnswer(content) }
-        )
+        VStack(alignment: .leading, spacing: 12) {
+            if !executionTrace.isEmpty {
+                RAGExecutionTimeline(steps: executionTrace)
+            }
+            RAGAssistantMessageBlock(
+                content: content,
+                citations: citations,
+                createdAtLabel: createdAt.map(messageTimeLabel),
+                showsActions: showsActions,
+                onSelectCitation: { citation in
+                    // 底部芯片只定位右侧证据，不打开详情窗。
+                    viewModel.selectCitation(citation)
+                    inspectorTab = .evidence
+                },
+                onExport: { viewModel.exportAnswer(content) }
+            )
+        }
     }
 
     /// 消息气泡时间戳：只显示短时间，避免挤占中栏。
@@ -1189,15 +1218,16 @@ struct KnowledgeRAGWorkspaceView: View {
                                     Text(citation.repoFullName)
                                         .font(ragFont(.callout, weight: .semibold))
                                         .foregroundStyle(.primary)
-                                    HStack(spacing: 4) {
-                                        Text(citation.source.titleKey)
-                                        Text("·")
-                                        Text(citation.sectionTitle)
-                                    }
-                                    .font(ragFont(.caption))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                    // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
+                                    (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
+                                        .font(ragFont(.caption2))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                 }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 Spacer(minLength: 4)
                                 Image(systemName: "chevron.right")
                                     .font(iconFont(size: 11, weight: .semibold))
@@ -2565,6 +2595,114 @@ private final class RAGComposerTextView: NSTextView {
                 .foregroundColor: NSColor.placeholderTextColor
             ]
         )
+    }
+}
+
+/// RAG 回答前后的紧凑步骤轨迹。
+///
+/// 当前运行步骤自动展开；前序步骤完成后自动折叠为摘要。用户可重新展开已完成步骤，
+/// 但生成回答是最终阅读上下文，始终展开而不会被折叠逻辑收起。该组件只渲染脱敏的
+/// `RAGExecutionStep`，不能读取 Debug trace。
+private struct RAGExecutionTimeline: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    let steps: [RAGExecutionStep]
+    @State private var manuallyExpanded: Set<RAGExecutionStepKind> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(steps) { step in
+                executionStep(step)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.13), lineWidth: 1)
+        )
+    }
+
+    private func executionStep(_ step: RAGExecutionStep) -> some View {
+        let isExpanded = step.kind == .generation
+            || step.state == .running
+            || manuallyExpanded.contains(step.kind)
+        return VStack(alignment: .leading, spacing: 7) {
+            Button {
+                guard step.kind != .generation else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    if isExpanded {
+                        manuallyExpanded.remove(step.kind)
+                    } else {
+                        manuallyExpanded.insert(step.kind)
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    stepStatusIcon(step)
+                        .frame(width: 15, height: 15)
+                    Text(titleKey(for: step.kind))
+                        .font(interfaceScale.font(.body, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    if !isExpanded, let summary = step.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(step.details, id: \.self) { detail in
+                        Label(detail, systemImage: "minus")
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.secondary)
+                            .labelStyle(.titleAndIcon)
+                    }
+                    if let summary = step.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(interfaceScale.font(.caption, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.leading, 23)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    @ViewBuilder
+    private func stepStatusIcon(_ step: RAGExecutionStep) -> some View {
+        if step.state == .running {
+            ProgressView()
+                .controlSize(.mini)
+        } else {
+            Image(systemName: step.state == .skipped ? "arrowshape.turn.up.right" : "checkmark.circle.fill")
+                .font(interfaceScale.font(size: 14, weight: .semibold))
+                .foregroundStyle(step.state == .skipped ? Color.secondary : Color.green)
+        }
+    }
+
+    private func titleKey(for kind: RAGExecutionStepKind) -> LocalizedStringKey {
+        switch kind {
+        case .thinking: return "rag.workspace.execution.thinking.title"
+        case .retrieval: return "rag.workspace.execution.retrieval.title"
+        case .remoteContext: return "rag.workspace.execution.remote.title"
+        case .generation: return "rag.workspace.execution.generation.title"
+        }
     }
 }
 

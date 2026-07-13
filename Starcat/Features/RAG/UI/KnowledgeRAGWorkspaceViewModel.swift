@@ -54,6 +54,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var editingUserDraft = ""
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
+    /// 当前轮默认可见的执行轨迹；完成后随 assistant message 持久化，Debug payload 不进入这里。
+    var executionSteps: [RAGExecutionStep] = []
     var remoteBlocks: [RAGRemoteContextBlock] = []
     var pendingRemoteRequests: [RAGRemoteContextRequest] = []
     var approvedRemoteResources: Set<RAGRemoteContextResource> = []
@@ -898,6 +900,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         streamingAnswer = ""
         queryPlan = nil
         retrieval = nil
+        executionSteps = []
         remoteBlocks = []
         pendingRemoteRequests = []
         approvedRemoteResources = []
@@ -930,6 +933,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                 case .state(let state):
                     answerState = state
                     terminalReply = reply(for: state) ?? terminalReply
+                    finishRunningExecutionIfNeeded(for: state)
+                case .execution(let event):
+                    applyExecution(event)
                 case .plan(let plan): queryPlan = plan
                 case .retrieval(let result): retrieval = result
                 case .remoteContextConfirmation(let requests):
@@ -950,7 +956,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     answer: completedPayload.0,
                     model: completedPayload.1,
                     citations: completedPayload.2,
-                    remoteContexts: remoteBlocks
+                    remoteContexts: remoteBlocks,
+                    executionTrace: executionSteps
                 )
                 if isFirstTurn {
                     generateConversationTitle(
@@ -966,7 +973,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     answer: terminalReply,
                     model: selectedModelDisplayName,
                     citations: [],
-                    remoteContexts: remoteBlocks
+                    remoteContexts: remoteBlocks,
+                    executionTrace: executionSteps
                 )
             } else if answerState == .cancelled {
                 scheduleFinalizeCancelledTurn(
@@ -1079,7 +1087,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     answer: partial,
                     model: selectedModelDisplayName,
                     citations: [],
-                    remoteContexts: remoteBlocks
+                    remoteContexts: remoteBlocks,
+                    executionTrace: executionSteps
                 )
                 if isFirstTurn, let service {
                     generateConversationTitle(
@@ -1228,13 +1237,133 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversations[index].title = title
     }
 
+    /// 将 Service 的结构化事件投影为普通用户可读的步骤。
+    ///
+    /// 这里刻意不消费 Debug trace：后者带完整 prompt / 历史，只适合开发排障。默认轨迹
+    /// 只展示已经发生的操作、LLM 给出的简短思考摘要和可核验的数量结果。
+    private func applyExecution(_ event: RAGExecutionEvent) {
+        switch event {
+        case .started(let kind):
+            for index in executionSteps.indices where executionSteps[index].state == .running {
+                executionSteps[index].state = .completed
+            }
+            executionSteps.append(RAGExecutionStep(kind: kind))
+
+        case .thinkingCompleted(let plan):
+            let fallback = String(
+                format: String.l10n("rag.workspace.execution.thinking.fallbackFormat"),
+                plan.userVisiblePlan.scope,
+                plan.userVisiblePlan.semantic
+            )
+            updateExecutionStep(kind: .thinking) { step in
+                step.details = plan.userVisiblePlan.thinking.isEmpty
+                    ? [fallback]
+                    : plan.userVisiblePlan.thinking
+                step.summary = String(
+                    format: String.l10n("rag.workspace.execution.thinking.summaryFormat"),
+                    plan.userVisiblePlan.semantic
+                )
+                step.state = .completed
+            }
+
+        case .retrieval(let progress):
+            updateExecutionStep(kind: .retrieval) { step in
+                switch progress {
+                case .candidateSelectionCompleted(let count):
+                    step.details.append(String(
+                        format: String.l10n("rag.workspace.execution.retrieval.candidatesFormat"), count
+                    ))
+                case .keywordSearchStarted:
+                    step.details.append(String.l10n("rag.workspace.execution.retrieval.keywordStarted"))
+                case .keywordSearchCompleted(let count):
+                    step.details.append(String(
+                        format: String.l10n("rag.workspace.execution.retrieval.keywordCompletedFormat"), count
+                    ))
+                case .semanticSearchStarted:
+                    step.details.append(String.l10n("rag.workspace.execution.retrieval.semanticStarted"))
+                case .semanticSearchCompleted(let count):
+                    step.details.append(String(
+                        format: String.l10n("rag.workspace.execution.retrieval.semanticCompletedFormat"), count
+                    ))
+                case .evidencePacked(let hitCount, let bundleCount):
+                    step.details.append(String(
+                        format: String.l10n("rag.workspace.execution.retrieval.evidencePackedFormat"),
+                        hitCount,
+                        bundleCount
+                    ))
+                }
+            }
+
+        case .retrievalCompleted(let result):
+            updateExecutionStep(kind: .retrieval) { step in
+                step.summary = String(
+                    format: String.l10n("rag.workspace.execution.retrieval.summaryFormat"),
+                    result.bundles.count,
+                    result.childHits.count
+                )
+                step.state = .completed
+            }
+
+        case .remoteContextCompleted(let blocks):
+            updateExecutionStep(kind: .remoteContext) { step in
+                step.details = blocks.map { $0.title }
+                step.summary = String(
+                    format: String.l10n("rag.workspace.execution.remote.summaryFormat"), blocks.count
+                )
+                step.state = .completed
+            }
+
+        case .generationStarted(let evidenceCount):
+            updateExecutionStep(kind: .generation) { step in
+                step.details = [String(
+                    format: String.l10n("rag.workspace.execution.generation.startedFormat"), evidenceCount
+                )]
+            }
+
+        case .generationCompleted(let citationCount):
+            updateExecutionStep(kind: .generation) { step in
+                step.summary = String(
+                    format: String.l10n("rag.workspace.execution.generation.summaryFormat"), citationCount
+                )
+                step.state = .completed
+            }
+
+        case .terminated(let kind, let summary):
+            updateExecutionStep(kind: kind) { step in
+                step.summary = summary
+                step.state = .completed
+            }
+        }
+    }
+
+    private func updateExecutionStep(
+        kind: RAGExecutionStepKind,
+        _ update: (inout RAGExecutionStep) -> Void
+    ) {
+        guard let index = executionSteps.lastIndex(where: { $0.kind == kind }) else { return }
+        update(&executionSteps[index])
+    }
+
+    private func finishRunningExecutionIfNeeded(for state: RAGAnswerState) {
+        let isFailure: Bool
+        if case .failed = state { isFailure = true } else { isFailure = false }
+        guard state == .cancelled || isFailure else { return }
+        for index in executionSteps.indices where executionSteps[index].state == .running {
+            executionSteps[index].state = .completed
+            executionSteps[index].summary = state == .cancelled
+                ? String.l10n("rag.workspace.execution.cancelled")
+                : String.l10n("rag.workspace.execution.failed")
+        }
+    }
+
     private func persistAnswer(
         conversationID: UUID,
         question: String,
         answer: String,
         model: String,
         citations: [RAGCitation],
-        remoteContexts: [RAGRemoteContextBlock]
+        remoteContexts: [RAGRemoteContextBlock],
+        executionTrace: [RAGExecutionStep] = []
     ) async throws {
         try await conversationStore.appendTurn(
             conversationID: conversationID,
@@ -1242,7 +1371,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             answer: answer,
             model: model,
             citations: citations,
-            remoteContexts: remoteContexts
+            remoteContexts: remoteContexts,
+            executionTrace: executionTrace
         )
         if let detail = try await conversationStore.loadConversation(id: conversationID) {
             messages = detail.messages
@@ -1250,6 +1380,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         conversations = try await conversationStore.listConversations()
         streamingAnswer = ""
+        executionSteps = []
         remoteBlocks = []
         attachments = []
         githubLinkContexts = []

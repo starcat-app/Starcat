@@ -64,7 +64,8 @@ struct KnowledgeRAGRetriever: Sendable {
         semanticQuery: String,
         candidates: [RAGRepoCandidate],
         explicitMode: RAGExplicitRepoMode,
-        explicitRepoIDs: [Int64]
+        explicitRepoIDs: [Int64],
+        progress: @Sendable (RAGRetrievalProgress) -> Void = { _ in }
     ) async throws -> RAGRetrievalResult {
         let query = semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !candidates.isEmpty else {
@@ -75,6 +76,7 @@ struct KnowledgeRAGRetriever: Sendable {
         let privateRepoIDs = candidates.filter(\.repo.isPrivate).map(\.repo.id)
         var failures: [Error] = []
         let keyword: [RAGChildHit]
+        progress(.keywordSearchStarted)
         do {
             keyword = try await keywordHits(
                 query: query,
@@ -86,8 +88,10 @@ struct KnowledgeRAGRetriever: Sendable {
             failures.append(error)
             AppLog.ai.warning("RAG keyword retrieval degraded: \(error.localizedDescription, privacy: .public)")
         }
+        progress(.keywordSearchCompleted(keyword.count))
 
         let vector: [RAGChildHit]
+        progress(.semanticSearchStarted)
         do {
             let queryVector = try await embeddingClient.embedding(input: query, model: embeddingModel)
             vector = try await vectorHits(
@@ -100,6 +104,7 @@ struct KnowledgeRAGRetriever: Sendable {
             failures.append(error)
             AppLog.ai.warning("RAG vector retrieval degraded: \(error.localizedDescription, privacy: .public)")
         }
+        progress(.semanticSearchCompleted(vector.count))
         if failures.count == 2, let error = failures.first { throw error }
         let preferred = explicitMode == .prefer ? Set(explicitRepoIDs) : []
         let hits = fusion.fuse(
@@ -108,6 +113,7 @@ struct KnowledgeRAGRetriever: Sendable {
             preferredRepoIDs: preferred
         ).filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)
+        progress(.evidencePacked(hitCount: hits.count, bundleCount: bundles.count))
         return RAGRetrievalResult(candidates: candidates, bundles: bundles, childHits: hits)
     }
 

@@ -1409,6 +1409,8 @@ enum DatabaseMigrations {
             t.column("role", .text).notNull()
             t.column("content", .text).notNull()
             t.column("model", .text)
+            // RAG 尚未随正式版发布：保存脱敏的用户可见执行轨迹，历史重开仍可核验本轮过程。
+            t.column("execution_trace_json", .text)
             t.column("created_at", .text).notNull()
         }
         try db.create(index: "idx_rag_messages_conversation_created", on: "rag_messages", columns: ["conversation_id", "created_at"])
@@ -1492,6 +1494,14 @@ enum DatabaseMigrations {
             if !citationColumns.contains("score_breakdown_json") {
                 try db.alter(table: "rag_message_citations") { t in
                     t.add(column: "score_breakdown_json", .text)
+                }
+            }
+        }
+        if try db.tableExists("rag_messages") {
+            let messageColumns = try db.columns(in: "rag_messages").map(\.name)
+            if !messageColumns.contains("execution_trace_json") {
+                try db.alter(table: "rag_messages") { t in
+                    t.add(column: "execution_trace_json", .text)
                 }
             }
         }

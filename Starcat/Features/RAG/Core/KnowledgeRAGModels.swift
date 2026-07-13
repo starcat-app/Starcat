@@ -217,12 +217,80 @@ struct RAGUserVisiblePlan: Codable, Equatable, Sendable {
     var scope: String
     var chips: [String]
     var semantic: String
+    /// Planner 产出的简短、面向用户的思考摘要；它不是 provider 的隐藏推理原文。
+    var thinking: [String]
 
-    init(scope: String = "知识库", chips: [String] = [], semantic: String = "") {
+    init(
+        scope: String = "知识库",
+        chips: [String] = [],
+        semantic: String = "",
+        thinking: [String] = []
+    ) {
         self.scope = scope
         self.chips = chips
         self.semantic = semantic
+        self.thinking = thinking
     }
+
+    enum CodingKeys: String, CodingKey {
+        case scope, chips, semantic, thinking
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "知识库"
+        chips = try container.decodeIfPresent([String].self, forKey: .chips) ?? []
+        semantic = try container.decodeIfPresent(String.self, forKey: .semantic) ?? ""
+        thinking = try container.decodeIfPresent([String].self, forKey: .thinking) ?? []
+    }
+}
+
+/// 一轮 RAG 问答中对普通用户可见的执行步骤。
+///
+/// 只保存已发生的操作及其可解释摘要，不能复用 Debug payload，避免把 prompt、历史或
+/// provider 内部字段暴露到普通会话历史。`generation` 是最后一步，UI 始终保持展开。
+enum RAGExecutionStepKind: String, Codable, CaseIterable, Sendable {
+    case thinking
+    case retrieval
+    case remoteContext
+    case generation
+}
+
+enum RAGExecutionStepState: String, Codable, Sendable {
+    case running
+    case completed
+    case skipped
+}
+
+struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
+    var kind: RAGExecutionStepKind
+    var state: RAGExecutionStepState
+    var details: [String]
+    var summary: String?
+
+    var id: RAGExecutionStepKind { kind }
+
+    init(
+        kind: RAGExecutionStepKind,
+        state: RAGExecutionStepState = .running,
+        details: [String] = [],
+        summary: String? = nil
+    ) {
+        self.kind = kind
+        self.state = state
+        self.details = details
+        self.summary = summary
+    }
+}
+
+/// Retriever 在真实子操作完成时上报的进度；用于驱动用户可见轨迹，而非调试日志。
+enum RAGRetrievalProgress: Sendable {
+    case candidateSelectionCompleted(Int)
+    case keywordSearchStarted
+    case keywordSearchCompleted(Int)
+    case semanticSearchStarted
+    case semanticSearchCompleted(Int)
+    case evidencePacked(hitCount: Int, bundleCount: Int)
 }
 
 struct RAGQueryPlan: Codable, Equatable, Sendable {
