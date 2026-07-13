@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/supports/ai-file-wall/integrations/hook-client.mjs\" codex claim",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/supports/ai-file-wall/integrations/hook-client.mjs\" codex release",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -7,7 +7,7 @@
 
 ---
 
-## 📦 项目清单（共 13 个）
+## 📦 项目清单（共 14 个）
 
 ### Go API 服务（7 个）
 
@@ -21,7 +21,7 @@
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`dong4j/starcat-discovery-api`](https://github.com/dong4j/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
 | [`starcat-license-api/`](./starcat-license-api/) | [`dong4j/starcat-license-api`](https://github.com/dong4j/starcat-license-api) 🔒 | — | Direct 分发授权 API |
 
-### 其他支撑项目（6 个）
+### 其他支撑项目（7 个）
 
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
@@ -29,6 +29,7 @@
 | [`starcat-localization/`](./starcat-localization/) | [`dong4j/starcat-localization`](https://github.com/dong4j/starcat-localization) | 本地化资源管理 |
 | [`homebrew-starcat/`](./homebrew-starcat/) | [`dong4j/homebrew-starcat`](https://github.com/dong4j/homebrew-starcat) | Homebrew tap（`brew install starcat`） |
 | [`vscode-makefile-explorer/`](./vscode-makefile-explorer/) | [`dong4j/vscode-makefile-explorer`](https://github.com/dong4j/vscode-makefile-explorer) | VS Code 插件 |
+| [`ai-file-wall/`](./ai-file-wall/) | —（本地独立项目） | 多 AI 并行开发时的 Git 变更与文件冲突预警面板 |
 | [`extensions/starcat-chrome-plugin/`](./extensions/starcat-chrome-plugin/) | [`dong4j/starcat-chrome-plugin`](https://github.com/dong4j/starcat-chrome-plugin) | Chrome 浏览器插件 |
 | [`extensions/starcat-safari-plugin/`](./extensions/starcat-safari-plugin/) | [`dong4j/starcat-safari-plugin`](https://github.com/dong4j/starcat-safari-plugin) | Safari 浏览器插件 |
 

@@ -253,6 +253,10 @@ Section {
 
 ## 跨 Agent 协作规范
 
+### AI File Wall 协作登记
+
+本仓库启动 `supports/ai-file-wall` 后，Cursor Agent 在首次编辑目标文件前必须调用 MCP 工具 `ai-file-wall.claim_files`，任务结束后调用 `ai-file-wall.release_files`；长任务在 3 分钟内续期一次。Codex 与 Claude Code 由项目 hook 自动登记和释放。该规则只用于显示协作冲突预警，不阻断文件写入。
+
 ### Skill 编写语言规范
 
 本项目内新增或维护的所有 skill 必须使用中文编写，包括 `SKILL.md`、`references/` 下的说明文档、示例、触发说明和操作步骤。代码、命令、文件路径、环境变量、脚本名、错误日志、YAML key 等技术字面量保持原文，不强行翻译。

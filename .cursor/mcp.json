@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ai-file-wall": {
+      "command": "node",
+      "args": ["supports/ai-file-wall/integrations/cursor/mcp-server.mjs"]
+    }
+  }
+}

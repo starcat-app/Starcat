@@ -562,10 +562,6 @@ struct RAGWorkspaceAnswerSurface: View {
                         explicitModeMenu
                     }
 
-                    // 这是实际 Prompt 的预算快照入口。用户展开后可核对每个分段和输出预留，
-                    // 不能只显示一个没有来源的百分比，避免长会话接近窗口时失去判断依据。
-                    RAGContextUsageButton(usage: viewModel.composerContextUsage)
-
                     Spacer(minLength: 8)
 
                     // 附件在发送按钮左侧，对齐 Agent 输入框。
@@ -577,6 +573,9 @@ struct RAGWorkspaceAnswerSurface: View {
                     .focusEffectDisabled()
                     .foregroundStyle(.secondary)
                     .help("rag.workspace.composer.attach")
+
+                    // Prompt 预算快照：放在附件右侧，靠近发送区，避免挤在模型菜单旁。
+                    RAGContextUsageButton(usage: viewModel.composerContextUsage)
 
                     if viewModel.isAnswering {
                         Button { viewModel.cancelAnswer() } label: {
@@ -625,8 +624,8 @@ struct RAGWorkspaceAnswerSurface: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        // 与 Agent 输入框上方标签一致：thinMaterial 胶囊，避免贴在 window 底上时几乎看不见。
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+        // thinMaterial + Capsule：真实胶囊两端半圆；cornerRadius:7 的圆角矩形不算胶囊。
+        .background(.thinMaterial, in: Capsule())
     }
 
     func githubLinkChip(_ reference: RAGGitHubLinkReference) -> some View {
@@ -649,7 +648,7 @@ struct RAGWorkspaceAnswerSurface: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+        .background(.thinMaterial, in: Capsule())
     }
 
     /// `@` 多选弹层：顶部统计 + 当前筛选词 + 已选置顶列表；筛选源仍是输入框 `@token`。

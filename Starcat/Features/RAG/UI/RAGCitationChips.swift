@@ -41,17 +41,17 @@ struct RAGCitationChipsRow: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: citation.source.systemImageName)
-                            .font(interfaceScale.font(size: 11, weight: .semibold))
+                            .font(interfaceScale.font(size: 10, weight: .semibold))
                             .foregroundStyle(citation.source.tintColor)
                         Text("\(citation.marker) ·")
-                            // caption(12) 比正文 body(13) 略小；勿用 .callout（不在 StarcatTypography）。
-                            .font(interfaceScale.font(.caption, weight: .medium))
+                            // captionSmall(11) 比正文 body(13) 再小一档，避免底部引用抢视线。
+                            .font(interfaceScale.font(.captionSmall, weight: .medium))
                             .foregroundStyle(.primary)
-                        // owner logo 走 Kingfisher 缓存；芯片内 14pt、无描边，避免挤爆短芯片。
+                        // owner logo 走 Kingfisher 缓存；芯片内 12pt、无描边，避免挤爆短芯片。
                         RepoIdentityLabel(
                             fullName: citation.repoFullName,
-                            avatarSize: 14,
-                            font: interfaceScale.font(.caption, weight: .medium),
+                            avatarSize: 12,
+                            font: interfaceScale.font(.captionSmall, weight: .medium),
                             spacing: 4,
                             showAvatarBorder: false
                         )
@@ -81,7 +81,7 @@ struct RAGCitationChipsRow: View {
                             Text(String(format: String.l10n("rag.workspace.citations.moreFormat"), hiddenCount))
                         }
                     }
-                    .font(interfaceScale.font(.caption, weight: .medium))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .padding(.horizontal, 8)

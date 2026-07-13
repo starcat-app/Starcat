@@ -40,6 +40,7 @@ func iconFont(
 }
 
 /// 输入框底栏模型 / 范围菜单：与附件 chip 同款 thinMaterial 胶囊。
+/// 关键约束：必须用 `Capsule()`；`RoundedRectangle(cornerRadius: 7)` 看起来仍是圆角矩形，胶囊样式不会生效。
 extension View {
     func ragComposerCapsuleChip(font: Font) -> some View {
         self
@@ -47,7 +48,7 @@ extension View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+            .background(.thinMaterial, in: Capsule())
     }
 }
 

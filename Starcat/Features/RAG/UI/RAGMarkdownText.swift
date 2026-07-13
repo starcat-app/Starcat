@@ -115,5 +115,48 @@ struct RAGMarkdownText: View {
                     .relativeLineSpacing(.em(0.15))
                     .markdownMargin(top: .em(0.35), bottom: .em(0.95))
             }
+            // 默认 Theme 表格几乎无内边距 + 全网格描边，宽表/多列时贴边难读。
+            // 对齐 DocC 横线分隔 + GitHub 内边距：表头加重、斑马纹、宽表可横向滚。
+            .table { configuration in
+                ScrollView(.horizontal, showsIndicators: true) {
+                    configuration.label
+                        // 让表格按内容固有宽度布局；过宽时由外层横向滚动，不把列压扁。
+                        .fixedSize(horizontal: true, vertical: true)
+                        .markdownTableBorderStyle(
+                            TableBorderStyle(
+                                .horizontalBorders,
+                                color: Color.secondary.opacity(0.35),
+                                width: 0.5
+                            )
+                        )
+                        .markdownTableBackgroundStyle(
+                            .alternatingRows(
+                                Color.clear,
+                                Color.primary.opacity(0.04),
+                                header: Color.primary.opacity(0.08)
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.22), lineWidth: 0.5)
+                        )
+                }
+                .markdownMargin(top: .em(0.25), bottom: .em(0.95))
+            }
+            .tableCell { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        if configuration.row == 0 {
+                            FontWeight(.semibold)
+                        }
+                        // 背景交给 tableBackgroundStyle，避免 Text 再铺一层抢斑马纹。
+                        BackgroundColor(nil)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .relativeLineSpacing(.em(0.18))
+            }
     }
 }
