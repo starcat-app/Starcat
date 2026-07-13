@@ -753,7 +753,14 @@ private struct KnowledgeRAGBrowserView: View {
         let index = viewModel.indexes[candidate.repo.id]
         return Button { Task { await viewModel.selectRepository(candidate.repo.id) } } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(candidate.repo.fullName).font(.callout.weight(selected ? .semibold : .regular)).lineLimit(1)
+                RepoIdentityLabel(
+                    fullName: candidate.repo.fullName,
+                    ownerAvatarURL: candidate.repo.ownerAvatar,
+                    avatarSize: 18,
+                    font: .callout.weight(selected ? .semibold : .regular),
+                    spacing: 6,
+                    showAvatarBorder: false
+                )
                 Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 HStack(spacing: 6) {
                     if let language = candidate.repo.language, !language.isEmpty { Text(language) }
@@ -794,7 +801,13 @@ private struct KnowledgeRAGBrowserView: View {
 
     private func repositoryDetail(_ candidate: RAGRepoCandidate) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 10) {
+                // 详情顶栏用稍大头像；优先本地 ownerAvatar，否则 RepoAvatarURL（Kingfisher 缓存）。
+                RemoteAvatar(
+                    urlString: candidate.repo.ownerAvatar ?? RepoAvatarURL.from(owner: candidate.repo.owner),
+                    size: 28,
+                    showBorder: true
+                )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(candidate.repo.fullName).font(.title3.weight(.semibold))
                     Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription")).font(.body).foregroundStyle(.secondary)
@@ -888,9 +901,13 @@ private struct KnowledgeRAGBrowserView: View {
             .focusEffectDisabled()
             .pointerStyle(.link)
 
-            // 状态与删除入口共用标题行高度，避免图标因 28pt 点击框而向下错位。
+            // 编辑 / 状态 / 删除三图标统一 caption2，与「可用」绿勾同视觉字号；点击热区仍略放大。
             HStack(alignment: .center, spacing: 8) {
-                if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
+                if managed.hasOverride {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color.accentColor)
+                }
                 Label {
                     Text(managedStatusKey(managed, embeddingStatus: status))
                 } icon: {
@@ -908,7 +925,7 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                 } label: {
                     Image(systemName: "trash")
-                        .font(.callout)
+                        .font(.caption2)
                         .frame(width: 28, height: 16)
                         .contentShape(Rectangle())
                 }

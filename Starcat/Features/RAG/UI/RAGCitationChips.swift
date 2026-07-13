@@ -43,11 +43,18 @@ struct RAGCitationChipsRow: View {
                         Image(systemName: citation.source.systemImageName)
                             .font(interfaceScale.font(size: 11, weight: .semibold))
                             .foregroundStyle(citation.source.tintColor)
-                        Text("\(citation.marker) · \(citation.repoFullName)")
+                        Text("\(citation.marker) ·")
                             // caption(12) 比正文 body(13) 略小；勿用 .callout（不在 StarcatTypography）。
                             .font(interfaceScale.font(.caption, weight: .medium))
                             .foregroundStyle(.primary)
-                            .lineLimit(1)
+                        // owner logo 走 Kingfisher 缓存；芯片内 14pt、无描边，避免挤爆短芯片。
+                        RepoIdentityLabel(
+                            fullName: citation.repoFullName,
+                            avatarSize: 14,
+                            font: interfaceScale.font(.caption, weight: .medium),
+                            spacing: 4,
+                            showAvatarBorder: false
+                        )
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)

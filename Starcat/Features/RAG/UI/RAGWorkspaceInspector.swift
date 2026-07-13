@@ -161,11 +161,13 @@ struct RAGWorkspaceInspector: View {
                                     .padding(.top, 2)
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(citation.repoFullName)
-                                        .font(ragFont(.callout, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
+                                    RepoIdentityLabel(
+                                        fullName: citation.repoFullName,
+                                        avatarSize: 16,
+                                        font: ragFont(.callout, weight: .semibold),
+                                        spacing: 6,
+                                        showAvatarBorder: false
+                                    )
                                     // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
                                     (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
                                         .font(ragFont(.caption2))
@@ -293,9 +295,23 @@ struct RAGWorkspaceInspector: View {
                 )
             }
             if let chunk = viewModel.selectedCitationChunk, viewModel.selectedCitation?.id == citation.id {
-                Text("rag.workspace.inspector.chunkPreview")
+                // 与综合检索分一致：info.circle 标明可点开 popover 看全文。
+                Button {
+                    isCitationChunkPopoverPresented = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("rag.workspace.inspector.chunkPreview")
+                        Image(systemName: "info.circle")
+                            .font(iconFont(size: 11, weight: .medium))
+                    }
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.inspector.chunkPreview.expand")
                 citationChunkPreview(chunk)
             }
             if citation.chunkID == nil {
