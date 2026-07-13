@@ -216,25 +216,34 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         _ requests: [RAGRemoteContextRequest]
     ) -> [RAGRemoteContextRequest] {
         let maxRequestCount = 3
-        var remainingFetches = 8
         var seen = Set<String>()
-        var normalized: [RAGRemoteContextRequest] = []
+        var unique: [RAGRemoteContextRequest] = []
         for request in requests {
-            guard normalized.count < maxRequestCount, remainingFetches > 0 else { break }
+            guard unique.count < maxRequestCount else { break }
             let query = String(request.query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
             let identity = "\(request.resource.rawValue)|\(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))"
             guard seen.insert(identity).inserted else { continue }
-            let maxRepos = min(max(request.maxRepos, 1), 5, remainingFetches)
-            normalized.append(RAGRemoteContextRequest(
+            unique.append(RAGRemoteContextRequest(
                 resource: request.resource,
                 query: query,
                 reason: String(request.reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500)),
-                maxRepos: maxRepos,
+                maxRepos: min(max(request.maxRepos, 1), 5),
                 perRepoLimit: min(max(request.perRepoLimit, 1), 10)
             ))
-            remainingFetches -= maxRepos
         }
-        return normalized
+        // 先去重、再均分总工作量。原先按输入顺序先取满 5 个 repo，会让第一类请求
+        // 吞掉预算，后面的不同资源根本没有机会执行；均分后仍严格不超过 8 个 repo，
+        // 也让确认弹窗与实际请求范围更符合用户的“多类现场信息”意图。
+        var remainingFetches = 8
+        return unique.enumerated().map { index, request in
+            let remainingRequests = unique.count - index
+            let fairShare = Int(ceil(Double(remainingFetches) / Double(remainingRequests)))
+            let maxRepos = min(request.maxRepos, fairShare)
+            remainingFetches -= maxRepos
+            var normalized = request
+            normalized.maxRepos = maxRepos
+            return normalized
+        }
     }
 
     private static func extractJSONObject(_ value: String) -> String {
