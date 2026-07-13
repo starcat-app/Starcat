@@ -133,7 +133,8 @@ struct RAGWorkspaceAnswerSurface: View {
                             .background(
                                 RAGWorkspaceBottomScrollBridge(
                                     requestID: messageTailRequests.requestID,
-                                    shouldFollow: messageTail.isFollowing
+                                    shouldFollow: messageTail.isFollowing,
+                                    animatesScroll: messageTailRequests.animatesScroll
                                 )
                             )
                             .onScrollVisibilityChange(threshold: 0.5) { isVisible in
@@ -206,7 +207,7 @@ struct RAGWorkspaceAnswerSurface: View {
                     scrollToBottomButton {
                         messageTail.resumeFollowing()
                         // 手动请求优先于旧的用户滚动 phase：本次必须到底，后续 token 才继续自动跟随。
-                        forceMessageTailScroll()
+                        forceMessageTailScroll(animated: true)
                     }
                     .padding(.bottom, 16)
                 }
@@ -241,12 +242,13 @@ struct RAGWorkspaceAnswerSurface: View {
     /// 都可能在 SwiftUI 更新期间失效。`ScrollPosition` 直接驱动当前 ScrollView 的 edge，
     /// 不依赖惰性子项是否已布局；递增请求再交给底部原生 bridge，确保每次流式快照
     /// 都会在最新布局完成后重新贴住底部。
-    func forceMessageTailScroll() {
-        messageTailRequests.issue()
+    func forceMessageTailScroll(animated: Bool = false) {
         // 流式快照约 10Hz 提交；尾部跟随若每次都带动画，会形成彼此追逐的动画事务。
-        // 这里统一禁用动画，用户点击快捷按钮与历史恢复也能立即到达确定位置。
+        // 只有用户点击快捷入口时才允许动画；打开历史会话和自动跟随始终即时完成。
+        let animatesScroll = animated && !reduceMotion
+        messageTailRequests.issue(animatesScroll: animatesScroll)
         var transaction = Transaction()
-        transaction.disablesAnimations = true
+        transaction.disablesAnimations = !animatesScroll
         withTransaction(transaction) {
             messageTimelinePosition.scrollTo(edge: .bottom)
         }

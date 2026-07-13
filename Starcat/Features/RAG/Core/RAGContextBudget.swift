@@ -5,7 +5,7 @@
 //  RAG 请求的统一 Context Window 预算与用量快照。
 //
 //  所有会进入模型请求的文本必须通过这里分配，而不是各模块各自截断。这样 Composer
-//  展示的占用、实际发送的 Prompt 与输出预留使用同一份数字，避免超过模型窗口后才失败。
+//  展示的输入占用、实际发送的 Prompt 与内部输出预留使用同一份预算数字。
 //
 
 import Foundation
@@ -40,6 +40,9 @@ enum RAGContextUsageSegmentKind: String, CaseIterable, Identifiable, Sendable {
 
 /// 发送前构建出的 Context Window 快照。token 仍是 `TokenEstimator` 的本地近似值，
 /// 但整个请求统一使用同一估算器，因而预算边界和 UI 占比保持一致。
+///
+/// 展示约定：圆环 / 分段只反映已装进 Prompt 的**输入**；`reservedOutputTokens`
+/// 仍参与内部扣预算，但不计入 `usageRatio`，避免用户把「预留回答空间」当成已消耗内容。
 struct RAGContextUsage: Equatable, Sendable {
     var windowTokens: Int
     var reservedOutputTokens: Int
@@ -60,11 +63,13 @@ struct RAGContextUsage: Equatable, Sendable {
             .reduce(0) { $0 + $1.value }
     }
 
+    /// 输入 + 输出预留；仅供预算校验，不直接驱动 Composer 圆环。
     var usedTokens: Int { inputTokens + reservedOutputTokens }
 
+    /// Composer 展示占比：只除以窗口的输入占用。
     var usageRatio: Double {
         guard windowTokens > 0 else { return 0 }
-        return min(max(Double(usedTokens) / Double(windowTokens), 0), 1)
+        return min(max(Double(inputTokens) / Double(windowTokens), 0), 1)
     }
 
     func tokenCount(for kind: RAGContextUsageSegmentKind) -> Int {

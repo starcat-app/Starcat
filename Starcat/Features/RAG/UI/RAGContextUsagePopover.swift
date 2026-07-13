@@ -4,10 +4,8 @@
 //
 //  Composer 的 Context Window 占用入口与明细 Popover。
 //
-//  显示的是 `KnowledgeRAGPromptBuilder` 给出的同一份预算快照，而不是根据 UI 状态另算，
-//  因此用户看到的用量、输出预留与实际模型请求保持一致。
-//
-//  UI 对齐「分类色块 + 分段进度条」：只展示用量元数据，不展开请求正文预览。
+//  显示的是 `KnowledgeRAGPromptBuilder` 给出的同一份预算快照里的**输入分段**；
+//  输出预留只在构建期扣预算，不在此展示，避免「预留回答空间」被读成已消耗内容。
 //
 
 import SwiftUI
@@ -51,9 +49,11 @@ struct RAGContextUsagePopover: View {
 
     let usage: RAGContextUsage
 
-    /// 只列出已占用分段，顺序与 `RAGContextUsageSegmentKind.allCases` 一致，便于扫读。
+    /// 只列出已装进 Prompt 的输入分段；故意跳过 reservedOutput。
     private var activeSegments: [RAGContextUsageSegmentKind] {
-        RAGContextUsageSegmentKind.allCases.filter { usage.tokenCount(for: $0) > 0 }
+        RAGContextUsageSegmentKind.allCases.filter {
+            $0 != .reservedOutput && usage.tokenCount(for: $0) > 0
+        }
     }
 
     var body: some View {
@@ -98,7 +98,7 @@ struct RAGContextUsagePopover: View {
         .focusEffectDisabled()
     }
 
-    /// 整窗宽为 Context Window；已用分段按 token 比例着色，剩余留灰轨。
+    /// 整窗宽为 Context Window；已用输入分段按 token 比例着色，剩余留灰轨。
     private var segmentedUsageBar: some View {
         GeometryReader { proxy in
             let total = CGFloat(max(usage.windowTokens, 1))
@@ -133,7 +133,7 @@ struct RAGContextUsagePopover: View {
         String(
             format: String.l10n("rag.workspace.context.tokensSummary"),
             locale: locale,
-            tokenText(usage.usedTokens),
+            tokenText(usage.inputTokens),
             tokenText(usage.windowTokens)
         )
     }
@@ -156,7 +156,7 @@ struct RAGContextUsagePopover: View {
         case .evidence: return Color(nsColor: .systemPurple)
         case .remoteContext: return Color(nsColor: .systemPink)
         case .attachments: return Color(nsColor: .systemYellow)
-        case .reservedOutput: return Color(nsColor: .systemTeal)
+        case .reservedOutput: return Color(nsColor: .systemTeal) // UI 已过滤，保留穷尽分支
         }
     }
 }

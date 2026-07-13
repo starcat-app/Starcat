@@ -22,10 +22,21 @@ struct ScrollTailControllerTests {
 
         requests.issue()
         let firstRequestID = requests.requestID
-        requests.issue()
+        requests.issue(animatesScroll: true)
 
         #expect(firstRequestID == 1)
         #expect(requests.requestID == 2)
+        #expect(requests.animatesScroll)
+    }
+
+    @Test("自动跟随请求保持无动画")
+    func automaticTailRequestDoesNotAnimate() {
+        var requests = ScrollTailRequestSequencer()
+
+        requests.issue(animatesScroll: true)
+        requests.issue()
+
+        #expect(!requests.animatesScroll)
     }
 
     @Test("用户开始滚动立即暂停跟随")

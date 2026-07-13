@@ -126,16 +126,21 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         // 全局预算可能在某个证据块中间截断；只保留真实进入 Prompt 的 marker，避免模型
         // 引用已被裁掉的来源而 UI 却误把它当作有效 citation。
         citations = citations.filter { evidenceText.contains("[\($0.key)]") }
-        let remoteText = budget.consume(
-            "GitHub 远程临时上下文：\n\(rawRemoteText.isEmpty ? "无" : rawRemoteText)",
-            kind: .remoteContext,
-            preferredLimit: maxRemoteTokens
-        )
-        let attachmentText = budget.consume(
-            "用户本轮附件：\n\(rawAttachmentText.isEmpty ? "无" : rawAttachmentText)",
-            kind: .attachments,
-            preferredLimit: maxAttachmentTokens
-        )
+        // 无真实内容时不写入「…：无」占位，也不 consume 该分段，UI 占用显示为 0。
+        let remoteText = rawRemoteText.isEmpty
+            ? ""
+            : budget.consume(
+                "GitHub 远程临时上下文：\n\(rawRemoteText)",
+                kind: .remoteContext,
+                preferredLimit: maxRemoteTokens
+            )
+        let attachmentText = rawAttachmentText.isEmpty
+            ? ""
+            : budget.consume(
+                "用户本轮附件：\n\(rawAttachmentText)",
+                kind: .attachments,
+                preferredLimit: maxAttachmentTokens
+            )
         let userPrompt = [questionSection, evidenceText, remoteText, attachmentText]
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")

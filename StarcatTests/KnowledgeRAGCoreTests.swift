@@ -587,6 +587,21 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.contextUsage.promptPreview.contains("system:"))
     }
 
+    @Test("无远程/附件时不把占位文案记入对应占用分段")
+    func emptyRemoteAndAttachmentsDoNotCountPlaceholderTokens() {
+        let prompt = KnowledgeRAGPromptBuilder().build(
+            question: "hello",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "hello"),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+        #expect(prompt.contextUsage.tokenCount(for: .remoteContext) == 0)
+        #expect(prompt.contextUsage.tokenCount(for: .attachments) == 0)
+        #expect(!prompt.userPrompt.contains("GitHub 远程临时上下文"))
+        #expect(!prompt.userPrompt.contains("用户本轮附件"))
+    }
+
     @Test("未知模型窗口保守回退到 32K")
     func unknownModelUsesConservativeContextWindow() {
         #expect(AIModelParameters.summaryDefault.contextWindowTokens == nil)

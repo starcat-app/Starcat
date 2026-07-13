@@ -52,10 +52,15 @@ import SwiftUI
 /// 不判断用户意图，仍由 `ScrollTailController` 作为唯一真源。
 struct ScrollTailRequestSequencer {
     private(set) var requestID: UInt = 0
+    /// 当前请求是否需要动画；仅供同一轮 View 更新传给原生 bridge。
+    private(set) var animatesScroll = false
 
     /// 生成下一次尾部定位请求。溢出后仍可通过“不等于”语义区分新旧请求。
-    mutating func issue() {
+    ///
+    /// 自动跟随和历史恢复保持即时定位，只有用户显式点击时才传入 `true`。
+    mutating func issue(animatesScroll: Bool = false) {
         requestID &+= 1
+        self.animatesScroll = animatesScroll
     }
 }
 

@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// 向当前 RAG 时间线的 `NSScrollView` 发送新的尾部滚动请求。
@@ -17,16 +18,25 @@ import SwiftUI
 struct RAGWorkspaceBottomScrollBridge: NSViewRepresentable {
     let requestID: UInt
     let shouldFollow: Bool
+    let animatesScroll: Bool
 
     func makeNSView(context: Context) -> RAGWorkspaceBottomScrollAnchorView {
         let view = RAGWorkspaceBottomScrollAnchorView(frame: .zero)
         // 请求可能早于 SwiftUI 把 background mount 到时间线；先记录，待进入 window 后执行。
-        view.apply(requestID: requestID, shouldFollow: shouldFollow)
+        view.apply(
+            requestID: requestID,
+            shouldFollow: shouldFollow,
+            animatesScroll: animatesScroll
+        )
         return view
     }
 
     func updateNSView(_ nsView: RAGWorkspaceBottomScrollAnchorView, context: Context) {
-        nsView.apply(requestID: requestID, shouldFollow: shouldFollow)
+        nsView.apply(
+            requestID: requestID,
+            shouldFollow: shouldFollow,
+            animatesScroll: animatesScroll
+        )
     }
 }
 
@@ -40,6 +50,7 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
     private var pendingRequestID: UInt = 0
     private var handledRequestID: UInt = 0
     private var shouldFollow = true
+    private var animatesPendingScroll = false
     private var isScheduled = false
 
     override func viewDidMoveToWindow() {
@@ -55,8 +66,9 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
     }
 
     /// 同步 SwiftUI 最新请求与用户跟随意图。
-    func apply(requestID: UInt, shouldFollow: Bool) {
+    func apply(requestID: UInt, shouldFollow: Bool, animatesScroll: Bool) {
         self.shouldFollow = shouldFollow
+        animatesPendingScroll = animatesScroll
         guard requestID != pendingRequestID else { return }
         pendingRequestID = requestID
         schedulePendingScroll()
@@ -102,8 +114,21 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
         } else {
             targetY = documentView.bounds.minY
         }
-        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: targetY))
-        scrollView.reflectScrolledClipView(clipView)
+        let targetOrigin = NSPoint(x: clipView.bounds.origin.x, y: targetY)
+        if animatesPendingScroll {
+            // 动画只来自用户点击，不能用于高频流式更新；否则新 token 会不断重设
+            // 进行中的动画，造成视口“追逐”底部的卡顿感。
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.22
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                clipView.animator().setBoundsOrigin(targetOrigin)
+            } completionHandler: {
+                scrollView.reflectScrolledClipView(clipView)
+            }
+        } else {
+            clipView.scroll(to: targetOrigin)
+            scrollView.reflectScrolledClipView(clipView)
+        }
         handledRequestID = pendingRequestID
     }
 
