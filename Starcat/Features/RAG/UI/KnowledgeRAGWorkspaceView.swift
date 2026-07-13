@@ -24,6 +24,8 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var inspectorTab: RAGInspectorTab = .evidence
     @State private var composerContentHeight: CGFloat = 0
     @State private var expandedDebugTraceIDs: Set<UUID> = []
+    /// 调试事件默认折叠；只展开用户点开的 stage，避免一次渲染整段 Prompt/返回。
+    @State private var expandedDebugEventIDs: Set<UUID> = []
     @State private var renameTarget: RAGConversationSummary?
     @State private var renameDraft = ""
     /// `@` 候选弹层锚点：相对输入框（NSScrollView）左上角，落在 `@` 字形下方。
@@ -1482,6 +1484,7 @@ struct KnowledgeRAGWorkspaceView: View {
                 Button("rag.workspace.debug.clear") {
                     viewModel.clearDebugTraces()
                     expandedDebugTraceIDs = []
+                    expandedDebugEventIDs = []
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -1498,8 +1501,14 @@ struct KnowledgeRAGWorkspaceView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Button {
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                                if isExpanded { expandedDebugTraceIDs.remove(trace.id) }
-                                else { expandedDebugTraceIDs.insert(trace.id) }
+                                if isExpanded {
+                                    expandedDebugTraceIDs.remove(trace.id)
+                                    // 收起外层时清掉内部展开，下次进来仍默认折叠。
+                                    let eventIDs = Set(trace.events.map(\.id))
+                                    expandedDebugEventIDs.subtract(eventIDs)
+                                } else {
+                                    expandedDebugTraceIDs.insert(trace.id)
+                                }
                             }
                         } label: {
                             HStack(spacing: 6) {
@@ -1523,29 +1532,9 @@ struct KnowledgeRAGWorkspaceView: View {
                         .focusEffectDisabled()
 
                         if isExpanded {
+                            // Stage 默认折叠：外层展开只渲染标题行，payload 点开后再进视图树。
                             ForEach(trace.events) { event in
-                                VStack(alignment: .leading, spacing: 7) {
-                                    HStack(spacing: 6) {
-                                        Text(debugStageKey(event.stage))
-                                            .font(ragFont(.caption, weight: .semibold))
-                                        Spacer()
-                                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
-                                            .font(ragFont(.caption2, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                        CopyFeedbackButton(
-                                            providesContent: { event.payload },
-                                            tooltip: "rag.workspace.debug.copy"
-                                        ) { didCopy in
-                                            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                                                .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                                        }
-                                    }
-                                    Text(event.payload)
-                                        .font(ragFont(.caption2, design: .monospaced))
-                                        .textSelection(.enabled)
-                                }
-                                .padding(10)
-                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                                debugEventRow(event)
                             }
                         }
                     }
@@ -1555,6 +1544,57 @@ struct KnowledgeRAGWorkspaceView: View {
             }
         }
         .padding(Self.inspectorContentInset)
+    }
+
+    /// 单个 stage 行：默认只显示标题/耗时/复制；展开后才挂载 payload，避免大段文本拖垮侧栏。
+    private func debugEventRow(_ event: RAGDebugEvent) -> some View {
+        let isExpanded = expandedDebugEventIDs.contains(event.id)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        if isExpanded {
+                            expandedDebugEventIDs.remove(event.id)
+                        } else {
+                            expandedDebugEventIDs.insert(event.id)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(ragFont(.caption2, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                        Text(debugStageKey(event.stage))
+                            .font(ragFont(.caption, weight: .semibold))
+                        Spacer(minLength: 4)
+                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
+                            .font(ragFont(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+
+                // 复制独立于折叠，折叠态也能直接拷整段 payload。
+                CopyFeedbackButton(
+                    providesContent: { event.payload },
+                    tooltip: "rag.workspace.debug.copy"
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                }
+            }
+
+            if isExpanded {
+                Text(event.payload)
+                    .font(ragFont(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(10)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func debugStageKey(_ stage: RAGDebugEvent.Stage) -> LocalizedStringKey {
