@@ -707,6 +707,53 @@ struct KnowledgeRAGCoreTests {
         #expect(history.dropFirst().allSatisfy { $0.content.count <= 500 })
     }
 
+    @Test("大纲轨只投影完整问答轮次，跳过未完成用户消息")
+    func outlineRailUsesCompleteTurnsOnly() {
+        let conversationID = UUID()
+        let user1 = UUID()
+        let assistant1 = UUID()
+        let orphanUser = UUID()
+        let messages = [
+            RAGStoredMessage(
+                id: user1,
+                conversationID: conversationID,
+                role: .user,
+                content: "第一问\n第二行",
+                model: nil,
+                citations: [],
+                remoteContextAudits: [],
+                createdAt: "2026-07-13T01:00:00Z"
+            ),
+            RAGStoredMessage(
+                id: assistant1,
+                conversationID: conversationID,
+                role: .assistant,
+                content: String(repeating: "答", count: 160),
+                model: "test-model",
+                citations: [],
+                remoteContextAudits: [],
+                createdAt: "2026-07-13T01:00:05Z"
+            ),
+            RAGStoredMessage(
+                id: orphanUser,
+                conversationID: conversationID,
+                role: .user,
+                content: "还在生成中的问题",
+                model: nil,
+                citations: [],
+                remoteContextAudits: [],
+                createdAt: "2026-07-13T01:01:00Z"
+            )
+        ]
+
+        let turns = RAGConversationOutlineBuilder.completeTurns(from: messages)
+        #expect(turns.count == 1)
+        #expect(turns[0].userMessageID == user1)
+        #expect(turns[0].title == "第一问")
+        #expect(turns[0].preview.hasSuffix("…"))
+        #expect(turns[0].timestampISO8601 == "2026-07-13T01:00:05Z")
+    }
+
     private func fixtureChunk(id: Int64, repoID: Int64, source: RAGChunkSource) -> RAGChunk {
         RAGChunk(
             id: id,

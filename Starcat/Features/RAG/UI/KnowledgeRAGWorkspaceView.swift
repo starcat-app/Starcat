@@ -514,37 +514,56 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private var messageTimeline: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(viewModel.messages) { message in
-                        messageView(message)
-                            .id(message.id)
+        let outlineTurns = RAGConversationOutlineBuilder.completeTurns(from: viewModel.messages)
+        return ScrollViewReader { proxy in
+            ZStack(alignment: .leading) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ForEach(viewModel.messages) { message in
+                            messageView(message)
+                                .id(message.id)
+                        }
+                        if !viewModel.streamingAnswer.isEmpty {
+                            assistantMessage(
+                                content: viewModel.streamingAnswer,
+                                citations: [],
+                                createdAt: nil,
+                                showsActions: false
+                            )
+                                .id("streaming-answer")
+                        } else if viewModel.isAnswering {
+                            workingIndicator
+                                .id("working-indicator")
+                        }
                     }
-                    if !viewModel.streamingAnswer.isEmpty {
-                        assistantMessage(
-                            content: viewModel.streamingAnswer,
-                            citations: [],
-                            createdAt: nil,
-                            showsActions: false
-                        )
-                            .id("streaming-answer")
-                    } else if viewModel.isAnswering {
-                        workingIndicator
-                            .id("working-indicator")
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onChange(of: viewModel.streamingAnswer) { _, _ in
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                        proxy.scrollTo("streaming-answer", anchor: .bottom)
                     }
                 }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .onChange(of: viewModel.streamingAnswer) { _, _ in
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                    proxy.scrollTo("streaming-answer", anchor: .bottom)
+                .onChange(of: viewModel.messages.count) { _, _ in
+                    if let id = viewModel.messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
-            }
-            .onChange(of: viewModel.messages.count) { _, _ in
-                if let id = viewModel.messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+
+                // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
+                if !outlineTurns.isEmpty {
+                    RAGConversationOutlineRail(
+                        turns: outlineTurns,
+                        onSelect: { turn in
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                proxy.scrollTo(turn.userMessageID, anchor: .top)
+                            }
+                        },
+                        timeLabel: messageTimeLabel
+                    )
+                    .padding(.leading, 6)
+                    .padding(.vertical, 12)
+                    .frame(maxHeight: .infinity, alignment: .leading)
+                }
             }
         }
     }

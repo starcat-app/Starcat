@@ -19495,6 +19495,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向知识库提问" } }
       }
     },
+    "rag.workspace.outline.jump" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Jump to this turn" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "跳转到该轮问答" } }
+      }
+    },
     "rag.workspace.error.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't complete this request" } },
