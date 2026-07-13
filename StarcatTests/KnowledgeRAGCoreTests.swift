@@ -12,6 +12,17 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @MainActor
+    @Test("RAG 最新选择请求不会接受过期结果")
+    func latestRequestGateRejectsStaleResult() {
+        let gate = RAGLatestRequestGate()
+        let first = gate.begin()
+        let second = gate.begin()
+
+        #expect(!gate.isCurrent(first))
+        #expect(gate.isCurrent(second))
+    }
+
     @Test("Planner: 无筛选问题保持 semantic_only")
     func plannerSemanticOnly() throws {
         let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
