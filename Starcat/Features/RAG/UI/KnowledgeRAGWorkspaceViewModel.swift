@@ -53,6 +53,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private(set) var loadedMessageSequence = 0
     var draftQuestion = ""
     var streamingAnswer = ""
+    /// 流式阶段只提交稳定 Markdown chunk 与未闭合尾部，避免每个 delta 重解析完整回答。
+    var streamingPresentation: StreamingMarkdownSnapshot?
     var answerState: RAGAnswerState = .idle
     /// 用户气泡原地编辑：非 nil 时该消息进入图 4 编辑态。
     var editingUserMessageID: UUID?
@@ -1007,6 +1009,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         messages.append(userMessage)
         draftQuestion = ""
         streamingAnswer = ""
+        streamingPresentation = nil
         queryPlan = nil
         retrieval = nil
         executionSteps = []
@@ -1018,6 +1021,22 @@ final class KnowledgeRAGWorkspaceViewModel {
         errorMessage = nil
         var completedPayload: (String, String, [RAGCitation])?
         var terminalReply: String?
+        let streamingMessageID = UUID()
+        let streamingTimestamp = Date()
+        var accumulatedAnswer = ""
+        var pendingCharacterCount = 0
+        var lastPresentationCommitAt: TimeInterval = 0
+        var presentationRevision = 0
+        var markdownAssembler = StreamingMarkdownAssembler()
+        let presentationThrottleInterval: TimeInterval = 0.10
+        let immediatePresentationCharacterCount = 96
+        streamingPresentation = StreamingMarkdownSnapshot(
+            messageID: streamingMessageID,
+            timestamp: streamingTimestamp,
+            stableMarkdownChunks: [],
+            liveTail: "",
+            revision: 0
+        )
 
         do {
             let service = try dependencies.makeKnowledgeRAGService(selectedModelID: selectedModelID)
@@ -1053,7 +1072,26 @@ final class KnowledgeRAGWorkspaceViewModel {
                 case .remoteContext(let blocks): remoteBlocks = blocks
                 case .debug(let event):
                     appendDebugEvent(event, to: debugTraceID)
-                case .delta(let text): streamingAnswer += text
+                case .delta(let text):
+                    accumulatedAnswer += text
+                    markdownAssembler.append(text)
+                    pendingCharacterCount += text.count
+                    let now = Date.timeIntervalSinceReferenceDate
+                    // Provider 可能逐 token 回调；最多约 10Hz 触发 SwiftUI 更新，较大网络批次
+                    // 则立即可见。冻结前缀不会在后续 token 到达时重复进入 MarkdownUI。
+                    guard now - lastPresentationCommitAt >= presentationThrottleInterval
+                            || pendingCharacterCount >= immediatePresentationCharacterCount else { continue }
+                    lastPresentationCommitAt = now
+                    pendingCharacterCount = 0
+                    presentationRevision &+= 1
+                    streamingAnswer = accumulatedAnswer
+                    streamingPresentation = StreamingMarkdownSnapshot(
+                        messageID: streamingMessageID,
+                        timestamp: streamingTimestamp,
+                        stableMarkdownChunks: markdownAssembler.stableMarkdownChunks,
+                        liveTail: markdownAssembler.liveTail,
+                        revision: presentationRevision
+                    )
                 case .completed(let answer, let model, let citations, _):
                     completedPayload = (answer, model, citations)
                 }
@@ -1095,6 +1133,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
             }
         } catch is CancellationError {
+            streamingAnswer = accumulatedAnswer
             answerState = .cancelled
             scheduleFinalizeCancelledTurn(
                 conversationID: conversationID,
@@ -1107,6 +1146,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             // 停止按钮会 cancel Task；部分底层 API 不抛 CancellationError 而是带上
             // Task.isCancelled，不能当成「RAG 请求失败」弹窗。
             if Task.isCancelled {
+                streamingAnswer = accumulatedAnswer
                 answerState = .cancelled
                 scheduleFinalizeCancelledTurn(
                     conversationID: conversationID,
@@ -1129,6 +1169,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         finishDebugTrace(debugTraceID, state: debugTraceState(for: answerState))
         remoteContextConsent = nil
+        if answerState != .generating { streamingPresentation = nil }
         answerTask = nil
     }
 
@@ -1552,6 +1593,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         conversations = try await conversationStore.listConversations()
         streamingAnswer = ""
+        streamingPresentation = nil
         executionSteps = []
         remoteBlocks = []
         attachments = []
@@ -1567,6 +1609,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func resetTurnState() {
         draftQuestion = ""
         streamingAnswer = ""
+        streamingPresentation = nil
         answerState = .idle
         editingUserMessageID = nil
         editingUserDraft = ""

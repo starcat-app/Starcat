@@ -149,3 +149,79 @@ struct RAGAssistantMessageBlock: View {
         }
     }
 }
+
+/// 流式回答专用展示块。
+///
+/// 已冻结段落通过 Equatable 包装后不再重复解析；尚未闭合的尾部暂以 Text 展示。最终回答
+/// 落库后会回到 `RAGAssistantMessageBlock` 的完整 Markdown 与 citation 展示，不改变结果语义。
+struct RAGStreamingAssistantMessageBlock: View {
+    let snapshot: StreamingMarkdownSnapshot
+    let executionTrace: [RAGExecutionStep]
+    let activityLabel: String?
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    private var preparationSteps: [RAGExecutionStep] {
+        executionTrace.filter { $0.kind != .generation }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: RAGMessageAvatarMetrics.size, height: RAGMessageAvatarMetrics.size)
+                    .clipShape(RoundedRectangle(cornerRadius: RAGMessageAvatarMetrics.cornerRadius, style: .continuous))
+                Text("rag.workspace.message.assistant")
+                    .font(interfaceScale.font(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+
+            if !preparationSteps.isEmpty { RAGExecutionTimeline(steps: preparationSteps) }
+
+            if let activityLabel, !activityLabel.isEmpty, snapshot.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text(activityLabel)
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
+                RAGStableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
+                    .equatable()
+            }
+
+            if !snapshot.liveTail.isEmpty {
+                // 尾部可能仍补全列表、强调或代码围栏；中间态不解析它，保证流式帧率。
+                Text(snapshot.liveTail)
+                    .font(interfaceScale.font(.body))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 900, alignment: .leading)
+            }
+
+            if !snapshot.isEmpty, let activityLabel, !activityLabel.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text(activityLabel)
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+/// frozen chunk 输入永不变化，阻止父级 revision 更新时重复构建 MarkdownUI AST。
+private struct RAGStableStreamingMarkdownChunk: View, Equatable {
+    let markdown: String
+
+    var body: some View {
+        RAGMarkdownText(content: markdown)
+            .frame(maxWidth: 900, alignment: .leading)
+    }
+}

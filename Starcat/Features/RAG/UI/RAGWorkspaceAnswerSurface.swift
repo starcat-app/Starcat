@@ -122,14 +122,7 @@ struct RAGWorkspaceAnswerSurface: View {
                         if !viewModel.executionSteps.isEmpty
                             || !viewModel.streamingAnswer.isEmpty
                             || viewModel.isAnswering {
-                            assistantMessage(
-                                content: viewModel.streamingAnswer,
-                                citations: [],
-                                createdAt: nil,
-                                showsActions: false,
-                                executionTrace: viewModel.executionSteps,
-                                activityLabel: liveAssistantActivityLabel()
-                            )
+                            liveAssistantMessage
                                 .id("live-assistant-message")
                         }
 
@@ -302,6 +295,27 @@ struct RAGWorkspaceAnswerSurface: View {
                 createdAt: message.createdAt,
                 showsActions: true,
                 executionTrace: message.executionTrace
+            )
+        }
+    }
+
+    /// 单条助手回答。复制 / 导出放在正文下方，仅悬停显示；流式中关闭动作条。
+    @ViewBuilder
+    var liveAssistantMessage: some View {
+        if let snapshot = viewModel.streamingPresentation {
+            RAGStreamingAssistantMessageBlock(
+                snapshot: snapshot,
+                executionTrace: viewModel.executionSteps,
+                activityLabel: liveAssistantActivityLabel()
+            )
+        } else {
+            assistantMessage(
+                content: viewModel.streamingAnswer,
+                citations: [],
+                createdAt: nil,
+                showsActions: false,
+                executionTrace: viewModel.executionSteps,
+                activityLabel: liveAssistantActivityLabel()
             )
         }
     }
