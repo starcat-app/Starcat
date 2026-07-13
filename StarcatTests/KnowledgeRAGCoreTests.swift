@@ -77,6 +77,29 @@ struct KnowledgeRAGCoreTests {
         }
     }
 
+    @Test("Planner: 每次 LLM 请求与返回都进入 Debug 事件")
+    func plannerRecordsEveryLLMRequestInDebug() async throws {
+        let planner = KnowledgeRAGQueryPlanner(
+            client: SpyRAGAIClient(chatResponse: """
+            {"mode":"semantic_only","semanticQuery":"Swift RAG","filters":{},"remoteContextRequests":[],"confidence":"high","userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"Swift RAG"}}
+            """),
+            model: "planner-model",
+            parameters: .summaryDefault
+        )
+        let recorder = RAGDebugEventRecorder()
+
+        _ = try await planner.plan(
+            question: "Swift RAG",
+            composerContext: .init(),
+            onReasoningDelta: { _ in },
+            onDebugEvent: { stage, payload in recorder.record(stage: stage, payload: payload) }
+        )
+
+        #expect(recorder.stages == [.plannerPrompt, .plannerResponse])
+        #expect(recorder.payloads.first?.contains("planner-model") == true)
+        #expect(recorder.payloads.last?.contains("semantic_only") == true)
+    }
+
     @Test("AI 流式 `<think>` 跨分片时推理与正文分离")
     func reasoningNormalizerSeparatesSplitThinkTag() {
         var normalizer = AIStreamReasoningNormalizer()
@@ -455,6 +478,53 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.lastChatRequest?.images.isEmpty == true)
         #expect(spy.lastChatRequest?.userPrompt == "用户的第一个问题：\n帮我比较一下这个项目的 SQLite 和 GRDB 选型")
         #expect(spy.lastChatRequest?.parameters.streamEnabled == false)
+    }
+
+    @Test("会话压缩记录独立的 LLM Prompt 与返回")
+    func conversationCompressionRecordsLLMRequestInDebug() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "用户目标：验证持续对话。\n约束：禁止远程访问。")
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "unused")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        let message = RAGStoredMessage(
+            id: UUID(),
+            conversationID: UUID(),
+            role: .user,
+            content: "请记住代号 A-17。",
+            model: nil,
+            citations: [],
+            remoteContextAudits: [],
+            createdAt: "2026-07-13T00:00:00Z"
+        )
+
+        let result = try await service.compressConversationHistory(
+            existingSummary: nil,
+            messages: [message],
+            isDebugEnabled: true,
+            debugEndpoint: "https://example.com/v1"
+        )
+
+        guard case .completed(let summary, let debugEvents) = result else {
+            Issue.record("预期压缩成功")
+            return
+        }
+        #expect(summary.contains("持续对话"))
+        #expect(debugEvents.map(\.stage) == [.compressionPrompt, .compressionResponse])
+        #expect(debugEvents.first?.payload.contains("https://example.com/v1") == true)
+        #expect(debugEvents.last?.payload.contains("normalizedSummary") == true)
     }
 
     @Test("调用方未提供确认器时默认跳过远程上下文")
@@ -999,6 +1069,49 @@ struct KnowledgeRAGCoreTests {
         #expect(!content.contains("foreign"))
     }
 
+    @Test("GitHub 远程上下文逐条记录真实请求与缓存命中")
+    func githubRemoteContextRecordsEachExternalRequestInDebug() async throws {
+        let response = Data("{\"items\":[]}".utf8)
+        let provider = GitHubRAGRemoteContextProvider(
+            httpClient: StaticRAGHTTPClient(data: response, statusCode: 200),
+            token: "never-log-this-token",
+            cache: RAGRemoteContextMemoryCache()
+        )
+        let request = RAGRemoteContextRequest(
+            resource: .githubIssues,
+            query: "crash",
+            reason: "验证 Debug Trace",
+            maxRepos: 1,
+            perRepoLimit: 1
+        )
+        let candidates = [RAGRepoCandidate(
+            repo: fixtureRepo(id: 9, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )]
+        let recorder = RAGRemoteDebugEventRecorder()
+
+        _ = await provider.fetch(
+            requests: [request],
+            candidates: candidates,
+            onProgress: { _ in },
+            onDebug: { event in recorder.record(event) }
+        )
+        _ = await provider.fetch(
+            requests: [request],
+            candidates: candidates,
+            onProgress: { _ in },
+            onDebug: { event in recorder.record(event) }
+        )
+
+        #expect(recorder.stages.contains(.remoteRequest))
+        #expect(recorder.stages.contains(.remoteResponse))
+        #expect(recorder.payloads.contains { $0.contains("status: 200") })
+        #expect(recorder.payloads.contains { $0.contains("cache: hit") })
+        #expect(recorder.payloads.allSatisfy { !$0.contains("never-log-this-token") })
+    }
+
     @Test("GitHub 远程缓存按认证 token 隔离")
     func githubRemoteCacheIsTokenScoped() async throws {
         func response(title: String) -> Data {
@@ -1339,6 +1452,32 @@ private actor RemoteFetchRecorder {
 
     func record() {
         fetchCount += 1
+    }
+}
+
+/// Debug 回调可能来自远程 Provider 的并发 TaskGroup。测试记录器用锁收集事件，确保断言
+/// 检查的是完整的请求序列，而不是依赖某个调度时机。
+private final class RAGDebugEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [(RAGDebugEvent.Stage, String)] = []
+
+    var stages: [RAGDebugEvent.Stage] { lock.withLock { values.map(\.0) } }
+    var payloads: [String] { lock.withLock { values.map(\.1) } }
+
+    func record(stage: RAGDebugEvent.Stage, payload: String) {
+        lock.withLock { values.append((stage, payload)) }
+    }
+}
+
+private final class RAGRemoteDebugEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [(RAGDebugEvent.Stage, String)] = []
+
+    var stages: [RAGDebugEvent.Stage] { lock.withLock { values.map(\.0) } }
+    var payloads: [String] { lock.withLock { values.map(\.1) } }
+
+    func record(_ event: RAGRemoteContextDebugEvent) {
+        lock.withLock { values.append((event.stage, event.payload)) }
     }
 }
 

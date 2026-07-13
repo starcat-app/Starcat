@@ -697,12 +697,18 @@ struct RAGWorkspaceInspector: View {
     func debugStageKey(_ stage: RAGDebugEvent.Stage) -> LocalizedStringKey {
         switch stage {
         case .request: return "rag.workspace.debug.stage.request"
+        case .plannerPrompt: return "rag.workspace.debug.stage.plannerPrompt"
+        case .plannerResponse: return "rag.workspace.debug.stage.plannerResponse"
         case .plan: return "rag.workspace.debug.stage.plan"
         case .candidates: return "rag.workspace.debug.stage.candidates"
         case .retrieval: return "rag.workspace.debug.stage.retrieval"
+        case .remoteRequest: return "rag.workspace.debug.stage.remoteRequest"
+        case .remoteResponse: return "rag.workspace.debug.stage.remoteResponse"
         case .remoteContext: return "rag.workspace.debug.stage.remoteContext"
         case .prompt: return "rag.workspace.debug.stage.prompt"
         case .response: return "rag.workspace.debug.stage.response"
+        case .compressionPrompt: return "rag.workspace.debug.stage.compressionPrompt"
+        case .compressionResponse: return "rag.workspace.debug.stage.compressionResponse"
         case .titlePrompt: return "rag.workspace.debug.stage.titlePrompt"
         case .titleResponse: return "rag.workspace.debug.stage.titleResponse"
         case .failure: return "rag.workspace.debug.stage.failure"

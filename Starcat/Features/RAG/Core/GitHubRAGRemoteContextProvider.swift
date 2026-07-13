@@ -31,7 +31,7 @@ struct URLSessionRAGHTTPClient: RAGHTTPClientProtocol {
     }
 }
 
-struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
+struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProviding {
     private let httpClient: any RAGHTTPClientProtocol
     private let token: String?
     private let cacheNamespace: String
@@ -57,6 +57,20 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         candidates: [RAGRepoCandidate],
         onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
     ) async -> [RAGRemoteContextBlock] {
+        await fetch(
+            requests: requests,
+            candidates: candidates,
+            onProgress: onProgress,
+            onDebug: { _ in }
+        )
+    }
+
+    func fetch(
+        requests: [RAGRemoteContextRequest],
+        candidates: [RAGRepoCandidate],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async -> [RAGRemoteContextBlock] {
         let work = requests.enumerated().flatMap { requestIndex, contextRequest in
             candidates.prefix(contextRequest.maxRepos).enumerated().map { candidateIndex, candidate in
                 RemoteFetchWork(
@@ -75,7 +89,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
             let end = min(start + Self.maxConcurrentRequests, work.count)
             await withTaskGroup(of: IndexedRemoteBlock?.self) { group in
                 for item in work[start..<end] {
-                    group.addTask { await fetchBlock(for: item) }
+                    group.addTask { await fetchBlock(for: item, onDebug: onDebug) }
                 }
                 for await result in group {
                     guard !Task.isCancelled else { continue }
@@ -90,14 +104,23 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
 
     /// GitHub 的速率与客户端连接数都有限。小批并发覆盖慢网络而不让一次 Planner 输出
     /// 形成请求风暴；`index` 使 UI 与 Prompt 保持原始 request/candidate 的稳定顺序。
-    private func fetchBlock(for work: RemoteFetchWork) async -> IndexedRemoteBlock? {
+    private func fetchBlock(
+        for work: RemoteFetchWork,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async -> IndexedRemoteBlock? {
         guard !Task.isCancelled else { return nil }
         let cacheKey = "\(cacheNamespace)|\(work.repo.id)|\(work.request.resource.rawValue)|\(work.request.query)|\(work.request.perRepoLimit)"
         if let cached = await cache.value(for: cacheKey) {
+            onDebug(RAGRemoteContextDebugEvent(
+                repoFullName: work.repo.fullName,
+                resource: work.request.resource,
+                url: nil,
+                outcome: .cacheHit
+            ))
             return IndexedRemoteBlock(index: work.index, block: cached)
         }
         do {
-            let block = try await fetchOne(work.request, repo: work.repo)
+            let block = try await fetchOne(work.request, repo: work.repo, onDebug: onDebug)
             guard !Task.isCancelled else { return nil }
             await cache.insert(block, for: cacheKey)
             return IndexedRemoteBlock(index: work.index, block: block)
@@ -119,21 +142,25 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
 
     private static let maxConcurrentRequests = 3
 
-    private func fetchOne(_ contextRequest: RAGRemoteContextRequest, repo: Repo) async throws -> RAGRemoteContextBlock {
+    private func fetchOne(
+        _ contextRequest: RAGRemoteContextRequest,
+        repo: Repo,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> RAGRemoteContextBlock {
         let result: (String, URL?)
         switch contextRequest.resource {
         case .githubIssues:
-            result = try await fetchIssues(repo: repo, query: contextRequest.query, limit: contextRequest.perRepoLimit, pullRequests: false)
+            result = try await fetchIssues(repo: repo, query: contextRequest.query, limit: contextRequest.perRepoLimit, pullRequests: false, resource: contextRequest.resource, onDebug: onDebug)
         case .githubPullRequests:
-            result = try await fetchIssues(repo: repo, query: contextRequest.query, limit: contextRequest.perRepoLimit, pullRequests: true)
+            result = try await fetchIssues(repo: repo, query: contextRequest.query, limit: contextRequest.perRepoLimit, pullRequests: true, resource: contextRequest.resource, onDebug: onDebug)
         case .githubReleases:
-            result = try await fetchReleases(repo: repo, limit: contextRequest.perRepoLimit)
+            result = try await fetchReleases(repo: repo, limit: contextRequest.perRepoLimit, resource: contextRequest.resource, onDebug: onDebug)
         case .githubContributors:
-            result = try await fetchContributors(repo: repo, limit: contextRequest.perRepoLimit)
+            result = try await fetchContributors(repo: repo, limit: contextRequest.perRepoLimit, resource: contextRequest.resource, onDebug: onDebug)
         case .githubCommitActivity:
-            result = try await fetchCommitActivity(repo: repo)
+            result = try await fetchCommitActivity(repo: repo, resource: contextRequest.resource, onDebug: onDebug)
         case .githubSecurityAdvisories:
-            result = try await fetchSecurityAdvisories(repo: repo, limit: contextRequest.perRepoLimit)
+            result = try await fetchSecurityAdvisories(repo: repo, limit: contextRequest.perRepoLimit, resource: contextRequest.resource, onDebug: onDebug)
         }
         return RAGRemoteContextBlock(
             id: "\(repo.id):\(contextRequest.resource.rawValue)",
@@ -147,7 +174,14 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         )
     }
 
-    private func fetchIssues(repo: Repo, query: String, limit: Int, pullRequests: Bool) async throws -> (String, URL?) {
+    private func fetchIssues(
+        repo: Repo,
+        query: String,
+        limit: Int,
+        pullRequests: Bool,
+        resource: RAGRemoteContextResource,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> (String, URL?) {
         var components = URLComponents(url: baseURL.appendingPathComponent("search/issues"), resolvingAgainstBaseURL: false)!
         let kind = pullRequests ? "is:pr" : "is:issue"
         components.queryItems = [
@@ -156,7 +190,12 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
             URLQueryItem(name: "order", value: "desc"),
             URLQueryItem(name: "per_page", value: String(limit))
         ]
-        let response: SearchIssuesResponse = try await get(components.url!)
+        let response: SearchIssuesResponse = try await get(
+            components.url!,
+            repoFullName: repo.fullName,
+            resource: resource,
+            onDebug: onDebug
+        )
         // Planner 生成的 query 不能被当作可信 GitHub Search 语法。即使 query 夹带
         // `OR repo:other/name` 等 qualifier，也只接受当前候选 repo 的返回项。
         let scopedItems = response.items.filter { $0.belongs(to: repo) }
@@ -180,9 +219,14 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         return (content, components.url)
     }
 
-    private func fetchReleases(repo: Repo, limit: Int) async throws -> (String, URL?) {
+    private func fetchReleases(
+        repo: Repo,
+        limit: Int,
+        resource: RAGRemoteContextResource,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> (String, URL?) {
         let url = repoAPIURL(repo, suffix: "releases", query: [URLQueryItem(name: "per_page", value: String(limit))])
-        let releases: [ReleaseResponse] = try await get(url)
+        let releases: [ReleaseResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = releases.prefix(limit).map { release in
             """
             \(release.name ?? release.tagName) (\(release.tagName)) published=\(release.publishedAt ?? "unknown")
@@ -193,25 +237,45 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         return (lines.isEmpty ? "仓库没有公开 Release。" : lines.joined(separator: "\n\n"), url)
     }
 
-    private func fetchContributors(repo: Repo, limit: Int) async throws -> (String, URL?) {
+    private func fetchContributors(
+        repo: Repo,
+        limit: Int,
+        resource: RAGRemoteContextResource,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> (String, URL?) {
         let url = repoAPIURL(repo, suffix: "contributors", query: [URLQueryItem(name: "per_page", value: String(limit))])
-        let contributors: [ContributorResponse] = try await get(url)
+        let contributors: [ContributorResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = contributors.prefix(limit).map { "\($0.login): contributions=\($0.contributions); url=\($0.htmlURL ?? "")" }
         return (lines.isEmpty ? "没有可用的公开贡献者数据。" : lines.joined(separator: "\n"), url)
     }
 
-    private func fetchCommitActivity(repo: Repo) async throws -> (String, URL?) {
+    private func fetchCommitActivity(
+        repo: Repo,
+        resource: RAGRemoteContextResource,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> (String, URL?) {
         let url = repoAPIURL(repo, suffix: "stats/commit_activity")
-        let weeks: [CommitActivityResponse] = try await get(url, acceptedStatus: [200])
+        let weeks: [CommitActivityResponse] = try await get(
+            url,
+            acceptedStatus: [200],
+            repoFullName: repo.fullName,
+            resource: resource,
+            onDebug: onDebug
+        )
         let recent = weeks.suffix(12)
         let total = recent.reduce(0) { $0 + $1.total }
         let activeWeeks = recent.filter { $0.total > 0 }.count
         return ("最近 12 周 commits=\(total)，活跃周数=\(activeWeeks)/\(recent.count)。", url)
     }
 
-    private func fetchSecurityAdvisories(repo: Repo, limit: Int) async throws -> (String, URL?) {
+    private func fetchSecurityAdvisories(
+        repo: Repo,
+        limit: Int,
+        resource: RAGRemoteContextResource,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> (String, URL?) {
         let url = repoAPIURL(repo, suffix: "security-advisories", query: [URLQueryItem(name: "per_page", value: String(limit))])
-        let advisories: [SecurityAdvisoryResponse] = try await get(url)
+        let advisories: [SecurityAdvisoryResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = advisories.prefix(limit).map {
             "\($0.ghsaID) severity=\($0.severity) cve=\($0.cveID ?? "unknown") published=\($0.publishedAt)\n\($0.summary)\nurl=\($0.htmlURL ?? "")"
         }
@@ -225,7 +289,15 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         return components.url!
     }
 
-    private func get<T: Decodable>(_ url: URL, acceptedStatus: Set<Int> = [200]) async throws -> T {
+    /// 唯一的 GitHub 出站点：只记录 URL、状态和错误，不记录 Authorization 请求头。
+    /// 在 HTTP 客户端真正开始前发 request 事件，故 Debug Trace 能区分网络耗时与缓存命中。
+    private func get<T: Decodable>(
+        _ url: URL,
+        acceptedStatus: Set<Int> = [200],
+        repoFullName: String,
+        resource: RAGRemoteContextResource,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async throws -> T {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -234,12 +306,34 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await httpClient.data(for: request)
-        guard acceptedStatus.contains(response.statusCode) else {
-            let message = (try? JSONDecoder().decode(GitHubErrorResponse.self, from: data).message) ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
-            throw GitHubRemoteContextError.http(status: response.statusCode, message: message)
+        onDebug(RAGRemoteContextDebugEvent(
+            repoFullName: repoFullName,
+            resource: resource,
+            url: url.absoluteString,
+            outcome: .request
+        ))
+        do {
+            let (data, response) = try await httpClient.data(for: request)
+            onDebug(RAGRemoteContextDebugEvent(
+                repoFullName: repoFullName,
+                resource: resource,
+                url: url.absoluteString,
+                outcome: .response(statusCode: response.statusCode)
+            ))
+            guard acceptedStatus.contains(response.statusCode) else {
+                let message = (try? JSONDecoder().decode(GitHubErrorResponse.self, from: data).message) ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
+                throw GitHubRemoteContextError.http(status: response.statusCode, message: message)
+            }
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            onDebug(RAGRemoteContextDebugEvent(
+                repoFullName: repoFullName,
+                resource: resource,
+                url: url.absoluteString,
+                outcome: .failure(error.localizedDescription)
+            ))
+            throw error
         }
-        return try JSONDecoder().decode(T.self, from: data)
     }
 
     private func clip(_ value: String, limit: Int) -> String {

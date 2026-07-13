@@ -47,12 +47,18 @@ enum RAGExecutionEvent: Sendable {
 struct RAGDebugEvent: Identifiable, Sendable {
     enum Stage: String, Sendable {
         case request
+        case plannerPrompt = "planner_prompt"
+        case plannerResponse = "planner_response"
         case plan
         case candidates
         case retrieval
+        case remoteRequest = "remote_request"
+        case remoteResponse = "remote_response"
         case remoteContext
         case prompt
         case response
+        case compressionPrompt = "compression_prompt"
+        case compressionResponse = "compression_response"
         case titlePrompt = "title_prompt"
         case titleResponse = "title_response"
         case failure
@@ -111,6 +117,54 @@ protocol KnowledgeRAGRemoteContextProviding: Sendable {
     ) async -> [RAGRemoteContextBlock]
 }
 
+/// 远程上下文的逐请求调试事件。它刻意不携带请求头，避免 Debug Trace 暴露 GitHub Token；
+/// 缓存命中也会显式上报，便于区分“没有网络请求”和“网络请求没有返回内容”。
+struct RAGRemoteContextDebugEvent: Sendable {
+    enum Outcome: Sendable {
+        case request
+        case response(statusCode: Int)
+        case failure(String)
+        case cacheHit
+    }
+
+    let repoFullName: String
+    let resource: RAGRemoteContextResource
+    let url: String?
+    let outcome: Outcome
+
+    var stage: RAGDebugEvent.Stage {
+        switch outcome {
+        case .request: .remoteRequest
+        case .response, .failure, .cacheHit: .remoteResponse
+        }
+    }
+
+    var payload: String {
+        let common = "repo: \(repoFullName)\nresource: \(resource.rawValue)\nurl: \(url ?? "<cache>")"
+        switch outcome {
+        case .request:
+            return "method: GET\n\(common)"
+        case .response(let statusCode):
+            return "status: \(statusCode)\n\(common)"
+        case .failure(let error):
+            return "error: \(error)\n\(common)"
+        case .cacheHit:
+            return "cache: hit\nnetworkRequest: skipped\n\(common)"
+        }
+    }
+}
+
+/// 只让具备逐请求观测能力的 Provider 接收 Debug 回调，旧的测试替身和第三方实现仍可
+/// 保持原协议。生产 GitHub Provider 实现该协议后，每条真实 HTTP 调用都会进入 Trace。
+protocol KnowledgeRAGDebuggableRemoteContextProviding: KnowledgeRAGRemoteContextProviding {
+    func fetch(
+        requests: [RAGRemoteContextRequest],
+        candidates: [RAGRepoCandidate],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void,
+        onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
+    ) async -> [RAGRemoteContextBlock]
+}
+
 struct EmptyKnowledgeRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
     func fetch(
         requests: [RAGRemoteContextRequest],
@@ -126,11 +180,18 @@ struct RAGRemoteContextFetchProgress: Sendable, Equatable {
     var total: Int
 }
 
-/// 首轮问答完成后生成会话标题的结果。标题调用独立于 RAG 主链路，因此失败不会影响问答。
+/// 首轮问题提交后并行生成会话标题的结果。标题调用独立于 RAG 主链路，因此失败不会影响问答。
 enum RAGConversationTitleGenerationResult: Sendable {
     case completed(title: String, debugEvents: [RAGDebugEvent])
     case failed(debugEvents: [RAGDebugEvent])
     case cancelled
+}
+
+/// 压缩在主 RAG 流开始前完成，不能直接通过 `KnowledgeRAGServiceEvent.debug` 回传。
+/// 因此把本次 LLM 调用的事件连同结果返回给 ViewModel，由它写入同一条问答 Trace。
+enum RAGConversationCompressionResult: Sendable {
+    case completed(summary: String, debugEvents: [RAGDebugEvent])
+    case failed(debugEvents: [RAGDebugEvent])
 }
 
 struct KnowledgeRAGService: Sendable {
@@ -176,7 +237,7 @@ struct KnowledgeRAGService: Sendable {
     ) -> AsyncThrowingStream<KnowledgeRAGServiceEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                let startedAt = Date()
+                let startedAt = request.debugTraceStartedAt ?? Date()
                 func emitDebug(_ stage: RAGDebugEvent.Stage, _ payload: @autoclosure () -> String) {
                     guard request.isDebugEnabled else { return }
                     continuation.yield(RAGDebugEvent(
@@ -202,18 +263,31 @@ struct KnowledgeRAGService: Sendable {
                     continuation.yield(.state(.planning))
                     continuation.yield(.execution(.started(.planning)))
                     var hasPlanningReasoning = false
-                    var plan = try await planner.plan(
-                        question: request.rawQuestion,
-                        composerContext: request.composerContext,
-                        onReasoningDelta: { text in
-                            guard !text.isEmpty else { return }
-                            if !hasPlanningReasoning {
-                                hasPlanningReasoning = true
-                                continuation.yield(.execution(.started(.planningReasoning)))
-                            }
-                            continuation.yield(.execution(.reasoningDelta(.planningReasoning, text)))
+                    let onReasoningDelta: (String) -> Void = { text in
+                        guard !text.isEmpty else { return }
+                        if !hasPlanningReasoning {
+                            hasPlanningReasoning = true
+                            continuation.yield(.execution(.started(.planningReasoning)))
                         }
-                    )
+                        continuation.yield(.execution(.reasoningDelta(.planningReasoning, text)))
+                    }
+                    var plan: RAGQueryPlan
+                    if let debuggablePlanner = planner as? any KnowledgeRAGDebuggableQueryPlanning {
+                        plan = try await debuggablePlanner.plan(
+                            question: request.rawQuestion,
+                            composerContext: request.composerContext,
+                            onReasoningDelta: onReasoningDelta,
+                            onDebugEvent: { stage, payload in
+                                emitDebug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
+                            }
+                        )
+                    } else {
+                        plan = try await planner.plan(
+                            question: request.rawQuestion,
+                            composerContext: request.composerContext,
+                            onReasoningDelta: onReasoningDelta
+                        )
+                    }
                     if hasPlanningReasoning {
                         continuation.yield(.execution(.reasoningCompleted(.planningReasoning)))
                     }
@@ -325,16 +399,35 @@ struct KnowledgeRAGService: Sendable {
                     }
                     if !plan.remoteContextRequests.isEmpty {
                         continuation.yield(.state(.fetchingRemoteContext))
-                        remoteBlocks = await remoteContextProvider.fetch(
-                            requests: plan.remoteContextRequests,
-                            candidates: Array(candidates.prefix(5)),
-                            onProgress: { progress in
-                                continuation.yield(.execution(.remoteContextProgress(
-                                    completed: progress.completed,
-                                    total: progress.total
-                                )))
-                            }
-                        )
+                        let onProgress: @Sendable (RAGRemoteContextFetchProgress) -> Void = { progress in
+                            continuation.yield(.execution(.remoteContextProgress(
+                                completed: progress.completed,
+                                total: progress.total
+                            )))
+                        }
+                        if let debuggableProvider = remoteContextProvider as? any KnowledgeRAGDebuggableRemoteContextProviding {
+                            remoteBlocks = await debuggableProvider.fetch(
+                                requests: plan.remoteContextRequests,
+                                candidates: Array(candidates.prefix(5)),
+                                onProgress: onProgress,
+                                onDebug: { event in
+                                    // 该回调来自 Provider 的 TaskGroup，不能捕获本地非 Sendable
+                                    // `emitDebug`。直接写入同一 continuation，时间仍相对问答 Trace。
+                                    guard request.isDebugEnabled else { return }
+                                    continuation.yield(.debug(RAGDebugEvent(
+                                        stage: event.stage,
+                                        elapsedSeconds: Date().timeIntervalSince(startedAt),
+                                        payload: event.payload
+                                    )))
+                                }
+                            )
+                        } else {
+                            remoteBlocks = await remoteContextProvider.fetch(
+                                requests: plan.remoteContextRequests,
+                                candidates: Array(candidates.prefix(5)),
+                                onProgress: onProgress
+                            )
+                        }
                         emitDebug(.remoteContext, remoteBlocks.map { block in
                             """
                             title: \(block.title)
@@ -464,11 +557,17 @@ struct KnowledgeRAGService: Sendable {
     /// 绝不能阻断用户本轮提问。
     func compressConversationHistory(
         existingSummary: String?,
-        messages: [RAGStoredMessage]
-    ) async throws -> String {
+        messages: [RAGStoredMessage],
+        isDebugEnabled: Bool,
+        debugEndpoint: String?
+    ) async throws -> RAGConversationCompressionResult {
         guard !messages.isEmpty else {
-            return existingSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return .completed(
+                summary: existingSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                debugEvents: []
+            )
         }
+        let startedAt = Date()
         var parameters = generatorParameters
         parameters.temperature = 0.1
         parameters.topP = 0.9
@@ -488,13 +587,60 @@ struct KnowledgeRAGService: Sendable {
             model: generatorModel,
             parameters: parameters
         )
-        let response = try await generatorClient.chat(request: request)
-        let summary = RAGContextBudget.clip(
-            response.content.trimmingCharacters(in: .whitespacesAndNewlines),
-            toTokenBudget: 2_000
-        )
-        guard !summary.isEmpty else { throw AIClientError.emptyResponse }
-        return summary
+        var debugEvents: [RAGDebugEvent] = []
+        if isDebugEnabled {
+            debugEvents.append(RAGDebugEvent(
+                stage: .compressionPrompt,
+                elapsedSeconds: 0,
+                payload: """
+                endpoint: \(debugEndpoint ?? "<unknown>")
+                model: \(request.model)
+                parameters: \(String(reflecting: request.parameters))
+
+                systemPrompt:
+                \(request.systemPrompt)
+
+                userPrompt:
+                \(request.userPrompt)
+                """
+            ))
+        }
+        do {
+            let response = try await generatorClient.chat(request: request)
+            try Task.checkCancellation()
+            let summary = RAGContextBudget.clip(
+                response.content.trimmingCharacters(in: .whitespacesAndNewlines),
+                toTokenBudget: 2_000
+            )
+            guard !summary.isEmpty else { throw AIClientError.emptyResponse }
+            if isDebugEnabled {
+                debugEvents.append(RAGDebugEvent(
+                    stage: .compressionResponse,
+                    elapsedSeconds: Date().timeIntervalSince(startedAt),
+                    payload: """
+                    model: \(response.model)
+
+                    content:
+                    \(response.content)
+
+                    normalizedSummary:
+                    \(summary)
+                    """
+                ))
+            }
+            return .completed(summary: summary, debugEvents: debugEvents)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if isDebugEnabled {
+                debugEvents.append(RAGDebugEvent(
+                    stage: .failure,
+                    elapsedSeconds: Date().timeIntervalSince(startedAt),
+                    payload: "会话压缩失败，已回退本地受限摘要：\(error.localizedDescription)"
+                ))
+            }
+            return .failed(debugEvents: debugEvents)
+        }
     }
 
     /// 基于首个用户问题生成会话标题。

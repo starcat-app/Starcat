@@ -20677,6 +20677,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "候选仓库" } }
       }
     },
+    "rag.workspace.debug.stage.compressionPrompt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversation Compression Prompt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话压缩 Prompt" } }
+      }
+    },
+    "rag.workspace.debug.stage.compressionResponse" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversation Compression Response" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话压缩返回" } }
+      }
+    },
     "rag.workspace.debug.stage.failure" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Failure" } },
@@ -20689,6 +20701,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查询计划" } }
       }
     },
+    "rag.workspace.debug.stage.plannerPrompt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Planner Prompt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查询规划 Prompt" } }
+      }
+    },
+    "rag.workspace.debug.stage.plannerResponse" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Planner Response" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查询规划返回" } }
+      }
+    },
     "rag.workspace.debug.stage.prompt" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "LLM Prompt" } },
@@ -20699,6 +20723,18 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Remote Context" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "远程上下文" } }
+      }
+    },
+    "rag.workspace.debug.stage.remoteRequest" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "External Request" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "外部请求" } }
+      }
+    },
+    "rag.workspace.debug.stage.remoteResponse" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "External Response" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "外部返回" } }
       }
     },
     "rag.workspace.debug.stage.request" : {
@@ -49891,6 +49927,244 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可用占位符：{outputLanguage}、{question}、{explicitRepoIDs}、{explicitRepoMode}、{attachmentCount}"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholders.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placeholders"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可用占位符"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholders.openHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show placeholder names and meanings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看占位符名称与含义"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholders.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placeholder Reference"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "占位符说明"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholders.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete a placeholder from the template to skip injecting that segment."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从模板中删除某个占位符后，对应内容将不会注入。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.outputLanguage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display language for the final answer (from Settings → Language)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最终回答的显示语言（来自设置 → 语言）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.questionSection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "User question plus the local query-plan block for this turn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮用户问题与本地查询计划段落。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.evidenceSection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local knowledge-base evidence. Empty string when there is no evidence."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地知识库证据；无证据时注入空字符串。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.remoteSection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporary GitHub remote context for this turn. Empty when unused."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮临时 GitHub 远程上下文；未使用时为空。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.attachmentSection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "User attachment text for this turn. Empty when there are no attachments."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮用户附件文本；无附件时为空。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.outputLanguagePlanner" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language for userVisiblePlan fields (scope / chips / semantic / notes)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "userVisiblePlan 字段（scope / chips / semantic / notes）的文案语言。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.question" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current user question text."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前用户问题原文。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.explicitRepoIDs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comma-separated repo IDs explicitly scoped in Composer."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Composer 中明确指定的仓库 ID（逗号分隔）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.explicitRepoMode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How explicit repos constrain planning (for understanding only; executor re-enforces)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明确仓库范围如何约束规划（仅供理解；本地执行器会再强制）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.attachmentCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Number of attachments attached to this turn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮附件数量。"
           }
         }
       }

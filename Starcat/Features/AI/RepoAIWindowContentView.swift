@@ -547,9 +547,9 @@ struct RepoAIWindowContentView: View {
                 .frame(width: 20)
                 .focusEffectDisabled()
                 .help("ai.assistant.summary.menu.help")
-            } else if vm.isGenerating {
-                ProgressView().controlSize(.small)
             }
+            // 生成中不再在 header 放 ProgressView：正文 `preparingContextPlaceholder` /
+            // `streamingSummary` / 空态按钮已经各自带 spinner + 文案，再画一处会叠成双转圈。
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)

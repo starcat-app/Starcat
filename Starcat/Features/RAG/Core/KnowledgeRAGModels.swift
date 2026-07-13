@@ -63,6 +63,9 @@ struct RAGServiceRequest: Sendable {
     var isDebugEnabled = false
     /// 仅用于调试面板标识实际调用的 provider endpoint，不参与网络请求构造。
     var debugEndpoint: String? = nil
+    /// 问答 Trace 的统一起点。压缩发生在 `ask` 之前，必须沿用同一时钟，才能让调试面板
+    /// 按真实先后计算每一步耗时；关闭 Debug 时保持 `nil`，不改变常规请求行为。
+    var debugTraceStartedAt: Date? = nil
 }
 
 enum RAGQueryMode: String, Codable, Sendable {

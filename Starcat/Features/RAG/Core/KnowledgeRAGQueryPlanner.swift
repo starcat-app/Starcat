@@ -33,13 +33,24 @@ protocol KnowledgeRAGQueryPlanning: Sendable {
     ) async throws -> RAGQueryPlan
 }
 
+/// Planner 的原始 LLM 调用只在 Debug 模式下可见。通过可选的子协议提供观测能力，避免
+/// 把 Debug 细节强加给轻量测试替身或其它 Planner 实现。
+protocol KnowledgeRAGDebuggableQueryPlanning: KnowledgeRAGQueryPlanning {
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        onReasoningDelta: @escaping (String) -> Void,
+        onDebugEvent: @escaping (RAGDebugEvent.Stage, String) -> Void
+    ) async throws -> RAGQueryPlan
+}
+
 extension KnowledgeRAGQueryPlanning {
     func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan {
         try await plan(question: question, composerContext: composerContext, onReasoningDelta: { _ in })
     }
 }
 
-struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
+struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
     private let client: any AIClientProtocol
     private let model: String
     private let parameters: AIModelParameters
@@ -70,6 +81,20 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         composerContext: RAGComposerContext,
         onReasoningDelta: @escaping (String) -> Void = { _ in }
     ) async throws -> RAGQueryPlan {
+        try await plan(
+            question: question,
+            composerContext: composerContext,
+            onReasoningDelta: onReasoningDelta,
+            onDebugEvent: { _, _ in }
+        )
+    }
+
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        onReasoningDelta: @escaping (String) -> Void,
+        onDebugEvent: @escaping (RAGDebugEvent.Stage, String) -> Void
+    ) async throws -> RAGQueryPlan {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { throw RAGQueryPlannerError.emptyQuestion }
 
@@ -82,7 +107,12 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             parameters: parameters,
             responseFormat: .jsonObject
         )
-        let firstContent = try await streamedContent(request: request, onReasoningDelta: onReasoningDelta)
+        let firstContent = try await runLLMRequest(
+            request,
+            attempt: 1,
+            onReasoningDelta: onReasoningDelta,
+            onDebugEvent: onDebugEvent
+        )
         do {
             return try Self.decodeAndValidate(firstContent, fallbackQuestion: question)
         } catch {
@@ -92,13 +122,55 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             // 认证和配置错误必须交给 UI 的可恢复提示，不能伪装成成功的降级检索。
             var retry = request
             retry.userPrompt += "\n\nPrevious output could not be parsed. Return only one JSON object that matches the schema. No Markdown fences or commentary."
-            let retryContent = try await streamedContent(request: retry, onReasoningDelta: onReasoningDelta)
+            let retryContent = try await runLLMRequest(
+                retry,
+                attempt: 2,
+                onReasoningDelta: onReasoningDelta,
+                onDebugEvent: onDebugEvent
+            )
             do {
                 return try Self.decodeAndValidate(retryContent, fallbackQuestion: question)
             } catch {
                 guard Self.isPlanFormatError(error) else { throw error }
+                onDebugEvent(.failure, "查询规划两次返回均无法解析，已改用本地 semantic fallback。")
                 return Self.semanticFallback(question)
             }
+        }
+    }
+
+    /// 每次真实 Planner LLM 请求都在调用前后成对写入 Trace。`responseFormat` 与重试后的
+    /// 完整 userPrompt 一同记录，避免 Debug 面板只看到最终 Plan 而无法复盘模型输入。
+    private func runLLMRequest(
+        _ request: AIChatRequest,
+        attempt: Int,
+        onReasoningDelta: @escaping (String) -> Void,
+        onDebugEvent: @escaping (RAGDebugEvent.Stage, String) -> Void
+    ) async throws -> String {
+        onDebugEvent(.plannerPrompt, """
+        attempt: \(attempt)
+        model: \(request.model)
+        parameters: \(String(reflecting: request.parameters))
+        responseFormat: \(String(reflecting: request.responseFormat))
+
+        systemPrompt:
+        \(request.systemPrompt)
+
+        userPrompt:
+        \(request.userPrompt)
+        """)
+        do {
+            let content = try await streamedContent(request: request, onReasoningDelta: onReasoningDelta)
+            onDebugEvent(.plannerResponse, """
+            attempt: \(attempt)
+            model: \(request.model)
+
+            content:
+            \(content)
+            """)
+            return content
+        } catch {
+            onDebugEvent(.failure, "查询规划 LLM 请求失败（attempt \(attempt)）：\(error.localizedDescription)")
+            throw error
         }
     }
 

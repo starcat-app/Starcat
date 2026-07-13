@@ -44,7 +44,14 @@ final class KnowledgeRAGWorkspaceViewModel {
     private let homeViewModel: HomeViewModel
     private let conversationStore: any RAGConversationStoring
     private var answerTask: Task<Void, Never>?
-    private var conversationTitleTask: Task<Void, Never>?
+    /// 标题与首轮回答并行，但不同会话的轻量标题请求不能因用户切换历史而互相取消。
+    /// generationID 是取消后的第二道保护：部分 Provider 即使收到 cancel 也可能稍后返回。
+    private struct ConversationTitleGeneration {
+        let id: UUID
+        let debugTraceID: UUID?
+        let task: Task<Void, Never>
+    }
+    private var conversationTitleGenerations: [UUID: ConversationTitleGeneration] = [:]
     /// store 读取未必会合作响应取消；generation 是提交结果前的第二道保护。
     private let conversationSelectionGate = RAGLatestRequestGate()
     private var remoteContextConsent: RAGRemoteContextConsent?
@@ -361,7 +368,6 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func newConversation() async {
         cancelAnswer()
-        conversationTitleTask?.cancel()
         do {
             // 当前选中目录时，新会话直接归入该一级分组。
             let conversation = try await conversationStore.createConversation(
@@ -382,7 +388,6 @@ final class KnowledgeRAGWorkspaceViewModel {
         guard selectedConversationID != id || messages.isEmpty else { return }
         let requestGeneration = conversationSelectionGate.begin()
         cancelAnswer()
-        conversationTitleTask?.cancel()
         do {
             guard let detail = try await conversationStore.loadConversation(id: id) else { return }
             // 用户可能已点选另一会话。即使旧的 SQLite 读取此刻才返回，也不能覆盖 UI。
@@ -403,7 +408,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func deleteConversation(_ id: UUID) async {
-        if selectedConversationID == id { conversationTitleTask?.cancel() }
+        cancelConversationTitleGeneration(for: id)
         do {
             try await conversationStore.deleteConversation(id: id)
             conversations.removeAll { $0.id == id }
@@ -424,7 +429,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     func renameConversation(id: UUID, title: String) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if selectedConversationID == id { conversationTitleTask?.cancel() }
+        cancelConversationTitleGeneration(for: id)
         do {
             try await conversationStore.renameConversation(id: id, title: trimmed)
             updateConversationTitle(title: trimmed, for: id)
@@ -1067,12 +1072,15 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     /// 在发起下一轮问答前增量压缩已离开 recent window 的消息。压缩失败只能降级为本地
     /// 受限摘要，不能让一项辅助优化阻断用户提问；成功结果带 coverage 落库，重开窗口后
-    /// 仍可继续增量合并而非重新发送整段历史。
+    /// 仍可继续增量合并而非重新发送整段历史。压缩在主 `ask` 之前执行，故须将其 Debug
+    /// 事件按同一 Trace 起点重定位，不能让后续步骤的耗时倒退。
     private func preparedConversationHistory(
         using service: KnowledgeRAGService,
         conversationID: UUID,
-        messages: [RAGStoredMessage]
-    ) async -> [AIChatMessage] {
+        messages: [RAGStoredMessage],
+        debugTraceID: UUID?,
+        debugTraceStartedAt: Date
+    ) async throws -> [AIChatMessage] {
         let coveredCount = max(messages.count - RAGConversationHistoryBuilder.recentLimit, 0)
         guard coveredCount > 0 else {
             return RAGConversationHistoryBuilder.build(
@@ -1094,13 +1102,30 @@ final class KnowledgeRAGWorkspaceViewModel {
             return RAGConversationHistoryBuilder.build(from: messages, contextSummary: validSummary)
         }
 
+        let compressionStartedAt = Date()
+        let compression = try await service.compressConversationHistory(
+            existingSummary: validSummary?.content,
+            messages: newlyCovered,
+            isDebugEnabled: isDebugModeEnabled,
+            debugEndpoint: selectedModelEndpoint
+        )
         let compressed: String
-        do {
-            compressed = try await service.compressConversationHistory(
-                existingSummary: validSummary?.content,
-                messages: newlyCovered
+        switch compression {
+        case .completed(let summary, let debugEvents):
+            appendDebugEvents(
+                debugEvents,
+                rebasingFrom: compressionStartedAt,
+                traceStartedAt: debugTraceStartedAt,
+                to: debugTraceID
             )
-        } catch {
+            compressed = summary
+        case .failed(let debugEvents):
+            appendDebugEvents(
+                debugEvents,
+                rebasingFrom: compressionStartedAt,
+                traceStartedAt: debugTraceStartedAt,
+                to: debugTraceID
+            )
             // Provider 不可用时仍走相同的 coverage，避免下一轮又把旧原文无限带回请求。
             compressed = RAGConversationContextCompressor.fallback(
                 existingSummary: validSummary?.content,
@@ -1128,7 +1153,10 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func runQuestion(_ question: String) async {
         guard let conversationID = selectedConversationID else { return }
-        let debugTraceID = isDebugModeEnabled ? beginDebugTrace(category: .questionAnswer) : nil
+        let debugTraceStartedAt = Date()
+        let debugTraceID = isDebugModeEnabled
+            ? beginDebugTrace(category: .questionAnswer, startedAt: debugTraceStartedAt)
+            : nil
         let isFirstTurn = messages.isEmpty
         let userMessage = RAGStoredMessage(
             id: UUID(),
@@ -1174,10 +1202,21 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         do {
             let service = try dependencies.makeKnowledgeRAGService(selectedModelID: selectedModelID)
-            let history = await preparedConversationHistory(
+            // 标题只依赖首个问题，不需要等检索、流式回答或落库完成。独立 Task 让首轮
+            // 回答不被这次轻量 LLM 调用阻塞；即使终态回答或用户主动停止，也仍有标题。
+            if isFirstTurn {
+                generateConversationTitle(
+                    using: service,
+                    conversationID: conversationID,
+                    firstQuestion: question
+                )
+            }
+            let history = try await preparedConversationHistory(
                 using: service,
                 conversationID: conversationID,
-                messages: Array(messages.dropLast())
+                messages: Array(messages.dropLast()),
+                debugTraceID: debugTraceID,
+                debugTraceStartedAt: debugTraceStartedAt
             )
             let consent = RAGRemoteContextConsent()
             remoteContextConsent = consent
@@ -1193,7 +1232,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                 ),
                 conversationID: conversationID,
                 isDebugEnabled: isDebugModeEnabled,
-                debugEndpoint: selectedModelEndpoint
+                debugEndpoint: selectedModelEndpoint,
+                debugTraceStartedAt: isDebugModeEnabled ? debugTraceStartedAt : nil
             )
             for try await event in service.ask(request: request, history: history, remoteContextConsent: consent) {
                 switch event {
@@ -1246,13 +1286,6 @@ final class KnowledgeRAGWorkspaceViewModel {
                     remoteContexts: remoteBlocks,
                     executionTrace: executionSteps
                 )
-                if isFirstTurn {
-                    generateConversationTitle(
-                        using: service,
-                        conversationID: conversationID,
-                        firstQuestion: question
-                    )
-                }
             } else if let terminalReply, answerState != .cancelled {
                 try await persistAnswer(
                     conversationID: conversationID,
@@ -1267,9 +1300,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 scheduleFinalizeCancelledTurn(
                     conversationID: conversationID,
                     userMessage: userMessage,
-                    question: question,
-                    isFirstTurn: isFirstTurn,
-                    service: service
+                    question: question
                 )
             }
         } catch is CancellationError {
@@ -1278,9 +1309,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             scheduleFinalizeCancelledTurn(
                 conversationID: conversationID,
                 userMessage: userMessage,
-                question: question,
-                isFirstTurn: isFirstTurn,
-                service: nil
+                question: question
             )
         } catch {
             // 停止按钮会 cancel Task；部分底层 API 不抛 CancellationError 而是带上
@@ -1291,9 +1320,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 scheduleFinalizeCancelledTurn(
                     conversationID: conversationID,
                     userMessage: userMessage,
-                    question: question,
-                    isFirstTurn: isFirstTurn,
-                    service: nil
+                    question: question
                 )
             } else {
                 answerState = .failed(error.localizedDescription)
@@ -1353,9 +1380,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func scheduleFinalizeCancelledTurn(
         conversationID: UUID,
         userMessage: RAGStoredMessage,
-        question: String,
-        isFirstTurn: Bool,
-        service: KnowledgeRAGService?
+        question: String
     ) {
         let partial = streamingAnswer
         Task { @MainActor [weak self] in
@@ -1367,9 +1392,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             await finalizeCancelledTurn(
                 conversationID: conversationID,
                 userMessage: userMessage,
-                question: question,
-                isFirstTurn: isFirstTurn,
-                service: service
+                question: question
             )
         }
     }
@@ -1378,9 +1401,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func finalizeCancelledTurn(
         conversationID: UUID,
         userMessage: RAGStoredMessage,
-        question: String,
-        isFirstTurn: Bool,
-        service: KnowledgeRAGService?
+        question: String
     ) async {
         let partial = streamingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
         if partial.isEmpty {
@@ -1398,13 +1419,6 @@ final class KnowledgeRAGWorkspaceViewModel {
                     loadedMessageSequence &+= 1
                 }
                 conversations = try await conversationStore.listConversations()
-                if isFirstTurn, let service {
-                    generateConversationTitle(
-                        using: service,
-                        conversationID: conversationID,
-                        firstQuestion: question
-                    )
-                }
             } catch is CancellationError {
                 // 忽略：停止路径不应弹失败窗。
             } catch {
@@ -1423,13 +1437,6 @@ final class KnowledgeRAGWorkspaceViewModel {
                     remoteContexts: remoteBlocks,
                     executionTrace: executionSteps
                 )
-                if isFirstTurn, let service {
-                    generateConversationTitle(
-                        using: service,
-                        conversationID: conversationID,
-                        firstQuestion: question
-                    )
-                }
             } catch is CancellationError {
                 // 忽略：停止路径不应弹失败窗；半截文本仍挂到时间线。
                 let assistant = RAGStoredMessage(
@@ -1471,48 +1478,97 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 标题请求从回答任务中拆开：回答一旦落库即可立即交互，标题网络慢或失败都不能阻塞它。
+    /// 标题请求从回答任务中拆开：仅使用首个问题，和检索/流式回答并行进行。
+    /// 同一会话最多保留一个任务；切换会话不取消它，只有删除或人工重命名才明确作废。
     private func generateConversationTitle(
         using service: KnowledgeRAGService,
         conversationID: UUID,
         firstQuestion: String
     ) {
-        conversationTitleTask?.cancel()
+        cancelConversationTitleGeneration(for: conversationID)
+        let generationID = UUID()
         let debugEnabled = isDebugModeEnabled
         let debugEndpoint = selectedModelEndpoint
         let debugTraceID = debugEnabled ? beginDebugTrace(category: .conversationTitle) : nil
-        conversationTitleTask = Task { [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let result = await service.generateConversationTitle(
                 firstQuestion: firstQuestion,
                 isDebugEnabled: debugEnabled,
                 debugEndpoint: debugEndpoint
             )
-            guard !Task.isCancelled, selectedConversationID == conversationID else {
-                finishDebugTrace(debugTraceID, state: .cancelled)
-                return
-            }
+            guard !Task.isCancelled,
+                  isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
 
             switch result {
             case .completed(let title, let debugEvents):
                 appendDebugEvents(debugEvents, to: debugTraceID)
-                finishDebugTrace(debugTraceID, state: .completed)
-                await typewriteConversationTitle(title, for: conversationID)
+                await applyGeneratedConversationTitle(
+                    title,
+                    for: conversationID,
+                    generationID: generationID
+                )
+                finishConversationTitleGeneration(
+                    generationID,
+                    for: conversationID,
+                    debugState: .completed
+                )
             case .failed(let debugEvents):
                 appendDebugEvents(debugEvents, to: debugTraceID)
-                finishDebugTrace(debugTraceID, state: .failed)
+                finishConversationTitleGeneration(
+                    generationID,
+                    for: conversationID,
+                    debugState: .failed
+                )
             case .cancelled:
-                finishDebugTrace(debugTraceID, state: .cancelled)
-                break
+                finishConversationTitleGeneration(
+                    generationID,
+                    for: conversationID,
+                    debugState: .cancelled
+                )
             }
         }
+        // 当前方法位于 MainActor；Task 会在本次同步状态更新完成后才取得执行机会，
+        // 因而结果回调开始前 generation 已登记，可用其拦截延迟返回的已取消请求。
+        conversationTitleGenerations[conversationID] = ConversationTitleGeneration(
+            id: generationID,
+            debugTraceID: debugTraceID,
+            task: task
+        )
     }
 
-    private func beginDebugTrace(category: RAGDebugTraceCategory) -> UUID {
+    private func cancelConversationTitleGeneration(for conversationID: UUID) {
+        guard let generation = conversationTitleGenerations.removeValue(forKey: conversationID) else { return }
+        generation.task.cancel()
+        finishDebugTrace(generation.debugTraceID, state: .cancelled)
+    }
+
+    private func isConversationTitleGenerationCurrent(
+        _ generationID: UUID,
+        for conversationID: UUID
+    ) -> Bool {
+        conversationTitleGenerations[conversationID]?.id == generationID
+    }
+
+    private func finishConversationTitleGeneration(
+        _ generationID: UUID,
+        for conversationID: UUID,
+        debugState: RAGDebugTrace.State
+    ) {
+        guard let generation = conversationTitleGenerations[conversationID],
+              generation.id == generationID else { return }
+        finishDebugTrace(generation.debugTraceID, state: debugState)
+        conversationTitleGenerations.removeValue(forKey: conversationID)
+    }
+
+    private func beginDebugTrace(
+        category: RAGDebugTraceCategory,
+        startedAt: Date = Date()
+    ) -> UUID {
         let trace = RAGDebugTrace(
             id: UUID(),
             category: category,
-            startedAt: Date(),
+            startedAt: startedAt,
             state: .running,
             events: []
         )
@@ -1533,7 +1589,13 @@ final class KnowledgeRAGWorkspaceViewModel {
             elapsedSeconds: event.elapsedSeconds,
             payload: boundedPayload
         )
-        debugTraces[index].events.append(boundedEvent)
+        // GitHub 远程上下文会并发完成；continuation 的送达顺序不保证严格等于发生时间。
+        // 按 Trace 相对时间插入，Inspector 的相邻事件耗时始终可解释，且缓存/网络混合时
+        // 不会出现负耗时。
+        let insertionIndex = debugTraces[index].events.firstIndex {
+            $0.elapsedSeconds > boundedEvent.elapsedSeconds
+        } ?? debugTraces[index].events.endIndex
+        debugTraces[index].events.insert(boundedEvent, at: insertionIndex)
         if debugTraces[index].events.count > DebugTraceLimit.maxEventsPerTrace {
             debugTraces[index].events.removeFirst(
                 debugTraces[index].events.count - DebugTraceLimit.maxEventsPerTrace
@@ -1544,6 +1606,27 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func appendDebugEvents(_ events: [RAGDebugEvent], to traceID: UUID?) {
         for event in events { appendDebugEvent(event, to: traceID) }
+    }
+
+    /// 压缩调用在 `ask` 前完成，Service 返回的是以压缩起点为零的局部耗时。写入问答
+    /// Trace 前须换算为全局耗时，Inspector 的相邻事件差分才能正确反映实际等待时间。
+    private func appendDebugEvents(
+        _ events: [RAGDebugEvent],
+        rebasingFrom localStartedAt: Date,
+        traceStartedAt: Date,
+        to traceID: UUID?
+    ) {
+        let offset = max(localStartedAt.timeIntervalSince(traceStartedAt), 0)
+        for event in events {
+            appendDebugEvent(
+                RAGDebugEvent(
+                    stage: event.stage,
+                    elapsedSeconds: offset + event.elapsedSeconds,
+                    payload: event.payload
+                ),
+                to: traceID
+            )
+        }
     }
 
     private func finishDebugTrace(_ traceID: UUID?, state: RAGDebugTrace.State) {
@@ -1579,8 +1662,28 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 当前会话保留逐字展示；若用户中途切到历史会话，则直接落库完整标题，避免后台任务
+    /// 因不再可见而丢失结果。
+    private func applyGeneratedConversationTitle(
+        _ title: String,
+        for conversationID: UUID,
+        generationID: UUID
+    ) async {
+        guard isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
+        if selectedConversationID == conversationID {
+            await typewriteConversationTitle(title, for: conversationID, generationID: generationID)
+        } else {
+            await persistGeneratedConversationTitle(title, for: conversationID, generationID: generationID)
+        }
+    }
+
     /// 动画期间只改内存中的列表标题，完成后才写数据库，避免历史记录被半截文本污染。
-    private func typewriteConversationTitle(_ title: String, for conversationID: UUID) async {
+    private func typewriteConversationTitle(
+        _ title: String,
+        for conversationID: UUID,
+        generationID: UUID
+    ) async {
+        guard isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
         updateConversationTitle(title: "", for: conversationID)
         var displayedTitle = ""
         for character in title {
@@ -1589,13 +1692,33 @@ final class KnowledgeRAGWorkspaceViewModel {
             } catch {
                 return
             }
-            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            guard !Task.isCancelled,
+                  isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
+            if selectedConversationID != conversationID {
+                await persistGeneratedConversationTitle(title, for: conversationID, generationID: generationID)
+                return
+            }
             displayedTitle.append(character)
             updateConversationTitle(title: displayedTitle, for: conversationID)
         }
-        guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+        guard !Task.isCancelled,
+              isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
+        await persistGeneratedConversationTitle(title, for: conversationID, generationID: generationID)
+    }
+
+    /// 后台会话不播放标题动画。先更新内存，再写 SQLite 并刷新排序；任何人工重命名都会
+    /// 先使 generationID 失效，因此延迟返回的自动标题不能覆盖用户输入。
+    private func persistGeneratedConversationTitle(
+        _ title: String,
+        for conversationID: UUID,
+        generationID: UUID
+    ) async {
+        guard isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
+        updateConversationTitle(title: title, for: conversationID)
         do {
             try await conversationStore.renameConversation(id: conversationID, title: title)
+            guard isConversationTitleGenerationCurrent(generationID, for: conversationID) else { return }
+            conversations = try await conversationStore.listConversations()
         } catch {
             // 标题失败不应影响已完成的问答；内存标题仍保留，下一次加载会使用数据库旧标题。
         }
