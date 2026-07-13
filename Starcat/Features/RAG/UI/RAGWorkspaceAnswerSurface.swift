@@ -21,6 +21,8 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var messageTail = ScrollTailController()
     /// 直接控制中栏 ScrollView 的边缘位置，避免依赖 LazyVStack 内部锚点的实现细节。
     @State private var messageTimelinePosition = ScrollPosition()
+    /// 每个流式可视更新都签发新请求，避免已处于 `.bottom` 的位置状态吞掉后续命令。
+    @State private var messageTailRequests = ScrollTailRequestSequencer()
     @State private var isMessageNearBottom = true
 
     private static let messageNearBottomThreshold: CGFloat = 64
@@ -128,6 +130,12 @@ struct RAGWorkspaceAnswerSurface: View {
 
                         Color.clear
                             .frame(height: 1)
+                            .background(
+                                RAGWorkspaceBottomScrollBridge(
+                                    requestID: messageTailRequests.requestID,
+                                    shouldFollow: messageTail.isFollowing
+                                )
+                            )
                             .onScrollVisibilityChange(threshold: 0.5) { isVisible in
                                 messageTail.updateBottomVisibility(isVisible)
                             }
@@ -156,8 +164,19 @@ struct RAGWorkspaceAnswerSurface: View {
                     messageTail.resumeFollowing()
                     forceMessageTailScroll()
                 }
-                .onChange(of: viewModel.streamingAnswer) { _, newValue in
-                    guard !newValue.isEmpty else { return }
+                .onChange(of: viewModel.isAnswering) { _, isAnswering in
+                    // 先出现查询规划 / 思考等步骤，再出现正文 token；开始生成时先对齐，
+                    // 避免首段执行轨迹已把底部推离视口。
+                    guard isAnswering else { return }
+                    forceMessageTailScrollIfFollowing()
+                }
+                .onChange(of: viewModel.executionSteps.count) { _, _ in
+                    forceMessageTailScrollIfFollowing()
+                }
+                .onChange(of: viewModel.streamingPresentation?.revision) { _, revision in
+                    // `streamingPresentation` 才是实际驱动消息块重绘的快照；每个 revision
+                    // 必须重新发出命令，而不是重复设置同一个 `.bottom` 位置值。
+                    guard revision != nil else { return }
                     forceMessageTailScrollIfFollowing()
                 }
                 .onChange(of: viewModel.messages.count) { _, _ in
@@ -220,14 +239,16 @@ struct RAGWorkspaceAnswerSurface: View {
     ///
     /// 历史实现依赖 `LazyVStack` 内的 item id，并曾跨 `Task.yield()` 保存 proxy；两者
     /// 都可能在 SwiftUI 更新期间失效。`ScrollPosition` 直接驱动当前 ScrollView 的 edge，
-    /// 不依赖惰性子项是否已布局，故历史恢复、按钮和流式更新共用此路径。
+    /// 不依赖惰性子项是否已布局；递增请求再交给底部原生 bridge，确保每次流式快照
+    /// 都会在最新布局完成后重新贴住底部。
     func forceMessageTailScroll() {
-        if reduceMotion {
+        messageTailRequests.issue()
+        // 流式快照约 10Hz 提交；尾部跟随若每次都带动画，会形成彼此追逐的动画事务。
+        // 这里统一禁用动画，用户点击快捷按钮与历史恢复也能立即到达确定位置。
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             messageTimelinePosition.scrollTo(edge: .bottom)
-        } else {
-            withAnimation(.easeOut(duration: 0.18)) {
-                messageTimelinePosition.scrollTo(edge: .bottom)
-            }
         }
     }
 

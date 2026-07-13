@@ -17,6 +17,15 @@ protocol RAGRepoCandidateRepositoryProtocol: Sendable {
         explicitRepoIDs: [Int64],
         explicitMode: RAGExplicitRepoMode
     ) async throws -> [RAGRepoCandidate]
+
+    /// 知识库浏览器左侧列表专用分页；与 Planner 候选查询解耦，避免 semantic_only 全库哨兵 LIMIT。
+    func fetchKnowledgeBrowserPage(limit: Int, offset: Int) async throws -> RAGRepoCandidatePage
+}
+
+/// 知识库浏览器仓库列表一页；`hasMore` 由 `limit + 1` 哨兵判定。
+struct RAGRepoCandidatePage: Equatable, Sendable {
+    var candidates: [RAGRepoCandidate]
+    var hasMore: Bool
 }
 
 struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
@@ -92,17 +101,44 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                 LIMIT ?
                 """, arguments: StatementArguments(arguments))
 
-            return try rows.map { row in
-                let rawStatus: String = row["rag_status"]
-                let tagString: String = row["rag_tag_names"]
-                return RAGRepoCandidate(
-                    repo: try Repo(row: row),
-                    status: RepoStatus.parse(rawStatus),
-                    libraryUpdatedAt: row["rag_library_updated_at"],
-                    tagNames: tagString.isEmpty ? [] : tagString.components(separatedBy: "\u{1F}")
-                )
-            }
+            return try rows.map(Self.mapCandidate(row:))
         }
+    }
+
+    func fetchKnowledgeBrowserPage(limit: Int, offset: Int) async throws -> RAGRepoCandidatePage {
+        precondition(limit > 0 && offset >= 0)
+        return try await database.writer.read { db in
+            // 与主列表一致：star 数降序，同星再按 full_name；LIMIT+1 判定是否还有下一页。
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT r.*, n.status AS rag_status, n.library_updated_at AS rag_library_updated_at,
+                       COALESCE((
+                           SELECT GROUP_CONCAT(t.name, '\u{1F}')
+                           FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
+                           WHERE rt.repo_id = r.id
+                       ), '') AS rag_tag_names
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE n.library_state = 'in_library'
+                ORDER BY r.stars_count DESC, r.full_name COLLATE NOCASE ASC
+                LIMIT ? OFFSET ?
+                """, arguments: [limit + 1, offset])
+            let mapped = try rows.map(Self.mapCandidate(row:))
+            return RAGRepoCandidatePage(
+                candidates: Array(mapped.prefix(limit)),
+                hasMore: mapped.count > limit
+            )
+        }
+    }
+
+    private static func mapCandidate(row: Row) throws -> RAGRepoCandidate {
+        let rawStatus: String = row["rag_status"]
+        let tagString: String = row["rag_tag_names"]
+        return RAGRepoCandidate(
+            repo: try Repo(row: row),
+            status: RepoStatus.parse(rawStatus),
+            libraryUpdatedAt: row["rag_library_updated_at"],
+            tagNames: tagString.isEmpty ? [] : tagString.components(separatedBy: "\u{1F}")
+        )
     }
 
     private func defaultLimit(for mode: RAGQueryMode) -> Int {

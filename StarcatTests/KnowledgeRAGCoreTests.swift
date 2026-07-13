@@ -250,6 +250,35 @@ struct KnowledgeRAGCoreTests {
         #expect(candidates.map(\.repo.id) == [11])
     }
 
+    @Test("知识库浏览器仓库列表按页返回并正确标记 hasMore")
+    func knowledgeBrowserRepositoryPaging() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in 1...25 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await notes.updateLibraryState(repoId: Int64(id), state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE repos SET stars_count = ? WHERE id = ?",
+                    arguments: [1_000 - id, id]
+                )
+            }
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let first = try await repository.fetchKnowledgeBrowserPage(limit: 20, offset: 0)
+        #expect(first.candidates.count == 20)
+        #expect(first.hasMore == true)
+        #expect(first.candidates.map(\.repo.id) == Array(1...20).map(Int64.init))
+
+        let second = try await repository.fetchKnowledgeBrowserPage(limit: 20, offset: 20)
+        #expect(second.candidates.count == 5)
+        #expect(second.hasMore == false)
+        #expect(second.candidates.map(\.repo.id) == Array(21...25).map(Int64.init))
+
+        let overlap = Set(first.candidates.map(\.repo.id)).intersection(second.candidates.map(\.repo.id))
+        #expect(overlap.isEmpty)
+    }
+
     @Test("混合融合合并命中并限制每个 repo 的 child 数")
     func hybridFusionDeduplicatesAndCapsRepo() throws {
         let chunks = (1...5).map { index in fixtureChunk(id: Int64(index), repoID: index <= 4 ? 1 : 2, source: index == 1 ? .notes : .readme) }

@@ -20455,14 +20455,26 @@
     },
     "rag.workspace.context.evidence" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge base evidence" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库证据" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge base citations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库引用" } }
       }
     },
     "rag.workspace.context.historySummary" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversation summary" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "对话摘要" } }
+      }
+    },
+    "rag.workspace.context.percentFull" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld%% Full" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld%% 已占用" } }
+      }
+    },
+    "rag.workspace.context.tokensSummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ / %@ Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ / %@ Tokens" } }
       }
     },
     "rag.workspace.context.open" : {
@@ -20485,8 +20497,8 @@
     },
     "rag.workspace.context.recentMessages" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent messages" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近期消息" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "History messages" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "历史消息" } }
       }
     },
     "rag.workspace.context.remote" : {

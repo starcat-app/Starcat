@@ -204,8 +204,10 @@ private final class KnowledgeRAGBrowserViewModel {
     var selectedRepoID: Int64?
     var chunks: [RAGManagedChunk] = []
     var hasMoreChunks = false
+    var hasMoreRepositories = false
     var isLoading = false
     var isLoadingMoreChunks = false
+    var isLoadingMoreRepositories = false
     var isIndexing = false
     /// 每个仓库单独保存完成时间，切换仓库时不能借用其它仓库或全局刷新的时间。
     var selectedRepositoryRefreshAt: Date? {
@@ -249,6 +251,16 @@ private final class KnowledgeRAGBrowserViewModel {
         isLoadingMoreChunks = true
         defer { isLoadingMoreChunks = false }
         await loadChunks(limit: Self.additionalChunkPageSize, append: true)
+    }
+
+    /// 阈值取 8 行：比贴底更早发起，滚动时下一页通常已到位。
+    func loadMoreRepositoriesIfNeeded(rowIndex: Int) async {
+        guard hasMoreRepositories,
+              !isLoadingMoreRepositories,
+              rowIndex >= max(candidates.count - Self.repositoryPrefetchLeadCount, 0) else { return }
+        isLoadingMoreRepositories = true
+        defer { isLoadingMoreRepositories = false }
+        await loadRepositories(limit: Self.repositoryPageSize, append: true)
     }
 
     func rebuildIndex() {
@@ -358,13 +370,10 @@ private final class KnowledgeRAGBrowserViewModel {
         if showsLoading { isLoading = true }
         defer { if showsLoading { isLoading = false } }
         do {
-            let plan = RAGQueryPlan(mode: .semanticOnly, semanticQuery: "knowledge")
-            async let loadedCandidates = dependencies.ragCandidateRepository.fetchCandidates(plan: plan, explicitRepoIDs: [], explicitMode: .only)
             try await refreshIndexStatistics()
-            candidates = try await loadedCandidates
-            if selectedRepoID == nil || !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
-                selectedRepoID = candidates.first?.repo.id
-            }
+            // 索引变更刷新时保留已滚过的页数，避免 embedding 过程中把列表打回首页。
+            let reloadCount = max(candidates.count, Self.repositoryPageSize)
+            await loadRepositories(limit: reloadCount, append: false)
             await loadChunks()
         } catch { errorMessage = error.localizedDescription }
     }
@@ -377,8 +386,37 @@ private final class KnowledgeRAGBrowserViewModel {
         indexes = Dictionary(uniqueKeysWithValues: try await loadedIndexes.map { ($0.repoID, $0) })
     }
 
+    private static let repositoryPageSize = 20
+    /// 距列表尾部还有这么多行时开始续页，保证滚到底前数据已接上。
+    private static let repositoryPrefetchLeadCount = 8
     private static let initialChunkPageSize = 10
     private static let additionalChunkPageSize = 10
+
+    private func loadRepositories(limit: Int, append: Bool) async {
+        let offset = append ? candidates.count : 0
+        do {
+            let page = try await dependencies.ragCandidateRepository.fetchKnowledgeBrowserPage(
+                limit: limit,
+                offset: offset
+            )
+            if append {
+                let existingIDs = Set(candidates.map(\.repo.id))
+                candidates.append(contentsOf: page.candidates.filter { !existingIDs.contains($0.repo.id) })
+            } else {
+                candidates = page.candidates
+                if selectedRepoID == nil || !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
+                    selectedRepoID = candidates.first?.repo.id
+                }
+            }
+            hasMoreRepositories = page.hasMore
+        } catch {
+            errorMessage = error.localizedDescription
+            if !append {
+                candidates = []
+                hasMoreRepositories = false
+            }
+        }
+    }
 
     private func loadChunks(selectionGeneration: Int? = nil) async {
         await loadChunks(
@@ -516,6 +554,18 @@ private struct KnowledgeRAGBrowserView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(viewModel.candidates.enumerated()), id: \.element.repo.id) { rowIndex, candidate in
                             repositoryRow(candidate, rowIndex: rowIndex)
+                                .onAppear {
+                                    // 距尾部 8 行即续载，避免贴底才请求造成停顿。
+                                    Task { await viewModel.loadMoreRepositoriesIfNeeded(rowIndex: rowIndex) }
+                                }
+                        }
+                        if viewModel.isLoadingMoreRepositories {
+                            HStack {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
                         }
                     }
                     .padding(.bottom, 12)

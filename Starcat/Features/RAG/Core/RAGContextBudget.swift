@@ -44,7 +44,7 @@ struct RAGContextUsage: Equatable, Sendable {
     var windowTokens: Int
     var reservedOutputTokens: Int
     var tokensBySegment: [RAGContextUsageSegmentKind: Int]
-    /// 用户主动展开时展示的实际请求预览；不持久化到会话记录。
+    /// 构建期留下的请求预览快照，供测试 / 调试核对；UI 不再展示正文。
     var promptPreview: String
 
     static let empty = RAGContextUsage(

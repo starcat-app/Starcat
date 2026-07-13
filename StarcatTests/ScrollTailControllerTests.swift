@@ -16,6 +16,18 @@ import Testing
 @Suite("ScrollTailController")
 struct ScrollTailControllerTests {
 
+    @Test("每个流式快照都生成独立尾部请求")
+    func streamingSnapshotsIssueDistinctTailRequests() {
+        var requests = ScrollTailRequestSequencer()
+
+        requests.issue()
+        let firstRequestID = requests.requestID
+        requests.issue()
+
+        #expect(firstRequestID == 1)
+        #expect(requests.requestID == 2)
+    }
+
     @Test("用户开始滚动立即暂停跟随")
     func userScrollImmediatelyDisengages() {
         let controller = ScrollTailController()

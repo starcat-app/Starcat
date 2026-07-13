@@ -45,6 +45,20 @@
 
 import SwiftUI
 
+/// 为每次需要“重新贴住尾部”的内容更新生成不同请求。
+///
+/// `ScrollPosition` 已在 `.bottom` 时，重复设置相同 edge 不保证产生新的滚动命令。
+/// 调用方将此编号传给原生 bridge，保证每个已提交的流式快照都能重新定位；本类型
+/// 不判断用户意图，仍由 `ScrollTailController` 作为唯一真源。
+struct ScrollTailRequestSequencer {
+    private(set) var requestID: UInt = 0
+
+    /// 生成下一次尾部定位请求。溢出后仍可通过“不等于”语义区分新旧请求。
+    mutating func issue() {
+        requestID &+= 1
+    }
+}
+
 /// 对话区顶部 overscroll 检测需要的最小 geometry 快照。
 struct ScrollFollowTailMetrics: Equatable {
     let offsetY: CGFloat
