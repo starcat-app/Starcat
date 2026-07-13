@@ -245,7 +245,14 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
         let chunks = try await repository.fetchChunks(ids: scoredIDs.map(\.0))
         let byID = Dictionary(uniqueKeysWithValues: chunks.compactMap { chunk in chunk.id.map { ($0, chunk) } })
         return scoredIDs.compactMap { id, score in
-            byID[id].map { RAGChildHit(chunk: $0, score: score, kind: .vector) }
+            byID[id].map {
+                RAGChildHit(
+                    chunk: $0,
+                    score: score,
+                    kind: .vector,
+                    vectorSimilarity: score
+                )
+            }
         }
     }
 

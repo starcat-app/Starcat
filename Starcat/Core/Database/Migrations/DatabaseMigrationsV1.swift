@@ -1429,6 +1429,8 @@ enum DatabaseMigrations {
             t.column("rank", .integer).notNull()
             t.column("score", .double).notNull()
             t.column("hit_kind", .text).notNull().defaults(to: "hybrid")
+            // 融合分仅用于排序；单独保留原始向量分，避免 UI 把低量纲融合分误称为相关度。
+            t.column("vector_similarity", .double)
             t.column("source_url", .text)
             t.column("fetched_at", .text)
         }
@@ -1478,6 +1480,11 @@ enum DatabaseMigrations {
             if !citationColumns.contains("marker") {
                 try db.alter(table: "rag_message_citations") { t in
                     t.add(column: "marker", .text).notNull().defaults(to: "")
+                }
+            }
+            if !citationColumns.contains("vector_similarity") {
+                try db.alter(table: "rag_message_citations") { t in
+                    t.add(column: "vector_similarity", .double)
                 }
             }
         }

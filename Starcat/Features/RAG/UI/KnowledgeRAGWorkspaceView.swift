@@ -37,6 +37,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
     @State private var isKnowledgeRepositoryRowHovered = false
+    @State private var isRetrievalScoreExplanationPresented = false
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
@@ -446,7 +447,12 @@ struct KnowledgeRAGWorkspaceView: View {
         VStack(spacing: 0) {
             answerHeader
             Divider()
-            messageTimeline
+            // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
+            if showsEmptyConversation {
+                emptyConversation
+            } else {
+                messageTimeline
+            }
             if !viewModel.pendingRemoteRequests.isEmpty {
                 Divider()
                 remoteConfirmation
@@ -455,6 +461,13 @@ struct KnowledgeRAGWorkspaceView: View {
             commandComposer
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// 新会话且尚未开始回答时显示空态提示。
+    private var showsEmptyConversation: Bool {
+        viewModel.messages.isEmpty
+            && viewModel.streamingAnswer.isEmpty
+            && !viewModel.isAnswering
     }
 
     private var answerHeader: some View {
@@ -504,9 +517,6 @@ struct KnowledgeRAGWorkspaceView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    if viewModel.messages.isEmpty && viewModel.streamingAnswer.isEmpty {
-                        emptyConversation
-                    }
                     ForEach(viewModel.messages) { message in
                         messageView(message)
                             .id(message.id)
@@ -539,16 +549,19 @@ struct KnowledgeRAGWorkspaceView: View {
         }
     }
 
-    /// 新会话空态：与 AI 问答共用 EmptyStateView，水平居中 + 偏上留白。
+    /// 新会话空态：放大图标/文案，并在中栏剩余区域上下左右居中。
     private var emptyConversation: some View {
         EmptyStateView(
             systemImage: "text.book.closed",
             title: "rag.workspace.empty.title",
             subtitle: "rag.workspace.empty.subtitle",
-            subtitleHorizontalPadding: 40
+            iconSize: interfaceScale.scaled(52),
+            spacing: 14,
+            subtitleHorizontalPadding: 48,
+            titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
+            subtitleFont: ragFont(.callout)
         )
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -1182,10 +1195,13 @@ struct KnowledgeRAGWorkspaceView: View {
             }
             inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
             inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
-            inspectorValue(
-                "rag.workspace.inspector.relevance",
-                value: String(format: "%.3f", locale: locale, citation.score)
-            )
+            retrievalScoreValue(citation)
+            if let vectorSimilarity = citation.vectorSimilarity {
+                inspectorValue(
+                    "rag.workspace.inspector.vectorSimilarity",
+                    value: String(format: "%.3f", locale: locale, vectorSimilarity)
+                )
+            }
             if let chunk = viewModel.selectedCitationChunk, viewModel.selectedCitation?.id == citation.id {
                 Text("rag.workspace.inspector.chunkPreview")
                     .font(ragFont(.caption, weight: .semibold))
@@ -1206,8 +1222,9 @@ struct KnowledgeRAGWorkspaceView: View {
                     .foregroundStyle(.orange)
             }
             HStack {
-                Button("rag.workspace.inspector.openStarcat") { viewModel.openCitation(citation) }
-                Button("rag.workspace.inspector.openGitHub") { viewModel.openGitHub(citation) }
+                Spacer()
+                Button("rag.workspace.inspector.citationStarcatDetail") { viewModel.openCitation(citation) }
+                Button("rag.workspace.inspector.citationGitHub") { viewModel.openGitHub(citation) }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -1444,6 +1461,80 @@ struct KnowledgeRAGWorkspaceView: View {
                 .font(ragFont(.callout, weight: .semibold))
                 .textSelection(.enabled)
         }
+    }
+
+    /// 融合分只负责检索排序，无法被直接解读为百分比；点击该行在独立 popover 中解释当前命中方式的公式。
+    private func retrievalScoreValue(_ citation: RAGCitation) -> some View {
+        Button {
+            isRetrievalScoreExplanationPresented.toggle()
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("rag.workspace.inspector.retrievalScore")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                Text(String(format: "%.3f", locale: locale, citation.score))
+                    .font(ragFont(.callout, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("rag.workspace.inspector.retrievalScore.help")
+        .popover(isPresented: $isRetrievalScoreExplanationPresented, arrowEdge: .leading) {
+            retrievalScoreExplanation(citation)
+        }
+    }
+
+    /// 公式随命中方式变化；特别是 hybrid 不能误用 vector-only 公式解释。
+    private func retrievalScoreExplanation(_ citation: RAGCitation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("rag.workspace.inspector.retrievalScore.explanationTitle")
+                .font(ragFont(.headline, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            Text(retrievalScoreFormulaKey(for: citation.hitKind))
+                .font(ragFont(.caption2, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 7) {
+                scoreExplanationRow("rag.workspace.inspector.retrievalScore.rank")
+                if citation.hitKind != .keyword {
+                    scoreExplanationRow("rag.workspace.inspector.retrievalScore.cosine")
+                    scoreExplanationRow("rag.workspace.inspector.retrievalScore.vectorWeight")
+                }
+                if citation.hitKind != .vector {
+                    scoreExplanationRow("rag.workspace.inspector.retrievalScore.keyword")
+                }
+                scoreExplanationRow("rag.workspace.inspector.retrievalScore.sourceWeight")
+                scoreExplanationRow("rag.workspace.inspector.retrievalScore.preferBoost")
+            }
+        }
+        .padding(16)
+        .frame(width: 480, alignment: .leading)
+        .appLocaleEnvironment()
+    }
+
+    private func retrievalScoreFormulaKey(for hitKind: RAGHitKind) -> LocalizedStringKey {
+        switch hitKind {
+        case .vector:
+            "rag.workspace.inspector.retrievalScore.formula.vector"
+        case .keyword:
+            "rag.workspace.inspector.retrievalScore.formula.keyword"
+        case .hybrid:
+            "rag.workspace.inspector.retrievalScore.formula.hybrid"
+        }
+    }
+
+    private func scoreExplanationRow(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(ragFont(.caption))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var knowledgeRepositoryRow: some View {

@@ -113,11 +113,14 @@ struct KnowledgeRAGCoreTests {
     func hybridFusionDeduplicatesAndCapsRepo() {
         let chunks = (1...5).map { index in fixtureChunk(id: Int64(index), repoID: index <= 4 ? 1 : 2, source: index == 1 ? .notes : .readme) }
         let keyword = chunks.map { RAGChildHit(chunk: $0, score: 1, kind: .keyword) }
-        let vector = chunks.reversed().map { RAGChildHit(chunk: $0, score: 0.9, kind: .vector) }
+        let vector = chunks.reversed().map {
+            RAGChildHit(chunk: $0, score: 0.9, kind: .vector, vectorSimilarity: 0.9)
+        }
         let engine = RAGHybridFusionEngine(configuration: .init(perRepoLimit: 2, totalLimit: 10))
         let hits = engine.fuse(keywordHits: keyword, vectorHits: vector)
         #expect(hits.filter { $0.chunk.repoId == 1 }.count == 2)
         #expect(hits.contains { $0.kind == .hybrid })
+        #expect(hits.first(where: { $0.kind == .hybrid })?.vectorSimilarity == 0.9)
     }
 
     @Test("纯 keyword 首名超过证据阈值")
@@ -433,6 +436,7 @@ struct KnowledgeRAGCoreTests {
                 sectionTitle: "Intro",
                 score: 0.9,
                 hitKind: .hybrid,
+                vectorSimilarity: 0.91,
                 sourceURL: URL(string: "https://github.com/octo/demo-42")
             )]
         )
@@ -442,6 +446,7 @@ struct KnowledgeRAGCoreTests {
         #expect(citation.chunkID == nil)
         #expect(citation.repoFullName == "octo/demo-42")
         #expect(citation.marker == "S1")
+        #expect(citation.vectorSimilarity == 0.91)
     }
 
     @Test("外部后端配置拒绝无效 endpoint")

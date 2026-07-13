@@ -292,8 +292,11 @@ enum RAGHitKind: String, Codable, Sendable {
 
 struct RAGChildHit: Equatable, Sendable {
     var chunk: RAGChunk
+    /// 用于排序和证据门槛的融合分；不是可直接解释为百分比的相似度。
     var score: Double
     var kind: RAGHitKind
+    /// 原始向量召回分。仅 vector / hybrid 命中有值，供引用详情如实展示语义相似度。
+    var vectorSimilarity: Double? = nil
 }
 
 struct RAGSectionParent: Equatable, Sendable {
@@ -349,8 +352,11 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     var repoFullName: String
     var source: RAGChunkSource
     var sectionTitle: String
+    /// 融合后的检索排序分，用于回放本轮证据排序，不能作为百分比相关度解读。
     var score: Double
     var hitKind: RAGHitKind
+    /// 写入历史的原始向量相似度；keyword-only 命中保持 nil。
+    var vectorSimilarity: Double?
     var sourceURL: URL?
 }
 

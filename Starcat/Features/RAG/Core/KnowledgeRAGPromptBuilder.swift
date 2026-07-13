@@ -56,6 +56,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                         sectionTitle: parent.title,
                         score: hit.score,
                         hitKind: hit.kind,
+                        vectorSimilarity: hit.vectorSimilarity,
                         sourceURL: URL(string: bundle.candidate.repo.htmlUrl)
                     )
                     nextCitation += 1

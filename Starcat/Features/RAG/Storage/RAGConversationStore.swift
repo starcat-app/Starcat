@@ -202,8 +202,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 try db.execute(sql: """
                     INSERT INTO rag_message_citations (
                         id, message_id, chunk_id, repo_id, repo_full_name, marker, source,
-                        section_title, rank, score, hit_kind, source_url, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        section_title, rank, score, hit_kind, vector_similarity, source_url, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         citation.id.uuidString,
                         assistantID.uuidString,
@@ -216,6 +216,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                         rank,
                         citation.score,
                         citation.hitKind.rawValue,
+                        citation.vectorSimilarity,
                         citation.sourceURL?.absoluteString,
                         assistantAt
                 ])
@@ -423,7 +424,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     private func citationRows(db: Database, messageID: UUID) throws -> [RAGCitation] {
         let rows = try Row.fetchAll(db, sql: """
             SELECT id, chunk_id, repo_id, repo_full_name, marker, source, section_title,
-                   rank, score, hit_kind, source_url
+                   rank, score, hit_kind, vector_similarity, source_url
             FROM rag_message_citations
             WHERE message_id = ?
             ORDER BY rank ASC
@@ -447,6 +448,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 sectionTitle: row["section_title"],
                 score: row["score"],
                 hitKind: hitKind,
+                vectorSimilarity: row["vector_similarity"],
                 sourceURL: sourceURLString.flatMap(URL.init(string:))
             )
         }

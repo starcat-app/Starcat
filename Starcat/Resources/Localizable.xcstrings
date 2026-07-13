@@ -20841,6 +20841,18 @@
         }
       }
     },
+    "rag.workspace.inspector.citationGitHub" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub" } }
+      }
+    },
+    "rag.workspace.inspector.citationStarcatDetail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat detail" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 详情" } }
+      }
+    },
     "rag.workspace.inspector.citations" : {
       "localizations" : {
         "en" : {
@@ -20889,18 +20901,100 @@
         }
       }
     },
-    "rag.workspace.inspector.relevance" : {
+    "rag.workspace.inspector.retrievalScore" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Relevance"
+            "value" : "Retrieval score"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "相关度"
+            "value" : "综合检索分"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.cosine" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cosine similarity: the raw semantic similarity between the question and this chunk." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "余弦相似度：问题与该分片的原始语义相似度。" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.explanationTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieval score" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "综合检索分说明" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.formula.hybrid" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "score = (keyword RRF + keyword score × 0.12 + vector RRF + cosine similarity × 0.20) × source weight + preferred-repo boost" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "综合检索分 =（关键词 RRF + 字面命中分 × 0.12 + 向量 RRF + 余弦相似度 × 0.20）× 来源权重 + @repo 偏好加成" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.formula.keyword" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "score = (1.0 / (60 + keyword rank) + keyword score × 0.12) × source weight + preferred-repo boost" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "综合检索分 =（1.0 /（60 + 关键词排名）+ 字面命中分 × 0.12）× 来源权重 + @repo 偏好加成" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.formula.vector" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "score = (1.15 / (60 + vector rank) + cosine similarity × 0.20) × source weight + preferred-repo boost" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "综合检索分 =（1.15 /（60 + 向量排名）+ 余弦相似度 × 0.20）× 来源权重 + @repo 偏好加成" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show score formula" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看计算公式" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.keyword" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Keyword score: the normalized rank of an exact text match; its weight is 0.12." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "字面命中分：严格文本匹配的归一化排名分，权重为 0.12。" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.preferBoost" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preferred-repo boost: an explicit @repo preference adds 0.08; otherwise it is 0." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "偏好加成：显式 @repo 偏好时额外加 0.08，否则为 0。" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.rank" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RRF rank term: weight / (60 + rank), so rank refines rather than dominates the result." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "RRF 排名项：权重 /（60 + 排名），让排名只细化结果而不主导结果。" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.sourceWeight" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Source weight: notes 1.18, summary 1.12, README 1.00, metadata 0.85." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来源权重：笔记 1.18、摘要 1.12、README 1.00、元数据 0.85。" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.vectorWeight" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vector weight: cosine similarity is scaled by 0.20 before fusion." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向量权重：余弦相似度在融合前乘以 0.20。" } }
+      }
+    },
+    "rag.workspace.inspector.vectorSimilarity" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vector similarity"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向量相似度"
           }
         }
       }

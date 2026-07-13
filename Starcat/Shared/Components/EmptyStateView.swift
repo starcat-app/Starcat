@@ -96,6 +96,12 @@ struct EmptyStateView<Accessory: View>: View {
     /// 描述行的水平 padding。默认 0；超长描述（如带"BYOK 配置说明"）传 24-40 让文本不顶到边。
     let subtitleHorizontalPadding: CGFloat
 
+    /// 标题字号。默认 `.headline`；工作台空态等需要更强层级时可覆盖。
+    let titleFont: Font
+
+    /// 描述字号。默认 `.caption`；与 `titleFont` 配对放大时保持可读层级。
+    let subtitleFont: Font
+
     /// 在描述下方追加的自定义内容（通常是 Button）。默认无。
     let accessory: Accessory
 
@@ -107,6 +113,8 @@ struct EmptyStateView<Accessory: View>: View {
         iconSize: CGFloat = 36,
         spacing: CGFloat = 10,
         subtitleHorizontalPadding: CGFloat = 0,
+        titleFont: Font = .headline,
+        subtitleFont: Font = .caption,
         @ViewBuilder accessory: () -> Accessory = { EmptyView() }
     ) {
         self.systemImage = systemImage
@@ -116,6 +124,8 @@ struct EmptyStateView<Accessory: View>: View {
         self.iconSize = iconSize
         self.spacing = spacing
         self.subtitleHorizontalPadding = subtitleHorizontalPadding
+        self.titleFont = titleFont
+        self.subtitleFont = subtitleFont
         self.accessory = accessory()
     }
 
@@ -126,7 +136,7 @@ struct EmptyStateView<Accessory: View>: View {
                 .foregroundStyle(.secondary)
 
             Text(title)
-                .font(.headline)
+                .font(titleFont)
                 .foregroundStyle(.secondary)
 
             subtitleView
@@ -140,13 +150,13 @@ struct EmptyStateView<Accessory: View>: View {
     private var subtitleView: some View {
         if let subtitle {
             Text(subtitle)
-                .font(.caption)
+                .font(subtitleFont)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, subtitleHorizontalPadding)
         } else if let subtitleText {
             Text(verbatim: subtitleText)
-                .font(.caption)
+                .font(subtitleFont)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, subtitleHorizontalPadding)

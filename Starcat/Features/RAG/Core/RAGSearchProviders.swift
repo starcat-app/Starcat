@@ -53,7 +53,12 @@ struct SQLiteRAGVectorSearchProvider: RAGVectorSearchProvider {
         return chunks.compactMap { chunk -> RAGChildHit? in
             let score = SemanticSearchService.cosineSimilarity(queryVector, chunk.vector)
             guard score.isFinite else { return nil }
-            return RAGChildHit(chunk: chunk, score: score, kind: .vector)
+            return RAGChildHit(
+                chunk: chunk,
+                score: score,
+                kind: .vector,
+                vectorSimilarity: score
+            )
         }
         .sorted { $0.score > $1.score }
         .prefix(limit)
@@ -85,6 +90,7 @@ struct RAGHybridFusionEngine: Sendable {
             var score: Double = 0
             var keyword = false
             var vector = false
+            var vectorSimilarity: Double?
         }
 
         var values: [Int64: Accumulator] = [:]
@@ -105,6 +111,8 @@ struct RAGHybridFusionEngine: Sendable {
             value.score += configuration.vectorWeight / (configuration.rrfConstant + Double(index + 1))
             value.score += max(hit.score, 0) * configuration.vectorScoreWeight
             value.vector = true
+            // 原始向量分与融合分用途不同：前者给用户解释语义相似度，后者只负责排序。
+            value.vectorSimilarity = hit.vectorSimilarity ?? hit.score
             values[id] = value
         }
 
@@ -114,7 +122,12 @@ struct RAGHybridFusionEngine: Sendable {
             if preferredRepoIDs.contains(value.chunk.repoId) {
                 score += configuration.preferRepoBoost
             }
-            return RAGChildHit(chunk: value.chunk, score: score, kind: kind)
+            return RAGChildHit(
+                chunk: value.chunk,
+                score: score,
+                kind: kind,
+                vectorSimilarity: value.vectorSimilarity
+            )
         }
         ranked.sort { lhs, rhs in
             if lhs.score == rhs.score { return lhs.chunk.chunkIndex < rhs.chunk.chunkIndex }
