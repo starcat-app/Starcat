@@ -191,7 +191,10 @@ struct SmartCollectionDetailPanel: View {
 
             if activeSystemCollectionKind == .library {
                 Button {
-                    KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies)
+                    KnowledgeRAGWorkspaceWindowController.show(
+                        dependencies: dependencies,
+                        homeViewModel: viewModel
+                    )
                 } label: {
                     Label("smartCollections.library.openRAG", systemImage: "text.book.closed")
                 }

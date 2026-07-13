@@ -69,12 +69,11 @@ struct KnowledgeRAGWorkspaceView: View {
         .task { await viewModel.observeKnowledgeBoundaryChanges() }
         .task { await viewModel.observeIndexChanges() }
         .environment(\.openURL, OpenURLAction { url in
-            // 正文 `[S1]` 链到 starcat-rag://citation/<id>；命中后切证据 tab。
+            // 正文 `[S1]` → 独立详情窗；底部芯片另走 selectCitation，不共用此路径。
             if viewModel.openCitationLink(url) {
-                inspectorTab = .evidence
-            } else {
-                viewModel.handleLink(url)
+                return .handled
             }
+            viewModel.handleLink(url)
             return .handled
         })
         .sheet(isPresented: Binding(
@@ -593,8 +592,8 @@ struct KnowledgeRAGWorkspaceView: View {
             createdAtLabel: createdAt.map(messageTimeLabel),
             showsActions: showsActions,
             onSelectCitation: { citation in
-                // 芯片与正文 `[Sn]` 一致：打开 Starcat 仓库详情，并定位证据。
-                viewModel.openCitation(citation)
+                // 底部芯片只定位右侧证据，不打开详情窗。
+                viewModel.selectCitation(citation)
                 inspectorTab = .evidence
             },
             onExport: { viewModel.exportAnswer(content) }
@@ -1054,14 +1053,24 @@ struct KnowledgeRAGWorkspaceView: View {
                             viewModel.toggleCitation(citation)
                         } label: {
                             HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: citation.source.systemImageName)
+                                    .font(iconFont(size: 12, weight: .semibold))
+                                    .foregroundStyle(citation.source.tintColor)
+                                    .frame(width: 14, alignment: .center)
+                                    .padding(.top, 2)
+
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(citation.repoFullName)
                                         .font(ragFont(.callout, weight: .semibold))
                                         .foregroundStyle(.primary)
-                                    Text("\(citation.source.rawValue) · \(citation.sectionTitle)")
-                                        .font(ragFont(.caption))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                    HStack(spacing: 4) {
+                                        Text(citation.source.titleKey)
+                                        Text("·")
+                                        Text(citation.sectionTitle)
+                                    }
+                                    .font(ragFont(.caption))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
                                 }
                                 Spacer(minLength: 4)
                                 Image(systemName: "chevron.right")
@@ -1158,7 +1167,19 @@ struct KnowledgeRAGWorkspaceView: View {
     @ViewBuilder
     private func citationDetail(_ citation: RAGCitation) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            inspectorValue("rag.workspace.inspector.source", value: citation.source.rawValue)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("rag.workspace.inspector.source")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                Label {
+                    Text(citation.source.titleKey)
+                        .font(ragFont(.callout, weight: .semibold))
+                } icon: {
+                    Image(systemName: citation.source.systemImageName)
+                        .font(iconFont(size: 12, weight: .semibold))
+                        .foregroundStyle(citation.source.tintColor)
+                }
+            }
             inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
             inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
             inspectorValue(
@@ -1581,12 +1602,7 @@ struct KnowledgeRAGWorkspaceView: View {
     }
 
     private func indexIssueSourceTitle(_ source: RAGChunkSource) -> LocalizedStringKey {
-        switch source {
-        case .readme: return "rag.browser.source.readme"
-        case .notes: return "rag.browser.source.notes"
-        case .summary: return "rag.browser.source.summary"
-        case .metadata: return "rag.browser.source.metadata"
-        }
+        source.titleKey
     }
 
     @ViewBuilder
@@ -2440,6 +2456,7 @@ private struct RAGMarkdownText: View {
 }
 
 /// 回答底部引用芯片：默认 3 条，超出折叠；底色按 `owner/repo` 稳定 hash，明暗皆淡色。
+/// 文案只保留 `Sn · repo`；同 repo 不同分片靠彩色 source 图标区分，不堆 sectionTitle。
 private struct RAGCitationChipsRow: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -2469,20 +2486,26 @@ private struct RAGCitationChipsRow: View {
                 Button {
                     onSelectCitation(citation)
                 } label: {
-                    Text("\(citation.marker) · \(citation.repoFullName)")
-                        // caption(12) 比正文 body(13) 略小；勿用 .callout（不在 StarcatTypography）。
-                        .font(interfaceScale.font(.caption, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RAGCitationChipPalette.background(for: citation.repoFullName),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
+                    HStack(spacing: 5) {
+                        Image(systemName: citation.source.systemImageName)
+                            .font(interfaceScale.font(size: 11, weight: .semibold))
+                            .foregroundStyle(citation.source.tintColor)
+                        Text("\(citation.marker) · \(citation.repoFullName)")
+                            // caption(12) 比正文 body(13) 略小；勿用 .callout（不在 StarcatTypography）。
+                            .font(interfaceScale.font(.caption, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RAGCitationChipPalette.background(for: citation.repoFullName),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .help(chipHelp(for: citation))
             }
 
             if hiddenCount > 0 {
@@ -2510,6 +2533,15 @@ private struct RAGCitationChipsRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// tooltip 仍带 section，方便悬停看具体分片；芯片本体保持短。
+    private func chipHelp(for citation: RAGCitation) -> String {
+        let section = citation.sectionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if section.isEmpty {
+            return "\(citation.marker) · \(citation.repoFullName)"
+        }
+        return "\(citation.marker) · \(citation.repoFullName) · \(section)"
     }
 }
 

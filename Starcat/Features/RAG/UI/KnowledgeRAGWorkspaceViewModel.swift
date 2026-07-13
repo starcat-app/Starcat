@@ -32,6 +32,8 @@ enum KnowledgeRAGIndexRefreshPresentation {
 @Observable
 final class KnowledgeRAGWorkspaceViewModel {
     private let dependencies: AppDependencies
+    /// 打开独立详情窗需要共享主窗 HomeViewModel（star 状态 / registry）。
+    private let homeViewModel: HomeViewModel
     private let conversationStore: any RAGConversationStoring
     private var answerTask: Task<Void, Never>?
     private var conversationTitleTask: Task<Void, Never>?
@@ -104,8 +106,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
     var debugTraces: [RAGDebugTrace] = []
 
-    init(dependencies: AppDependencies) {
+    init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         self.dependencies = dependencies
+        self.homeViewModel = homeViewModel
         self.conversationStore = dependencies.ragConversationStore
         let resolvedModelID = Self.resolveInitialModelID(
             savedModelID: dependencies.settings.ragWorkspaceSelectedModelID,
@@ -664,7 +667,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         Task {
             if let repo = try? await dependencies.repoRepository.findById(repoID) {
-                dependencies.companionActionDispatcher.requestOpenRepo(repo)
+                openLocalRepoDetail(repo)
             } else {
                 NSWorkspace.shared.open(reference.url)
             }
@@ -812,16 +815,12 @@ final class KnowledgeRAGWorkspaceViewModel {
     func openCitation(_ citation: RAGCitation) {
         selectCitation(citation)
         Task {
-            if let repo = try? await dependencies.repoRepository.findById(citation.repoID) {
-                dependencies.companionActionDispatcher.requestOpenRepo(repo)
-            } else if let url = citation.sourceURL {
-                NSWorkspace.shared.open(url)
-            }
+            await openLocalRepoDetail(for: citation)
         }
     }
 
-    /// 回答正文里的 `starcat-rag://citation/<uuid>`；命中则打开仓库详情并选中证据。
-    /// - Returns: 是否已处理（调用方可据此切到证据 tab）。
+    /// 回答正文里的 `starcat-rag://citation/<uuid>`：只开独立详情窗，不抢右侧证据选中。
+    /// - Returns: 是否已处理（调用方不应再走通用 `handleLink`）。
     @discardableResult
     func openCitationLink(_ url: URL) -> Bool {
         guard url.scheme == "starcat-rag", url.host == "citation" else { return false }
@@ -830,7 +829,9 @@ final class KnowledgeRAGWorkspaceViewModel {
               let citation = messages.flatMap(\.citations).first(where: { $0.id == id }) else {
             return false
         }
-        openCitation(citation)
+        Task {
+            await openLocalRepoDetail(for: citation)
+        }
         return true
     }
 
@@ -852,10 +853,27 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         Task {
             if let repo = try? await dependencies.repoRepository.findByOwnerName(owner: parts[0], name: parts[1]) {
-                dependencies.companionActionDispatcher.requestOpenRepo(repo)
+                openLocalRepoDetail(repo)
             } else {
                 NSWorkspace.shared.open(url)
             }
+        }
+    }
+
+    /// 本地已收录仓库走独立详情窗；与推荐卡片 / 主窗「新窗打开」一致，不激活主窗口 selection。
+    private func openLocalRepoDetail(_ repo: Repo) {
+        RepoDetailWindowController.show(
+            repo: repo,
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
+        )
+    }
+
+    private func openLocalRepoDetail(for citation: RAGCitation) async {
+        if let repo = try? await dependencies.repoRepository.findById(citation.repoID) {
+            openLocalRepoDetail(repo)
+        } else if let url = citation.sourceURL {
+            NSWorkspace.shared.open(url)
         }
     }
 

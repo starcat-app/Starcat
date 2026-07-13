@@ -995,7 +995,7 @@ struct HomeView: View {
     private func openKnowledgeRAGWorkspaceForGettingStarted() {
         searchCenterViewModel.dismiss()
         NotificationCenter.default.post(name: .gettingStartedDidOpenRAGWorkspace, object: nil)
-        KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies)
+        KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies, homeViewModel: viewModel)
     }
 
     private func openAgentWorkspaceForGettingStarted() {

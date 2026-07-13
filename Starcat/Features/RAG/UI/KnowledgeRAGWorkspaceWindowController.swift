@@ -29,8 +29,11 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     private let viewModel: KnowledgeRAGWorkspaceViewModel
 
     /// 显示知识库 RAG 工作台窗口。
+    ///
+    /// `homeViewModel` 用于正文引用 / 本地 GitHub 链接打开独立详情窗，必须与主窗共享
+    /// 同一实例，才能同步 star 状态。
     @MainActor
-    static func show(dependencies: AppDependencies) {
+    static func show(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         let controller: KnowledgeRAGWorkspaceWindowController
         let shouldCenter: Bool
 
@@ -38,7 +41,10 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
             controller = shared
             shouldCenter = false
         } else {
-            controller = KnowledgeRAGWorkspaceWindowController(dependencies: dependencies)
+            controller = KnowledgeRAGWorkspaceWindowController(
+                dependencies: dependencies,
+                homeViewModel: homeViewModel
+            )
             shared = controller
             shouldCenter = true
         }
@@ -60,14 +66,17 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         shared = nil
     }
 
-    private init(dependencies: AppDependencies) {
+    private init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         let chromeState = WorkspaceChromeState()
-        let viewModel = KnowledgeRAGWorkspaceViewModel(dependencies: dependencies)
+        let viewModel = KnowledgeRAGWorkspaceViewModel(
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
+        )
         self.chromeState = chromeState
         self.viewModel = viewModel
 
         let content = KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
-        .appHostEnvironment(dependencies)
+            .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
 
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
@@ -604,23 +613,24 @@ private struct KnowledgeRAGBrowserView: View {
                     TextEditor(text: $viewModel.retrievalQuery)
                         .font(.body)
                         .scrollContentBackground(.hidden)
-                        // 为右下角操作预留输入空间，避免第二行文本被按钮覆盖。
-                        .padding(.trailing, 104)
-                        .padding(.bottom, 28)
+                        // 与分片编辑器保持同一内边距；右下角按钮占 44pt，预留后仍可完整展示三行正文。
+                        .padding(8)
+                        .padding(.trailing, 52)
+                        .padding(.bottom, 44)
                     if viewModel.retrievalQuery.isEmpty {
                         Text("rag.browser.retrieval.placeholder")
                             .font(.body)
                             .foregroundStyle(.secondary)
-                            // 与 TextEditor 的原生首行基线匹配，避免占位文本与光标错行。
-                            .padding(.leading, 5)
-                            .padding(.top, 2)
+                            // 与上方 TextEditor 的 8pt 内容边距对齐，避免空态与输入态发生跳动。
+                            .padding(.leading, 12)
+                            .padding(.top, 10)
                             .allowsHitTesting(false)
                     }
                 }
                 Button { viewModel.runRetrievalTest() } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.caption.weight(.semibold))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -637,7 +647,7 @@ private struct KnowledgeRAGBrowserView: View {
                 .pointerStyle(.link)
                 .padding(8)
             }
-            .frame(height: 72)
+            .frame(height: 120)
             .padding(.horizontal, 7)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
@@ -652,13 +662,18 @@ private struct KnowledgeRAGBrowserView: View {
                 }
                 .frame(maxHeight: 160)
             } else if viewModel.hasCompletedRetrievalTest {
-                ContentUnavailableView(
-                    "rag.browser.retrieval.noHitsTitle",
-                    systemImage: "magnifyingglass",
-                    description: Text("rag.browser.retrieval.noHitsMessage")
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                // 未命中只是一次测试结果，不应使用页面级空状态占据大块垂直空间。
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("rag.browser.retrieval.noHitsTitle")
+                        .font(.caption.weight(.semibold))
+                    Text("rag.browser.retrieval.noHitsMessage")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -943,12 +958,7 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private func sourceKey(_ source: RAGChunkSource) -> LocalizedStringKey {
-        switch source {
-        case .readme: return "rag.browser.source.readme"
-        case .notes: return "rag.browser.source.notes"
-        case .summary: return "rag.browser.source.summary"
-        case .metadata: return "rag.browser.source.metadata"
-        }
+        source.titleKey
     }
 
     private func statusKey(_ status: RAGEmbeddingStatus) -> LocalizedStringKey {
