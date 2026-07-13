@@ -19,10 +19,10 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var composerContentHeight: CGFloat = 0
     @State private var mentionCaretAnchor: CGPoint = .zero
     @State private var messageTail = ScrollTailController()
-    @State private var isMessageTailScrollScheduled = false
+    /// 直接控制中栏 ScrollView 的边缘位置，避免依赖 LazyVStack 内部锚点的实现细节。
+    @State private var messageTimelinePosition = ScrollPosition()
     @State private var isMessageNearBottom = true
 
-    private static let messageBottomAnchorID = "rag-message-bottom-anchor"
     private static let messageNearBottomThreshold: CGFloat = 64
 
     private func ragFont(_ role: RAGFontRole, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
@@ -128,7 +128,6 @@ struct RAGWorkspaceAnswerSurface: View {
 
                         Color.clear
                             .frame(height: 1)
-                            .id(Self.messageBottomAnchorID)
                             .onScrollVisibilityChange(threshold: 0.5) { isVisible in
                                 messageTail.updateBottomVisibility(isVisible)
                             }
@@ -137,6 +136,7 @@ struct RAGWorkspaceAnswerSurface: View {
                     .padding(.vertical, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .scrollPosition($messageTimelinePosition)
                 .onScrollPhaseChange { _, newPhase in
                     messageTail.updatePhase(newPhase)
                 }
@@ -154,14 +154,14 @@ struct RAGWorkspaceAnswerSurface: View {
                     // LazyVStack 的内容更新，导致复用上一会话的顶部偏移。
                     isMessageNearBottom = true
                     messageTail.resumeFollowing()
-                    forceMessageTailScroll(proxy: proxy)
+                    forceMessageTailScroll()
                 }
                 .onChange(of: viewModel.streamingAnswer) { _, newValue in
                     guard !newValue.isEmpty else { return }
-                    scheduleMessageTailScroll(proxy: proxy)
+                    forceMessageTailScrollIfFollowing()
                 }
                 .onChange(of: viewModel.messages.count) { _, _ in
-                    scheduleMessageTailScroll(proxy: proxy)
+                    forceMessageTailScrollIfFollowing()
                 }
 
                 // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
@@ -187,7 +187,7 @@ struct RAGWorkspaceAnswerSurface: View {
                     scrollToBottomButton {
                         messageTail.resumeFollowing()
                         // 手动请求优先于旧的用户滚动 phase：本次必须到底，后续 token 才继续自动跟随。
-                        forceMessageTailScroll(proxy: proxy)
+                        forceMessageTailScroll()
                     }
                     .padding(.bottom, 16)
                 }
@@ -216,43 +216,25 @@ struct RAGWorkspaceAnswerSurface: View {
         .pointerStyle(.link)
     }
 
-    /// 合并流式回答与手动点击产生的尾部滚动请求。
+    /// 直接定位滚动容器的尾部。
     ///
-    /// `ScrollViewProxy` 必须在本轮 SwiftUI 布局提交后才拥有最新 sentinel 位置；延迟一个
-    /// 主线程周期并关闭动画，既保证按钮点击能到达真正底部，也避免每个 delta 叠加动画事务。
-    func scheduleMessageTailScroll(proxy: ScrollViewProxy) {
-        guard messageTail.isFollowing, !isMessageTailScrollScheduled else { return }
-        isMessageTailScrollScheduled = true
-
-        Task { @MainActor in
-            await Task.yield()
-            defer { isMessageTailScrollScheduled = false }
-            guard messageTail.isFollowing else { return }
-
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                proxy.scrollTo(Self.messageBottomAnchorID, anchor: .bottom)
+    /// 历史实现依赖 `LazyVStack` 内的 item id，并曾跨 `Task.yield()` 保存 proxy；两者
+    /// 都可能在 SwiftUI 更新期间失效。`ScrollPosition` 直接驱动当前 ScrollView 的 edge，
+    /// 不依赖惰性子项是否已布局，故历史恢复、按钮和流式更新共用此路径。
+    func forceMessageTailScroll() {
+        if reduceMotion {
+            messageTimelinePosition.scrollTo(edge: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.18)) {
+                messageTimelinePosition.scrollTo(edge: .bottom)
             }
         }
     }
 
-    /// 用户明确要求展示最新内容时的强制滚动。
-    ///
-    /// 它故意不检查 `messageTail.isFollowing`：按钮点击时旧的 `.decelerating` 回调可能尚未
-    /// 结束，若沿用自动跟随的二次 guard，点击会被错误取消，表现为按钮消失却没有到底。
-    func forceMessageTailScroll(proxy: ScrollViewProxy) {
-        Task { @MainActor in
-            await Task.yield()
-            // 第一轮 yield 让 messages 进入 body，第二轮才确保 LazyVStack 已产生最新 sentinel。
-            await Task.yield()
-
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                proxy.scrollTo(Self.messageBottomAnchorID, anchor: .bottom)
-            }
-        }
+    /// 流式更新只在用户仍在尾部时请求；手动上滚后不抢走阅读位置。
+    func forceMessageTailScrollIfFollowing() {
+        guard messageTail.isFollowing else { return }
+        forceMessageTailScroll()
     }
 
     /// 新会话空态：放大图标/文案，并在中栏剩余区域上下左右居中。
