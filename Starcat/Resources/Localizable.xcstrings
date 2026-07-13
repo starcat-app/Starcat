@@ -20021,12 +20021,6 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "思考 / Think" } }
       }
     },
-    "rag.workspace.execution.reasoning.completed" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Thinking completed" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "思考已完成" } }
-      }
-    },
     "rag.workspace.execution.reasoning.planning.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Think" } },

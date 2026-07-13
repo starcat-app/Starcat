@@ -927,10 +927,13 @@ private struct KnowledgeRAGBrowserView: View {
 
     @ViewBuilder
     private var refreshIndexIcon: some View {
+        // 与旁边按钮文案对齐：默认继承 control 字号会偏大，收到 caption。
         if reduceMotion {
             Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.caption)
         } else {
             Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.caption)
                 .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
         }
     }

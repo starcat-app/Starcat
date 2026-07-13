@@ -1375,7 +1375,6 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         case .reasoningCompleted(let kind):
             updateExecutionStep(kind: kind) { step in
-                step.summary = String.l10n("rag.workspace.execution.reasoning.completed")
                 // 推理流结束后取消 running 状态，时间线即自动折叠，为正式回答让出阅读空间。
                 completeExecutionStep(&step)
             }
