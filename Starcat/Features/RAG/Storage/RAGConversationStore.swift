@@ -148,19 +148,26 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 WHERE conversation_id = ?
                 ORDER BY created_at ASC, rowid ASC
                 """, arguments: [id.uuidString])
+            let messageIDs = messageRows.compactMap { row -> UUID? in
+                let rawID: String = row["id"]
+                return UUID(uuidString: rawID)
+            }
+            // 会话历史必须一次性带回关联 metadata。逐 message 查询 citation / remote audit 在
+            // 200 条历史时会变成 401 次 SQL 读取，切换会话会明显拖慢并干扰尾部滚动时机。
+            let citationsByMessageID = try citationRows(db: db, messageIDs: messageIDs)
+            let remoteAuditsByMessageID = try remoteContextAuditRows(db: db, messageIDs: messageIDs)
             var messages: [RAGStoredMessage] = []
             for messageRow in messageRows {
                 guard let messageID = UUID(uuidString: messageRow["id"]),
                       let role = RAGStoredMessageRole(rawValue: messageRow["role"]) else { continue }
-                let citations = try citationRows(db: db, messageID: messageID)
                 messages.append(RAGStoredMessage(
                     id: messageID,
                     conversationID: id,
                     role: role,
                     content: messageRow["content"],
                     model: messageRow["model"],
-                    citations: citations,
-                    remoteContextAudits: try remoteContextAuditRows(db: db, messageID: messageID),
+                    citations: citationsByMessageID[messageID] ?? [],
+                    remoteContextAudits: remoteAuditsByMessageID[messageID] ?? [],
                     executionTrace: Self.executionTrace(json: messageRow["execution_trace_json"]),
                     createdAt: messageRow["created_at"]
                 ))
@@ -437,25 +444,30 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         )
     }
 
-    private func citationRows(db: Database, messageID: UUID) throws -> [RAGCitation] {
+    /// 将整段会话的 citation 以一次 SQL 读取并按 message ID 分桶，避免历史恢复 N+1。
+    private func citationRows(db: Database, messageIDs: [UUID]) throws -> [UUID: [RAGCitation]] {
+        guard !messageIDs.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: messageIDs.count).joined(separator: ",")
         let rows = try Row.fetchAll(db, sql: """
-            SELECT id, chunk_id, repo_id, repo_full_name, marker, source, section_title,
+            SELECT id, message_id, chunk_id, repo_id, repo_full_name, marker, source, section_title,
                    rank, score, hit_kind, vector_similarity, score_breakdown_json, source_url
             FROM rag_message_citations
-            WHERE message_id = ?
-            ORDER BY rank ASC
-            """, arguments: [messageID.uuidString])
-        return rows.compactMap { row in
-            guard let id = UUID(uuidString: row["id"]),
+            WHERE message_id IN (\(placeholders))
+            ORDER BY message_id ASC, rank ASC
+            """, arguments: StatementArguments(messageIDs.map(\.uuidString)))
+        var grouped: [UUID: [RAGCitation]] = [:]
+        for row in rows {
+            guard let messageID = UUID(uuidString: row["message_id"]),
+                  let id = UUID(uuidString: row["id"]),
                   let source = RAGChunkSource(rawValue: row["source"]),
-                  let hitKind = RAGHitKind(rawValue: row["hit_kind"]) else { return nil }
+                  let hitKind = RAGHitKind(rawValue: row["hit_kind"]) else { continue }
             let sourceURLString: String? = row["source_url"]
             let scoreBreakdownJSON: String? = row["score_breakdown_json"]
             let storedMarker: String = row["marker"]
             // ensure 补列后旧行为空串：用 rank+1 仅恢复本机开发会话显示。
             let rank: Int = row["rank"]
             let marker = storedMarker.isEmpty ? "S\(rank + 1)" : storedMarker
-            return RAGCitation(
+            let citation = RAGCitation(
                 id: id,
                 marker: marker,
                 chunkID: row["chunk_id"],
@@ -471,22 +483,29 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 },
                 sourceURL: sourceURLString.flatMap(URL.init(string:))
             )
+            grouped[messageID, default: []].append(citation)
         }
+        return grouped
     }
 
-    private func remoteContextAuditRows(db: Database, messageID: UUID) throws -> [RAGRemoteContextAudit] {
+    /// 将会话全部 remote audit 元数据一次性读取并按 message ID 分桶。
+    private func remoteContextAuditRows(db: Database, messageIDs: [UUID]) throws -> [UUID: [RAGRemoteContextAudit]] {
+        guard !messageIDs.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: messageIDs.count).joined(separator: ",")
         let rows = try Row.fetchAll(db, sql: """
-            SELECT id, repo_id, resource, title, source_url, fetched_at, error_message
+            SELECT id, message_id, repo_id, resource, title, source_url, fetched_at, error_message
             FROM rag_message_remote_contexts
-            WHERE message_id = ?
-            ORDER BY rowid ASC
-            """, arguments: [messageID.uuidString])
-        return rows.compactMap { row in
-            guard let id: String = row["id"],
+            WHERE message_id IN (\(placeholders))
+            ORDER BY message_id ASC, rowid ASC
+            """, arguments: StatementArguments(messageIDs.map(\.uuidString)))
+        var grouped: [UUID: [RAGRemoteContextAudit]] = [:]
+        for row in rows {
+            guard let messageID = UUID(uuidString: row["message_id"]),
+                  let id: String = row["id"],
                   let resourceRawValue: String = row["resource"],
-                  let resource = RAGRemoteContextResource(rawValue: resourceRawValue) else { return nil }
+                  let resource = RAGRemoteContextResource(rawValue: resourceRawValue) else { continue }
             let sourceURLString: String? = row["source_url"]
-            return RAGRemoteContextAudit(
+            let audit = RAGRemoteContextAudit(
                 id: id,
                 repoID: row["repo_id"],
                 resource: resource,
@@ -495,7 +514,9 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 fetchedAt: row["fetched_at"],
                 errorMessage: row["error_message"]
             )
+            grouped[messageID, default: []].append(audit)
         }
+        return grouped
     }
 
     private static func executionTrace(json: String?) -> [RAGExecutionStep] {
