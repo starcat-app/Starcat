@@ -360,6 +360,32 @@ struct AppSettingsTests {
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{externalContext}"))
         #expect(s.aiChatTask.prompt.userPromptTemplate.isEmpty)
         #expect(s.smartSearchMode == .keyword)
+        #expect(s.ragPromptSettings.generator.systemPrompt.contains("{outputLanguage}"))
+        #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{questionSection}"))
+        #expect(s.ragPromptSettings.planner.systemPrompt.contains("{outputLanguage}"))
+        #expect(s.ragPromptSettings.planner.userPromptTemplate.contains("{question}"))
+    }
+
+    @Test("RAG: Generator/Planner 提示词配置应持久化")
+    func ragPromptSettingsPersist() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.ragPromptSettings = RAGPromptSettings(
+            generator: AIPromptConfiguration(
+                systemPrompt: "GEN_SYS {outputLanguage}",
+                userPromptTemplate: "GEN_USER {questionSection}"
+            ),
+            planner: AIPromptConfiguration(
+                systemPrompt: "PLAN_SYS {outputLanguage}",
+                userPromptTemplate: "PLAN_USER {question}"
+            )
+        )
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.ragPromptSettings.generator.systemPrompt == "GEN_SYS {outputLanguage}")
+        #expect(s2.ragPromptSettings.generator.userPromptTemplate == "GEN_USER {questionSection}")
+        #expect(s2.ragPromptSettings.planner.systemPrompt == "PLAN_SYS {outputLanguage}")
+        #expect(s2.ragPromptSettings.planner.userPromptTemplate == "PLAN_USER {question}")
     }
 
     @Test("AI: 旧版设置后重新读取应保留")
@@ -446,6 +472,71 @@ struct AppSettingsTests {
         #expect(!failed.isVerifiedConfiguration)
         #expect(!disabled.isVerifiedConfiguration)
         #expect(verified.isVerifiedConfiguration)
+    }
+
+    @Test("AI: 工作台入口只接受有效的对话模型配置")
+    func workspaceRequiresConfiguredChatModel() {
+        let settings = AppSettings(defaults: makeIsolatedDefaults())
+        let profileID = "workspace-provider"
+        let modelName = "chat-model"
+        var profile = AIProviderProfile(
+            id: profileID,
+            provider: .openAICompatible,
+            models: [
+                AIModelDescriptor(
+                    providerID: profileID,
+                    name: modelName,
+                    capability: .chat
+                )
+            ],
+            lastTestStatus: .success(modelCount: 1)
+        )
+        settings.aiProviderProfiles = [profile]
+        var task = settings.aiChatTask
+        task.providerID = profileID
+        task.modelID = modelName
+        task.useCustomModel = false
+        settings.aiChatTask = task
+
+        #expect(settings.hasConfiguredChatModel)
+
+        task.modelID = "removed-model"
+        settings.aiChatTask = task
+        #expect(!settings.hasConfiguredChatModel)
+
+        task.useCustomModel = true
+        task.customModelName = "custom-chat-model"
+        settings.aiChatTask = task
+        #expect(settings.hasConfiguredChatModel)
+
+        profile.lastTestStatus = .failed("401")
+        settings.aiProviderProfiles = [profile]
+        #expect(!settings.hasConfiguredChatModel)
+    }
+
+    @Test("AI: 工作台入口先校验 Pro，再校验对话模型")
+    func workspaceEntryAccessOrder() {
+        switch AIWorkspaceEntryGate.access(
+            isProUser: false,
+            hasConfiguredChatModel: false,
+            proFeature: .knowledgeRAG
+        ) {
+        case .requiresPro(.knowledgeRAG):
+            break
+        default:
+            Issue.record("免费用户应优先进入知识库 RAG 付费墙")
+        }
+
+        switch AIWorkspaceEntryGate.access(
+            isProUser: true,
+            hasConfiguredChatModel: false,
+            proFeature: .aiChat
+        ) {
+        case .requiresChatModel:
+            break
+        default:
+            Issue.record("Pro 用户未配置对话模型时应跳转 AI 设置")
+        }
     }
 
     // MARK: - HOM-68 follow-up v9: 模型粒度参数

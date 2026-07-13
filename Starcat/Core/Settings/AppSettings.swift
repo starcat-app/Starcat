@@ -832,6 +832,11 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.ragBackendConfiguration, value: ragBackendConfiguration) }
     }
 
+    /// RAG Generator / Planner 可编辑提示词；缺省为英文默认模板 + `{outputLanguage}`。
+    var ragPromptSettings: RAGPromptSettings {
+        didSet { persistJSON(key: Keys.ragPromptSettings, value: ragPromptSettings) }
+    }
+
     /// RAG 工作台上次选用的聊天模型 ID（`AIModelDescriptor.id`）。
     ///
     /// 空字符串表示从未选过，打开工作台时回退到 `aiChatTask` 对齐的模型。
@@ -1485,6 +1490,11 @@ final class AppSettings {
             key: Keys.ragBackendConfiguration,
             defaults: defaults
         ) ?? RAGBackendConfiguration()
+        self.ragPromptSettings = Self.decodeJSON(
+            RAGPromptSettings.self,
+            key: Keys.ragPromptSettings,
+            defaults: defaults
+        ) ?? .default
         self.ragWorkspaceSelectedModelID = defaults.string(forKey: Keys.ragWorkspaceSelectedModelID) ?? ""
         self.ragWorkspaceDebugModeEnabled = defaults.object(forKey: Keys.ragWorkspaceDebugModeEnabled) as? Bool ?? false
         let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
@@ -1692,6 +1702,7 @@ final class AppSettings {
         aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
         aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
         ragBackendConfiguration = RAGBackendConfiguration()
+        ragPromptSettings = .default
         ragWorkspaceSelectedModelID = ""
         ragWorkspaceDebugModeEnabled = false
 
@@ -2004,6 +2015,7 @@ final class AppSettings {
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let ragBackendConfiguration = "settings.ai.rag.backends.v1"
+        static let ragPromptSettings = "settings.rag.prompts.v1"
         static let ragWorkspaceSelectedModelID = "settings.rag.workspace.selectedModelID.v1"
         static let ragWorkspaceDebugModeEnabled = "settings.rag.workspace.debugModeEnabled.v1"
         static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
@@ -2086,6 +2098,7 @@ final class AppSettings {
             aiTranslationTask,
             aiChatTask,
             ragBackendConfiguration,
+            ragPromptSettings,
             ragWorkspaceSelectedModelID,
             ragWorkspaceDebugModeEnabled,
             chatHistoryStorageKind,

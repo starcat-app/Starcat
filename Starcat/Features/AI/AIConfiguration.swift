@@ -187,6 +187,35 @@ struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+extension AppSettings {
+    /// 设置页「模型配置 → 对话」是否已经指向一个可用模型。
+    ///
+    /// Agent 与知识库 RAG 都依赖对话模型，因此入口只依据此处的用户显式选择放行。
+    /// 不能读取 API Key：本地 Provider 可以合法地没有 Key，且连接测试结果已经是
+    /// Provider 可用性的单一设置真源。
+    var hasConfiguredChatModel: Bool {
+        let task = aiChatTask
+        let resolvedName = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedName.isEmpty,
+              let profile = aiProviderProfiles.first(where: { $0.id == task.providerID }),
+              profile.isVerifiedConfiguration
+        else {
+            return false
+        }
+
+        if task.useCustomModel {
+            // 自定义模型没有 descriptor；用户在已验证 Provider 上填入非空名称即可使用。
+            return true
+        }
+
+        return profile.models.contains {
+            $0.name == task.modelID
+                && $0.isEnabled
+                && ($0.capability == .chat || $0.capability == .unknown)
+        }
+    }
+}
+
 /// Starcat 内置 AI 任务。
 ///
 /// HOM-68 (2026-06-05) 追加 `.translation`：dong4j 反馈"摘要 / 推荐标签 / 向量 三类

@@ -510,10 +510,14 @@ final class AppDependencies {
             embeddingClient: embeddingClient,
             embeddingModel: embeddingSelection.modelName
         )
+        let outputLanguage = LocaleStore.shared.selection.aiOutputLanguageDescriptor
+        let ragPrompts = settings.ragPromptSettings
         let planner = KnowledgeRAGQueryPlanner(
             client: chatClient,
             model: chatSelection.modelName,
-            parameters: chatSelection.parameters
+            parameters: chatSelection.parameters,
+            promptConfiguration: ragPrompts.planner,
+            outputLanguage: outputLanguage
         )
         let githubToken = try? KeychainManager.shared.loadGithubToken()
         return KnowledgeRAGService(
@@ -523,7 +527,11 @@ final class AppDependencies {
             remoteContextProvider: GitHubRAGRemoteContextProvider(token: githubToken),
             generatorClient: chatClient,
             generatorModel: chatSelection.modelName,
-            generatorParameters: chatSelection.parameters
+            generatorParameters: chatSelection.parameters,
+            promptBuilder: KnowledgeRAGPromptBuilder(
+                promptConfiguration: ragPrompts.generator,
+                outputLanguage: outputLanguage
+            )
         )
     }
 

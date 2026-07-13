@@ -43,11 +43,21 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
     private let client: any AIClientProtocol
     private let model: String
     private let parameters: AIModelParameters
+    private let promptConfiguration: AIPromptConfiguration
+    private let outputLanguage: String
 
-    init(client: any AIClientProtocol, model: String, parameters: AIModelParameters) {
+    init(
+        client: any AIClientProtocol,
+        model: String,
+        parameters: AIModelParameters,
+        promptConfiguration: AIPromptConfiguration = RAGDefaultPrompts.planner,
+        outputLanguage: String = "English"
+    ) {
         self.client = client
         self.model = model
         self.parameters = parameters
+        self.promptConfiguration = promptConfiguration
+        self.outputLanguage = outputLanguage
     }
 
     func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan {
@@ -64,8 +74,10 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         guard !question.isEmpty else { throw RAGQueryPlannerError.emptyQuestion }
 
         let request = AIChatRequest(
-            systemPrompt: Self.systemPrompt,
-            userPrompt: userPrompt(question: question, context: composerContext),
+            systemPrompt: promptConfiguration.renderedSystemPrompt(placeholders: [
+                "outputLanguage": outputLanguage
+            ]),
+            userPrompt: renderedUserPrompt(question: question, context: composerContext),
             model: model,
             parameters: parameters,
             responseFormat: .jsonObject
@@ -79,7 +91,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             // 这种“已经收到但无法解析”的格式失败才值得重试和 semantic fallback。网络、
             // 认证和配置错误必须交给 UI 的可恢复提示，不能伪装成成功的降级检索。
             var retry = request
-            retry.userPrompt += "\n\n上一次输出无法解析。只返回一个符合 schema 的 JSON object，不要 Markdown 代码块或说明。"
+            retry.userPrompt += "\n\nPrevious output could not be parsed. Return only one JSON object that matches the schema. No Markdown fences or commentary."
             let retryContent = try await streamedContent(request: retry, onReasoningDelta: onReasoningDelta)
             do {
                 return try Self.decodeAndValidate(retryContent, fallbackQuestion: question)
@@ -113,18 +125,15 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         return content
     }
 
-    private func userPrompt(question: String, context: RAGComposerContext) -> String {
+    private func renderedUserPrompt(question: String, context: RAGComposerContext) -> String {
         let explicit = context.explicitRepoIDs.map(String.init).joined(separator: ",")
-        return """
-            用户问题：\(question)
-
-            输入框确定上下文（只供理解，本地执行器会再次强制执行）：
-            - explicitRepoIDs: [\(explicit)]
-            - explicitRepoMode: \(context.explicitRepoMode.rawValue)
-            - attachmentCount: \(context.attachments.count)
-
-            请输出查询计划 JSON。
-            """
+        return promptConfiguration.renderedUserPrompt(placeholders: [
+            "outputLanguage": outputLanguage,
+            "question": question,
+            "explicitRepoIDs": explicit,
+            "explicitRepoMode": context.explicitRepoMode.rawValue,
+            "attachmentCount": String(context.attachments.count)
+        ])
     }
 
     static func decodeAndValidate(_ raw: String, fallbackQuestion: String) throws -> RAGQueryPlan {
@@ -259,38 +268,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             mode: .semanticOnly,
             semanticQuery: question,
             confidence: .medium,
-            userVisiblePlan: .init(scope: "知识库", chips: ["查询计划已降级"], semantic: question)
+            userVisiblePlan: .init(scope: "Knowledge Base", chips: ["Query plan degraded"], semantic: question)
         )
     }
-
-    private static let systemPrompt = """
-        你是 Starcat 的 Query Planner。你只输出 JSON 查询计划，不回答用户问题。
-
-        数据边界：默认且只能查询用户 Starcat 知识库中的 GitHub repo。本地执行器会强制执行该边界。
-        支持字段：status(using/read/unread)、languages、tags、minStars、maxStars、minForks、maxForks、license、includeArchived、includeForks、starredAfter、starredBefore、libraryUpdatedAfter、libraryUpdatedBefore、repoCreatedAfter、repoCreatedBefore、pushedAfter、pushedBefore。
-        日期输出 ISO-8601。不要创造字段。用户没有筛选语义时 filters 必须是空 object。
-
-        mode：
-        - semantic_only：没有结构化筛选，semanticQuery 是优化后的检索问题。
-        - filtered_semantic：先按 filters/sort 过滤，再用 semanticQuery 检索。
-        - structured_only：只需列表、排序或统计，不做 child chunk 召回。
-        - needs_clarification：日期含义或意图无法确定，必须提供 clarificationQuestion。
-
-        “从某日期开始”没有说明是 star、入库、创建还是 push 时间时，必须 needs_clarification。
-        普通问题 remoteContextRequests 必须为空。只有明确依赖 GitHub 现场数据时才请求：
-        github_issues、github_pull_requests、github_releases、github_contributors、github_commit_activity、github_security_advisories。
-
-        输出 schema：
-        {
-          "mode":"semantic_only|filtered_semantic|structured_only|needs_clarification",
-          "semanticQuery":"string",
-          "filters":{},
-          "sort":null或{"field":"stars|forks|pushedAt|repoCreatedAt|libraryUpdatedAt|starredAt","direction":"asc|desc"},
-          "candidateLimit":null或integer,
-          "remoteContextRequests":[{"resource":"github_issues","query":"string","reason":"string","maxRepos":5,"perRepoLimit":10}],
-          "confidence":"high|medium|needs_clarification",
-          "clarificationQuestion":null或string,
-          "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"string","planningNotes":["面向用户的简短查询规划说明，最多 3 条"]}
-        }
-        """
 }

@@ -9,8 +9,9 @@ import SwiftUI
 
 struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(AppDependencies.self) private var dependencies
 
-    let chromeState: WorkspaceChromeState
+    @Bindable var chromeState: WorkspaceChromeState
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
 
     var body: some View {
@@ -50,6 +51,9 @@ struct KnowledgeRAGWorkspaceView: View {
                 onDismiss: viewModel.dismissError
             )
                 .appLocaleEnvironment()
+        }
+        .sheet(isPresented: $chromeState.isPromptSettingsPresented) {
+            RAGWorkspacePromptSettingsSheet(settings: dependencies.settings)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)

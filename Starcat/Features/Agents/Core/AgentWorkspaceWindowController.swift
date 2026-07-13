@@ -29,6 +29,13 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
     /// 显示 Agent 工作台窗口。
     @MainActor
     static func show(dependencies: AppDependencies) {
+        guard AIWorkspaceEntryGate.authorizeOpening(
+            dependencies: dependencies,
+            proFeature: .aiChat
+        ) else {
+            return
+        }
+
         let controller: AgentWorkspaceWindowController
         let shouldCenter: Bool
 

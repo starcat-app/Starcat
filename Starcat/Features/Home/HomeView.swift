@@ -727,6 +727,12 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenAgentWorkspace)) { _ in
             gettingStartedStore.markCompleted(.useAgentWorkspace)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatWorkspaceRequiresProPaywall)) { note in
+            // Smart Collections 等子视图通过 AppKit 窗口入口请求付费墙；只有主窗口持有
+            // `ProPaywallSheet` 的 presentation state，故在这里统一接住并展示。
+            guard let feature = note.object as? ProFeature else { return }
+            paywallContext = ProPaywallContext(feature: feature)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRepoHomepage)) { _ in
             gettingStartedStore.markCompleted(.openRepoHomepage)
         }

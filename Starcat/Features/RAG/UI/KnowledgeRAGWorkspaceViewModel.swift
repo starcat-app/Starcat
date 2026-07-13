@@ -210,7 +210,10 @@ final class KnowledgeRAGWorkspaceViewModel {
            let lastContextUsage {
             return lastContextUsage
         }
-        return KnowledgeRAGPromptBuilder().preview(
+        return KnowledgeRAGPromptBuilder(
+            promptConfiguration: dependencies.settings.ragPromptSettings.generator,
+            outputLanguage: LocaleStore.shared.selection.aiOutputLanguageDescriptor
+        ).preview(
             question: draftQuestion,
             history: RAGConversationHistoryBuilder.build(
                 from: messages,

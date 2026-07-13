@@ -21,6 +21,8 @@ final class WorkspaceChromeState {
     var isLeftColumnCollapsed: Bool = false
     var isRightColumnCollapsed: Bool = false
     var isPinned: Bool = false
+    /// RAG 工作台专用：titlebar 齿轮打开提示词 Sheet；Agent 不用。
+    var isPromptSettingsPresented: Bool = false
 }
 
 /// 放在 `NSTitlebarAccessoryViewController` 内的窗口级图标按钮组。
@@ -28,13 +30,17 @@ struct WorkspaceTitlebarControls: View {
 
     @Bindable var chromeState: WorkspaceChromeState
     let onPinnedChange: (Bool) -> Void
+    /// RAG 工作台专用：右上角齿轮打开提示词设置；Agent 不传则不显示。
+    var onPromptSettings: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             controlButton(
                 systemImage: "inset.filled.leftthird.rectangle",
                 isActive: chromeState.isLeftColumnCollapsed,
-                help: chromeState.isLeftColumnCollapsed ? "显示左栏" : "隐藏左栏"
+                helpKey: chromeState.isLeftColumnCollapsed
+                    ? "workspace.chrome.showLeft"
+                    : "workspace.chrome.hideLeft"
             ) {
                 chromeState.isLeftColumnCollapsed.toggle()
             }
@@ -42,7 +48,9 @@ struct WorkspaceTitlebarControls: View {
             controlButton(
                 systemImage: "inset.filled.rightthird.rectangle",
                 isActive: chromeState.isRightColumnCollapsed,
-                help: chromeState.isRightColumnCollapsed ? "显示右栏" : "隐藏右栏"
+                helpKey: chromeState.isRightColumnCollapsed
+                    ? "workspace.chrome.showRight"
+                    : "workspace.chrome.hideRight"
             ) {
                 chromeState.isRightColumnCollapsed.toggle()
             }
@@ -50,22 +58,37 @@ struct WorkspaceTitlebarControls: View {
             controlButton(
                 systemImage: chromeState.isPinned ? "pin.circle.fill" : "pin.circle",
                 isActive: chromeState.isPinned,
-                help: chromeState.isPinned ? "取消窗口置顶" : "置顶窗口"
+                helpKey: chromeState.isPinned
+                    ? "workspace.chrome.unpin"
+                    : "workspace.chrome.pin"
             ) {
                 chromeState.isPinned.toggle()
                 onPinnedChange(chromeState.isPinned)
             }
+
+            if let onPromptSettings {
+                controlButton(
+                    systemImage: "gearshape",
+                    isActive: false,
+                    helpKey: "rag.workspace.prompt.open"
+                ) {
+                    onPromptSettings()
+                }
+            }
         }
         .padding(.trailing, 10)
         // NSTitlebarAccessoryViewController 不会可靠地从 SwiftUI 内容推导尺寸。
-        // 在透明标题栏 + fullSizeContentView 下显式给出尺寸，避免按钮组被系统按 0 宽布局而不可见。
-        .frame(width: 112, height: 32, alignment: .trailing)
+        // 按钮数可变（Agent 3 / RAG 4），用 fixedSize 避免齿轮被裁掉。
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: 32, alignment: .trailing)
+        // titlebar accessory 是独立 hosting 树，不继承主窗口 locale。
+        .appLocaleEnvironment()
     }
 
     private func controlButton(
         systemImage: String,
         isActive: Bool,
-        help: String,
+        helpKey: LocalizedStringKey,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -78,6 +101,6 @@ struct WorkspaceTitlebarControls: View {
         .focusEffectDisabled()
         .foregroundStyle(isActive ? Color.accentColor : .secondary)
         .background(isActive ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-        .help(help)
+        .help(helpKey)
     }
 }

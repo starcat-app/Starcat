@@ -34,6 +34,13 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     /// 同一实例，才能同步 star 状态。
     @MainActor
     static func show(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+        guard AIWorkspaceEntryGate.authorizeOpening(
+            dependencies: dependencies,
+            proFeature: .knowledgeRAG
+        ) else {
+            return
+        }
+
         let controller: KnowledgeRAGWorkspaceWindowController
         let shouldCenter: Bool
 
@@ -94,11 +101,18 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
 
         let controls = NSTitlebarAccessoryViewController()
         controls.layoutAttribute = .right
-        let controlsView = NSHostingView(rootView: WorkspaceTitlebarControls(chromeState: chromeState) { [weak window] isPinned in
-            window?.level = isPinned ? .floating : .normal
-        })
+        let controlsView = NSHostingView(rootView: WorkspaceTitlebarControls(
+            chromeState: chromeState,
+            onPinnedChange: { [weak window] isPinned in
+                window?.level = isPinned ? .floating : .normal
+            },
+            onPromptSettings: { [chromeState] in
+                chromeState.isPromptSettingsPresented = true
+            }
+        ))
         // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。
-        controlsView.frame = NSRect(x: 0, y: 0, width: 112, height: 32)
+        // RAG 比 Agent 多一个齿轮（约 +34pt）。
+        controlsView.frame = NSRect(x: 0, y: 0, width: 146, height: 32)
         controls.view = controlsView
         window.addTitlebarAccessoryViewController(controls)
 

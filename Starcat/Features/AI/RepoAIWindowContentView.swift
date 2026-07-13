@@ -304,11 +304,14 @@ struct RepoAIWindowContentView: View {
 
     /// 自定义面板标题栏。系统标题栏被隐藏后，主动关闭入口必须留在内容树中；
     /// `isMovableByWindowBackground` 仍让标题空白区域承担拖动窗口的职责。
+    /// 左上角用当前仓库 logo（对齐 RAG 工作台身份标识），不再用 sparkles 泛化图标。
     private var panelHeader: some View {
         HStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                .foregroundStyle(.purple)
+            RemoteAvatar(
+                urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
+                size: 20,
+                showBorder: false
+            )
 
             Text(
                 verbatim: String(
@@ -1478,6 +1481,7 @@ struct RepoAIWindowContentView: View {
                                 ForEach(chat.messages) { message in
                                     AIChatBubble(
                                         message: message,
+                                        userAvatarURL: authSession.state.user?.avatarUrl,
                                         onEditUserMessage: editUserMessage
                                     )
                                 }
