@@ -61,6 +61,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var approvedRemoteResources: Set<RAGRemoteContextResource> = []
     var selectedCitation: RAGCitation?
     var selectedCitationChunk: RAGChunk?
+    /// 每次主动聚焦引用时递增；同 id 再点也会变，驱动右侧切回「证据」tab。
+    private(set) var citationFocusSequence: Int = 0
     var selectedRepoContexts: [Repo] = []
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var attachments: [RAGComposerAttachment] = []
@@ -694,6 +696,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     func showKnowledgeBrowser(presentingWindow: NSWindow?) {
         KnowledgeRAGBrowserWindowController.show(
             dependencies: dependencies,
+            homeViewModel: homeViewModel,
             centeredOver: presentingWindow
         )
     }
@@ -889,6 +892,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     func selectCitation(_ citation: RAGCitation) {
         selectedCitation = citation
         selectedCitationChunk = nil
+        // 即使还是同一条引用，也要通知 Inspector：用户可能正停在「调试/计划/索引」。
+        citationFocusSequence &+= 1
         guard let chunkID = citation.chunkID else { return }
         Task { [weak self] in
             guard let self else { return }

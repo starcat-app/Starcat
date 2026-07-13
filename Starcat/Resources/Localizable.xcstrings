@@ -19631,6 +19631,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "命中的分片" } }
       }
     },
+    "rag.workspace.inspector.chunkPreview.expand" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Click to view the full matched chunk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击查看完整命中分片" } }
+      }
+    },
     "rag.workspace.attachment.textContext" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "temporary text context" } },
@@ -20691,8 +20697,8 @@
     },
     "rag.browser.open" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Starcat details" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 Starcat 详情" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat detail" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 详情" } }
       }
     },
     "rag.browser.overview" : {

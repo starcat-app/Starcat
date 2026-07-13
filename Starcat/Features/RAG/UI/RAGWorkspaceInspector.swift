@@ -23,9 +23,12 @@ struct RAGWorkspaceInspector: View {
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isRetrievalScoreExplanationPresented = false
+    @State private var isCitationChunkPopoverPresented = false
 
     private static let inspectorContentInset: CGFloat = 14
     private static let indexRowTrailingAffordanceWidth: CGFloat = 16
+    /// Matched chunk 预览行数；超出尾部省略，全文进 popover。
+    private static let citationChunkPreviewLineLimit = 5
 
     private func ragFont(_ role: RAGFontRole, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
         interfaceScale.font(role.typography, weight: weight, design: design)
@@ -83,17 +86,15 @@ struct RAGWorkspaceInspector: View {
 
             Divider()
 
-            Picker("", selection: $inspectorTab) {
-                ForEach(visibleInspectorTabs) { tab in
-                    Text(tab.titleKey).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            // 等宽铺满：系统 segmented 会按文案长短挤段宽，中文短标签看起来和英文不一致。
+            RAGInspectorTabBar(
+                tabs: visibleInspectorTabs,
+                selection: $inspectorTab,
+                font: ragFont(.caption, weight: .medium)
+            )
             .padding(.horizontal, Self.inspectorContentInset)
             .padding(.top, 12)
             .padding(.bottom, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             ScrollView {
                 switch inspectorTab {
@@ -109,8 +110,15 @@ struct RAGWorkspaceInspector: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
-        .onChange(of: viewModel.selectedCitation?.id) { _, selectedID in
-            if selectedID != nil { inspectorTab = .evidence }
+        .onChange(of: viewModel.citationFocusSequence) { _, _ in
+            // 用 sequence 而不是 citation.id：同条芯片再点时 id 不变，仍需从调试等 tab 切回证据。
+            if viewModel.selectedCitation != nil {
+                inspectorTab = .evidence
+            }
+        }
+        .onChange(of: viewModel.selectedCitation?.id) { _, _ in
+            // 换引用时关掉旧全文，避免 popover 挂在错误分片上。
+            isCitationChunkPopoverPresented = false
         }
     }
 
@@ -288,15 +296,7 @@ struct RAGWorkspaceInspector: View {
                 Text("rag.workspace.inspector.chunkPreview")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text(chunk.content)
-                    .font(ragFont(.caption))
-                    .textSelection(.enabled)
-                    .lineLimit(12)
-                if chunk.isTruncated {
-                    Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.orange)
-                }
+                citationChunkPreview(chunk)
             }
             if citation.chunkID == nil {
                 Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
@@ -312,6 +312,61 @@ struct RAGWorkspaceInspector: View {
             .controlSize(.small)
         }
         .padding(.top, 2)
+    }
+
+    /// 最多 5 行预览；点击用 popover 看全文，避免点选文本时「字突然变多」。
+    private func citationChunkPreview(_ chunk: RAGChunk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                isCitationChunkPopoverPresented = true
+            } label: {
+                Text(chunk.content)
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(Self.citationChunkPreviewLineLimit)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("rag.workspace.inspector.chunkPreview.expand")
+            .popover(isPresented: $isCitationChunkPopoverPresented, arrowEdge: .leading) {
+                citationChunkFullPopover(chunk)
+            }
+
+            if chunk.isTruncated {
+                Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func citationChunkFullPopover(_ chunk: RAGChunk) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("rag.workspace.inspector.chunkPreview")
+                .font(ragFont(.callout, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            ScrollView {
+                Text(chunk.content)
+                    .font(ragFont(.caption))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 360)
+
+            if chunk.isTruncated {
+                Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(14)
+        .frame(width: 400, alignment: .leading)
+        .appLocaleEnvironment()
     }
 
     var planInspector: some View {
@@ -1054,5 +1109,76 @@ struct RAGWorkspaceInspector: View {
         case .githubCommitActivity: return "GitHub Commit Activity"
         case .githubSecurityAdvisories: return "GitHub Security Advisories"
         }
+    }
+}
+
+/// 引用侧栏等宽 tab：铺满可用宽度，中英文标签长短不再改变段宽观感。
+private struct RAGInspectorTabBar: View {
+    let tabs: [RAGInspectorTab]
+    @Binding var selection: RAGInspectorTab
+    let font: Font
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    private static let horizontalInset: CGFloat = 3
+    private static let dividerWidth: CGFloat = 1
+    private static let controlHeight: CGFloat = 32
+
+    var body: some View {
+        GeometryReader { proxy in
+            // 由确定的父宽度一次性分配每段宽度，避免多个 `.infinity` 子项反向参与
+            // HStack 的尺寸协商；后者在 macOS 26 的 SwiftUI 布局引擎中会造成主线程自旋。
+            let dividerCount = max(tabs.count - 1, 0)
+            let contentWidth = max(
+                0,
+                proxy.size.width
+                    - Self.horizontalInset * 2
+                    - CGFloat(dividerCount) * Self.dividerWidth
+            )
+            let tabWidth = tabs.isEmpty ? 0 : contentWidth / CGFloat(tabs.count)
+
+            HStack(spacing: 0) {
+                ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                    Button {
+                        selection = tab
+                    } label: {
+                        Text(tab.titleKey)
+                            .font(font)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .frame(width: tabWidth, height: Self.controlHeight - Self.horizontalInset * 2)
+                            .foregroundStyle(selection == tab ? Color.white : Color.primary)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(selection == tab ? Color.accentColor : Color.clear)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .accessibilityAddTraits(selection == tab ? .isSelected : [])
+
+                    if index < tabs.count - 1 {
+                        Rectangle()
+                            .fill(showsDivider(before: index + 1) ? Color.primary.opacity(0.18) : .clear)
+                            .frame(width: Self.dividerWidth, height: 14)
+                    }
+                }
+            }
+            .padding(Self.horizontalInset)
+        }
+        .frame(height: Self.controlHeight)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: selection)
+    }
+
+    /// 仅在相邻两个未选中段之间画竖线，与系统 segmented 分隔习惯一致。
+    private func showsDivider(before index: Int) -> Bool {
+        guard index > 0 else { return false }
+        return selection != tabs[index - 1] && selection != tabs[index]
     }
 }

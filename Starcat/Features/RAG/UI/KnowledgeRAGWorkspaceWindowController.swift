@@ -123,9 +123,16 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     private static var shared: KnowledgeRAGBrowserWindowController?
 
     @MainActor
-    static func show(dependencies: AppDependencies, centeredOver presentingWindow: NSWindow?) {
+    static func show(
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel,
+        centeredOver presentingWindow: NSWindow?
+    ) {
         let isNewWindow = shared == nil
-        let controller = shared ?? KnowledgeRAGBrowserWindowController(dependencies: dependencies)
+        let controller = shared ?? KnowledgeRAGBrowserWindowController(
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
+        )
         shared = controller
         controller.showWindow(nil)
         if isNewWindow, let window = controller.window {
@@ -154,9 +161,14 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
         window.setFrameOrigin(frame.origin)
     }
 
-    private init(dependencies: AppDependencies) {
-        let content = KnowledgeRAGBrowserView(viewModel: KnowledgeRAGBrowserViewModel(dependencies: dependencies))
-            .appHostEnvironment(dependencies)
+    private init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+        let content = KnowledgeRAGBrowserView(
+            viewModel: KnowledgeRAGBrowserViewModel(
+                dependencies: dependencies,
+                homeViewModel: homeViewModel
+            )
+        )
+        .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
         let window = NSWindow(contentViewController: NSHostingController(rootView: content))
         window.title = String.l10n("rag.browser.window.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -181,6 +193,8 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
 @Observable
 private final class KnowledgeRAGBrowserViewModel {
     private let dependencies: AppDependencies
+    /// 与证据 tab「Starcat 详情」同路：独立详情窗需要共享 HomeViewModel 才能同步 star。
+    private let homeViewModel: HomeViewModel
 
     var coverage = RAGIndexCoverage(knowledgeRepoCount: 0, indexedRepoCount: 0, totalChunks: 0, readyChunks: 0, pendingChunks: 0, failedChunks: 0, staleChunks: 0)
     var candidates: [RAGRepoCandidate] = []
@@ -203,7 +217,10 @@ private final class KnowledgeRAGBrowserViewModel {
     var hasCompletedRetrievalTest = false
     var errorMessage: String?
 
-    init(dependencies: AppDependencies) { self.dependencies = dependencies }
+    init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+        self.dependencies = dependencies
+        self.homeViewModel = homeViewModel
+    }
 
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
     var selectedCandidate: RAGRepoCandidate? { candidates.first(where: { $0.repo.id == selectedRepoID }) }
@@ -247,9 +264,14 @@ private final class KnowledgeRAGBrowserViewModel {
         }
     }
 
+    /// 与证据 tab「Starcat 详情」一致：只开独立详情渲染窗，不激活主窗口选中态。
     func openSelectedRepository() {
         guard let repo = selectedCandidate?.repo else { return }
-        dependencies.companionActionDispatcher.requestOpenRepo(repo)
+        RepoDetailWindowController.show(
+            repo: repo,
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
+        )
     }
 
     func runRetrievalTest() {
@@ -653,14 +675,15 @@ private struct KnowledgeRAGBrowserView: View {
                 .accessibilityLabel(Text("rag.browser.retrieval.run"))
                 .help(Text("rag.browser.retrieval.run"))
                 .pointerStyle(.link)
-                // 贴右：保留底/左内边距，缩小 trailing，让按钮更靠输入框右缘。
+                // 相对输入框描边：右/下同为 6，贴角对称。
                 .padding(.leading, 8)
-                .padding(.vertical, 8)
-                .padding(.trailing, 2)
+                .padding(.top, 8)
+                .padding(.trailing, 6)
+                .padding(.bottom, 6)
             }
             .frame(height: 120)
+            // 只给正文左侧留白；右/下由按钮自身边距控制，避免叠加后不对称。
             .padding(.leading, 7)
-            .padding(.trailing, 2)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
             if !viewModel.retrievalHits.isEmpty {
