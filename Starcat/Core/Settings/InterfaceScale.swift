@@ -40,6 +40,17 @@ enum InterfaceScale: String, CaseIterable, Identifiable {
         case .large:       return "settings.general.interfaceScale.large"
         }
     }
+
+    /// 给仍使用 SwiftUI 动态 text style 的独立窗口提供与字号档位一致的倍率。
+    /// 自定义 `StarcatTypography` 仍直接使用 `multiplier`，不会受此映射二次缩放。
+    var dynamicTypeSize: DynamicTypeSize {
+        switch self {
+        case .compact: return .xSmall
+        case .standard: return .medium
+        case .comfortable: return .large
+        case .large: return .xLarge
+        }
+    }
 }
 
 private struct StarcatInterfaceScaleKey: EnvironmentKey {

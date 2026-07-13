@@ -26,29 +26,11 @@ extension View {
         _ dependencies: AppDependencies,
         homeViewModel: HomeViewModel? = nil
     ) -> some View {
-        let rooted = self
-            .starcatAnimationOverride()
-            .appLocaleEnvironment()
-            // AppKit 自建窗口不经过 StarcatApp.contentRoot,需要在这里同步注入
-            // 主窗口同款字号倍率,否则 Agent/RAG/AI 独立窗口会退回 standard。
-            .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
-            .environment(dependencies)
-            .environment(dependencies.authSession)
-            .environment(dependencies.syncManager)
-            .environment(dependencies.settings)
-            .environment(dependencies.subscriptionManager)
-            .environment(dependencies.directLicenseManager)
-            .environment(dependencies.entitlementGate)
-            .environment(dependencies.contributionService)
-            .environment(dependencies.userProfileService)
-            .environment(dependencies.developerLanguageService)
-            .environment(dependencies.autoTidyScheduler)
-
-        if let homeViewModel {
-            rooted.environment(homeViewModel)
-        } else {
-            rooted
-        }
+        AppHostEnvironmentContainer(
+            content: self,
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
+        )
     }
 
     /// SwiftUI `.sheet` / `.popover` 根视图的标准 environment 链。
@@ -66,5 +48,46 @@ extension View {
             .environment(dependencies.entitlementGate)
             .environment(dependencies.developerLanguageService)
             .appLocaleEnvironment()
+    }
+}
+
+/// AppKit 独立窗口的 environment 根节点。
+///
+/// 必须在 SwiftUI `body` 内读取 `settings.interfaceScale`：在 window controller init 里把值
+/// 直接塞进 modifier 只会得到打开窗口那一刻的快照，Settings 后续改字号不会重绘。
+private struct AppHostEnvironmentContainer<Content: View>: View {
+    let content: Content
+    let dependencies: AppDependencies
+    let homeViewModel: HomeViewModel?
+
+    var body: some View {
+        // AppSettings 是 @Observable；这里的读取会令独立 NSHostingController 根视图订阅字号变化。
+        let interfaceScale = dependencies.settings.interfaceScale
+        let rooted = content
+            .starcatAnimationOverride()
+            .appLocaleEnvironment()
+            // AppKit 自建窗口不经过 StarcatApp.contentRoot,需要在这里同步注入
+            // 主窗口同款字号倍率,否则 Agent/RAG/AI 独立窗口会退回 standard。
+            .environment(\.starcatInterfaceScale, interfaceScale)
+            // 知识库浏览器等仍使用 `.caption` / `.body` 的原生 text style 也随设置更新。
+            // 显式 `StarcatTypography` 已自行乘倍率，不会受到 Dynamic Type 的二次影响。
+            .dynamicTypeSize(interfaceScale.dynamicTypeSize)
+            .environment(dependencies)
+            .environment(dependencies.authSession)
+            .environment(dependencies.syncManager)
+            .environment(dependencies.settings)
+            .environment(dependencies.subscriptionManager)
+            .environment(dependencies.directLicenseManager)
+            .environment(dependencies.entitlementGate)
+            .environment(dependencies.contributionService)
+            .environment(dependencies.userProfileService)
+            .environment(dependencies.developerLanguageService)
+            .environment(dependencies.autoTidyScheduler)
+
+        if let homeViewModel {
+            rooted.environment(homeViewModel)
+        } else {
+            rooted
+        }
     }
 }
