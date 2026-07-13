@@ -540,21 +540,18 @@ struct KnowledgeRAGWorkspaceView: View {
                             messageView(message)
                                 .id(message.id)
                         }
-                        if !viewModel.executionSteps.isEmpty {
-                            RAGExecutionTimeline(steps: viewModel.executionSteps)
-                                .id("rag-execution-timeline")
-                        }
-                        if !viewModel.streamingAnswer.isEmpty {
+                        if !viewModel.executionSteps.isEmpty
+                            || !viewModel.streamingAnswer.isEmpty
+                            || viewModel.isAnswering {
                             assistantMessage(
                                 content: viewModel.streamingAnswer,
                                 citations: [],
                                 createdAt: nil,
-                                showsActions: false
+                                showsActions: false,
+                                executionTrace: viewModel.executionSteps,
+                                activityLabel: liveAssistantActivityLabel()
                             )
-                                .id("streaming-answer")
-                        } else if viewModel.isAnswering {
-                            workingIndicator
-                                .id("working-indicator")
+                                .id("live-assistant-message")
                         }
 
                         Color.clear
@@ -734,25 +731,23 @@ struct KnowledgeRAGWorkspaceView: View {
         citations: [RAGCitation],
         createdAt: String?,
         showsActions: Bool,
-        executionTrace: [RAGExecutionStep] = []
+        executionTrace: [RAGExecutionStep] = [],
+        activityLabel: String? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if !executionTrace.isEmpty {
-                RAGExecutionTimeline(steps: executionTrace)
-            }
-            RAGAssistantMessageBlock(
-                content: content,
-                citations: citations,
-                createdAtLabel: createdAt.map(messageTimeLabel),
-                showsActions: showsActions,
-                onSelectCitation: { citation in
-                    // 底部芯片只定位右侧证据，不打开详情窗。
-                    viewModel.selectCitation(citation)
-                    inspectorTab = .evidence
-                },
-                onExport: { viewModel.exportAnswer(content) }
-            )
-        }
+        RAGAssistantMessageBlock(
+            content: content,
+            citations: citations,
+            createdAtLabel: createdAt.map(messageTimeLabel),
+            showsActions: showsActions,
+            executionTrace: executionTrace,
+            activityLabel: activityLabel,
+            onSelectCitation: { citation in
+                // 底部芯片只定位右侧证据，不打开详情窗。
+                viewModel.selectCitation(citation)
+                inspectorTab = .evidence
+            },
+            onExport: { viewModel.exportAnswer(content) }
+        )
     }
 
     /// 消息气泡时间戳：只显示短时间，避免挤占中栏。
@@ -763,15 +758,14 @@ struct KnowledgeRAGWorkspaceView: View {
         return date.formatted(Date.FormatStyle(time: .shortened).locale(locale))
     }
 
-    private var workingIndicator: some View {
-        HStack(spacing: 9) {
-            ProgressView()
-                .controlSize(.small)
-            Text(stateText(viewModel.answerState))
-                .font(ragFont(.callout))
-                .foregroundStyle(.secondary)
+    /// 只有尚未创建步骤，或最后一步正在生成正文时才显示独立的加载文案。
+    /// 思考、检索等操作本身已经由 assistant 消息内部的轨迹行表达，不能再额外生成第二条消息。
+    private func liveAssistantActivityLabel() -> String? {
+        guard viewModel.isAnswering else { return nil }
+        guard let runningStep = viewModel.executionSteps.last(where: { $0.state == .running }) else {
+            return stateText(viewModel.answerState)
         }
-        .padding(.vertical, 8)
+        return runningStep.kind == .generation ? stateText(viewModel.answerState) : nil
     }
 
     private var remoteConfirmation: some View {
@@ -1730,7 +1724,8 @@ struct KnowledgeRAGWorkspaceView: View {
         } label: {
             HStack(spacing: 9) {
                 Circle().fill(Color.blue).frame(width: 8, height: 8)
-                Text("rag.workspace.status.repos").font(ragFont(.callout))
+                // 索引统计行用 caption，与证据 tab 的 inspector 密度对齐，避免 callout 抢主阅读层级。
+                Text("rag.workspace.status.repos").font(ragFont(.caption))
                 Spacer()
                 indexRowValue("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
                 indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
@@ -1751,7 +1746,7 @@ struct KnowledgeRAGWorkspaceView: View {
     private func coverageRow(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
         HStack(spacing: 9) {
             Circle().fill(color).frame(width: 8, height: 8)
-            Text(label).font(ragFont(.callout))
+            Text(label).font(ragFont(.caption))
             Spacer()
             indexRowValue(value)
             indexRowTrailingAffordance()
@@ -1771,7 +1766,7 @@ struct KnowledgeRAGWorkspaceView: View {
             } label: {
                 HStack(spacing: 9) {
                     Circle().fill(color).frame(width: 8, height: 8)
-                    Text(indexIssueTitle(kind)).font(ragFont(.callout))
+                    Text(indexIssueTitle(kind)).font(ragFont(.caption))
                     Spacer()
                     indexRowValue(value)
                     indexRowTrailingAffordance(systemImage: isExpanded ? "chevron.down" : "chevron.right")
@@ -1795,7 +1790,7 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private func indexRowValue(_ value: String) -> some View {
         Text(value)
-            .font(ragFont(.callout, weight: .semibold, design: .monospaced))
+            .font(ragFont(.caption, weight: .semibold, design: .monospaced))
             .frame(minWidth: 44, alignment: .trailing)
     }
 
@@ -2295,6 +2290,10 @@ private struct RAGAssistantMessageBlock: View {
     let citations: [RAGCitation]
     let createdAtLabel: String?
     let showsActions: Bool
+    /// 执行轨迹属于本轮 assistant 消息，不允许在消息块之外另起视觉容器。
+    let executionTrace: [RAGExecutionStep]
+    /// 仅用于“正在生成回答”或步骤尚未建立的短暂过渡；回答正文始终不折叠。
+    let activityLabel: String?
     let onSelectCitation: (RAGCitation) -> Void
     let onExport: () -> Void
 
@@ -2305,6 +2304,11 @@ private struct RAGAssistantMessageBlock: View {
 
     private var areActionsRevealed: Bool {
         isHovered || isCopyFeedbackPinned
+    }
+
+    private var preparationSteps: [RAGExecutionStep] {
+        // 生成步骤的可见内容就是下方回答正文，不能把正文再包进一个可折叠步骤。
+        executionTrace.filter { $0.kind != .generation }
     }
 
     var body: some View {
@@ -2323,12 +2327,29 @@ private struct RAGAssistantMessageBlock: View {
                 Spacer(minLength: 0)
             }
 
-            RAGMarkdownText(content: content, citations: citations)
-                .font(interfaceScale.font(.body))
-                .textSelection(.enabled)
-                .frame(maxWidth: 900, alignment: .leading)
+            if !preparationSteps.isEmpty {
+                RAGExecutionTimeline(steps: preparationSteps)
+            }
 
-            if !citations.isEmpty {
+            if let activityLabel, !activityLabel.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(activityLabel)
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            }
+
+            if !content.isEmpty {
+                RAGMarkdownText(content: content, citations: citations)
+                    .font(interfaceScale.font(.body))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 900, alignment: .leading)
+            }
+
+            if !content.isEmpty, !citations.isEmpty {
                 RAGCitationChipsRow(
                     citations: citations,
                     onSelectCitation: onSelectCitation
@@ -2611,28 +2632,19 @@ private struct RAGExecutionTimeline: View {
     @State private var manuallyExpanded: Set<RAGExecutionStepKind> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(steps) { step in
                 executionStep(step)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(Color.accentColor.opacity(0.13), lineWidth: 1)
-        )
     }
 
     private func executionStep(_ step: RAGExecutionStep) -> some View {
-        let isExpanded = step.kind == .generation
-            || step.state == .running
+        let isExpanded = step.state == .running
             || manuallyExpanded.contains(step.kind)
         return VStack(alignment: .leading, spacing: 7) {
             Button {
-                guard step.kind != .generation else { return }
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     if isExpanded {
                         manuallyExpanded.remove(step.kind)
