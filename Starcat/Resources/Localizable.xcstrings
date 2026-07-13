@@ -20397,6 +20397,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制全部调试记录" } }
       }
     },
+    "rag.workspace.debug.export" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Export this debug record as Markdown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导出此调试记录为 Markdown" } }
+      }
+    },
     "rag.workspace.debug.category.conversationTitle" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Title generation" } },

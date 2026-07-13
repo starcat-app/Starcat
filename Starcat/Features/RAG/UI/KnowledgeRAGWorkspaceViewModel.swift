@@ -713,6 +713,15 @@ final class KnowledgeRAGWorkspaceViewModel {
         }.joined(separator: "\n\n==========\n\n")
     }
 
+    /// 导出单条调试 trace 为 Markdown，便于贴 issue / 对照 Prompt。
+    func exportDebugTrace(_ trace: RAGDebugTrace) {
+        let stamp = Self.debugExportFilenameFormatter.string(from: trace.startedAt)
+        exportMarkdown(
+            Self.debugTraceMarkdown(trace),
+            suggestedName: "Starcat-RAG-Debug-\(trace.category.rawValue)-\(stamp).md"
+        )
+    }
+
     func exportAnswer(_ content: String) {
         exportMarkdown(content, suggestedName: "Starcat-RAG.md")
     }
@@ -733,6 +742,61 @@ final class KnowledgeRAGWorkspaceViewModel {
             errorMessage = error.localizedDescription
         }
     }
+
+    /// 单条 trace → Markdown；stage 用 fenced code block，方便 diff / 粘贴。
+    private static func debugTraceMarkdown(_ trace: RAGDebugTrace) -> String {
+        let header = """
+        # \(debugTraceCategoryTitle(trace.category))
+
+        - started_at: `\(debugExportTimestampFormatter.string(from: trace.startedAt))`
+        - state: `\(debugTraceStateRaw(trace.state))`
+        - category: `\(trace.category.rawValue)`
+        - events: \(trace.events.count)
+
+        """
+        let body = trace.events.map { event in
+            """
+            ## \(event.stage.rawValue) (+\(String(format: "%.3f", event.elapsedSeconds))s)
+
+            ```
+            \(event.payload)
+            ```
+            """
+        }.joined(separator: "\n\n")
+        return header + "\n" + body + "\n"
+    }
+
+    private static func debugTraceCategoryTitle(_ category: RAGDebugTraceCategory) -> String {
+        switch category {
+        case .questionAnswer:
+            return String.l10n("rag.workspace.debug.category.questionAnswer")
+        case .conversationTitle:
+            return String.l10n("rag.workspace.debug.category.conversationTitle")
+        }
+    }
+
+    private static func debugTraceStateRaw(_ state: RAGDebugTrace.State) -> String {
+        switch state {
+        case .running: return "running"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        case .cancelled: return "cancelled"
+        }
+    }
+
+    private static let debugExportTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
+    private static let debugExportFilenameFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
 
     func rebuildIndex() {
         guard !isIndexing else { return }
