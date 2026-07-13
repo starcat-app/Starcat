@@ -119,7 +119,7 @@ struct DirectLicenseAPITests {
         URLProtocolStub.requestHandler = { request in
             #expect(request.httpMethod == "POST")
             #expect(request.url?.path == "/v1/direct/customer-portal")
-            let body = try #require(request.httpBody)
+            let body = try #require(Self.bodyData(from: request))
             let payload = try JSONSerialization.jsonObject(with: body) as? [String: String]
             #expect(payload?["licenseKey"] == "STARCAT-TEST-KEY")
             #expect(payload?["instanceID"] == "inst_123")
@@ -240,5 +240,24 @@ struct DirectLicenseAPITests {
             headerFields: ["Content-Type": "application/json"]
         )!
         return (response, Data(body.utf8))
+    }
+
+    /// `URLSession` 转交给 `URLProtocol` 时可能把 `httpBody` 改放到 stream。
+    /// 测试必须同时读取两种承载方式，才能验证实际发送的 JSON 契约。
+    private static func bodyData(from request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 }

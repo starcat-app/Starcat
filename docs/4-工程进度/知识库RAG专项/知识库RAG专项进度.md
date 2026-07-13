@@ -189,6 +189,8 @@
 > 实现：以 repo 与 parent 的复合身份批量加载 siblings，保持知识库和当前 embedding 模型门槛。
 - [x] citation 解析仅接受正文可见区域的本轮 marker，过滤代码、转义文本、链接标签与伪造编号 — `KnowledgeRAGPromptBuilder.swift` — 2026-07-13
 > 实现：生成历史 citation 前先做轻量 Markdown 语法过滤，不把示例文本误记为回答证据。
+- [x] 知识库浏览器查询关联 chunk override，已排除 chunk 不再触发 SQL 错误或泄漏到浏览列表 — `RAGChunkRepository.swift` — 2026-07-13
+> 实现：读取时显式关联 override 表，以相同的排除状态过滤浏览器数据。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
 - [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。

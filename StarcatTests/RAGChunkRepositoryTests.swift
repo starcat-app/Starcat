@@ -229,6 +229,23 @@ struct RAGChunkRepositoryTests {
         #expect(try await repository.fetchKnowledgeChunks(repoId: 31).isEmpty)
     }
 
+    @Test("知识库浏览器不展示已排除的 chunk")
+    func knowledgeBrowserOmitsExcludedChunks() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 32)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 32, state: .inLibrary)
+
+        let result = try await repository.replaceSource(
+            repoId: 32,
+            source: .readme,
+            drafts: [draft(repoId: 32, key: "readme:excluded:0", content: "Excluded")]
+        )
+        let chunkID = try #require(result.pendingChunkIDs.first)
+        try await repository.setKnowledgeChunkExcluded(id: chunkID, isExcluded: true)
+
+        #expect(try await repository.fetchKnowledgeChunks(repoId: 32).isEmpty)
+    }
+
     @Test("知识库浏览器分片按页读取并报告是否还有下一页")
     func managedKnowledgeChunksArePaginated() async throws {
         let (database, repository) = try makeRepository()

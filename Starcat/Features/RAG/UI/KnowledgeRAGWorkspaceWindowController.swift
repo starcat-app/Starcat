@@ -653,10 +653,14 @@ private struct KnowledgeRAGBrowserView: View {
                 .accessibilityLabel(Text("rag.browser.retrieval.run"))
                 .help(Text("rag.browser.retrieval.run"))
                 .pointerStyle(.link)
-                .padding(8)
+                // 贴右：保留底/左内边距，缩小 trailing，让按钮更靠输入框右缘。
+                .padding(.leading, 8)
+                .padding(.vertical, 8)
+                .padding(.trailing, 2)
             }
             .frame(height: 120)
-            .padding(.horizontal, 7)
+            .padding(.leading, 7)
+            .padding(.trailing, 2)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
             if !viewModel.retrievalHits.isEmpty {

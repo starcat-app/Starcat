@@ -261,24 +261,25 @@ struct RAGWorkspaceInspector: View {
     @ViewBuilder
     func citationDetail(_ citation: RAGCitation) -> some View {
         VStack(alignment: .leading, spacing: 9) {
+            // 证据字段与「Matched chunk」同用 caption，避免 callout 值字号一截大一截小。
             VStack(alignment: .leading, spacing: 3) {
                 Text("rag.workspace.inspector.source")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
                 Label {
                     Text(citation.source.titleKey)
-                        .font(ragFont(.callout, weight: .semibold))
+                        .font(ragFont(.caption, weight: .semibold))
                 } icon: {
                     Image(systemName: citation.source.systemImageName)
-                        .font(iconFont(size: 12, weight: .semibold))
+                        .font(iconFont(size: 11, weight: .semibold))
                         .foregroundStyle(citation.source.tintColor)
                 }
             }
-            inspectorValue("rag.workspace.inspector.location", value: citation.sectionTitle)
-            inspectorValue("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
+            citationField("rag.workspace.inspector.location", value: citation.sectionTitle)
+            citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
             retrievalScoreValue(citation)
             if let vectorSimilarity = citation.vectorSimilarity {
-                inspectorValue(
+                citationField(
                     "rag.workspace.inspector.vectorSimilarity",
                     value: String(format: "%.3f", locale: locale, vectorSimilarity)
                 )
@@ -695,6 +696,18 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
+    /// 引用详情字段：与 Matched chunk 同 caption 字号，仅证据展开区使用。
+    func citationField(_ label: LocalizedStringKey, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Text(value.isEmpty ? "-" : value)
+                .font(ragFont(.caption, weight: .semibold))
+                .textSelection(.enabled)
+        }
+    }
+
     /// 融合分只负责检索排序，无法被直接解读为百分比；点击该行在独立 popover 中解释当前命中方式的公式。
     func retrievalScoreValue(_ citation: RAGCitation) -> some View {
         Button {
@@ -704,12 +717,12 @@ struct RAGWorkspaceInspector: View {
                 HStack(spacing: 4) {
                     Text("rag.workspace.inspector.retrievalScore")
                     Image(systemName: "info.circle")
-                        .font(iconFont(size: 12, weight: .medium))
+                        .font(iconFont(size: 11, weight: .medium))
                 }
                 .font(ragFont(.caption))
                 .foregroundStyle(.secondary)
                 Text(String(format: "%.3f", locale: locale, citation.score))
-                    .font(ragFont(.callout, weight: .semibold))
+                    .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

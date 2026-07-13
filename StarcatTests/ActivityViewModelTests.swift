@@ -839,7 +839,8 @@ struct ActivityViewModelTests {
                         summary: "CVE fix",
                         description: "Details",
                         htmlUrl: "https://github.com/advisories/GHSA-xxxx",
-                        publishedAt: "2026-06-10T00:00:00Z",
+                        // 使用当前时间，避免后台 30 天保留期清理掉本用例刚写入的公告。
+                        publishedAt: ActivityViewModel.isoString(Date()),
                         severity: "high"
                     ),
                 ],
@@ -867,7 +868,8 @@ struct ActivityViewModelTests {
 
         let stored = try await GRDBActivityAnnouncementRepository(database: db).fetchAll(limit: 10)
         #expect(stored.count == 1)
-        #expect(stored[0].id == "security:GHSA-xxxx")
+        let announcement = try #require(stored.first)
+        #expect(announcement.id == "security:GHSA-xxxx")
         #expect(mockAPI.securityAdvisoriesCalls.count == 2)
     }
 

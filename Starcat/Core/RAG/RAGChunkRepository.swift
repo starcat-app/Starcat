@@ -492,6 +492,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 SELECT c.*
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                LEFT JOIN rag_chunk_overrides o ON o.chunk_id = c.id
                 WHERE c.repo_id = ? AND COALESCE(o.is_excluded, 0) = 0
                 ORDER BY c.source, c.parent_title, c.chunk_index
                 """, arguments: [repoId])
