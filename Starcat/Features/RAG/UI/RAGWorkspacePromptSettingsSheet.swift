@@ -2,13 +2,15 @@
 //  RAGWorkspacePromptSettingsSheet.swift
 //  Starcat
 //
-//  RAG 工作台提示词编辑 Sheet：Generator / Planner 两套 System + User 模板，
-//  可恢复英文默认值；运行时仍由 Builder 注入 `{outputLanguage}` 等占位符。
+//  RAG 工作台提示词编辑 Sheet：Generator / Planner / Compressor / Title 四套
+//  System + User 模板，可恢复英文默认值；运行时仍由 Builder / Service 注入
+//  `{outputLanguage}` 等占位符。
 //
 //  UI（2026-07-13）：
 //  - System 吃主要高度、User 次之；重置放在 segmented 右侧。
 //  - 字号直接读 `settings.interfaceScale`（与独立窗口同一档位），不只缩放外框。
 //  - 占位符说明收进 popover，避免底部一长串 token 且无含义。
+//  - 2026-07-14：一行 4 段 segmented（回答 / 规划 / 压缩 / 标题）。
 //
 
 import SwiftUI
@@ -16,6 +18,8 @@ import SwiftUI
 private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
     case generator
     case planner
+    case compressor
+    case title
 
     var id: String { rawValue }
 
@@ -23,6 +27,8 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
         switch self {
         case .generator: return "rag.workspace.prompt.tab.generator"
         case .planner: return "rag.workspace.prompt.tab.planner"
+        case .compressor: return "rag.workspace.prompt.tab.compressor"
+        case .title: return "rag.workspace.prompt.tab.title"
         }
     }
 
@@ -43,6 +49,17 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
                 .init(token: "{explicitRepoIDs}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepoIDs"),
                 .init(token: "{explicitRepoMode}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepoMode"),
                 .init(token: "{attachmentCount}", meaningKey: "rag.workspace.prompt.placeholder.attachmentCount"),
+            ]
+        case .compressor:
+            return [
+                .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageCompressor"),
+                .init(token: "{existingSummarySection}", meaningKey: "rag.workspace.prompt.placeholder.existingSummarySection"),
+                .init(token: "{newMessagesSection}", meaningKey: "rag.workspace.prompt.placeholder.newMessagesSection"),
+            ]
+        case .title:
+            return [
+                .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageTitle"),
+                .init(token: "{firstQuestion}", meaningKey: "rag.workspace.prompt.placeholder.firstQuestion"),
             ]
         }
     }
@@ -129,7 +146,7 @@ struct RAGWorkspacePromptSettingsSheet: View {
         }
         .padding(interfaceScale.scaled(20))
         .frame(
-            width: 760 * interfaceScale.multiplier,
+            width: 820 * interfaceScale.multiplier,
             height: 640 * interfaceScale.multiplier
         )
         // sheet 独立环境树：显式挂档位，系统控件与自定义字体同步缩放。
@@ -201,12 +218,16 @@ struct RAGWorkspacePromptSettingsSheet: View {
                 switch tab {
                 case .generator: return draft.generator.systemPrompt
                 case .planner: return draft.planner.systemPrompt
+                case .compressor: return draft.compressor.systemPrompt
+                case .title: return draft.title.systemPrompt
                 }
             },
             set: { value in
                 switch tab {
                 case .generator: draft.generator.systemPrompt = value
                 case .planner: draft.planner.systemPrompt = value
+                case .compressor: draft.compressor.systemPrompt = value
+                case .title: draft.title.systemPrompt = value
                 }
             }
         )
@@ -218,12 +239,16 @@ struct RAGWorkspacePromptSettingsSheet: View {
                 switch tab {
                 case .generator: return draft.generator.userPromptTemplate
                 case .planner: return draft.planner.userPromptTemplate
+                case .compressor: return draft.compressor.userPromptTemplate
+                case .title: return draft.title.userPromptTemplate
                 }
             },
             set: { value in
                 switch tab {
                 case .generator: draft.generator.userPromptTemplate = value
                 case .planner: draft.planner.userPromptTemplate = value
+                case .compressor: draft.compressor.userPromptTemplate = value
+                case .title: draft.title.userPromptTemplate = value
                 }
             }
         )
@@ -233,6 +258,8 @@ struct RAGWorkspacePromptSettingsSheet: View {
         switch tab {
         case .generator: draft.generator = RAGDefaultPrompts.generator
         case .planner: draft.planner = RAGDefaultPrompts.planner
+        case .compressor: draft.compressor = RAGDefaultPrompts.compressor
+        case .title: draft.title = RAGDefaultPrompts.title
         }
     }
 

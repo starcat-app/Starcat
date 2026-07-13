@@ -458,14 +458,9 @@ struct RAGWorkspaceInspector: View {
             indexIssueRow(.pending, value: "\(viewModel.indexCoverage.pendingChunks)", color: .orange)
             indexIssueRow(.failed, value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
             indexIssueRow(.stale, value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
+            embeddingCoverageProgress
             Divider()
             VStack(alignment: .trailing, spacing: 6) {
-                HStack(spacing: 8) {
-                    Spacer()
-                    indexProgressLabel
-                }
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
                 Button {
                     viewModel.rebuildIndex()
                 } label: {
@@ -475,6 +470,7 @@ struct RAGWorkspaceInspector: View {
                     }
                 }
                 .disabled(viewModel.isIndexing)
+                indexProgressLabel
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -1079,33 +1075,75 @@ struct RAGWorkspaceInspector: View {
     @ViewBuilder
     var indexProgressLabel: some View {
         if let summary = viewModel.indexRefreshSummary {
-            HStack(spacing: 5) {
+            VStack(alignment: .trailing, spacing: 2) {
                 if let completedAt = summary.completedAt {
-                    Text(completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
-                        .monospacedDigit()
-                        .foregroundStyle(.green)
-                        .contentTransition(.numericText())
-                        .animation(.easeInOut(duration: 0.18), value: completedAt)
-                    Text(verbatim: "|").foregroundStyle(.secondary)
+                    indexProgressLine(
+                        "rag.workspace.index.lastCompleted",
+                        value: completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)),
+                        color: .green
+                    )
                 }
-                indexProgressSegment("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
-                Text(verbatim: "|").foregroundStyle(.secondary)
-                indexProgressSegment("rag.workspace.index.chunksShort", value: "\(summary.chunksProcessed)/\(summary.totalRepos)", color: .orange)
+                indexProgressLine("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
+                indexProgressLine("rag.workspace.index.sourceBuild", value: "\(summary.sourceReposProcessed)/\(summary.totalRepos)", color: .orange)
+                indexProgressLine("rag.workspace.index.embedding", value: embeddingProgressValue(for: summary), color: .green)
             }
             .font(ragFont(.caption2))
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
         } else {
             EmptyView()
         }
     }
 
-    func indexProgressSegment(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
-        HStack(spacing: 3) {
+    /// 刷新历史改为纵向阶段清单，避免仓库数与分片数并排时被误读为同一口径。
+    func indexProgressLine(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
+        HStack(spacing: 5) {
             Text(label)
-            Text(value).monospacedDigit()
+                .foregroundStyle(.secondary)
+            Text(value)
+                .monospacedDigit()
+                .foregroundStyle(color)
         }
-        .foregroundStyle(color)
+    }
+
+    /// 对用户展示全库向量覆盖，而不是本轮待处理队列；这样无新增分片的刷新仍会显示 20,281/20,281。
+    func embeddingProgressValue(for summary: RAGIndexRefreshSummary) -> String {
+        guard summary.totalChunksAtEmbedding > 0 else {
+            return "\(viewModel.indexCoverage.readyChunks)/\(viewModel.indexCoverage.totalChunks)"
+        }
+        return "\(summary.embeddingReadyChunks)/\(summary.totalChunksAtEmbedding)"
+    }
+
+    /// 常显的整体向量覆盖率。embedding 过程中使用 builder 的批次快照即时推进，完成后回到数据库聚合的真实覆盖率。
+    var embeddingCoverageProgress: some View {
+        let progress = displayedEmbeddingCoverage
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text("rag.workspace.index.embeddingCoverage")
+                    .font(ragFont(.caption2))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(progress.readyChunks.formatted()) / \(progress.totalChunks.formatted())")
+                    .font(ragFont(.caption2))
+                    .monospacedDigit()
+                    .foregroundStyle(.green)
+                    .contentTransition(.numericText())
+            }
+            ProgressView(
+                value: Double(progress.readyChunks),
+                total: Double(max(progress.totalChunks, 1))
+            )
+            .tint(.green)
+            .animation(.easeInOut(duration: 0.18), value: progress.readyChunks)
+        }
+    }
+
+    /// source 构建阶段尚未得到新的 chunk 总数，继续显示上一次真实覆盖率；进入 embedding 后再按批次进度补足。
+    var displayedEmbeddingCoverage: (readyChunks: Int, totalChunks: Int) {
+        guard viewModel.isIndexing,
+              let summary = viewModel.indexRefreshSummary,
+              summary.totalChunksAtEmbedding > 0 else {
+            return (viewModel.indexCoverage.readyChunks, viewModel.indexCoverage.totalChunks)
+        }
+        return (summary.embeddingReadyChunks, summary.totalChunksAtEmbedding)
     }
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))

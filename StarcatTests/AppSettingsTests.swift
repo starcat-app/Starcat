@@ -364,9 +364,14 @@ struct AppSettingsTests {
         #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{questionSection}"))
         #expect(s.ragPromptSettings.planner.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.planner.userPromptTemplate.contains("{question}"))
+        #expect(s.ragPromptSettings.compressor.systemPrompt.contains("{outputLanguage}"))
+        #expect(s.ragPromptSettings.compressor.userPromptTemplate.contains("{existingSummarySection}"))
+        #expect(s.ragPromptSettings.compressor.userPromptTemplate.contains("{newMessagesSection}"))
+        #expect(s.ragPromptSettings.title.systemPrompt.contains("{outputLanguage}"))
+        #expect(s.ragPromptSettings.title.userPromptTemplate.contains("{firstQuestion}"))
     }
 
-    @Test("RAG: Generator/Planner 提示词配置应持久化")
+    @Test("RAG: Generator/Planner/Compressor/Title 提示词配置应持久化")
     func ragPromptSettingsPersist() {
         let defaults = makeIsolatedDefaults()
         let s1 = AppSettings(defaults: defaults)
@@ -378,6 +383,14 @@ struct AppSettingsTests {
             planner: AIPromptConfiguration(
                 systemPrompt: "PLAN_SYS {outputLanguage}",
                 userPromptTemplate: "PLAN_USER {question}"
+            ),
+            compressor: AIPromptConfiguration(
+                systemPrompt: "COMP_SYS {outputLanguage}",
+                userPromptTemplate: "COMP_USER {existingSummarySection}{newMessagesSection}"
+            ),
+            title: AIPromptConfiguration(
+                systemPrompt: "TITLE_SYS {outputLanguage}",
+                userPromptTemplate: "TITLE_USER {firstQuestion}"
             )
         )
 
@@ -386,6 +399,28 @@ struct AppSettingsTests {
         #expect(s2.ragPromptSettings.generator.userPromptTemplate == "GEN_USER {questionSection}")
         #expect(s2.ragPromptSettings.planner.systemPrompt == "PLAN_SYS {outputLanguage}")
         #expect(s2.ragPromptSettings.planner.userPromptTemplate == "PLAN_USER {question}")
+        #expect(s2.ragPromptSettings.compressor.systemPrompt == "COMP_SYS {outputLanguage}")
+        #expect(s2.ragPromptSettings.compressor.userPromptTemplate == "COMP_USER {existingSummarySection}{newMessagesSection}")
+        #expect(s2.ragPromptSettings.title.systemPrompt == "TITLE_SYS {outputLanguage}")
+        #expect(s2.ragPromptSettings.title.userPromptTemplate == "TITLE_USER {firstQuestion}")
+    }
+
+    @Test("RAG: 旧版只有 Generator/Planner 的提示词 JSON 升级后应补齐默认压缩与标题")
+    func ragPromptSettingsDecodeLegacyTwoPromptJSON() throws {
+        let defaults = makeIsolatedDefaults()
+        let legacy = """
+        {
+          "generator":{"systemPrompt":"OLD_GEN","userPromptTemplate":"OLD_GEN_USER"},
+          "planner":{"systemPrompt":"OLD_PLAN","userPromptTemplate":"OLD_PLAN_USER"}
+        }
+        """
+        defaults.set(legacy, forKey: "settings.rag.prompts.v1")
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.ragPromptSettings.generator.systemPrompt == "OLD_GEN")
+        #expect(settings.ragPromptSettings.planner.systemPrompt == "OLD_PLAN")
+        #expect(settings.ragPromptSettings.compressor == RAGDefaultPrompts.compressor)
+        #expect(settings.ragPromptSettings.title == RAGDefaultPrompts.title)
     }
 
     @Test("AI: 旧版设置后重新读取应保留")

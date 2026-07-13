@@ -656,21 +656,34 @@ enum RAGConversationHistoryBuilder {
 /// 会话摘要的模型输入与本地降级策略。模型调用失败时仍可稳定缩短历史，但不会把“降级摘要”
 /// 误标为模型生成的事实；下次可用时会由 Service 重新生成语义摘要并覆盖它。
 enum RAGConversationContextCompressor {
-    static func sourceText(
+    /// User 模板注入的已有摘要段；无摘要时返回空串（与 Generator section 策略一致）。
+    static func existingSummarySection(existingSummary: String?) -> String {
+        guard let existingSummary else { return "" }
+        let trimmed = existingSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return "Existing summary:\n\(trimmed)\n\n"
+    }
+
+    /// User 模板注入的新增对话段；角色标签由代码写死，不暴露成占位符。
+    static func newMessagesSection(messages: [RAGStoredMessage]) -> String {
+        let transcript: String = messages.map { message in
+            let role = message.role == .user ? "User" : "Assistant"
+            return "\(role):\n\(message.content)"
+        }.joined(separator: "\n\n---\n\n")
+        return "New messages:\n\(transcript)"
+    }
+
+    /// 用可配置模板渲染压缩 User Prompt，再整体 clip 到预算。
+    static func renderedUserPrompt(
+        configuration: AIPromptConfiguration,
         existingSummary: String?,
         messages: [RAGStoredMessage]
     ) -> String {
-        let transcript: String = messages.map { message in
-            let role = message.role == .user ? "用户" : "助手"
-            return "\(role)：\n\(message.content)"
-        }.joined(separator: "\n\n---\n\n")
-        let existing: String
-        if let existingSummary {
-            existing = "已有摘要：\n\(existingSummary)\n\n"
-        } else {
-            existing = ""
-        }
-        return RAGContextBudget.clip(existing + "新增对话：\n" + transcript, toTokenBudget: 8_000)
+        let rendered = configuration.renderedUserPrompt(placeholders: [
+            "existingSummarySection": existingSummarySection(existingSummary: existingSummary),
+            "newMessagesSection": newMessagesSection(messages: messages),
+        ])
+        return RAGContextBudget.clip(rendered, toTokenBudget: 8_000)
     }
 
     static func fallback(existingSummary: String?, messages: [RAGStoredMessage]) -> String {

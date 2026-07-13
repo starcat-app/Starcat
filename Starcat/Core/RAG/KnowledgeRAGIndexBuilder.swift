@@ -25,8 +25,20 @@ enum RAGIndexingStatus: Equatable, Sendable {
 struct RAGIndexRefreshSummary: Equatable, Sendable {
     let totalRepos: Int
     var readmesProcessed: Int
-    var chunksProcessed: Int
+    /// source 构建以仓库为单位；不能与后续按 chunk 计数的 embedding 混用。
+    var sourceReposProcessed: Int
+    /// 当前这轮实际需要调用 embedding API 的分片进度。
+    var embeddingProcessed: Int
+    var embeddingTotal: Int
+    /// 开始 embedding 时的索引覆盖快照，用于在数据库最终汇总前平滑推进工作台进度条。
+    var readyChunksBeforeEmbedding: Int
+    var totalChunksAtEmbedding: Int
     var completedAt: Date?
+
+    /// 只在本轮 embedding 期间使用的已向量化分片数；上限钳制避免异常响应让进度条越界。
+    var embeddingReadyChunks: Int {
+        min(totalChunksAtEmbedding, readyChunksBeforeEmbedding + embeddingProcessed)
+    }
 }
 
 @MainActor
@@ -193,7 +205,11 @@ final class KnowledgeRAGIndexBuilder {
             refreshSummary = RAGIndexRefreshSummary(
                 totalRepos: repos.count,
                 readmesProcessed: 0,
-                chunksProcessed: 0,
+                sourceReposProcessed: 0,
+                embeddingProcessed: 0,
+                embeddingTotal: 0,
+                readyChunksBeforeEmbedding: 0,
+                totalChunksAtEmbedding: 0,
                 // 刷新中继续显示上一轮完成时间；新时间只在本轮真正完成时替换，避免布局跳动。
                 completedAt: refreshSummary?.completedAt
             )
@@ -205,12 +221,12 @@ final class KnowledgeRAGIndexBuilder {
             status = .building(processedRepos: index, totalRepos: repos.count)
             try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
             if recordsRefreshSummary {
-                updateRefreshSummary(chunksProcessed: index + 1)
+                updateRefreshSummary(sourceReposProcessed: index + 1)
             }
         }
         status = .building(processedRepos: repos.count, totalRepos: repos.count)
         if recordsRefreshSummary {
-            updateRefreshSummary(chunksProcessed: repos.count)
+            updateRefreshSummary(sourceReposProcessed: repos.count)
         }
         try await embedPendingChunks(recordsRefreshSummary: recordsRefreshSummary)
     }
@@ -400,6 +416,15 @@ final class KnowledgeRAGIndexBuilder {
         var processed = 0
         var pending = try await chunkRepository.fetchChunksNeedingEmbedding(limit: Int.max)
         let total = pending.count
+        if recordsRefreshSummary {
+            let coverage = try await chunkRepository.coverage(model: model)
+            updateRefreshSummary(
+                embeddingProcessed: 0,
+                embeddingTotal: total,
+                readyChunksBeforeEmbedding: coverage.readyChunks,
+                totalChunksAtEmbedding: coverage.totalChunks
+            )
+        }
         while !pending.isEmpty {
             try Task.checkCancellation()
             let batch = Array(pending.prefix(embeddingBatchSize))
@@ -420,6 +445,9 @@ final class KnowledgeRAGIndexBuilder {
                 throw error
             }
             processed += batch.count
+            if recordsRefreshSummary {
+                updateRefreshSummary(embeddingProcessed: processed)
+            }
             pending.removeFirst(batch.count)
         }
         try await syncExternalBackends(model: model)
@@ -432,10 +460,21 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     /// Summary 是值类型；每次赋回属性以确保 Observation 能让两个窗口同步刷新。
-    private func updateRefreshSummary(readmesProcessed: Int? = nil, chunksProcessed: Int? = nil) {
+    private func updateRefreshSummary(
+        readmesProcessed: Int? = nil,
+        sourceReposProcessed: Int? = nil,
+        embeddingProcessed: Int? = nil,
+        embeddingTotal: Int? = nil,
+        readyChunksBeforeEmbedding: Int? = nil,
+        totalChunksAtEmbedding: Int? = nil
+    ) {
         guard var summary = refreshSummary else { return }
         if let readmesProcessed { summary.readmesProcessed = readmesProcessed }
-        if let chunksProcessed { summary.chunksProcessed = chunksProcessed }
+        if let sourceReposProcessed { summary.sourceReposProcessed = sourceReposProcessed }
+        if let embeddingProcessed { summary.embeddingProcessed = embeddingProcessed }
+        if let embeddingTotal { summary.embeddingTotal = embeddingTotal }
+        if let readyChunksBeforeEmbedding { summary.readyChunksBeforeEmbedding = readyChunksBeforeEmbedding }
+        if let totalChunksAtEmbedding { summary.totalChunksAtEmbedding = totalChunksAtEmbedding }
         refreshSummary = summary
     }
 

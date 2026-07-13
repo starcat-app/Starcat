@@ -12,6 +12,25 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @Test("索引刷新汇总分别记录仓库构建与向量分片")
+    func indexRefreshSummaryKeepsRepositoryAndEmbeddingCountsSeparate() {
+        let summary = RAGIndexRefreshSummary(
+            totalRepos: 1_880,
+            readmesProcessed: 1_880,
+            sourceReposProcessed: 1_880,
+            embeddingProcessed: 12_345,
+            embeddingTotal: 20_281,
+            readyChunksBeforeEmbedding: 3_000,
+            totalChunksAtEmbedding: 20_281,
+            completedAt: nil
+        )
+
+        #expect(summary.sourceReposProcessed == 1_880)
+        #expect(summary.embeddingProcessed == 12_345)
+        #expect(summary.embeddingTotal == 20_281)
+        #expect(summary.embeddingReadyChunks == 15_345)
+    }
+
     @MainActor
     @Test("RAG 最新选择请求不会接受过期结果")
     func latestRequestGateRejectsStaleResult() {
@@ -483,7 +502,9 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.callCount == 1)
         #expect(spy.lastChatRequest?.history.isEmpty == true)
         #expect(spy.lastChatRequest?.images.isEmpty == true)
-        #expect(spy.lastChatRequest?.userPrompt == "用户的第一个问题：\n帮我比较一下这个项目的 SQLite 和 GRDB 选型")
+        #expect(spy.lastChatRequest?.userPrompt == "User's first question:\n帮我比较一下这个项目的 SQLite 和 GRDB 选型")
+        #expect(spy.lastChatRequest?.systemPrompt.contains("{outputLanguage}") == false)
+        #expect(spy.lastChatRequest?.systemPrompt.contains("English") == true)
         #expect(spy.lastChatRequest?.parameters.streamEnabled == false)
     }
 
@@ -532,6 +553,9 @@ struct KnowledgeRAGCoreTests {
         #expect(debugEvents.map(\.stage) == [.compressionPrompt, .compressionResponse])
         #expect(debugEvents.first?.payload.contains("https://example.com/v1") == true)
         #expect(debugEvents.last?.payload.contains("normalizedSummary") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("New messages:") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("User:\n请记住代号 A-17。") == true)
+        #expect(spy.lastChatRequest?.systemPrompt.contains("English") == true)
     }
 
     @Test("调用方未提供确认器时默认跳过远程上下文")
@@ -1341,9 +1365,8 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.selectedCount == 1)
         #expect(snapshot.knowledgeCount == 3)
         #expect(snapshot.matchCount == 2)
+        #expect(snapshot.displayedCount == 3)
         #expect(!snapshot.isTruncated)
-        #expect(RAGMentionPickerLogic.subtitle(for: redis) == "C · ★ 50000")
-        #expect(RAGMentionPickerLogic.subtitle(for: awesome) == "★ 200000")
     }
 
     @Test("Mention picker: 未选命中超过上限会截断并保留已选")
@@ -1368,8 +1391,10 @@ struct KnowledgeRAGCoreTests {
 
         #expect(snapshot.suggestions.first?.id == 0)
         #expect(snapshot.suggestions.count == 1 + RAGMentionPickerLogic.unselectedDisplayLimit)
+        #expect(snapshot.displayedCount == 1 + RAGMentionPickerLogic.unselectedDisplayLimit)
         #expect(snapshot.matchCount == allCandidates.count)
         #expect(snapshot.isTruncated)
+        #expect(RAGMentionPickerLogic.unselectedDisplayLimit == 80)
     }
 
     @Test("Add to library: 过滤未入库 Stars，并按关键词筛选")

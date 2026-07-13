@@ -20057,6 +20057,54 @@
         }
       }
     },
+    "rag.workspace.index.embedding": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedding"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.embeddingCoverage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已向量化"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.lastCompleted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次完成"
+          }
+        }
+      }
+    },
     "rag.workspace.index.issues.empty": {
       "localizations": {
         "en": {
@@ -20069,6 +20117,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无匹配分片"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.sourceBuild": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source build"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分片构建"
           }
         }
       }
@@ -20702,13 +20766,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d matches · keep typing to narrow"
+            "value": "Showing %1$d of %2$d · keep typing to narrow"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "命中 %d · 继续输入可缩小范围"
+            "value": "显示 %1$d / 命中 %2$d · 继续输入可缩小范围"
           }
         }
       }
@@ -52812,6 +52876,40 @@
         }
       }
     },
+    "rag.workspace.prompt.tab.compressor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context Compression"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文压缩"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.tab.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title Generation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题生成"
+          }
+        }
+      }
+    },
     "rag.workspace.prompt.system": {
       "extractionState": "manual",
       "localizations": {
@@ -53131,6 +53229,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "本轮附件数量。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.outputLanguageCompressor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display language for the compressed digest (from Settings → Language)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "压缩摘要的显示语言（来自设置 → 语言）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.existingSummarySection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Existing conversation digest section. Empty string when there is no prior summary."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有会话摘要段落；无摘要时注入空字符串。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.newMessagesSection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New messages to merge, with User/Assistant role labels built by the app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待合并的新增对话；User/Assistant 角色标签由应用拼装。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.outputLanguageTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display language for the conversation title (from Settings → Language)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话标题的显示语言（来自设置 → 语言）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.firstQuestion": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The first user question used to generate the conversation title."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于生成会话标题的首个用户问题原文。"
           }
         }
       }

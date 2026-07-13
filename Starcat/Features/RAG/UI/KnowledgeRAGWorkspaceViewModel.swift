@@ -295,6 +295,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 matchCount: 0,
                 knowledgeCount: knowledgeCandidates.count,
                 selectedCount: selectedRepoContexts.count,
+                displayedCount: 0,
                 isTruncated: false
             )
         }
@@ -311,10 +312,6 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func isMentionSelected(_ repo: Repo) -> Bool {
         selectedRepoContexts.contains { $0.id == repo.id }
-    }
-
-    func mentionSubtitle(for repo: Repo) -> String {
-        RAGMentionPickerLogic.subtitle(for: repo)
     }
 
     /// 有未完成 `@token` 就展示弹层；无命中时走空态，不再直接关闭。

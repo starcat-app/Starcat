@@ -531,7 +531,10 @@ final class AppDependencies {
             promptBuilder: KnowledgeRAGPromptBuilder(
                 promptConfiguration: ragPrompts.generator,
                 outputLanguage: outputLanguage
-            )
+            ),
+            compressorPromptConfiguration: ragPrompts.compressor,
+            titlePromptConfiguration: ragPrompts.title,
+            outputLanguage: outputLanguage
         )
     }
 

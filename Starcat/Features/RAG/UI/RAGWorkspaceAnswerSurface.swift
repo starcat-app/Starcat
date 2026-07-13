@@ -668,12 +668,12 @@ struct RAGWorkspaceAnswerSurface: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(snapshot.suggestions) { repo in
-                            mentionPickerRow(repo)
+                        ForEach(Array(snapshot.suggestions.enumerated()), id: \.element.id) { index, repo in
+                            mentionPickerRow(repo, rowIndex: index)
                         }
                     }
                 }
-                .frame(maxHeight: 260)
+                .frame(maxHeight: 280)
             }
 
             if snapshot.isTruncated {
@@ -682,6 +682,7 @@ struct RAGWorkspaceAnswerSurface: View {
                     String(
                         format: String.l10n("rag.workspace.mention.narrowHint"),
                         locale: locale,
+                        snapshot.displayedCount,
                         snapshot.matchCount
                     )
                 )
@@ -813,23 +814,32 @@ struct RAGWorkspaceAnswerSurface: View {
         .padding(.vertical, 16)
     }
 
-    func mentionPickerRow(_ repo: Repo) -> some View {
-        Button { viewModel.toggleMention(repo) } label: {
+    func mentionPickerRow(_ repo: Repo, rowIndex: Int) -> some View {
+        let isHighlighted = repo.id == viewModel.highlightedMentionRepoIDValue
+        return Button { viewModel.toggleMention(repo) } label: {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "checkmark")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
                     .opacity(viewModel.isMentionSelected(repo) ? 1 : 0)
                     .frame(width: 12, alignment: .center)
-                VStack(alignment: .leading, spacing: 1) {
+                RemoteAvatar(
+                    urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
+                    size: 18,
+                    showBorder: false
+                )
+                VStack(alignment: .leading, spacing: 3) {
                     Text(repo.fullName)
                         .font(ragFont(.callout))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text(viewModel.mentionSubtitle(for: repo))
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 8) {
+                        if let language = repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !language.isEmpty {
+                            LanguageBadge(language: language, style: .compact)
+                        }
+                        StarsBadge(count: repo.starsCount, style: .compact)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -838,14 +848,19 @@ struct RAGWorkspaceAnswerSurface: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
-                repo.id == viewModel.highlightedMentionRepoIDValue
+                isHighlighted
                     ? Color.accentColor.opacity(0.12)
-                    : Color.clear
+                    : mentionZebraBackground(rowIndex: rowIndex)
             )
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(repo.fullName)
+    }
+
+    /// 与知识库浏览器分片列表同一套斑马纹：奇数行极淡 primary，不抢高亮色。
+    func mentionZebraBackground(rowIndex: Int) -> Color {
+        rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
     var modelMenu: some View {
