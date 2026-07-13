@@ -19945,6 +19945,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制回答" } }
       }
     },
+    "rag.workspace.citations.collapse" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show less" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收起" } }
+      }
+    },
+    "rag.workspace.citations.moreFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "+%d more" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还有 %d 个" } }
+      }
+    },
     "rag.workspace.answer.export" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Export Markdown" } },
@@ -20503,6 +20515,18 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No chat completion" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不生成 LLM 回答" } }
+      }
+    },
+    "rag.browser.retrieval.noHitsMessage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try rephrasing the question or refreshing the index." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可调整问题后重试，或刷新索引后再测试。" } }
+      }
+    },
+    "rag.browser.retrieval.noHitsTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No matching chunks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未命中分片" } }
       }
     },
     "rag.browser.retrieval.detail" : {

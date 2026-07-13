@@ -190,6 +190,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
     var isTestingRetrieval = false
+    /// 仅在服务端成功返回后置位，用于区分“尚未测试”和“测试完成但无命中”。
+    var hasCompletedRetrievalTest = false
     var errorMessage: String?
 
     init(dependencies: AppDependencies) { self.dependencies = dependencies }
@@ -245,12 +247,15 @@ private final class KnowledgeRAGBrowserViewModel {
         let query = retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isTestingRetrieval else { return }
         isTestingRetrieval = true
+        hasCompletedRetrievalTest = false
+        retrievalHits = []
         Task { [weak self] in
             guard let self else { return }
             defer { isTestingRetrieval = false }
             do {
                 let service = try dependencies.makeKnowledgeRAGService(selectedModelID: nil)
                 retrievalHits = try await service.testRetrieval(query: query).childHits.sorted { $0.score > $1.score }
+                hasCompletedRetrievalTest = true
             } catch { errorMessage = error.localizedDescription }
         }
     }
@@ -332,7 +337,7 @@ private final class KnowledgeRAGBrowserViewModel {
         indexes = Dictionary(uniqueKeysWithValues: try await loadedIndexes.map { ($0.repoID, $0) })
     }
 
-    private static let initialChunkPageSize = 5
+    private static let initialChunkPageSize = 10
     private static let additionalChunkPageSize = 10
 
     private func loadChunks() async {
@@ -363,6 +368,15 @@ private final class KnowledgeRAGBrowserViewModel {
 }
 
 /// 左侧选择仓库，右侧只显示持久化的分片与当前 embedding 模型下的索引状态。
+/// 左侧知识库面板用该偏好值监听滚动位置，以驱动全局概览 Hero 的折叠状态。
+private struct KnowledgeRAGBrowserScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private struct KnowledgeRAGBrowserView: View {
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -373,6 +387,7 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var hoveredRepositoryID: Int64?
     @State private var hoveredChunkID: Int64?
     @State private var isRetrievalTestExpanded = false
+    @State private var knowledgeHeroCollapseProgress: CGFloat = 0
     @State private var permanentlyDeletingChunk: RAGManagedChunk?
 
     var body: some View {
@@ -422,35 +437,82 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private var repositoryList: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        ZStack(alignment: .top) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: KnowledgeRAGBrowserScrollOffsetKey.self,
+                            value: proxy.frame(in: .named("knowledgeBrowserSidebarScroll")).minY
+                        )
+                    }
+                    .frame(height: 0)
+
+                    knowledgeHero
+
+                    Divider()
+                    Text("rag.browser.repositories")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                    LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(viewModel.candidates, id: \.repo.id) { candidate in repositoryRow(candidate) }
+                    }
+                    .padding(.bottom, 12)
+                }
+            }
+            .coordinateSpace(name: "knowledgeBrowserSidebarScroll")
+            .onPreferenceChange(KnowledgeRAGBrowserScrollOffsetKey.self) { offsetY in
+                knowledgeHeroCollapseProgress = knowledgeHeroCollapseProgress(for: offsetY)
+            }
+
+            collapsedKnowledgeHeader
+        }
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+    }
+
+    private var knowledgeHero: some View {
+        VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("rag.browser.title").font(.title3.weight(.semibold))
                 Text("rag.browser.subtitle").font(.caption).foregroundStyle(.secondary)
             }
-            .padding(16)
-            VStack(spacing: 8) {
-                knowledgeOverviewCard
-                retrievalTestCard
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
-
-            Divider()
-            Text("rag.browser.repositories")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 5) {
-                    ForEach(viewModel.candidates, id: \.repo.id) { candidate in repositoryRow(candidate) }
-                }
-                .padding(.bottom, 12)
-            }
-            .frame(minHeight: 140, maxHeight: .infinity)
+            .padding(.bottom, 4)
+            knowledgeOverviewCard
+            retrievalTestCard
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+        .padding(16)
+    }
+
+    /// 0...8pt 保持完整上下文，随后在 64pt 内收敛为紧凑摘要，减少列表滚动时的突变感。
+    private func knowledgeHeroCollapseProgress(for offsetY: CGFloat) -> CGFloat {
+        let normalizedOffset = max(-offsetY, 0)
+        return min(max((normalizedOffset - 8) / 64, 0), 1)
+    }
+
+    private var collapsedKnowledgeHeader: some View {
+        HStack(spacing: 10) {
+            Text("rag.browser.title")
+                .font(.headline)
+            Spacer(minLength: 8)
+            Text("\(viewModel.coverage.indexedRepoCount)/\(viewModel.coverage.knowledgeRepoCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Circle().fill(.green).frame(width: 7, height: 7)
+                Text("\(viewModel.coverage.readyChunks)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 42)
+        .background(.regularMaterial)
+        .overlay(alignment: .bottom) { Divider() }
+        .opacity(knowledgeHeroCollapseProgress)
+        .offset(y: -8 * (1 - knowledgeHeroCollapseProgress))
+        .allowsHitTesting(false)
     }
 
     private var detail: some View {
@@ -553,10 +615,16 @@ private struct KnowledgeRAGBrowserView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                Button("rag.browser.retrieval.run") { viewModel.runRetrievalTest() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isTestingRetrieval)
-                    .padding(8)
+                Button { viewModel.runRetrievalTest() } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.callout.weight(.semibold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isTestingRetrieval)
+                .accessibilityLabel(Text("rag.browser.retrieval.run"))
+                .help(Text("rag.browser.retrieval.run"))
+                .padding(8)
             }
             .frame(height: 72)
             .padding(.horizontal, 7)
@@ -572,6 +640,14 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                 }
                 .frame(maxHeight: 160)
+            } else if viewModel.hasCompletedRetrievalTest {
+                ContentUnavailableView(
+                    "rag.browser.retrieval.noHitsTitle",
+                    systemImage: "magnifyingglass",
+                    description: Text("rag.browser.retrieval.noHitsMessage")
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
             }
         }
     }
@@ -749,9 +825,15 @@ private struct KnowledgeRAGBrowserView: View {
             // 状态与删除入口共用标题行高度，避免图标因 28pt 点击框而向下错位。
             HStack(alignment: .center, spacing: 8) {
                 if managed.hasOverride { Image(systemName: "pencil.circle.fill").foregroundStyle(Color.accentColor) }
-                Text(managedStatusKey(managed, embeddingStatus: status))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(managedStatusColor(managed, embeddingStatus: status))
+                Label {
+                    Text(managedStatusKey(managed, embeddingStatus: status))
+                } icon: {
+                    Image(systemName: managedStatusIcon(managed, embeddingStatus: status))
+                }
+                .labelStyle(.titleAndIcon)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(managedStatusColor(managed, embeddingStatus: status))
+                .symbolRenderingMode(.hierarchical)
                 Button(role: .destructive) {
                     if managed.isExcluded {
                         permanentlyDeletingChunk = managed
@@ -869,7 +951,18 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private func managedStatusColor(_ managed: RAGManagedChunk, embeddingStatus: RAGEmbeddingStatus) -> Color {
-        managed.isExcluded ? .secondary : statusColor(embeddingStatus)
+        // 下架态固定红色，与编辑窗「不可用」一致；其余仍跟 embedding 状态色。
+        managed.isExcluded ? .red : statusColor(embeddingStatus)
+    }
+
+    private func managedStatusIcon(_ managed: RAGManagedChunk, embeddingStatus: RAGEmbeddingStatus) -> String {
+        if managed.isExcluded { return RAGChunkAvailabilityBadge.unavailableSymbol }
+        switch embeddingStatus {
+        case .ready: return RAGChunkAvailabilityBadge.availableSymbol
+        case .pending: return "clock.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .stale: return "clock.arrow.circlepath"
+        }
     }
 
     /// 与仓库级统计保持同一语义：旧 embedding 模型即使数据库残留 ready，也不能被标为当前可用。
@@ -955,19 +1048,9 @@ private struct KnowledgeRAGChunkEditor: View {
                     )
             }
             HStack(alignment: .center, spacing: 12) {
-                // 左侧展示管理态（可用/不可用）；不可用时提示保存会重置，与 saveChunk 清 is_excluded 一致。
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(chunk.isExcluded ? "rag.browser.status.unavailable" : "rag.browser.status.available")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    if chunk.isExcluded {
-                        Text("rag.browser.chunk.edit.restoreHint")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
+                RAGChunkAvailabilityBadge(isExcluded: chunk.isExcluded, showsRestoreHint: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button("common.cancel") { dismiss() }
                 Button("rag.browser.chunk.save") {
@@ -982,5 +1065,35 @@ private struct KnowledgeRAGChunkEditor: View {
         }
         .padding(18)
         .frame(width: 680, height: 540)
+    }
+}
+
+/// 分片管理态徽章：列表与编辑窗共用，可用绿勾、不可用红叉。
+private struct RAGChunkAvailabilityBadge: View {
+    static let availableSymbol = "checkmark.circle.fill"
+    static let unavailableSymbol = "xmark.circle.fill"
+
+    let isExcluded: Bool
+    var showsRestoreHint: Bool = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Label {
+                Text(isExcluded ? "rag.browser.status.unavailable" : "rag.browser.status.available")
+            } icon: {
+                Image(systemName: isExcluded ? Self.unavailableSymbol : Self.availableSymbol)
+            }
+            .labelStyle(.titleAndIcon)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isExcluded ? Color.red : Color.green)
+            .symbolRenderingMode(.hierarchical)
+
+            if isExcluded, showsRestoreHint {
+                Text("rag.browser.chunk.edit.restoreHint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
     }
 }

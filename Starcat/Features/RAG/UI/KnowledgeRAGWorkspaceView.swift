@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import MarkdownUI
 import SwiftUI
 
 struct KnowledgeRAGWorkspaceView: View {
@@ -2034,25 +2035,10 @@ private struct RAGAssistantMessageBlock: View {
                 .frame(maxWidth: 900, alignment: .leading)
 
             if !citations.isEmpty {
-                // 随中栏宽度自动换行，与输入框上方附件 chip 同一套 FlowLayout。
-                RAGFlowLayout(spacing: 7) {
-                    ForEach(citations) { citation in
-                        Button {
-                            onSelectCitation(citation)
-                        } label: {
-                            Text("\(citation.marker) · \(citation.repoFullName)")
-                                .font(interfaceScale.font(.caption, weight: .semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                RAGCitationChipsRow(
+                    citations: citations,
+                    onSelectCitation: onSelectCitation
+                )
             }
 
             // 底部悬停行：复制/导出与时间戳紧挨成组（时间在图标右侧），不要 Spacer 拉开。
@@ -2349,12 +2335,47 @@ private struct RAGMarkdownText: View {
     var citations: [RAGCitation] = []
 
     var body: some View {
-        let rendered = Self.linkifyCitations(in: content, citations: citations)
-        if let attributed = try? AttributedString(markdown: rendered) {
-            Text(attributed)
-        } else {
-            Text(content)
-        }
+        // 与详情页 AI 摘要同一条 MarkdownUI 路线，段落/列表间距由主题控制。
+        Markdown(Self.prepareForDisplay(content, citations: citations))
+            .markdownTheme(Self.ragAnswerTheme)
+            .textSelection(.enabled)
+    }
+
+    /// 仅影响展示：松散段落 → 链接化引用；不改会话持久化原文。
+    static func prepareForDisplay(_ content: String, citations: [RAGCitation]) -> String {
+        linkifyCitations(in: loosenBlockSpacing(content), citations: citations)
+    }
+
+    /// 模型常把多条仓库挤在同一段；展示层补换行，让编号项 / 下一仓库能成块阅读。
+    static func loosenBlockSpacing(_ content: String) -> String {
+        var text = content
+        // 引用簇后紧贴 `owner/repo`：`][S3]dong4j/foo` → 换段
+        text = replace(
+            in: text,
+            pattern: #"((?:\[S\d+\])+)\s*([A-Za-z0-9][\w.-]*/[\w.-]+)"#,
+            template: "$1\n\n$2"
+        )
+        // 非行首的编号项：`：1.` / `。2.` → 另起一段，便于 Markdown 识别为列表
+        text = replace(
+            in: text,
+            pattern: #"([^\n])([：:。；;）\)])\s*(\d+\.\s+)"#,
+            template: "$1$2\n\n$3"
+        )
+        // 紧列表升松列表：单换行后的 `1.` → 双换行
+        text = replace(
+            in: text,
+            pattern: #"([^\n])\n(\d+\.\s+)"#,
+            template: "$1\n\n$2"
+        )
+        // 相邻 `[S1][S3]` 加空格，避免链接挤成一团
+        text = text.replacingOccurrences(of: "][", with: "] [")
+        return text
+    }
+
+    private static func replace(in text: String, pattern: String, template: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: template)
     }
 
     /// 把裸 `[S1]` 转成 Markdown 链接，交给上层 `openURL` → `openCitationLink`。
@@ -2381,6 +2402,150 @@ private struct RAGMarkdownText: View {
         }
         result += content[lastEnd...]
         return result
+    }
+    /// RAG 回答专用主题：段落/列表更疏；每次构建避免 Theme 非 Sendable 静态存储告警。
+    private static var ragAnswerTheme: Theme {
+        Theme()
+            .text {
+                ForegroundColor(.primary)
+            }
+            .code {
+                FontFamilyVariant(.monospaced)
+                FontSize(.em(0.92))
+                BackgroundColor(.secondary.opacity(0.12))
+            }
+            .link {
+                ForegroundColor(.accentColor)
+            }
+            .paragraph { configuration in
+                configuration.label
+                    .fixedSize(horizontal: false, vertical: true)
+                    .relativeLineSpacing(.em(0.22))
+                    .markdownMargin(top: .zero, bottom: .em(0.95))
+            }
+            .list { configuration in
+                configuration.label
+                    .markdownMargin(top: .em(0.2), bottom: .em(0.95))
+            }
+            .listItem { configuration in
+                configuration.label
+                    .markdownMargin(top: .em(0.45))
+            }
+            .codeBlock { configuration in
+                configuration.label
+                    .relativeLineSpacing(.em(0.15))
+                    .markdownMargin(top: .em(0.35), bottom: .em(0.95))
+            }
+    }
+}
+
+/// 回答底部引用芯片：默认 3 条，超出折叠；底色按 `owner/repo` 稳定 hash，明暗皆淡色。
+private struct RAGCitationChipsRow: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    let citations: [RAGCitation]
+    let onSelectCitation: (RAGCitation) -> Void
+
+    /// 首屏只露 3 条，避免长回答底部被芯片墙占满。
+    private static let previewLimit = 3
+
+    @State private var isExpanded = false
+
+    private var visibleCitations: [RAGCitation] {
+        if isExpanded || citations.count <= Self.previewLimit {
+            return citations
+        }
+        return Array(citations.prefix(Self.previewLimit))
+    }
+
+    private var hiddenCount: Int {
+        max(0, citations.count - Self.previewLimit)
+    }
+
+    var body: some View {
+        RAGFlowLayout(spacing: 7) {
+            ForEach(visibleCitations) { citation in
+                Button {
+                    onSelectCitation(citation)
+                } label: {
+                    Text("\(citation.marker) · \(citation.repoFullName)")
+                        // 比正文略小一档，避免 chip 加粗后显得比回答还抢眼。
+                        .font(interfaceScale.font(.callout, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RAGCitationChipPalette.background(for: citation.repoFullName),
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+            }
+
+            if hiddenCount > 0 {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Group {
+                        if isExpanded {
+                            Text("rag.workspace.citations.collapse")
+                        } else {
+                            Text(String(format: String.l10n("rag.workspace.citations.moreFormat"), hiddenCount))
+                        }
+                    }
+                    .font(interfaceScale.font(.callout, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// 按 `owner/repo` 稳定映射到低饱和色盘；用动态 NSColor 适配浅色/深色窗口。
+private enum RAGCitationChipPalette {
+    private static let swatches: [(hue: CGFloat, satLight: CGFloat, briLight: CGFloat, satDark: CGFloat, briDark: CGFloat)] = [
+        (210, 0.26, 0.94, 0.28, 0.30), // soft blue
+        (168, 0.24, 0.93, 0.26, 0.29), // teal
+        (145, 0.22, 0.93, 0.24, 0.29), // green
+        (32, 0.28, 0.95, 0.30, 0.31),  // sand
+        (195, 0.24, 0.94, 0.26, 0.30), // cyan
+        (250, 0.18, 0.94, 0.22, 0.31), // muted indigo
+        (350, 0.18, 0.95, 0.22, 0.31), // soft rose
+        (48, 0.26, 0.95, 0.28, 0.31),  // soft gold
+    ]
+
+    static func background(for repoFullName: String) -> Color {
+        let swatch = swatches[stableIndex(for: repoFullName)]
+        return Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return NSColor(
+                calibratedHue: swatch.hue / 360,
+                saturation: isDark ? swatch.satDark : swatch.satLight,
+                brightness: isDark ? swatch.briDark : swatch.briLight,
+                alpha: 1
+            )
+        }))
+    }
+
+    private static func stableIndex(for repoFullName: String) -> Int {
+        // djb2：同一仓库跨会话/跨消息颜色一致。
+        var hash: UInt64 = 5381
+        for byte in repoFullName.lowercased().utf8 {
+            hash = ((hash << 5) &+ hash) &+ UInt64(byte)
+        }
+        return Int(hash % UInt64(swatches.count))
     }
 }
 
