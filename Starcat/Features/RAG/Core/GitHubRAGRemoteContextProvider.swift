@@ -52,38 +52,72 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         self.cache = cache
     }
 
-    func fetch(requests: [RAGRemoteContextRequest], candidates: [RAGRepoCandidate]) async -> [RAGRemoteContextBlock] {
-        var blocks: [RAGRemoteContextBlock] = []
-        for contextRequest in requests {
-            for candidate in candidates.prefix(contextRequest.maxRepos) {
-                let cacheKey = "\(cacheNamespace)|\(candidate.repo.id)|\(contextRequest.resource.rawValue)|\(contextRequest.query)|\(contextRequest.perRepoLimit)"
-                if let cached = await cache.value(for: cacheKey) {
-                    blocks.append(cached)
-                    continue
+    func fetch(
+        requests: [RAGRemoteContextRequest],
+        candidates: [RAGRepoCandidate],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
+    ) async -> [RAGRemoteContextBlock] {
+        let work = requests.enumerated().flatMap { requestIndex, contextRequest in
+            candidates.prefix(contextRequest.maxRepos).enumerated().map { candidateIndex, candidate in
+                RemoteFetchWork(
+                    index: requestIndex * candidates.count + candidateIndex,
+                    request: contextRequest,
+                    repo: candidate.repo
+                )
+            }
+        }
+        guard !work.isEmpty else { return [] }
+
+        var completed = 0
+        var indexedBlocks: [IndexedRemoteBlock] = []
+        for start in stride(from: 0, to: work.count, by: Self.maxConcurrentRequests) {
+            guard !Task.isCancelled else { break }
+            let end = min(start + Self.maxConcurrentRequests, work.count)
+            await withTaskGroup(of: IndexedRemoteBlock?.self) { group in
+                for item in work[start..<end] {
+                    group.addTask { await fetchBlock(for: item) }
                 }
-                do {
-                    let block = try await fetchOne(contextRequest, repo: candidate.repo)
-                    await cache.insert(block, for: cacheKey)
-                    blocks.append(block)
-                } catch {
-                    let block = RAGRemoteContextBlock(
-                        id: "\(candidate.repo.id):\(contextRequest.resource.rawValue)",
-                        repoId: candidate.repo.id,
-                        resource: contextRequest.resource,
-                        title: "\(candidate.repo.fullName) · \(displayName(contextRequest.resource))",
-                        sourceURL: URL(string: candidate.repo.htmlUrl),
-                        content: "",
-                        fetchedAt: Date(),
-                        errorMessage: error.localizedDescription
-                    )
-                    // 限流、断网和权限错误可能很快恢复；降级结果只反馈本轮，不能缓存
-                    // 15 分钟阻止用户立即重试。TTL cache 只保存成功取得的远程上下文。
-                    blocks.append(block)
+                for await result in group {
+                    guard !Task.isCancelled else { continue }
+                    completed += 1
+                    onProgress(.init(completed: completed, total: work.count))
+                    if let result { indexedBlocks.append(result) }
                 }
             }
         }
-        return blocks
+        return indexedBlocks.sorted { $0.index < $1.index }.map(\.block)
     }
+
+    /// GitHub 的速率与客户端连接数都有限。小批并发覆盖慢网络而不让一次 Planner 输出
+    /// 形成请求风暴；`index` 使 UI 与 Prompt 保持原始 request/candidate 的稳定顺序。
+    private func fetchBlock(for work: RemoteFetchWork) async -> IndexedRemoteBlock? {
+        guard !Task.isCancelled else { return nil }
+        let cacheKey = "\(cacheNamespace)|\(work.repo.id)|\(work.request.resource.rawValue)|\(work.request.query)|\(work.request.perRepoLimit)"
+        if let cached = await cache.value(for: cacheKey) {
+            return IndexedRemoteBlock(index: work.index, block: cached)
+        }
+        do {
+            let block = try await fetchOne(work.request, repo: work.repo)
+            guard !Task.isCancelled else { return nil }
+            await cache.insert(block, for: cacheKey)
+            return IndexedRemoteBlock(index: work.index, block: block)
+        } catch {
+            // URLSession 取消通常以 URLError.cancelled 抛出，不能把它伪装成 GitHub 失败提示。
+            guard !Task.isCancelled else { return nil }
+            return IndexedRemoteBlock(index: work.index, block: RAGRemoteContextBlock(
+                id: "\(work.repo.id):\(work.request.resource.rawValue)",
+                repoId: work.repo.id,
+                resource: work.request.resource,
+                title: "\(work.repo.fullName) · \(displayName(work.request.resource))",
+                sourceURL: URL(string: work.repo.htmlUrl),
+                content: "",
+                fetchedAt: Date(),
+                errorMessage: error.localizedDescription
+            ))
+        }
+    }
+
+    private static let maxConcurrentRequests = 3
 
     private func fetchOne(_ contextRequest: RAGRemoteContextRequest, repo: Repo) async throws -> RAGRemoteContextBlock {
         let result: (String, URL?)
@@ -229,6 +263,17 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
         guard let token, !token.isEmpty else { return "anonymous" }
         return SHA256.hash(data: Data(token.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
     }
+}
+
+private struct RemoteFetchWork: Sendable {
+    var index: Int
+    var request: RAGRemoteContextRequest
+    var repo: Repo
+}
+
+private struct IndexedRemoteBlock: Sendable {
+    var index: Int
+    var block: RAGRemoteContextBlock
 }
 
 /// 远程现场数据只做 15 分钟进程内缓存，不写 rag_chunks 或用户历史。

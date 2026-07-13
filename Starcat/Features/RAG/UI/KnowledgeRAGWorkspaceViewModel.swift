@@ -1552,6 +1552,15 @@ final class KnowledgeRAGWorkspaceViewModel {
                 completeExecutionStep(&step)
             }
 
+        case .remoteContextProgress(let completed, let total):
+            updateExecutionStep(kind: .remoteContext) { step in
+                step.summary = String(
+                    format: String.l10n("rag.workspace.execution.remote.progressFormat"),
+                    completed,
+                    total
+                )
+            }
+
         case .remoteContextCompleted(let blocks):
             updateExecutionStep(kind: .remoteContext) { step in
                 step.details = blocks.map { $0.title }

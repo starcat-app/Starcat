@@ -49,21 +49,66 @@ struct SQLiteRAGVectorSearchProvider: RAGVectorSearchProvider {
 
     func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         guard !queryVector.isEmpty, limit > 0 else { return [] }
-        let chunks = try await repository.fetchReadyChunks(model: model, repoIDs: repoIDs)
-        return chunks.compactMap { chunk -> RAGChildHit? in
-            let score = SemanticSearchService.cosineSimilarity(queryVector, chunk.vector)
-            guard score.isFinite else { return nil }
-            return RAGChildHit(
-                chunk: chunk,
-                score: score,
-                kind: .vector,
-                vectorSimilarity: score
-            )
+        var topMatches: [RAGVectorMatch] = []
+        // SQLite 没有向量索引时仍需要扫过 embedding BLOB，但只分页读取 id/repo/vector，
+        // 并把内存保留在 Top-K；正文在排名完成后才回填，避免大知识库随检索线性膨胀。
+        for repoIDBatch in Self.idBatches(repoIDs) {
+            var afterID: Int64?
+            while !Task.isCancelled {
+                let embeddings = try await repository.fetchReadyEmbeddings(
+                    model: model,
+                    repoIDs: repoIDBatch,
+                    afterID: afterID,
+                    limit: Self.embeddingScanPageSize
+                )
+                guard !embeddings.isEmpty else { break }
+                for embedding in embeddings {
+                    let score = SemanticSearchService.cosineSimilarity(queryVector, embedding.vector)
+                    guard score.isFinite else { continue }
+                    insertTopMatch(
+                        RAGVectorMatch(chunkID: embedding.chunkID, score: score),
+                        into: &topMatches,
+                        limit: limit
+                    )
+                }
+                afterID = embeddings.last?.chunkID
+                if embeddings.count < Self.embeddingScanPageSize { break }
+            }
         }
-        .sorted { $0.score > $1.score }
-        .prefix(limit)
-        .map { $0 }
+        try Task.checkCancellation()
+        let chunkByID = Dictionary(uniqueKeysWithValues: try await repository.fetchReadyChunks(
+            ids: topMatches.map(\.chunkID),
+            model: model
+        ).compactMap { chunk in
+            chunk.id.map { ($0, chunk) }
+        })
+        return topMatches.compactMap { match in
+            guard let chunk = chunkByID[match.chunkID] else { return nil }
+            return RAGChildHit(chunk: chunk, score: match.score, kind: .vector, vectorSimilarity: match.score)
+        }
     }
+
+    private static let embeddingScanPageSize = 400
+    private static let maxIDsPerQuery = 900
+
+    private static func idBatches(_ ids: [Int64]) -> [[Int64]] {
+        stride(from: 0, to: ids.count, by: maxIDsPerQuery).map {
+            Array(ids[$0..<min($0 + maxIDsPerQuery, ids.count)])
+        }
+    }
+
+    /// 小而固定的候选数组等价于 Top-K 最小堆的内存边界；K 最大只来自 Retriever 的 childLimit。
+    private func insertTopMatch(_ match: RAGVectorMatch, into matches: inout [RAGVectorMatch], limit: Int) {
+        if matches.count == limit, let lowest = matches.last, match.score <= lowest.score { return }
+        matches.append(match)
+        matches.sort { $0.score > $1.score }
+        if matches.count > limit { matches.removeLast() }
+    }
+}
+
+private struct RAGVectorMatch: Sendable {
+    var chunkID: Int64
+    var score: Double
 }
 
 struct RAGHybridFusionConfiguration: Equatable, Sendable {

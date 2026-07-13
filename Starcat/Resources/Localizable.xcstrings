@@ -19919,6 +19919,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已按你的选择跳过 GitHub 上下文" } }
       }
     },
+    "rag.workspace.execution.remote.progressFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fetching GitHub context: %1$lld of %2$lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在获取 GitHub 上下文：%1$lld / %2$lld" } }
+      }
+    },
     "rag.workspace.execution.generation.startedFormat" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Organizing an answer from %lld evidence groups" } },

@@ -18,6 +18,10 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
+    func hasReadyChunks(model: String, repoIDs: [Int64]) async throws -> Bool
+    /// 只读取向量扫描所需的列；调用方必须按页消费，避免大知识库把正文和全部向量同时留在内存。
+    func fetchReadyEmbeddings(model: String, repoIDs: [Int64], afterID: Int64?, limit: Int) async throws -> [RAGChunkEmbedding]
+    func fetchReadyChunks(ids: [Int64], model: String) async throws -> [RAGChunk]
     func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
     func markReady(_ embeddings: [Int64: [Float]], model: String) async throws
@@ -34,6 +38,14 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func restoreKnowledgeChunk(id: Int64) async throws
     func totalBytes() async throws -> Int64
     func deleteAll() async throws
+}
+
+/// SQLite BLOB 向量扫描的轻量行。正文和 citation 元数据只在最终 Top-K 确定后才回填，
+/// 否则 1 万个分片会因无关正文造成不必要的峰值内存。
+struct RAGChunkEmbedding: Sendable {
+    var chunkID: Int64
+    var repoID: Int64
+    var vector: [Float]
 }
 
 /// 知识库浏览器的仓库级索引统计。状态按当前 embedding 模型计算，避免旧模型的 ready
@@ -85,6 +97,8 @@ struct RAGIndexIssueChunkPage: Equatable, Sendable {
 }
 
 struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
+    /// SQLite 的变量上限会随构建选项变化；保留余量给 model、offset、limit 等固定参数。
+    private static let maxIDsPerQuery = 900
     private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
@@ -297,23 +311,110 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
-    func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk] {
-        guard !repoIDs.isEmpty else { return [] }
+    func hasReadyChunks(model: String, repoIDs: [Int64]) async throws -> Bool {
+        guard !repoIDs.isEmpty else { return false }
+        for repoIDBatch in Self.idBatches(repoIDs) {
+            let found = try await database.writer.read { db in
+                let placeholders = Array(repeating: "?", count: repoIDBatch.count).joined(separator: ",")
+                var arguments: [any DatabaseValueConvertible] = [model]
+                arguments.append(contentsOf: repoIDBatch)
+                return try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM rag_chunks c
+                        JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                        WHERE c.embedding_status = 'ready'
+                          AND c.embedding_model = ?
+                          AND c.repo_id IN (\(placeholders))
+                          AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                    )
+                    """, arguments: StatementArguments(arguments)) ?? false
+            }
+            if found { return true }
+        }
+        return false
+    }
+
+    func fetchReadyEmbeddings(
+        model: String,
+        repoIDs: [Int64],
+        afterID: Int64?,
+        limit: Int
+    ) async throws -> [RAGChunkEmbedding] {
+        guard !repoIDs.isEmpty, limit > 0 else { return [] }
+        // 调用方会逐个 repo ID batch 传入；这里不再做额外拆分，确保 keyset pagination
+        // 的 `afterID` 在同一个稳定范围内连续推进。
         return try await database.writer.read { db in
             let placeholders = Array(repeating: "?", count: repoIDs.count).joined(separator: ",")
             var arguments: [any DatabaseValueConvertible] = [model]
             arguments.append(contentsOf: repoIDs)
-            return try RAGChunk.fetchAll(db, sql: """
-                SELECT c.*
+            arguments.append(afterID ?? 0)
+            arguments.append(limit)
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.id, c.repo_id, c.embedding
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 WHERE c.embedding_status = 'ready'
                   AND c.embedding_model = ?
                   AND c.repo_id IN (\(placeholders))
+                  AND c.id > ?
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
-                ORDER BY c.repo_id, c.source, c.chunk_index
+                ORDER BY c.id
+                LIMIT ?
                 """, arguments: StatementArguments(arguments))
+            return rows.compactMap { row in
+                let vector = RepoEmbedding.decode(row["embedding"] as Data? ?? Data())
+                guard !vector.isEmpty else { return nil }
+                return RAGChunkEmbedding(chunkID: row["id"], repoID: row["repo_id"], vector: vector)
+            }
         }
+    }
+
+    func fetchReadyChunks(ids: [Int64], model: String) async throws -> [RAGChunk] {
+        guard !ids.isEmpty else { return [] }
+        var chunks: [RAGChunk] = []
+        for idBatch in Self.idBatches(ids) {
+            let batch = try await database.writer.read { db in
+                let placeholders = Array(repeating: "?", count: idBatch.count).joined(separator: ",")
+                var arguments: [any DatabaseValueConvertible] = [model]
+                arguments.append(contentsOf: idBatch)
+                return try RAGChunk.fetchAll(db, sql: """
+                    SELECT c.*
+                    FROM rag_chunks c
+                    JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                    WHERE c.embedding_status = 'ready'
+                      AND c.embedding_model = ?
+                      AND c.id IN (\(placeholders))
+                      AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                    """, arguments: StatementArguments(arguments))
+            }
+            chunks.append(contentsOf: batch)
+        }
+        return chunks
+    }
+
+    func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk] {
+        guard !repoIDs.isEmpty else { return [] }
+        var chunks: [RAGChunk] = []
+        for repoIDBatch in Self.idBatches(repoIDs) {
+            let batch = try await database.writer.read { db in
+                let placeholders = Array(repeating: "?", count: repoIDBatch.count).joined(separator: ",")
+                var arguments: [any DatabaseValueConvertible] = [model]
+                arguments.append(contentsOf: repoIDBatch)
+                return try RAGChunk.fetchAll(db, sql: """
+                    SELECT c.*
+                    FROM rag_chunks c
+                    JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                    WHERE c.embedding_status = 'ready'
+                      AND c.embedding_model = ?
+                      AND c.repo_id IN (\(placeholders))
+                      AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                    ORDER BY c.repo_id, c.source, c.chunk_index
+                    """, arguments: StatementArguments(arguments))
+            }
+            chunks.append(contentsOf: batch)
+        }
+        return chunks
     }
 
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit] {
@@ -614,6 +715,12 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
 
     private static func identity(sourceId: String, chunkKey: String) -> String {
         "\(sourceId)\u{1F}\(chunkKey)"
+    }
+
+    private static func idBatches(_ ids: [Int64]) -> [[Int64]] {
+        stride(from: 0, to: ids.count, by: maxIDsPerQuery).map {
+            Array(ids[$0..<min($0 + maxIDsPerQuery, ids.count)])
+        }
     }
 
     private func ensureOverrideBaseline(_ db: Database, chunkID: Int64) throws {

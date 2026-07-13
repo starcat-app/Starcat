@@ -31,6 +31,7 @@ enum RAGExecutionEvent: Sendable {
     case reasoningCompleted(RAGExecutionStepKind)
     case retrieval(RAGRetrievalProgress)
     case retrievalCompleted(RAGRetrievalResult)
+    case remoteContextProgress(completed: Int, total: Int)
     case remoteContextCompleted([RAGRemoteContextBlock])
     case generationStarted(evidenceCount: Int)
     case generationCompleted(citationCount: Int)
@@ -101,11 +102,26 @@ actor RAGRemoteContextConsent {
 }
 
 protocol KnowledgeRAGRemoteContextProviding: Sendable {
-    func fetch(requests: [RAGRemoteContextRequest], candidates: [RAGRepoCandidate]) async -> [RAGRemoteContextBlock]
+    func fetch(
+        requests: [RAGRemoteContextRequest],
+        candidates: [RAGRepoCandidate],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
+    ) async -> [RAGRemoteContextBlock]
 }
 
 struct EmptyKnowledgeRAGRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
-    func fetch(requests: [RAGRemoteContextRequest], candidates: [RAGRepoCandidate]) async -> [RAGRemoteContextBlock] { [] }
+    func fetch(
+        requests: [RAGRemoteContextRequest],
+        candidates: [RAGRepoCandidate],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
+    ) async -> [RAGRemoteContextBlock] { [] }
+}
+
+/// 远程请求按 repo/resource 计数，而不是按返回 block 猜测进度。缓存命中也算已完成，
+/// 因此用户看到的数字始终对应本轮真正需要处理的工作单元。
+struct RAGRemoteContextFetchProgress: Sendable, Equatable {
+    var completed: Int
+    var total: Int
 }
 
 /// 首轮问答完成后生成会话标题的结果。标题调用独立于 RAG 主链路，因此失败不会影响问答。
@@ -309,7 +325,13 @@ struct KnowledgeRAGService: Sendable {
                         continuation.yield(.state(.fetchingRemoteContext))
                         remoteBlocks = await remoteContextProvider.fetch(
                             requests: plan.remoteContextRequests,
-                            candidates: Array(candidates.prefix(5))
+                            candidates: Array(candidates.prefix(5)),
+                            onProgress: { progress in
+                                continuation.yield(.execution(.remoteContextProgress(
+                                    completed: progress.completed,
+                                    total: progress.total
+                                )))
+                            }
                         )
                         emitDebug(.remoteContext, remoteBlocks.map { block in
                             """

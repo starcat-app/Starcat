@@ -57,7 +57,7 @@ struct KnowledgeRAGRetriever: Sendable {
 
     func hasReadyChunks(repoIDs: [Int64]) async throws -> Bool {
         guard !repoIDs.isEmpty else { return false }
-        return !(try await chunkRepository.fetchReadyChunks(model: embeddingModel, repoIDs: repoIDs)).isEmpty
+        return try await chunkRepository.hasReadyChunks(model: embeddingModel, repoIDs: repoIDs)
     }
 
     func retrieve(

@@ -133,6 +133,45 @@ struct KnowledgeRAGCoreTests {
         #expect(plan.remoteContextRequests.first?.perRepoLimit == 10)
     }
 
+    @Test("Planner: 远程请求去重并受总工作量预算限制")
+    func plannerNormalizesRemoteRequestWorkload() throws {
+        let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
+            {
+              "mode":"semantic_only", "semanticQuery":"近期风险", "filters":{},
+              "remoteContextRequests":[
+                {"resource":"github_issues","query":" crash ","reason":"A","maxRepos":5,"perRepoLimit":10},
+                {"resource":"github_issues","query":"CRASH","reason":"duplicate","maxRepos":5,"perRepoLimit":10},
+                {"resource":"github_releases","query":"latest","reason":"B","maxRepos":5,"perRepoLimit":10},
+                {"resource":"github_contributors","query":"top","reason":"C","maxRepos":5,"perRepoLimit":10},
+                {"resource":"github_pull_requests","query":"open","reason":"over limit","maxRepos":5,"perRepoLimit":10}
+              ],
+              "confidence":"high", "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"近期风险"}
+            }
+            """, fallbackQuestion: "原问题")
+        #expect(plan.remoteContextRequests.count == 3)
+        #expect(plan.remoteContextRequests.map(\.maxRepos).reduce(0, +) == 8)
+        #expect(plan.remoteContextRequests.first?.query == "crash")
+    }
+
+    @Test("大文本附件只保留 Prompt 预算内的前缀")
+    func attachmentProcessorReadsBoundedTextPrefix() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rag-attachment-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 0x61, count: 1_000_000).write(to: url)
+        let attachment = RAGComposerAttachment(
+            id: UUID(),
+            filename: "large.txt",
+            contentType: "text/plain",
+            sizeInBytes: 1_000_000,
+            localURL: url,
+            handling: .textContext
+        )
+
+        let contexts = try await RAGAttachmentProcessor().process([attachment])
+        #expect(contexts.count == 1)
+        #expect(contexts[0].content.count == 40_000)
+    }
+
     @Test("Planner: 日期歧义计划必须带追问")
     func plannerClarification() throws {
         let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
@@ -747,7 +786,8 @@ struct KnowledgeRAGCoreTests {
                 status: .using,
                 libraryUpdatedAt: nil,
                 tagNames: []
-            )]
+            )],
+            onProgress: { _ in }
         )
         let content = try #require(blocks.first?.content)
         #expect(content.contains("Allowed issue"))
@@ -793,8 +833,8 @@ struct KnowledgeRAGCoreTests {
             cache: cache
         )
 
-        _ = await first.fetch(requests: [request], candidates: candidates)
-        let secondBlocks = await second.fetch(requests: [request], candidates: candidates)
+        _ = await first.fetch(requests: [request], candidates: candidates, onProgress: { _ in })
+        let secondBlocks = await second.fetch(requests: [request], candidates: candidates, onProgress: { _ in })
 
         #expect(secondBlocks.first?.content.contains("Account B") == true)
         #expect(secondBlocks.first?.content.contains("Account A") == false)
@@ -1103,7 +1143,8 @@ private struct RecordingRemoteContextProvider: KnowledgeRAGRemoteContextProvidin
 
     func fetch(
         requests: [RAGRemoteContextRequest],
-        candidates: [RAGRepoCandidate]
+        candidates: [RAGRepoCandidate],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
     ) async -> [RAGRemoteContextBlock] {
         await recorder.record()
         return []

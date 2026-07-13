@@ -113,6 +113,61 @@ struct RAGChunkRepositoryTests {
         #expect(hits.map(\.chunk.repoId) == [10])
     }
 
+    @Test("ready 检查只返回知识库中当前模型的可用分片")
+    func readyChunkExistencePreservesRetrievalBoundary() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 14)
+        try await database.insertRepoFixture(id: 15)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 14, state: .inLibrary)
+
+        let inLibrary = try await repository.replaceSource(
+            repoId: 14,
+            source: .readme,
+            drafts: [draft(repoId: 14, key: "readme:ready:0", content: "Ready")]
+        )
+        let outside = try await repository.replaceSource(
+            repoId: 15,
+            source: .readme,
+            drafts: [draft(repoId: 15, key: "readme:outside:0", content: "Outside")]
+        )
+        try await repository.markReady(
+            [inLibrary.pendingChunkIDs[0]: [1, 0], outside.pendingChunkIDs[0]: [1, 0]],
+            model: "embed-v1"
+        )
+
+        #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [14]))
+        #expect(!(try await repository.hasReadyChunks(model: "embed-v2", repoIDs: [14])))
+        #expect(!(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [15])))
+    }
+
+    @Test("SQLite 向量召回先扫描 embedding，再仅回填 Top-K 正文")
+    func sqliteVectorSearchReturnsRankedHydratedChunks() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 16)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 16, state: .inLibrary)
+        let result = try await repository.replaceSource(
+            repoId: 16,
+            source: .readme,
+            drafts: [
+                draft(repoId: 16, key: "readme:top:0", content: "Top evidence"),
+                draft(repoId: 16, key: "readme:lower:0", content: "Lower evidence")
+            ]
+        )
+        try await repository.markReady(
+            [result.pendingChunkIDs[0]: [1, 0], result.pendingChunkIDs[1]: [0, 1]],
+            model: "embed-v1"
+        )
+
+        let hits = try await SQLiteRAGVectorSearchProvider(repository: repository).search(
+            queryVector: [1, 0],
+            model: "embed-v1",
+            repoIDs: [16],
+            limit: 1
+        )
+        #expect(hits.count == 1)
+        #expect(hits.first?.chunk.content == "Top evidence")
+    }
+
     @Test("批量 parent 读取保持知识库、embedding 与 parent 边界")
     func batchParentFetchPreservesRetrievalBoundary() async throws {
         let (database, repository) = try makeRepository()

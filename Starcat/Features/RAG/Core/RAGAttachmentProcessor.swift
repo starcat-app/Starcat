@@ -43,6 +43,9 @@ struct RAGAttachmentProcessor: RAGAttachmentProcessing {
     private let maxFileBytes: Int64 = 10 * 1_024 * 1_024
     private let maxTotalBytes: Int64 = 20 * 1_024 * 1_024
     private let maxCharactersPerFile = 40_000
+    /// UTF-8 单字符最多四字节；文本读取只需要到此上限便可满足 Prompt 字符预算。
+    private let maxTextBytesToRead = 40_000 * 4 + 4
+    private let textReadChunkSize = 16 * 1_024
 
     func process(_ attachments: [RAGComposerAttachment]) async throws -> [RAGAttachmentContext] {
         guard attachments.count <= maxFiles else { throw RAGAttachmentError.tooManyFiles }
@@ -55,45 +58,80 @@ struct RAGAttachmentProcessor: RAGAttachmentProcessing {
         guard sizedAttachments.reduce(Int64(0), { $0 + $1.1 }) <= maxTotalBytes else {
             throw RAGAttachmentError.totalTooLarge
         }
-        return try sizedAttachments.map { attachment, actualSize in
+        var contexts: [RAGAttachmentContext] = []
+        for (attachment, actualSize) in sizedAttachments {
+            try Task.checkCancellation()
             guard actualSize <= maxFileBytes else {
                 throw RAGAttachmentError.fileTooLarge(attachment.filename)
             }
             switch attachment.handling {
             case .textContext:
-                guard let text = textContent(for: attachment) else {
+                guard let text = try await textContent(for: attachment) else {
                     throw RAGAttachmentError.unreadable(attachment.filename)
                 }
-                return RAGAttachmentContext(
+                contexts.append(RAGAttachmentContext(
                     attachmentID: attachment.id,
                     filename: attachment.filename,
-                    content: String(text.prefix(maxCharactersPerFile))
-                )
+                    content: text
+                ))
             case .vision:
                 guard let data = try? Data(contentsOf: attachment.localURL), !data.isEmpty else {
                     throw RAGAttachmentError.unreadable(attachment.filename)
                 }
-                return RAGAttachmentContext(
+                contexts.append(RAGAttachmentContext(
                     attachmentID: attachment.id,
                     filename: attachment.filename,
                     content: "图片附件：\(attachment.filename)",
                     imageData: data,
                     contentType: attachment.contentType
-                )
+                ))
             case .unsupported:
                 throw RAGAttachmentError.unsupported(attachment.filename)
             }
         }
+        return contexts
     }
 
-    private func textContent(for attachment: RAGComposerAttachment) -> String? {
+    private func textContent(for attachment: RAGComposerAttachment) async throws -> String? {
         if attachment.contentType == "application/pdf" || attachment.localURL.pathExtension.lowercased() == "pdf" {
             guard let document = PDFDocument(url: attachment.localURL) else { return nil }
-            return (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n\n")
+            return try pdfText(document)
         }
-        guard let data = try? Data(contentsOf: attachment.localURL), !data.isEmpty else { return nil }
-        return String(data: data, encoding: .utf8)
+        let data = try readTextPrefix(from: attachment.localURL)
+        guard !data.isEmpty else { return nil }
+        return (String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .utf16)
-            ?? String(data: data, encoding: .unicode)
+            ?? String(data: data, encoding: .unicode))
+            .map { String($0.prefix(maxCharactersPerFile)) }
+    }
+
+    /// PDFKit 的 `page.string` 本身无法流式化，但页面可逐页释放。达到文本预算或任务取消后
+    /// 立即停止，不能为最终只会发送 4 万字符的 Prompt 把整份 PDF 拼成一个大字符串。
+    private func pdfText(_ document: PDFDocument) throws -> String {
+        var result = ""
+        for pageIndex in 0..<document.pageCount {
+            try Task.checkCancellation()
+            guard let pageText = document.page(at: pageIndex)?.string, !pageText.isEmpty else { continue }
+            let remaining = maxCharactersPerFile - result.count
+            guard remaining > 0 else { break }
+            if !result.isEmpty { result += "\n\n" }
+            result += String(pageText.prefix(remaining))
+        }
+        return result
+    }
+
+    /// 普通文本只读取足够生成 Prompt 的前缀。读取循环保留取消点，避免大日志或导出文件
+    /// 在用户已经停止问答后仍占用主链 I/O。
+    private func readTextPrefix(from url: URL) throws -> Data {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return Data() }
+        defer { try? handle.close() }
+        var data = Data()
+        while data.count < maxTextBytesToRead {
+            try Task.checkCancellation()
+            let remaining = maxTextBytesToRead - data.count
+            guard let chunk = try handle.read(upToCount: min(textReadChunkSize, remaining)), !chunk.isEmpty else { break }
+            data.append(chunk)
+        }
+        return data
     }
 }

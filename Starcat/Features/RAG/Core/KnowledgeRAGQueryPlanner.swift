@@ -151,15 +151,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         try validateRanges(plan.filters)
         plan.semanticQuery = plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         plan.candidateLimit = plan.candidateLimit.map { min(max($0, 1), 1_000) }
-        plan.remoteContextRequests = plan.remoteContextRequests.map {
-            RAGRemoteContextRequest(
-                resource: $0.resource,
-                query: String($0.query.prefix(300)),
-                reason: String($0.reason.prefix(500)),
-                maxRepos: min(max($0.maxRepos, 1), 5),
-                perRepoLimit: min(max($0.perRepoLimit, 1), 10)
-            )
-        }
+        plan.remoteContextRequests = normalizeRemoteContextRequests(plan.remoteContextRequests)
 
         switch plan.mode {
         case .semanticOnly:
@@ -212,6 +204,34 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         if let min = filters.minForks, let max = filters.maxForks, min > max {
             throw RAGQueryPlannerError.invalidPlan("minForks 大于 maxForks")
         }
+    }
+
+    /// Planner 是不可信输入。这里在用户确认前收敛同一 resource/query 的重复项，并把本轮
+    /// GitHub 工作单元限制为 8 个（最多 3 类请求）。这既防止兼容 Provider 重复规划，也让
+    /// 确认弹窗所展示的请求数与实际联网工作量一致。
+    private static func normalizeRemoteContextRequests(
+        _ requests: [RAGRemoteContextRequest]
+    ) -> [RAGRemoteContextRequest] {
+        let maxRequestCount = 3
+        var remainingFetches = 8
+        var seen = Set<String>()
+        var normalized: [RAGRemoteContextRequest] = []
+        for request in requests {
+            guard normalized.count < maxRequestCount, remainingFetches > 0 else { break }
+            let query = String(request.query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+            let identity = "\(request.resource.rawValue)|\(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))"
+            guard seen.insert(identity).inserted else { continue }
+            let maxRepos = min(max(request.maxRepos, 1), 5, remainingFetches)
+            normalized.append(RAGRemoteContextRequest(
+                resource: request.resource,
+                query: query,
+                reason: String(request.reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500)),
+                maxRepos: maxRepos,
+                perRepoLimit: min(max(request.perRepoLimit, 1), 10)
+            ))
+            remainingFetches -= maxRepos
+        }
+        return normalized
     }
 
     private static func extractJSONObject(_ value: String) -> String {
