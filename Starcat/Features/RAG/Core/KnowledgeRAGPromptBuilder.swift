@@ -14,6 +14,9 @@ struct RAGPromptBuildResult: Equatable, Sendable {
     var systemPrompt: String
     var userPrompt: String
     var citationsByMarker: [String: RAGCitation]
+    /// 已被统一预算后的历史；Service 必须发送这份而不是调用方传入的原始 history。
+    var history: [AIChatMessage] = []
+    var contextUsage: RAGContextUsage = .empty
 }
 
 struct KnowledgeRAGPromptBuilder: Sendable {
@@ -26,8 +29,17 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         plan: RAGQueryPlan,
         retrieval: RAGRetrievalResult,
         remoteBlocks: [RAGRemoteContextBlock],
-        attachmentContexts: [RAGAttachmentContext]
+        attachmentContexts: [RAGAttachmentContext],
+        history: [AIChatMessage] = [],
+        contextWindowTokens: Int = 32 * 1_024,
+        maximumOutputTokens: Int = 8 * 1_024
     ) -> RAGPromptBuildResult {
+        var budget = RAGContextBudget(
+            contextWindowTokens: contextWindowTokens,
+            requestedOutputTokens: maximumOutputTokens
+        )
+        let systemPrompt = budget.consume(Self.systemPrompt, kind: .system)
+        let boundedHistory = boundedHistory(history, budget: &budget)
         var citations: [String: RAGCitation] = [:]
         var evidenceSections: [String] = []
         var usedTokens = 0
@@ -71,22 +83,22 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         }
 
         var remoteTokens = 0
-        let remoteText = remoteBlocks.enumerated().compactMap { index, block -> String? in
+        let rawRemoteText = remoteBlocks.enumerated().compactMap { index, block -> String? in
             let remaining = maxRemoteTokens - remoteTokens
             guard remaining > 0 else { return nil }
             let status = block.errorMessage.map { "获取失败：\($0)" } ?? block.content
             let value = "[R\(index + 1)] \(block.title)\n\(status)"
-            let clipped = clip(value, toTokenBudget: remaining)
+            let clipped = RAGContextBudget.clip(value, toTokenBudget: remaining)
             remoteTokens += TokenEstimator.estimate(text: clipped)
             return clipped
         }.joined(separator: "\n\n")
 
         var attachmentTokens = 0
-        let attachmentText = attachmentContexts.compactMap { attachment -> String? in
+        let rawAttachmentText = attachmentContexts.compactMap { attachment -> String? in
             let remaining = maxAttachmentTokens - attachmentTokens
             guard remaining > 0 else { return nil }
             let value = "[A:\(attachment.filename)]\n\(attachment.content)"
-            let clipped = clip(value, toTokenBudget: remaining)
+            let clipped = RAGContextBudget.clip(value, toTokenBudget: remaining)
             attachmentTokens += TokenEstimator.estimate(text: clipped)
             return clipped
         }.joined(separator: "\n\n")
@@ -94,7 +106,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         let degradation = remoteBlocks.compactMap(\.errorMessage).isEmpty
             ? ""
             : "远程上下文有部分获取失败。回答中必须明确说明降级范围，不得把缺失信息表述成事实。"
-        let userPrompt = """
+        let questionSection = budget.consume("""
             用户问题：
             \(question)
 
@@ -105,21 +117,69 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             structured_rows_in_prompt=\(retrieval.bundles.isEmpty ? bundles.count : 0)
             structured_rows_truncated=\(retrieval.bundles.isEmpty && retrieval.candidates.count > bundles.count)
             \(degradation)
-
-            本地知识库证据：
-            \(evidenceSections.joined(separator: "\n\n---\n\n"))
-
-            GitHub 远程临时上下文：
-            \(remoteText.isEmpty ? "无" : remoteText)
-
-            用户本轮附件：
-            \(attachmentText.isEmpty ? "无" : attachmentText)
-            """
-        return RAGPromptBuildResult(
-            systemPrompt: Self.systemPrompt,
-            userPrompt: userPrompt,
-            citationsByMarker: citations
+            """, kind: .question, preferredLimit: 4_096)
+        let evidenceText = budget.consume(
+            "本地知识库证据：\n\(evidenceSections.joined(separator: "\n\n---\n\n"))",
+            kind: .evidence,
+            preferredLimit: maxEvidenceTokens
         )
+        // 全局预算可能在某个证据块中间截断；只保留真实进入 Prompt 的 marker，避免模型
+        // 引用已被裁掉的来源而 UI 却误把它当作有效 citation。
+        citations = citations.filter { evidenceText.contains("[\($0.key)]") }
+        let remoteText = budget.consume(
+            "GitHub 远程临时上下文：\n\(rawRemoteText.isEmpty ? "无" : rawRemoteText)",
+            kind: .remoteContext,
+            preferredLimit: maxRemoteTokens
+        )
+        let attachmentText = budget.consume(
+            "用户本轮附件：\n\(rawAttachmentText.isEmpty ? "无" : rawAttachmentText)",
+            kind: .attachments,
+            preferredLimit: maxAttachmentTokens
+        )
+        let userPrompt = [questionSection, evidenceText, remoteText, attachmentText]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+
+        return RAGPromptBuildResult(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            citationsByMarker: citations,
+            history: boundedHistory,
+            contextUsage: budget.usage(promptPreview: promptPreview(
+                systemPrompt: systemPrompt,
+                history: boundedHistory,
+                userPrompt: userPrompt
+            ))
+        )
+    }
+
+    /// 输入框还没有检索结果时的轻量预估。正式请求完成构建后会被精确快照替代；此处不读取
+    /// 附件文件内容，避免用户仅输入文字就触发磁盘 I/O 或把大文件预先放进内存。
+    func preview(
+        question: String,
+        history: [AIChatMessage],
+        attachmentNames: [String],
+        contextWindowTokens: Int,
+        maximumOutputTokens: Int
+    ) -> RAGContextUsage {
+        var budget = RAGContextBudget(
+            contextWindowTokens: contextWindowTokens,
+            requestedOutputTokens: maximumOutputTokens
+        )
+        let systemPrompt = budget.consume(Self.systemPrompt, kind: .system)
+        let boundedHistory = boundedHistory(history, budget: &budget)
+        let questionSection = budget.consume("用户问题：\n\(question)", kind: .question, preferredLimit: 4_096)
+        let attachments = budget.consume(
+            attachmentNames.isEmpty ? "" : "用户本轮附件：\n\(attachmentNames.joined(separator: "\n"))",
+            kind: .attachments,
+            preferredLimit: 512
+        )
+        let userPrompt = [questionSection, attachments].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return budget.usage(promptPreview: promptPreview(
+            systemPrompt: systemPrompt,
+            history: boundedHistory,
+            userPrompt: userPrompt
+        ))
     }
 
     func citationsUsed(in answer: String, prompt: RAGPromptBuildResult) -> [RAGCitation] {
@@ -141,6 +201,44 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         }.compactMap { marker in
             referencedMarkers.contains(marker) ? prompt.citationsByMarker[marker] : nil
         }
+    }
+
+    /// 历史按“离当前轮最近优先”放入统一预算。摘要与普通消息分段计数，供 Composer
+    /// 明确展示压缩效果；没有空间的旧消息被稳定丢弃，而不是把当前问题或输出空间挤掉。
+    private func boundedHistory(
+        _ history: [AIChatMessage],
+        budget: inout RAGContextBudget
+    ) -> [AIChatMessage] {
+        let historyLimit = min(budget.remainingInputTokens, max(budget.inputLimitTokens * 35 / 100, 512))
+        var remaining = historyLimit
+        var result: [AIChatMessage] = []
+        for message in history.reversed() {
+            guard remaining > 0 else { break }
+            let isSummary = message.content.hasPrefix("以下是较早对话的受限摘要")
+            let kind: RAGContextUsageSegmentKind = isSummary ? .historySummary : .recentMessages
+            let clipped = budget.consume(message.content, kind: kind, preferredLimit: remaining)
+            let consumed = TokenEstimator.estimate(text: clipped)
+            remaining -= consumed
+            guard !clipped.isEmpty else { continue }
+            result.insert(AIChatMessage(role: message.role, content: clipped), at: 0)
+        }
+        return result
+    }
+
+    private func promptPreview(
+        systemPrompt: String,
+        history: [AIChatMessage],
+        userPrompt: String
+    ) -> String {
+        let historyText = history.map { "\($0.role.rawValue):\n\($0.content)" }.joined(separator: "\n\n")
+        return """
+            system:
+            \(systemPrompt)
+
+            \(historyText.isEmpty ? "" : "history:\n\(historyText)\n")
+            user:
+            \(userPrompt)
+            """
     }
 
     private func structuredBundle(_ candidate: RAGRepoCandidate) -> RepoContextBundle {
@@ -229,14 +327,6 @@ struct KnowledgeRAGPromptBuilder: Sendable {
     }
 
     private static let citationMarkerRegex = try! NSRegularExpression(pattern: #"\[(S\d+)\]"#)
-
-    /// TokenEstimator 是本地近似值，按同一估算器反推字符上限即可稳定守住 prompt 预算。
-    /// 保留前缀是为了让 `[R]` / `[A]` 来源头不会因正文过长而整块消失。
-    private func clip(_ value: String, toTokenBudget budget: Int) -> String {
-        guard budget > 0, TokenEstimator.estimate(text: value) > budget else { return value }
-        let characterLimit = max(budget * 3, 1)
-        return String(value.prefix(characterLimit)) + "\n[truncated]"
-    }
 
     private static let systemPrompt = """
         你是 Starcat 知识库问答助手。只能根据提供的本地知识库证据、明确列出的 GitHub

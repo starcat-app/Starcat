@@ -121,6 +121,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 友好错误模型与技术详情分离；错误 Sheet 只渲染前者，后者留在反馈诊断。
     var workspaceError: RAGWorkspaceError?
     private var retryQuestion: String?
+    /// 最近一次实际请求的预算快照。用户开始编辑下一轮问题后，Composer 改为轻量预估，
+    /// 避免把上轮的证据/远程上下文错误标记成当前输入。
+    private var lastContextUsage: RAGContextUsage?
     /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {
         didSet {
@@ -191,6 +194,27 @@ final class KnowledgeRAGWorkspaceViewModel {
     var selectedModelDisplayName: String {
         availableModels.first(where: { $0.id == selectedModelID })?.name
             ?? dependencies.settings.aiChatTask.resolvedModelName
+    }
+
+    /// 与 `AppDependencies.resolveRAGChatSelection` 同一优先级：选中模型参数优先，
+    /// 否则回退全局 chat task，保证 UI 展示的窗口与实际 Service 请求一致。
+    var selectedModelParameters: AIModelParameters {
+        availableModels.first(where: { $0.id == selectedModelID })?.parameters
+            ?? dependencies.settings.effectiveParameters(for: dependencies.settings.aiChatTask)
+    }
+
+    var composerContextUsage: RAGContextUsage {
+        if draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let lastContextUsage {
+            return lastContextUsage
+        }
+        return KnowledgeRAGPromptBuilder().preview(
+            question: draftQuestion,
+            history: RAGConversationHistoryBuilder.build(from: messages),
+            attachmentNames: attachments.map(\.filename),
+            contextWindowTokens: selectedModelParameters.resolvedContextWindowTokens,
+            maximumOutputTokens: selectedModelParameters.maxCompletionTokens
+        )
     }
 
     /// 模型记录保存的是 provider profile ID；解析为枚举后，UI 才能复用统一的服务商 logo。
@@ -1109,6 +1133,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     pendingRemoteRequests = requests
                     approvedRemoteResources = Set(requests.map(\.resource))
                 case .remoteContext(let blocks): remoteBlocks = blocks
+                case .contextUsage(let usage): lastContextUsage = usage
                 case .debug(let event):
                     appendDebugEvent(event, to: debugTraceID)
                 case .delta(let text):

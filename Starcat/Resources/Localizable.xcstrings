@@ -20441,6 +20441,78 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库 RAG" } }
       }
     },
+    "rag.workspace.context.attachments" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attachments" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本轮附件" } }
+      }
+    },
+    "rag.workspace.context.emptyPreview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No prompt has been built yet." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚未构建请求内容。" } }
+      }
+    },
+    "rag.workspace.context.evidence" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge base evidence" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库证据" } }
+      }
+    },
+    "rag.workspace.context.historySummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Conversation summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "对话摘要" } }
+      }
+    },
+    "rag.workspace.context.open" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View context usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看上下文占用" } }
+      }
+    },
+    "rag.workspace.context.promptPreview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Prompt preview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请求内容预览" } }
+      }
+    },
+    "rag.workspace.context.question" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Question and plan" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "问题与查询计划" } }
+      }
+    },
+    "rag.workspace.context.recentMessages" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent messages" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近期消息" } }
+      }
+    },
+    "rag.workspace.context.remote" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remote context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "远程上下文" } }
+      }
+    },
+    "rag.workspace.context.reservedOutput" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reserved output" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "预留输出" } }
+      }
+    },
+    "rag.workspace.context.system" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "System prompt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "系统提示" } }
+      }
+    },
+    "rag.workspace.context.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文占用" } }
+      }
+    },
     "rag.workspace.composer.model" : {
       "localizations" : {
         "en" : {
@@ -28640,6 +28712,13 @@
     },
     "settings.ai.modelList.totalFormat %@" : {
 
+    },
+    "settings.ai.modelParams.contextWindow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context window" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文窗口" } }
+      }
     },
     "settings.ai.modelParams.maxTokens" : {
       "extractionState" : "manual",

@@ -115,6 +115,12 @@ struct AIModelParametersPopover: View {
             disabled: isEmbedding
         )
         intField(
+            String.l10n("settings.ai.modelParams.contextWindow"),
+            value: contextWindowKBinding,
+            unit: "K",
+            disabled: isEmbedding
+        )
+        intField(
             String.l10n("settings.ai.modelParams.timeout"),
             value: timeoutSecondsBinding,
             unit: String.l10n("settings.ai.modelParams.unit.seconds"),
@@ -193,6 +199,17 @@ struct AIModelParametersPopover: View {
             set: { k in
                 let clamped = min(max(k, 1), 512)
                 parameters.maxCompletionTokens = clamped * 1024
+            }
+        )
+    }
+
+    /// Context Window 与“最大输出”是两件事：前者是模型输入加输出的硬上限，RAG 会在
+    /// 请求前预留一部分输出空间。nil 的旧配置按保守 32K 显示，用户编辑后才持久化覆盖。
+    private var contextWindowKBinding: Binding<Int> {
+        Binding(
+            get: { max(4, parameters.resolvedContextWindowTokens / 1_024) },
+            set: { k in
+                parameters.contextWindowTokens = min(max(k, 4), 2_048) * 1_024
             }
         )
     }

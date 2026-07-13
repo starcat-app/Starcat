@@ -15,6 +15,8 @@ enum KnowledgeRAGServiceEvent: Sendable {
     case retrieval(RAGRetrievalResult)
     case remoteContextConfirmation([RAGRemoteContextRequest])
     case remoteContext([RAGRemoteContextBlock])
+    /// 仅保存本轮内存快照，供 Composer 复用实际请求的 Context 占用；不写入历史记录。
+    case contextUsage(RAGContextUsage)
     case debug(RAGDebugEvent)
     case delta(String)
     case completed(answer: String, model: String, citations: [RAGCitation], plan: RAGQueryPlan)
@@ -358,15 +360,26 @@ struct KnowledgeRAGService: Sendable {
                         plan: plan,
                         retrieval: retrieval,
                         remoteBlocks: remoteBlocks,
-                        attachmentContexts: attachmentContexts
+                        attachmentContexts: attachmentContexts,
+                        history: history,
+                        contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
+                        maximumOutputTokens: generatorParameters.maxCompletionTokens
                     )
+                    continuation.yield(.contextUsage(prompt.contextUsage))
 
                     continuation.yield(.state(.generating))
                     continuation.yield(.execution(.generationStarted(evidenceCount: retrieval.bundles.count)))
+                    // Provider 不一定会主动把 max token 限制在 Context Window 内。这里用同一份
+                    // 预算快照收紧输出上限，确保“输入 + 预留输出”不会超过模型窗口。
+                    var generationParameters = generatorParameters
+                    generationParameters.maxCompletionTokens = min(
+                        generationParameters.maxCompletionTokens,
+                        prompt.contextUsage.reservedOutputTokens
+                    )
                     let chatRequest = AIChatRequest(
                         systemPrompt: prompt.systemPrompt,
                         userPrompt: prompt.userPrompt,
-                        history: history,
+                        history: prompt.history,
                         images: attachmentContexts.compactMap { context in
                             guard let data = context.imageData, let contentType = context.contentType else { return nil }
                             return AIChatImageInput(data: data, contentType: contentType)
@@ -374,7 +387,7 @@ struct KnowledgeRAGService: Sendable {
                         // selectedModelID 是 UI 的 provider::model 标识，依赖容器已经把它
                         // 解析为真实模型名，不能把复合 id 直接发给 OpenAI-compatible API。
                         model: generatorModel,
-                        parameters: generatorParameters
+                        parameters: generationParameters
                     )
                     emitDebug(.prompt, """
                     endpoint: \(request.debugEndpoint ?? "<unknown>")

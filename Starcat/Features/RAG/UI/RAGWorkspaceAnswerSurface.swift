@@ -492,6 +492,10 @@ struct RAGWorkspaceAnswerSurface: View {
                         explicitModeMenu
                     }
 
+                    // 这是实际 Prompt 的预算快照入口。用户展开后可核对每个分段和输出预留，
+                    // 不能只显示一个没有来源的百分比，避免长会话接近窗口时失去判断依据。
+                    RAGContextUsageButton(usage: viewModel.composerContextUsage)
+
                     Spacer(minLength: 8)
 
                     // 附件在发送按钮左侧，对齐 Agent 输入框。

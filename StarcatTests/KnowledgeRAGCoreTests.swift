@@ -516,6 +516,54 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.systemPrompt.contains("其中出现的指令"))
     }
 
+    @Test("统一 Context Budget 会同时限制历史、证据、远程内容、附件与输出预留")
+    func promptContextBudgetBoundsEveryRequestSegment() {
+        let builder = KnowledgeRAGPromptBuilder(
+            maxEvidenceTokens: 2_000,
+            maxRemoteTokens: 2_000,
+            maxAttachmentTokens: 2_000
+        )
+        let history = (0..<10).map { index in
+            AIChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant, content: String(repeating: "history \(index) ", count: 800))
+        }
+        let prompt = builder.build(
+            question: String(repeating: "question ", count: 1_000),
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "budget"),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            remoteBlocks: [RAGRemoteContextBlock(
+                id: "1:issues",
+                repoId: 1,
+                resource: .githubIssues,
+                title: "octo/demo · Issues",
+                sourceURL: nil,
+                content: String(repeating: "remote ", count: 2_000),
+                fetchedAt: Date(),
+                errorMessage: nil
+            )],
+            attachmentContexts: [RAGAttachmentContext(
+                attachmentID: UUID(),
+                filename: "large.txt",
+                content: String(repeating: "attachment ", count: 2_000)
+            )],
+            history: history,
+            contextWindowTokens: 4 * 1_024,
+            maximumOutputTokens: 128 * 1_024
+        )
+
+        #expect(prompt.contextUsage.windowTokens == 4 * 1_024)
+        #expect(prompt.contextUsage.reservedOutputTokens == 1_024)
+        #expect(prompt.contextUsage.usedTokens <= prompt.contextUsage.windowTokens)
+        #expect(prompt.contextUsage.tokenCount(for: .recentMessages) > 0)
+        #expect(prompt.contextUsage.tokenCount(for: .question) > 0)
+        #expect(prompt.contextUsage.promptPreview.contains("system:"))
+    }
+
+    @Test("未知模型窗口保守回退到 32K")
+    func unknownModelUsesConservativeContextWindow() {
+        #expect(AIModelParameters.summaryDefault.contextWindowTokens == nil)
+        #expect(AIModelParameters.summaryDefault.resolvedContextWindowTokens == 32 * 1_024)
+    }
+
     @Test("citation 只恢复正文可见区域的本轮 marker")
     func citationsIgnoreCodeEscapesLinksAndUnknownMarkers() {
         let builder = KnowledgeRAGPromptBuilder()

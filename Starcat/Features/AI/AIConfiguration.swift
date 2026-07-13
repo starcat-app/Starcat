@@ -237,8 +237,16 @@ struct AIModelParameters: Codable, Equatable, Sendable {
     var topP: Double
     var topK: Int
     var maxCompletionTokens: Int
+    /// 模型实际 Context Window。nil 表示未知模型，RAG 使用保守 32K；保持可空以兼容
+    /// 已持久化的旧配置，不能把最大输出 Token 误当作上下文窗口。
+    var contextWindowTokens: Int? = nil
     var timeoutSeconds: Double
     var streamEnabled: Bool
+
+    /// RAG 的单一窗口来源。4K 以下通常无法容纳系统提示与输出预留，2M 以上多为误填。
+    var resolvedContextWindowTokens: Int {
+        min(max(contextWindowTokens ?? 32 * 1_024, 4 * 1_024), 2 * 1_024 * 1_024)
+    }
 
     // HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：把所有 chat 任务的
     // maxCompletionTokens 默认值统一上调到 128K（= 128 * 1024 = 131_072 tokens）。
