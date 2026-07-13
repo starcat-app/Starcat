@@ -156,9 +156,9 @@ struct RAGWorkspaceAnswerSurface: View {
                     guard isMessageNearBottom != isNearBottom else { return }
                     isMessageNearBottom = isNearBottom
                 }
-                .onChange(of: viewModel.selectedConversationID) { _, _ in
-                    // `selectedConversationID` 先于 messages 写入；延迟到下一轮布局后再强制定位，
-                    // 才能保证历史会话首次打开展示最后一条，而不是复用上一会话的顶部偏移。
+                .onChange(of: viewModel.loadedMessageSequence) { _, _ in
+                    // 只在 ViewModel 已写入历史 messages 后响应；监听 selectedConversationID 会早于
+                    // LazyVStack 的内容更新，导致复用上一会话的顶部偏移。
                     isMessageNearBottom = true
                     messageTail.resumeFollowing()
                     forceMessageTailScroll(proxy: proxy)
@@ -250,6 +250,8 @@ struct RAGWorkspaceAnswerSurface: View {
     /// 结束，若沿用自动跟随的二次 guard，点击会被错误取消，表现为按钮消失却没有到底。
     func forceMessageTailScroll(proxy: ScrollViewProxy) {
         Task { @MainActor in
+            await Task.yield()
+            // 第一轮 yield 让 messages 进入 body，第二轮才确保 LazyVStack 已产生最新 sentinel。
             await Task.yield()
 
             var transaction = Transaction()

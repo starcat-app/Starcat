@@ -48,6 +48,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     var selectedGroupID: UUID?
     var selectedConversationID: UUID?
     var messages: [RAGStoredMessage] = []
+    /// 在 messages 已经写入后递增。Answer Surface 监听它而非 selectedConversationID，
+    /// 才能在历史 `LazyVStack` 真正拥有新内容后定位尾部。
+    private(set) var loadedMessageSequence = 0
     var draftQuestion = ""
     var streamingAnswer = ""
     var answerState: RAGAnswerState = .idle
@@ -338,6 +341,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             // 点选会话时目录选中态让位，避免误以为「新会话仍进目录」。
             selectedGroupID = nil
             messages = detail.messages
+            loadedMessageSequence &+= 1
             let initialCitation = messages.reversed().lazy.flatMap(\.citations).first
             resetTurnState()
             if let initialCitation { selectCitation(initialCitation) }
@@ -1114,12 +1118,46 @@ final class KnowledgeRAGWorkspaceViewModel {
             } else {
                 answerState = .failed(error.localizedDescription)
                 errorMessage = error.localizedDescription
-                messages.removeAll { $0.id == userMessage.id }
+                // 正常失败也必须与取消路径同样保留问题：用户能直接复制或编辑后重试，
+                // 不能因 Provider / 附件临时故障被迫重新输入。
+                scheduleFinalizeFailedTurn(
+                    conversationID: conversationID,
+                    userMessage: userMessage,
+                    question: question
+                )
             }
         }
         finishDebugTrace(debugTraceID, state: debugTraceState(for: answerState))
         remoteContextConsent = nil
         answerTask = nil
+    }
+
+    /// 非取消错误的恢复路径。先尽力把用户问题落库，落库失败时仍保留已显示的气泡；
+    /// 后续由 error sheet 提示错误，用户可使用气泡上的复制/编辑动作恢复。
+    private func scheduleFinalizeFailedTurn(
+        conversationID: UUID,
+        userMessage: RAGStoredMessage,
+        question: String
+    ) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await conversationStore.appendUserMessage(
+                    conversationID: conversationID,
+                    messageID: userMessage.id,
+                    question: question,
+                    createdAt: userMessage.createdAt
+                )
+                guard selectedConversationID == conversationID else { return }
+                if let detail = try await conversationStore.loadConversation(id: conversationID) {
+                    messages = detail.messages
+                    loadedMessageSequence &+= 1
+                }
+                conversations = try await conversationStore.listConversations()
+            } catch {
+                // 不覆盖原始 Provider 错误；内存气泡仍可让用户复制或编辑问题。
+            }
+        }
     }
 
     /// 在已取消的回答 Task 之外落库：否则 `appendUserMessage` 等 await 会再抛
@@ -1168,6 +1206,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
                 if let detail = try await conversationStore.loadConversation(id: conversationID) {
                     messages = detail.messages
+                    loadedMessageSequence &+= 1
                 }
                 conversations = try await conversationStore.listConversations()
                 if isFirstTurn, let service {
@@ -1508,6 +1547,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         )
         if let detail = try await conversationStore.loadConversation(id: conversationID) {
             messages = detail.messages
+            loadedMessageSequence &+= 1
             if let citation = citations.first { selectCitation(citation) }
         }
         conversations = try await conversationStore.listConversations()
