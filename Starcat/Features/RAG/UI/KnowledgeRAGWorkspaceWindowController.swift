@@ -415,7 +415,7 @@ private struct KnowledgeRAGBrowserView: View {
             .appLocaleEnvironment()
         }
         .sheet(item: $inspectingHit) { hit in
-            KnowledgeRAGRetrievalHitDetail(hit: hit)
+            KnowledgeRAGChunkEditor(hit: hit)
                 .appLocaleEnvironment()
         }
         .alert(
@@ -457,8 +457,10 @@ private struct KnowledgeRAGBrowserView: View {
                         .textCase(.uppercase)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                    LazyVStack(alignment: .leading, spacing: 5) {
-                        ForEach(viewModel.candidates, id: \.repo.id) { candidate in repositoryRow(candidate) }
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(viewModel.candidates.enumerated()), id: \.element.repo.id) { rowIndex, candidate in
+                            repositoryRow(candidate, rowIndex: rowIndex)
+                        }
                     }
                     .padding(.bottom, 12)
                 }
@@ -617,13 +619,22 @@ private struct KnowledgeRAGBrowserView: View {
                 }
                 Button { viewModel.runRetrievalTest() } label: {
                     Image(systemName: "magnifyingglass")
-                        .font(.callout.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.white)
+                .background(
+                    viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? Color.accentColor.opacity(0.4)
+                        : Color.accentColor,
+                    in: Circle()
+                )
                 .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isTestingRetrieval)
                 .accessibilityLabel(Text("rag.browser.retrieval.run"))
                 .help(Text("rag.browser.retrieval.run"))
+                .pointerStyle(.link)
                 .padding(8)
             }
             .frame(height: 72)
@@ -633,9 +644,9 @@ private struct KnowledgeRAGBrowserView: View {
             if viewModel.isTestingRetrieval { ProgressView().controlSize(.small) }
             if !viewModel.retrievalHits.isEmpty {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(viewModel.retrievalHits, id: \.chunk.id) { hit in
-                            retrievalHitRow(hit)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(viewModel.retrievalHits.enumerated()), id: \.element.chunk.id) { rowIndex, hit in
+                            retrievalHitRow(hit, rowIndex: rowIndex)
                         }
                     }
                 }
@@ -652,7 +663,7 @@ private struct KnowledgeRAGBrowserView: View {
         }
     }
 
-    private func retrievalHitRow(_ hit: RAGChildHit) -> some View {
+    private func retrievalHitRow(_ hit: RAGChildHit, rowIndex: Int) -> some View {
         Button {
             inspectingHit = RAGRetrievalHitInspection(hit: hit, repositoryName: viewModel.repositoryName(for: hit.chunk.repoId))
         } label: {
@@ -677,10 +688,7 @@ private struct KnowledgeRAGBrowserView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .padding(8)
-            .background(
-                hoveredRetrievalHitID == hit.chunk.id ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 6)
-            )
+            .background(retrievalRowBackground(rowIndex: rowIndex, isHovered: hoveredRetrievalHitID == hit.chunk.id))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -690,7 +698,7 @@ private struct KnowledgeRAGBrowserView: View {
         }
     }
 
-    private func repositoryRow(_ candidate: RAGRepoCandidate) -> some View {
+    private func repositoryRow(_ candidate: RAGRepoCandidate, rowIndex: Int) -> some View {
         let selected = candidate.repo.id == viewModel.selectedRepoID
         let isHovered = hoveredRepositoryID == candidate.repo.id
         let index = viewModel.indexes[candidate.repo.id]
@@ -705,11 +713,13 @@ private struct KnowledgeRAGBrowserView: View {
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-            .background(repositoryCardBackground(selected: selected, isHovered: isHovered), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(repositoryCardBorderColor(selected: selected, isHovered: isHovered))
-            )
+            .background(repositoryRowBackground(rowIndex: rowIndex, selected: selected, isHovered: isHovered))
+            .overlay {
+                if selected || isHovered {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(repositoryRowBorderColor(selected: selected, isHovered: isHovered))
+                }
+            }
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -720,17 +730,17 @@ private struct KnowledgeRAGBrowserView: View {
         }
     }
 
-    /// 仓库列表始终保留卡片边界，避免未选中项在浅色背景中融成一片。
-    private func repositoryCardBackground(selected: Bool, isHovered: Bool) -> Color {
+    /// 选中和悬停优先于底纹，确保当前操作对象仍是列表里的最强视觉信号。
+    private func repositoryRowBackground(rowIndex: Int, selected: Bool, isHovered: Bool) -> Color {
         if selected { return Color.accentColor.opacity(0.12) }
         if isHovered { return Color.accentColor.opacity(0.07) }
-        return Color(nsColor: .textBackgroundColor)
+        return zebraStripeBackground(rowIndex: rowIndex)
     }
 
-    private func repositoryCardBorderColor(selected: Bool, isHovered: Bool) -> Color {
+    private func repositoryRowBorderColor(selected: Bool, isHovered: Bool) -> Color {
         if selected { return Color.accentColor.opacity(0.35) }
         if isHovered { return Color.accentColor.opacity(0.55) }
-        return Color(nsColor: .separatorColor).opacity(0.35)
+        return .clear
     }
 
     private func repositoryDetail(_ candidate: RAGRepoCandidate) -> some View {
@@ -770,7 +780,14 @@ private struct KnowledgeRAGBrowserView: View {
             if viewModel.chunks.isEmpty {
                 ContentUnavailableView("rag.browser.noChunks", systemImage: "doc.text").frame(maxWidth: .infinity, minHeight: 180)
             } else {
-                ForEach(viewModel.chunks) { chunk in chunkRow(chunk) }
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.chunks.enumerated()), id: \.element.id) { index, chunk in
+                        if index > 0 { Divider() }
+                        chunkRow(chunk, rowIndex: index)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor).opacity(0.45)))
                 if viewModel.hasMoreChunks || viewModel.isLoadingMoreChunks {
                     chunkLoadMore
                 }
@@ -797,7 +814,7 @@ private struct KnowledgeRAGBrowserView: View {
         .padding(.vertical, 6)
     }
 
-    private func chunkRow(_ managed: RAGManagedChunk) -> some View {
+    private func chunkRow(_ managed: RAGManagedChunk, rowIndex: Int) -> some View {
         let chunk = managed.chunk
         let status = effectiveStatus(for: chunk)
         let isHovered = hoveredChunkID == managed.id
@@ -855,20 +872,26 @@ private struct KnowledgeRAGBrowserView: View {
             .frame(height: 16)
         }
         .padding(12)
-        .background(chunkCardBackground(managed, isHovered: isHovered), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor).opacity(isHovered ? 0.7 : 0.35))
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .background(chunkRowBackground(managed, isHovered: isHovered, rowIndex: rowIndex))
+        .contentShape(Rectangle())
         .onHover { hoveredChunkID = $0 ? managed.id : nil }
     }
 
-    private func chunkCardBackground(_ managed: RAGManagedChunk, isHovered: Bool) -> Color {
+    private func chunkRowBackground(_ managed: RAGManagedChunk, isHovered: Bool, rowIndex: Int) -> Color {
         if isHovered { return Color.accentColor.opacity(0.10) }
+        // 下架行保持弱化底色，不参与斑马纹。
         if managed.isExcluded { return Color.secondary.opacity(0.10) }
-        // 使用 control surface 作为常态，确保每个分片在详情页中保持独立卡片层级。
-        return Color(nsColor: .controlBackgroundColor)
+        return zebraStripeBackground(rowIndex: rowIndex)
+    }
+
+    /// 不能再用 text/control background 做交替色：浅色窗口中二者接近白色，圆角卡片会完全掩盖差异。
+    /// primary 的极低透明度会随明暗主题反转，既形成可扫描的行带，又不抢占选中和状态颜色。
+    private func zebraStripeBackground(rowIndex: Int) -> Color {
+        rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
+    }
+
+    private func retrievalRowBackground(rowIndex: Int, isHovered: Bool) -> Color {
+        isHovered ? Color.accentColor.opacity(0.08) : zebraStripeBackground(rowIndex: rowIndex)
     }
 
     private func stat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
@@ -979,60 +1002,65 @@ private struct RAGRetrievalHitInspection: Identifiable {
 }
 
 /// 召回命中详情只读展示完整分片与评分，避免测试列表为了预览而截断关键信息。
-private struct KnowledgeRAGRetrievalHitDetail: View {
-    @Environment(\.dismiss) private var dismiss
-    let hit: RAGRetrievalHitInspection
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("rag.browser.retrieval.detail").font(.headline)
-                Spacer()
-                SheetCloseButton(action: { dismiss() })
-            }
-            HStack(spacing: 8) {
-                Text(hit.repositoryName).font(.callout.weight(.semibold))
-                Text(hit.hit.chunk.source.rawValue).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Text(hit.hit.kind.rawValue).font(.caption).foregroundStyle(.secondary)
-                Text(String(format: "%.3f", hit.hit.score)).font(.caption.monospaced())
-            }
-            Text(hit.hit.chunk.sectionPath.isEmpty ? hit.hit.chunk.title : hit.hit.chunk.sectionPath)
-                .font(.subheadline.weight(.semibold))
-            ScrollView { Text(hit.hit.chunk.content).font(.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-        }
-        .padding(18)
-        .frame(width: 680, height: 500)
-    }
-}
-
-/// 分片编辑器只提交人工覆盖层；关闭或重建都不会直接覆盖 README 等源数据。
+/// 分片窗口共用编辑与召回详情布局；编辑只提交人工覆盖层，只读模式绝不写回 README 等源数据。
 private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.dismiss) private var dismiss
-    let chunk: RAGManagedChunk
-    let onSave: (String, String, String) async -> Void
+    let chunk: RAGChunk
+    let isExcluded: Bool?
+    let retrievalMetadata: (repositoryName: String, kind: String, score: Double)?
+    let onSave: ((String, String, String) async -> Void)?
     @State private var title: String
     @State private var sectionPath: String
     @State private var content: String
 
     init(chunk: RAGManagedChunk, onSave: @escaping (String, String, String) async -> Void) {
-        self.chunk = chunk
+        self.chunk = chunk.chunk
+        isExcluded = chunk.isExcluded
+        retrievalMetadata = nil
         self.onSave = onSave
         _title = State(initialValue: chunk.chunk.title)
         _sectionPath = State(initialValue: chunk.chunk.sectionPath)
         _content = State(initialValue: chunk.chunk.content)
     }
 
+    init(hit: RAGRetrievalHitInspection) {
+        chunk = hit.hit.chunk
+        isExcluded = nil
+        retrievalMetadata = (hit.repositoryName, hit.hit.kind.rawValue, hit.hit.score)
+        onSave = nil
+        _title = State(initialValue: hit.hit.chunk.title)
+        _sectionPath = State(initialValue: hit.hit.chunk.sectionPath)
+        _content = State(initialValue: hit.hit.chunk.content)
+    }
+
+    private var isReadOnly: Bool { onSave == nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("rag.browser.chunk.edit").font(.headline); Spacer(); SheetCloseButton(action: { dismiss() }) }
+            HStack {
+                if isReadOnly { Text("rag.browser.retrieval.detail").font(.headline) }
+                else { Text("rag.browser.chunk.edit").font(.headline) }
+                Spacer()
+                SheetCloseButton(action: { dismiss() })
+            }
+            if let retrievalMetadata {
+                HStack(spacing: 8) {
+                    Text(retrievalMetadata.repositoryName).font(.callout.weight(.semibold))
+                    Text(chunk.source.rawValue).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(retrievalMetadata.kind).font(.caption).foregroundStyle(.secondary)
+                    Text(String(format: "%.3f", retrievalMetadata.score)).font(.caption.monospaced())
+                }
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text("rag.browser.chunk.titleLabel").font(.caption).foregroundStyle(.secondary)
                 TextField("rag.browser.chunk.title", text: $title)
+                    .disabled(isReadOnly)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("rag.browser.chunk.sectionLabel").font(.caption).foregroundStyle(.secondary)
                 TextField("rag.browser.chunk.section", text: $sectionPath)
+                    .disabled(isReadOnly)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("rag.browser.chunk.contentLabel").font(.caption).foregroundStyle(.secondary)
@@ -1046,21 +1074,24 @@ private struct KnowledgeRAGChunkEditor: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color(nsColor: .separatorColor).opacity(0.55))
                     )
+                    .disabled(isReadOnly)
             }
-            HStack(alignment: .center, spacing: 12) {
-                // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
-                RAGChunkAvailabilityBadge(isExcluded: chunk.isExcluded, showsRestoreHint: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let onSave, let isExcluded {
+                HStack(alignment: .center, spacing: 12) {
+                    // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
+                    RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button("common.cancel") { dismiss() }
-                Button("rag.browser.chunk.save") {
-                    Task {
-                        await onSave(title, sectionPath, content)
-                        dismiss()
+                    Button("common.cancel") { dismiss() }
+                    Button("rag.browser.chunk.save") {
+                        Task {
+                            await onSave(title, sectionPath, content)
+                            dismiss()
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(18)

@@ -2470,8 +2470,8 @@ private struct RAGCitationChipsRow: View {
                     onSelectCitation(citation)
                 } label: {
                     Text("\(citation.marker) · \(citation.repoFullName)")
-                        // 比正文略小一档，避免 chip 加粗后显得比回答还抢眼。
-                        .font(interfaceScale.font(.callout, weight: .medium))
+                        // caption(12) 比正文 body(13) 略小；勿用 .callout（不在 StarcatTypography）。
+                        .font(interfaceScale.font(.caption, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .padding(.horizontal, 8)
@@ -2498,7 +2498,7 @@ private struct RAGCitationChipsRow: View {
                             Text(String(format: String.l10n("rag.workspace.citations.moreFormat"), hiddenCount))
                         }
                     }
-                    .font(interfaceScale.font(.callout, weight: .medium))
+                    .font(interfaceScale.font(.caption, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .padding(.horizontal, 8)
