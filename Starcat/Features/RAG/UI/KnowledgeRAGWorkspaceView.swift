@@ -38,11 +38,22 @@ struct KnowledgeRAGWorkspaceView: View {
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isRetrievalScoreExplanationPresented = false
+    /// 中栏消息时间线的「跟随尾部」状态；上滚后暂停，点「滚到底部」或自然到底再恢复。
+    @State private var messageTail = ScrollTailController()
+    /// 同一主线程周期内只允许一个尾部滚动，避免流式输出堆积多次程序化滚动。
+    @State private var isMessageTailScrollScheduled = false
+    /// 是否贴近时间线底部。按钮显隐只认这个几何量，不跟 `isFollowing` 绑在一起，
+    /// 避免鼠标移入底部按钮时 phase/sentinel 抖动把按钮闪没，并拖垮滚动帧率。
+    @State private var isMessageNearBottom = true
 
     /// Inspector 标题 / tabs / 内容共用水平 inset，避免三层左右错位。
     private static let inspectorContentInset: CGFloat = 14
     /// 所有索引统计行都占用同一操作列；否则展开行的 chevron 会把数字向左推，破坏数值列对齐。
     private static let indexRowTrailingAffordanceWidth: CGFloat = 16
+    /// 消息时间线底部 sentinel：流式 scrollTo 与「是否在底部」共用，比绑最后一条 message.id 更稳。
+    private static let messageBottomAnchorID = "rag-message-bottom-anchor"
+    /// 距底部小于该值视为「在底部」；略宽一点减少临界闪烁。
+    private static let messageNearBottomThreshold: CGFloat = 64
 
     var body: some View {
         HStack(spacing: 0) {
@@ -515,6 +526,12 @@ struct KnowledgeRAGWorkspaceView: View {
 
     private var messageTimeline: some View {
         let outlineTurns = RAGConversationOutlineBuilder.completeTurns(from: viewModel.messages)
+        let hasTimelineContent = !viewModel.messages.isEmpty
+            || !viewModel.streamingAnswer.isEmpty
+            || viewModel.isAnswering
+        // 显隐只看几何「是否离底」：不要读 messageTail.isFollowing，否则滚动 phase
+        // 每次变化都会整页刷新，鼠标划过按钮时更容易闪没并卡顿。
+        let showsScrollToBottom = hasTimelineContent && !isMessageNearBottom
         return ScrollViewReader { proxy in
             ZStack(alignment: .leading) {
                 ScrollView {
@@ -535,18 +552,41 @@ struct KnowledgeRAGWorkspaceView: View {
                             workingIndicator
                                 .id("working-indicator")
                         }
+
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.messageBottomAnchorID)
+                            .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                messageTail.updateBottomVisibility(isVisible)
+                            }
                     }
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .onChange(of: viewModel.streamingAnswer) { _, _ in
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                        proxy.scrollTo("streaming-answer", anchor: .bottom)
-                    }
+                .onScrollPhaseChange { _, newPhase in
+                    messageTail.updatePhase(newPhase)
+                }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    let remaining = geometry.contentSize.height
+                        - geometry.contentOffset.y
+                        - geometry.containerSize.height
+                    return remaining <= Self.messageNearBottomThreshold
+                } action: { _, isNearBottom in
+                    guard isMessageNearBottom != isNearBottom else { return }
+                    isMessageNearBottom = isNearBottom
+                }
+                .onChange(of: viewModel.selectedConversationID) { _, _ in
+                    // 切会话后默认跟到底部，避免沿用上一会话的「已离开尾部」状态。
+                    isMessageNearBottom = true
+                    messageTail.resumeFollowing()
+                }
+                .onChange(of: viewModel.streamingAnswer) { _, newValue in
+                    guard !newValue.isEmpty else { return }
+                    scheduleMessageTailScroll(proxy: proxy)
                 }
                 .onChange(of: viewModel.messages.count) { _, _ in
-                    if let id = viewModel.messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+                    scheduleMessageTailScroll(proxy: proxy)
                 }
 
                 // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
@@ -554,6 +594,8 @@ struct KnowledgeRAGWorkspaceView: View {
                     RAGConversationOutlineRail(
                         turns: outlineTurns,
                         onSelect: { turn in
+                            messageTail.pauseFollowing()
+                            isMessageNearBottom = false
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                                 proxy.scrollTo(turn.userMessageID, anchor: .top)
                             }
@@ -564,6 +606,58 @@ struct KnowledgeRAGWorkspaceView: View {
                     .padding(.vertical, 12)
                     .frame(maxHeight: .infinity, alignment: .leading)
                 }
+            }
+            .overlay(alignment: .bottom) {
+                if showsScrollToBottom {
+                    scrollToBottomButton {
+                        messageTail.resumeFollowing()
+                        // 不提前把几何状态伪装成“已到底”；等下一轮布局让 sentinel 落位后再滚动。
+                        scheduleMessageTailScroll(proxy: proxy)
+                    }
+                    .padding(.bottom, 16)
+                }
+            }
+        }
+    }
+
+    /// 中栏底部居中的「滚到底部」快捷入口；仅在内容未贴底时出现。
+    private func scrollToBottomButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "arrow.down")
+                .font(iconFont(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 32, height: 32)
+                .background(.regularMaterial, in: Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("rag.workspace.scrollToBottom")
+        .accessibilityLabel(Text("rag.workspace.scrollToBottom"))
+        .pointerStyle(.link)
+    }
+
+    /// 合并流式回答与手动点击产生的尾部滚动请求。
+    ///
+    /// `ScrollViewProxy` 必须在本轮 SwiftUI 布局提交后才拥有最新 sentinel 位置；延迟一个
+    /// 主线程周期并关闭动画，既保证按钮点击能到达真正底部，也避免每个 delta 叠加动画事务。
+    private func scheduleMessageTailScroll(proxy: ScrollViewProxy) {
+        guard messageTail.isFollowing, !isMessageTailScrollScheduled else { return }
+        isMessageTailScrollScheduled = true
+
+        Task { @MainActor in
+            await Task.yield()
+            defer { isMessageTailScrollScheduled = false }
+            guard messageTail.isFollowing else { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(Self.messageBottomAnchorID, anchor: .bottom)
             }
         }
     }
@@ -1488,9 +1582,13 @@ struct KnowledgeRAGWorkspaceView: View {
             isRetrievalScoreExplanationPresented.toggle()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
-                Text("rag.workspace.inspector.retrievalScore")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("rag.workspace.inspector.retrievalScore")
+                    Image(systemName: "info.circle")
+                        .font(iconFont(size: 12, weight: .medium))
+                }
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
                 Text(String(format: "%.3f", locale: locale, citation.score))
                     .font(ragFont(.callout, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -1513,6 +1611,25 @@ struct KnowledgeRAGWorkspaceView: View {
                 .font(ragFont(.headline, weight: .semibold))
                 .foregroundStyle(.primary)
 
+            if let scoreBreakdown = citation.scoreBreakdown {
+                Text("rag.workspace.inspector.retrievalScore.actualCalculation")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(actualScoreFormula(scoreBreakdown))
+                    .font(ragFont(.caption2, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.60)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("rag.workspace.inspector.retrievalScore.actualCalculationUnavailable")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("rag.workspace.inspector.retrievalScore.formulaLabel")
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
             Text(retrievalScoreFormulaKey(for: citation.hitKind))
                 .font(ragFont(.caption2, design: .monospaced))
                 .foregroundStyle(.primary)
@@ -1534,7 +1651,7 @@ struct KnowledgeRAGWorkspaceView: View {
             }
         }
         .padding(16)
-        .frame(width: 480, alignment: .leading)
+        .frame(width: 560, alignment: .leading)
         .appLocaleEnvironment()
     }
 
@@ -1554,6 +1671,27 @@ struct KnowledgeRAGWorkspaceView: View {
             .font(ragFont(.caption))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// 用持久化的融合快照拼出代入式，绝不根据 UI 上已四舍五入的最终分数反推排名或加成。
+    private func actualScoreFormula(_ score: RAGScoreBreakdown) -> String {
+        let final = formattedScoreValue(score.finalScore, precision: 3)
+        let rrfConstant = formattedScoreValue(score.rrfConstant, precision: 0)
+        let sourceWeight = formattedScoreValue(score.sourceWeight, precision: 2)
+        let boost = formattedScoreValue(score.preferredRepoBoost, precision: 2)
+
+        switch score.hitKind {
+        case .vector:
+            return "\(final) = (\(formattedScoreValue(score.vectorWeight, precision: 2)) / (\(rrfConstant) + \(score.vectorRank ?? 0)) + \(formattedScoreValue(score.vectorSimilarity ?? 0, precision: 3)) × \(formattedScoreValue(score.vectorScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
+        case .keyword:
+            return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
+        case .hybrid:
+            return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2)) + \(formattedScoreValue(score.vectorWeight, precision: 2)) / (\(rrfConstant) + \(score.vectorRank ?? 0)) + \(formattedScoreValue(score.vectorSimilarity ?? 0, precision: 3)) × \(formattedScoreValue(score.vectorScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
+        }
+    }
+
+    private func formattedScoreValue(_ value: Double, precision: Int) -> String {
+        String(format: "%.\(precision)f", locale: locale, value)
     }
 
     private var knowledgeRepositoryRow: some View {

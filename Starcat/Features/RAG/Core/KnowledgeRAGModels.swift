@@ -290,6 +290,23 @@ enum RAGHitKind: String, Codable, Sendable {
     case hybrid
 }
 
+/// 单次检索的不可变计算快照。排名和权重都取自融合当刻，不能从最终分数可靠倒推。
+struct RAGScoreBreakdown: Codable, Equatable, Sendable {
+    var hitKind: RAGHitKind
+    var rrfConstant: Double
+    var keywordRank: Int?
+    var keywordScore: Double?
+    var keywordWeight: Double
+    var keywordScoreWeight: Double
+    var vectorRank: Int?
+    var vectorSimilarity: Double?
+    var vectorWeight: Double
+    var vectorScoreWeight: Double
+    var sourceWeight: Double
+    var preferredRepoBoost: Double
+    var finalScore: Double
+}
+
 struct RAGChildHit: Equatable, Sendable {
     var chunk: RAGChunk
     /// 用于排序和证据门槛的融合分；不是可直接解释为百分比的相似度。
@@ -297,6 +314,8 @@ struct RAGChildHit: Equatable, Sendable {
     var kind: RAGHitKind
     /// 原始向量召回分。仅 vector / hybrid 命中有值，供引用详情如实展示语义相似度。
     var vectorSimilarity: Double? = nil
+    /// 融合阶段生成的真实计算输入；引用写入会话历史后仍可精确复算。
+    var scoreBreakdown: RAGScoreBreakdown? = nil
 }
 
 struct RAGSectionParent: Equatable, Sendable {
@@ -357,6 +376,8 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     var hitKind: RAGHitKind
     /// 写入历史的原始向量相似度；keyword-only 命中保持 nil。
     var vectorSimilarity: Double?
+    /// 与本轮引用绑定的融合快照；旧历史没有该字段时为 nil。
+    var scoreBreakdown: RAGScoreBreakdown? = nil
     var sourceURL: URL?
 }
 

@@ -1431,6 +1431,8 @@ enum DatabaseMigrations {
             t.column("hit_kind", .text).notNull().defaults(to: "hybrid")
             // 融合分仅用于排序；单独保留原始向量分，避免 UI 把低量纲融合分误称为相关度。
             t.column("vector_similarity", .double)
+            // 引用审计快照：同一分片在不同问题的排名与权重不同，必须随消息引用保存。
+            t.column("score_breakdown_json", .text)
             t.column("source_url", .text)
             t.column("fetched_at", .text)
         }
@@ -1485,6 +1487,11 @@ enum DatabaseMigrations {
             if !citationColumns.contains("vector_similarity") {
                 try db.alter(table: "rag_message_citations") { t in
                     t.add(column: "vector_similarity", .double)
+                }
+            }
+            if !citationColumns.contains("score_breakdown_json") {
+                try db.alter(table: "rag_message_citations") { t in
+                    t.add(column: "score_breakdown_json", .text)
                 }
             }
         }

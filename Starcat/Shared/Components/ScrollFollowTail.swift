@@ -38,8 +38,9 @@
 //  4. **初始 isFollowing = true**：用户打开窗口默认期待"自动跟随最
 //     新输出"，这个默认值与生成流程的预期 100% 吻合。
 //
-//  5. **无浮动恢复按钮**：用户明确要求不展示遮挡内容的“跟随最新”入口；恢复
-//     自动跟随的唯一方式是自然滚到底部并结束手势。
+//  5. **浮动「滚到底部」入口由调用方可选**：状态机本身不画按钮。按钮显隐应
+//     以滚动几何（是否离底）为准，不要直接绑 `isFollowing`——否则鼠标移入
+//     底部 overlay 时 phase/sentinel 抖动会把按钮闪掉，并在滚动中反复刷新。
 //
 
 import SwiftUI
@@ -115,5 +116,16 @@ final class ScrollTailController {
         if isVisible, !isUserScrollInProgress, lastPhase == .idle {
             isFollowing = true
         }
+    }
+
+    /// 用户主动离开尾部（如大纲跳转）：立即停止跟随，避免流式输出把视口拽回底部。
+    func pauseFollowing() {
+        isFollowing = false
+    }
+
+    /// 用户点击「滚到底部」：恢复跟随；真正对齐由调用方 `scrollTo` 完成。
+    func resumeFollowing() {
+        isFollowing = true
+        isBottomVisible = true
     }
 }

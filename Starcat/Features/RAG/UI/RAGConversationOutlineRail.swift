@@ -87,34 +87,29 @@ struct RAGConversationOutlineRail: View {
     private let idleDashWidth: CGFloat = 10
     private let activeDashWidth: CGFloat = 16
     private let dashHeight: CGFloat = 2
-    private let dashSpacing: CGFloat = 7
+    private let dashSpacing: CGFloat = 4
     private let previewCardWidth: CGFloat = 280
 
     var body: some View {
         GeometryReader { proxy in
-            HStack(alignment: .center, spacing: 10) {
-                dashTrack(containerHeight: proxy.size.height)
-
-                if let turn = turns.first(where: { $0.id == hoveredTurnID }) {
-                    previewCard(turn)
-                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .leading)))
+            dashTrack(containerHeight: proxy.size.height)
+                // 预览卡叠在横线右侧，不参与布局宽度，避免出现/消失时左右撑开。
+                .overlay(alignment: .leading) {
+                    if let turn = turns.first(where: { $0.id == hoveredTurnID }) {
+                        previewCard(turn)
+                            .offset(x: activeDashWidth + 14)
+                            .transition(.opacity)
+                    }
                 }
-            }
-            .frame(maxHeight: .infinity, alignment: .center)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveredTurnID)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hoveredTurnID)
         }
-        // 宽度随「横线轨 + 可选预览卡」内容增长；不要拉满中栏，否则会挡住消息点击。
-        .frame(width: railWidth)
+        // 只占横线轨宽度，预览卡画出边界外；不要拉满中栏，否则会挡住消息点击。
+        .frame(width: activeDashWidth + 4)
         .onDisappear {
             hoverClearTask?.cancel()
             hoverClearTask = nil
             hoveredTurnID = nil
         }
-    }
-
-    private var railWidth: CGFloat {
-        let dashColumn = activeDashWidth + 4
-        return hoveredTurnID == nil ? dashColumn : dashColumn + 10 + previewCardWidth
     }
 
     private func dashTrack(containerHeight: CGFloat) -> some View {
@@ -143,7 +138,7 @@ struct RAGConversationOutlineRail: View {
                     width: isHovered ? activeDashWidth : idleDashWidth,
                     height: dashHeight
                 )
-                .frame(width: activeDashWidth, height: dashHeight + 10, alignment: .leading)
+                .frame(width: activeDashWidth, height: dashHeight + 6, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

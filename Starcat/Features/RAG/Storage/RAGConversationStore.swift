@@ -199,11 +199,14 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 VALUES (?, ?, 'assistant', ?, ?, ?)
                 """, arguments: [assistantID.uuidString, conversationID.uuidString, answer, model, assistantAt])
             for (rank, citation) in citations.enumerated() {
+                let scoreBreakdownJSON = try citation.scoreBreakdown.map {
+                    String(decoding: try JSONEncoder().encode($0), as: UTF8.self)
+                }
                 try db.execute(sql: """
                     INSERT INTO rag_message_citations (
                         id, message_id, chunk_id, repo_id, repo_full_name, marker, source,
-                        section_title, rank, score, hit_kind, vector_similarity, source_url, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        section_title, rank, score, hit_kind, vector_similarity, score_breakdown_json, source_url, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         citation.id.uuidString,
                         assistantID.uuidString,
@@ -217,6 +220,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                         citation.score,
                         citation.hitKind.rawValue,
                         citation.vectorSimilarity,
+                        scoreBreakdownJSON,
                         citation.sourceURL?.absoluteString,
                         assistantAt
                 ])
@@ -424,7 +428,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     private func citationRows(db: Database, messageID: UUID) throws -> [RAGCitation] {
         let rows = try Row.fetchAll(db, sql: """
             SELECT id, chunk_id, repo_id, repo_full_name, marker, source, section_title,
-                   rank, score, hit_kind, vector_similarity, source_url
+                   rank, score, hit_kind, vector_similarity, score_breakdown_json, source_url
             FROM rag_message_citations
             WHERE message_id = ?
             ORDER BY rank ASC
@@ -434,6 +438,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                   let source = RAGChunkSource(rawValue: row["source"]),
                   let hitKind = RAGHitKind(rawValue: row["hit_kind"]) else { return nil }
             let sourceURLString: String? = row["source_url"]
+            let scoreBreakdownJSON: String? = row["score_breakdown_json"]
             let storedMarker: String = row["marker"]
             // ensure 补列后旧行为空串：用 rank+1 仅恢复本机开发会话显示。
             let rank: Int = row["rank"]
@@ -449,6 +454,9 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 score: row["score"],
                 hitKind: hitKind,
                 vectorSimilarity: row["vector_similarity"],
+                scoreBreakdown: scoreBreakdownJSON.flatMap {
+                    try? JSONDecoder().decode(RAGScoreBreakdown.self, from: Data($0.utf8))
+                },
                 sourceURL: sourceURLString.flatMap(URL.init(string:))
             )
         }

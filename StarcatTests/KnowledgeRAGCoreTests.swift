@@ -110,7 +110,7 @@ struct KnowledgeRAGCoreTests {
     }
 
     @Test("混合融合合并命中并限制每个 repo 的 child 数")
-    func hybridFusionDeduplicatesAndCapsRepo() {
+    func hybridFusionDeduplicatesAndCapsRepo() throws {
         let chunks = (1...5).map { index in fixtureChunk(id: Int64(index), repoID: index <= 4 ? 1 : 2, source: index == 1 ? .notes : .readme) }
         let keyword = chunks.map { RAGChildHit(chunk: $0, score: 1, kind: .keyword) }
         let vector = chunks.reversed().map {
@@ -121,6 +121,10 @@ struct KnowledgeRAGCoreTests {
         #expect(hits.filter { $0.chunk.repoId == 1 }.count == 2)
         #expect(hits.contains { $0.kind == .hybrid })
         #expect(hits.first(where: { $0.kind == .hybrid })?.vectorSimilarity == 0.9)
+        let hybridHit = try #require(hits.first(where: { $0.kind == .hybrid }))
+        let breakdown = try #require(hybridHit.scoreBreakdown)
+        #expect(breakdown.keywordRank != nil)
+        #expect(breakdown.vectorRank != nil)
     }
 
     @Test("纯 keyword 首名超过证据阈值")
@@ -437,6 +441,21 @@ struct KnowledgeRAGCoreTests {
                 score: 0.9,
                 hitKind: .hybrid,
                 vectorSimilarity: 0.91,
+                scoreBreakdown: RAGScoreBreakdown(
+                    hitKind: .hybrid,
+                    rrfConstant: 60,
+                    keywordRank: 1,
+                    keywordScore: 1,
+                    keywordWeight: 1,
+                    keywordScoreWeight: 0.12,
+                    vectorRank: 2,
+                    vectorSimilarity: 0.91,
+                    vectorWeight: 1.15,
+                    vectorScoreWeight: 0.20,
+                    sourceWeight: 1,
+                    preferredRepoBoost: 0,
+                    finalScore: 0.9
+                ),
                 sourceURL: URL(string: "https://github.com/octo/demo-42")
             )]
         )
@@ -447,6 +466,7 @@ struct KnowledgeRAGCoreTests {
         #expect(citation.repoFullName == "octo/demo-42")
         #expect(citation.marker == "S1")
         #expect(citation.vectorSimilarity == 0.91)
+        #expect(citation.scoreBreakdown?.vectorRank == 2)
     }
 
     @Test("外部后端配置拒绝无效 endpoint")

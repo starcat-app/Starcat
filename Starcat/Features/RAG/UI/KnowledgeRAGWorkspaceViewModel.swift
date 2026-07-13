@@ -812,8 +812,9 @@ final class KnowledgeRAGWorkspaceViewModel {
         selectCitation(citation)
     }
 
+    /// 证据卡「Starcat 详情」：只开独立详情窗。
+    /// 不调 `selectCitation`——该按钮只在已展开行出现；再选一次会清掉 `selectedCitationChunk` 并异步重拉，证据区会闪一次。
     func openCitation(_ citation: RAGCitation) {
-        selectCitation(citation)
         Task {
             await openLocalRepoDetail(for: citation)
         }

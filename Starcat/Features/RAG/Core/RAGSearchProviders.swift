@@ -90,6 +90,9 @@ struct RAGHybridFusionEngine: Sendable {
             var score: Double = 0
             var keyword = false
             var vector = false
+            var keywordRank: Int?
+            var keywordScore: Double?
+            var vectorRank: Int?
             var vectorSimilarity: Double?
         }
 
@@ -103,6 +106,8 @@ struct RAGHybridFusionEngine: Sendable {
             // repo 名、API、错误码等精确查询独立成立。
             value.score += max(hit.score, 0) * configuration.keywordScoreWeight
             value.keyword = true
+            value.keywordRank = index + 1
+            value.keywordScore = hit.score
             values[id] = value
         }
         for (index, hit) in vectorHits.enumerated() {
@@ -111,6 +116,7 @@ struct RAGHybridFusionEngine: Sendable {
             value.score += configuration.vectorWeight / (configuration.rrfConstant + Double(index + 1))
             value.score += max(hit.score, 0) * configuration.vectorScoreWeight
             value.vector = true
+            value.vectorRank = index + 1
             // 原始向量分与融合分用途不同：前者给用户解释语义相似度，后者只负责排序。
             value.vectorSimilarity = hit.vectorSimilarity ?? hit.score
             values[id] = value
@@ -118,15 +124,33 @@ struct RAGHybridFusionEngine: Sendable {
 
         var ranked = values.values.map { value -> RAGChildHit in
             let kind: RAGHitKind = value.keyword && value.vector ? .hybrid : (value.keyword ? .keyword : .vector)
-            var score = value.score * sourceWeight(value.chunk.source)
-            if preferredRepoIDs.contains(value.chunk.repoId) {
-                score += configuration.preferRepoBoost
-            }
+            let sourceWeight = sourceWeight(value.chunk.source)
+            let preferredRepoBoost = preferredRepoIDs.contains(value.chunk.repoId)
+                ? configuration.preferRepoBoost
+                : 0
+            let score = value.score * sourceWeight + preferredRepoBoost
+            // 在候选仍带有真实排名时冻结所有输入；后续裁剪、排序和会话恢复都不再改变这份审计快照。
+            let scoreBreakdown = RAGScoreBreakdown(
+                hitKind: kind,
+                rrfConstant: configuration.rrfConstant,
+                keywordRank: value.keywordRank,
+                keywordScore: value.keywordScore,
+                keywordWeight: configuration.keywordWeight,
+                keywordScoreWeight: configuration.keywordScoreWeight,
+                vectorRank: value.vectorRank,
+                vectorSimilarity: value.vectorSimilarity,
+                vectorWeight: configuration.vectorWeight,
+                vectorScoreWeight: configuration.vectorScoreWeight,
+                sourceWeight: sourceWeight,
+                preferredRepoBoost: preferredRepoBoost,
+                finalScore: score
+            )
             return RAGChildHit(
                 chunk: value.chunk,
                 score: score,
                 kind: kind,
-                vectorSimilarity: value.vectorSimilarity
+                vectorSimilarity: value.vectorSimilarity,
+                scoreBreakdown: scoreBreakdown
             )
         }
         ranked.sort { lhs, rhs in

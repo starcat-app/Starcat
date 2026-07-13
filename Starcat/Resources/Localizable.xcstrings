@@ -19501,6 +19501,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "跳转到该轮问答" } }
       }
     },
+    "rag.workspace.scrollToBottom" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Scroll to bottom" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "滚动到底部" } }
+      }
+    },
     "rag.workspace.error.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't complete this request" } },
@@ -20929,6 +20935,18 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "余弦相似度：问题与该分片的原始语义相似度。" } }
       }
     },
+    "rag.workspace.inspector.retrievalScore.actualCalculation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Calculation with this citation's inputs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本次引用的实际计算" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.actualCalculationUnavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This older citation does not retain its retrieval inputs, so it cannot be recalculated exactly." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该历史引用未保留当时的检索参数，无法精确复算。" } }
+      }
+    },
     "rag.workspace.inspector.retrievalScore.explanationTitle" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Retrieval score" } },
@@ -20939,6 +20957,12 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "score = (keyword RRF + keyword score × 0.12 + vector RRF + cosine similarity × 0.20) × source weight + preferred-repo boost" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "综合检索分 =（关键词 RRF + 字面命中分 × 0.12 + 向量 RRF + 余弦相似度 × 0.20）× 来源权重 + @repo 偏好加成" } }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.formulaLabel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Calculation formula" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "计算公式" } }
       }
     },
     "rag.workspace.inspector.retrievalScore.formula.keyword" : {
