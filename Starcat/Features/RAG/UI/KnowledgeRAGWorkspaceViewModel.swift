@@ -31,6 +31,14 @@ enum KnowledgeRAGIndexRefreshPresentation {
 @MainActor
 @Observable
 final class KnowledgeRAGWorkspaceViewModel {
+    /// Debug 只用于当前窗口，仍必须有内存上界：Prompt/远程正文可能很大，长时间调试不应
+    /// 因积累完整 payload 挤压正常回答渲染。
+    private enum DebugTraceLimit {
+        static let maxTraceCount = 24
+        static let maxEventsPerTrace = 80
+        static let maxPayloadUTF8Bytes = 16 * 1_024
+        static let maxTotalPayloadUTF8Bytes = 512 * 1_024
+    }
     private let dependencies: AppDependencies
     /// 打开独立详情窗需要共享主窗 HomeViewModel（star 状态 / registry）。
     private let homeViewModel: HomeViewModel
@@ -1369,13 +1377,29 @@ final class KnowledgeRAGWorkspaceViewModel {
             events: []
         )
         debugTraces.append(trace)
+        trimDebugTraceMemory()
         return trace.id
     }
 
     private func appendDebugEvent(_ event: RAGDebugEvent, to traceID: UUID?) {
         guard isDebugModeEnabled, let traceID,
               let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
-        debugTraces[index].events.append(event)
+        let boundedPayload = String(
+            decoding: (event.payload ?? "").utf8.prefix(DebugTraceLimit.maxPayloadUTF8Bytes),
+            as: UTF8.self
+        )
+        let boundedEvent = RAGDebugEvent(
+            stage: event.stage,
+            elapsedSeconds: event.elapsedSeconds,
+            payload: boundedPayload
+        )
+        debugTraces[index].events.append(boundedEvent)
+        if debugTraces[index].events.count > DebugTraceLimit.maxEventsPerTrace {
+            debugTraces[index].events.removeFirst(
+                debugTraces[index].events.count - DebugTraceLimit.maxEventsPerTrace
+            )
+        }
+        trimDebugTraceMemory()
     }
 
     private func appendDebugEvents(_ events: [RAGDebugEvent], to traceID: UUID?) {
@@ -1385,6 +1409,26 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func finishDebugTrace(_ traceID: UUID?, state: RAGDebugTrace.State) {
         guard let traceID, let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
         debugTraces[index].state = state
+    }
+
+    /// FIFO 清理最老事件/trace；普通会话与数据库永不依赖 debug trace，因此可安全释放。
+    private func trimDebugTraceMemory() {
+        while debugTraces.count > DebugTraceLimit.maxTraceCount {
+            debugTraces.removeFirst()
+        }
+        while debugPayloadByteCount > DebugTraceLimit.maxTotalPayloadUTF8Bytes {
+            guard let traceIndex = debugTraces.firstIndex(where: { !$0.events.isEmpty }) else { break }
+            debugTraces[traceIndex].events.removeFirst()
+            if debugTraces[traceIndex].events.isEmpty, debugTraces.count > 1 {
+                debugTraces.remove(at: traceIndex)
+            }
+        }
+    }
+
+    private var debugPayloadByteCount: Int {
+        debugTraces.reduce(0) { traceTotal, trace in
+            traceTotal + trace.events.reduce(0) { $0 + $1.payload.utf8.count }
+        }
     }
 
     private func debugTraceState(for answerState: RAGAnswerState) -> RAGDebugTrace.State {
