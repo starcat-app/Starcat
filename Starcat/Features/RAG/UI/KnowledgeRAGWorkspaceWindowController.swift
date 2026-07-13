@@ -274,6 +274,12 @@ private final class KnowledgeRAGBrowserViewModel {
         )
     }
 
+    /// 浏览器打开 GitHub 仓库主页；htmlUrl 缺失时用 owner/name 兜底拼接。
+    func openRepositoryOnGitHub(_ repo: Repo) {
+        let url = RepoExternalLinks.repo(repo) ?? GitHubURLs.repo(owner: repo.owner, repo: repo.name)
+        NSWorkspace.shared.open(url)
+    }
+
     func runRetrievalTest() {
         let query = retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isTestingRetrieval else { return }
@@ -802,15 +808,37 @@ private struct KnowledgeRAGBrowserView: View {
     private func repositoryDetail(_ candidate: RAGRepoCandidate) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 10) {
-                // 详情顶栏用稍大头像；优先本地 ownerAvatar，否则 RepoAvatarURL（Kingfisher 缓存）。
-                RemoteAvatar(
-                    urlString: candidate.repo.ownerAvatar ?? RepoAvatarURL.from(owner: candidate.repo.owner),
-                    size: 28,
-                    showBorder: true
-                )
+                // logo / 仓库名 → 浏览器打开 GitHub；右侧按钮仍走 Starcat 详情窗。
+                Button {
+                    viewModel.openRepositoryOnGitHub(candidate.repo)
+                } label: {
+                    RemoteAvatar(
+                        urlString: candidate.repo.ownerAvatar ?? RepoAvatarURL.from(owner: candidate.repo.owner),
+                        size: 28,
+                        showBorder: true
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+                .help("repo.openOnGithub")
+
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(candidate.repo.fullName).font(.title3.weight(.semibold))
-                    Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription")).font(.body).foregroundStyle(.secondary)
+                    Button {
+                        viewModel.openRepositoryOnGitHub(candidate.repo)
+                    } label: {
+                        Text(candidate.repo.fullName)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pointerStyle(.link)
+                    .help("repo.openOnGithub")
+
+                    Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription"))
+                        .font(.body)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("rag.browser.open") { viewModel.openSelectedRepository() }.buttonStyle(.bordered)
