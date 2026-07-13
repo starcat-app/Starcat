@@ -299,7 +299,8 @@ struct RAGWorkspaceAnswerSurface: View {
                 citations: message.citations,
                 createdAt: message.createdAt,
                 showsActions: true,
-                executionTrace: message.executionTrace
+                executionTrace: message.executionTrace,
+                processingDuration: message.processingDuration
             )
         }
     }
@@ -311,7 +312,8 @@ struct RAGWorkspaceAnswerSurface: View {
             RAGStreamingAssistantMessageBlock(
                 snapshot: snapshot,
                 executionTrace: viewModel.executionSteps,
-                activityLabel: liveAssistantActivityLabel()
+                activityLabel: liveAssistantActivityLabel(),
+                processingDuration: viewModel.answerElapsedDuration
             )
         } else {
             assistantMessage(
@@ -320,7 +322,8 @@ struct RAGWorkspaceAnswerSurface: View {
                 createdAt: nil,
                 showsActions: false,
                 executionTrace: viewModel.executionSteps,
-                activityLabel: liveAssistantActivityLabel()
+                activityLabel: liveAssistantActivityLabel(),
+                processingDuration: viewModel.answerElapsedDuration
             )
         }
     }
@@ -332,7 +335,8 @@ struct RAGWorkspaceAnswerSurface: View {
         createdAt: String?,
         showsActions: Bool,
         executionTrace: [RAGExecutionStep] = [],
-        activityLabel: String? = nil
+        activityLabel: String? = nil,
+        processingDuration: TimeInterval? = nil
     ) -> some View {
         RAGAssistantMessageBlock(
             content: content,
@@ -341,6 +345,7 @@ struct RAGWorkspaceAnswerSurface: View {
             showsActions: showsActions,
             executionTrace: executionTrace,
             activityLabel: activityLabel,
+            processingDuration: processingDuration,
             onSelectCitation: { citation in
                 // 底部芯片只定位右侧证据，不打开详情窗。
                 viewModel.selectCitation(citation)
@@ -587,44 +592,185 @@ struct RAGWorkspaceAnswerSurface: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
     }
 
-    /// 简易多选列表：单行仓库名 + checkmark；弹层本身锚在 `@` 光标处。
+    /// `@` 多选弹层：顶部统计 + 当前筛选词 + 已选置顶列表；筛选源仍是输入框 `@token`。
     var mentionPicker: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(viewModel.mentionSuggestions) { repo in
-                    Button { viewModel.toggleMention(repo) } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark")
-                                .font(ragFont(.caption, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
-                                .opacity(viewModel.isMentionSelected(repo) ? 1 : 0)
-                                .frame(width: 12, alignment: .center)
-                            Text(repo.fullName)
-                                .font(ragFont(.callout))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
+        let snapshot = viewModel.mentionPickerSnapshot
+        let filterText = viewModel.mentionQuery ?? ""
+
+        return VStack(alignment: .leading, spacing: 0) {
+            mentionPickerHeader(snapshot: snapshot)
+            Divider()
+            mentionPickerFilterRow(filterText: filterText)
+            Divider()
+
+            if snapshot.suggestions.isEmpty {
+                mentionPickerEmptyState(hasKnowledge: snapshot.knowledgeCount > 0, hasFilter: !filterText.isEmpty)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(snapshot.suggestions) { repo in
+                            mentionPickerRow(repo)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(
-                            repo.id == viewModel.highlightedMentionRepoIDValue
-                                ? Color.accentColor.opacity(0.12)
-                                : Color.clear
-                        )
                     }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
                 }
+                .frame(maxHeight: 260)
+            }
+
+            if snapshot.isTruncated {
+                Divider()
+                Text(
+                    String(
+                        format: String.l10n("rag.workspace.mention.narrowHint"),
+                        locale: locale,
+                        snapshot.matchCount
+                    )
+                )
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
         }
-        .frame(
-            width: 280,
-            height: min(CGFloat(viewModel.mentionSuggestions.count) * 28 + 8, 260)
-        )
+        .frame(width: 320)
         .padding(.vertical, 4)
+        .appLocaleEnvironment()
+    }
+
+    func mentionPickerHeader(snapshot: RAGMentionPickerSnapshot) -> some View {
+        HStack(spacing: 8) {
+            Text(
+                String(
+                    format: String.l10n("rag.workspace.mention.stats"),
+                    locale: locale,
+                    snapshot.selectedCount,
+                    snapshot.knowledgeCount
+                )
+            )
+            .font(ragFont(.caption, weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            Button {
+                viewModel.selectAllVisibleMentions()
+            } label: {
+                Text("rag.workspace.mention.selectVisible")
+                    .font(ragFont(.caption, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .foregroundStyle(Color.accentColor)
+            .disabled(snapshot.suggestions.isEmpty)
+            .help("rag.workspace.mention.selectVisible")
+
+            Button {
+                viewModel.clearSelectedMentions()
+            } label: {
+                Text("rag.workspace.mention.clearSelected")
+                    .font(ragFont(.caption, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .foregroundStyle(.secondary)
+            .disabled(snapshot.selectedCount == 0)
+            .help("rag.workspace.mention.clearSelected")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    func mentionPickerFilterRow(filterText: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            if filterText.isEmpty {
+                Text("rag.workspace.mention.filterHint")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text(
+                    String(
+                        format: String.l10n("rag.workspace.mention.filterLabel"),
+                        locale: locale,
+                        filterText
+                    )
+                )
+                .font(ragFont(.caption))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if !filterText.isEmpty {
+                Button {
+                    viewModel.clearMentionFilter()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.mention.clearFilter")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    func mentionPickerEmptyState(hasKnowledge: Bool, hasFilter: Bool) -> some View {
+        let key: LocalizedStringKey = {
+            if !hasKnowledge {
+                return "rag.workspace.mention.emptyKnowledge"
+            }
+            if hasFilter {
+                return "rag.workspace.mention.emptyFilter"
+            }
+            return "rag.workspace.mention.emptyKnowledge"
+        }()
+        return Text(key)
+            .font(ragFont(.callout))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 16)
+    }
+
+    func mentionPickerRow(_ repo: Repo) -> some View {
+        Button { viewModel.toggleMention(repo) } label: {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "checkmark")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(viewModel.isMentionSelected(repo) ? 1 : 0)
+                    .frame(width: 12, alignment: .center)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(repo.fullName)
+                        .font(ragFont(.callout))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(viewModel.mentionSubtitle(for: repo))
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                repo.id == viewModel.highlightedMentionRepoIDValue
+                    ? Color.accentColor.opacity(0.12)
+                    : Color.clear
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(repo.fullName)
     }
 
     var modelMenu: some View {

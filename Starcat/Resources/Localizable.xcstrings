@@ -19901,6 +19901,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat" } }
       }
     },
+    "rag.workspace.message.processingDuration" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Processed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已处理" } }
+      }
+    },
     "rag.workspace.message.user" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "User" } },

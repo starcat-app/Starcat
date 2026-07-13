@@ -177,7 +177,7 @@ final class KnowledgeRAGIndexBuilder {
                 guard let repoID = notification.userInfo?["repoId"] as? Int64,
                       let raw = notification.userInfo?["libraryState"] as? String,
                       LibraryState.parse(raw) == .inLibrary else { continue }
-                await self?.refresh(repoID: repoID, sources: Set(RAGChunkSource.allCases))
+                await self?.indexNewlyAddedKnowledgeRepository(repoID: repoID)
             }
         })
     }
@@ -215,7 +215,10 @@ final class KnowledgeRAGIndexBuilder {
         try await embedPendingChunks(recordsRefreshSummary: recordsRefreshSummary)
     }
 
-    /// 知识库浏览器的刷新只重建当前选中的仓库，避免用户以为是局部操作却触发全库网络请求。
+    /// 知识库浏览器手动刷新与“加入知识库”自动补全共用单仓库重建。
+    ///
+    /// `fetchMissingReadmes` 最终经过 `ReadmeInflightTracker`：如果 README 后台预拉已在处理
+    /// 同一个 repo，两个入口会等待同一份 HTML / Markdown 请求结果，不会重复消耗 GitHub 配额。
     func rebuildRepository(_ repo: Repo) async throws {
         guard beginOperation() else { throw CancellationError() }
         defer { endOperation() }
@@ -299,6 +302,20 @@ final class KnowledgeRAGIndexBuilder {
     private func refresh(repoID: Int64, sources: Set<RAGChunkSource>) async {
         guard let repo = try? await repoRepository.findById(repoID) else { return }
         await refresh(repo: repo, sources: sources)
+    }
+
+    /// 新入库的 repo 属于用户明确要求沉淀的内容，因此主动补齐 README 后再建立完整索引。
+    /// 此路径不能复用普通 source refresh：后者只读取本地 Markdown，会留下仅 metadata 的半成品索引。
+    private func indexNewlyAddedKnowledgeRepository(repoID: Int64) async {
+        guard let repo = try? await repoRepository.findById(repoID) else { return }
+        do {
+            try await rebuildRepository(repo)
+        } catch EntitlementGateError.requiresPro {
+            // 非 Pro 用户不建立 RAG 索引，保持既有静默门禁语义。
+        } catch {
+            AppLog.ai.error("RAG library-add indexing failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
+        }
     }
 
     private func rebuildSources(

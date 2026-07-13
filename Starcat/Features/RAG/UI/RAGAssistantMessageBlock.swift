@@ -22,6 +22,8 @@ struct RAGAssistantMessageBlock: View {
     let executionTrace: [RAGExecutionStep]
     /// 仅用于“正在生成回答”或步骤尚未建立的短暂过渡；回答正文始终不折叠。
     let activityLabel: String?
+    /// 从提交问题到最后一个 LLM 响应结束的耗时；运行中持续刷新，历史回答保持冻结值。
+    let processingDuration: TimeInterval?
     let onSelectCitation: (RAGCitation) -> Void
     let onExport: () -> Void
 
@@ -52,6 +54,9 @@ struct RAGAssistantMessageBlock: View {
                 Text("rag.workspace.message.assistant")
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
+                if let processingDuration {
+                    RAGProcessingDurationLabel(duration: processingDuration)
+                }
                 Spacer(minLength: 0)
             }
 
@@ -158,6 +163,7 @@ struct RAGStreamingAssistantMessageBlock: View {
     let snapshot: StreamingMarkdownSnapshot
     let executionTrace: [RAGExecutionStep]
     let activityLabel: String?
+    let processingDuration: TimeInterval?
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -177,6 +183,9 @@ struct RAGStreamingAssistantMessageBlock: View {
                 Text("rag.workspace.message.assistant")
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
+                if let processingDuration {
+                    RAGProcessingDurationLabel(duration: processingDuration)
+                }
                 Spacer(minLength: 0)
             }
 
@@ -213,6 +222,30 @@ struct RAGStreamingAssistantMessageBlock: View {
                 }
             }
         }
+    }
+}
+
+/// RAG 计时标签统一按分:秒显示，避免长任务在消息头中挤占回答阅读宽度。
+private struct RAGProcessingDurationLabel: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    let duration: TimeInterval
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text("rag.workspace.message.processingDuration")
+            Text(verbatim: RAGProcessingDurationFormatter.string(for: duration))
+        }
+        .font(interfaceScale.font(.captionSmall, weight: .medium))
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// 用纯格式化逻辑隔离显示，确保运行中和历史消息对同一秒数给出相同结果。
+enum RAGProcessingDurationFormatter {
+    static func string(for duration: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(duration.rounded(.down)))
+        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }
 

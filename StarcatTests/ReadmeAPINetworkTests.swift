@@ -483,6 +483,36 @@ struct ReadmeAPINetworkTests {
         #expect(mock.readmeHTMLCalls.count == 1)
     }
 
+    /// 入库 RAG 补齐和后台预拉都会调用这两个 API；请求尚未完成时必须复用同一 in-flight Task。
+    @Test("同仓库并发补齐 README 时 HTML 与 Markdown 各只请求一次")
+    func concurrentReadmeCompletionDeduplicatesBothRequests() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            try await Task.sleep(for: .milliseconds(30))
+            return BytesResponse.ok(data: Data("<h1>README</h1>".utf8), etag: "\"html\"")
+        }
+
+        async let firstHTML = api.refreshReadme(for: repo)
+        async let secondHTML = api.refreshReadme(for: repo)
+        _ = await (firstHTML, secondHTML)
+
+        #expect(mock.readmeHTMLCalls.count == 1)
+        #expect(try await readmeRepo.find(repoId: repo.id) != nil)
+
+        mock.readmeMarkdownHandler = { _, _, _, _ in
+            try await Task.sleep(for: .milliseconds(30))
+            return BytesResponse.ok(data: Data("# README".utf8), etag: "\"markdown\"")
+        }
+
+        async let firstMarkdown = api.refreshMarkdownIfNeeded(for: repo)
+        async let secondMarkdown = api.refreshMarkdownIfNeeded(for: repo)
+        _ = await (firstMarkdown, secondMarkdown)
+
+        #expect(mock.readmeMarkdownCalls.count == 1)
+        #expect(try await readmeRepo.findContent(repoId: repo.id) == "# README")
+    }
+
     /// trending prefetch: 同上 softTtl 短路语义。
     @Test("prefetchTrending: cache 在 softTtl 内 → 不调用 GitHub")
     func prefetchTrendingSkipsWhenFresh() async throws {

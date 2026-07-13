@@ -44,6 +44,8 @@ struct RAGStoredMessage: Identifiable, Equatable, Sendable {
     var remoteContextAudits: [RAGRemoteContextAudit]
     /// 用户可回看的脱敏执行轨迹；不同于仅存内存的 Debug trace。
     var executionTrace: [RAGExecutionStep] = []
+    /// 从用户提交问题到最终 LLM 流结束的真实耗时；保留历史回答的性能反馈。
+    var processingDuration: TimeInterval?
     var createdAt: String
 }
 
@@ -84,7 +86,8 @@ protocol RAGConversationStoring: Sendable {
         model: String,
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock],
-        executionTrace: [RAGExecutionStep]
+        executionTrace: [RAGExecutionStep],
+        processingDuration: TimeInterval? = nil
     ) async throws
     /// 仅落库用户消息（停止时尚未产生任何助手文本）。
     func appendUserMessage(
@@ -156,7 +159,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 """, arguments: [id.uuidString]),
                   let summary = Self.summary(row: row) else { return nil }
             let messageRows = try Row.fetchAll(db, sql: """
-                SELECT id, conversation_id, role, content, model, execution_trace_json, created_at
+                SELECT id, conversation_id, role, content, model, execution_trace_json, processing_duration, created_at
                 FROM rag_messages
                 WHERE conversation_id = ?
                 ORDER BY created_at ASC, rowid ASC
@@ -182,6 +185,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     citations: citationsByMessageID[messageID] ?? [],
                     remoteContextAudits: remoteAuditsByMessageID[messageID] ?? [],
                     executionTrace: Self.executionTrace(json: messageRow["execution_trace_json"]),
+                    processingDuration: messageRow["processing_duration"],
                     createdAt: messageRow["created_at"]
                 ))
             }
@@ -232,7 +236,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         model: String,
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock] = [],
-        executionTrace: [RAGExecutionStep] = []
+        executionTrace: [RAGExecutionStep] = [],
+        processingDuration: TimeInterval? = nil
     ) async throws {
         let userID = UUID()
         let assistantID = UUID()
@@ -256,14 +261,15 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 VALUES (?, ?, 'user', ?, NULL, ?)
                 """, arguments: [userID.uuidString, conversationID.uuidString, question, userAt])
             try db.execute(sql: """
-                INSERT INTO rag_messages (id, conversation_id, role, content, model, execution_trace_json, created_at)
-                VALUES (?, ?, 'assistant', ?, ?, ?, ?)
+                INSERT INTO rag_messages (id, conversation_id, role, content, model, execution_trace_json, processing_duration, created_at)
+                VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?)
                 """, arguments: [
                     assistantID.uuidString,
                     conversationID.uuidString,
                     answer,
                     model,
                     Self.executionTraceJSON(executionTrace),
+                    processingDuration,
                     assistantAt
                 ])
             for (rank, citation) in citations.enumerated() {

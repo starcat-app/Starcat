@@ -44,6 +44,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     private let homeViewModel: HomeViewModel
     private let conversationStore: any RAGConversationStoring
     private var answerTask: Task<Void, Never>?
+    /// 计时只覆盖用户实际等待的 RAG 主任务；标题生成和落库不延长用户看到的耗时。
+    private var answerTimingTask: Task<Void, Never>?
+    private var answerStartedAt: Date?
     /// 标题与首轮回答并行，但不同会话的轻量标题请求不能因用户切换历史而互相取消。
     /// generationID 是取消后的第二道保护：部分 Provider 即使收到 cancel 也可能稍后返回。
     private struct ConversationTitleGeneration {
@@ -71,6 +74,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 流式阶段只提交稳定 Markdown chunk 与未闭合尾部，避免每个 delta 重解析完整回答。
     var streamingPresentation: StreamingMarkdownSnapshot?
     var answerState: RAGAnswerState = .idle
+    /// 运行中每秒刷新，终态冻结为最后一个 LLM 响应结束时的真实耗时。
+    var answerElapsedDuration: TimeInterval?
     /// 用户气泡原地编辑：非 nil 时该消息进入图 4 编辑态。
     var editingUserMessageID: UUID?
     var editingUserDraft = ""
@@ -275,30 +280,39 @@ final class KnowledgeRAGWorkspaceViewModel {
         return String(suffix)
     }
 
+    /// 当前 `@token` 对应的候选快照：已选置顶、关键词过滤、截断元数据。
+    var mentionPickerSnapshot: RAGMentionPickerSnapshot {
+        guard let query = mentionQuery else {
+            return RAGMentionPickerSnapshot(
+                suggestions: [],
+                matchCount: 0,
+                knowledgeCount: knowledgeCandidates.count,
+                selectedCount: selectedRepoContexts.count,
+                isTruncated: false
+            )
+        }
+        return RAGMentionPickerLogic.build(
+            candidates: knowledgeCandidates,
+            selected: selectedRepoContexts,
+            query: query
+        )
+    }
+
     var mentionSuggestions: [Repo] {
-        guard let query = mentionQuery else { return [] }
-        // 多选时保留已选项：列表用 checkmark 展示，方便再次点击取消。
-        return knowledgeCandidates.filter { candidate in
-            let repo = candidate.repo
-            guard !query.isEmpty else { return true }
-            let searchable = [
-                repo.fullName,
-                repo.description ?? "",
-                repo.language ?? "",
-                repo.topicsArray.joined(separator: " "),
-                candidate.tagNames.joined(separator: " "),
-                candidate.status.rawValue
-            ].joined(separator: " ")
-            return searchable.localizedCaseInsensitiveContains(query)
-        }.prefix(12).map(\.repo)
+        mentionPickerSnapshot.suggestions
     }
 
     func isMentionSelected(_ repo: Repo) -> Bool {
         selectedRepoContexts.contains { $0.id == repo.id }
     }
 
+    func mentionSubtitle(for repo: Repo) -> String {
+        RAGMentionPickerLogic.subtitle(for: repo)
+    }
+
+    /// 有未完成 `@token` 就展示弹层；无命中时走空态，不再直接关闭。
     var isMentionPickerPresented: Bool {
-        !isMentionPickerDismissed && mentionQuery != nil && !mentionSuggestions.isEmpty
+        !isMentionPickerDismissed && mentionQuery != nil
     }
 
     var highlightedMentionRepoIDValue: Int64? {
@@ -521,6 +535,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         editingUserMessageID = nil
         editingUserDraft = ""
         answerTask?.cancel()
+        startAnswerTiming()
         answerTask = Task { [weak self] in
             await self?.runQuestion(question)
         }
@@ -529,6 +544,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     func cancelAnswer() {
         answerTask?.cancel()
         answerTask = nil
+        _ = finishAnswerTiming()
         // 主动停止不是失败，清掉可能残留的错误弹窗。
         if isAnswering {
             answerState = .cancelled
@@ -598,12 +614,47 @@ final class KnowledgeRAGWorkspaceViewModel {
         messages.removeAll { $0.id == messageID }
         conversationContextSummary = nil
         answerTask?.cancel()
+        startAnswerTiming()
         answerTask = Task { [weak self] in
             guard let self else { return }
             try? await conversationStore.deleteMessage(id: messageID)
             conversations = (try? await conversationStore.listConversations()) ?? conversations
             await runQuestion(question)
         }
+    }
+
+    /// 点击发送即进入可见处理态，而不是等待 Planner 或首个流式 token 返回。
+    ///
+    /// RAG 的主链包含历史压缩、规划、检索与生成；计时从这里开始才能如实反映用户等待。
+    private func startAnswerTiming() {
+        answerTimingTask?.cancel()
+        let startedAt = Date()
+        answerStartedAt = startedAt
+        answerElapsedDuration = 0
+        answerState = .planning
+        answerTimingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                guard let self, self.answerStartedAt == startedAt else { return }
+                self.answerElapsedDuration = Date().timeIntervalSince(startedAt)
+            }
+        }
+    }
+
+    /// 最后一个 LLM 事件结束时冻结耗时；后续本地落库不能被误算进用户等待时间。
+    @discardableResult
+    private func finishAnswerTiming() -> TimeInterval {
+        answerTimingTask?.cancel()
+        answerTimingTask = nil
+        guard let startedAt = answerStartedAt else { return answerElapsedDuration ?? 0 }
+        let duration = max(0, Date().timeIntervalSince(startedAt))
+        answerStartedAt = nil
+        answerElapsedDuration = duration
+        return duration
     }
 
     func toggleRemoteResource(_ resource: RAGRemoteContextResource) {
@@ -635,6 +686,32 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedRepoContexts.append(repo)
         }
         highlightedMentionRepoID = repo.id
+    }
+
+    /// 全选当前列表可见结果（含已选置顶项与当前过滤命中）。
+    func selectAllVisibleMentions() {
+        let visibleIDs = Set(mentionSuggestions.map(\.id))
+        for repo in mentionSuggestions where !selectedRepoContexts.contains(where: { $0.id == repo.id }) {
+            selectedRepoContexts.append(repo)
+        }
+        highlightedMentionRepoID = mentionSuggestions.first(where: { visibleIDs.contains($0.id) })?.id
+            ?? highlightedMentionRepoID
+    }
+
+    /// 清空全部已选仓库 chip；不影响输入框 `@token`。
+    func clearSelectedMentions() {
+        selectedRepoContexts = []
+        highlightedMentionRepoID = mentionSuggestions.first?.id
+    }
+
+    /// 方案 A：只清 `@` 后关键词，保留 `@`，弹层继续展示全量候选。
+    func clearMentionFilter() {
+        guard let at = draftQuestion.lastIndex(of: "@") else { return }
+        let suffix = draftQuestion[draftQuestion.index(after: at)...]
+        guard !suffix.contains(where: \.isWhitespace), !suffix.isEmpty else { return }
+        draftQuestion.removeSubrange(draftQuestion.index(after: at)..<draftQuestion.endIndex)
+        isMentionPickerDismissed = false
+        highlightedMentionRepoID = nil
     }
 
     /// `@repo` 候选由输入框持有键盘焦点。这里仅移动高亮，不改变输入内容，Enter 才会
@@ -1152,7 +1229,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func runQuestion(_ question: String) async {
-        guard let conversationID = selectedConversationID else { return }
+        guard let conversationID = selectedConversationID else {
+            _ = finishAnswerTiming()
+            return
+        }
         let debugTraceStartedAt = Date()
         let debugTraceID = isDebugModeEnabled
             ? beginDebugTrace(category: .questionAnswer, startedAt: debugTraceStartedAt)
@@ -1276,6 +1356,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     completedPayload = (answer, model, citations)
                 }
             }
+            let processingDuration = finishAnswerTiming()
             if let completedPayload {
                 try await persistAnswer(
                     conversationID: conversationID,
@@ -1284,7 +1365,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     model: completedPayload.1,
                     citations: completedPayload.2,
                     remoteContexts: remoteBlocks,
-                    executionTrace: executionSteps
+                    executionTrace: executionSteps,
+                    processingDuration: processingDuration
                 )
             } else if let terminalReply, answerState != .cancelled {
                 try await persistAnswer(
@@ -1294,22 +1376,26 @@ final class KnowledgeRAGWorkspaceViewModel {
                     model: selectedModelDisplayName,
                     citations: [],
                     remoteContexts: remoteBlocks,
-                    executionTrace: executionSteps
+                    executionTrace: executionSteps,
+                    processingDuration: processingDuration
                 )
             } else if answerState == .cancelled {
                 scheduleFinalizeCancelledTurn(
                     conversationID: conversationID,
                     userMessage: userMessage,
-                    question: question
+                    question: question,
+                    processingDuration: processingDuration
                 )
             }
         } catch is CancellationError {
             streamingAnswer = accumulatedAnswer
             answerState = .cancelled
+            let processingDuration = finishAnswerTiming()
             scheduleFinalizeCancelledTurn(
                 conversationID: conversationID,
                 userMessage: userMessage,
-                question: question
+                question: question,
+                processingDuration: processingDuration
             )
         } catch {
             // 停止按钮会 cancel Task；部分底层 API 不抛 CancellationError 而是带上
@@ -1317,13 +1403,16 @@ final class KnowledgeRAGWorkspaceViewModel {
             if Task.isCancelled {
                 streamingAnswer = accumulatedAnswer
                 answerState = .cancelled
+                let processingDuration = finishAnswerTiming()
                 scheduleFinalizeCancelledTurn(
                     conversationID: conversationID,
                     userMessage: userMessage,
-                    question: question
+                    question: question,
+                    processingDuration: processingDuration
                 )
             } else {
                 answerState = .failed(error.localizedDescription)
+                _ = finishAnswerTiming()
                 retryQuestion = question
                 presentWorkspaceError(error)
                 // 正常失败也必须与取消路径同样保留问题：用户能直接复制或编辑后重试，
@@ -1380,7 +1469,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func scheduleFinalizeCancelledTurn(
         conversationID: UUID,
         userMessage: RAGStoredMessage,
-        question: String
+        question: String,
+        processingDuration: TimeInterval
     ) {
         let partial = streamingAnswer
         Task { @MainActor [weak self] in
@@ -1392,7 +1482,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             await finalizeCancelledTurn(
                 conversationID: conversationID,
                 userMessage: userMessage,
-                question: question
+                question: question,
+                processingDuration: processingDuration
             )
         }
     }
@@ -1401,7 +1492,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func finalizeCancelledTurn(
         conversationID: UUID,
         userMessage: RAGStoredMessage,
-        question: String
+        question: String,
+        processingDuration: TimeInterval
     ) async {
         let partial = streamingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
         if partial.isEmpty {
@@ -1435,7 +1527,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     model: selectedModelDisplayName,
                     citations: [],
                     remoteContexts: remoteBlocks,
-                    executionTrace: executionSteps
+                    executionTrace: executionSteps,
+                    processingDuration: processingDuration
                 )
             } catch is CancellationError {
                 // 忽略：停止路径不应弹失败窗；半截文本仍挂到时间线。
@@ -1447,6 +1540,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     model: selectedModelDisplayName,
                     citations: [],
                     remoteContextAudits: [],
+                    processingDuration: processingDuration,
                     createdAt: ISO8601DateFormatter.shared.string(from: Date())
                 )
                 if !messages.contains(where: { $0.id == userMessage.id }) {
@@ -1466,6 +1560,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     model: selectedModelDisplayName,
                     citations: [],
                     remoteContextAudits: [],
+                    processingDuration: processingDuration,
                     createdAt: ISO8601DateFormatter.shared.string(from: Date())
                 )
                 if !messages.contains(where: { $0.id == userMessage.id }) {
@@ -1891,7 +1986,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         model: String,
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock],
-        executionTrace: [RAGExecutionStep] = []
+        executionTrace: [RAGExecutionStep] = [],
+        processingDuration: TimeInterval? = nil
     ) async throws {
         try await conversationStore.appendTurn(
             conversationID: conversationID,
@@ -1900,7 +1996,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             model: model,
             citations: citations,
             remoteContexts: remoteContexts,
-            executionTrace: executionTrace
+            executionTrace: executionTrace,
+            processingDuration: processingDuration
         )
         if let detail = try await conversationStore.loadConversation(id: conversationID) {
             messages = detail.messages
@@ -1924,6 +2021,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func resetTurnState() {
+        answerTimingTask?.cancel()
+        answerTimingTask = nil
+        answerStartedAt = nil
+        answerElapsedDuration = nil
         draftQuestion = ""
         streamingAnswer = ""
         streamingPresentation = nil

@@ -147,6 +147,13 @@ struct KnowledgeRAGCoreTests {
         #expect(step.elapsedDuration(at: startedAt.addingTimeInterval(99)) == 1.25)
     }
 
+    @Test("RAG 处理耗时按分秒显示")
+    func processingDurationUsesMinuteSecondFormat() {
+        #expect(RAGProcessingDurationFormatter.string(for: 0.99) == "00:00")
+        #expect(RAGProcessingDurationFormatter.string(for: 65.9) == "01:05")
+        #expect(RAGProcessingDurationFormatter.string(for: -1) == "00:00")
+    }
+
     @Test("Planner: 结构化条件和远程请求执行本地钳制")
     func plannerClampsRemoteRequest() throws {
         let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
@@ -913,11 +920,13 @@ struct KnowledgeRAGCoreTests {
             answer: "比较结果",
             model: "test-model",
             citations: [],
-            executionTrace: trace
+            executionTrace: trace,
+            processingDuration: 12.4
         )
 
         let detail = try #require(try await store.loadConversation(id: conversation.id))
         #expect(detail.messages.last?.executionTrace == trace)
+        #expect(detail.messages.last?.processingDuration == 12.4)
     }
 
     @Test("外部后端配置拒绝无效 endpoint")

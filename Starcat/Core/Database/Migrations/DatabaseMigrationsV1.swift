@@ -1415,6 +1415,8 @@ enum DatabaseMigrations {
             t.column("model", .text)
             // RAG 尚未随正式版发布：保存脱敏的用户可见执行轨迹，历史重开仍可核验本轮过程。
             t.column("execution_trace_json", .text)
+            // 从用户提交到最终 LLM 流结束的秒数，供历史回答保留本轮处理耗时。
+            t.column("processing_duration", .double)
             t.column("created_at", .text).notNull()
         }
         try db.create(index: "idx_rag_messages_conversation_created", on: "rag_messages", columns: ["conversation_id", "created_at"])
@@ -1506,6 +1508,11 @@ enum DatabaseMigrations {
             if !messageColumns.contains("execution_trace_json") {
                 try db.alter(table: "rag_messages") { t in
                     t.add(column: "execution_trace_json", .text)
+                }
+            }
+            if !messageColumns.contains("processing_duration") {
+                try db.alter(table: "rag_messages") { t in
+                    t.add(column: "processing_duration", .double)
                 }
             }
         }
