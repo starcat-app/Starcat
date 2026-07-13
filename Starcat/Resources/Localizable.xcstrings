@@ -20089,6 +20089,22 @@
         }
       }
     },
+    "rag.workspace.index.embeddingCurrent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedding this refresh"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮向量化"
+          }
+        }
+      }
+    },
     "rag.workspace.index.lastCompleted": {
       "localizations": {
         "en": {

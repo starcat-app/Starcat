@@ -90,6 +90,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var selectedCitationChunk: RAGChunk?
     /// 每次主动聚焦引用时递增；同 id 再点也会变，驱动右侧切回「证据」tab。
     private(set) var citationFocusSequence: Int = 0
+    /// 回答内 S1 / 底部芯片要展开的「命中的分片」popover；nil 表示关闭。
+    private(set) var citationChunkPopoverCitationID: UUID?
     var selectedRepoContexts: [Repo] = []
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var attachments: [RAGComposerAttachment] = []
@@ -129,6 +131,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     var isIndexing = false
     /// 直接透出 builder 的状态，让工作台显示真实构建阶段与数字进度。
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
+    /// 自动入库与手动刷新共用 builder status，Inspector 因而能展示真实的本轮 embedding 进度。
+    var indexEmbeddingProgress: (processedChunks: Int, totalChunks: Int)? {
+        dependencies.knowledgeRAGIndexBuilder.status.embeddingProgress
+    }
     /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
     var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
@@ -1074,6 +1080,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func selectCitation(_ citation: RAGCitation) {
+        // 右侧证据换到另一条时，关掉回答区挂在旧芯片上的分片 popover。
+        if let openID = citationChunkPopoverCitationID, openID != citation.id {
+            citationChunkPopoverCitationID = nil
+        }
         selectedCitation = citation
         selectedCitationChunk = nil
         // 即使还是同一条引用，也要通知 Inspector：用户可能正停在「调试/计划/索引」。
@@ -1087,11 +1097,22 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 回答正文 S1 / 底部芯片：聚焦证据并弹出命中分片，不再直接开 Starcat 详情窗。
+    func presentCitationChunk(_ citation: RAGCitation) {
+        citationChunkPopoverCitationID = citation.id
+        selectCitation(citation)
+    }
+
+    func dismissCitationChunkPopover() {
+        citationChunkPopoverCitationID = nil
+    }
+
     /// 证据列表手风琴：再点同一条则收起。
     func toggleCitation(_ citation: RAGCitation) {
         if selectedCitation?.id == citation.id {
             selectedCitation = nil
             selectedCitationChunk = nil
+            citationChunkPopoverCitationID = nil
             return
         }
         selectCitation(citation)
@@ -1105,7 +1126,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 回答正文里的 `starcat-rag://citation/<uuid>`：只开独立详情窗，不抢右侧证据选中。
+    /// 回答正文里的 `starcat-rag://citation/<uuid>`：弹出命中分片，并同步右侧证据选中。
     /// - Returns: 是否已处理（调用方不应再走通用 `handleLink`）。
     @discardableResult
     func openCitationLink(_ url: URL) -> Bool {
@@ -1115,9 +1136,7 @@ final class KnowledgeRAGWorkspaceViewModel {
               let citation = messages.flatMap(\.citations).first(where: { $0.id == id }) else {
             return false
         }
-        Task {
-            await openLocalRepoDetail(for: citation)
-        }
+        presentCitationChunk(citation)
         return true
     }
 
@@ -1276,6 +1295,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         approvedRemoteResources = []
         selectedCitation = nil
         selectedCitationChunk = nil
+        citationChunkPopoverCitationID = nil
         errorMessage = nil
         var completedPayload: (String, String, [RAGCitation])?
         var terminalReply: String?
@@ -2058,6 +2078,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         errorMessage = nil
         selectedCitation = nil
         selectedCitationChunk = nil
+        citationChunkPopoverCitationID = nil
     }
 
     private func reply(for state: RAGAnswerState) -> String? {

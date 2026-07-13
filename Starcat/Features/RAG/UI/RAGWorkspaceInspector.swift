@@ -349,7 +349,7 @@ struct RAGWorkspaceInspector: View {
             .focusEffectDisabled()
             .help("rag.workspace.inspector.chunkPreview.expand")
             .popover(isPresented: $isCitationChunkPopoverPresented, arrowEdge: .leading) {
-                citationChunkFullPopover(chunk)
+                RAGCitationChunkPopoverContent(chunk: chunk)
             }
 
             if chunk.isTruncated {
@@ -358,31 +358,6 @@ struct RAGWorkspaceInspector: View {
                     .foregroundStyle(.orange)
             }
         }
-    }
-
-    private func citationChunkFullPopover(_ chunk: RAGChunk) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("rag.workspace.inspector.chunkPreview")
-                .font(ragFont(.callout, weight: .semibold))
-                .foregroundStyle(.primary)
-
-            ScrollView {
-                Text(chunk.content)
-                    .font(ragFont(.caption))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 360)
-
-            if chunk.isTruncated {
-                Label("rag.workspace.inspector.chunkTruncated", systemImage: "scissors")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.orange)
-            }
-        }
-        .padding(14)
-        .frame(width: 400, alignment: .leading)
-        .appLocaleEnvironment()
     }
 
     var planInspector: some View {
@@ -1221,36 +1196,42 @@ struct RAGWorkspaceInspector: View {
 
     /// 常显的整体向量覆盖率。embedding 过程中使用 builder 的批次快照即时推进，完成后回到数据库聚合的真实覆盖率。
     var embeddingCoverageProgress: some View {
-        let progress = displayedEmbeddingCoverage
+        let liveProgress = viewModel.indexEmbeddingProgress
+        let progress = liveProgress.map {
+            (readyChunks: $0.processedChunks, totalChunks: $0.totalChunks)
+        } ?? displayedEmbeddingCoverage
+        let title: LocalizedStringKey = liveProgress == nil
+            ? "rag.workspace.index.embeddingCoverage"
+            : "rag.workspace.index.embeddingCurrent"
         return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text("rag.workspace.index.embeddingCoverage")
+                Text(title)
                     .font(ragFont(.caption2))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(progress.readyChunks.formatted()) / \(progress.totalChunks.formatted())")
                     .font(ragFont(.caption2))
                     .monospacedDigit()
-                    .foregroundStyle(.green)
+                    .foregroundStyle(liveProgress == nil ? Color.green : Color.accentColor)
                     .contentTransition(.numericText())
             }
             ProgressView(
                 value: Double(progress.readyChunks),
                 total: Double(max(progress.totalChunks, 1))
             )
-            .tint(.green)
+            .progressViewStyle(.linear)
+            .controlSize(.mini)
+            .tint(liveProgress == nil ? .green : Color.accentColor)
+            // 全库健康度不应占据整行；本轮任务的数值才是主信息，窄条只辅助确认推进。
+            .frame(maxWidth: 260)
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .animation(.easeInOut(duration: 0.18), value: progress.readyChunks)
         }
     }
 
-    /// source 构建阶段尚未得到新的 chunk 总数，继续显示上一次真实覆盖率；进入 embedding 后再按批次进度补足。
+    /// 非 embedding 阶段只表达全库健康度；进入 embedding 后由上方本轮进度覆盖，避免混淆两种口径。
     var displayedEmbeddingCoverage: (readyChunks: Int, totalChunks: Int) {
-        guard viewModel.isIndexing,
-              let summary = viewModel.indexRefreshSummary,
-              summary.totalChunksAtEmbedding > 0 else {
-            return (viewModel.indexCoverage.readyChunks, viewModel.indexCoverage.totalChunks)
-        }
-        return (summary.embeddingReadyChunks, summary.totalChunksAtEmbedding)
+        (viewModel.indexCoverage.readyChunks, viewModel.indexCoverage.totalChunks)
     }
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))

@@ -407,10 +407,17 @@ struct RAGWorkspaceAnswerSurface: View {
             activityLabel: activityLabel,
             processingDuration: processingDuration,
             onSelectCitation: { citation in
-                // 底部芯片只定位右侧证据，不打开详情窗。
-                viewModel.selectCitation(citation)
+                // 底部芯片与正文 S1：弹出命中分片，并同步右侧证据。
+                viewModel.presentCitationChunk(citation)
             },
-            onExport: { viewModel.exportAnswer(content) }
+            onExport: { viewModel.exportAnswer(content) },
+            popoverCitationID: citations.contains(where: { $0.id == viewModel.citationChunkPopoverCitationID })
+                ? viewModel.citationChunkPopoverCitationID
+                : nil,
+            popoverChunk: viewModel.citationChunkPopoverCitationID == viewModel.selectedCitation?.id
+                ? viewModel.selectedCitationChunk
+                : nil,
+            onDismissChunkPopover: { viewModel.dismissCitationChunkPopover() }
         )
     }
 

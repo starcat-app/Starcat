@@ -61,7 +61,7 @@ struct RAGMarkdownText: View {
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: template)
     }
 
-    /// 把裸 `[S1]` 转成 Markdown 链接，交给上层 `openURL` → `openCitationLink`。
+    /// 把裸 `[S1]` 转成 Markdown 链接，交给上层 `openURL` → `openCitationLink` → 命中分片 popover。
     /// 已是 `[S1](...)` 形式的不二次改写，避免流式中间态或导出文案被破坏。
     static func linkifyCitations(in content: String, citations: [RAGCitation]) -> String {
         guard !citations.isEmpty else { return content }

@@ -19,6 +19,15 @@ enum RAGIndexingStatus: Equatable, Sendable {
     case embedding(processedChunks: Int, totalChunks: Int)
     case completed(RAGIndexCoverage)
     case failed(String)
+
+    /// 只有实际调用 embedding API 时才暴露本轮进度；全库覆盖率不能代替一轮小批量任务的进度。
+    var embeddingProgress: (processedChunks: Int, totalChunks: Int)? {
+        guard case let .embedding(processedChunks, totalChunks) = self,
+              totalChunks > 0 else {
+            return nil
+        }
+        return (min(max(processedChunks, 0), totalChunks), totalChunks)
+    }
 }
 
 /// 用户手动刷新全库时展示的阶段汇总。阶段切换后仍保留已完成阶段的数据，避免快速刷新让用户错过过程。
@@ -430,10 +439,12 @@ final class KnowledgeRAGIndexBuilder {
                 totalChunksAtEmbedding: coverage.totalChunks
             )
         }
+        if total > 0 {
+            status = .embedding(processedChunks: 0, totalChunks: total)
+        }
         while !pending.isEmpty {
             try Task.checkCancellation()
             let batch = Array(pending.prefix(embeddingBatchSize))
-            status = .embedding(processedChunks: processed, totalChunks: total)
             do {
                 let vectors = try await client.embeddings(inputs: batch.map(\.content), model: model)
                 let pairs: [(Int64, [Float])] = zip(batch, vectors).compactMap { chunk, vector in
@@ -450,6 +461,7 @@ final class KnowledgeRAGIndexBuilder {
                 throw error
             }
             processed += batch.count
+            status = .embedding(processedChunks: processed, totalChunks: total)
             if recordsRefreshSummary {
                 updateRefreshSummary(embeddingProcessed: processed)
             }

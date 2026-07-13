@@ -35,7 +35,9 @@ struct KnowledgeRAGWorkspaceView: View {
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
-        .defaultCursorShield()
+        // RAG 是独立窗口，无底层 WKWebView cursor 穿透问题。
+        // `defaultCursorShield` 会在 mouseMoved 里强制 NSCursor.arrow，盖掉
+        // Markdown 链接与芯片的 pointing-hand，故此处不加。
         .task { await viewModel.bootstrap() }
         .task { await viewModel.observeKnowledgeBoundaryChanges() }
         .task { await viewModel.observeIndexChanges() }

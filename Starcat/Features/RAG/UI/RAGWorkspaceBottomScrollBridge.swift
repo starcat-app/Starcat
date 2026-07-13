@@ -118,15 +118,9 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
         if animatesPendingScroll {
             // 动画只来自用户点击，不能用于高频流式更新；否则新 token 会不断重设
             // 进行中的动画，造成视口“追逐”底部的卡顿感。
-            //
-            // 时长按滚动量自适应：固定 0.22s 在长会话里会像被拽下去；短距又拖太久。
-            // 钳在 0.35…0.65s，easeInEaseOut 起停更稳。
-            let distance = abs(clipView.bounds.origin.y - targetY)
-            let duration = Self.scrollAnimationDuration(forDistance: distance)
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = duration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                context.allowsImplicitAnimation = true
+                context.duration = 0.22
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 clipView.animator().setBoundsOrigin(targetOrigin)
             } completionHandler: {
                 scrollView.reflectScrolledClipView(clipView)
@@ -136,13 +130,6 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
             scrollView.reflectScrolledClipView(clipView)
         }
         handledRequestID = pendingRequestID
-    }
-
-    /// 按垂直距离估算点击「滚到底」的动画时长；单位 pt。
-    private static func scrollAnimationDuration(forDistance distance: CGFloat) -> TimeInterval {
-        // 约每 1800pt 对应 1s，短跳也不低于 0.35s，避免「闪一下」；长跳封顶 0.65s。
-        let scaled = Double(distance) / 1800
-        return min(0.65, max(0.35, scaled))
     }
 
     /// 选择包含当前 anchor 的最近一个可垂直滚动容器，避开未来消息块内部可能新增的

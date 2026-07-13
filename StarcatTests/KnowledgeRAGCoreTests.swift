@@ -31,6 +31,15 @@ struct KnowledgeRAGCoreTests {
         #expect(summary.embeddingReadyChunks == 15_345)
     }
 
+    @Test("仅 embedding 阶段暴露本轮分片进度")
+    func indexingStatusExposesOnlyActiveEmbeddingProgress() {
+        let active = RAGIndexingStatus.embedding(processedChunks: 12, totalChunks: 30)
+
+        #expect(active.embeddingProgress?.processedChunks == 12)
+        #expect(active.embeddingProgress?.totalChunks == 30)
+        #expect(RAGIndexingStatus.idle.embeddingProgress == nil)
+    }
+
     @MainActor
     @Test("RAG 最新选择请求不会接受过期结果")
     func latestRequestGateRejectsStaleResult() {
