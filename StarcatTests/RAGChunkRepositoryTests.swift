@@ -113,6 +113,40 @@ struct RAGChunkRepositoryTests {
         #expect(hits.map(\.chunk.repoId) == [10])
     }
 
+    @Test("批量 parent 读取保持知识库、embedding 与 parent 边界")
+    func batchParentFetchPreservesRetrievalBoundary() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 12)
+        try await database.insertRepoFixture(id: 13)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 12, state: .inLibrary)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 13, state: .inLibrary)
+
+        let first = try await repository.replaceSource(
+            repoId: 12,
+            source: .readme,
+            drafts: [draft(repoId: 12, key: "readme:install:0", content: "Install")]
+        )
+        let second = try await repository.replaceSource(
+            repoId: 13,
+            source: .readme,
+            drafts: [draft(repoId: 13, key: "readme:install:0", content: "Other install")]
+        )
+        try await repository.markReady(
+            [first.pendingChunkIDs[0]: [1, 0], second.pendingChunkIDs[0]: [1, 0]],
+            model: "embed-v1"
+        )
+
+        let chunks = try await repository.fetchChunks(
+            parents: [
+                .init(repoID: 12, parentKey: "readme:test"),
+                .init(repoID: 13, parentKey: "readme:test"),
+                .init(repoID: 12, parentKey: "missing")
+            ],
+            model: "embed-v1"
+        )
+        #expect(chunks.map(\.repoId) == [12, 13])
+    }
+
     @Test("coverage 区分 ready pending failed stale")
     func coverageCountsStatuses() async throws {
         let (database, repository) = try makeRepository()

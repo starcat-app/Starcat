@@ -74,42 +74,37 @@ struct KnowledgeRAGRetriever: Sendable {
 
         let publicRepoIDs = candidates.filter { !$0.repo.isPrivate }.map(\.repo.id)
         let privateRepoIDs = candidates.filter(\.repo.isPrivate).map(\.repo.id)
-        var failures: [Error] = []
-        let keyword: [RAGChildHit]
+        // keyword 与 query embedding/vector 没有数据依赖。先同时启动两路，既保留原来的
+        // 独立降级语义，也避免网络 embedding 的等待时间串行叠加到 FTS 查询之后。
         progress(.keywordSearchStarted)
-        do {
-            keyword = try await keywordHits(
-                query: query,
-                publicRepoIDs: publicRepoIDs,
-                privateRepoIDs: privateRepoIDs
-            )
-        } catch {
-            keyword = []
-            failures.append(error)
+        progress(.semanticSearchStarted)
+        async let keywordResult = keywordRetrieval(
+            query: query,
+            publicRepoIDs: publicRepoIDs,
+            privateRepoIDs: privateRepoIDs
+        )
+        async let vectorResult = vectorRetrieval(
+            query: query,
+            publicRepoIDs: publicRepoIDs,
+            privateRepoIDs: privateRepoIDs
+        )
+
+        let keyword = await keywordResult
+        let vector = await vectorResult
+        let failures = [keyword.error, vector.error].compactMap { $0 }
+        if let error = keyword.error {
             AppLog.ai.warning("RAG keyword retrieval degraded: \(error.localizedDescription, privacy: .public)")
         }
-        progress(.keywordSearchCompleted(keyword.count))
-
-        let vector: [RAGChildHit]
-        progress(.semanticSearchStarted)
-        do {
-            let queryVector = try await embeddingClient.embedding(input: query, model: embeddingModel)
-            vector = try await vectorHits(
-                queryVector: queryVector,
-                publicRepoIDs: publicRepoIDs,
-                privateRepoIDs: privateRepoIDs
-            )
-        } catch {
-            vector = []
-            failures.append(error)
+        if let error = vector.error {
             AppLog.ai.warning("RAG vector retrieval degraded: \(error.localizedDescription, privacy: .public)")
         }
-        progress(.semanticSearchCompleted(vector.count))
+        progress(.keywordSearchCompleted(keyword.hits.count))
+        progress(.semanticSearchCompleted(vector.hits.count))
         if failures.count == 2, let error = failures.first { throw error }
         let preferred = explicitMode == .prefer ? Set(explicitRepoIDs) : []
         let hits = fusion.fuse(
-            keywordHits: keyword,
-            vectorHits: vector,
+            keywordHits: keyword.hits,
+            vectorHits: vector.hits,
             preferredRepoIDs: preferred
         ).filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)
@@ -120,6 +115,13 @@ struct KnowledgeRAGRetriever: Sendable {
     private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> [RepoContextBundle] {
         let candidateByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.repo.id, $0) })
         let grouped = Dictionary(grouping: hits, by: { $0.chunk.repoId })
+        let parentKeys = Set(hits.map { RAGChunkParentKey(repoID: $0.chunk.repoId, parentKey: $0.chunk.parentKey) })
+        // 命中的 parent 一次性加载，避免每个 child hit 都触发一次 SQLite read。
+        // 随后按完整 parent 身份分组，维持原有 repo/section 隔离和 chunk 顺序。
+        let siblingsByParent = Dictionary(grouping: try await chunkRepository.fetchChunks(
+            parents: Array(parentKeys),
+            model: embeddingModel
+        )) { RAGChunkParentKey(repoID: $0.repoId, parentKey: $0.parentKey) }
         var bundles: [RepoContextBundle] = []
 
         for (repoID, repoHits) in grouped {
@@ -127,11 +129,9 @@ struct KnowledgeRAGRetriever: Sendable {
             var parents: [RAGSectionParent] = []
             var seenParents = Set<String>()
             for hit in repoHits where seenParents.insert(hit.chunk.parentKey).inserted {
-                let siblings = try await chunkRepository.fetchChunks(
-                    repoId: repoID,
-                    parentKey: hit.chunk.parentKey,
-                    model: embeddingModel
-                )
+                let siblings = siblingsByParent[
+                    RAGChunkParentKey(repoID: repoID, parentKey: hit.chunk.parentKey)
+                ] ?? []
                 let selected = parentPacker.select(
                     chunks: siblings,
                     anchorChunkID: hit.chunk.id,
@@ -178,6 +178,39 @@ struct KnowledgeRAGRetriever: Sendable {
         return hits.sorted { $0.score > $1.score }.prefix(childLimit).map { $0 }
     }
 
+    private func keywordRetrieval(
+        query: String,
+        publicRepoIDs: [Int64],
+        privateRepoIDs: [Int64]
+    ) async -> RAGRetrievalBranchResult {
+        do {
+            return .init(hits: try await keywordHits(
+                query: query,
+                publicRepoIDs: publicRepoIDs,
+                privateRepoIDs: privateRepoIDs
+            ))
+        } catch {
+            return .init(hits: [], error: error)
+        }
+    }
+
+    private func vectorRetrieval(
+        query: String,
+        publicRepoIDs: [Int64],
+        privateRepoIDs: [Int64]
+    ) async -> RAGRetrievalBranchResult {
+        do {
+            let queryVector = try await embeddingClient.embedding(input: query, model: embeddingModel)
+            return .init(hits: try await vectorHits(
+                queryVector: queryVector,
+                publicRepoIDs: publicRepoIDs,
+                privateRepoIDs: privateRepoIDs
+            ))
+        } catch {
+            return .init(hits: [], error: error)
+        }
+    }
+
     private func vectorHits(queryVector: [Float], publicRepoIDs: [Int64], privateRepoIDs: [Int64]) async throws -> [RAGChildHit] {
         var hits: [RAGChildHit] = []
         if !publicRepoIDs.isEmpty {
@@ -198,6 +231,13 @@ struct KnowledgeRAGRetriever: Sendable {
         }
         return hits.sorted { $0.score > $1.score }.prefix(childLimit).map { $0 }
     }
+}
+
+/// 让并发分支把失败收敛回 Retriever，再按原规则决定是降级还是抛错。
+/// `Error` 在 Swift Concurrency 中可跨任务传递；这里不保存它，也不让它越过本次检索边界。
+private struct RAGRetrievalBranchResult: Sendable {
+    var hits: [RAGChildHit]
+    var error: (any Error)?
 }
 
 /// Section parent 必须围绕实际命中的 child 取上下文，而不是总从章节开头截取。否则超长

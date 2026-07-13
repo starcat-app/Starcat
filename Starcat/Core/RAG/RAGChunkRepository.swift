@@ -16,6 +16,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func replaceSource(repoId: Int64, source: RAGChunkSource, drafts: [RAGChunkDraft]) async throws -> RAGChunkSyncResult
     func fetchChunks(ids: [Int64]) async throws -> [RAGChunk]
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
+    func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
     func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
@@ -59,6 +60,15 @@ struct RAGManagedChunk: Identifiable, Equatable, Sendable {
 struct RAGManagedChunkPage: Equatable, Sendable {
     var chunks: [RAGManagedChunk]
     var hasMore: Bool
+}
+
+/// Retriever 批量扩展命中章节时使用的稳定 parent 身份。
+///
+/// 同一个 `parentKey` 只在仓库内唯一，因此必须同时带上 repo ID；这让一次 SQL 查询可以安全
+/// 取回多个仓库的 siblings，又不会把不同仓库的 README 章节混在一起。
+struct RAGChunkParentKey: Hashable, Sendable {
+    var repoID: Int64
+    var parentKey: String
 }
 
 /// 索引面板可展开查看的非 ready 分片分类。过期同时覆盖显式 stale 与旧 embedding 模型。
@@ -239,6 +249,29 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.chunk_index
                 """, arguments: [repoId, parentKey, model])
+        }
+    }
+
+    func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk] {
+        guard !parents.isEmpty else { return [] }
+        return try await database.writer.read { db in
+            // 不能只按 parent_key 批量读取：README 常用的 section key 会在不同 repo 重复。
+            // 每个 parent 使用一对绑定参数，保持与单 parent 查询完全相同的范围约束。
+            var arguments: [any DatabaseValueConvertible] = [model]
+            let parentConditions = parents.map { parent -> String in
+                arguments.append(parent.repoID)
+                arguments.append(parent.parentKey)
+                return "(c.repo_id = ? AND c.parent_key = ?)"
+            }.joined(separator: " OR ")
+            return try RAGChunk.fetchAll(db, sql: """
+                SELECT c.*
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                WHERE c.embedding_status = 'ready' AND c.embedding_model = ?
+                  AND (\(parentConditions))
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                ORDER BY c.repo_id, c.parent_key, c.chunk_index
+                """, arguments: StatementArguments(arguments))
         }
     }
 

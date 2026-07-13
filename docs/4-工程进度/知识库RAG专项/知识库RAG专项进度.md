@@ -178,3 +178,16 @@
 - [ ] `docs/功能实现总览.md` 更新为完成并补 `> 实现:` 与变更日志。
 
 上述 3 个验收项全部完成前，专项保持“验收中”，不以“核心完成”或“编译通过”替代最终完成。
+
+## 12. 质量与性能优化 checklist
+
+> 状态: 进行中（先优化可验证的检索性能；质量调参必须以真实数据评测为准）
+
+- [x] keyword 与 vector 召回并行执行，保留双路独立降级与双失败报错语义 — `KnowledgeRAGRetriever.swift` — 2026-07-13
+> 实现：并行启动互不依赖的 FTS 与 embedding/vector 分支，降低首个证据的串行等待。
+- [x] parent context 使用批量读取，消除命中章节扩展的 N+1 SQLite 查询 — `RAGChunkRepository.swift`、`KnowledgeRAGRetriever.swift` — 2026-07-13
+> 实现：以 repo 与 parent 的复合身份批量加载 siblings，保持知识库和当前 embedding 模型门槛。
+- [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
+- [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
+- [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。
+- [ ] 在大规模知识库或自托管后端成为瓶颈后，评估外部索引的 chunk 级增量同步。
