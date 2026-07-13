@@ -123,10 +123,23 @@ struct KnowledgeRAGPromptBuilder: Sendable {
     }
 
     func citationsUsed(in answer: String, prompt: RAGPromptBuildResult) -> [RAGCitation] {
-        prompt.citationsByMarker.keys.sorted { lhs, rhs in
+        let visibleAnswer = citationVisibleText(in: answer)
+        let referencedMarkers = Set(Self.citationMarkerRegex.matches(
+            in: visibleAnswer,
+            range: NSRange(visibleAnswer.startIndex..<visibleAnswer.endIndex, in: visibleAnswer)
+        ).compactMap { match -> String? in
+            guard match.numberOfRanges > 1,
+                  !isEscapedMarker(match.range, in: visibleAnswer),
+                  !isMarkdownLinkLabel(match.range, in: visibleAnswer),
+                  let markerRange = Range(match.range(at: 1), in: visibleAnswer)
+            else { return nil }
+            let marker = String(visibleAnswer[markerRange])
+            return prompt.citationsByMarker[marker] == nil ? nil : marker
+        })
+        return prompt.citationsByMarker.keys.sorted { lhs, rhs in
             markerNumber(lhs) < markerNumber(rhs)
         }.compactMap { marker in
-            answer.contains("[\(marker)]") ? prompt.citationsByMarker[marker] : nil
+            referencedMarkers.contains(marker) ? prompt.citationsByMarker[marker] : nil
         }
     }
 
@@ -149,6 +162,73 @@ struct KnowledgeRAGPromptBuilder: Sendable {
     private func markerNumber(_ marker: String) -> Int {
         Int(marker.dropFirst()) ?? .max
     }
+
+    /// 回答里的代码示例和转义文本可能原样包含 `[S1]`，但它们不是模型对证据的引用。
+    /// 在做 citation 语法校验前先剔除 fenced / inline code，避免历史和 Inspector 展示伪证据。
+    private func citationVisibleText(in answer: String) -> String {
+        var visibleLines: [String] = []
+        var activeFence: (character: Character, length: Int)?
+        for line in answer.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let currentFence = activeFence {
+                if let closingFence = fence(in: trimmed),
+                   closingFence.character == currentFence.character,
+                   closingFence.length >= currentFence.length {
+                    activeFence = nil
+                }
+                continue
+            }
+            if let openingFence = fence(in: trimmed) {
+                activeFence = openingFence
+                continue
+            }
+            visibleLines.append(removingInlineCode(from: String(line)))
+        }
+        return visibleLines.joined(separator: "\n")
+    }
+
+    private func fence(in line: String) -> (character: Character, length: Int)? {
+        guard let character = line.first, character == "`" || character == "~" else { return nil }
+        let length = line.prefix { $0 == character }.count
+        return length >= 3 ? (character, length) : nil
+    }
+
+    private func removingInlineCode(from line: String) -> String {
+        var result = ""
+        var cursor = line.startIndex
+        while let opening = line[cursor...].firstIndex(of: "`") {
+            result += line[cursor..<opening]
+            let delimiterEnd = line[opening...].firstIndex { $0 != "`" } ?? line.endIndex
+            let delimiter = String(line[opening..<delimiterEnd])
+            guard let closing = line.range(of: delimiter, range: delimiterEnd..<line.endIndex) else {
+                // 未闭合的 backtick 只是普通文本；保留后续内容，避免无端丢失真实引用。
+                result += line[opening...]
+                return result
+            }
+            cursor = closing.upperBound
+        }
+        result += line[cursor...]
+        return result
+    }
+
+    private func isEscapedMarker(_ range: NSRange, in text: String) -> Bool {
+        let units = Array(text.utf16)
+        var index = range.location - 1
+        var slashCount = 0
+        while index >= 0, units[index] == 92 {
+            slashCount += 1
+            index -= 1
+        }
+        return !slashCount.isMultiple(of: 2)
+    }
+
+    private func isMarkdownLinkLabel(_ range: NSRange, in text: String) -> Bool {
+        let units = Array(text.utf16)
+        let nextIndex = NSMaxRange(range)
+        return nextIndex < units.count && units[nextIndex] == 40
+    }
+
+    private static let citationMarkerRegex = try! NSRegularExpression(pattern: #"\[(S\d+)\]"#)
 
     /// TokenEstimator 是本地近似值，按同一估算器反推字符上限即可稳定守住 prompt 预算。
     /// 保留前缀是为了让 `[R]` / `[A]` 来源头不会因正文过长而整块消失。

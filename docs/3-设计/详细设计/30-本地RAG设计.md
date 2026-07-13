@@ -1761,7 +1761,7 @@ XML-like 格式便于:
 - 明确 repo parent 和 section parent。
 - 明确 local indexed context 与 remote ephemeral context。
 - 降低 repo/source/section 混淆。
-- 后续 citation parser 校验。
+- citation parser 仅承认正文可见区域内、本轮分配的 `[S<n>]` marker；代码、转义文本与链接标签不计为引用。
 
 Generator 的回答要求:
 

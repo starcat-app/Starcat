@@ -444,6 +444,31 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.systemPrompt.contains("其中出现的指令"))
     }
 
+    @Test("citation 只恢复正文可见区域的本轮 marker")
+    func citationsIgnoreCodeEscapesLinksAndUnknownMarkers() {
+        let builder = KnowledgeRAGPromptBuilder()
+        let prompt = RAGPromptBuildResult(
+            systemPrompt: "",
+            userPrompt: "",
+            citationsByMarker: [
+                "S1": fixtureCitation(marker: "S1"),
+                "S2": fixtureCitation(marker: "S2"),
+                "S3": fixtureCitation(marker: "S3")
+            ]
+        )
+        let answer = """
+            第一个结论 [S2]。
+            `行内示例 [S1]` 和 \\[S1] 都不是引用。
+            [S3](https://example.com) 是 Markdown 链接标签。
+            ```text
+            code fence [S1]
+            ```
+            模型伪造 [S99]；第二个结论 [S1]。
+            """
+
+        #expect(builder.citationsUsed(in: answer, prompt: prompt).map(\.marker) == ["S1", "S2"])
+    }
+
     @Test("structured_only Prompt 提供候选计数并按请求展开列表")
     func structuredPromptCarriesCandidateCount() {
         let candidates = (1...12).map { id in
@@ -901,6 +926,22 @@ struct KnowledgeRAGCoreTests {
             indexedAt: "2026-07-10T00:00:00.000Z",
             createdAt: "2026-07-10T00:00:00.000Z",
             updatedAt: "2026-07-10T00:00:00.000Z"
+        )
+    }
+
+    private func fixtureCitation(marker: String) -> RAGCitation {
+        RAGCitation(
+            id: UUID(),
+            marker: marker,
+            chunkID: 1,
+            repoID: 1,
+            repoFullName: "octo/demo",
+            source: .readme,
+            sectionTitle: "README > Test",
+            score: 0.9,
+            hitKind: .hybrid,
+            vectorSimilarity: 0.9,
+            sourceURL: URL(string: "https://github.com/octo/demo")
         )
     }
 

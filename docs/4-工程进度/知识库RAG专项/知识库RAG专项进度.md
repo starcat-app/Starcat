@@ -187,6 +187,8 @@
 > 实现：并行启动互不依赖的 FTS 与 embedding/vector 分支，降低首个证据的串行等待。
 - [x] parent context 使用批量读取，消除命中章节扩展的 N+1 SQLite 查询 — `RAGChunkRepository.swift`、`KnowledgeRAGRetriever.swift` — 2026-07-13
 > 实现：以 repo 与 parent 的复合身份批量加载 siblings，保持知识库和当前 embedding 模型门槛。
+- [x] citation 解析仅接受正文可见区域的本轮 marker，过滤代码、转义文本、链接标签与伪造编号 — `KnowledgeRAGPromptBuilder.swift` — 2026-07-13
+> 实现：生成历史 citation 前先做轻量 Markdown 语法过滤，不把示例文本误记为回答证据。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
 - [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。
