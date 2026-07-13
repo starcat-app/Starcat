@@ -489,8 +489,9 @@ final class RepoAIInsightService {
         carriedOverSummary: String?,
         wikiLinks: [WikiLink],
         codeFlowPageURL: URL?,
-        // 聊天链路只上抛本次新增 delta。累积值由 ViewModel 单点维护，避免 SDK、
-        // service、UI 三层各复制一次不断增长的完整字符串。
+        // 聊天链路只上抛本次新增 delta。正文与 provider 公开推理均由 ViewModel 单点累积，
+        // 避免 SDK、service、UI 三层各复制一次不断增长的完整字符串。
+        onReasoningDelta: (@MainActor (String) -> Void)? = nil,
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         try entitlementGate?.requirePro(.aiChat)
@@ -525,6 +526,10 @@ final class RepoAIInsightService {
         var accumulated = ""
         for try await event in client.chatStream(request: request) {
             switch event {
+            case .reasoningDelta(let delta):
+                onReasoningDelta?(delta)
+            case .reasoningCompleted:
+                break
             case .delta(let delta):
                 accumulated += delta
                 onDelta?(delta)
@@ -698,6 +703,8 @@ final class RepoAIInsightService {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
                 switch event {
+                case .reasoningDelta, .reasoningCompleted:
+                    break
                 case .delta(let delta):
                     accumulated += delta
                     onDelta?(accumulated)

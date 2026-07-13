@@ -15,6 +15,7 @@ import SwiftUI
 struct RAGExecutionTimeline: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     let steps: [RAGExecutionStep]
     @State private var manuallyExpanded: Set<RAGExecutionStepKind> = []
@@ -54,6 +55,9 @@ struct RAGExecutionTimeline: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+                    if step.kind != .generation {
+                        executionDuration(step)
+                    }
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(interfaceScale.font(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -67,10 +71,17 @@ struct RAGExecutionTimeline: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(step.details, id: \.self) { detail in
-                        Label(detail, systemImage: "minus")
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                            .labelStyle(.titleAndIcon)
+                        if step.kind == .planningReasoning || step.kind == .answerReasoning {
+                            Text(detail)
+                                .font(interfaceScale.font(.caption))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        } else {
+                            Label(detail, systemImage: "minus")
+                                .font(interfaceScale.font(.caption))
+                                .foregroundStyle(.secondary)
+                                .labelStyle(.titleAndIcon)
+                        }
                     }
                     if let summary = step.summary, !summary.isEmpty {
                         Text(summary)
@@ -82,6 +93,21 @@ struct RAGExecutionTimeline: View {
             }
         }
         .padding(.vertical, 3)
+    }
+
+    /// 回答前的可折叠步骤显示真实耗时；结束后固定为真实起止时间差。
+    @ViewBuilder
+    private func executionDuration(_ step: RAGExecutionStep) -> some View {
+        if let duration = step.elapsedDuration() {
+            Text(String(
+                format: String.l10n("rag.workspace.execution.duration.format"),
+                locale: locale,
+                duration
+            ))
+            .font(interfaceScale.font(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
     }
 
     @ViewBuilder
@@ -98,9 +124,11 @@ struct RAGExecutionTimeline: View {
 
     private func titleKey(for kind: RAGExecutionStepKind) -> LocalizedStringKey {
         switch kind {
-        case .thinking: return "rag.workspace.execution.thinking.title"
+        case .planning: return "rag.workspace.execution.planning.title"
+        case .planningReasoning: return "rag.workspace.execution.reasoning.planning.title"
         case .retrieval: return "rag.workspace.execution.retrieval.title"
         case .remoteContext: return "rag.workspace.execution.remote.title"
+        case .answerReasoning: return "rag.workspace.execution.reasoning.answer.title"
         case .generation: return "rag.workspace.execution.generation.title"
         }
     }

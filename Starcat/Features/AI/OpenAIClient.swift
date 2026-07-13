@@ -97,16 +97,28 @@ struct OpenAIClient: AIClientProtocol {
                     let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
                     var content = ""
                     var finishReason: String?
+                    var reasoningNormalizer = AIStreamReasoningNormalizer()
                     for try await chunk in client.chatsStream(query: query) {
                         for choice in chunk.choices {
-                            if let delta = choice.delta.content, !delta.isEmpty {
-                                content += delta
-                                continuation.yield(.delta(delta))
+                            for event in reasoningNormalizer.ingest(
+                                content: choice.delta.content,
+                                nativeReasoning: choice.delta.reasoning
+                            ) {
+                                if case .delta(let delta) = event {
+                                    content += delta
+                                }
+                                continuation.yield(event)
                             }
                             if let reason = choice.finishReason {
                                 finishReason = reason.rawValue
                             }
                         }
+                    }
+                    for event in reasoningNormalizer.finish() {
+                        if case .delta(let delta) = event {
+                            content += delta
+                        }
+                        continuation.yield(event)
                     }
                     guard let final = content.nilIfBlank else {
                         continuation.finish(throwing: AIClientError.emptyResponse)

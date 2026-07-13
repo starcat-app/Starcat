@@ -25,7 +25,18 @@ enum RAGQueryPlannerError: Error, LocalizedError, Equatable {
 }
 
 protocol KnowledgeRAGQueryPlanning: Sendable {
-    func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan
+    /// 将 provider 公开的推理增量交给交互层；规划结果本身仍须在流结束后才解析。
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        onReasoningDelta: @escaping (String) -> Void
+    ) async throws -> RAGQueryPlan
+}
+
+extension KnowledgeRAGQueryPlanning {
+    func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan {
+        try await plan(question: question, composerContext: composerContext, onReasoningDelta: { _ in })
+    }
 }
 
 struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
@@ -40,6 +51,15 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
     }
 
     func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan {
+        try await plan(question: question, composerContext: composerContext, onReasoningDelta: { _ in })
+    }
+
+    /// 规划 JSON 仍须完整接收后再解析，但 provider 若公开推理流，会在这里实时转交调用方。
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        onReasoningDelta: @escaping (String) -> Void = { _ in }
+    ) async throws -> RAGQueryPlan {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { throw RAGQueryPlannerError.emptyQuestion }
 
@@ -51,8 +71,8 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             responseFormat: .jsonObject
         )
         do {
-            let response = try await client.chat(request: request)
-            return try Self.decodeAndValidate(response.content, fallbackQuestion: question)
+            let content = try await streamedContent(request: request, onReasoningDelta: onReasoningDelta)
+            return try Self.decodeAndValidate(content, fallbackQuestion: question)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -61,14 +81,37 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
             var retry = request
             retry.userPrompt += "\n\n上一次输出无法解析。只返回一个符合 schema 的 JSON object，不要 Markdown 代码块或说明。"
             do {
-                let response = try await client.chat(request: retry)
-                return try Self.decodeAndValidate(response.content, fallbackQuestion: question)
+                let content = try await streamedContent(request: retry, onReasoningDelta: onReasoningDelta)
+                return try Self.decodeAndValidate(content, fallbackQuestion: question)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 return Self.semanticFallback(question)
             }
         }
+    }
+
+    private func streamedContent(
+        request: AIChatRequest,
+        onReasoningDelta: (String) -> Void
+    ) async throws -> String {
+        var content = ""
+        for try await event in client.chatStream(request: request) {
+            switch event {
+            case .reasoningDelta(let delta):
+                onReasoningDelta(delta)
+            case .reasoningCompleted:
+                break
+            case .delta(let delta):
+                content += delta
+            case .completed(let response):
+                if content.isEmpty { content = response.content }
+            }
+        }
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AIClientError.emptyResponse
+        }
+        return content
     }
 
     private func userPrompt(question: String, context: RAGComposerContext) -> String {
@@ -148,9 +191,9 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
         if plan.userVisiblePlan.scope.isEmpty {
             plan.userVisiblePlan.scope = "知识库"
         }
-        // 这是展示给用户的“思考摘要”，而非模型隐藏推理。限制条数和长度，既保证可扫描，
+        // 这是展示给用户的“查询规划”，而非模型隐藏推理。限制条数和长度，既保证可扫描，
         // 也避免兼容 provider 误把长篇说明塞进执行时间线。
-        plan.userVisiblePlan.thinking = plan.userVisiblePlan.thinking
+        plan.userVisiblePlan.planningNotes = plan.userVisiblePlan.planningNotes
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .prefix(3)
@@ -215,7 +258,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGQueryPlanning {
           "remoteContextRequests":[{"resource":"github_issues","query":"string","reason":"string","maxRepos":5,"perRepoLimit":10}],
           "confidence":"high|medium|needs_clarification",
           "clarificationQuestion":null或string,
-          "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"string","thinking":["面向用户的简短思考说明，最多 3 条"]}
+          "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"string","planningNotes":["面向用户的简短查询规划说明，最多 3 条"]}
         }
         """
 }

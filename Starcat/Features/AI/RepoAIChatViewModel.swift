@@ -41,6 +41,8 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
     let role: Role
     /// 正文。助手消息在流式过程中会被不断改写。
     var content: String
+    /// Provider 公开的推理文本。它属于同一条 assistant 消息，但不混入正文或下一轮 history。
+    var reasoning: String?
     let timestamp: Date
     /// 流式生成是否还在进行。完成后置 false，UI 据此显示"光标 / 打字中"指示。
     var isStreaming: Bool
@@ -49,12 +51,14 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         id: UUID = UUID(),
         role: Role,
         content: String,
+        reasoning: String? = nil,
         timestamp: Date = Date(),
         isStreaming: Bool = false
     ) {
         self.id = id
         self.role = role
         self.content = content
+        self.reasoning = reasoning
         self.timestamp = timestamp
         self.isStreaming = isStreaming
     }
@@ -62,7 +66,7 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
     // 自定义 Codable：跳过 `isStreaming`（落盘的消息恒为 false），其余字段照常。
     // 老 JSON（理论上不存在，HOM-70 首版上线）若缺这个字段也能正常 decode。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, timestamp
+        case id, role, content, reasoning, timestamp
     }
 
     init(from decoder: Decoder) throws {
@@ -70,6 +74,7 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         self.id = try container.decode(UUID.self, forKey: .id)
         self.role = try container.decode(Role.self, forKey: .role)
         self.content = try container.decode(String.self, forKey: .content)
+        self.reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
         self.timestamp = try container.decode(Date.self, forKey: .timestamp)
         self.isStreaming = false
     }
@@ -79,6 +84,7 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         try container.encode(id, forKey: .id)
         try container.encode(role, forKey: .role)
         try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(reasoning, forKey: .reasoning)
         try container.encode(timestamp, forKey: .timestamp)
     }
 }
@@ -543,6 +549,7 @@ final class RepoAIChatViewModel {
         // 未闭合尾部走纯 Text；最终完成时才渲染一次完整 Markdown。
         var lastCommitAt: TimeInterval = 0
         var accumulated = ""
+        var accumulatedReasoning = ""
         var pendingCharacterCount = 0
         var renderRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
@@ -555,7 +562,14 @@ final class RepoAIChatViewModel {
                 userMessage: trimmed,
                 carriedOverSummary: currentCarriedOverSummary,
                 wikiLinks: wikiLinks,
-                codeFlowPageURL: codeFlowPageURL
+                codeFlowPageURL: codeFlowPageURL,
+                onReasoningDelta: { [weak self] delta in
+                    guard let self else { return }
+                    accumulatedReasoning += delta
+                    guard var streaming = self.streamingMessage else { return }
+                    streaming.reasoning = accumulatedReasoning
+                    self.streamingMessage = streaming
+                }
             ) { [weak self] delta in
                 guard let self else { return }
                 accumulated += delta
@@ -578,6 +592,8 @@ final class RepoAIChatViewModel {
 
             if var completed = streamingMessage {
                 completed.content = final
+                let trimmedReasoning = accumulatedReasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+                completed.reasoning = trimmedReasoning.isEmpty ? nil : accumulatedReasoning
                 completed.isStreaming = false
                 messages.append(completed)
                 totalMessageCount += 1

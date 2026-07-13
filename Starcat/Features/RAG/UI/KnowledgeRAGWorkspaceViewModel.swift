@@ -700,9 +700,11 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     var debugTraceText: String {
         debugTraces.sorted { $0.startedAt < $1.startedAt }.map { trace in
+            let stepDurations = Self.debugEventStepDurations(for: trace.events)
             let events = trace.events.map { event in
-                """
-                [\(event.stage.rawValue)] +\(String(format: "%.3f", event.elapsedSeconds))s
+                let step = stepDurations[event.id] ?? event.elapsedSeconds
+                return """
+                [\(event.stage.rawValue)] \(String(format: "%.3f", step))s (elapsed +\(String(format: "%.3f", event.elapsedSeconds))s)
                 \(event.payload)
                 """
             }.joined(separator: "\n\n")
@@ -743,8 +745,9 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 单条 trace → Markdown；stage 用 fenced code block，方便 diff / 粘贴。
+    /// 单条 trace → Markdown；stage payload 一律进自适应围栏，避免 Prompt 内 `#` / ``` 破坏大纲。
     private static func debugTraceMarkdown(_ trace: RAGDebugTrace) -> String {
+        let stepDurations = debugEventStepDurations(for: trace.events)
         let header = """
         # \(debugTraceCategoryTitle(trace.category))
 
@@ -755,15 +758,42 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         """
         let body = trace.events.map { event in
-            """
-            ## \(event.stage.rawValue) (+\(String(format: "%.3f", event.elapsedSeconds))s)
-
-            ```
-            \(event.payload)
-            ```
-            """
+            let step = stepDurations[event.id] ?? event.elapsedSeconds
+            let title = "## \(event.stage.rawValue) (\(String(format: "%.3f", step))s, elapsed +\(String(format: "%.3f", event.elapsedSeconds))s)"
+            return title + "\n\n" + fencedDebugPayload(event.payload)
         }.joined(separator: "\n\n")
         return header + "\n" + body + "\n"
+    }
+
+    /// 按内容里已有的最长 `` ` `` 串加长围栏，防止 Prompt / 返回正文提前闭合代码块后污染文档结构。
+    private static func fencedDebugPayload(_ payload: String, language: String = "text") -> String {
+        var tickCount = 3
+        let lines = payload.split(separator: "\n", omittingEmptySubsequences: false)
+        for line in lines {
+            var count = 0
+            for character in line {
+                if character == "`" {
+                    count += 1
+                    tickCount = max(tickCount, count + 1)
+                } else {
+                    count = 0
+                }
+            }
+        }
+        let fence = String(repeating: "`", count: tickCount)
+        // 正文前后各留空行，部分渲染器对「围栏贴内容」更稳。
+        return "\(fence)\(language)\n\(payload)\n\(fence)"
+    }
+
+    /// 由累计 elapsed 差分得到本步耗时；与 Inspector 展示口径一致。
+    private static func debugEventStepDurations(for events: [RAGDebugEvent]) -> [UUID: TimeInterval] {
+        var durations: [UUID: TimeInterval] = [:]
+        var previousElapsed: TimeInterval = 0
+        for event in events {
+            durations[event.id] = max(0, event.elapsedSeconds - previousElapsed)
+            previousElapsed = event.elapsedSeconds
+        }
+        return durations
     }
 
     private static func debugTraceCategoryTitle(_ category: RAGDebugTraceCategory) -> String {
@@ -1304,30 +1334,50 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 将 Service 的结构化事件投影为普通用户可读的步骤。
     ///
     /// 这里刻意不消费 Debug trace：后者带完整 prompt / 历史，只适合开发排障。默认轨迹
-    /// 只展示已经发生的操作、LLM 给出的简短思考摘要和可核验的数量结果。
+    /// 只展示已经发生的操作、查询规划、provider 公开的推理文本和可核验的数量结果。
     private func applyExecution(_ event: RAGExecutionEvent) {
         switch event {
         case .started(let kind):
+            let transitionTime = Date()
             for index in executionSteps.indices where executionSteps[index].state == .running {
                 executionSteps[index].state = .completed
+                if executionSteps[index].completedAt == nil {
+                    executionSteps[index].completedAt = transitionTime
+                }
             }
             executionSteps.append(RAGExecutionStep(kind: kind))
 
-        case .thinkingCompleted(let plan):
+        case .planningCompleted(let plan):
             let fallback = String(
-                format: String.l10n("rag.workspace.execution.thinking.fallbackFormat"),
+                format: String.l10n("rag.workspace.execution.planning.fallbackFormat"),
                 plan.userVisiblePlan.scope,
                 plan.userVisiblePlan.semantic
             )
-            updateExecutionStep(kind: .thinking) { step in
-                step.details = plan.userVisiblePlan.thinking.isEmpty
+            updateExecutionStep(kind: .planning) { step in
+                step.details = plan.userVisiblePlan.planningNotes.isEmpty
                     ? [fallback]
-                    : plan.userVisiblePlan.thinking
+                    : plan.userVisiblePlan.planningNotes
                 step.summary = String(
-                    format: String.l10n("rag.workspace.execution.thinking.summaryFormat"),
+                    format: String.l10n("rag.workspace.execution.planning.summaryFormat"),
                     plan.userVisiblePlan.semantic
                 )
-                step.state = .completed
+                completeExecutionStep(&step)
+            }
+
+        case .reasoningDelta(let kind, let text):
+            updateExecutionStep(kind: kind) { step in
+                if step.details.isEmpty {
+                    step.details = [text]
+                } else {
+                    step.details[step.details.count - 1] += text
+                }
+            }
+
+        case .reasoningCompleted(let kind):
+            updateExecutionStep(kind: kind) { step in
+                step.summary = String.l10n("rag.workspace.execution.reasoning.completed")
+                // 推理流结束后取消 running 状态，时间线即自动折叠，为正式回答让出阅读空间。
+                completeExecutionStep(&step)
             }
 
         case .retrieval(let progress):
@@ -1365,7 +1415,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     result.bundles.count,
                     result.childHits.count
                 )
-                step.state = .completed
+                completeExecutionStep(&step)
             }
 
         case .remoteContextCompleted(let blocks):
@@ -1374,7 +1424,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 step.summary = String(
                     format: String.l10n("rag.workspace.execution.remote.summaryFormat"), blocks.count
                 )
-                step.state = .completed
+                completeExecutionStep(&step)
             }
 
         case .generationStarted(let evidenceCount):
@@ -1389,14 +1439,22 @@ final class KnowledgeRAGWorkspaceViewModel {
                 step.summary = String(
                     format: String.l10n("rag.workspace.execution.generation.summaryFormat"), citationCount
                 )
-                step.state = .completed
+                completeExecutionStep(&step)
             }
 
         case .terminated(let kind, let summary):
             updateExecutionStep(kind: kind) { step in
                 step.summary = summary
-                step.state = .completed
+                completeExecutionStep(&step)
             }
+        }
+    }
+
+    /// 所有终态共用同一时间戳，避免 UI 只能从近似事件时间倒推步骤耗时。
+    private func completeExecutionStep(_ step: inout RAGExecutionStep, at time: Date = .now) {
+        step.state = .completed
+        if step.completedAt == nil {
+            step.completedAt = time
         }
     }
 
@@ -1413,7 +1471,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         if case .failed = state { isFailure = true } else { isFailure = false }
         guard state == .cancelled || isFailure else { return }
         for index in executionSteps.indices where executionSteps[index].state == .running {
-            executionSteps[index].state = .completed
+            completeExecutionStep(&executionSteps[index])
             executionSteps[index].summary = state == .cancelled
                 ? String.l10n("rag.workspace.execution.cancelled")
                 : String.l10n("rag.workspace.execution.failed")

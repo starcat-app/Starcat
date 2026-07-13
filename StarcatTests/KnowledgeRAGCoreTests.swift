@@ -31,8 +31,8 @@ struct KnowledgeRAGCoreTests {
         #expect(!plan.filters.hasEffectiveConditions)
     }
 
-    @Test("Planner: 用户可见思考摘要会被保留并限制长度")
-    func plannerKeepsUserVisibleThinking() throws {
+    @Test("Planner: 用户可见查询规划会被保留并限制长度")
+    func plannerKeepsUserVisiblePlanningNotes() throws {
         let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
             {
               "mode":"semantic_only",
@@ -44,13 +44,60 @@ struct KnowledgeRAGCoreTests {
                 "scope":"知识库",
                 "chips":[],
                 "semantic":"Swift 并发问题",
-                "thinking":["先确认问题聚焦 Swift 并发，再从知识库证据中检索。", "优先匹配 README、笔记和摘要中的相关段落。"]
+                "planningNotes":["先确认问题聚焦 Swift 并发，再从知识库证据中检索。", "优先匹配 README、笔记和摘要中的相关段落。"]
               }
             }
             """, fallbackQuestion: "原问题")
 
-        #expect(plan.userVisiblePlan.thinking.count == 2)
-        #expect(plan.userVisiblePlan.thinking.first?.contains("Swift 并发") == true)
+        #expect(plan.userVisiblePlan.planningNotes.count == 2)
+        #expect(plan.userVisiblePlan.planningNotes.first?.contains("Swift 并发") == true)
+    }
+
+    @Test("AI 流式 `<think>` 跨分片时推理与正文分离")
+    func reasoningNormalizerSeparatesSplitThinkTag() {
+        var normalizer = AIStreamReasoningNormalizer()
+        var events = normalizer.ingest(content: "<thi", nativeReasoning: nil)
+        events += normalizer.ingest(content: "nk>先检查索引</th", nativeReasoning: nil)
+        events += normalizer.ingest(content: "ink>正式回答", nativeReasoning: nil)
+        events += normalizer.finish()
+
+        let reasoning = events.compactMap { event -> String? in
+            if case .reasoningDelta(let text) = event { return text }
+            return nil
+        }.joined()
+        let answer = events.compactMap { event -> String? in
+            if case .delta(let text) = event { return text }
+            return nil
+        }.joined()
+        #expect(reasoning == "先检查索引")
+        #expect(answer == "正式回答")
+        #expect(events.contains(.reasoningCompleted))
+    }
+
+    @Test("AI 原生 reasoning_content 优先作为推理流")
+    func reasoningNormalizerUsesNativeReasoning() {
+        var normalizer = AIStreamReasoningNormalizer()
+        var events = normalizer.ingest(content: nil, nativeReasoning: "先分析请求")
+        events += normalizer.ingest(content: "正式回答", nativeReasoning: nil)
+        events += normalizer.finish()
+
+        #expect(events.contains(.reasoningDelta("先分析请求")))
+        #expect(events.contains(.delta("正式回答")))
+        #expect(events.contains(.reasoningCompleted))
+    }
+
+    @Test("用户可见步骤使用真实起止时间计算耗时")
+    func executionStepUsesPersistedDuration() {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 10_000)
+        let completedAt = startedAt.addingTimeInterval(1.25)
+        let step = RAGExecutionStep(
+            kind: .answerReasoning,
+            state: .completed,
+            startedAt: startedAt,
+            completedAt: completedAt
+        )
+
+        #expect(step.elapsedDuration(at: startedAt.addingTimeInterval(99)) == 1.25)
     }
 
     @Test("Planner: 结构化条件和远程请求执行本地钳制")
@@ -498,7 +545,7 @@ struct KnowledgeRAGCoreTests {
         let conversation = try await store.createConversation()
         let trace = [
             RAGExecutionStep(
-                kind: .thinking,
+                kind: .planning,
                 state: .completed,
                 details: ["先识别问题的检索意图。"],
                 summary: "已规划检索"
@@ -984,7 +1031,11 @@ private actor SequencedRAGHTTPClient: RAGHTTPClientProtocol {
 
 private struct FixedRAGPlanner: KnowledgeRAGQueryPlanning {
     var plan: RAGQueryPlan
-    func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan { plan }
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        onReasoningDelta: @escaping (String) -> Void
+    ) async throws -> RAGQueryPlan { plan }
 }
 
 private actor RemoteFetchRecorder {
@@ -1034,7 +1085,18 @@ private final class SpyRAGAIClient: @unchecked Sendable, AIClientProtocol {
 
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
         lock.withLock { calls += 1 }
-        return AsyncThrowingStream { $0.finish(throwing: AIClientError.emptyResponse) }
+        return AsyncThrowingStream { continuation in
+            if let chatResponse {
+                continuation.yield(.completed(AIChatResponse(
+                    content: chatResponse,
+                    model: request.model,
+                    finishReason: "stop"
+                )))
+                continuation.finish()
+            } else {
+                continuation.finish(throwing: AIClientError.emptyResponse)
+            }
+        }
     }
 
     func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {

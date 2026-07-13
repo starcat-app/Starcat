@@ -613,10 +613,9 @@ private struct KnowledgeRAGBrowserView: View {
                     TextEditor(text: $viewModel.retrievalQuery)
                         .font(.body)
                         .scrollContentBackground(.hidden)
-                        // 与分片编辑器保持同一内边距；右下角按钮占 44pt，预留后仍可完整展示三行正文。
+                        // 只预留底部给右下角按钮；不要加 trailing padding，否则每一行都会提前换行。
                         .padding(8)
-                        .padding(.trailing, 52)
-                        .padding(.bottom, 44)
+                        .padding(.bottom, 36)
                     if viewModel.retrievalQuery.isEmpty {
                         Text("rag.browser.retrieval.placeholder")
                             .font(.body)
@@ -628,9 +627,18 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                 }
                 Button { viewModel.runRetrievalTest() } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.caption.weight(.semibold))
-                        .frame(width: 24, height: 24)
+                    Group {
+                        if viewModel.isTestingRetrieval {
+                            // 加载态占住按钮位，避免输入框下方再挂一颗 ProgressView。
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "testtube.2")
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                    .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -651,7 +659,6 @@ private struct KnowledgeRAGBrowserView: View {
             .padding(.horizontal, 7)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
-            if viewModel.isTestingRetrieval { ProgressView().controlSize(.small) }
             if !viewModel.retrievalHits.isEmpty {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {

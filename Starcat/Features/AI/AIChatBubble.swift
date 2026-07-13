@@ -152,9 +152,14 @@ struct AIChatBubble: View {
     /// - 时间戳"是生成完成后才应该显示的"——把 `assistantFooter` 整体在
     ///   流式期间不渲染，等 `isStreaming == false` 才出现 timestamp + 复制按钮。
     private var assistantBubble: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let reasoning = message.reasoning?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 6) {
-                if message.content.isEmpty {
+                if let reasoning, !reasoning.isEmpty {
+                    AIChatReasoningDisclosure(content: reasoning, isStreaming: message.isStreaming)
+                }
+
+                if message.content.isEmpty, reasoning?.isEmpty != false {
                     // 占位指示：首个 token 还没到。ProgressView 自带旋转动画，
                     // 已足够传达"在思考"，配文字辅助语义即可。
                     HStack(spacing: 6) {
@@ -242,6 +247,64 @@ struct AIChatBubble: View {
         Text(message.timestamp, style: .time)
             .font(interfaceScale.font(.captionSmall))
             .foregroundStyle(.secondary)
+    }
+}
+
+/// 同一条 assistant 消息内的真实模型推理。只接收 provider 已公开的 reasoning stream，
+/// 不把正文外的“加载提示”伪装成模型思考；流结束后自动折叠，正文始终保持可见。
+private struct AIChatReasoningDisclosure: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    let content: String
+    let isStreaming: Bool
+    @State private var isExpanded: Bool
+
+    init(content: String, isStreaming: Bool) {
+        self.content = content
+        self.isStreaming = isStreaming
+        _isExpanded = State(initialValue: isStreaming)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    if isStreaming {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.green)
+                    }
+                    Text("ai.assistant.chat.reasoning.title")
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isExpanded {
+                Text(content)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 20)
+            }
+        }
+        .onChange(of: isStreaming) { _, streaming in
+            if !streaming { isExpanded = false }
+        }
     }
 }
 

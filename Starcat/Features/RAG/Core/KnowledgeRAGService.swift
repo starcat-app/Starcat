@@ -23,10 +23,12 @@ enum KnowledgeRAGServiceEvent: Sendable {
 /// 默认会话可见的 RAG 执行事件。
 ///
 /// 与 `RAGDebugEvent` 严格分层：这里仅描述用户已触发且可核验的操作结果，不包含完整
-/// prompt、对话历史、模型参数或 provider 原始 reasoning token。
+/// prompt、对话历史或模型参数；provider 已公开并由用户主动查看的推理文本例外。
 enum RAGExecutionEvent: Sendable {
     case started(RAGExecutionStepKind)
-    case thinkingCompleted(RAGQueryPlan)
+    case planningCompleted(RAGQueryPlan)
+    case reasoningDelta(RAGExecutionStepKind, String)
+    case reasoningCompleted(RAGExecutionStepKind)
     case retrieval(RAGRetrievalProgress)
     case retrievalCompleted(RAGRetrievalResult)
     case remoteContextCompleted([RAGRemoteContextBlock])
@@ -180,8 +182,23 @@ struct KnowledgeRAGService: Sendable {
                     \(history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
                     """)
                     continuation.yield(.state(.planning))
-                    continuation.yield(.execution(.started(.thinking)))
-                    var plan = try await planner.plan(question: request.rawQuestion, composerContext: request.composerContext)
+                    continuation.yield(.execution(.started(.planning)))
+                    var hasPlanningReasoning = false
+                    var plan = try await planner.plan(
+                        question: request.rawQuestion,
+                        composerContext: request.composerContext,
+                        onReasoningDelta: { text in
+                            guard !text.isEmpty else { return }
+                            if !hasPlanningReasoning {
+                                hasPlanningReasoning = true
+                                continuation.yield(.execution(.started(.planningReasoning)))
+                            }
+                            continuation.yield(.execution(.reasoningDelta(.planningReasoning, text)))
+                        }
+                    )
+                    if hasPlanningReasoning {
+                        continuation.yield(.execution(.reasoningCompleted(.planningReasoning)))
+                    }
                     plan.remoteContextRequests.removeAll {
                         request.composerContext.disabledRemoteResources.contains($0.resource)
                     }
@@ -194,7 +211,7 @@ struct KnowledgeRAGService: Sendable {
                     remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
                     """)
                     continuation.yield(.plan(plan))
-                    continuation.yield(.execution(.thinkingCompleted(plan)))
+                    continuation.yield(.execution(.planningCompleted(plan)))
                     if plan.mode == .needsClarification {
                         continuation.yield(.state(.needsClarification(plan.clarificationQuestion ?? "请补充查询条件")))
                         continuation.finish()
@@ -354,9 +371,22 @@ struct KnowledgeRAGService: Sendable {
                     """)
                     var answer = ""
                     var responseModel = chatRequest.model
+                    var hasAnswerReasoning = false
+                    var answerReasoningCompleted = false
                     for try await event in generatorClient.chatStream(request: chatRequest) {
                         try Task.checkCancellation()
                         switch event {
+                        case .reasoningDelta(let text):
+                            guard !text.isEmpty else { continue }
+                            if !hasAnswerReasoning {
+                                hasAnswerReasoning = true
+                                continuation.yield(.execution(.started(.answerReasoning)))
+                            }
+                            continuation.yield(.execution(.reasoningDelta(.answerReasoning, text)))
+                        case .reasoningCompleted:
+                            guard hasAnswerReasoning, !answerReasoningCompleted else { continue }
+                            answerReasoningCompleted = true
+                            continuation.yield(.execution(.reasoningCompleted(.answerReasoning)))
                         case .delta(let text):
                             answer += text
                             continuation.yield(.delta(text))
@@ -364,6 +394,9 @@ struct KnowledgeRAGService: Sendable {
                             responseModel = response.model
                             if answer.isEmpty { answer = response.content }
                         }
+                    }
+                    if hasAnswerReasoning, !answerReasoningCompleted {
+                        continuation.yield(.execution(.reasoningCompleted(.answerReasoning)))
                     }
                     let citations = promptBuilder.citationsUsed(in: answer, prompt: prompt)
                     emitDebug(.response, """

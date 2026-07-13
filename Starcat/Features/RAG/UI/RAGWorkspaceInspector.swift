@@ -461,17 +461,26 @@ struct RAGWorkspaceInspector: View {
                                         .font(ragFont(.caption2, weight: .semibold))
                                         .foregroundStyle(.secondary)
                                         .frame(width: 12)
+                                        .fixedSize()
+                                    // 英文标题更长：不够宽时只截标题，不挤换时间戳。
                                     Text(debugTraceCategoryKey(trace.category))
                                         .font(ragFont(.caption, weight: .semibold))
                                         .lineLimit(1)
+                                        .truncationMode(.tail)
+                                        .layoutPriority(0)
                                     Spacer(minLength: 4)
-                                    // 固定 `yyyy-MM-dd HH:mm`，避免本地化长日期把窄侧栏挤乱。
+                                    // 固定 `yyyy-MM-dd HH:mm` 单行；避免窄侧栏把日期/时间折成两行。
                                     Text(debugTraceCompactTimestamp(trace.startedAt))
                                         .font(ragFont(.caption2, design: .monospaced))
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .layoutPriority(1)
                                     Image(systemName: debugTraceStateIcon(trace.state))
                                         .font(iconFont(size: 11, weight: .semibold))
                                         .foregroundStyle(debugTraceStateColor(trace.state))
+                                        .fixedSize()
+                                        .layoutPriority(1)
                                         .help(debugTraceStateKey(trace.state))
                                 }
                                 .contentShape(Rectangle())
@@ -489,13 +498,19 @@ struct RAGWorkspaceInspector: View {
                             }
                             .buttonStyle(.plain)
                             .focusEffectDisabled()
+                            .fixedSize()
                             .help("rag.workspace.debug.export")
                         }
 
                         if isExpanded {
                             // Stage 默认折叠：外层展开只渲染标题行，payload 点开后再进视图树。
+                            // 右侧秒数是本步耗时（相对上一条），不是从 ask 开始的累计时间。
+                            let stepDurations = debugEventStepDurations(for: trace.events)
                             ForEach(trace.events) { event in
-                                debugEventRow(event)
+                                debugEventRow(
+                                    event,
+                                    stepDurationSeconds: stepDurations[event.id] ?? event.elapsedSeconds
+                                )
                             }
                         }
                     }
@@ -507,8 +522,8 @@ struct RAGWorkspaceInspector: View {
         .padding(Self.inspectorContentInset)
     }
 
-    /// 单个 stage 行：默认只显示标题/耗时/复制；展开后才挂载 payload，避免大段文本拖垮侧栏。
-    func debugEventRow(_ event: RAGDebugEvent) -> some View {
+    /// 单个 stage 行：默认只显示标题/本步耗时/复制；展开后才挂载 payload，避免大段文本拖垮侧栏。
+    func debugEventRow(_ event: RAGDebugEvent, stepDurationSeconds: TimeInterval) -> some View {
         let isExpanded = expandedDebugEventIDs.contains(event.id)
         let isExpandPending = pendingExpandDebugEventIDs.contains(event.id)
         return VStack(alignment: .leading, spacing: 7) {
@@ -531,9 +546,10 @@ struct RAGWorkspaceInspector: View {
                         Text(debugStageKey(event.stage))
                             .font(ragFont(.caption, weight: .semibold))
                         Spacer(minLength: 4)
-                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, event.elapsedSeconds))
+                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, stepDurationSeconds))
                             .font(ragFont(.caption2, design: .monospaced))
                             .foregroundStyle(.secondary)
+                            .help("rag.workspace.debug.stepDuration.help")
                     }
                     .contentShape(Rectangle())
                 }
@@ -564,6 +580,17 @@ struct RAGWorkspaceInspector: View {
         }
         .padding(10)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    /// 由累计 `elapsedSeconds` 差分得到本步耗时；首条相对 ask 起点。
+    func debugEventStepDurations(for events: [RAGDebugEvent]) -> [UUID: TimeInterval] {
+        var durations: [UUID: TimeInterval] = [:]
+        var previousElapsed: TimeInterval = 0
+        for event in events {
+            durations[event.id] = max(0, event.elapsedSeconds - previousElapsed)
+            previousElapsed = event.elapsedSeconds
+        }
+        return durations
     }
 
     /// 折叠可立刻切；展开先加 pending 锁，等 payload `onAppear`（或超时兜底）再解锁。

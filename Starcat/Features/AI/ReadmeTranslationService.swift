@@ -253,6 +253,8 @@ final class ReadmeTranslationService {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
                 switch event {
+                case .reasoningDelta, .reasoningCompleted:
+                    break
                 case .delta(let delta):
                     accumulated += delta
                     onDelta?(accumulated)

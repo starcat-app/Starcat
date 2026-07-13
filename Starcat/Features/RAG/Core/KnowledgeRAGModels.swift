@@ -217,23 +217,23 @@ struct RAGUserVisiblePlan: Codable, Equatable, Sendable {
     var scope: String
     var chips: [String]
     var semantic: String
-    /// Planner 产出的简短、面向用户的思考摘要；它不是 provider 的隐藏推理原文。
-    var thinking: [String]
+    /// Planner 产出的简短、面向用户的查询规划说明；它不是 provider 的推理原文。
+    var planningNotes: [String]
 
     init(
         scope: String = "知识库",
         chips: [String] = [],
         semantic: String = "",
-        thinking: [String] = []
+        planningNotes: [String] = []
     ) {
         self.scope = scope
         self.chips = chips
         self.semantic = semantic
-        self.thinking = thinking
+        self.planningNotes = planningNotes
     }
 
     enum CodingKeys: String, CodingKey {
-        case scope, chips, semantic, thinking
+        case scope, chips, semantic, planningNotes
     }
 
     init(from decoder: Decoder) throws {
@@ -241,18 +241,20 @@ struct RAGUserVisiblePlan: Codable, Equatable, Sendable {
         scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "知识库"
         chips = try container.decodeIfPresent([String].self, forKey: .chips) ?? []
         semantic = try container.decodeIfPresent(String.self, forKey: .semantic) ?? ""
-        thinking = try container.decodeIfPresent([String].self, forKey: .thinking) ?? []
+        planningNotes = try container.decodeIfPresent([String].self, forKey: .planningNotes) ?? []
     }
 }
 
 /// 一轮 RAG 问答中对普通用户可见的执行步骤。
 ///
 /// 只保存已发生的操作及其可解释摘要，不能复用 Debug payload，避免把 prompt、历史或
-/// provider 内部字段暴露到普通会话历史。`generation` 是最后一步，UI 始终保持展开。
+/// 用户可见的规划、工具操作和 provider 已公开的推理文本。
 enum RAGExecutionStepKind: String, Codable, CaseIterable, Sendable {
-    case thinking
+    case planning
+    case planningReasoning
     case retrieval
     case remoteContext
+    case answerReasoning
     case generation
 }
 
@@ -267,6 +269,9 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
     var state: RAGExecutionStepState
     var details: [String]
     var summary: String?
+    /// 轨迹会随会话持久化；可选值兼容此前没有耗时字段的本地 RAG 历史。
+    var startedAt: Date?
+    var completedAt: Date?
 
     var id: RAGExecutionStepKind { kind }
 
@@ -274,12 +279,22 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         kind: RAGExecutionStepKind,
         state: RAGExecutionStepState = .running,
         details: [String] = [],
-        summary: String? = nil
+        summary: String? = nil,
+        startedAt: Date? = .now,
+        completedAt: Date? = nil
     ) {
         self.kind = kind
         self.state = state
         self.details = details
         self.summary = summary
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+    }
+
+    /// 运行中以当前时刻持续计时，完成后固定为真实结束时刻，供用户核验步骤耗时。
+    func elapsedDuration(at now: Date = .now) -> TimeInterval? {
+        guard let startedAt else { return nil }
+        return max(0, (completedAt ?? now).timeIntervalSince(startedAt))
     }
 }
 

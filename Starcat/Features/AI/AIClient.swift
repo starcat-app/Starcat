@@ -85,8 +85,125 @@ struct AIChatResponse: Equatable, Sendable {
 
 /// 流式 Chat 事件。
 enum AIChatStreamEvent: Equatable, Sendable {
+    /// Provider 明确拆出的推理 token；来自 `reasoning_content` / `reasoning`，或正文起始的 `<think>` 块。
+    case reasoningDelta(String)
+    case reasoningCompleted
     case delta(String)
     case completed(AIChatResponse)
+}
+
+/// 统一 OpenAI-compatible 推理流，避免业务 UI 依赖某一家 provider 的字段名称。
+///
+/// 原生 `reasoning_content` 优先；部分兼容服务只把推理包在正文开头的 `<think>` 标签里，
+/// 因此只识别开头标签，并正确处理标签被拆到多个 SSE chunk 的情况。这样不会误吞回答
+/// 中用于讲解协议或代码的普通 `<think>` 文本。
+struct AIStreamReasoningNormalizer {
+    private enum Source: Equatable {
+        case probing
+        case tagged
+        case native
+        case content
+    }
+
+    private static let openingTag = "<think>"
+    private static let closingTag = "</think>"
+
+    private var source: Source = .probing
+    private var probe = ""
+    private var taggedTail = ""
+    private var emittedReasoning = false
+
+    mutating func ingest(content: String?, nativeReasoning: String?) -> [AIChatStreamEvent] {
+        var events: [AIChatStreamEvent] = []
+
+        if let nativeReasoning, !nativeReasoning.isEmpty, source != .tagged {
+            source = .native
+            emittedReasoning = true
+            events.append(.reasoningDelta(nativeReasoning))
+        }
+        guard let content, !content.isEmpty else { return events }
+
+        switch source {
+        case .native, .content:
+            events.append(.delta(content))
+        case .probing:
+            probe += content
+            let leadingWhitespace = probe.prefix { $0.isWhitespace }
+            let candidate = String(probe.dropFirst(leadingWhitespace.count))
+            if candidate.count < Self.openingTag.count {
+                // 开始标签被拆开时先保留，不要把 `<thi` 误当成正文输出。
+                guard Self.openingTag.hasPrefix(candidate) else {
+                    source = .content
+                    events.append(.delta(probe))
+                    probe = ""
+                    return events
+                }
+                return events
+            }
+            if candidate.hasPrefix(Self.openingTag) {
+                source = .tagged
+                probe = ""
+                events.append(contentsOf: ingestTagged(String(candidate.dropFirst(Self.openingTag.count))))
+            } else {
+                source = .content
+                events.append(.delta(probe))
+                probe = ""
+            }
+        case .tagged:
+            events.append(contentsOf: ingestTagged(content))
+        }
+
+        return events
+    }
+
+    mutating func finish() -> [AIChatStreamEvent] {
+        var events: [AIChatStreamEvent] = []
+        if source == .probing, !probe.isEmpty {
+            events.append(.delta(probe))
+        } else if source == .tagged, !taggedTail.isEmpty {
+            emittedReasoning = true
+            events.append(.reasoningDelta(taggedTail))
+        }
+        if emittedReasoning {
+            events.append(.reasoningCompleted)
+        }
+        return events
+    }
+
+    private mutating func ingestTagged(_ text: String) -> [AIChatStreamEvent] {
+        let buffered = taggedTail + text
+        if let closingRange = buffered.range(of: Self.closingTag) {
+            let reasoning = String(buffered[..<closingRange.lowerBound])
+            let answer = String(buffered[closingRange.upperBound...])
+            taggedTail = ""
+            source = .content
+            var events: [AIChatStreamEvent] = []
+            if !reasoning.isEmpty {
+                emittedReasoning = true
+                events.append(.reasoningDelta(reasoning))
+            }
+            if !answer.isEmpty {
+                events.append(.delta(answer))
+            }
+            return events
+        }
+
+        let heldSuffix = Self.longestClosingTagPrefix(in: buffered)
+        let emittedCount = buffered.count - heldSuffix.count
+        let reasoning = String(buffered.prefix(emittedCount))
+        taggedTail = heldSuffix
+        guard !reasoning.isEmpty else { return [] }
+        emittedReasoning = true
+        return [.reasoningDelta(reasoning)]
+    }
+
+    private static func longestClosingTagPrefix(in text: String) -> String {
+        for length in stride(from: min(closingTag.count - 1, text.count), through: 1, by: -1) {
+            let suffix = String(text.suffix(length))
+            if closingTag.hasPrefix(suffix) { return suffix }
+        }
+        return ""
+    }
 }
 
 /// 业务层依赖的最小 AI 能力集。
