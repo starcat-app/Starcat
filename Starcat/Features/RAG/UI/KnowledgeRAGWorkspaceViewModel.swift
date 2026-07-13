@@ -37,6 +37,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private let conversationStore: any RAGConversationStoring
     private var answerTask: Task<Void, Never>?
     private var conversationTitleTask: Task<Void, Never>?
+    /// store 读取未必会合作响应取消；generation 是提交结果前的第二道保护。
+    private let conversationSelectionGate = RAGLatestRequestGate()
     private var remoteContextConsent: RAGRemoteContextConsent?
     private var linkDetectionTask: Task<Void, Never>?
 
@@ -325,10 +327,13 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func selectConversation(_ id: UUID) async {
         guard selectedConversationID != id || messages.isEmpty else { return }
+        let requestGeneration = conversationSelectionGate.begin()
         cancelAnswer()
         conversationTitleTask?.cancel()
         do {
             guard let detail = try await conversationStore.loadConversation(id: id) else { return }
+            // 用户可能已点选另一会话。即使旧的 SQLite 读取此刻才返回，也不能覆盖 UI。
+            guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
             selectedConversationID = id
             // 点选会话时目录选中态让位，避免误以为「新会话仍进目录」。
             selectedGroupID = nil
@@ -337,6 +342,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             resetTurnState()
             if let initialCitation { selectCitation(initialCitation) }
         } catch {
+            guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
             errorMessage = error.localizedDescription
         }
     }

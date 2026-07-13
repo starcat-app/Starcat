@@ -195,6 +195,8 @@ private final class KnowledgeRAGBrowserViewModel {
     private let dependencies: AppDependencies
     /// 与证据 tab「Starcat 详情」同路：独立详情窗需要共享 HomeViewModel 才能同步 star。
     private let homeViewModel: HomeViewModel
+    /// 浏览器的分片读取与工作台会话读取一样需要防止旧请求覆盖新选择。
+    private let repositorySelectionGate = RAGLatestRequestGate()
 
     var coverage = RAGIndexCoverage(knowledgeRepoCount: 0, indexedRepoCount: 0, totalChunks: 0, readyChunks: 0, pendingChunks: 0, failedChunks: 0, staleChunks: 0)
     var candidates: [RAGRepoCandidate] = []
@@ -237,8 +239,9 @@ private final class KnowledgeRAGBrowserViewModel {
 
     func selectRepository(_ id: Int64) async {
         guard selectedRepoID != id else { return }
+        let requestGeneration = repositorySelectionGate.begin()
         selectedRepoID = id
-        await loadChunks()
+        await loadChunks(selectionGeneration: requestGeneration)
     }
 
     func loadMoreChunks() async {
@@ -377,22 +380,32 @@ private final class KnowledgeRAGBrowserViewModel {
     private static let initialChunkPageSize = 10
     private static let additionalChunkPageSize = 10
 
-    private func loadChunks() async {
-        await loadChunks(limit: Self.initialChunkPageSize, append: false)
+    private func loadChunks(selectionGeneration: Int? = nil) async {
+        await loadChunks(
+            limit: Self.initialChunkPageSize,
+            append: false,
+            selectionGeneration: selectionGeneration
+        )
     }
 
-    private func loadChunks(limit: Int, append: Bool) async {
+    private func loadChunks(limit: Int, append: Bool, selectionGeneration: Int? = nil) async {
         guard let selectedRepoID else {
             chunks = []
             hasMoreChunks = false
             return
         }
+        let requestedRepoID = selectedRepoID
+        let requestedOffset = append ? chunks.count : 0
         do {
             let page = try await dependencies.ragChunkRepository.fetchManagedKnowledgeChunks(
-                repoId: selectedRepoID,
+                repoId: requestedRepoID,
                 limit: limit,
-                offset: append ? chunks.count : 0
+                offset: requestedOffset
             )
+            // refresh / load more 与用户点选可以并发；只允许仍属于当前仓库且仍是最新选择的
+            // 结果改写列表，避免 A 的分页数据出现在 B 的详情中。
+            guard self.selectedRepoID == requestedRepoID,
+                  selectionGeneration.map(repositorySelectionGate.isCurrent) ?? true else { return }
             if append {
                 chunks.append(contentsOf: page.chunks)
             } else {
