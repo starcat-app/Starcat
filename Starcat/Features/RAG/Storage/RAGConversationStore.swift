@@ -87,7 +87,7 @@ protocol RAGConversationStoring: Sendable {
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock],
         executionTrace: [RAGExecutionStep],
-        processingDuration: TimeInterval? = nil
+        processingDuration: TimeInterval?
     ) async throws
     /// 仅落库用户消息（停止时尚未产生任何助手文本）。
     func appendUserMessage(

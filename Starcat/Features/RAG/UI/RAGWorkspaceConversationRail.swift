@@ -136,15 +136,23 @@ struct RAGWorkspaceConversationRail: View {
     }
 
     var indexSummary: some View {
-        Button { viewModel.showKnowledgeBrowser(presentingWindow: NSApp.keyWindow) } label: {
+        Button {
+            viewModel.openKnowledgeBaseEntry(presentingWindow: NSApp.keyWindow)
+        } label: {
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
                         .font(ragFont(.caption, weight: .semibold))
                     Spacer()
-                    Image(systemName: "arrow.up.right.square")
+                    Image(systemName: viewModel.isKnowledgeBaseEmpty ? "plus.circle" : "arrow.up.right.square")
                         .font(iconFont(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
+                }
+                if viewModel.isKnowledgeBaseEmpty {
+                    Text("rag.workspace.status.knowledgeBaseEmpty")
+                        .font(ragFont(.caption2))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
         }
@@ -152,7 +160,13 @@ struct RAGWorkspaceConversationRail: View {
         .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help("rag.browser.open")
+        .help(
+            Text(
+                viewModel.isKnowledgeBaseEmpty
+                    ? "rag.workspace.addToLibrary.openHelp"
+                    : "rag.browser.open"
+            )
+        )
     }
 
     func groupSection(_ group: RAGConversationGroup) -> some View {

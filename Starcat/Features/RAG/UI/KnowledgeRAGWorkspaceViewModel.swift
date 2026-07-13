@@ -116,6 +116,13 @@ final class KnowledgeRAGWorkspaceViewModel {
         failedChunks: 0,
         staleChunks: 0
     )
+    /// RAG 工作台内「从 Stars 加入知识库」Sheet；空库空态 / 左栏 / 失败态共用。
+    var isAddToLibraryPresented = false
+
+    /// 知识库尚无任何仓库时，问答没有可检索边界。
+    var isKnowledgeBaseEmpty: Bool {
+        indexCoverage.knowledgeRepoCount == 0
+    }
     var indexIssueChunks: [RAGIndexIssueKind: [RAGChunk]] = [:]
     var indexIssueHasMore: Set<RAGIndexIssueKind> = []
     var loadingIndexIssueKinds: Set<RAGIndexIssueKind> = []
@@ -690,12 +697,10 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     /// 全选当前列表可见结果（含已选置顶项与当前过滤命中）。
     func selectAllVisibleMentions() {
-        let visibleIDs = Set(mentionSuggestions.map(\.id))
         for repo in mentionSuggestions where !selectedRepoContexts.contains(where: { $0.id == repo.id }) {
             selectedRepoContexts.append(repo)
         }
-        highlightedMentionRepoID = mentionSuggestions.first(where: { visibleIDs.contains($0.id) })?.id
-            ?? highlightedMentionRepoID
+        highlightedMentionRepoID = mentionSuggestions.first?.id ?? highlightedMentionRepoID
     }
 
     /// 清空全部已选仓库 chip；不影响输入框 `@token`。
@@ -867,6 +872,20 @@ final class KnowledgeRAGWorkspaceViewModel {
             homeViewModel: homeViewModel,
             centeredOver: presentingWindow
         )
+    }
+
+    /// 空库时打开批量入库 Sheet；入库后 IndexBuilder 会自动补 README 并建索引。
+    func presentAddToLibrary() {
+        isAddToLibraryPresented = true
+    }
+
+    /// 左栏知识库入口：空库走入库 Sheet，有仓库才打开只读浏览器。
+    func openKnowledgeBaseEntry(presentingWindow: NSWindow?) {
+        if isKnowledgeBaseEmpty {
+            presentAddToLibrary()
+        } else {
+            showKnowledgeBrowser(presentingWindow: presentingWindow)
+        }
     }
 
     var debugTraceText: String {

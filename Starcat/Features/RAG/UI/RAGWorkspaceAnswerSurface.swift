@@ -49,6 +49,11 @@ struct RAGWorkspaceAnswerSurface: View {
                 Divider()
                 remoteConfirmation
             }
+            // 空会话已有大空态 CTA；有消息时再挂一条补救横幅，避免提问后无入口。
+            if viewModel.isKnowledgeBaseEmpty && !showsEmptyConversation {
+                Divider()
+                emptyKnowledgeBanner
+            }
             Divider()
             commandComposer
         }
@@ -261,18 +266,73 @@ struct RAGWorkspaceAnswerSurface: View {
     }
 
     /// 新会话空态：放大图标/文案，并在中栏剩余区域上下左右居中。
+    /// 知识库为空时换成入库引导，避免用户对着「向知识库提问」却无处可问。
     var emptyConversation: some View {
-        EmptyStateView(
-            systemImage: "text.book.closed",
-            title: "rag.workspace.empty.title",
-            subtitle: "rag.workspace.empty.subtitle",
-            iconSize: interfaceScale.scaled(52),
-            spacing: 14,
-            subtitleHorizontalPadding: 48,
-            titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
-            subtitleFont: ragFont(.callout)
-        )
+        Group {
+            if viewModel.isKnowledgeBaseEmpty {
+                EmptyStateView(
+                    systemImage: "books.vertical",
+                    title: "rag.workspace.empty.noKnowledge.title",
+                    subtitle: "rag.workspace.empty.noKnowledge.subtitle",
+                    iconSize: interfaceScale.scaled(52),
+                    spacing: 14,
+                    subtitleHorizontalPadding: 48,
+                    titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
+                    subtitleFont: ragFont(.callout)
+                ) {
+                    Button {
+                        viewModel.presentAddToLibrary()
+                    } label: {
+                        Label("rag.workspace.addToLibrary.cta", systemImage: "heart.fill")
+                            .font(ragFont(.callout, weight: .semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+                    .help("rag.workspace.addToLibrary.openHelp")
+                }
+            } else {
+                EmptyStateView(
+                    systemImage: "text.book.closed",
+                    title: "rag.workspace.empty.title",
+                    subtitle: "rag.workspace.empty.subtitle",
+                    iconSize: interfaceScale.scaled(52),
+                    spacing: 14,
+                    subtitleHorizontalPadding: 48,
+                    titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
+                    subtitleFont: ragFont(.callout)
+                )
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 会话已有内容但知识库仍为空（例如提问后落到 noKnowledgeRepos）时，在 Composer 上方给补救入口。
+    var emptyKnowledgeBanner: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "books.vertical")
+                .font(iconFont(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("rag.workspace.empty.noKnowledge.banner")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            Button {
+                viewModel.presentAddToLibrary()
+            } label: {
+                Text("rag.workspace.addToLibrary.cta")
+                    .font(ragFont(.caption, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .foregroundStyle(Color.accentColor)
+            .help("rag.workspace.addToLibrary.openHelp")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.accentColor.opacity(0.08))
     }
 
     @ViewBuilder
@@ -730,12 +790,27 @@ struct RAGWorkspaceAnswerSurface: View {
             }
             return "rag.workspace.mention.emptyKnowledge"
         }()
-        return Text(key)
-            .font(ragFont(.callout))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 16)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(key)
+                .font(ragFont(.callout))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if !hasKnowledge {
+                Button {
+                    viewModel.dismissMentionPicker()
+                    viewModel.presentAddToLibrary()
+                } label: {
+                    Text("rag.workspace.addToLibrary.cta")
+                        .font(ragFont(.caption, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(Color.accentColor)
+                .help("rag.workspace.addToLibrary.openHelp")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 16)
     }
 
     func mentionPickerRow(_ repo: Repo) -> some View {

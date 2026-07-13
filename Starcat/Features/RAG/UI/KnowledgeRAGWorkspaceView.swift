@@ -55,6 +55,13 @@ struct KnowledgeRAGWorkspaceView: View {
         .sheet(isPresented: $chromeState.isPromptSettingsPresented) {
             RAGWorkspacePromptSettingsSheet(settings: dependencies.settings)
         }
+        .sheet(isPresented: $viewModel.isAddToLibraryPresented) {
+            RAGAddToLibrarySheet()
+                .environment(dependencies)
+                .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
+                .dynamicTypeSize(dependencies.settings.interfaceScale.dynamicTypeSize)
+                .appLocaleEnvironment()
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }

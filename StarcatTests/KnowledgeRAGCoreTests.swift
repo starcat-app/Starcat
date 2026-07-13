@@ -1322,6 +1322,107 @@ struct KnowledgeRAGCoreTests {
         )
     }
 
+    @Test("Mention picker: 已选置顶且不匹配关键词仍保留")
+    func mentionPickerPinsSelectedOutsideFilter() {
+        let redis = mentionFixtureRepo(id: 1, fullName: "redis/redis", language: "C", stars: 50_000)
+        let jedis = mentionFixtureRepo(id: 2, fullName: "redis/jedis", language: "Java", stars: 10_000)
+        let awesome = mentionFixtureRepo(id: 3, fullName: "sindresorhus/awesome", language: nil, stars: 200_000)
+        let candidates = [redis, jedis, awesome].map {
+            RAGRepoCandidate(repo: $0, status: .unread, libraryUpdatedAt: nil, tagNames: ["cache"])
+        }
+
+        let snapshot = RAGMentionPickerLogic.build(
+            candidates: candidates,
+            selected: [awesome],
+            query: "redis"
+        )
+
+        #expect(snapshot.suggestions.map(\.id) == [3, 1, 2])
+        #expect(snapshot.selectedCount == 1)
+        #expect(snapshot.knowledgeCount == 3)
+        #expect(snapshot.matchCount == 2)
+        #expect(!snapshot.isTruncated)
+        #expect(RAGMentionPickerLogic.subtitle(for: redis) == "C · ★ 50000")
+        #expect(RAGMentionPickerLogic.subtitle(for: awesome) == "★ 200000")
+    }
+
+    @Test("Mention picker: 未选命中超过上限会截断并保留已选")
+    func mentionPickerTruncatesUnselectedMatches() {
+        let selected = mentionFixtureRepo(id: 0, fullName: "selected/repo", language: "Swift", stars: 1)
+        let allCandidates: [RAGRepoCandidate] = [
+            RAGRepoCandidate(repo: selected, status: .unread, libraryUpdatedAt: nil, tagNames: [])
+        ] + (1...RAGMentionPickerLogic.unselectedDisplayLimit + 5).map { id in
+            RAGRepoCandidate(
+                repo: mentionFixtureRepo(id: Int64(id), fullName: "owner/repo-\(id)", language: "Go", stars: id),
+                status: .unread,
+                libraryUpdatedAt: nil,
+                tagNames: []
+            )
+        }
+
+        let snapshot = RAGMentionPickerLogic.build(
+            candidates: allCandidates,
+            selected: [selected],
+            query: ""
+        )
+
+        #expect(snapshot.suggestions.first?.id == 0)
+        #expect(snapshot.suggestions.count == 1 + RAGMentionPickerLogic.unselectedDisplayLimit)
+        #expect(snapshot.matchCount == allCandidates.count)
+        #expect(snapshot.isTruncated)
+    }
+
+    @Test("Add to library: 过滤未入库 Stars，并按关键词筛选")
+    func addToLibraryFiltersOutsideLibraryStars() {
+        let outside = mentionFixtureRepo(id: 1, fullName: "apple/swift", language: "C++", stars: 100)
+        let inside = mentionFixtureRepo(id: 2, fullName: "apple/swift-nio", language: "Swift", stars: 50)
+        let other = mentionFixtureRepo(id: 3, fullName: "redis/redis", language: "C", stars: 10)
+
+        let candidates = RAGAddToLibraryLogic.outsideLibraryStars(
+            starred: [outside, inside, other],
+            libraryStateMap: [inside.id: .inLibrary]
+        )
+        #expect(candidates.map(\.id) == [1, 3])
+
+        let filtered = RAGAddToLibraryLogic.filter(candidates, query: "swift")
+        #expect(filtered.map(\.id) == [1])
+    }
+
+    private func mentionFixtureRepo(
+        id: Int64,
+        fullName: String,
+        language: String?,
+        stars: Int
+    ) -> Repo {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        return Repo(
+            id: id,
+            owner: parts.first ?? "owner",
+            name: parts.count > 1 ? parts[1] : "repo",
+            fullName: fullName,
+            description: "Demo \(fullName)",
+            language: language,
+            starsCount: stars,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: "[]",
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/\(fullName)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: true,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
+    }
+
     private func fixtureRepo(id: Int64, isPrivate: Bool) -> Repo {
         Repo(
             id: id,
