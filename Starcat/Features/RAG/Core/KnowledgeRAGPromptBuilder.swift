@@ -214,7 +214,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         var result: [AIChatMessage] = []
         for message in history.reversed() {
             guard remaining > 0 else { break }
-            let isSummary = message.content.hasPrefix("以下是较早对话的受限摘要")
+            let isSummary = message.content.hasPrefix("以下是较早对话的")
             let kind: RAGContextUsageSegmentKind = isSummary ? .historySummary : .recentMessages
             let clipped = budget.consume(message.content, kind: kind, preferredLimit: remaining)
             let consumed = TokenEstimator.estimate(text: clipped)

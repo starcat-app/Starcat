@@ -134,6 +134,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
     var debugTraces: [RAGDebugTrace] = []
+    /// 当前会话已持久化的语义摘要；只覆盖 recent window 以外的消息，完整历史仍可浏览。
+    private var conversationContextSummary: RAGConversationContextSummary?
 
     init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         self.dependencies = dependencies
@@ -210,7 +212,10 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         return KnowledgeRAGPromptBuilder().preview(
             question: draftQuestion,
-            history: RAGConversationHistoryBuilder.build(from: messages),
+            history: RAGConversationHistoryBuilder.build(
+                from: messages,
+                contextSummary: conversationContextSummary
+            ),
             attachmentNames: attachments.map(\.filename),
             contextWindowTokens: selectedModelParameters.resolvedContextWindowTokens,
             maximumOutputTokens: selectedModelParameters.maxCompletionTokens
@@ -363,6 +368,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             conversations.insert(conversation, at: 0)
             selectedConversationID = conversation.id
             messages = []
+            conversationContextSummary = nil
             resetTurnState()
         } catch {
             errorMessage = error.localizedDescription
@@ -382,6 +388,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             // 点选会话时目录选中态让位，避免误以为「新会话仍进目录」。
             selectedGroupID = nil
             messages = detail.messages
+            conversationContextSummary = detail.contextSummary
             loadedMessageSequence &+= 1
             let initialCitation = messages.reversed().lazy.flatMap(\.citations).first
             resetTurnState()
@@ -581,6 +588,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         editingUserMessageID = nil
         editingUserDraft = ""
         messages.removeAll { $0.id == messageID }
+        conversationContextSummary = nil
         answerTask?.cancel()
         answerTask = Task { [weak self] in
             guard let self else { return }
@@ -1054,11 +1062,71 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 在发起下一轮问答前增量压缩已离开 recent window 的消息。压缩失败只能降级为本地
+    /// 受限摘要，不能让一项辅助优化阻断用户提问；成功结果带 coverage 落库，重开窗口后
+    /// 仍可继续增量合并而非重新发送整段历史。
+    private func preparedConversationHistory(
+        using service: KnowledgeRAGService,
+        conversationID: UUID,
+        messages: [RAGStoredMessage]
+    ) async -> [AIChatMessage] {
+        let coveredCount = max(messages.count - RAGConversationHistoryBuilder.recentLimit, 0)
+        guard coveredCount > 0 else {
+            return RAGConversationHistoryBuilder.build(
+                from: messages,
+                contextSummary: conversationContextSummary
+            )
+        }
+
+        let validSummary = conversationContextSummary.flatMap { summary in
+            summary.coveredMessageCount <= coveredCount ? summary : nil
+        }
+        if validSummary?.coveredMessageCount == coveredCount {
+            return RAGConversationHistoryBuilder.build(from: messages, contextSummary: validSummary)
+        }
+
+        let alreadyCovered = validSummary?.coveredMessageCount ?? 0
+        let newlyCovered = Array(messages.dropFirst(alreadyCovered).prefix(coveredCount - alreadyCovered))
+        guard !newlyCovered.isEmpty else {
+            return RAGConversationHistoryBuilder.build(from: messages, contextSummary: validSummary)
+        }
+
+        let compressed: String
+        do {
+            compressed = try await service.compressConversationHistory(
+                existingSummary: validSummary?.content,
+                messages: newlyCovered
+            )
+        } catch {
+            // Provider 不可用时仍走相同的 coverage，避免下一轮又把旧原文无限带回请求。
+            compressed = RAGConversationContextCompressor.fallback(
+                existingSummary: validSummary?.content,
+                messages: newlyCovered
+            )
+        }
+        let summary = RAGConversationContextSummary(
+            content: compressed,
+            coveredMessageCount: coveredCount
+        )
+        do {
+            try await conversationStore.saveContextSummary(
+                conversationID: conversationID,
+                content: summary.content,
+                coveredMessageCount: summary.coveredMessageCount
+            )
+            conversationContextSummary = summary
+        } catch {
+            // 写盘失败时继续使用内存摘要完成本轮，避免存储短暂错误中断聊天；下一次加载
+            // 会自然回退并再次尝试压缩。
+            conversationContextSummary = summary
+        }
+        return RAGConversationHistoryBuilder.build(from: messages, contextSummary: summary)
+    }
+
     private func runQuestion(_ question: String) async {
         guard let conversationID = selectedConversationID else { return }
         let debugTraceID = isDebugModeEnabled ? beginDebugTrace(category: .questionAnswer) : nil
-        let history = RAGConversationHistoryBuilder.build(from: messages)
-        let isFirstTurn = history.isEmpty
+        let isFirstTurn = messages.isEmpty
         let userMessage = RAGStoredMessage(
             id: UUID(),
             conversationID: conversationID,
@@ -1103,6 +1171,11 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         do {
             let service = try dependencies.makeKnowledgeRAGService(selectedModelID: selectedModelID)
+            let history = await preparedConversationHistory(
+                using: service,
+                conversationID: conversationID,
+                messages: Array(messages.dropLast())
+            )
             let consent = RAGRemoteContextConsent()
             remoteContextConsent = consent
             let request = RAGServiceRequest(
@@ -1262,6 +1335,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 guard selectedConversationID == conversationID else { return }
                 if let detail = try await conversationStore.loadConversation(id: conversationID) {
                     messages = detail.messages
+                    conversationContextSummary = detail.contextSummary
                     loadedMessageSequence &+= 1
                 }
                 conversations = try await conversationStore.listConversations()
@@ -1317,6 +1391,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
                 if let detail = try await conversationStore.loadConversation(id: conversationID) {
                     messages = detail.messages
+                    conversationContextSummary = detail.contextSummary
                     loadedMessageSequence &+= 1
                 }
                 conversations = try await conversationStore.listConversations()
@@ -1703,6 +1778,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         )
         if let detail = try await conversationStore.loadConversation(id: conversationID) {
             messages = detail.messages
+            conversationContextSummary = detail.contextSummary
             loadedMessageSequence &+= 1
             if let citation = citations.first { selectCitation(citation) }
         }

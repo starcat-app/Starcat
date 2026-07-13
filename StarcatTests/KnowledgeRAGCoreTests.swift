@@ -564,6 +564,38 @@ struct KnowledgeRAGCoreTests {
         #expect(AIModelParameters.summaryDefault.resolvedContextWindowTokens == 32 * 1_024)
     }
 
+    @Test("会话语义摘要持久化，并只替代 recent window 外的历史")
+    func conversationContextSummaryPersistsAndBuildsHistory() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let conversation = try await store.createConversation()
+        for index in 0..<4 {
+            try await store.appendTurn(
+                conversationID: conversation.id,
+                question: "问题 \(index)",
+                answer: "回答 \(index)",
+                model: "test",
+                citations: []
+            )
+        }
+        try await store.saveContextSummary(
+            conversationID: conversation.id,
+            content: "已确认：用户在比较 RAG 项目的稳定性。未完成：继续评估上下文预算。",
+            coveredMessageCount: 2
+        )
+
+        let detail = try #require(try await store.loadConversation(id: conversation.id))
+        #expect(detail.contextSummary?.coveredMessageCount == 2)
+        #expect(detail.contextSummary?.content.contains("上下文预算") == true)
+        let history = RAGConversationHistoryBuilder.build(
+            from: detail.messages,
+            contextSummary: detail.contextSummary
+        )
+        #expect(history.count == 1 + RAGConversationHistoryBuilder.recentLimit)
+        #expect(history.first?.content.contains("会话压缩摘要") == true)
+        #expect(history.first?.content.contains("上下文预算") == true)
+    }
+
     @Test("citation 只恢复正文可见区域的本轮 marker")
     func citationsIgnoreCodeEscapesLinksAndUnknownMarkers() {
         let builder = KnowledgeRAGPromptBuilder()

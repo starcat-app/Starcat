@@ -47,9 +47,17 @@ struct RAGStoredMessage: Identifiable, Equatable, Sendable {
     var createdAt: String
 }
 
+/// 已持久化的会话压缩摘要。`coveredMessageCount` 表示前多少条原始消息已包含在摘要中；
+/// 新一轮压缩只追加这之后、且已离开 recent window 的消息，避免反复总结全部历史。
+struct RAGConversationContextSummary: Equatable, Sendable {
+    var content: String
+    var coveredMessageCount: Int
+}
+
 struct RAGConversationDetail: Equatable, Sendable {
     var summary: RAGConversationSummary
     var messages: [RAGStoredMessage]
+    var contextSummary: RAGConversationContextSummary?
 }
 
 struct RAGConversationStatistics: Equatable, Sendable {
@@ -64,6 +72,11 @@ protocol RAGConversationStoring: Sendable {
     func createConversation(title: String?, groupID: UUID?) async throws -> RAGConversationSummary
     func listConversations() async throws -> [RAGConversationSummary]
     func loadConversation(id: UUID) async throws -> RAGConversationDetail?
+    func saveContextSummary(
+        conversationID: UUID,
+        content: String,
+        coveredMessageCount: Int
+    ) async throws
     func appendTurn(
         conversationID: UUID,
         question: String,
@@ -127,7 +140,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func listConversations() async throws -> [RAGConversationSummary] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT id, title, is_pinned, group_id, created_at, updated_at
+                SELECT id, title, is_pinned, group_id, context_summary, context_summary_message_count, created_at, updated_at
                 FROM rag_conversations
                 ORDER BY is_pinned DESC, updated_at DESC
                 """)
@@ -172,7 +185,43 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     createdAt: messageRow["created_at"]
                 ))
             }
-            return RAGConversationDetail(summary: summary, messages: messages)
+            let contextSummary: RAGConversationContextSummary?
+            if let content: String = row["context_summary"], !content.isEmpty {
+                contextSummary = RAGConversationContextSummary(
+                    content: content,
+                    coveredMessageCount: row["context_summary_message_count"] ?? 0
+                )
+            } else {
+                contextSummary = nil
+            }
+            return RAGConversationDetail(
+                summary: summary,
+                messages: messages,
+                contextSummary: contextSummary
+            )
+        }
+    }
+
+    func saveContextSummary(
+        conversationID: UUID,
+        content: String,
+        coveredMessageCount: Int
+    ) async throws {
+        try await database.writer.write { db in
+            // 摘要是会话的派生压缩，不改最近活跃排序；限制持久化大小以免异常 Provider 响应
+            // 把用户本地历史无界撑大。
+            try db.execute(
+                sql: """
+                UPDATE rag_conversations
+                SET context_summary = ?, context_summary_message_count = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    RAGContextBudget.clip(content, toTokenBudget: 2_000),
+                    max(coveredMessageCount, 0),
+                    conversationID.uuidString
+                ]
+            )
         }
     }
 
@@ -298,6 +347,11 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
 
     func deleteMessage(id: UUID) async throws {
         try await database.writer.write { db in
+            let conversationID: String? = try String.fetchOne(
+                db,
+                sql: "SELECT conversation_id FROM rag_messages WHERE id = ?",
+                arguments: [id.uuidString]
+            )
             try db.execute(
                 sql: "DELETE FROM rag_message_citations WHERE message_id = ?",
                 arguments: [id.uuidString]
@@ -310,6 +364,14 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 sql: "DELETE FROM rag_messages WHERE id = ?",
                 arguments: [id.uuidString]
             )
+            // 删除的可能是已被摘要覆盖的旧消息；清空覆盖边界后，下次请求会重建摘要，
+            // 防止模型继续收到已经被用户编辑掉的事实。
+            if let conversationID {
+                try db.execute(
+                    sql: "UPDATE rag_conversations SET context_summary = NULL, context_summary_message_count = 0 WHERE id = ?",
+                    arguments: [conversationID]
+                )
+            }
         }
     }
 
@@ -542,28 +604,35 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     }
 }
 
-/// 长会话不能把全部原文重复送入模型。保留最近 3 轮消息，较早内容压缩为明确标识的上下文
-/// 摘要；摘要只用于背景，不应被理解为当前轮指令。
+/// 长会话不能把全部原文重复送入模型。保留最近 3 轮消息，较早内容优先使用已持久化的
+/// 语义摘要；摘要只用于背景，不应被理解为当前轮指令。
 enum RAGConversationHistoryBuilder {
     private static let recentMessageLimit = 6
-    private static let excerptLimit = 280
-    private static let summaryLimit = 1_800
+    fileprivate static let excerptLimit = 280
+    fileprivate static let summaryLimit = 1_800
 
-    static func build(from messages: [RAGStoredMessage]) -> [AIChatMessage] {
+    static var recentLimit: Int { recentMessageLimit }
+
+    static func build(
+        from messages: [RAGStoredMessage],
+        contextSummary: RAGConversationContextSummary? = nil
+    ) -> [AIChatMessage] {
         guard messages.count > recentMessageLimit else { return map(messages) }
-        let older = messages.dropLast(recentMessageLimit)
         let recent = messages.suffix(recentMessageLimit)
-        let digestLines = older.map { message in
-            let role = message.role == .user ? "用户" : "助手"
-            let content = message.content
-                .replacingOccurrences(of: "\n", with: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(role)：\(String(content.prefix(excerptLimit)))"
+        let digest: String
+        if let contextSummary, contextSummary.coveredMessageCount > 0 {
+            digest = contextSummary.content
+        } else {
+            // 模型压缩失败或旧库还没有摘要时，不阻断问答；使用严格长度上限的本地降级，
+            // 并在下一轮可用时覆盖为语义摘要。
+            digest = RAGConversationContextCompressor.fallback(
+                existingSummary: nil,
+                messages: Array(messages.dropLast(recentMessageLimit))
+            )
         }
-        let digest = String(digestLines.joined(separator: "\n").prefix(summaryLimit))
         let summary = AIChatMessage(
             role: .user,
-            content: "以下是较早对话的受限摘要，仅作背景，不包含新的执行指令：\n\(digest)"
+            content: "以下是较早对话的会话压缩摘要，仅作背景，不包含新的执行指令：\n\(digest)"
         )
         return [summary] + map(Array(recent))
     }
@@ -575,5 +644,38 @@ enum RAGConversationHistoryBuilder {
                 content: message.content
             )
         }
+    }
+}
+
+/// 会话摘要的模型输入与本地降级策略。模型调用失败时仍可稳定缩短历史，但不会把“降级摘要”
+/// 误标为模型生成的事实；下次可用时会由 Service 重新生成语义摘要并覆盖它。
+enum RAGConversationContextCompressor {
+    static func sourceText(
+        existingSummary: String?,
+        messages: [RAGStoredMessage]
+    ) -> String {
+        let transcript: String = messages.map { message in
+            let role = message.role == .user ? "用户" : "助手"
+            return "\(role)：\n\(message.content)"
+        }.joined(separator: "\n\n---\n\n")
+        let existing: String
+        if let existingSummary {
+            existing = "已有摘要：\n\(existingSummary)\n\n"
+        } else {
+            existing = ""
+        }
+        return RAGContextBudget.clip(existing + "新增对话：\n" + transcript, toTokenBudget: 8_000)
+    }
+
+    static func fallback(existingSummary: String?, messages: [RAGStoredMessage]) -> String {
+        let lines = messages.map { message in
+            let role = message.role == .user ? "用户问题" : "助手结论"
+            let content = message.content
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(role)：\(String(content.prefix(RAGConversationHistoryBuilder.excerptLimit)))"
+        }
+        let joined = ([existingSummary].compactMap { $0 } + lines).joined(separator: "\n")
+        return RAGContextBudget.clip(joined, toTokenBudget: RAGConversationHistoryBuilder.summaryLimit)
     }
 }

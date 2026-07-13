@@ -1387,6 +1387,10 @@ enum DatabaseMigrations {
             // 一级分组：NULL = 未分组；删除分组时会话回到未分组（ON DELETE SET NULL）。
             t.column("group_id", .text)
                 .references("rag_conversation_groups", column: "id", onDelete: .setNull)
+            // 语义摘要是可从原始消息重建的派生数据；coverage 用消息条数而非时间戳，
+            // 使后续增量压缩能精确知道哪些旧消息已经进入摘要。
+            t.column("context_summary", .text)
+            t.column("context_summary_message_count", .integer).notNull().defaults(to: 0)
             t.column("created_at", .text).notNull()
             t.column("updated_at", .text).notNull()
         }
@@ -1511,6 +1515,16 @@ enum DatabaseMigrations {
             if !columns.contains("is_pinned") {
                 try db.alter(table: "rag_conversations") { t in
                     t.add(column: "is_pinned", .boolean).notNull().defaults(to: false)
+                }
+            }
+            if !columns.contains("context_summary") {
+                try db.alter(table: "rag_conversations") { t in
+                    t.add(column: "context_summary", .text)
+                }
+            }
+            if !columns.contains("context_summary_message_count") {
+                try db.alter(table: "rag_conversations") { t in
+                    t.add(column: "context_summary_message_count", .integer).notNull().defaults(to: 0)
                 }
             }
             let indexes = try db.indexes(on: "rag_conversations").map(\.name)
