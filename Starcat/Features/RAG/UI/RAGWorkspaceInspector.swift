@@ -817,7 +817,12 @@ struct RAGWorkspaceInspector: View {
                             .padding(.bottom, 8)
                         }
                     }
+                    // 浅底 + separator 细边框：同一 trace 折叠/展开时边界都清晰，不强于侧栏其它卡片。
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
+                    )
                 }
             }
         }

@@ -975,6 +975,40 @@ struct KnowledgeRAGCoreTests {
         #expect(!retrievalDiagnostics.debugPayload().contains(rerank.debugPayload()))
     }
 
+    @MainActor
+    @Test("工作台保留独立 Rerank Debug 的结构化内容")
+    func workspaceDebugEventPreservesRerankPayload() {
+        let rerank = RAGRerankDiagnostics(
+            state: .completed,
+            provider: .huggingFaceTEI,
+            candidateCount: 1,
+            rerankedCount: 1,
+            elapsedSeconds: 0.42,
+            trace: RAGRerankTrace(
+                query: "How do I configure BetterDisplay?",
+                model: nil,
+                candidateLimit: 24,
+                inputCandidates: [],
+                responseResults: [],
+                appliedOrder: []
+            )
+        )
+        let original = RAGDebugEvent(
+            stage: .rerank,
+            elapsedSeconds: 1,
+            payload: "",
+            rerankPayload: RAGRerankDebugPayload(diagnostics: rerank)
+        )
+
+        let bounded = KnowledgeRAGWorkspaceViewModel.boundedDebugEvent(original)
+        let rebased = KnowledgeRAGWorkspaceViewModel.rebasedDebugEvent(bounded, offset: 2)
+
+        #expect(bounded.rerankPayload?.diagnostics == rerank)
+        #expect(rebased.rerankPayload?.diagnostics == rerank)
+        #expect(rebased.elapsedSeconds == 3)
+        #expect(rebased.renderedPayload().contains("How do I configure BetterDisplay?"))
+    }
+
     @Test("RAG Debug 清空只删除当前会话的文件")
     func debugFilesDeleteOnlyCurrentConversation() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())

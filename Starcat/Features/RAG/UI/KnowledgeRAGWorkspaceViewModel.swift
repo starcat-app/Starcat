@@ -1888,6 +1888,25 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func appendDebugEvent(_ event: RAGDebugEvent, to traceID: UUID?) {
         guard isDebugModeEnabled, let traceID,
               let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
+        let boundedEvent = Self.boundedDebugEvent(event)
+        // GitHub 远程上下文会并发完成；continuation 的送达顺序不保证严格等于发生时间。
+        // 按 Trace 相对时间插入，Inspector 的相邻事件耗时始终可解释，且缓存/网络混合时
+        // 不会出现负耗时。
+        let insertionIndex = debugTraces[index].events.firstIndex {
+            $0.elapsedSeconds > boundedEvent.elapsedSeconds
+        } ?? debugTraces[index].events.endIndex
+        debugTraces[index].events.insert(boundedEvent, at: insertionIndex)
+        if debugTraces[index].events.count > DebugTraceLimit.maxEventsPerTrace {
+            debugTraces[index].events.removeFirst(
+                debugTraces[index].events.count - DebugTraceLimit.maxEventsPerTrace
+            )
+        }
+        trimDebugTraceMemory()
+    }
+
+    /// 保留结构化 Trace 的类型信息，仅裁剪可能包含长文本的通用 payload 与最终分片详情。
+    /// Rerank 详情不应在此处降为普通字符串，否则独立的“重排序”行无法渲染其请求和返回。
+    static func boundedDebugEvent(_ event: RAGDebugEvent) -> RAGDebugEvent {
         let boundedPayload = String(
             decoding: event.payload.utf8.prefix(DebugTraceLimit.maxPayloadUTF8Bytes),
             as: UTF8.self
@@ -1905,21 +1924,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             stage: event.stage,
             elapsedSeconds: event.elapsedSeconds,
             payload: boundedPayload,
-            retrievalPayload: boundedRetrievalPayload
+            retrievalPayload: boundedRetrievalPayload,
+            rerankPayload: event.rerankPayload
         )
-        // GitHub 远程上下文会并发完成；continuation 的送达顺序不保证严格等于发生时间。
-        // 按 Trace 相对时间插入，Inspector 的相邻事件耗时始终可解释，且缓存/网络混合时
-        // 不会出现负耗时。
-        let insertionIndex = debugTraces[index].events.firstIndex {
-            $0.elapsedSeconds > boundedEvent.elapsedSeconds
-        } ?? debugTraces[index].events.endIndex
-        debugTraces[index].events.insert(boundedEvent, at: insertionIndex)
-        if debugTraces[index].events.count > DebugTraceLimit.maxEventsPerTrace {
-            debugTraces[index].events.removeFirst(
-                debugTraces[index].events.count - DebugTraceLimit.maxEventsPerTrace
-            )
-        }
-        trimDebugTraceMemory()
+        return boundedEvent
     }
 
     private func appendDebugEvents(_ events: [RAGDebugEvent], to traceID: UUID?) {
@@ -1937,15 +1945,22 @@ final class KnowledgeRAGWorkspaceViewModel {
         let offset = max(localStartedAt.timeIntervalSince(traceStartedAt), 0)
         for event in events {
             appendDebugEvent(
-                RAGDebugEvent(
-                    stage: event.stage,
-                    elapsedSeconds: offset + event.elapsedSeconds,
-                    payload: event.payload,
-                    retrievalPayload: event.retrievalPayload
-                ),
+                Self.rebasedDebugEvent(event, offset: offset),
                 to: traceID
             )
         }
+    }
+
+    /// 压缩等辅助调用会使用自己的计时起点；重设耗时时仍需原样保留两类结构化 Debug payload。
+    static func rebasedDebugEvent(_ event: RAGDebugEvent, offset: TimeInterval) -> RAGDebugEvent {
+        RAGDebugEvent(
+            id: event.id,
+            stage: event.stage,
+            elapsedSeconds: offset + event.elapsedSeconds,
+            payload: event.payload,
+            retrievalPayload: event.retrievalPayload,
+            rerankPayload: event.rerankPayload
+        )
     }
 
     @discardableResult

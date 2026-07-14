@@ -543,9 +543,9 @@ private struct KnowledgeRAGBrowserView: View {
         return font.ascender - font.descender + font.leading
     }
 
-    /// 召回查询是实际可编辑输入，使用标准 input token，并随全局界面字号档位缩放。
+    /// 召回测试是侧栏辅助工具，沿用正文输入层级，避免与主问答 composer 争夺视觉焦点。
     private var retrievalQueryFont: NSFont {
-        NSFont.systemFont(ofSize: interfaceScale.scaled(16))
+        NSFont.systemFont(ofSize: interfaceScale.scaled(13))
     }
 
     private var retrievalQueryMinHeight: CGFloat {
@@ -872,11 +872,11 @@ private struct KnowledgeRAGBrowserView: View {
                             .frame(width: 18, height: 18)
                             .accessibilityLabel(Text("rag.browser.retrieval.run"))
                     } else {
-                        // 18pt 圆钮贴合 2～4 行输入框角位；24pt 会压过输入区观感。
+                        // 20pt 圆形视觉配合 24pt 点击区，保证紧凑面板里既易点按也不喧宾夺主。
                         Button { viewModel.runRetrievalTest() } label: {
                             Image(systemName: "testtube.2")
-                                .font(interfaceScale.font(size: 13, weight: .semibold))
-                                .frame(width: 18, height: 18)
+                                .font(interfaceScale.font(size: 15, weight: .semibold))
+                                .frame(width: 20, height: 20)
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
@@ -892,6 +892,7 @@ private struct KnowledgeRAGBrowserView: View {
                         .accessibilityLabel(Text("rag.browser.retrieval.run"))
                         .help(Text("rag.browser.retrieval.run"))
                         .pointerStyle(.link)
+                        .padding(2)
                     }
                 }
                 // 相对输入框描边：右/下同为 5，贴角对称。
@@ -987,11 +988,24 @@ private struct KnowledgeRAGBrowserView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("rag.workspace.retrieval.sources.title")
                             .font(.body.weight(.medium))
-                        HStack(spacing: 10) {
+                        // 四个来源在大字号下无法可靠地放进侧栏单行；两列确保 checkbox
+                        // 与标签维持同一基线，也避免本地化文本被拆成难读的两行。
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(minimum: 0), spacing: 10),
+                                GridItem(.flexible(minimum: 0), spacing: 10)
+                            ],
+                            alignment: .leading,
+                            spacing: 6
+                        ) {
                             ForEach(RAGChunkSource.allCases, id: \.self) { source in
-                                Toggle(source.titleKey, isOn: retrievalTestSourceBinding(source))
+                                Toggle(isOn: retrievalTestSourceBinding(source)) {
+                                    Text(source.titleKey)
+                                        .lineLimit(1)
+                                }
                                     .font(.body)
                                     .toggleStyle(.checkbox)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
@@ -1079,7 +1093,9 @@ private struct KnowledgeRAGBrowserView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(titleKey)
                 .font(.body.weight(.medium))
-                .lineLimit(1)
+                // 较长的英文标题可占两行；预留相同标题区高度，保持并排输入框对齐。
+                .lineLimit(2)
+                .frame(minHeight: 34, alignment: .topLeading)
             TextField("", text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.callout.monospacedDigit())
