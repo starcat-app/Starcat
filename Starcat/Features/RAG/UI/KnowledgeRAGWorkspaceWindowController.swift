@@ -981,26 +981,22 @@ private struct KnowledgeRAGBrowserView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("rag.workspace.retrieval.sources.title")
                             .font(.caption.weight(.medium))
-                        // 四个来源在大字号下无法可靠地放进侧栏单行；两列确保 checkbox
-                        // 与标签维持同一基线，也避免本地化文本被拆成难读的两行。
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(minimum: 0), spacing: 10),
-                                GridItem(.flexible(minimum: 0), spacing: 10)
-                            ],
-                            alignment: .leading,
-                            spacing: 6
-                        ) {
+                        // 四个来源必须单行展示；HStack 本身不换行，标签再锁
+                        // lineLimit(1)，窄侧栏时压缩字间距也不折到第二行。
+                        HStack(spacing: 8) {
                             ForEach(RAGChunkSource.allCases, id: \.self) { source in
                                 Toggle(isOn: retrievalTestSourceBinding(source)) {
                                     Text(source.titleKey)
                                         .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
                                 }
-                                    .font(.caption)
-                                    .toggleStyle(.checkbox)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                .font(.caption)
+                                .toggleStyle(.checkbox)
+                                .fixedSize(horizontal: true, vertical: false)
                             }
+                            Spacer(minLength: 0)
                         }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
 
                     HStack(spacing: 8) {
@@ -1213,11 +1209,16 @@ private struct KnowledgeRAGBrowserView: View {
                     fullName: candidate.repo.fullName,
                     ownerAvatarURL: candidate.repo.ownerAvatar,
                     avatarSize: 18,
-                    font: .subheadline.weight(selected ? .semibold : .regular),
+                    // 列表标题 / 描述使用同一倍率下的 15pt / 13pt 基准，避免系统
+                    // body 在较大动态字号档位反超 subheadline，破坏主次层级。
+                    font: interfaceScale.font(size: 15, weight: selected ? .semibold : .regular),
                     spacing: 6,
                     showAvatarBorder: false
                 )
-                Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription")).font(.body).foregroundStyle(.secondary).lineLimit(2)
+                Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription"))
+                    .font(interfaceScale.font(size: 13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
                 HStack(spacing: 6) {
                     if let language = candidate.repo.language, !language.isEmpty { Text(language) }
                     if let index { Text("\(index.readyChunks)/\(index.totalChunks)") }

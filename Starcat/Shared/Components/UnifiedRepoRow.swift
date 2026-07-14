@@ -580,7 +580,8 @@ struct OpenSSFScoreBadge: View {
 ///
 /// **视觉规格**：
 /// - `.unread`：蓝色实心圆点（7pt），与邮件 / RSS "未读"视觉系统一致；不带文字保持紧凑
-/// - `.using`：`bookmark.fill` 图标 + accent 色 capsule + "在用"短文本
+/// - `.using`：`checkmark.seal.fill` 图标 + accent 色 capsule + "在用"短文本
+///   （与详情页 `RepoNotesSection` 状态 pill 同源，避免主窗口 / 详情视觉分叉）
 /// - `.read`：EmptyView（不应被调用方传入，但守卫住做兜底）
 fileprivate struct RepoStatusChip: View {
 
@@ -604,7 +605,7 @@ fileprivate struct RepoStatusChip: View {
             // capsule chip（与 sceneBadge / SemanticScoreBadge 同视觉档），accent 色
             // 高亮 —— 这是用户主动标的"重点 repo"，应该比 unread 更突出。
             HStack(spacing: 3) {
-                Image(systemName: "bookmark.fill")
+                Image(systemName: "checkmark.seal.fill")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 Text("repo.status.using")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))

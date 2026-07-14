@@ -24,6 +24,10 @@ struct RAGWorkspaceInspector: View {
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isRetrievalScoreExplanationPresented = false
     @State private var isCitationChunkPopoverPresented = false
+    /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
+    @State private var isKnowledgeMetadataExpanded = false
+    /// Star Top10 是次级排行，默认折叠在元数据展开内容内部。
+    @State private var isStarLeadersExpanded = false
 
     private static let inspectorContentInset: CGFloat = 14
     private static let indexRowTrailingAffordanceWidth: CGFloat = 16
@@ -276,71 +280,78 @@ struct RAGWorkspaceInspector: View {
     @ViewBuilder
     var knowledgeBaseMetadataPanel: some View {
         if let snapshot = viewModel.knowledgeBaseMetadataSnapshot {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label("rag.workspace.inspector.metadata.title", systemImage: "cylinder.split.1x2")
-                        .font(ragFont(.callout, weight: .semibold))
-                    Spacer(minLength: 8)
-                    Text(snapshot.generatedAt, format: .dateTime.hour().minute().second())
-                        .font(ragFont(.caption2))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                // 整行可点：chevron 只表达状态，不单独做触发区（见 UI-折叠展开-规范）。
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        isKnowledgeMetadataExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: isKnowledgeMetadataExpanded ? "chevron.down" : "chevron.right")
+                            .font(ragFont(.caption2, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                        Image(systemName: "cylinder.split.1x2")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("rag.workspace.inspector.metadata.title")
+                            .font(ragFont(.callout, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Text(snapshot.generatedAt, format: .dateTime.hour().minute().second())
+                            .font(ragFont(.caption2))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(10)
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
 
-                Text("rag.workspace.inspector.metadata.subtitle")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
+                if isKnowledgeMetadataExpanded {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("rag.workspace.inspector.metadata.subtitle")
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
-                    metadataStat("rag.workspace.inspector.metadata.projects", value: snapshot.projectCount)
-                    metadataStat("rag.workspace.inspector.metadata.starred", value: snapshot.starredProjectCount)
-                    metadataStat("rag.workspace.inspector.metadata.retained", value: snapshot.retainedAfterUnstarCount)
-                }
+                        // 三列等分 + 居中：窄侧栏下短标签才不会左侧挤成一团、右侧空白。
+                        HStack(spacing: 8) {
+                            metadataStat("rag.workspace.inspector.metadata.projects", value: snapshot.projectCount)
+                            metadataStat("rag.workspace.inspector.metadata.starred", value: snapshot.starredProjectCount)
+                            metadataStat("rag.workspace.inspector.metadata.retained", value: snapshot.retainedAfterUnstarCount)
+                        }
 
-                Divider()
+                        Divider()
 
-                metadataRow("rag.workspace.inspector.metadata.status", value: metadataDistribution(snapshot.statusCounts))
-                metadataRow(
-                    "rag.workspace.inspector.metadata.tags",
-                    value: "\(snapshot.taggedProjectCount) / \(snapshot.untaggedProjectCount) · \(snapshot.tagCount)"
-                )
-                metadataRow(
-                    "rag.workspace.inspector.metadata.languages",
-                    value: metadataDistribution(snapshot.topLanguages)
-                )
-                metadataRow(
-                    "rag.workspace.inspector.metadata.activity",
-                    value: "\(snapshot.addedInLast30DaysCount) / \(snapshot.pushedInLast30DaysCount)"
-                )
-                metadataRow(
-                    "rag.workspace.inspector.metadata.index",
-                    value: "\(snapshot.indexHealth.readyChunks) / \(snapshot.indexHealth.pendingChunks) / \(snapshot.indexHealth.failedChunks) / \(snapshot.indexHealth.staleChunks)"
-                )
+                        metadataRow("rag.workspace.inspector.metadata.status", value: metadataDistribution(snapshot.statusCounts))
+                        metadataRow(
+                            "rag.workspace.inspector.metadata.tags",
+                            value: "\(snapshot.taggedProjectCount) / \(snapshot.untaggedProjectCount) · \(snapshot.tagCount)"
+                        )
+                        metadataRow(
+                            "rag.workspace.inspector.metadata.languages",
+                            value: metadataDistribution(snapshot.topLanguages)
+                        )
+                        metadataRow(
+                            "rag.workspace.inspector.metadata.activity",
+                            value: "\(snapshot.addedInLast30DaysCount) / \(snapshot.pushedInLast30DaysCount)"
+                        )
+                        metadataRow(
+                            "rag.workspace.inspector.metadata.index",
+                            value: "\(snapshot.indexHealth.readyChunks) / \(snapshot.indexHealth.pendingChunks) / \(snapshot.indexHealth.failedChunks) / \(snapshot.indexHealth.staleChunks)"
+                        )
 
-                if !snapshot.topStarredRepositories.isEmpty {
-                    Divider()
-                    Text("rag.workspace.inspector.metadata.starLeaders")
-                        .font(ragFont(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    ForEach(Array(snapshot.topStarredRepositories.enumerated()), id: \.offset) { index, repository in
-                        HStack(spacing: 6) {
-                            Text("\(index + 1)")
-                                .font(ragFont(.caption2, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16, alignment: .trailing)
-                            Text(repository.fullName)
-                                .font(ragFont(.caption, weight: .medium, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 6)
-                            Text(repository.stars, format: .number)
-                                .font(ragFont(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                        if !snapshot.topStarredRepositories.isEmpty {
+                            Divider()
+                            starLeadersSection(snapshot.topStarredRepositories)
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
                 }
             }
-            .padding(10)
             .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
         } else {
             HStack(spacing: 8) {
@@ -353,16 +364,63 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
+    /// Star Top10：嵌在元数据展开区内，自身默认折叠。
+    @ViewBuilder
+    private func starLeadersSection(_ repositories: [KnowledgeBaseMetadataSnapshot.TopRepository]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    isStarLeadersExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isStarLeadersExpanded ? "chevron.down" : "chevron.right")
+                        .font(ragFont(.caption2, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                    Text("rag.workspace.inspector.metadata.starLeaders")
+                        .font(ragFont(.caption, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isStarLeadersExpanded {
+                ForEach(Array(repositories.enumerated()), id: \.offset) { index, repository in
+                    HStack(spacing: 6) {
+                        Text("\(index + 1)")
+                            .font(ragFont(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, alignment: .trailing)
+                        Text(repository.fullName)
+                            .font(ragFont(.caption, weight: .medium, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 6)
+                        Text(repository.stars, format: .number)
+                            .font(ragFont(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
     func metadataStat(_ titleKey: LocalizedStringKey, value: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .center, spacing: 2) {
             Text(value, format: .number)
                 .font(ragFont(.headline, weight: .semibold, design: .rounded))
             Text(titleKey)
                 .font(ragFont(.caption2))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .multilineTextAlignment(.center)
     }
 
     func metadataRow(_ titleKey: LocalizedStringKey, value: String) -> some View {
@@ -504,7 +562,7 @@ struct RAGWorkspaceInspector: View {
 
     var planInspector: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if let plan = viewModel.queryPlan {
+            if let plan = viewModel.displayedQueryPlan {
                 if plan.mode == .needsClarification {
                     // 澄清态没有可执行的检索词；展示 Planner 已校验过的追问，避免把空查询误称为优化结果。
                     planSection("rag.workspace.inspector.plan.questionUnderstanding") {
@@ -521,7 +579,13 @@ struct RAGWorkspaceInspector: View {
                     planSummary(plan)
 
                     planSection("rag.workspace.inspector.plan.questionUnderstanding") {
-                        inspectorValue("rag.workspace.inspector.semanticQuery", value: plan.userVisiblePlan.semantic)
+                        if let question = viewModel.displayedPlanQuestion, !question.isEmpty {
+                            inspectorValue("rag.workspace.inspector.plan.originalQuestion", value: question)
+                        }
+                        let semanticQuery = resolvedSemanticQuery(plan)
+                        if !semanticQuery.isEmpty {
+                            inspectorValue("rag.workspace.inspector.semanticQuery", value: semanticQuery)
+                        }
                         if !plan.userVisiblePlan.planningNotes.isEmpty {
                             Text("rag.workspace.inspector.planNotes")
                                 .font(ragFont(.caption))
@@ -535,12 +599,21 @@ struct RAGWorkspaceInspector: View {
                         }
                     }
 
-                    planSection("rag.workspace.inspector.plan.searchScope") {
-                        inspectorValue("rag.workspace.inspector.planScope", value: plan.userVisiblePlan.scope)
-                        if !plan.userVisiblePlan.chips.isEmpty {
+                    planSection("rag.workspace.inspector.plan.executionStrategy") {
+                        planMetricRow(
+                            "rag.workspace.inspector.planMode",
+                            value: localizedPlanMode(plan.mode)
+                        )
+                        let filters = localizedPlanFilters(plan.filters)
+                        if filters.isEmpty {
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.filters",
+                                value: String.l10n("rag.workspace.inspector.plan.filters.none")
+                            )
+                        } else {
                             RAGFlowLayout(spacing: 7) {
-                                ForEach(plan.userVisiblePlan.chips, id: \.self) { chip in
-                                    planChip(chip)
+                                ForEach(filters, id: \.self) { filter in
+                                    planChip(filter)
                                 }
                             }
                         }
@@ -559,40 +632,172 @@ struct RAGWorkspaceInspector: View {
                                 )
                             )
                         }
+                        if let analytics = plan.analytics {
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.analytics",
+                                value: localizedAnalytics(analytics)
+                            )
+                        }
                     }
 
-                    if !plan.remoteContextRequests.isEmpty {
-                        planSection("rag.workspace.inspector.plan.remoteSupplement") {
-                            ForEach(plan.remoteContextRequests, id: \.resource) { request in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Label(remoteResourceName(request.resource), systemImage: "network")
-                                        .font(ragFont(.callout, weight: .semibold))
-                                    Text(request.reason)
+                    planSection("rag.workspace.inspector.plan.networkPlan") {
+                        planMetricRow(
+                            "rag.workspace.inspector.plan.liveEvidence",
+                            value: plan.requiresLiveEvidence
+                                ? String.l10n("rag.workspace.inspector.plan.liveEvidence.required")
+                                : String.l10n("rag.workspace.inspector.plan.liveEvidence.notRequired")
+                        )
+                        if plan.remoteContextRequests.isEmpty, plan.webSearchRequests.isEmpty {
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.networkStatus",
+                                value: String.l10n("rag.workspace.inspector.plan.networkStatus.none")
+                            )
+                        }
+                        ForEach(Array(plan.remoteContextRequests.enumerated()), id: \.offset) { _, request in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(remoteResourceName(request.resource), systemImage: "network")
+                                    .font(ragFont(.callout, weight: .semibold))
+                                if !request.query.isEmpty {
+                                    Text(request.query)
                                         .font(ragFont(.caption))
-                                        .foregroundStyle(.secondary)
-                                    Text(String(
-                                        format: String.l10n("rag.workspace.inspector.planRemoteBudgetFormat"),
-                                        request.maxRepos,
-                                        request.perRepoLimit
-                                    ))
-                                    .font(ragFont(.caption2))
-                                    .foregroundStyle(.secondary)
+                                        .foregroundStyle(.primary)
+                                        .textSelection(.enabled)
                                 }
+                                Text(request.reason)
+                                    .font(ragFont(.caption))
+                                    .foregroundStyle(.secondary)
+                                Text(String(
+                                    format: String.l10n("rag.workspace.inspector.planRemoteBudgetFormat"),
+                                    request.maxRepos,
+                                    request.perRepoLimit
+                                ))
+                                .font(ragFont(.caption2))
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        ForEach(plan.webSearchRequests) { request in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label("rag.workspace.inspector.plan.webSearch", systemImage: "globe")
+                                    .font(ragFont(.callout, weight: .semibold))
+                                Text(request.query)
+                                    .font(ragFont(.caption))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+                                Text(request.reason)
+                                    .font(ragFont(.caption))
+                                    .foregroundStyle(.secondary)
+                                Text(String(
+                                    format: String.l10n("rag.workspace.inspector.plan.webSearchBudgetFormat"),
+                                    request.maxResults
+                                ))
+                                .font(ragFont(.caption2))
+                                .foregroundStyle(.secondary)
                             }
                         }
                     }
 
-                    if let retrieval = viewModel.retrieval {
-                        planSection("rag.workspace.inspector.plan.executionSummary") {
-                            Text(String(
-                                format: String.l10n("rag.workspace.inspector.planExecutionSummaryFormat"),
-                                retrieval.candidates.count,
-                                retrieval.childHits.count,
-                                retrieval.bundles.count
-                            ))
-                            .font(ragFont(.caption))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    if let retrieval = viewModel.displayedRetrievalSnapshot {
+                        planSection("rag.workspace.inspector.plan.retrievalFunnel") {
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.candidates",
+                                value: localizedInteger(retrieval.candidateRepoCount)
+                            )
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.keyword",
+                                value: localizedFunnelCount(
+                                    raw: retrieval.keywordRawCount,
+                                    accepted: retrieval.keywordAcceptedCount
+                                )
+                            )
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.vector",
+                                value: localizedFunnelCount(
+                                    raw: retrieval.vectorRawCount,
+                                    accepted: retrieval.vectorAcceptedCount
+                                )
+                            )
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.fusion",
+                                value: String(
+                                    format: String.l10n("rag.workspace.inspector.plan.retrieval.fusionFormat"),
+                                    retrieval.fusionUniqueCount,
+                                    retrieval.rankingFilteredCount
+                                )
+                            )
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.rerank",
+                                value: localizedRerank(retrieval)
+                            )
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.result",
+                                value: String(
+                                    format: String.l10n("rag.workspace.inspector.plan.retrieval.resultFormat"),
+                                    retrieval.finalChildHitCount,
+                                    retrieval.bundleCount
+                                )
+                            )
+                            if let outcome = retrieval.outcome {
+                                planMetricRow(
+                                    "rag.workspace.inspector.plan.retrieval.outcome",
+                                    value: localizedRetrievalOutcome(outcome)
+                                )
+                            }
+                            if let settings = retrieval.settings {
+                                planMetricRow(
+                                    "rag.workspace.inspector.plan.retrieval.sources",
+                                    value: localizedSources(settings.enabledSources)
+                                )
+                                planMetricRow(
+                                    "rag.workspace.inspector.plan.retrieval.limits",
+                                    value: String(
+                                        format: String.l10n("rag.workspace.inspector.plan.retrieval.limitsFormat"),
+                                        settings.finalEvidenceChunkLimit,
+                                        settings.perRepositoryEvidenceLimit,
+                                        settings.evidenceTokenBudget.formatted()
+                                    )
+                                )
+                            }
+                        }
+                    } else if plan.mode == .guidedDiscovery {
+                        planSection("rag.workspace.inspector.plan.retrievalFunnel") {
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.retrieval.outcome",
+                                value: String.l10n("rag.workspace.inspector.plan.retrieval.guided")
+                            )
+                        }
+                    }
+
+                    if let usage = viewModel.displayedContextUsage {
+                        planSection("rag.workspace.inspector.plan.contextBudget") {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(String(
+                                    format: String.l10n("rag.workspace.context.percentFull"),
+                                    Int((usage.usageRatio * 100).rounded())
+                                ))
+                                .font(ragFont(.caption, weight: .semibold))
+                                Spacer(minLength: 8)
+                                Text(String(
+                                    format: String.l10n("rag.workspace.context.tokensSummary"),
+                                    contextTokenText(usage.inputTokens),
+                                    contextTokenText(usage.windowTokens)
+                                ))
+                                .font(ragFont(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            }
+                            ProgressView(value: usage.usageRatio)
+                                .progressViewStyle(.linear)
+                                .controlSize(.mini)
+                                .tint(.accentColor)
+                            ForEach(activeContextSegments(usage)) { kind in
+                                planMetricRow(
+                                    LocalizedStringKey(kind.displayKey),
+                                    value: contextTokenText(usage.tokenCount(for: kind))
+                                )
+                            }
+                            planMetricRow(
+                                "rag.workspace.context.reservedOutput",
+                                value: contextTokenText(usage.reservedOutputTokens)
+                            )
                         }
                     }
                 }
@@ -618,10 +823,13 @@ struct RAGWorkspaceInspector: View {
     }
 
     func planSummary(_ plan: RAGQueryPlan) -> some View {
-        Text("\(plan.userVisiblePlan.scope) · \(localizedPlanMode(plan.mode)) · \(localizedPlanConfidence(plan.confidence))")
-            .font(ragFont(.caption, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        RAGFlowLayout(spacing: 7) {
+            planChip(String.l10n("rag.workspace.inspector.plan.scope.knowledgeBase"))
+            planChip(localizedPlanMode(plan.mode))
+            if plan.requiresLiveEvidence {
+                planChip(String.l10n("rag.workspace.inspector.plan.liveEvidence.required"))
+            }
+        }
     }
 
     func planChip(_ value: String) -> some View {
@@ -630,6 +838,197 @@ struct RAGWorkspaceInspector: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    func planMetricRow(_ label: LocalizedStringKey, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+    }
+
+    func resolvedSemanticQuery(_ plan: RAGQueryPlan) -> String {
+        let validated = plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !validated.isEmpty { return validated }
+        return plan.userVisiblePlan.semantic.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func localizedPlanFilters(_ filters: RAGRepoFilter) -> [String] {
+        var values: [String] = []
+        if let status = filters.status {
+            values.append(localizedFilter("rag.workspace.inspector.plan.filter.status", value: localizedRepoStatus(status)))
+        }
+        if !filters.languages.isEmpty {
+            values.append(localizedFilter("rag.workspace.inspector.plan.filter.languages", value: filters.languages.joined(separator: ", ")))
+        }
+        if !filters.tags.isEmpty {
+            values.append(localizedFilter("rag.workspace.inspector.plan.filter.tags", value: filters.tags.joined(separator: ", ")))
+        }
+        appendNumericFilter(&values, key: "rag.workspace.inspector.plan.filter.stars", minimum: filters.minStars, maximum: filters.maxStars)
+        appendNumericFilter(&values, key: "rag.workspace.inspector.plan.filter.forks", minimum: filters.minForks, maximum: filters.maxForks)
+        if !filters.licenses.isEmpty {
+            values.append(localizedFilter("rag.workspace.inspector.plan.filter.licenses", value: filters.licenses.joined(separator: ", ")))
+        }
+        if let includeArchived = filters.includeArchived {
+            values.append(localizedFilter(
+                "rag.workspace.inspector.plan.filter.archived",
+                value: localizedBoolean(includeArchived)
+            ))
+        }
+        if let includeForks = filters.includeForks {
+            values.append(localizedFilter(
+                "rag.workspace.inspector.plan.filter.forkRepos",
+                value: localizedBoolean(includeForks)
+            ))
+        }
+        appendDateFilter(&values, key: "rag.workspace.inspector.plan.filter.starredAt", after: filters.starredAfter, before: filters.starredBefore)
+        appendDateFilter(&values, key: "rag.workspace.inspector.plan.filter.libraryUpdatedAt", after: filters.libraryUpdatedAfter, before: filters.libraryUpdatedBefore)
+        appendDateFilter(&values, key: "rag.workspace.inspector.plan.filter.repoCreatedAt", after: filters.repoCreatedAfter, before: filters.repoCreatedBefore)
+        appendDateFilter(&values, key: "rag.workspace.inspector.plan.filter.pushedAt", after: filters.pushedAfter, before: filters.pushedBefore)
+        return values
+    }
+
+    func localizedFilter(_ key: String, value: String) -> String {
+        String(format: String.l10n("rag.workspace.inspector.plan.filterFormat"), String.l10n(key), value)
+    }
+
+    func appendNumericFilter(_ values: inout [String], key: String, minimum: Int?, maximum: Int?) {
+        guard minimum != nil || maximum != nil else { return }
+        let range: String
+        switch (minimum, maximum) {
+        case let (minimum?, maximum?): range = "\(localizedInteger(minimum))–\(localizedInteger(maximum))"
+        case let (minimum?, nil): range = "≥ \(localizedInteger(minimum))"
+        case let (nil, maximum?): range = "≤ \(localizedInteger(maximum))"
+        case (nil, nil): return
+        }
+        values.append(localizedFilter(key, value: range))
+    }
+
+    func appendDateFilter(_ values: inout [String], key: String, after: Date?, before: Date?) {
+        guard after != nil || before != nil else { return }
+        let dateStyle = Date.FormatStyle(date: .numeric, time: .omitted).locale(locale)
+        let range: String
+        switch (after, before) {
+        case let (after?, before?): range = "\(after.formatted(dateStyle))–\(before.formatted(dateStyle))"
+        case let (after?, nil): range = "≥ \(after.formatted(dateStyle))"
+        case let (nil, before?): range = "≤ \(before.formatted(dateStyle))"
+        case (nil, nil): return
+        }
+        values.append(localizedFilter(key, value: range))
+    }
+
+    func localizedBoolean(_ value: Bool) -> String {
+        String.l10n(value ? "rag.workspace.inspector.plan.boolean.yes" : "rag.workspace.inspector.plan.boolean.no")
+    }
+
+    func localizedRepoStatus(_ status: RepoStatus) -> String {
+        switch status {
+        case .unread: return String.l10n("repo.status.unread")
+        case .read: return String.l10n("repo.status.read")
+        case .using: return String.l10n("repo.status.using")
+        }
+    }
+
+    func localizedAnalytics(_ analytics: KnowledgeBaseAnalyticsPlan) -> String {
+        String(
+            format: String.l10n("rag.workspace.inspector.plan.analyticsFormat"),
+            localizedAnalyticsDimension(analytics.dimension),
+            localizedAnalyticsMeasure(analytics.measure),
+            localizedAnalyticsDirection(analytics.direction),
+            analytics.limit
+        )
+    }
+
+    func localizedAnalyticsDimension(_ dimension: KnowledgeBaseAnalyticsDimension?) -> String {
+        switch dimension {
+        case .repository: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.repository")
+        case .language: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.language")
+        case .status: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.status")
+        case .tag: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.tag")
+        case nil: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.all")
+        }
+    }
+
+    func localizedAnalyticsMeasure(_ measure: KnowledgeBaseAnalyticsMeasure) -> String {
+        switch measure {
+        case .count: return String.l10n("rag.workspace.inspector.plan.analytics.measure.count")
+        case .maxStars: return String.l10n("rag.workspace.inspector.plan.analytics.measure.maxStars")
+        case .averageStars: return String.l10n("rag.workspace.inspector.plan.analytics.measure.averageStars")
+        case .maxForks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.maxForks")
+        case .averageForks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.averageForks")
+        }
+    }
+
+    func localizedAnalyticsDirection(_ direction: KnowledgeBaseAnalyticsSortDirection) -> String {
+        switch direction {
+        case .ascending: return String.l10n("rag.workspace.inspector.plan.analytics.direction.ascending")
+        case .descending: return String.l10n("rag.workspace.inspector.plan.analytics.direction.descending")
+        }
+    }
+
+    func localizedFunnelCount(raw: Int, accepted: Int) -> String {
+        String(format: String.l10n("rag.workspace.inspector.plan.retrieval.funnelFormat"), raw, accepted)
+    }
+
+    func localizedRerank(_ snapshot: RAGRetrievalSnapshot) -> String {
+        switch snapshot.rerankState {
+        case .completed:
+            return String(
+                format: String.l10n("rag.workspace.inspector.plan.retrieval.rerank.completedFormat"),
+                snapshot.rerankedCount,
+                snapshot.rerankCandidateCount
+            )
+        case .failedFallback: return String.l10n("rag.workspace.inspector.plan.retrieval.rerank.fallback")
+        case .skipped: return String.l10n("rag.workspace.inspector.plan.retrieval.rerank.skipped")
+        case .disabled, nil: return String.l10n("rag.workspace.inspector.plan.retrieval.rerank.disabled")
+        }
+    }
+
+    func localizedRetrievalOutcome(_ outcome: RAGRetrievalDiagnostics.Outcome) -> String {
+        switch outcome {
+        case .completed: return String.l10n("rag.workspace.inspector.plan.retrieval.outcome.completed")
+        case .noCandidates: return String.l10n("rag.workspace.inspector.plan.retrieval.outcome.noCandidates")
+        case .noReadyChunks: return String.l10n("rag.workspace.inspector.plan.retrieval.outcome.noReadyChunks")
+        case .sourcesDisabled: return String.l10n("rag.workspace.inspector.plan.retrieval.outcome.sourcesDisabled")
+        case .skippedStructured: return String.l10n("rag.workspace.inspector.plan.retrieval.outcome.skippedStructured")
+        case .noEvidence: return String.l10n("rag.workspace.inspector.plan.retrieval.outcome.noEvidence")
+        }
+    }
+
+    func localizedSources(_ sources: Set<RAGChunkSource>) -> String {
+        sources.sorted { $0.rawValue < $1.rawValue }.map { source in
+            switch source {
+            case .readme: return String.l10n("rag.browser.source.readme")
+            case .notes: return String.l10n("rag.browser.source.notes")
+            case .summary: return String.l10n("rag.browser.source.summary")
+            case .metadata: return String.l10n("rag.browser.source.metadata")
+            }
+        }.joined(separator: ", ")
+    }
+
+    func activeContextSegments(_ usage: RAGContextUsage) -> [RAGContextUsageSegmentKind] {
+        RAGContextUsageSegmentKind.allCases.filter {
+            $0 != .reservedOutput && usage.tokenCount(for: $0) > 0
+        }
+    }
+
+    func contextTokenText(_ tokens: Int) -> String {
+        if tokens >= 1_000 {
+            return (Double(tokens) / 1_000)
+                .formatted(.number.precision(.fractionLength(0...1)).locale(locale)) + "K"
+        }
+        return localizedInteger(tokens)
+    }
+
+    func localizedInteger(_ value: Int) -> String {
+        value.formatted(.number.locale(locale))
     }
 
     func localizedPlanMode(_ mode: RAGQueryMode) -> String {

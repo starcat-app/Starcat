@@ -626,7 +626,8 @@ private struct SmartCollectionRepoCard: View {
                 .frame(width: 7, height: 7)
                 .accessibilityLabel(Text("repo.status.unread"))
         case .using:
-            MetaBadge(systemImage: "bookmark.fill", text: String.l10n("repo.status.using"), tint: .accentColor)
+            // 与详情页 RepoNotesSection / 主窗口 RepoStatusChip 同源：checkmark.seal.fill
+            MetaBadge(systemImage: "checkmark.seal.fill", text: String.l10n("repo.status.using"), tint: .accentColor)
         case .read:
             EmptyView()
         }

@@ -12,7 +12,7 @@ import Foundation
 
 /// Context Window 中可向用户解释的分段。`historySummary` 与 `recentMessages` 分开，
 /// 让长期会话在压缩后能清楚看到“摘要”取代了多少原始消息。
-enum RAGContextUsageSegmentKind: String, CaseIterable, Identifiable, Sendable {
+enum RAGContextUsageSegmentKind: String, CaseIterable, Codable, Identifiable, Sendable {
     case system
     case historySummary
     case recentMessages
@@ -74,6 +74,32 @@ struct RAGContextUsage: Equatable, Sendable {
 
     func tokenCount(for kind: RAGContextUsageSegmentKind) -> Int {
         kind == .reservedOutput ? reservedOutputTokens : (tokensBySegment[kind] ?? 0)
+    }
+}
+
+/// 可随会话保存的 Context Window 用量摘要。
+///
+/// 这里只保留 token 计数，不保存 `promptPreview`。后者可能包含问题、历史与证据正文，
+/// 若写进 execution trace 会把调试级敏感内容复制到长期会话历史。
+struct RAGContextUsageSnapshot: Codable, Equatable, Sendable {
+    var windowTokens: Int
+    var reservedOutputTokens: Int
+    var tokensBySegment: [RAGContextUsageSegmentKind: Int]
+
+    init(usage: RAGContextUsage) {
+        windowTokens = usage.windowTokens
+        reservedOutputTokens = usage.reservedOutputTokens
+        tokensBySegment = usage.tokensBySegment
+    }
+
+    /// 恢复成 UI 共用的用量模型；持久化快照从不恢复 Prompt 正文。
+    var usage: RAGContextUsage {
+        RAGContextUsage(
+            windowTokens: windowTokens,
+            reservedOutputTokens: reservedOutputTokens,
+            tokensBySegment: tokensBySegment,
+            promptPreview: ""
+        )
     }
 }
 

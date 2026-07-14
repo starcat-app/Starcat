@@ -1856,12 +1856,68 @@ struct KnowledgeRAGCoreTests {
         let database = try InMemoryDatabaseManager()
         let store = GRDBRAGConversationStore(database: database)
         let conversation = try await store.createConversation()
+        let plan = RAGQueryPlan(
+            mode: .filteredSemantic,
+            semanticQuery: "Swift database architecture",
+            filters: RAGRepoFilter(languages: ["Swift"], minStars: 500),
+            candidateLimit: 24,
+            webSearchRequests: [RAGWebSearchRequest(
+                query: "Swift database architecture 2026",
+                reason: "需要核对最新资料",
+                maxResults: 6
+            )],
+            requiresLiveEvidence: true,
+            userVisiblePlan: RAGUserVisiblePlan(
+                scope: "知识库",
+                semantic: "Swift database architecture",
+                planningNotes: ["先筛选 Swift 仓库，再核对实时资料。"]
+            )
+        )
+        var diagnostics = RAGRetrievalDiagnostics(
+            settings: .balanced,
+            candidateRepoCount: 12,
+            outcome: .completed
+        )
+        diagnostics.keywordRawCount = 18
+        diagnostics.keywordSourceFilteredCount = 2
+        diagnostics.vectorRawCount = 20
+        diagnostics.vectorSimilarityFilteredCount = 5
+        diagnostics.fusion.uniqueCount = 24
+        diagnostics.minimumEvidenceScoreFilteredCount = 4
+        diagnostics.rerank = RAGRerankDiagnostics(
+            state: .completed,
+            candidateCount: 8,
+            rerankedCount: 6
+        )
+        diagnostics.finalChildHitCount = 6
+        diagnostics.bundleCount = 2
+        let retrievalSnapshot = RAGRetrievalSnapshot(result: RAGRetrievalResult(
+            candidates: [],
+            bundles: [],
+            childHits: [],
+            diagnostics: diagnostics
+        ))
+        let contextSnapshot = RAGContextUsageSnapshot(usage: RAGContextUsage(
+            windowTokens: 32_768,
+            reservedOutputTokens: 4_096,
+            tokensBySegment: [.question: 120, .evidence: 2_400, .reservedOutput: 4_096],
+            promptPreview: "不得写入历史的原始 Prompt"
+        ))
         let trace = [
             RAGExecutionStep(
                 kind: .planning,
                 state: .completed,
                 details: ["先识别问题的检索意图。"],
-                summary: "已规划检索"
+                summary: "已规划检索",
+                queryPlan: plan,
+                contextUsageSnapshot: contextSnapshot
+            ),
+            RAGExecutionStep(
+                kind: .retrieval,
+                state: .completed,
+                details: ["已完成本地检索。"],
+                summary: "采用 2 个仓库的 6 个分片",
+                retrievalSnapshot: retrievalSnapshot
             ),
             RAGExecutionStep(
                 kind: .remoteContext,
@@ -1904,6 +1960,33 @@ struct KnowledgeRAGCoreTests {
         let detail = try #require(try await store.loadConversation(id: conversation.id))
         #expect(detail.messages.last?.executionTrace == trace)
         #expect(detail.messages.last?.processingDuration == 12.4)
+        let restoredPlanning = try #require(detail.messages.last?.executionTrace.first)
+        #expect(restoredPlanning.queryPlan == plan)
+        #expect(restoredPlanning.contextUsageSnapshot?.usage.promptPreview == "")
+        #expect(restoredPlanning.contextUsageSnapshot?.usage.inputTokens == 2_520)
+        let restoredRetrieval = try #require(
+            detail.messages.last?.executionTrace.first(where: { $0.kind == .retrieval })?.retrievalSnapshot
+        )
+        #expect(restoredRetrieval.keywordAcceptedCount == 16)
+        #expect(restoredRetrieval.vectorAcceptedCount == 15)
+        #expect(restoredRetrieval.rerankedCount == 6)
+    }
+
+    @Test("旧执行轨迹缺少计划快照字段时仍可解码")
+    func legacyExecutionStepDecodesWithoutPlanSnapshots() throws {
+        let data = try #require("""
+        {
+          "kind": "planning",
+          "state": "completed",
+          "details": ["legacy"],
+          "summary": "done"
+        }
+        """.data(using: .utf8))
+
+        let step = try JSONDecoder().decode(RAGExecutionStep.self, from: data)
+        #expect(step.queryPlan == nil)
+        #expect(step.retrievalSnapshot == nil)
+        #expect(step.contextUsageSnapshot == nil)
     }
 
     @Test("推荐问题随 assistant message 持久化仓库范围")

@@ -231,6 +231,46 @@ final class KnowledgeRAGWorkspaceViewModel {
         messages.flatMap(\.remoteContextAudits)
     }
 
+    /// 当前轮结束后 `executionSteps` 会清空；Inspector 必须回退到最后一条 assistant
+    /// 消息里的脱敏快照，用户切换历史会话时才不会看到空白计划。
+    private var latestHistoricalExecutionTrace: [RAGExecutionStep]? {
+        messages.reversed().first {
+            $0.role == .assistant && $0.executionTrace.contains(where: { $0.queryPlan != nil })
+        }?.executionTrace
+    }
+
+    var displayedQueryPlan: RAGQueryPlan? {
+        if let queryPlan { return queryPlan }
+        // 新问题已经进入消息列表、Planner 尚未返回时不能回放上一轮计划，否则会把旧计划
+        // 错配到新问题上；停止后只留下孤立 user message 也遵循同一边界。
+        guard messages.last?.role != .user else { return nil }
+        return latestHistoricalExecutionTrace?.reversed().first(where: { $0.queryPlan != nil })?.queryPlan
+    }
+
+    var displayedRetrievalSnapshot: RAGRetrievalSnapshot? {
+        if queryPlan != nil || messages.last?.role == .user {
+            return retrieval.map(RAGRetrievalSnapshot.init(result:))
+                ?? executionSteps.reversed().first(where: { $0.retrievalSnapshot != nil })?.retrievalSnapshot
+        }
+        return latestHistoricalExecutionTrace?.reversed()
+            .first(where: { $0.retrievalSnapshot != nil })?.retrievalSnapshot
+    }
+
+    var displayedContextUsage: RAGContextUsage? {
+        if queryPlan != nil || messages.last?.role == .user {
+            return lastContextUsage
+                ?? executionSteps.reversed()
+                    .first(where: { $0.contextUsageSnapshot != nil })?.contextUsageSnapshot?.usage
+        }
+        return latestHistoricalExecutionTrace?.reversed()
+            .first(where: { $0.contextUsageSnapshot != nil })?.contextUsageSnapshot?.usage
+    }
+
+    /// 计划快照与最近一轮问答绑定；原始问题从用户消息恢复，无需在 execution trace 再复制。
+    var displayedPlanQuestion: String? {
+        messages.last(where: { $0.role == .user })?.content
+    }
+
     var selectedModelDisplayName: String {
         availableModels.first(where: { $0.id == selectedModelID })?.name
             ?? dependencies.settings.aiChatTask.resolvedModelName
@@ -1372,6 +1412,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         streamingPresentation = nil
         queryPlan = nil
         retrieval = nil
+        lastContextUsage = nil
         executionSteps = []
         remoteBlocks = []
         pendingRemoteWorkItems = []
@@ -1495,7 +1536,11 @@ final class KnowledgeRAGWorkspaceViewModel {
                             firstQuestion: question
                         )
                     }
-                case .retrieval(let result): retrieval = result
+                case .retrieval(let result):
+                    retrieval = result
+                    updateExecutionStep(kind: .retrieval) { step in
+                        step.retrievalSnapshot = RAGRetrievalSnapshot(result: result)
+                    }
                 case .remoteContextConfirmation(let workItems):
                     pendingRemoteWorkItems = workItems
                     approvedRemoteWorkItemIDs = Set(workItems.map(\.id))
@@ -1504,7 +1549,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                     terminalReply = response.answer
                     suggestedActions = response.suggestedActions
                 case .metadataSnapshot(let snapshot): knowledgeBaseMetadataSnapshot = snapshot
-                case .contextUsage(let usage): lastContextUsage = usage
+                case .contextUsage(let usage):
+                    lastContextUsage = usage
+                    // 规划步骤贯穿整轮且一定会持久化；把数字快照挂在这里，避免生成步骤尚未
+                    // started 时事件无处承载，同时不保存 usage.promptPreview。
+                    updateExecutionStep(kind: .planning) { step in
+                        step.contextUsageSnapshot = RAGContextUsageSnapshot(usage: usage)
+                    }
                 case .debug(let event):
                     appendDebugEvent(event, to: debugTraceID)
                 case .delta(let text):
@@ -2096,6 +2147,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     format: String.l10n("rag.workspace.execution.planning.summaryFormat"),
                     plan.userVisiblePlan.semantic
                 )
+                step.queryPlan = plan
                 completeExecutionStep(&step)
             }
 
@@ -2149,6 +2201,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     result.bundles.count,
                     result.childHits.count
                 )
+                step.retrievalSnapshot = RAGRetrievalSnapshot(result: result)
                 completeExecutionStep(&step)
             }
 
@@ -2391,6 +2444,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         editingUserDraft = ""
         queryPlan = nil
         retrieval = nil
+        lastContextUsage = nil
         remoteBlocks = []
         pendingRemoteWorkItems = []
         approvedRemoteWorkItemIDs = []

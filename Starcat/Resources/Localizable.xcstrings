@@ -20366,13 +20366,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "In library"
+            "value": "Projects"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "知识库项目"
+            "value": "项目数"
           }
         }
       }
@@ -20382,13 +20382,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Retained"
+            "value": "Kept"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已取消星标仍保留"
+            "value": "保留"
           }
         }
       }
@@ -20398,13 +20398,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Star leaders"
+            "value": "Star Top10"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Star Top 10"
+            "value": "Star Top10"
           }
         }
       }
@@ -20414,13 +20414,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Still starred"
+            "value": "Starred"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仍在星标"
+            "value": "星标"
           }
         }
       }
@@ -20478,13 +20478,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Knowledge-base metadata"
+            "value": "Metadata"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "知识库元数据"
+            "value": "元数据"
           }
         }
       }
@@ -20729,6 +20729,1094 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.analytics": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Structured analytics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结构化分析"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.dimension.all": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whole knowledge base"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全知识库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.dimension.language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By language"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按语言"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.dimension.repository": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By repository"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.dimension.status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按状态"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.dimension.tag": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By tag"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按标签"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.direction.ascending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ascending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升序"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.direction.descending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "降序"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.averageForks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Average forks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平均 Fork 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.averageStars": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Average stars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平均 Star 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.count": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Count"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数量"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.maxForks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum forks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最高 Fork 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.maxStars": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum stars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最高 Star 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analyticsFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ · %3$@ · up to %4$lld rows"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ · %3$@ · 最多 %4$lld 行"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.boolean.no": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "否"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.boolean.yes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "是"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.contextBudget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文预算"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.executionStrategy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Execution strategy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行策略"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.archived": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归档仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.forkRepos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fork repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fork 仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.forks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fork 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.languages": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Languages"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.libraryUpdatedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added to knowledge base"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入知识库时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.licenses": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Licenses"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "许可证"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.pushedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository updated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库更新时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.repoCreatedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository created"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库创建时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.starredAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starred"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.stars": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Star 数"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filter.tags": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filterFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@：%2$@"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filters": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filters"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "筛选条件"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.filters.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No additional filters"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无额外筛选"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.liveEvidence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时证据"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.liveEvidence.notRequired": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not required"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非必需"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.liveEvidence.required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必须获取"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.networkPlan": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network plan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联网计划"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.networkStatus": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network access"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联网访问"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.networkStatus.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not planned"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未计划联网"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.originalQuestion": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original question"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始问题"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.candidates": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Candidate repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候选仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.funnelFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld recalled → %2$lld retained"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "召回 %1$lld → 保留 %2$lld"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.fusion": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hybrid fusion"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混合融合"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.fusionFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld unique · %2$lld filtered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 个唯一命中 · 过滤 %2$lld 个"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.guided": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local guidance; retrieval not needed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地引导，无需检索"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.keyword": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword recall"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词召回"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.limits": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evidence limits"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证据上限"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.limitsFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld chunks · %2$lld per repository · %3$@ tokens"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 个分片 · 每仓库 %2$lld 个 · %3$@ tokens"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outcome"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果状态"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome.completed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evidence ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证据已就绪"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome.noCandidates": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matching repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome.noEvidence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No relevant evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有相关证据"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome.noReadyChunks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No ready chunks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用分片"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome.skippedStructured": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Structured query; chunk retrieval skipped"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结构化查询，跳过分片检索"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.outcome.sourcesDisabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All sources disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有来源均已关闭"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.rerank": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rerank"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重排"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.rerank.completedFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reranked %1$lld of %2$lld candidates"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重排 %1$lld / %2$lld 个候选"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.rerank.disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未启用"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.rerank.fallback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed; kept fusion order"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败，已保留融合排序"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.rerank.skipped": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skipped"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.result": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Final evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最终证据"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.resultFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld chunks from %2$lld repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 个分片 · 来自 %2$lld 个仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.sources": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enabled sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用来源"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.vector": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semantic recall"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语义召回"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrievalFunnel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retrieval funnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索漏斗"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.scope.knowledgeBase": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Knowledge Base"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.webSearch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互联网搜索"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.webSearchBudgetFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to %lld results"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 条结果"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.planCandidateLimit": {
       "localizations": {
         "en": {
@@ -20916,7 +22004,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从早到晚"
+            "value": "升序"
           }
         }
       }
@@ -20932,7 +22020,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从高到低"
+            "value": "降序"
           }
         }
       }

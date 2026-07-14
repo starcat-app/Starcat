@@ -380,6 +380,12 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
     var completedAt: Date?
     /// 仅联网步骤使用。保持 optional，才能无损读取此前没有联网审计字段的历史轨迹。
     var remoteAuditItems: [RAGRemoteExecutionAuditItem]?
+    /// 最终通过本地校验与联网门禁后的计划；optional 兼容旧会话。
+    var queryPlan: RAGQueryPlan?
+    /// 脱敏后的检索漏斗，不包含错误原文、Rerank 输入或分片正文。
+    var retrievalSnapshot: RAGRetrievalSnapshot?
+    /// Context Window 仅保存 token 数字，绝不把 Prompt 预览写入历史。
+    var contextUsageSnapshot: RAGContextUsageSnapshot?
 
     var id: RAGExecutionStepKind { kind }
 
@@ -390,7 +396,10 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         summary: String? = nil,
         startedAt: Date? = .now,
         completedAt: Date? = nil,
-        remoteAuditItems: [RAGRemoteExecutionAuditItem]? = nil
+        remoteAuditItems: [RAGRemoteExecutionAuditItem]? = nil,
+        queryPlan: RAGQueryPlan? = nil,
+        retrievalSnapshot: RAGRetrievalSnapshot? = nil,
+        contextUsageSnapshot: RAGContextUsageSnapshot? = nil
     ) {
         self.kind = kind
         self.state = state
@@ -399,6 +408,9 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         self.startedAt = startedAt
         self.completedAt = completedAt
         self.remoteAuditItems = remoteAuditItems
+        self.queryPlan = queryPlan
+        self.retrievalSnapshot = retrievalSnapshot
+        self.contextUsageSnapshot = contextUsageSnapshot
     }
 
     /// 运行中以当前时刻持续计时，完成后固定为真实结束时刻，供用户核验步骤耗时。
@@ -710,6 +722,70 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
         let errors = [keywordErrorDescription, vectorErrorDescription].compactMap { $0 }
         guard !errors.isEmpty else { return "" }
         return String(format: String.l10n("rag.workspace.debug.retrieval.funnel.errorsFormat"), errors.joined(separator: "\n"))
+    }
+}
+
+/// “计划”面板可回放的检索结果摘要。
+///
+/// `RAGRetrievalDiagnostics` 仍是当前轮 Debug 事实，可能包含 provider 错误和 Rerank Trace；
+/// 历史会话只持久化下面这些数量与安全设置，避免把外部错误或候选元数据长期复制一份。
+struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
+    var settings: RAGRetrievalSettings?
+    var candidateRepoCount: Int
+    var keywordRawCount: Int
+    var keywordAcceptedCount: Int
+    var vectorRawCount: Int
+    var vectorAcceptedCount: Int
+    var fusionUniqueCount: Int
+    var rankingFilteredCount: Int
+    var rerankState: RAGRerankDiagnostics.State?
+    var rerankCandidateCount: Int
+    var rerankedCount: Int
+    var finalChildHitCount: Int
+    var bundleCount: Int
+    var outcome: RAGRetrievalDiagnostics.Outcome?
+
+    init(result: RAGRetrievalResult) {
+        guard let diagnostics = result.diagnostics else {
+            settings = nil
+            candidateRepoCount = result.candidates.count
+            keywordRawCount = 0
+            keywordAcceptedCount = 0
+            vectorRawCount = 0
+            vectorAcceptedCount = 0
+            fusionUniqueCount = result.childHits.count
+            rankingFilteredCount = 0
+            rerankState = nil
+            rerankCandidateCount = 0
+            rerankedCount = 0
+            finalChildHitCount = result.childHits.count
+            bundleCount = result.bundles.count
+            outcome = nil
+            return
+        }
+
+        let rerank = diagnostics.rerank
+        settings = diagnostics.settings
+        candidateRepoCount = diagnostics.candidateRepoCount
+        keywordRawCount = diagnostics.keywordRawCount
+        keywordAcceptedCount = max(diagnostics.keywordRawCount - diagnostics.keywordSourceFilteredCount, 0)
+        vectorRawCount = diagnostics.vectorRawCount
+        vectorAcceptedCount = max(
+            diagnostics.vectorRawCount
+                - diagnostics.vectorSourceFilteredCount
+                - diagnostics.vectorSimilarityFilteredCount,
+            0
+        )
+        fusionUniqueCount = diagnostics.fusion.uniqueCount
+        rankingFilteredCount = diagnostics.fusion.perRepositoryLimitFilteredCount
+            + diagnostics.fusion.totalLimitFilteredCount
+            + diagnostics.minimumEvidenceScoreFilteredCount
+        rerankState = rerank?.state
+        rerankCandidateCount = rerank?.candidateCount ?? 0
+        rerankedCount = rerank?.rerankedCount ?? 0
+        finalChildHitCount = diagnostics.finalChildHitCount
+        bundleCount = diagnostics.bundleCount
+        outcome = diagnostics.outcome
     }
 }
 
