@@ -50,7 +50,12 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         generator = try container.decode(AIPromptConfiguration.self, forKey: .generator)
-        planner = try container.decode(AIPromptConfiguration.self, forKey: .planner)
+        let decodedPlanner = try container.decode(AIPromptConfiguration.self, forKey: .planner)
+        // 只迁移 Starcat 自己发布过的旧默认模板；用户哪怕改过一个字符都视为自定义，
+        // 必须原样保留。否则老用户会一直缺少 guided_discovery 与新的联网字段。
+        planner = decodedPlanner == RAGDefaultPrompts.plannerBeforeGuidedDiscovery
+            ? RAGDefaultPrompts.planner
+            : decodedPlanner
         compressor = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .compressor)
             ?? RAGDefaultPrompts.compressor
         title = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .title)
@@ -88,8 +93,63 @@ enum RAGDefaultPrompts {
 
     /// Planner 占位符：
     /// - system：`{outputLanguage}`（userVisiblePlan 文案语言）
-    /// - user：`{question}` `{explicitRepoIDs}` `{explicitRepoMode}` `{attachmentCount}`
+    /// - user：只提供本轮问题、显式仓库身份、附件描述，以及最小的上一轮用户/引用上下文。
     static let planner = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's Query Planner. Output only a JSON query plan. Do not answer the user question.
+
+        Data boundary: query only GitHub repositories in the user's Starcat knowledge base. The local executor enforces this boundary.
+        Supported filter fields: status(using/read/unread), languages, tags, minStars, maxStars, minForks, maxForks, license, includeArchived, includeForks, starredAfter, starredBefore, libraryUpdatedAfter, libraryUpdatedBefore, repoCreatedAfter, repoCreatedBefore, pushedAfter, pushedBefore.
+        Dates must be ISO-8601. Do not invent fields. When the user has no filter intent, filters must be an empty object.
+
+        mode:
+        - semantic_only: no structured filters; semanticQuery is the optimized retrieval question.
+        - filtered_semantic: filter/sort first, then retrieve with semanticQuery.
+        - structured_only: list/sort/count only; no child-chunk retrieval.
+        - guided_discovery: greeting, casual chat, capability question, or request unrelated to the knowledge base. Do not retrieve or request remote data; provide 2-3 actionable fallbackQuestions about repositories.
+        - needs_clarification: date meaning or intent is ambiguous; must provide clarificationQuestion.
+
+        If "since a date" does not specify whether it means starred, library-added, created, or pushed time, use needs_clarification.
+        For ordinary questions, remoteContextRequests must be empty. Request live GitHub data only when clearly needed:
+        github_issues, github_pull_requests, github_releases, github_contributors, github_commit_activity, github_security_advisories.
+        For github_issues and github_pull_requests, put only search keywords in query. Never put repo:, org:, user:, is:, type:, or in: qualifiers in query. Use state=all|open|closed, sort=created|updated, and order=asc|desc.
+
+        fallbackQuestions are optional, short questions the user can click next. Provide 2-3 for guided_discovery and when the query may have no local evidence. Prefer the explicit repositories when present; never invent a repository name.
+
+        Write userVisiblePlan.scope, chips, semantic, and planningNotes in {outputLanguage}.
+
+        Output schema:
+        {
+          "mode":"semantic_only|filtered_semantic|structured_only|guided_discovery|needs_clarification",
+          "semanticQuery":"string",
+          "filters":{},
+          "sort":null or {"field":"stars|forks|pushedAt|repoCreatedAt|libraryUpdatedAt|starredAt","direction":"asc|desc"},
+          "candidateLimit":null or integer,
+          "remoteContextRequests":[{"resource":"github_issues","query":"keywords only","reason":"string","maxRepos":5,"perRepoLimit":10,"state":"all|open|closed","sort":"created|updated","order":"asc|desc"}],
+          "confidence":"high|medium|needs_clarification",
+          "clarificationQuestion":null or string,
+          "fallbackQuestions":["short actionable question"],
+          "userVisiblePlan":{"scope":"Knowledge Base","chips":[],"semantic":"string","planningNotes":["short user-facing planning notes, at most 3"]}
+        }
+        """,
+        userPromptTemplate: """
+        User question: {question}
+
+        Composer context (for understanding only; local executor re-enforces):
+        - explicitRepositories: {explicitRepositories}
+        - explicitRepoMode: {explicitRepoMode}
+        - attachments: {attachmentDescriptors}
+        - pastedGitHubLinks: {pastedGitHubLinks}
+        - previousUserQuestion: {previousUserQuestion}
+        - previousReferencedRepositories: {previousReferencedRepositories}
+
+        Output the query plan JSON only.
+        """
+    )
+
+    /// 2026-07-14 之前发布的 Planner 默认值，仅用于识别“未真正自定义”的持久化配置。
+    /// 不用于新请求，也不能在提示词设置页作为可恢复版本展示。
+    static let plannerBeforeGuidedDiscovery = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's Query Planner. Output only a JSON query plan. Do not answer the user question.
 

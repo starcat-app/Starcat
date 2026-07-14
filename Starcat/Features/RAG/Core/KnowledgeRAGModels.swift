@@ -45,12 +45,24 @@ struct RAGGitHubLinkReference: Equatable, Sendable {
     var relation: RAGGitHubLinkRelation
 }
 
+/// Planner 只需要仓库身份，不需要 README、笔记或检索正文。显式传名字是为了让模型能
+/// 正确理解 `@repo`，同时继续把真正的数据访问边界留在本地执行层。
+struct RAGPlannerRepoReference: Equatable, Sendable {
+    var id: Int64
+    var fullName: String
+}
+
 struct RAGComposerContext: Equatable, Sendable {
     var explicitRepoIDs: [Int64] = []
+    var explicitRepoReferences: [RAGPlannerRepoReference] = []
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var selectedModelID: String?
     var attachments: [RAGComposerAttachment] = []
     var pastedGitHubLinks: [RAGGitHubLinkReference] = []
+    /// 只传上一条用户问题及上一轮真正引用到的仓库名，避免把整段 assistant 回答再次
+    /// 发送给 Planner，又保留“继续比较它们”这类最小指代消解能力。
+    var previousUserQuestion: String?
+    var previousReferencedRepos: [RAGPlannerRepoReference] = []
     /// 用户可以在执行前移除 Planner 建议的远程上下文 chip。
     var disabledRemoteResources: Set<RAGRemoteContextResource> = []
 }
@@ -72,6 +84,7 @@ enum RAGQueryMode: String, Codable, Sendable {
     case semanticOnly = "semantic_only"
     case filteredSemantic = "filtered_semantic"
     case structuredOnly = "structured_only"
+    case guidedDiscovery = "guided_discovery"
     case needsClarification = "needs_clarification"
 }
 
@@ -202,12 +215,62 @@ enum RAGRemoteContextResource: String, CaseIterable, Codable, Sendable {
     case githubSecurityAdvisories = "github_security_advisories"
 }
 
+enum RAGRemoteIssueState: String, Codable, Sendable {
+    case all
+    case open
+    case closed
+}
+
+enum RAGRemoteIssueSort: String, Codable, Sendable {
+    case created
+    case updated
+}
+
 struct RAGRemoteContextRequest: Codable, Equatable, Sendable {
     var resource: RAGRemoteContextResource
     var query: String
     var reason: String
     var maxRepos: Int
     var perRepoLimit: Int
+    var state: RAGRemoteIssueState
+    var sort: RAGRemoteIssueSort
+    var order: RAGSortDirection
+
+    init(
+        resource: RAGRemoteContextResource,
+        query: String,
+        reason: String,
+        maxRepos: Int,
+        perRepoLimit: Int,
+        state: RAGRemoteIssueState = .all,
+        sort: RAGRemoteIssueSort = .updated,
+        order: RAGSortDirection = .descending
+    ) {
+        self.resource = resource
+        self.query = query
+        self.reason = reason
+        self.maxRepos = maxRepos
+        self.perRepoLimit = perRepoLimit
+        self.state = state
+        self.sort = sort
+        self.order = order
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case resource, query, reason, maxRepos, perRepoLimit, state, sort, order
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        resource = try container.decode(RAGRemoteContextResource.self, forKey: .resource)
+        query = try container.decodeIfPresent(String.self, forKey: .query) ?? ""
+        reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        maxRepos = try container.decodeIfPresent(Int.self, forKey: .maxRepos) ?? 1
+        perRepoLimit = try container.decodeIfPresent(Int.self, forKey: .perRepoLimit) ?? 5
+        state = try container.decodeIfPresent(RAGRemoteIssueState.self, forKey: .state) ?? .all
+        sort = try container.decodeIfPresent(RAGRemoteIssueSort.self, forKey: .sort) ?? .updated
+        order = try container.decodeIfPresent(RAGSortDirection.self, forKey: .order) ?? .descending
+    }
 }
 
 enum RAGQueryPlanConfidence: String, Codable, Sendable {
@@ -275,6 +338,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
     /// 轨迹会随会话持久化；可选值兼容此前没有耗时字段的本地 RAG 历史。
     var startedAt: Date?
     var completedAt: Date?
+    /// 仅联网步骤使用。保持 optional，才能无损读取此前没有联网审计字段的历史轨迹。
+    var remoteAuditItems: [RAGRemoteExecutionAuditItem]?
 
     var id: RAGExecutionStepKind { kind }
 
@@ -284,7 +349,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         details: [String] = [],
         summary: String? = nil,
         startedAt: Date? = .now,
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        remoteAuditItems: [RAGRemoteExecutionAuditItem]? = nil
     ) {
         self.kind = kind
         self.state = state
@@ -292,6 +358,7 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         self.summary = summary
         self.startedAt = startedAt
         self.completedAt = completedAt
+        self.remoteAuditItems = remoteAuditItems
     }
 
     /// 运行中以当前时刻持续计时，完成后固定为真实结束时刻，供用户核验步骤耗时。
@@ -320,11 +387,12 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     var remoteContextRequests: [RAGRemoteContextRequest]
     var confidence: RAGQueryPlanConfidence
     var clarificationQuestion: String?
+    var fallbackQuestions: [String]
     var userVisiblePlan: RAGUserVisiblePlan
 
     enum CodingKeys: String, CodingKey {
         case mode, semanticQuery, filters, sort, candidateLimit, remoteContextRequests
-        case confidence, clarificationQuestion, userVisiblePlan
+        case confidence, clarificationQuestion, fallbackQuestions, userVisiblePlan
     }
 
     init(
@@ -336,6 +404,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         remoteContextRequests: [RAGRemoteContextRequest] = [],
         confidence: RAGQueryPlanConfidence = .high,
         clarificationQuestion: String? = nil,
+        fallbackQuestions: [String] = [],
         userVisiblePlan: RAGUserVisiblePlan = .init()
     ) {
         self.mode = mode
@@ -346,6 +415,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         self.remoteContextRequests = remoteContextRequests
         self.confidence = confidence
         self.clarificationQuestion = clarificationQuestion
+        self.fallbackQuestions = fallbackQuestions
         self.userVisiblePlan = userVisiblePlan
     }
 
@@ -359,6 +429,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         remoteContextRequests = try container.decodeIfPresent([RAGRemoteContextRequest].self, forKey: .remoteContextRequests) ?? []
         confidence = try container.decodeIfPresent(RAGQueryPlanConfidence.self, forKey: .confidence) ?? .medium
         clarificationQuestion = try container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
+        fallbackQuestions = try container.decodeIfPresent([String].self, forKey: .fallbackQuestions) ?? []
         userVisiblePlan = try container.decodeIfPresent(RAGUserVisiblePlan.self, forKey: .userVisiblePlan) ?? .init()
     }
 }
@@ -425,6 +496,78 @@ struct RAGRetrievalResult: Equatable, Sendable {
     var childHits: [RAGChildHit]
 }
 
+/// 用户点击后会恢复本轮仓库范围并直接发送。仓库 ID 必须随消息持久化，不能只保存一段
+/// 看似带上下文、实际在历史会话中已经失去作用域的问题文本。
+struct RAGSuggestedQuestionAction: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID
+    var question: String
+    var repoIDs: [Int64]
+    var explicitRepoMode: RAGExplicitRepoMode
+
+    init(
+        id: UUID = UUID(),
+        question: String,
+        repoIDs: [Int64] = [],
+        explicitRepoMode: RAGExplicitRepoMode = .only
+    ) {
+        self.id = id
+        self.question = question
+        self.repoIDs = repoIDs
+        self.explicitRepoMode = explicitRepoMode
+    }
+}
+
+/// 不进入 Generator 的本地终止回答。用于纯闲聊引导和“没有任何可用证据”等路径，保证
+/// UI 仍能展示明确反馈及可点击下一问，同时不让模型在空上下文中补写事实。
+struct RAGTerminalResponse: Equatable, Sendable {
+    var answer: String
+    var suggestedActions: [RAGSuggestedQuestionAction]
+}
+
+/// 联网请求在执行前必须解析到确定的 `repo × resource`。这既是确认 UI 的最小授权单元，
+/// 也是 Provider 防止把一个模糊请求扩散到任意候选仓库的边界。
+struct RAGResolvedRemoteWorkItem: Identifiable, Equatable, Sendable {
+    var id: String
+    var candidate: RAGRepoCandidate
+    var request: RAGRemoteContextRequest
+}
+
+enum RAGRemoteContextOutcome: String, Codable, Sendable {
+    case success
+    case empty
+    case failed
+}
+
+enum RAGRemoteTransport: String, Codable, Sendable {
+    case network
+    case cache
+}
+
+enum RAGRemoteExecutionStatus: String, Codable, Sendable {
+    case pending
+    case running
+    case succeeded
+    case empty
+    case failed
+    case skipped
+}
+
+/// 普通用户可见、可随会话回放的最小联网审计。严禁写入 token、请求头和响应正文。
+struct RAGRemoteExecutionAuditItem: Identifiable, Codable, Equatable, Sendable {
+    var id: String
+    var repoFullName: String
+    var resource: RAGRemoteContextResource
+    var querySummary: String
+    var requestURL: URL?
+    var status: RAGRemoteExecutionStatus
+    var transport: RAGRemoteTransport?
+    var httpStatusCode: Int?
+    var resultCount: Int?
+    var errorMessage: String?
+    var startedAt: Date?
+    var completedAt: Date?
+}
+
 struct RAGRemoteContextBlock: Identifiable, Equatable, Sendable {
     var id: String
     var repoId: Int64
@@ -434,6 +577,13 @@ struct RAGRemoteContextBlock: Identifiable, Equatable, Sendable {
     var content: String
     var fetchedAt: Date
     var errorMessage: String?
+    var outcome: RAGRemoteContextOutcome = .success
+    var transport: RAGRemoteTransport = .network
+    var httpStatusCode: Int? = nil
+    var resultCount: Int = 0
+    var requestURL: URL? = nil
+    var startedAt: Date? = nil
+    var completedAt: Date? = nil
 }
 
 /// 会话历史只保留远程上下文的审计元数据，不保存 issues / PR 正文，避免把临时网络内容变成

@@ -70,17 +70,22 @@ struct RAGExecutionTimeline: View {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 5) {
-                    ForEach(step.details, id: \.self) { detail in
+                    ForEach(step.details.indices, id: \.self) { index in
+                        let detail = step.details[index]
                         if step.kind == .planningReasoning || step.kind == .answerReasoning {
                             Text(detail)
                                 .font(interfaceScale.font(.caption))
                                 .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
                         } else {
                             Label(detail, systemImage: "minus")
                                 .font(interfaceScale.font(.caption))
                                 .foregroundStyle(.secondary)
                                 .labelStyle(.titleAndIcon)
+                        }
+                    }
+                    if step.kind == .remoteContext {
+                        ForEach(step.remoteAuditItems ?? []) { item in
+                            remoteAuditItem(item)
                         }
                     }
                     if let summary = step.summary, !summary.isEmpty {
@@ -115,10 +120,103 @@ struct RAGExecutionTimeline: View {
         if step.state == .running {
             ProgressView()
                 .controlSize(.mini)
+        } else if step.kind == .remoteContext,
+                  (step.remoteAuditItems ?? []).contains(where: { $0.status == .failed || $0.status == .empty }) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(interfaceScale.font(size: 14, weight: .semibold))
+                .foregroundStyle(Color.orange)
         } else {
             Image(systemName: step.state == .skipped ? "arrowshape.turn.up.right" : "checkmark.circle.fill")
                 .font(interfaceScale.font(size: 14, weight: .semibold))
                 .foregroundStyle(step.state == .skipped ? Color.secondary : Color.green)
+        }
+    }
+
+    private func remoteAuditItem(_ item: RAGRemoteExecutionAuditItem) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                remoteAuditStatusIcon(item.status)
+                Text("\(item.repoFullName) · \(remoteResourceName(item.resource))")
+                    .font(interfaceScale.font(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Text(remoteStatusName(item.status))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            if !item.querySummary.isEmpty {
+                Text(String(
+                    format: String.l10n("rag.workspace.execution.remote.queryFormat"),
+                    item.querySummary
+                ))
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            }
+            HStack(spacing: 8) {
+                if let transport = item.transport {
+                    Text(transport == .cache
+                         ? String.l10n("rag.workspace.execution.remote.cache")
+                         : String.l10n("rag.workspace.execution.remote.network"))
+                }
+                if let status = item.httpStatusCode { Text("HTTP \(status)") }
+                if let count = item.resultCount {
+                    Text(String(
+                        format: String.l10n("rag.workspace.execution.remote.resultCountFormat"),
+                        count
+                    ))
+                }
+                if let startedAt = item.startedAt, let completedAt = item.completedAt {
+                    Text(String(
+                        format: String.l10n("rag.workspace.execution.duration.format"),
+                        locale: locale,
+                        max(0, completedAt.timeIntervalSince(startedAt))
+                    ))
+                }
+            }
+            .font(interfaceScale.font(.captionSmall, design: .monospaced))
+            .foregroundStyle(.secondary)
+            if let error = item.errorMessage, !error.isEmpty {
+                Text(error)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            if let url = item.requestURL {
+                Link(String.l10n("rag.workspace.execution.remote.endpoint"), destination: url)
+                    .font(interfaceScale.font(.captionSmall))
+            }
+        }
+        .padding(7)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    @ViewBuilder
+    private func remoteAuditStatusIcon(_ status: RAGRemoteExecutionStatus) -> some View {
+        switch status {
+        case .pending, .running:
+            ProgressView().controlSize(.mini)
+        case .succeeded:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+        case .empty, .failed:
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.orange)
+        case .skipped:
+            Image(systemName: "arrowshape.turn.up.right").foregroundStyle(.secondary)
+        }
+    }
+
+    private func remoteStatusName(_ status: RAGRemoteExecutionStatus) -> String {
+        String.l10n("rag.workspace.execution.remote.status.\(status.rawValue)")
+    }
+
+    private func remoteResourceName(_ resource: RAGRemoteContextResource) -> String {
+        switch resource {
+        case .githubIssues: return "GitHub Issues"
+        case .githubPullRequests: return "GitHub Pull Requests"
+        case .githubReleases: return "GitHub Releases"
+        case .githubContributors: return "GitHub Contributors"
+        case .githubCommitActivity: return "GitHub Commit Activity"
+        case .githubSecurityAdvisories: return "GitHub Security Advisories"
         }
     }
 

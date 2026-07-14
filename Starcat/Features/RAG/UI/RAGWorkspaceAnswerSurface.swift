@@ -46,7 +46,7 @@ struct RAGWorkspaceAnswerSurface: View {
             } else {
                 messageTimeline
             }
-            if !viewModel.pendingRemoteRequests.isEmpty {
+            if !viewModel.pendingRemoteWorkItems.isEmpty {
                 Divider()
                 remoteConfirmation
             }
@@ -400,6 +400,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 createdAt: message.createdAt,
                 showsActions: true,
                 executionTrace: message.executionTrace,
+                suggestedActions: message.suggestedActions,
                 processingDuration: message.processingDuration
             )
         }
@@ -435,6 +436,7 @@ struct RAGWorkspaceAnswerSurface: View {
         createdAt: String?,
         showsActions: Bool,
         executionTrace: [RAGExecutionStep] = [],
+        suggestedActions: [RAGSuggestedQuestionAction] = [],
         activityLabel: String? = nil,
         processingDuration: TimeInterval? = nil
     ) -> some View {
@@ -446,10 +448,12 @@ struct RAGWorkspaceAnswerSurface: View {
             executionTrace: executionTrace,
             activityLabel: activityLabel,
             processingDuration: processingDuration,
+            suggestedActions: suggestedActions,
             onSelectCitation: { citation in
                 // 底部芯片：只定位右侧证据，不弹分片（与改前一致）。
                 viewModel.selectCitation(citation)
             },
+            onSuggestedAction: { action in viewModel.sendSuggestedQuestion(action) },
             onExport: { viewModel.exportAnswer(content) }
         )
     }
@@ -482,20 +486,23 @@ struct RAGWorkspaceAnswerSurface: View {
                     .buttonStyle(.borderless)
                 Button("rag.workspace.remote.continue") { viewModel.confirmRemoteContext() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.approvedRemoteResources.isEmpty)
+                    .disabled(viewModel.approvedRemoteWorkItemIDs.isEmpty)
             }
             RAGFlowLayout(spacing: 7) {
-                ForEach(viewModel.pendingRemoteRequests, id: \.resource) { request in
-                    let enabled = viewModel.approvedRemoteResources.contains(request.resource)
+                ForEach(viewModel.pendingRemoteWorkItems) { workItem in
+                    let enabled = viewModel.approvedRemoteWorkItemIDs.contains(workItem.id)
                     Button {
-                        viewModel.toggleRemoteResource(request.resource)
+                        viewModel.toggleRemoteWorkItem(workItem.id)
                     } label: {
-                        Label(remoteResourceName(request.resource), systemImage: enabled ? "checkmark.circle.fill" : "circle")
+                        Label(
+                            "\(workItem.candidate.repo.fullName) · \(remoteResourceName(workItem.request.resource))",
+                            systemImage: enabled ? "checkmark.circle.fill" : "circle"
+                        )
                             .font(ragFont(.caption, weight: .semibold))
                     }
                     .buttonStyle(.bordered)
                     .tint(enabled ? .orange : .gray)
-                    .help(request.reason)
+                    .help(workItem.request.reason)
                 }
             }
         }

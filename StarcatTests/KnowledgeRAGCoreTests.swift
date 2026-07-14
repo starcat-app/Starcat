@@ -92,6 +92,54 @@ struct KnowledgeRAGCoreTests {
         #expect(plan.userVisiblePlan.planningNotes.first?.contains("Swift 并发") == true)
     }
 
+    @Test("Planner: 非知识库问题进入 guided_discovery 并清空数据访问")
+    func plannerGuidedDiscoveryCannotAccessData() throws {
+        let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
+            {
+              "mode":"guided_discovery",
+              "semanticQuery":"天气",
+              "filters":{"languages":["Swift"]},
+              "remoteContextRequests":[{"resource":"github_issues","query":"weather","reason":"不应执行","maxRepos":5,"perRepoLimit":10}],
+              "confidence":"high",
+              "fallbackQuestions":["介绍知识库中的 Swift 项目", "介绍知识库中的 Swift 项目", "比较两个相关项目"],
+              "userVisiblePlan":{"scope":"知识库提问引导","chips":[],"semantic":""}
+            }
+            """, fallbackQuestion: "今天天气如何")
+
+        #expect(plan.mode == .guidedDiscovery)
+        #expect(plan.semanticQuery.isEmpty)
+        #expect(!plan.filters.hasEffectiveConditions)
+        #expect(plan.remoteContextRequests.isEmpty)
+        #expect(plan.fallbackQuestions == ["介绍知识库中的 Swift 项目", "比较两个相关项目"])
+    }
+
+    @Test("Planner: 只接收显式仓库身份、上一条用户问题和上一轮引用仓库")
+    func plannerReceivesMinimalConversationContext() async throws {
+        let spy = SpyRAGAIClient(chatResponse: """
+            {"mode":"semantic_only","semanticQuery":"继续比较","filters":{},"remoteContextRequests":[],"confidence":"high","userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"继续比较"}}
+            """)
+        let planner = KnowledgeRAGQueryPlanner(
+            client: spy,
+            model: "planner-model",
+            parameters: .summaryDefault
+        )
+        _ = try await planner.plan(
+            question: "继续比较它们",
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [1],
+                explicitRepoReferences: [.init(id: 1, fullName: "octo/demo")],
+                previousUserQuestion: "先比较数据库能力",
+                previousReferencedRepos: [.init(id: 2, fullName: "octo/other")]
+            )
+        )
+
+        let prompt = try #require(spy.lastChatRequest?.userPrompt)
+        #expect(prompt.contains("1:octo/demo"))
+        #expect(prompt.contains("先比较数据库能力"))
+        #expect(prompt.contains("2:octo/other"))
+        #expect(!prompt.contains("assistant answer body"))
+    }
+
     @Test("Planner: 网络错误不伪装成 semantic fallback")
     func plannerPropagatesNetworkFailure() async {
         let planner = KnowledgeRAGQueryPlanner(
@@ -476,6 +524,166 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.callCount == 0)
     }
 
+    @Test("纯问候在本地引导，不调用 Planner、检索或 Generator")
+    func pureGreetingUsesLocalGuidance() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient()
+        let service = KnowledgeRAGService(
+            planner: FailingRAGPlanner(),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var terminal: RAGTerminalResponse?
+        var plan: RAGQueryPlan?
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "你好",
+            composerContext: .init(),
+            conversationID: nil
+        )) {
+            if case .terminal(let response) = event { terminal = response }
+            if case .plan(let value) = event { plan = value }
+        }
+
+        #expect(plan?.mode == .guidedDiscovery)
+        #expect(terminal?.suggestedActions.count == 3)
+        #expect(spy.callCount == 0)
+    }
+
+    @Test("知识库无候选但有真实附件时仍进入 Generator")
+    func attachmentOnlyQuestionCanGenerateAnswer() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "附件中的结论")
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "总结附件")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            attachmentProcessor: FixedAttachmentProcessor(contexts: [RAGAttachmentContext(
+                attachmentID: UUID(),
+                filename: "notes.txt",
+                content: "这是本轮附件事实"
+            )]),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var answer: String?
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "总结附件",
+            composerContext: .init(),
+            conversationID: nil
+        )) {
+            if case .completed(let value, _, _, _) = event { answer = value }
+        }
+
+        #expect(answer == "附件中的结论")
+        #expect(spy.callCount == 1)
+        #expect(spy.lastChatRequest?.userPrompt.contains("这是本轮附件事实") == true)
+    }
+
+    @Test("本地无分片但显式仓库的 GitHub 实时证据可独立生成回答")
+    func remoteOnlyEvidenceCanGenerateAnswer() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "最新 Issue 回答 [R1]")
+        let remoteRequest = RAGRemoteContextRequest(
+            resource: .githubIssues,
+            query: "crash",
+            reason: "需要实时 Issue",
+            maxRepos: 1,
+            perRepoLimit: 5,
+            state: .open,
+            sort: .updated,
+            order: .descending
+        )
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "最新 Issue",
+                remoteContextRequests: [remoteRequest]
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            remoteContextProvider: FixedRemoteContextProvider(blocks: [RAGRemoteContextBlock(
+                id: "21:github_issues:0",
+                repoId: 21,
+                resource: .githubIssues,
+                title: "octo/demo-21 · GitHub Issues",
+                sourceURL: URL(string: "https://github.com/octo/demo-21/issues/1"),
+                content: "#1 [open] Crash on launch",
+                fetchedAt: .now,
+                errorMessage: nil,
+                resultCount: 1,
+                requestURL: URL(string: "https://api.github.com/search/issues")
+            )]),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        let consent = RAGRemoteContextConsent()
+        await consent.resolve(["21:github_issues:0"])
+        var answer: String?
+        for try await event in service.ask(
+            request: RAGServiceRequest(
+                rawQuestion: "这个项目最新的 Issues 是什么？",
+                composerContext: RAGComposerContext(explicitRepoIDs: [21]),
+                conversationID: nil
+            ),
+            remoteContextConsent: consent
+        ) {
+            if case .completed(let value, _, _, _) = event { answer = value }
+        }
+
+        #expect(answer == "最新 Issue 回答 [R1]")
+        #expect(spy.callCount == 1)
+        #expect(spy.lastChatRequest?.userPrompt.contains("[R1]") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("Local knowledge-base evidence") == false)
+    }
+
+    @Test("semantic 零命中时不得把候选仓库元数据伪装为证据")
+    func semanticEmptyBundlesDoNotBecomeStructuredEvidence() {
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 9, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let prompt = KnowledgeRAGPromptBuilder().build(
+            question: "不存在的能力",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "不存在的能力"),
+            retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [], childHits: []),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(!prompt.userPrompt.contains("Repo: octo/demo-9"))
+        #expect(prompt.userPrompt.contains("structured_rows_in_prompt=0"))
+    }
+
     @Test("会话标题只发送首个问题并清理模型输出")
     func conversationTitleUsesOnlyFirstQuestion() async throws {
         let database = try InMemoryDatabaseManager()
@@ -684,7 +892,8 @@ struct KnowledgeRAGCoreTests {
                 sourceURL: URL(string: "https://github.com/octo/demo/issues"),
                 content: String(repeating: "remote ", count: 2_000) + remoteTail,
                 fetchedAt: Date(),
-                errorMessage: nil
+                errorMessage: nil,
+                resultCount: 1
             )],
             attachmentContexts: [RAGAttachmentContext(
                 attachmentID: UUID(),
@@ -748,7 +957,8 @@ struct KnowledgeRAGCoreTests {
                 sourceURL: nil,
                 content: String(repeating: "remote ", count: 2_000),
                 fetchedAt: Date(),
-                errorMessage: nil
+                errorMessage: nil,
+                resultCount: 1
             )],
             attachmentContexts: [RAGAttachmentContext(
                 attachmentID: UUID(),
@@ -987,6 +1197,26 @@ struct KnowledgeRAGCoreTests {
                 summary: "已规划检索"
             ),
             RAGExecutionStep(
+                kind: .remoteContext,
+                state: .completed,
+                details: [],
+                summary: "已获取 1 条 GitHub 上下文",
+                remoteAuditItems: [RAGRemoteExecutionAuditItem(
+                    id: "21:github_issues:0",
+                    repoFullName: "octo/demo-21",
+                    resource: .githubIssues,
+                    querySummary: "crash",
+                    requestURL: URL(string: "https://api.github.com/search/issues"),
+                    status: .succeeded,
+                    transport: .network,
+                    httpStatusCode: 200,
+                    resultCount: 1,
+                    errorMessage: nil,
+                    startedAt: Date(timeIntervalSince1970: 100),
+                    completedAt: Date(timeIntervalSince1970: 101)
+                )]
+            ),
+            RAGExecutionStep(
                 kind: .generation,
                 state: .completed,
                 details: ["正在根据 2 组证据组织回答"],
@@ -1007,6 +1237,30 @@ struct KnowledgeRAGCoreTests {
         let detail = try #require(try await store.loadConversation(id: conversation.id))
         #expect(detail.messages.last?.executionTrace == trace)
         #expect(detail.messages.last?.processingDuration == 12.4)
+    }
+
+    @Test("推荐问题随 assistant message 持久化仓库范围")
+    func suggestedActionsPersistWithRepositoryScope() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let conversation = try await store.createConversation()
+        let action = RAGSuggestedQuestionAction(
+            question: "这个项目最近有哪些未关闭 Issues？",
+            repoIDs: [21],
+            explicitRepoMode: .only
+        )
+
+        try await store.appendTurn(
+            conversationID: conversation.id,
+            question: "你好",
+            answer: "你可以继续问：",
+            model: "Starcat",
+            citations: [],
+            suggestedActions: [action]
+        )
+
+        let detail = try #require(try await store.loadConversation(id: conversation.id))
+        #expect(detail.messages.last?.suggestedActions == [action])
     }
 
     @Test("外部后端配置拒绝无效 endpoint")
@@ -1125,6 +1379,18 @@ struct KnowledgeRAGCoreTests {
                   "labels": [{"name":"foreign"}],
                   "comments": 1,
                   "updated_at": "2026-07-10T00:00:00Z"
+                },
+                {
+                  "number": 3,
+                  "title": "Same-repo pull request",
+                  "state": "open",
+                  "html_url": "https://github.com/octo/demo-9/pull/3",
+                  "repository_url": "https://api.github.com/repos/octo/demo-9",
+                  "pull_request": {"url":"https://api.github.com/repos/octo/demo-9/pulls/3"},
+                  "body": "must not enter issue prompt",
+                  "labels": [],
+                  "comments": 0,
+                  "updated_at": "2026-07-10T00:00:00Z"
                 }
               ]
             }
@@ -1136,26 +1402,31 @@ struct KnowledgeRAGCoreTests {
         )
         let request = RAGRemoteContextRequest(
             resource: .githubIssues,
-            query: "crash OR repo:other/repo",
+            query: "crash OR(repo:other/repo)",
             reason: "验证候选边界",
             maxRepos: 1,
             perRepoLimit: 10
         )
 
+        let recorder = RAGRemoteDebugEventRecorder()
         let blocks = await provider.fetch(
-            requests: [request],
-            candidates: [RAGRepoCandidate(
+            workItems: remoteWorkItems(request: request, candidates: [RAGRepoCandidate(
                 repo: fixtureRepo(id: 9, isPrivate: false),
                 status: .using,
                 libraryUpdatedAt: nil,
                 tagNames: []
-            )],
-            onProgress: { _ in }
+            )]),
+            onProgress: { _ in },
+            onDebug: { event in recorder.record(event) }
         )
         let content = try #require(blocks.first?.content)
         #expect(content.contains("Allowed issue"))
         #expect(!content.contains("Foreign issue"))
         #expect(!content.contains("foreign"))
+        #expect(!content.contains("Same-repo pull request"))
+        #expect(recorder.payloads.allSatisfy {
+            !$0.contains("other/repo") && !$0.contains("other%2Frepo")
+        })
     }
 
     @Test("GitHub 远程上下文逐条记录真实请求与缓存命中")
@@ -1182,14 +1453,12 @@ struct KnowledgeRAGCoreTests {
         let recorder = RAGRemoteDebugEventRecorder()
 
         _ = await provider.fetch(
-            requests: [request],
-            candidates: candidates,
+            workItems: remoteWorkItems(request: request, candidates: candidates),
             onProgress: { _ in },
             onDebug: { event in recorder.record(event) }
         )
         _ = await provider.fetch(
-            requests: [request],
-            candidates: candidates,
+            workItems: remoteWorkItems(request: request, candidates: candidates),
             onProgress: { _ in },
             onDebug: { event in recorder.record(event) }
         )
@@ -1239,8 +1508,8 @@ struct KnowledgeRAGCoreTests {
             cache: cache
         )
 
-        _ = await first.fetch(requests: [request], candidates: candidates, onProgress: { _ in })
-        let secondBlocks = await second.fetch(requests: [request], candidates: candidates, onProgress: { _ in })
+        _ = await first.fetch(workItems: remoteWorkItems(request: request, candidates: candidates), onProgress: { _ in })
+        let secondBlocks = await second.fetch(workItems: remoteWorkItems(request: request, candidates: candidates), onProgress: { _ in })
 
         #expect(secondBlocks.first?.content.contains("Account B") == true)
         #expect(secondBlocks.first?.content.contains("Account A") == false)
@@ -1712,6 +1981,36 @@ private struct FixedRAGPlanner: KnowledgeRAGQueryPlanning {
     ) async throws -> RAGQueryPlan { plan }
 }
 
+private struct FailingRAGPlanner: KnowledgeRAGQueryPlanning {
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        onReasoningDelta: @escaping (String) -> Void
+    ) async throws -> RAGQueryPlan {
+        throw StubRAGProviderError.unavailable
+    }
+}
+
+private struct FixedAttachmentProcessor: RAGAttachmentProcessing {
+    var contexts: [RAGAttachmentContext]
+
+    func process(_ attachments: [RAGComposerAttachment]) async throws -> [RAGAttachmentContext] {
+        contexts
+    }
+}
+
+private struct FixedRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
+    var blocks: [RAGRemoteContextBlock]
+
+    func fetch(
+        workItems: [RAGResolvedRemoteWorkItem],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
+    ) async -> [RAGRemoteContextBlock] {
+        onProgress(.init(completed: workItems.count, total: workItems.count))
+        return blocks
+    }
+}
+
 private actor RemoteFetchRecorder {
     private(set) var fetchCount = 0
 
@@ -1750,12 +2049,24 @@ private struct RecordingRemoteContextProvider: KnowledgeRAGRemoteContextProvidin
     let recorder: RemoteFetchRecorder
 
     func fetch(
-        requests: [RAGRemoteContextRequest],
-        candidates: [RAGRepoCandidate],
+        workItems: [RAGResolvedRemoteWorkItem],
         onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
     ) async -> [RAGRemoteContextBlock] {
         await recorder.record()
         return []
+    }
+}
+
+private func remoteWorkItems(
+    request: RAGRemoteContextRequest,
+    candidates: [RAGRepoCandidate]
+) -> [RAGResolvedRemoteWorkItem] {
+    candidates.enumerated().map { index, candidate in
+        RAGResolvedRemoteWorkItem(
+            id: "\(candidate.repo.id):\(request.resource.rawValue):\(index)",
+            candidate: candidate,
+            request: request
+        )
     }
 }
 
@@ -1787,7 +2098,10 @@ private final class SpyRAGAIClient: @unchecked Sendable, AIClientProtocol {
     }
 
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
-        lock.withLock { calls += 1 }
+        lock.withLock {
+            calls += 1
+            latestChatRequest = request
+        }
         return AsyncThrowingStream { continuation in
             if let streamError {
                 continuation.finish(throwing: streamError)

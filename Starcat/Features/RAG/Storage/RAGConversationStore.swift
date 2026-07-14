@@ -44,6 +44,8 @@ struct RAGStoredMessage: Identifiable, Equatable, Sendable {
     var remoteContextAudits: [RAGRemoteContextAudit]
     /// 用户可回看的脱敏执行轨迹；不同于仅存内存的 Debug trace。
     var executionTrace: [RAGExecutionStep] = []
+    /// 无证据/引导回答的可点击下一问；JSON 随 assistant message 保存，历史会话仍可复用。
+    var suggestedActions: [RAGSuggestedQuestionAction] = []
     /// 从用户提交问题到最终 LLM 流结束的真实耗时；保留历史回答的性能反馈。
     var processingDuration: TimeInterval?
     var createdAt: String
@@ -87,6 +89,7 @@ protocol RAGConversationStoring: Sendable {
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock],
         executionTrace: [RAGExecutionStep],
+        suggestedActions: [RAGSuggestedQuestionAction],
         processingDuration: TimeInterval?
     ) async throws
     /// 仅落库用户消息（停止时尚未产生任何助手文本）。
@@ -159,7 +162,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 """, arguments: [id.uuidString]),
                   let summary = Self.summary(row: row) else { return nil }
             let messageRows = try Row.fetchAll(db, sql: """
-                SELECT id, conversation_id, role, content, model, execution_trace_json, processing_duration, created_at
+                SELECT id, conversation_id, role, content, model, execution_trace_json, suggested_actions_json,
+                       processing_duration, created_at
                 FROM rag_messages
                 WHERE conversation_id = ?
                 ORDER BY created_at ASC, rowid ASC
@@ -185,6 +189,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     citations: citationsByMessageID[messageID] ?? [],
                     remoteContextAudits: remoteAuditsByMessageID[messageID] ?? [],
                     executionTrace: Self.executionTrace(json: messageRow["execution_trace_json"]),
+                    suggestedActions: Self.suggestedActions(json: messageRow["suggested_actions_json"]),
                     processingDuration: messageRow["processing_duration"],
                     createdAt: messageRow["created_at"]
                 ))
@@ -237,6 +242,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock] = [],
         executionTrace: [RAGExecutionStep] = [],
+        suggestedActions: [RAGSuggestedQuestionAction] = [],
         processingDuration: TimeInterval? = nil
     ) async throws {
         let userID = UUID()
@@ -261,14 +267,17 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 VALUES (?, ?, 'user', ?, NULL, ?)
                 """, arguments: [userID.uuidString, conversationID.uuidString, question, userAt])
             try db.execute(sql: """
-                INSERT INTO rag_messages (id, conversation_id, role, content, model, execution_trace_json, processing_duration, created_at)
-                VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?)
+                INSERT INTO rag_messages (
+                    id, conversation_id, role, content, model, execution_trace_json,
+                    suggested_actions_json, processing_duration, created_at
+                ) VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?)
                 """, arguments: [
                     assistantID.uuidString,
                     conversationID.uuidString,
                     answer,
                     model,
                     Self.executionTraceJSON(executionTrace),
+                    Self.suggestedActionsJSON(suggestedActions),
                     processingDuration,
                     assistantAt
                 ])
@@ -428,7 +437,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     (SELECT COUNT(*) FROM rag_conversations) AS conversation_count,
                     (SELECT COUNT(*) FROM rag_messages) AS message_count,
                     (SELECT COALESCE(SUM(length(title) + length(scope)), 0) FROM rag_conversations)
-                    + (SELECT COALESCE(SUM(length(content) + COALESCE(length(model), 0) + COALESCE(length(execution_trace_json), 0)), 0) FROM rag_messages)
+                    + (SELECT COALESCE(SUM(length(content) + COALESCE(length(model), 0) + COALESCE(length(execution_trace_json), 0) + COALESCE(length(suggested_actions_json), 0)), 0) FROM rag_messages)
                     + (SELECT COALESCE(SUM(length(repo_full_name) + length(marker) + length(source) + length(section_title) + COALESCE(length(source_url), 0)), 0) FROM rag_message_citations)
                     + (SELECT COALESCE(SUM(length(resource) + length(title) + COALESCE(length(source_url), 0) + COALESCE(length(error_message), 0)), 0) FROM rag_message_remote_contexts)
                     AS total_bytes
@@ -595,6 +604,17 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     private static func executionTraceJSON(_ trace: [RAGExecutionStep]) -> String? {
         guard !trace.isEmpty,
               let data = try? JSONEncoder().encode(trace) else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func suggestedActions(json: String?) -> [RAGSuggestedQuestionAction] {
+        guard let json, !json.isEmpty else { return [] }
+        return (try? JSONDecoder().decode([RAGSuggestedQuestionAction].self, from: Data(json.utf8))) ?? []
+    }
+
+    private static func suggestedActionsJSON(_ actions: [RAGSuggestedQuestionAction]) -> String? {
+        guard !actions.isEmpty,
+              let data = try? JSONEncoder().encode(actions) else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
 

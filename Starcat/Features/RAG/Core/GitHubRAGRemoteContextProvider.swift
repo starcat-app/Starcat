@@ -53,32 +53,23 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
     }
 
     func fetch(
-        requests: [RAGRemoteContextRequest],
-        candidates: [RAGRepoCandidate],
+        workItems: [RAGResolvedRemoteWorkItem],
         onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
     ) async -> [RAGRemoteContextBlock] {
         await fetch(
-            requests: requests,
-            candidates: candidates,
+            workItems: workItems,
             onProgress: onProgress,
             onDebug: { _ in }
         )
     }
 
     func fetch(
-        requests: [RAGRemoteContextRequest],
-        candidates: [RAGRepoCandidate],
+        workItems: [RAGResolvedRemoteWorkItem],
         onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async -> [RAGRemoteContextBlock] {
-        let work = requests.enumerated().flatMap { requestIndex, contextRequest in
-            candidates.prefix(contextRequest.maxRepos).enumerated().map { candidateIndex, candidate in
-                RemoteFetchWork(
-                    index: requestIndex * candidates.count + candidateIndex,
-                    request: contextRequest,
-                    repo: candidate.repo
-                )
-            }
+        let work = workItems.enumerated().map { index, item in
+            RemoteFetchWork(index: index, item: item)
         }
         guard !work.isEmpty else { return [] }
 
@@ -109,18 +100,26 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async -> IndexedRemoteBlock? {
         guard !Task.isCancelled else { return nil }
-        let cacheKey = "\(cacheNamespace)|\(work.repo.id)|\(work.request.resource.rawValue)|\(work.request.query)|\(work.request.perRepoLimit)"
+        let repo = work.item.candidate.repo
+        let contextRequest = work.item.request
+        let cacheKey = "\(cacheNamespace)|\(repo.id)|\(contextRequest.resource.rawValue)|\(contextRequest.query)|\(contextRequest.perRepoLimit)|\(contextRequest.state.rawValue)|\(contextRequest.sort.rawValue)|\(contextRequest.order.rawValue)"
         if let cached = await cache.value(for: cacheKey) {
             onDebug(RAGRemoteContextDebugEvent(
-                repoFullName: work.repo.fullName,
-                resource: work.request.resource,
+                repoFullName: repo.fullName,
+                resource: contextRequest.resource,
                 url: nil,
                 outcome: .cacheHit
             ))
-            return IndexedRemoteBlock(index: work.index, block: cached)
+            var cacheBlock = cached
+            cacheBlock.id = work.item.id
+            cacheBlock.transport = .cache
+            cacheBlock.startedAt = Date()
+            cacheBlock.completedAt = Date()
+            return IndexedRemoteBlock(index: work.index, block: cacheBlock)
         }
+        let startedAt = Date()
         do {
-            let block = try await fetchOne(work.request, repo: work.repo, onDebug: onDebug)
+            let block = try await fetchOne(work.item, startedAt: startedAt, onDebug: onDebug)
             guard !Task.isCancelled else { return nil }
             await cache.insert(block, for: cacheKey)
             return IndexedRemoteBlock(index: work.index, block: block)
@@ -128,14 +127,21 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             // URLSession 取消通常以 URLError.cancelled 抛出，不能把它伪装成 GitHub 失败提示。
             guard !Task.isCancelled else { return nil }
             return IndexedRemoteBlock(index: work.index, block: RAGRemoteContextBlock(
-                id: "\(work.repo.id):\(work.request.resource.rawValue)",
-                repoId: work.repo.id,
-                resource: work.request.resource,
-                title: "\(work.repo.fullName) · \(displayName(work.request.resource))",
-                sourceURL: URL(string: work.repo.htmlUrl),
+                id: work.item.id,
+                repoId: repo.id,
+                resource: contextRequest.resource,
+                title: "\(repo.fullName) · \(displayName(contextRequest.resource))",
+                sourceURL: URL(string: repo.htmlUrl),
                 content: "",
                 fetchedAt: Date(),
-                errorMessage: error.localizedDescription
+                errorMessage: error.localizedDescription,
+                outcome: .failed,
+                transport: .network,
+                httpStatusCode: Self.httpStatusCode(from: error),
+                resultCount: 0,
+                requestURL: requestURL(for: contextRequest, repo: repo),
+                startedAt: startedAt,
+                completedAt: Date()
             ))
         }
     }
@@ -143,16 +149,18 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
     private static let maxConcurrentRequests = 3
 
     private func fetchOne(
-        _ contextRequest: RAGRemoteContextRequest,
-        repo: Repo,
+        _ workItem: RAGResolvedRemoteWorkItem,
+        startedAt: Date,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async throws -> RAGRemoteContextBlock {
-        let result: (String, URL?)
+        let contextRequest = workItem.request
+        let repo = workItem.candidate.repo
+        let result: RemoteFetchResult
         switch contextRequest.resource {
         case .githubIssues:
-            result = try await fetchIssues(repo: repo, query: contextRequest.query, limit: contextRequest.perRepoLimit, pullRequests: false, resource: contextRequest.resource, onDebug: onDebug)
+            result = try await fetchIssues(repo: repo, request: contextRequest, pullRequests: false, onDebug: onDebug)
         case .githubPullRequests:
-            result = try await fetchIssues(repo: repo, query: contextRequest.query, limit: contextRequest.perRepoLimit, pullRequests: true, resource: contextRequest.resource, onDebug: onDebug)
+            result = try await fetchIssues(repo: repo, request: contextRequest, pullRequests: true, onDebug: onDebug)
         case .githubReleases:
             result = try await fetchReleases(repo: repo, limit: contextRequest.perRepoLimit, resource: contextRequest.resource, onDebug: onDebug)
         case .githubContributors:
@@ -163,43 +171,52 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             result = try await fetchSecurityAdvisories(repo: repo, limit: contextRequest.perRepoLimit, resource: contextRequest.resource, onDebug: onDebug)
         }
         return RAGRemoteContextBlock(
-            id: "\(repo.id):\(contextRequest.resource.rawValue)",
+            id: workItem.id,
             repoId: repo.id,
             resource: contextRequest.resource,
             title: "\(repo.fullName) · \(displayName(contextRequest.resource))",
-            sourceURL: result.1,
-            content: result.0,
+            sourceURL: result.url,
+            content: result.content,
             fetchedAt: Date(),
-            errorMessage: nil
+            errorMessage: nil,
+            outcome: result.count > 0 ? .success : .empty,
+            transport: .network,
+            httpStatusCode: 200,
+            resultCount: result.count,
+            requestURL: result.url,
+            startedAt: startedAt,
+            completedAt: Date()
         )
     }
 
     private func fetchIssues(
         repo: Repo,
-        query: String,
-        limit: Int,
+        request: RAGRemoteContextRequest,
         pullRequests: Bool,
-        resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
-    ) async throws -> (String, URL?) {
+    ) async throws -> RemoteFetchResult {
         var components = URLComponents(url: baseURL.appendingPathComponent("search/issues"), resolvingAgainstBaseURL: false)!
         let kind = pullRequests ? "is:pr" : "is:issue"
+        let state = request.state == .all ? "" : " is:\(request.state.rawValue)"
+        let keywords = Self.sanitizedIssueKeywords(request.query)
         components.queryItems = [
-            URLQueryItem(name: "q", value: "repo:\(repo.fullName) \(kind) \(query)"),
-            URLQueryItem(name: "sort", value: "updated"),
-            URLQueryItem(name: "order", value: "desc"),
-            URLQueryItem(name: "per_page", value: String(limit))
+            URLQueryItem(name: "q", value: "repo:\(repo.fullName) \(kind)\(state)\(keywords.isEmpty ? "" : " \(keywords)")"),
+            URLQueryItem(name: "sort", value: request.sort.rawValue),
+            URLQueryItem(name: "order", value: request.order.rawValue),
+            URLQueryItem(name: "per_page", value: String(request.perRepoLimit))
         ]
         let response: SearchIssuesResponse = try await get(
             components.url!,
             repoFullName: repo.fullName,
-            resource: resource,
+            resource: request.resource,
             onDebug: onDebug
         )
         // Planner 生成的 query 不能被当作可信 GitHub Search 语法。即使 query 夹带
         // `OR repo:other/name` 等 qualifier，也只接受当前候选 repo 的返回项。
-        let scopedItems = response.items.filter { $0.belongs(to: repo) }
-        let lines = scopedItems.prefix(limit).map { item in
+        let scopedItems = response.items.filter {
+            $0.belongs(to: repo) && $0.isPullRequest == pullRequests
+        }
+        let lines = scopedItems.prefix(request.perRepoLimit).map { item in
             let labels = item.labels.map(\.name).joined(separator: ", ")
             return """
                 #\(item.number) [\(item.state)] \(item.title)
@@ -216,7 +233,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         let content = lines.isEmpty
             ? "没有匹配的公开结果。"
             : "observed_themes=\(themes.isEmpty ? "none" : themes)\n\n\(lines.joined(separator: "\n\n"))"
-        return (content, components.url)
+        return RemoteFetchResult(content: content, url: components.url, count: min(scopedItems.count, request.perRepoLimit))
     }
 
     private func fetchReleases(
@@ -224,7 +241,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         limit: Int,
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
-    ) async throws -> (String, URL?) {
+    ) async throws -> RemoteFetchResult {
         let url = repoAPIURL(repo, suffix: "releases", query: [URLQueryItem(name: "per_page", value: String(limit))])
         let releases: [ReleaseResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = releases.prefix(limit).map { release in
@@ -234,7 +251,11 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             \(clip(release.body ?? "", limit: 1_000))
             """
         }
-        return (lines.isEmpty ? "仓库没有公开 Release。" : lines.joined(separator: "\n\n"), url)
+        return RemoteFetchResult(
+            content: lines.isEmpty ? "仓库没有公开 Release。" : lines.joined(separator: "\n\n"),
+            url: url,
+            count: min(releases.count, limit)
+        )
     }
 
     private func fetchContributors(
@@ -242,18 +263,22 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         limit: Int,
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
-    ) async throws -> (String, URL?) {
+    ) async throws -> RemoteFetchResult {
         let url = repoAPIURL(repo, suffix: "contributors", query: [URLQueryItem(name: "per_page", value: String(limit))])
         let contributors: [ContributorResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = contributors.prefix(limit).map { "\($0.login): contributions=\($0.contributions); url=\($0.htmlURL ?? "")" }
-        return (lines.isEmpty ? "没有可用的公开贡献者数据。" : lines.joined(separator: "\n"), url)
+        return RemoteFetchResult(
+            content: lines.isEmpty ? "没有可用的公开贡献者数据。" : lines.joined(separator: "\n"),
+            url: url,
+            count: min(contributors.count, limit)
+        )
     }
 
     private func fetchCommitActivity(
         repo: Repo,
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
-    ) async throws -> (String, URL?) {
+    ) async throws -> RemoteFetchResult {
         let url = repoAPIURL(repo, suffix: "stats/commit_activity")
         let weeks: [CommitActivityResponse] = try await get(
             url,
@@ -265,7 +290,11 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         let recent = weeks.suffix(12)
         let total = recent.reduce(0) { $0 + $1.total }
         let activeWeeks = recent.filter { $0.total > 0 }.count
-        return ("最近 12 周 commits=\(total)，活跃周数=\(activeWeeks)/\(recent.count)。", url)
+        return RemoteFetchResult(
+            content: "最近 12 周 commits=\(total)，活跃周数=\(activeWeeks)/\(recent.count)。",
+            url: url,
+            count: recent.count
+        )
     }
 
     private func fetchSecurityAdvisories(
@@ -273,13 +302,44 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         limit: Int,
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
-    ) async throws -> (String, URL?) {
+    ) async throws -> RemoteFetchResult {
         let url = repoAPIURL(repo, suffix: "security-advisories", query: [URLQueryItem(name: "per_page", value: String(limit))])
         let advisories: [SecurityAdvisoryResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = advisories.prefix(limit).map {
             "\($0.ghsaID) severity=\($0.severity) cve=\($0.cveID ?? "unknown") published=\($0.publishedAt)\n\($0.summary)\nurl=\($0.htmlURL ?? "")"
         }
-        return (lines.isEmpty ? "没有返回公开仓库安全公告。" : lines.joined(separator: "\n\n"), url)
+        return RemoteFetchResult(
+            content: lines.isEmpty ? "没有返回公开仓库安全公告。" : lines.joined(separator: "\n\n"),
+            url: url,
+            count: min(advisories.count, limit)
+        )
+    }
+
+    /// 审计 UI 需要展示实际 endpoint，但失败路径不能依赖“请求成功后才返回的 URL”。这里
+    /// 与各 fetch 方法复用同一构造规则，只包含公开 URL，不包含任何请求头。
+    private func requestURL(for request: RAGRemoteContextRequest, repo: Repo) -> URL? {
+        switch request.resource {
+        case .githubIssues, .githubPullRequests:
+            var components = URLComponents(url: baseURL.appendingPathComponent("search/issues"), resolvingAgainstBaseURL: false)!
+            let kind = request.resource == .githubPullRequests ? "is:pr" : "is:issue"
+            let state = request.state == .all ? "" : " is:\(request.state.rawValue)"
+            let keywords = Self.sanitizedIssueKeywords(request.query)
+            components.queryItems = [
+                URLQueryItem(name: "q", value: "repo:\(repo.fullName) \(kind)\(state)\(keywords.isEmpty ? "" : " \(keywords)")"),
+                URLQueryItem(name: "sort", value: request.sort.rawValue),
+                URLQueryItem(name: "order", value: request.order.rawValue),
+                URLQueryItem(name: "per_page", value: String(request.perRepoLimit)),
+            ]
+            return components.url
+        case .githubReleases:
+            return repoAPIURL(repo, suffix: "releases", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+        case .githubContributors:
+            return repoAPIURL(repo, suffix: "contributors", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+        case .githubCommitActivity:
+            return repoAPIURL(repo, suffix: "stats/commit_activity")
+        case .githubSecurityAdvisories:
+            return repoAPIURL(repo, suffix: "security-advisories", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+        }
     }
 
     private func repoAPIURL(_ repo: Repo, suffix: String, query: [URLQueryItem] = []) -> URL {
@@ -351,6 +411,29 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         }
     }
 
+    /// Planner 输出是不可信搜索文本。固定的 repo/kind/state qualifier 由 Provider 自己添加，
+    /// 用户关键词中的 scope qualifier 必须移除，防止 `OR repo:other/name` 扩大请求范围。
+    private static func sanitizedIssueKeywords(_ query: String) -> String {
+        let qualifierPattern = try? NSRegularExpression(
+            pattern: #"(?i)(^|[^a-z0-9_])(repo|org|user|is|type|in):"#
+        )
+        return query
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .filter { token in
+                let logicalToken = token.trimmingCharacters(in: .punctuationCharacters).uppercased()
+                let range = NSRange(token.startIndex..<token.endIndex, in: token)
+                return logicalToken != "OR"
+                    && qualifierPattern?.firstMatch(in: token, range: range) == nil
+            }
+            .joined(separator: " ")
+    }
+
+    private static func httpStatusCode(from error: Error) -> Int? {
+        guard case GitHubRemoteContextError.http(let status, _) = error else { return nil }
+        return status
+    }
+
     /// 进程内 cache 会跨账户存活，必须按认证身份隔离。这里只保留不可逆短指纹作为
     /// dictionary namespace，不写日志、数据库或网络请求。
     private static func cacheNamespace(for token: String?) -> String {
@@ -361,8 +444,13 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
 
 private struct RemoteFetchWork: Sendable {
     var index: Int
-    var request: RAGRemoteContextRequest
-    var repo: Repo
+    var item: RAGResolvedRemoteWorkItem
+}
+
+private struct RemoteFetchResult: Sendable {
+    var content: String
+    var url: URL?
+    var count: Int
 }
 
 private struct IndexedRemoteBlock: Sendable {
@@ -412,6 +500,7 @@ private struct SearchIssuesResponse: Decodable {
 
 private struct IssueResponse: Decodable {
     struct Label: Decodable { var name: String }
+    private struct PullRequestMarker: Decodable {}
     var number: Int
     var title: String
     var state: String
@@ -421,12 +510,16 @@ private struct IssueResponse: Decodable {
     var comments: Int
     var updatedAt: String
     var repositoryURL: String?
+    private var pullRequest: PullRequestMarker?
+
+    var isPullRequest: Bool { pullRequest != nil }
 
     enum CodingKeys: String, CodingKey {
         case number, title, state, body, labels, comments
         case htmlURL = "html_url"
         case updatedAt = "updated_at"
         case repositoryURL = "repository_url"
+        case pullRequest = "pull_request"
     }
 
     func belongs(to repo: Repo) -> Bool {

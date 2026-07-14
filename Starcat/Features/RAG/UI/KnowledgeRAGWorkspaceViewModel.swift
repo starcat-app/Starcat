@@ -84,8 +84,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 当前轮默认可见的执行轨迹；完成后随 assistant message 持久化，Debug payload 不进入这里。
     var executionSteps: [RAGExecutionStep] = []
     var remoteBlocks: [RAGRemoteContextBlock] = []
-    var pendingRemoteRequests: [RAGRemoteContextRequest] = []
-    var approvedRemoteResources: Set<RAGRemoteContextResource> = []
+    var pendingRemoteWorkItems: [RAGResolvedRemoteWorkItem] = []
+    var approvedRemoteWorkItemIDs: Set<String> = []
     var selectedCitation: RAGCitation?
     var selectedCitationChunk: RAGChunk?
     /// 每次主动聚焦引用时递增；同 id 再点也会变，驱动右侧切回「证据」tab。
@@ -667,25 +667,46 @@ final class KnowledgeRAGWorkspaceViewModel {
         return duration
     }
 
-    func toggleRemoteResource(_ resource: RAGRemoteContextResource) {
-        if approvedRemoteResources.contains(resource) {
-            approvedRemoteResources.remove(resource)
+    func toggleRemoteWorkItem(_ id: String) {
+        if approvedRemoteWorkItemIDs.contains(id) {
+            approvedRemoteWorkItemIDs.remove(id)
         } else {
-            approvedRemoteResources.insert(resource)
+            approvedRemoteWorkItemIDs.insert(id)
         }
     }
 
     func confirmRemoteContext() {
         let consent = remoteContextConsent
-        pendingRemoteRequests = []
-        Task { await consent?.resolve(approvedRemoteResources) }
+        pendingRemoteWorkItems = []
+        Task { await consent?.resolve(approvedRemoteWorkItemIDs) }
     }
 
     func skipRemoteContext() {
         let consent = remoteContextConsent
-        pendingRemoteRequests = []
-        approvedRemoteResources = []
+        pendingRemoteWorkItems = []
+        approvedRemoteWorkItemIDs = []
         Task { await consent?.resolve([]) }
+    }
+
+    /// 历史推荐问题点击后恢复它创建时的知识库范围，并清掉当前输入框里互不相关的附件、
+    /// GitHub 链接和旧联网授权。若仓库已离开知识库则明确报错，绝不静默扩大到全库。
+    func sendSuggestedQuestion(_ action: RAGSuggestedQuestionAction) {
+        guard !isAnswering else { return }
+        let repos = action.repoIDs.compactMap { repoID in
+            knowledgeRepos.first(where: { $0.id == repoID })
+        }
+        guard repos.count == action.repoIDs.count else {
+            errorMessage = String.l10n("rag.workspace.guidance.repoUnavailable")
+            return
+        }
+        selectedRepoContexts = repos
+        explicitRepoMode = action.explicitRepoMode
+        attachments = []
+        githubLinkContexts = []
+        pendingRemoteWorkItems = []
+        approvedRemoteWorkItemIDs = []
+        draftQuestion = action.question
+        send()
     }
 
     /// 切换 `@` 多选：写入 / 移除 chip，但不清掉输入框里的 `@token`，便于连续勾选。
@@ -1305,6 +1326,16 @@ final class KnowledgeRAGWorkspaceViewModel {
             ? beginDebugTrace(category: .questionAnswer, startedAt: debugTraceStartedAt)
             : nil
         let isFirstTurn = messages.isEmpty
+        let priorMessages = messages
+        let previousUserQuestion = priorMessages.last(where: { $0.role == .user })?.content
+        let previousReferencedRepos: [RAGPlannerRepoReference] = {
+            guard let previousAssistant = priorMessages.last(where: { $0.role == .assistant }) else { return [] }
+            var seen = Set<Int64>()
+            return previousAssistant.citations.compactMap { citation in
+                guard seen.insert(citation.repoID).inserted else { return nil }
+                return RAGPlannerRepoReference(id: citation.repoID, fullName: citation.repoFullName)
+            }
+        }()
         let userMessage = RAGStoredMessage(
             id: UUID(),
             conversationID: conversationID,
@@ -1323,14 +1354,16 @@ final class KnowledgeRAGWorkspaceViewModel {
         retrieval = nil
         executionSteps = []
         remoteBlocks = []
-        pendingRemoteRequests = []
-        approvedRemoteResources = []
+        pendingRemoteWorkItems = []
+        approvedRemoteWorkItemIDs = []
         selectedCitation = nil
         selectedCitationChunk = nil
         citationChunkPopoverCitationID = nil
         errorMessage = nil
         var completedPayload: (String, String, [RAGCitation])?
         var terminalReply: String?
+        var suggestedActions: [RAGSuggestedQuestionAction] = []
+        var didStartTitleGeneration = false
         let streamingMessageID = UUID()
         let streamingTimestamp = Date()
         var accumulatedAnswer = ""
@@ -1338,6 +1371,10 @@ final class KnowledgeRAGWorkspaceViewModel {
         var lastPresentationCommitAt: TimeInterval = 0
         var presentationRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
+        // Think 可能按 token 回调。完整文本留在 buffer，只有节流后的快照进入
+        // `executionSteps`，避免每个 token 都让 @MainActor 重建整条时间线。
+        var planningReasoningBuffer = StreamingTextPresentationBuffer()
+        var answerReasoningBuffer = StreamingTextPresentationBuffer()
         let presentationThrottleInterval: TimeInterval = 0.10
         let immediatePresentationCharacterCount = 96
         streamingPresentation = StreamingMarkdownSnapshot(
@@ -1350,19 +1387,10 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         do {
             let service = try dependencies.makeKnowledgeRAGService(selectedModelID: selectedModelID)
-            // 标题只依赖首个问题，不需要等检索、流式回答或落库完成。独立 Task 让首轮
-            // 回答不被这次轻量 LLM 调用阻塞；即使终态回答或用户主动停止，也仍有标题。
-            if isFirstTurn {
-                generateConversationTitle(
-                    using: service,
-                    conversationID: conversationID,
-                    firstQuestion: question
-                )
-            }
             let history = try await preparedConversationHistory(
                 using: service,
                 conversationID: conversationID,
-                messages: Array(messages.dropLast()),
+                messages: priorMessages,
                 debugTraceID: debugTraceID,
                 debugTraceStartedAt: debugTraceStartedAt
             )
@@ -1372,10 +1400,15 @@ final class KnowledgeRAGWorkspaceViewModel {
                 rawQuestion: question,
                 composerContext: RAGComposerContext(
                     explicitRepoIDs: selectedRepoContexts.map(\.id),
+                    explicitRepoReferences: selectedRepoContexts.map {
+                        RAGPlannerRepoReference(id: $0.id, fullName: $0.fullName)
+                    },
                     explicitRepoMode: explicitRepoMode,
                     selectedModelID: selectedModelID,
                     attachments: attachments,
                     pastedGitHubLinks: githubLinkContexts,
+                    previousUserQuestion: previousUserQuestion,
+                    previousReferencedRepos: previousReferencedRepos,
                     disabledRemoteResources: []
                 ),
                 conversationID: conversationID,
@@ -1387,16 +1420,62 @@ final class KnowledgeRAGWorkspaceViewModel {
                 switch event {
                 case .state(let state):
                     answerState = state
-                    terminalReply = reply(for: state) ?? terminalReply
+                    terminalReply = terminalReply ?? reply(for: state)
                     finishRunningExecutionIfNeeded(for: state)
                 case .execution(let event):
-                    applyExecution(event)
-                case .plan(let plan): queryPlan = plan
+                    switch event {
+                    case .reasoningDelta(let kind, let text):
+                        let now = Date.timeIntervalSinceReferenceDate
+                        let presentation: String?
+                        switch kind {
+                        case .planningReasoning:
+                            presentation = planningReasoningBuffer.append(text, now: now)
+                        case .answerReasoning:
+                            presentation = answerReasoningBuffer.append(text, now: now)
+                        default:
+                            presentation = nil
+                        }
+                        if let presentation {
+                            applyReasoningPresentation(kind: kind, text: presentation)
+                        }
+                    case .reasoningCompleted(let kind):
+                        let now = Date.timeIntervalSinceReferenceDate
+                        let finalPresentation: String?
+                        switch kind {
+                        case .planningReasoning:
+                            finalPresentation = planningReasoningBuffer.flush(now: now)
+                        case .answerReasoning:
+                            finalPresentation = answerReasoningBuffer.flush(now: now)
+                        default:
+                            finalPresentation = nil
+                        }
+                        if let finalPresentation {
+                            applyReasoningPresentation(kind: kind, text: finalPresentation)
+                        }
+                        applyExecution(event)
+                    default:
+                        applyExecution(event)
+                    }
+                case .plan(let plan):
+                    queryPlan = plan
+                    // 纯闲聊已由本地引导响应处理，不值得再调用一次标题 LLM。其它首轮在
+                    // Planner 完成后并行生成标题，不阻塞检索和回答。
+                    if isFirstTurn, !didStartTitleGeneration, plan.mode != .guidedDiscovery {
+                        didStartTitleGeneration = true
+                        generateConversationTitle(
+                            using: service,
+                            conversationID: conversationID,
+                            firstQuestion: question
+                        )
+                    }
                 case .retrieval(let result): retrieval = result
-                case .remoteContextConfirmation(let requests):
-                    pendingRemoteRequests = requests
-                    approvedRemoteResources = Set(requests.map(\.resource))
+                case .remoteContextConfirmation(let workItems):
+                    pendingRemoteWorkItems = workItems
+                    approvedRemoteWorkItemIDs = Set(workItems.map(\.id))
                 case .remoteContext(let blocks): remoteBlocks = blocks
+                case .terminal(let response):
+                    terminalReply = response.answer
+                    suggestedActions = response.suggestedActions
                 case .contextUsage(let usage): lastContextUsage = usage
                 case .debug(let event):
                     appendDebugEvent(event, to: debugTraceID)
@@ -1424,6 +1503,12 @@ final class KnowledgeRAGWorkspaceViewModel {
                     completedPayload = (answer, model, citations)
                 }
             }
+            // Provider 失败或提前结束时未必发送 reasoningCompleted；落库前仍要补齐最后
+            // 一批 Think，避免性能节流变成数据丢失。
+            flushReasoningPresentations(
+                planning: &planningReasoningBuffer,
+                answer: &answerReasoningBuffer
+            )
             let processingDuration = finishAnswerTiming()
             if let completedPayload {
                 try await persistAnswer(
@@ -1434,6 +1519,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     citations: completedPayload.2,
                     remoteContexts: remoteBlocks,
                     executionTrace: executionSteps,
+                    suggestedActions: [],
                     processingDuration: processingDuration
                 )
             } else if let terminalReply, answerState != .cancelled {
@@ -1445,6 +1531,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     citations: [],
                     remoteContexts: remoteBlocks,
                     executionTrace: executionSteps,
+                    suggestedActions: suggestedActions,
                     processingDuration: processingDuration
                 )
             } else if answerState == .cancelled {
@@ -1456,6 +1543,10 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
             }
         } catch is CancellationError {
+            flushReasoningPresentations(
+                planning: &planningReasoningBuffer,
+                answer: &answerReasoningBuffer
+            )
             streamingAnswer = accumulatedAnswer
             answerState = .cancelled
             let processingDuration = finishAnswerTiming()
@@ -1466,6 +1557,10 @@ final class KnowledgeRAGWorkspaceViewModel {
                 processingDuration: processingDuration
             )
         } catch {
+            flushReasoningPresentations(
+                planning: &planningReasoningBuffer,
+                answer: &answerReasoningBuffer
+            )
             // 停止按钮会 cancel Task；部分底层 API 不抛 CancellationError 而是带上
             // Task.isCancelled，不能当成「RAG 请求失败」弹窗。
             if Task.isCancelled {
@@ -1978,6 +2073,26 @@ final class KnowledgeRAGWorkspaceViewModel {
                 completeExecutionStep(&step)
             }
 
+        case .remoteContextPrepared(let workItems):
+            updateExecutionStep(kind: .remoteContext) { step in
+                step.remoteAuditItems = workItems.map { workItem in
+                    RAGRemoteExecutionAuditItem(
+                        id: workItem.id,
+                        repoFullName: workItem.candidate.repo.fullName,
+                        resource: workItem.request.resource,
+                        querySummary: workItem.request.query,
+                        requestURL: nil,
+                        status: .pending,
+                        transport: nil,
+                        httpStatusCode: nil,
+                        resultCount: nil,
+                        errorMessage: nil,
+                        startedAt: nil,
+                        completedAt: nil
+                    )
+                }
+            }
+
         case .remoteContextProgress(let completed, let total):
             updateExecutionStep(kind: .remoteContext) { step in
                 step.summary = String(
@@ -1989,7 +2104,25 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         case .remoteContextCompleted(let blocks):
             updateExecutionStep(kind: .remoteContext) { step in
-                step.details = blocks.map { $0.title }
+                let blocksByID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
+                step.remoteAuditItems = (step.remoteAuditItems ?? []).map { item in
+                    guard let block = blocksByID[item.id] else { return item }
+                    var completed = item
+                    completed.requestURL = block.requestURL
+                    completed.status = switch block.outcome {
+                    case .success: .succeeded
+                    case .empty: .empty
+                    case .failed: .failed
+                    }
+                    completed.transport = block.transport
+                    completed.httpStatusCode = block.httpStatusCode
+                    completed.resultCount = block.resultCount
+                    completed.errorMessage = block.errorMessage
+                    completed.startedAt = block.startedAt
+                    completed.completedAt = block.completedAt
+                    return completed
+                }
+                step.details = []
                 step.summary = String(
                     format: String.l10n("rag.workspace.execution.remote.summaryFormat"), blocks.count
                 )
@@ -2015,7 +2148,39 @@ final class KnowledgeRAGWorkspaceViewModel {
             updateExecutionStep(kind: kind) { step in
                 step.summary = summary
                 completeExecutionStep(&step)
+                if kind == .remoteContext {
+                    step.state = .skipped
+                    step.remoteAuditItems = (step.remoteAuditItems ?? []).map { item in
+                        var skipped = item
+                        skipped.status = .skipped
+                        skipped.completedAt = .now
+                        return skipped
+                    }
+                }
             }
+        }
+    }
+
+    /// 用稳定的单条详情承载节流后的完整 Think。数组下标不变，配合时间线按 index
+    /// 标识后，SwiftUI 只更新文字内容，不会把每个 token 当成一棵全新的 View 子树。
+    private func applyReasoningPresentation(kind: RAGExecutionStepKind, text: String) {
+        updateExecutionStep(kind: kind) { step in
+            step.details = text.isEmpty ? [] : [text]
+        }
+    }
+
+    /// Provider 在失败和取消路径上不保证发送 `reasoningCompleted`。所有退出路径都走
+    /// 同一刷新逻辑，确保 UI 降频只减少重绘次数，不吞掉最后一批 Think。
+    private func flushReasoningPresentations(
+        planning: inout StreamingTextPresentationBuffer,
+        answer: inout StreamingTextPresentationBuffer
+    ) {
+        let now = Date.timeIntervalSinceReferenceDate
+        if let finalPlanning = planning.flush(now: now) {
+            applyReasoningPresentation(kind: .planningReasoning, text: finalPlanning)
+        }
+        if let finalAnswer = answer.flush(now: now) {
+            applyReasoningPresentation(kind: .answerReasoning, text: finalAnswer)
         }
     }
 
@@ -2055,6 +2220,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         citations: [RAGCitation],
         remoteContexts: [RAGRemoteContextBlock],
         executionTrace: [RAGExecutionStep] = [],
+        suggestedActions: [RAGSuggestedQuestionAction] = [],
         processingDuration: TimeInterval? = nil
     ) async throws {
         try await conversationStore.appendTurn(
@@ -2065,6 +2231,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             citations: citations,
             remoteContexts: remoteContexts,
             executionTrace: executionTrace,
+            suggestedActions: suggestedActions,
             processingDuration: processingDuration
         )
         if let detail = try await conversationStore.loadConversation(id: conversationID) {
@@ -2102,8 +2269,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         queryPlan = nil
         retrieval = nil
         remoteBlocks = []
-        pendingRemoteRequests = []
-        approvedRemoteResources = []
+        pendingRemoteWorkItems = []
+        approvedRemoteWorkItemIDs = []
         selectedRepoContexts = []
         attachments = []
         githubLinkContexts = []

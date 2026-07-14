@@ -53,7 +53,9 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         var nextCitation = 1
 
         let structuredRowLimit = min(max(plan.candidateLimit ?? 50, 1), 50)
-        let bundles = retrieval.bundles.isEmpty
+        // 只有 structured_only 才允许把候选仓库元数据当数据库事实送入 Generator。
+        // 语义检索零命中时 candidates 只是“搜过哪些仓库”，绝不是回答证据。
+        let bundles = plan.mode == .structuredOnly
             ? retrieval.candidates.prefix(structuredRowLimit).map { structuredBundle($0) }
             : retrieval.bundles
         for bundle in bundles {
@@ -90,11 +92,13 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         }
 
         var remoteTokens = 0
-        let rawRemoteText = remoteBlocks.enumerated().compactMap { index, block -> String? in
+        let successfulRemoteBlocks = remoteBlocks.filter {
+            $0.outcome == .success && $0.resultCount > 0 && !$0.content.isEmpty
+        }
+        let rawRemoteText = successfulRemoteBlocks.enumerated().compactMap { index, block -> String? in
             let remaining = maxRemoteTokens - remoteTokens
             guard remaining > 0 else { return nil }
-            let status = block.errorMessage.map { "获取失败：\($0)" } ?? block.content
-            let value = "[R\(index + 1)] \(block.title)\n\(status)"
+            let value = "[R\(index + 1)] \(block.title)\n\(block.content)"
             let clipped = RAGContextBudget.clip(value, toTokenBudget: remaining)
             remoteTokens += TokenEstimator.estimate(text: clipped)
             return clipped
@@ -110,15 +114,16 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             return clipped
         }.joined(separator: "\n\n")
 
-        let degradation = remoteBlocks.compactMap(\.errorMessage).isEmpty
+        let degradation = remoteBlocks.allSatisfy { $0.outcome == .success }
             ? ""
             : "Remote context partially failed to fetch. The answer must state the degraded scope and must not present missing information as fact."
+        let hasStructuredRows = plan.mode == .structuredOnly
         let planBlock = """
             mode=\(plan.mode.rawValue)
             semantic=\(plan.semanticQuery)
             structured_candidate_count=\(retrieval.candidates.count)
-            structured_rows_in_prompt=\(retrieval.bundles.isEmpty ? bundles.count : 0)
-            structured_rows_truncated=\(retrieval.bundles.isEmpty && retrieval.candidates.count > bundles.count)
+            structured_rows_in_prompt=\(hasStructuredRows ? bundles.count : 0)
+            structured_rows_truncated=\(hasStructuredRows && retrieval.candidates.count > bundles.count)
             \(degradation)
             """.trimmingCharacters(in: .whitespacesAndNewlines)
 

@@ -423,6 +423,33 @@ struct AppSettingsTests {
         #expect(settings.ragPromptSettings.title == RAGDefaultPrompts.title)
     }
 
+    @Test("RAG: 已保存的旧默认 Planner 应升级，自定义 Planner 不应被覆盖")
+    func ragPromptSettingsUpgradeOnlyPublishedPlannerDefault() {
+        let legacyDefaults = makeIsolatedDefaults()
+        let legacySettings = AppSettings(defaults: legacyDefaults)
+        legacySettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: RAGDefaultPrompts.plannerBeforeGuidedDiscovery
+        )
+
+        let upgraded = AppSettings(defaults: legacyDefaults)
+        #expect(upgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
+        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("guided_discovery"))
+
+        let customDefaults = makeIsolatedDefaults()
+        let customSettings = AppSettings(defaults: customDefaults)
+        let customPlanner = AIPromptConfiguration(
+            systemPrompt: "CUSTOM PLAN",
+            userPromptTemplate: "CUSTOM {question}"
+        )
+        customSettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: customPlanner
+        )
+
+        #expect(AppSettings(defaults: customDefaults).ragPromptSettings.planner == customPlanner)
+    }
+
     @Test("AI: 旧版设置后重新读取应保留")
     func aiSettingsPersist() {
         let defaults = makeIsolatedDefaults()

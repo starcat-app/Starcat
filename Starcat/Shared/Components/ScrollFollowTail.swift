@@ -94,13 +94,13 @@ final class ScrollTailController {
     /// 主要给本控制器识别完整用户滚动生命周期。也暴露给对话段那种
     /// "还需要顺带判 overscroll"的场景复用同一个 phase 状态，避免一个
     /// view 上挂两个 onScrollPhaseChange。
-    private(set) var lastPhase: ScrollPhase = .idle
+    @ObservationIgnored private(set) var lastPhase: ScrollPhase = .idle
 
     /// 底部 sentinel 当前是否可见。它是“是否到底”的唯一位置真源。
-    private var isBottomVisible: Bool = true
+    @ObservationIgnored private var isBottomVisible: Bool = true
 
     /// 当前滚动生命周期是否由用户手势发起。
-    private var isUserScrollInProgress: Bool = false
+    @ObservationIgnored private var isUserScrollInProgress: Bool = false
 
     /// SwiftUI 把滚动 phase 递给控制器。
     func updatePhase(_ phase: ScrollPhase) {
@@ -111,14 +111,14 @@ final class ScrollTailController {
             // 用户一接管滚动就立即暂停，不能等距离变化；否则下一次流式 token
             // 可能抢先 scrollTo(.bottom)，覆盖用户刚开始的滚动操作。
             isUserScrollInProgress = true
-            isFollowing = false
+            setFollowing(false)
         case .idle:
             guard isUserScrollInProgress else { return }
             isUserScrollInProgress = false
             // 仅在用户滚动生命周期结束后恢复。滚动过程中即使经过底部也不恢复，
             // 避免 bounce / 惯性尚未结束时被新 token 再次拉动。
             if isBottomVisible {
-                isFollowing = true
+                setFollowing(true)
             }
         case .animating:
             // 程序化 scrollTo 不代表用户接管，保持当前跟随状态。
@@ -131,20 +131,28 @@ final class ScrollTailController {
     /// 底部锚点可见性变化。不可见只记录，不主动关闭跟随；可见且用户手势已经
     /// 结束时恢复，兼容“idle 回调早于 visibility 回调”的系统时序。
     func updateBottomVisibility(_ isVisible: Bool) {
+        guard isBottomVisible != isVisible else { return }
         isBottomVisible = isVisible
         if isVisible, !isUserScrollInProgress, lastPhase == .idle {
-            isFollowing = true
+            setFollowing(true)
         }
     }
 
     /// 用户主动离开尾部（如大纲跳转）：立即停止跟随，避免流式输出把视口拽回底部。
     func pauseFollowing() {
-        isFollowing = false
+        setFollowing(false)
     }
 
     /// 用户点击「滚到底部」：恢复跟随；真正对齐由调用方 `scrollTo` 完成。
     func resumeFollowing() {
-        isFollowing = true
+        setFollowing(true)
         isBottomVisible = true
+    }
+
+    /// Observation 不会替我们过滤“新旧值相同”的写入。统一走这里，避免滚动可见性
+    /// 回调在 SwiftUI 布局期间重复发布同一状态，形成布局与状态更新互相触发的反馈环。
+    private func setFollowing(_ newValue: Bool) {
+        guard isFollowing != newValue else { return }
+        isFollowing = newValue
     }
 }

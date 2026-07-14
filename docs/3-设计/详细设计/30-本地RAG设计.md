@@ -698,10 +698,13 @@ struct RAGServiceRequest: Sendable {
 
 struct RAGComposerContext: Sendable {
     var explicitRepoIDs: [Int64]
+    var explicitRepoReferences: [RAGPlannerRepoReference]
     var explicitRepoMode: RAGExplicitRepoMode
     var selectedModelID: String?
     var attachments: [RAGComposerAttachment]
     var pastedGitHubLinks: [RAGGitHubLinkReference]
+    var previousUserQuestion: String?
+    var previousReferencedRepos: [RAGPlannerRepoReference]
 }
 
 enum RAGExplicitRepoMode: String, Sendable {
@@ -747,6 +750,9 @@ enum RAGGitHubLinkRelation: String, Sendable {
 - 如果用户说“以 @repo 为参考,再找类似项目”,才使用 `.prefer`。
 - `selectedModelID` 只影响本轮或当前会话,不自动修改 Settings 全局模型。
 - 附件是本轮临时上下文,不进入 RAG 索引。
+- Planner 只接收当前问题、显式 repo 的 id/fullName、附件描述、粘贴链接描述、上一条用户问题与上一条回答实际引用的 repo；不接收分片正文、远程正文、完整历史或上一条回答正文。
+- `previousReferencedRepos` 来自已持久化 citation metadata，不允许从自然语言回答中反推仓库范围。
+- 配置解码时只会把已发布的上一版官方默认 Planner 模板升级为新模板；任何用户自定义 Planner 提示词都必须原样保留。
 
 ### 7.3 Query Plan Schema
 
@@ -758,12 +764,14 @@ struct RAGQueryPlan: Codable, Sendable {
     var sort: RAGRepoSort?
     var candidateLimit: Int?
     var remoteContextRequests: [RAGRemoteContextRequest]
+    var fallbackQuestions: [String]
     var confidence: RAGQueryPlanConfidence
     var clarificationQuestion: String?
     var userVisiblePlan: RAGUserVisiblePlan
 }
 
 enum RAGQueryMode: String, Codable, Sendable {
+    case guidedDiscovery = "guided_discovery"
     case semanticOnly = "semantic_only"
     case filteredSemantic = "filtered_semantic"
     case structuredOnly = "structured_only"
@@ -802,6 +810,9 @@ struct RAGRemoteContextRequest: Codable, Sendable {
     var reason: String
     var maxRepos: Int
     var perRepoLimit: Int
+    var state: RAGRemoteIssueState
+    var sort: RAGRemoteIssueSort
+    var order: RAGSortDirection
 }
 
 enum RAGRemoteContextResource: String, Codable, Sendable {
@@ -849,10 +860,13 @@ struct RAGUserVisiblePlan: Codable, Sendable {
 
 | mode | 使用场景 | 后续流程 |
 |---|---|---|
+| `guided_discovery` | 问候、闲聊、能力询问等不应检索知识库的问题 | 返回引导和推荐问题，不检索、不生成 |
 | `semantic_only` | 用户没有结构化筛选语义 | 知识库全量 repo -> child retrieval |
 | `filtered_semantic` | 用户同时有筛选和语义问题 | SQL 过滤 repo -> child retrieval |
 | `structured_only` | 用户只要列表/排序/统计,没有语义问题 | SQL 过滤 + metadata/summary bundle -> 直接生成列表 |
 | `needs_clarification` | 日期/字段/意图不明确 | UI 追问,不执行检索 |
+
+纯问候、致谢、告别等边界明确的短输入先走本地守卫，连 Planner 都不调用；其余疑似闲聊由 Planner 返回 `guided_discovery`。两条路径最终都产生可持久化的 `RAGTerminalResponse`，避免用 Generator 编造知识库答案。
 
 #### 7.4.1 无筛选语义
 
@@ -1048,6 +1062,8 @@ Planner:
 - 远程上下文必须受候选 repo 限制,不能从整个 GitHub 搜索后绕过知识库边界。
 - `maxRepos` 默认 5,`perRepoLimit` 默认 10,本地校验时必须钳制上限。
 - 远程上下文失败不改变本地 plan mode,只进入降级上下文。
+- `query` 只能包含主题关键词，禁止输出 `repo:`、`org:`、`user:`、`is:`、`type:`、`in:`；执行层仍会再次清洗，不能只信任 Prompt。
+- Issues / PR 可声明 `state = all/open/closed`、`sort = created/updated` 和 `order = asc/desc`；“最新 Issues”默认使用 `state=all&sort=created&order=desc`。
 
 ### 7.6 Planner 校验与降级
 
@@ -1064,6 +1080,7 @@ mode 与字段约束:
 
 | mode | 必须满足 |
 |---|---|
+| `guided_discovery` | 清空 filters、sort、candidateLimit 和远程请求，`fallbackQuestions` 最多 3 条 |
 | `semantic_only` | `semanticQuery` 非空,filters 为空或无有效字段 |
 | `filtered_semantic` | `semanticQuery` 非空,filters 或 sort 至少有一个有效字段 |
 | `structured_only` | `semanticQuery` 可空,filters 或 sort 至少有一个有效字段 |
@@ -1098,8 +1115,11 @@ Planner remote resource unsupported
 
 ```text
 user question
+  -> local social guard
+    -> matched: guided terminal response
   -> AI Query Planner
     -> invalid JSON: retry once
+    -> guided_discovery: guided terminal response
     -> needs_clarification: ask user
     -> semantic_only
     -> filtered_semantic
@@ -1108,8 +1128,7 @@ user question
 semantic_only:
   -> candidate repos = all knowledge repos
   -> child retrieval
-  -> if no ready chunks: no_index
-  -> if no hits / low relevance: no_evidence
+  -> local evidence may be empty; continue to attachments / approved remote context
   -> repo bundle
   -> optional remote context for top repos
   -> answer
@@ -1118,8 +1137,7 @@ filtered_semantic:
   -> SQL repo filter
   -> if 0 repos: no_candidate_repos
   -> child retrieval within candidate repos
-  -> if no ready chunks: no_index
-  -> if no hits / low relevance: no_evidence
+  -> local evidence may be empty; continue to attachments / approved remote context
   -> repo bundle
   -> optional remote context for top repos
   -> answer
@@ -1130,6 +1148,11 @@ structured_only:
   -> metadata/summary bundle
   -> optional remote context for candidate repos when requested
   -> answer as list/table
+
+unified evidence gate:
+  -> structured rows exist OR local bundles exist OR successful remote blocks exist OR real attachments exist
+  -> yes: Generator
+  -> no: terminal response + up to 3 suggested questions
 ```
 
 远程上下文介入顺序必须在候选 repo 确定之后:
@@ -1138,8 +1161,10 @@ structured_only:
 Query Planner
   -> SQL repo filter / semantic candidate scope
   -> local child retrieval and repo aggregation
-  -> top RepoContextBundle
-  -> remote ephemeral context fetch for selected repos
+  -> explicit repos or top RepoContextBundle
+  -> resolve repo × resource work items
+  -> user confirms each work item
+  -> remote ephemeral context fetch for approved work items
   -> final RepoContextBundle
   -> Generator
 ```
@@ -1204,6 +1229,8 @@ WHERE c.repo_id IN candidateRepoIDs
 ```
 
 这种情况下不调用 Generator 编答案。UI 可以展示“候选但证据不足”的 repo 列表,但必须标注证据不足。
+
+最终是否调用 Generator 由统一证据门禁决定，而不是只看本地分片：真实附件或成功且 `resultCount > 0` 的 GitHub 临时上下文可以独立支撑回答；仅有 GitHub URL 描述、远程空结果、远程失败或 semantic candidate metadata 都不算证据。无证据回复附带最多 3 个 `RAGSuggestedQuestionAction`，点击后恢复原轮 `explicitRepoIDs/explicitRepoMode` 再发送，避免把建议问题意外扩大到整个知识库。
 
 ### 7.10 UI Query Plan Chips
 
@@ -1594,14 +1621,13 @@ degradation block 不缓存,允许用户修复环境后立即重试。
 ```swift
 protocol KnowledgeRAGRemoteContextProviding {
     func fetch(
-        requests: [RAGRemoteContextRequest],
-        candidates: [RAGRepoCandidate]
+        workItems: [RAGResolvedRemoteWorkItem],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
     ) async -> [RAGRemoteContextBlock]
 }
 ```
 
-Provider 输入是经过知识库边界和结构化 SQL 筛选后的 top candidates，而不是全量 repo。远程数据
-只补充既有候选，不得反向扩大 RAG 范围。
+每个 work item 都已经绑定唯一知识库 repo 与 resource。repo 来源只能是用户显式选择，或本地检索实际聚合出的 repo；本地无命中时不得取任意前 5 个知识库项目兜底。远程数据只补充已解析的 work item，不得反向扩大 RAG 范围。
 
 第一版支持的 resource:
 
@@ -1632,10 +1658,13 @@ Provider 输入是经过知识库边界和结构化 SQL 筛选后的 top candida
 
 1. Query Planner 输出 `remoteContextRequests`。
 2. SQL / Retriever 先确定候选 repo。
-3. Provider 只对 top repo 拉取远程数据。
-4. Provider 把 raw JSON 转成 LLM 友好的文本块。
-5. Service 将 blocks 作为独立的 ephemeral context 参数交给 PromptBuilder。
-6. Generator 在 prompt 中明确区分 local indexed context 与 remote ephemeral context。
+3. Service 解析 `repo × resource` work items，UI 逐项确认。
+4. Provider 只对已批准 work items 拉取远程数据，并实时回传审计状态。
+5. Provider 把 raw JSON 转成 LLM 友好的文本块。
+6. Service 将成功且非空的 blocks 作为独立 ephemeral context 参数交给 PromptBuilder。
+7. Generator 在 prompt 中明确区分 local indexed context 与 remote ephemeral context。
+
+Issues / PR 查询统一调用 GitHub `/search/issues`：执行层固定追加目标 `repo:owner/name` 与 `is:issue` / `is:pr`，再传 `state/sort/order/per_page`。响应必须同时校验精确 `repository_url` 与 `pull_request` 标记，防止跨 repo 或 Issue/PR 混入。
 
 `structured_only` 也可以使用远程上下文,但必须先有 SQL 候选 repo。例如“列出我知识库里最近 issue 很活跃的 Swift 项目”可以先用 SQL 找 Swift 知识库 repo,再对候选 repo 拉取 issues 统计。不能反过来先全网搜 issue 再生成 repo 列表。
 
@@ -1677,7 +1706,7 @@ observed_themes:
 | timeout / network error | 返回 degradation block,继续本地答案 |
 | resource 不支持 | 丢弃该 request,记录 debug log |
 
-Generator 必须看到 degradation block,并在答案中说明“GitHub Issues 暂时无法获取,以下结论仅基于本地知识库”。UI Inspector 也要展示远程上下文失败原因。
+远程失败不会作为事实证据进入 Generator；如果还有本地或附件证据，PromptBuilder 标记远程降级，答案说明对应 GitHub 数据不可用。UI 执行轨迹和 Inspector 都展示失败原因。如果所有来源都没有证据，则直接返回无证据引导，不调用 Generator。
 
 ### 9.6 与本地索引的关系
 
@@ -1822,6 +1851,16 @@ enum RAGNoResultState: Sendable {
 
 UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“正在检索知识库”,remote context 阶段显示“正在获取 GitHub 上下文”,generation 阶段 streaming markdown。`clarificationRequired` / `noResult` 都是终止态,不会继续调用 Generator。
 
+流式展示还必须遵守以下性能契约：
+
+1. Provider 的原始 token/delta 只追加到非可观察 buffer，不能逐条改写 `@Observable` UI 状态。
+2. Think 以 150ms 或累计 256 字为发布阈值；完整文本始终保留在 buffer，完成、失败、取消和提前结束都必须 flush。
+3. 正文继续使用稳定 Markdown 前缀 + 未稳定普通 `Text` 尾部；正在变化的 Think/尾部不得启用 `.textSelection(.enabled)`，避免 AppKit 为每帧重建 `SelectionOverlay`。
+4. Think 详情使用稳定的数组下标身份，不把持续变化的正文用作 `ForEach` identity。
+5. 自动滚动控制器只在跟随状态真实变化时发布 Observation；phase、底部可见性和手势生命周期属于内部状态，不参与 View 依赖追踪。
+
+这些限制只降低 UI 发布与布局频率，不改变最终文本、执行轨迹落库、引用解析或完成态复制/导出能力。
+
 ## 11. 工作台 UI 设计
 
 ### 11.1 入口
@@ -1936,6 +1975,8 @@ Evidence 页在本地 citations 后显示轻量远程证据分组：
 Planner 产出远程请求后，Answer Surface 进入确认态并显示资源 chips。用户可以取消单个资源、确认
 保留项或全部跳过；未确认的资源不会发起网络请求。非 UI 调用方没有提供确认器时按“全部跳过”
 处理，不能把缺少确认器解释成默认批准。
+
+对话步骤同时增加可折叠的“联网搜索 GitHub”执行项。父步骤按既有 timeline 规则运行时展开、结束后折叠；子项按 `repo × resource` 展示 pending/running/succeeded/empty/failed/skipped，以及 network/cache、HTTP 状态、结果数、耗时、脱敏 endpoint 和错误。审计随回答持久化，但不保存 token、Authorization header 或远程正文。
 
 ### 11.7 Command Composer
 
@@ -2200,7 +2241,8 @@ Settings -> Storage 建议增加:
 ### 15.6 Remote Context tests
 
 - 没有 remote request 时不调用 `KnowledgeRAGRemoteContextProvider`。
-- remote provider 只接收知识库 SQL 筛选后的 top repo candidates。
+- remote provider 只接收由显式 repo 或实际命中 repo 解析出的已批准 work items。
+- Issues / PR 强制绑定目标 repo，过滤可扩大范围的 query qualifier，并剔除跨 repo 与错误类型结果。
 - issues provider 输出 LLM 友好的文本块,不透传 raw JSON。
 - issues provider 遵守 maxRepos / perRepoLimit / token budget。
 - rate limit / timeout / forbidden 返回 degradation block,不抛出整轮失败。
@@ -2208,6 +2250,8 @@ Settings -> Storage 建议增加:
 - remote context 不写入 `rag_chunks`。
 - 完成回答后只把 resource/source URL/fetchedAt/降级原因写入 `rag_message_remote_contexts`，表结构不得出现远程正文列。
 - structured_only + remote request 必须先有 SQL 候选 repo。
+- remote-only 有成功非空 block 时允许生成；远程空结果或失败不能单独通过证据门禁。
+- 执行轨迹记录 cache/network、HTTP 状态、结果数、耗时、脱敏 URL 与错误。
 
 ### 15.7 Generator tests
 
@@ -2220,15 +2264,21 @@ Settings -> Storage 建议增加:
 - marker 在生成前已绑定 matched child chunk metadata。
 - 模型创造的 marker 被过滤。
 - 无命中时不调用 chat 或返回明确不足状态。
+- semantic candidate metadata 不得冒充本地 evidence；attachment-only 可以调用 Generator。
 
 ### 15.8 UI/ViewModel tests
 
+- 高频追加 10,000 个单字符 Think delta 时，UI 快照次数保持有界且 flush 后正文逐字一致。
+- 重复底部可见性回调不重复发布跟随状态；用户接管、离底与回到底部的既有语义保持不变。
+- 流式可变 Think 与回答尾部不得启用文本选择层；完成态继续通过复制/导出入口提供完整内容。
 - 空知识库状态。
 - 索引缺失状态。
 - Query Plan chips 展示范围 / 筛选 / 排序 / 语义。
 - Query Plan chips 展示远程临时上下文。
 - `needs_clarification` 展示追问,不执行检索。
 - `no_candidate_repos` / `no_index` / `no_evidence` 展示不同空状态。
+- 纯问候本地返回引导，Planner/检索/Generator 调用次数均为 0。
+- 无证据推荐问题可持久化，点击后恢复原显式 repo scope 并自动发送。
 - retrieval -> remote context -> generation -> completed 状态流。
 - Inspector 使用 Evidence / Plan / Index 三个页签；Evidence 页显示 resource / fetchedAt / source URL / degradation，历史恢复时只显示远程审计元数据，不回放远程正文。
 - `@repo` mention 能生成 repo context chip。

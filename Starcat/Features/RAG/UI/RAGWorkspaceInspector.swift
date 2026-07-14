@@ -498,6 +498,7 @@ struct RAGWorkspaceInspector: View {
         case .semanticOnly: return String.l10n("rag.workspace.inspector.planMode.semanticOnly")
         case .filteredSemantic: return String.l10n("rag.workspace.inspector.planMode.filteredSemantic")
         case .structuredOnly: return String.l10n("rag.workspace.inspector.planMode.structuredOnly")
+        case .guidedDiscovery: return String.l10n("rag.workspace.inspector.planMode.guidedDiscovery")
         case .needsClarification: return String.l10n("rag.workspace.inspector.planMode.needsClarification")
         }
     }

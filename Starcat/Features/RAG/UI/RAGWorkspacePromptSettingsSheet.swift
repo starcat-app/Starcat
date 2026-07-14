@@ -46,9 +46,12 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
             return [
                 .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguagePlanner"),
                 .init(token: "{question}", meaningKey: "rag.workspace.prompt.placeholder.question"),
-                .init(token: "{explicitRepoIDs}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepoIDs"),
+                .init(token: "{explicitRepositories}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepositories"),
                 .init(token: "{explicitRepoMode}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepoMode"),
-                .init(token: "{attachmentCount}", meaningKey: "rag.workspace.prompt.placeholder.attachmentCount"),
+                .init(token: "{attachmentDescriptors}", meaningKey: "rag.workspace.prompt.placeholder.attachmentDescriptors"),
+                .init(token: "{pastedGitHubLinks}", meaningKey: "rag.workspace.prompt.placeholder.pastedGitHubLinks"),
+                .init(token: "{previousUserQuestion}", meaningKey: "rag.workspace.prompt.placeholder.previousUserQuestion"),
+                .init(token: "{previousReferencedRepositories}", meaningKey: "rag.workspace.prompt.placeholder.previousReferencedRepositories"),
             ]
         case .compressor:
             return [

@@ -147,7 +147,7 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
         // Prompt 层只展开预算内的前 50 行，但保留这里的完整候选计数。
         case .structuredOnly: return 1_000
         case .filteredSemantic: return 200
-        case .semanticOnly, .needsClarification: return 1_000
+        case .semanticOnly, .guidedDiscovery, .needsClarification: return 1_000
         }
     }
 

@@ -198,13 +198,31 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
     }
 
     private func renderedUserPrompt(question: String, context: RAGComposerContext) -> String {
-        let explicit = context.explicitRepoIDs.map(String.init).joined(separator: ",")
+        let explicit = context.explicitRepoReferences
+            .map { "\($0.id):\($0.fullName)" }
+            .joined(separator: ", ")
+        let attachments = context.attachments
+            .map { "\($0.filename) (\($0.contentType), \($0.handling.rawValue))" }
+            .joined(separator: ", ")
+        let links = context.pastedGitHubLinks
+            .map { "\($0.owner)/\($0.repo) [\($0.relation.rawValue)]" }
+            .joined(separator: ", ")
+        let previousRepos = context.previousReferencedRepos
+            .map { "\($0.id):\($0.fullName)" }
+            .joined(separator: ", ")
         return promptConfiguration.renderedUserPrompt(placeholders: [
             "outputLanguage": outputLanguage,
             "question": question,
-            "explicitRepoIDs": explicit,
+            // 旧版用户自定义 Planner prompt 仍可能引用这两个占位符；保留值仅为兼容，
+            // 默认 prompt 已改用带仓库名和附件描述的最小上下文。
+            "explicitRepoIDs": context.explicitRepoIDs.map(String.init).joined(separator: ","),
+            "attachmentCount": String(context.attachments.count),
+            "explicitRepositories": explicit.isEmpty ? "[]" : "[\(explicit)]",
             "explicitRepoMode": context.explicitRepoMode.rawValue,
-            "attachmentCount": String(context.attachments.count)
+            "attachmentDescriptors": attachments.isEmpty ? "[]" : "[\(attachments)]",
+            "pastedGitHubLinks": links.isEmpty ? "[]" : "[\(links)]",
+            "previousUserQuestion": context.previousUserQuestion ?? "<none>",
+            "previousReferencedRepositories": previousRepos.isEmpty ? "[]" : "[\(previousRepos)]"
         ])
     }
 
@@ -232,6 +250,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         plan.semanticQuery = plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         plan.candidateLimit = plan.candidateLimit.map { min(max($0, 1), 1_000) }
         plan.remoteContextRequests = normalizeRemoteContextRequests(plan.remoteContextRequests)
+        plan.fallbackQuestions = normalizedFallbackQuestions(plan.fallbackQuestions)
 
         switch plan.mode {
         case .semanticOnly:
@@ -249,6 +268,14 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             guard plan.filters.hasEffectiveConditions || plan.sort != nil else {
                 throw RAGQueryPlannerError.invalidPlan("structured_only 没有结构化条件")
             }
+        case .guidedDiscovery:
+            // 引导模式不执行任何数据访问。即使不可信 Planner 同时给了过滤或联网请求，
+            // 本地也必须清空，不能让一条闲聊问题触发隐藏副作用。
+            plan.semanticQuery = ""
+            plan.filters = .init()
+            plan.sort = nil
+            plan.candidateLimit = nil
+            plan.remoteContextRequests = []
         case .needsClarification:
             guard let clarification = plan.clarificationQuestion?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !clarification.isEmpty else {
@@ -302,14 +329,17 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         for request in requests {
             guard unique.count < maxRequestCount else { break }
             let query = String(request.query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
-            let identity = "\(request.resource.rawValue)|\(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))"
+            let identity = "\(request.resource.rawValue)|\(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))|\(request.state.rawValue)|\(request.sort.rawValue)|\(request.order.rawValue)"
             guard seen.insert(identity).inserted else { continue }
             unique.append(RAGRemoteContextRequest(
                 resource: request.resource,
                 query: query,
                 reason: String(request.reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500)),
                 maxRepos: min(max(request.maxRepos, 1), 5),
-                perRepoLimit: min(max(request.perRepoLimit, 1), 10)
+                perRepoLimit: min(max(request.perRepoLimit, 1), 10),
+                state: request.state,
+                sort: request.sort,
+                order: request.order
             ))
         }
         // 先去重、再均分总工作量。原先按输入顺序先取满 5 个 repo，会让第一类请求
@@ -325,6 +355,18 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             normalized.maxRepos = maxRepos
             return normalized
         }
+    }
+
+    private static func normalizedFallbackQuestions(_ questions: [String]) -> [String] {
+        var seen = Set<String>()
+        return questions.compactMap { raw in
+            let question = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !question.isEmpty,
+                  question.count <= 120,
+                  seen.insert(question.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)).inserted
+            else { return nil }
+            return question
+        }.prefix(3).map { $0 }
     }
 
     private static func extractJSONObject(_ value: String) -> String {

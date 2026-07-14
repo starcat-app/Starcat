@@ -12,6 +12,51 @@
 
 import Foundation
 
+/// 把 Provider 的高频文本 delta 合并成低频 UI 快照。
+///
+/// 完整文本始终保留在 `text`；节流只控制 SwiftUI 可观察状态的发布频率，结束时调用
+/// `flush()` 即可补上最后一小段。因此性能保护不会截断 Think，也不会改变最终落库内容。
+struct StreamingTextPresentationBuffer: Sendable {
+    private let throttleInterval: TimeInterval
+    private let immediateCharacterCount: Int
+    private var pendingCharacterCount = 0
+    private var lastCommitAt: TimeInterval?
+
+    private(set) var text = ""
+
+    init(throttleInterval: TimeInterval = 0.15, immediateCharacterCount: Int = 256) {
+        self.throttleInterval = max(0, throttleInterval)
+        self.immediateCharacterCount = max(1, immediateCharacterCount)
+    }
+
+    /// 返回非 nil 表示本次应该把完整快照发布给 UI。首个 delta 立即发布，避免用户
+    /// 在模型已经开始推理后仍只看到空白步骤。
+    mutating func append(_ delta: String, now: TimeInterval) -> String? {
+        guard !delta.isEmpty else { return nil }
+        text.append(contentsOf: delta)
+        pendingCharacterCount += delta.count
+
+        guard lastCommitAt == nil
+                || now - (lastCommitAt ?? now) >= throttleInterval
+                || pendingCharacterCount >= immediateCharacterCount else {
+            return nil
+        }
+        return commit(now: now)
+    }
+
+    /// 流结束、失败或取消前补发尚未展示的 delta；已经全部发布时不制造重复刷新。
+    mutating func flush(now: TimeInterval) -> String? {
+        guard pendingCharacterCount > 0 else { return nil }
+        return commit(now: now)
+    }
+
+    private mutating func commit(now: TimeInterval) -> String {
+        lastCommitAt = now
+        pendingCharacterCount = 0
+        return text
+    }
+}
+
 /// 一次流式 UI 提交对应的展示数据。
 struct StreamingMarkdownSnapshot: Equatable, Sendable {
     let messageID: UUID

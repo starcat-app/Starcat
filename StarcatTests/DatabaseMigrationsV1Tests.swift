@@ -53,7 +53,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("v7-knowledge-rag 应在已应用迁移列表中，并带上最终会话列")
+    @Test("RAG v7/v8 应在已应用迁移列表中，并带上最终会话与推荐问题列")
     func knowledgeRAGMigrationSealed() throws {
         let db = try makeDB()
         try db.read { db in
@@ -61,6 +61,7 @@ struct DatabaseMigrationsV1Tests {
             DatabaseMigrations.registerAll(into: &migrator)
             let applied = try migrator.appliedMigrations(db)
             #expect(applied.contains("v7-knowledge-rag"))
+            #expect(applied.contains("v8-rag-suggested-actions"))
 
             let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
             #expect(conversationColumns.contains("is_pinned"))
@@ -71,6 +72,7 @@ struct DatabaseMigrationsV1Tests {
             let messageColumns = try db.columns(in: "rag_messages").map(\.name)
             #expect(messageColumns.contains("execution_trace_json"))
             #expect(messageColumns.contains("processing_duration"))
+            #expect(messageColumns.contains("suggested_actions_json"))
         }
     }
 

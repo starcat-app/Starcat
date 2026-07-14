@@ -24,7 +24,9 @@ struct RAGAssistantMessageBlock: View {
     let activityLabel: String?
     /// 从提交问题到最后一个 LLM 响应结束的耗时；运行中持续刷新，历史回答保持冻结值。
     let processingDuration: TimeInterval?
+    let suggestedActions: [RAGSuggestedQuestionAction]
     let onSelectCitation: (RAGCitation) -> Void
+    let onSuggestedAction: (RAGSuggestedQuestionAction) -> Void
     let onExport: () -> Void
 
     @State private var isHovered = false
@@ -86,6 +88,19 @@ struct RAGAssistantMessageBlock: View {
                     citations: citations,
                     onSelectCitation: onSelectCitation
                 )
+            }
+
+            if !suggestedActions.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("rag.workspace.guidance.suggestedTitle")
+                        .font(interfaceScale.font(.caption, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(suggestedActions) { action in
+                        Button(action.question) { onSuggestedAction(action) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
             }
 
             // 底部悬停行：复制/导出与时间戳紧挨成组（时间在图标右侧），不要 Spacer 拉开。
@@ -206,9 +221,10 @@ struct RAGStreamingAssistantMessageBlock: View {
 
             if !snapshot.liveTail.isEmpty {
                 // 尾部可能仍补全列表、强调或代码围栏；中间态不解析它，保证流式帧率。
+                // 这里不能启用 textSelection：macOS 会为每次变化重建 SelectionOverlay，
+                // 长回答可能把 SwiftUI 主线程拖入 AttributeGraph livelock。完成态仍可整条复制。
                 Text(snapshot.liveTail)
                     .font(interfaceScale.font(.body))
-                    .textSelection(.enabled)
                     .frame(maxWidth: 900, alignment: .leading)
             }
 

@@ -88,6 +88,16 @@ struct ScrollTailControllerTests {
         #expect(following.isFollowing)
     }
 
+    @Test("重复的底部可见性回调不改变跟随状态")
+    func duplicateBottomVisibilityKeepsFollowingStable() {
+        let controller = ScrollTailController()
+
+        controller.updateBottomVisibility(true)
+        controller.updateBottomVisibility(true)
+
+        #expect(controller.isFollowing)
+    }
+
     @Test("idle 先到且随后锚点可见时仍恢复跟随")
     func visibilityAfterIdleReengages() {
         let paused = ScrollTailController()

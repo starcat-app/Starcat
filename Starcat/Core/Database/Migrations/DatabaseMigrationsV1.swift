@@ -32,7 +32,8 @@
 //
 //  **正式版后的追加迁移（不要与上方「原 vN」混淆）**：
 //  - `v2-undo-star` / `v3-agent-runs` / `v4-agent-tool-outputs` /
-//    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag`
+//    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag` /
+//    `v8-rag-suggested-actions`
 //
 
 import Foundation
@@ -56,6 +57,22 @@ enum DatabaseMigrations {
         registerV5(into: &migrator)
         registerV6(into: &migrator)
         registerV7(into: &migrator)
+        registerV8(into: &migrator)
+    }
+
+    // MARK: - v8-rag-suggested-actions：RAG 推荐问题持久化（2026-07-14）
+
+    /// 推荐问题必须跟随 assistant message 回放。迁移对表不存在和开发库已手工补列都幂等，
+    /// 但不会回写已收口的 v7 schema，确保正式用户只走向前追加的升级路径。
+    private static func registerV8(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v8-rag-suggested-actions") { db in
+            guard try db.tableExists("rag_messages") else { return }
+            let columns = try db.columns(in: "rag_messages").map(\.name)
+            guard !columns.contains("suggested_actions_json") else { return }
+            try db.alter(table: "rag_messages") { table in
+                table.add(column: "suggested_actions_json", .text)
+            }
+        }
     }
 
     // MARK: - v7-knowledge-rag：知识库 RAG 整包最终 schema（2026-07-14）

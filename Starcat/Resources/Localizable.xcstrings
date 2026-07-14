@@ -20825,6 +20825,12 @@
         }
       }
     },
+    "rag.workspace.inspector.planMode.guidedDiscovery": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Guided discovery" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "引导提问" } }
+      }
+    },
     "rag.workspace.inspector.planMode.needsClarification": {
       "localizations": {
         "en": {
@@ -21630,13 +21636,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fetch GitHub context"
+            "value": "Search GitHub online"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "获取 GitHub 上下文"
+            "value": "联网搜索 GitHub"
           }
         }
       }
@@ -53567,6 +53573,23 @@
         }
       }
     },
+    "rag.workspace.prompt.placeholder.explicitRepositories": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explicit repo IDs and full names selected in Composer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Composer 中明确选择的仓库 ID 与完整名称。"
+          }
+        }
+      }
+    },
     "rag.workspace.prompt.placeholder.explicitRepoMode": {
       "extractionState": "manual",
       "localizations": {
@@ -53597,6 +53620,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "本轮附件数量。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.attachmentDescriptors": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attachment filename, content type, and handling mode; no attachment body."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件文件名、内容类型与处理方式，不包含附件正文。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.pastedGitHubLinks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasted GitHub repo identities and their Starcat relationship; no remote page content."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴的 GitHub 仓库身份及其 Starcat 关系，不包含远程页面正文。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.previousUserQuestion": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The immediately previous user question, when available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一条用户问题（如有）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.previousReferencedRepositories": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repo IDs and full names actually cited by the previous assistant answer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一条助手回答实际引用的仓库 ID 与完整名称。"
           }
         }
       }
@@ -53989,6 +54080,156 @@
           }
         }
       }
+    },
+    "rag.workspace.guidance.scope": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Knowledge Base guidance" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库提问引导" } }
+      }
+    },
+    "rag.workspace.guidance.socialPlan": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Recognized a greeting and prepared knowledge-base question suggestions locally." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已识别为问候，并在本地准备知识库问题建议。" } }
+      }
+    },
+    "rag.workspace.guidance.socialReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hello! I answer questions from your Starcat knowledge base. Choose a question below, or ask about a repository in your knowledge base." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "你好！我主要根据你的 Starcat 知识库回答仓库相关问题。你可以点击下面的问题，或直接询问知识库中的项目。" } }
+      }
+    },
+    "rag.workspace.guidance.outOfScopeReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This question is outside the current knowledge-base Q&A scope. Try one of these repository questions instead." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这个问题不属于当前知识库问答范围。你可以改为询问知识库中的项目，例如：" } }
+      }
+    },
+    "rag.workspace.guidance.noIndexReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Relevant repositories were found, but their RAG index is not ready yet. Rebuild the index and try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "找到了相关仓库，但它们的 RAG 索引尚未就绪。请先重建索引后再试。" } }
+      }
+    },
+    "rag.workspace.guidance.noCandidatesReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No repository matched the current scope or filters. Try another question or adjust the repository scope." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前仓库范围或筛选条件下没有匹配项目。可以换个问题，或调整仓库范围后再试。" } }
+      }
+    },
+    "rag.workspace.guidance.noKnowledgeReposReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "There are no repositories in the knowledge base yet. Add repositories before asking knowledge-base questions." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库中还没有可查询的仓库。请先添加项目，再进行知识库问答。" } }
+      }
+    },
+    "rag.workspace.guidance.remoteScopeRequiredReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Live GitHub data requires an exact repository scope. Add an @repository and ask again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询 GitHub 实时数据需要明确仓库范围。请先添加一个 @仓库 后再提问。" } }
+      }
+    },
+    "rag.workspace.guidance.remoteFailedReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The GitHub online search failed, and there is no other evidence available for this question. See the online-search audit details and try again later." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub 联网搜索失败，且本轮没有其他可用证据。你可以展开联网审计查看原因，稍后再试。" } }
+      }
+    },
+    "rag.workspace.guidance.remoteEmptyReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No matching public GitHub results were found, and there is no other evidence available for this question." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有找到匹配的 GitHub 公开结果，且本轮没有其他可用证据。" } }
+      }
+    },
+    "rag.workspace.guidance.noEvidenceReply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No relevant content was found in the available knowledge-base evidence. Try one of the questions below." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在当前可用的知识库证据中没有找到相关内容。你可以尝试下面的问题：" } }
+      }
+    },
+    "rag.workspace.guidance.repoUnavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A repository used by this suggestion is no longer in the knowledge base. Please choose a new repository scope." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这个推荐问题关联的仓库已不在知识库中，请重新选择仓库范围。" } }
+      }
+    },
+    "rag.workspace.guidance.question.overview": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What projects are in my knowledge base, and what are they for?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "我的知识库中有哪些项目，它们分别适合做什么？" } }
+      }
+    },
+    "rag.workspace.guidance.question.compare": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Compare the main use cases and differences of relevant projects in my knowledge base." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "比较知识库中相关项目的主要用途和差异。" } }
+      }
+    },
+    "rag.workspace.guidance.question.latestIssues": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What are the latest open Issues for the selected repository?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选项目最近有哪些未关闭的 Issues？" } }
+      }
+    },
+    "rag.workspace.guidance.question.recentlyUpdated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Which projects in my knowledge base were updated most recently?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "我的知识库中最近更新的项目有哪些？" } }
+      }
+    },
+    "rag.workspace.guidance.suggestedTitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Try asking" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "你可以继续问" } }
+      }
+    },
+    "rag.workspace.execution.remote.queryFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Query: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询：%@" } }
+      }
+    },
+    "rag.workspace.execution.remote.cache": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cache (no network request)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "缓存命中（未发起网络请求）" } }
+      }
+    },
+    "rag.workspace.execution.remote.network": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Network" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "网络请求" } }
+      }
+    },
+    "rag.workspace.execution.remote.resultCountFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld results" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 条结果" } }
+      }
+    },
+    "rag.workspace.execution.remote.endpoint": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "View request endpoint" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查看请求 endpoint" } }
+      }
+    },
+    "rag.workspace.execution.remote.status.pending": {
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Pending" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "等待中" } } }
+    },
+    "rag.workspace.execution.remote.status.running": {
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Running" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询中" } } }
+    },
+    "rag.workspace.execution.remote.status.succeeded": {
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Succeeded" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "成功" } } }
+    },
+    "rag.workspace.execution.remote.status.empty": {
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No results" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "无结果" } } }
+    },
+    "rag.workspace.execution.remote.status.failed": {
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Failed" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "失败" } } }
+    },
+    "rag.workspace.execution.remote.status.skipped": {
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Skipped" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "已跳过" } } }
     },
     "rag.workspace.addToLibrary.emptyFilterSubtitle": {
       "localizations": {

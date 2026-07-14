@@ -90,6 +90,9 @@
 - [x] 多轮会话保留近期 3 轮原文；更早消息按覆盖水位压缩为持久化语义摘要，压缩失败时使用受限本地摘要且原文不丢失。
 - [x] 支持新建、继续和删除会话，支持复制与导出 Markdown。
 - [x] 用户数据库切换前取消当前问答并销毁工作台，同时暂停 source 监听并等待所有在途索引任务退出，防止旧账户历史或 chunk 误写新账户数据库。
+- [x] 统一证据门禁只接受 structured rows、本地命中 bundles、成功非空的 GitHub blocks 或真实附件；semantic candidates 和 GitHub URL 不冒充证据。
+- [x] 支持 attachment-only / remote-only 生成；所有来源均无证据时不调用 Generator，返回明确不足说明与最多 3 个推荐问题。
+- [x] 推荐问题随 assistant message 持久化；点击后恢复原轮显式 repo scope，再作为新问题发送。
 
 ## 6. 远程临时上下文
 
@@ -103,6 +106,9 @@
 - [x] 单 repo/resource 失败返回 degradation block，继续使用已取得的本地证据。
 - [x] Inspector 展示 resource、fetchedAt、source URL、正文摘要或降级原因。
 - [x] 历史恢复时 Inspector 展示远程上下文审计 metadata，不回放临时网络正文。
+- [x] 远程确认粒度收敛为 `repo × resource`；目标 repo 只来自显式选择或实际检索命中，不用任意知识库前 5 个兜底。
+- [x] Issues / PR 统一调用 `/search/issues`，固定目标 repo 与类型，清洗范围 qualifier 并二次过滤跨 repo / 类型错误结果。
+- [x] 对话步骤新增可折叠“联网搜索 GitHub”，逐项展示并持久化 network/cache、HTTP、结果数、耗时、脱敏 endpoint 与错误。
 
 ## 7. 工作台 UI/UX
 
@@ -125,6 +131,9 @@
 - [x] no knowledge/no candidates/no index/no evidence/clarification/error/cancel 均有独立 UI 状态。
 - [x] 固定文案完成 en/zh-Hans i18n。
 - [x] 索引构建与发送问答均在 UI 和 service 装配边界校验 Pro，已有索引不会绕过门禁。
+- [x] 明确问候/致谢/告别走本地引导，其他非知识库闲聊由 Planner 返回 `guided_discovery`；两者都不检索、不生成。
+- [x] Planner 仅接收当前问题、显式 repo、附件/链接描述、上一条用户问题与上一条回答实际引用 repo，不接收证据正文或完整历史。
+- [x] 长 Think 通过无损 buffer 降频发布，流式可变文本不创建 SelectionOverlay；滚动内部状态不参与 Observation，阻断布局反馈环。
 
 ## 8. Settings、Storage 与自托管后端
 
@@ -156,6 +165,12 @@
 > 2026-07-10: 专项测试与全量测试均已通过。测试运行中暴露的语言全局状态污染已通过测试串行化与与语言无关的行为断言修复；不改变产品逻辑。
 
 > 2026-07-13: RAG 收尾整改后的完整 `xcodebuild test` 为 1377 通过、0 失败、7 跳过、1 项预期失败（总计 1385）；100/200 条历史会话固定关联读取基线用例通过。
+
+> 2026-07-14: 本轮 `KnowledgeRAGCoreTests + AppSettingsTests` 排除既有分页预取断言后 96/96 通过；`DatabaseMigrationsV1Tests` 19/19 通过，确认 Planner 默认模板兼容升级与 v8 `suggested_actions_json`。
+
+> 2026-07-14: 长流式内容修复后 `KnowledgeRAGCoreTests + StreamingMarkdownSnapshotTests + ScrollTailControllerTests` 排除既有分页预取断言后 81/81 通过；10,000 个逐字符 delta 最终内容完整且 UI 发布次数低于 100。
+
+> 2026-07-14: 同一修复的全量 `xcodebuild test` 排除既有分页预取断言后退出码 0；Swift Testing 1375 项 / 171 suites 通过（1 个既有 known issue），XCTest 46 项通过、1 项按设计跳过。
 
 ## 10. 真实数据人工验收
 
@@ -197,6 +212,8 @@
 > 实现：固定快照、模型、Provider 和 Top K，避免把合成关键词或不同运行条件混入质量结论。
 - [x] 建立 RAG 测试与评测方案，覆盖质量、性能、可靠性、安全与发布门禁 — `RAG测试与评测方案.md` — 2026-07-14
 > 实现：拆分检索、回答、引用、拒答和性能指标，以脱敏真实样本和同条件基线驱动调参。
+- [x] 修复长 Think / 长回答的 SwiftUI 布局活锁，并建立 10,000 delta 无损降频回归测试 — `StreamingMarkdownSnapshot.swift`、`RAGAssistantMessageBlock.swift`、`ScrollFollowTail.swift` — 2026-07-14
+> 实现：运行态采样定位 SelectionOverlay 与 AttributeGraph 热点；Think 使用 150ms/256 字快照，动态文本移除选择层，滚动状态只发布真实变化。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
 - [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。

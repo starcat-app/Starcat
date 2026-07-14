@@ -11,6 +11,44 @@ import Testing
 
 @Suite("StreamingMarkdownChunker")
 struct StreamingMarkdownSnapshotTests {
+    @Test("高频文本 delta 只低频发布且最终内容完整")
+    func textPresentationBufferThrottlesWithoutDroppingContent() {
+        var buffer = StreamingTextPresentationBuffer(
+            throttleInterval: 0.15,
+            immediateCharacterCount: 256
+        )
+        var presented = ""
+        var presentationCount = 0
+
+        for index in 0..<10_000 {
+            if let snapshot = buffer.append("x", now: Double(index) / 1_000) {
+                presented = snapshot
+                presentationCount += 1
+            }
+        }
+        if let finalSnapshot = buffer.flush(now: 10) {
+            presented = finalSnapshot
+            presentationCount += 1
+        }
+
+        #expect(buffer.text == String(repeating: "x", count: 10_000))
+        #expect(presented == buffer.text)
+        #expect(presentationCount < 100)
+    }
+
+    @Test("流结束只补发尚未发布的尾部")
+    func textPresentationBufferFlushesPendingTailOnce() {
+        var buffer = StreamingTextPresentationBuffer(
+            throttleInterval: 10,
+            immediateCharacterCount: 100
+        )
+
+        #expect(buffer.append("first", now: 0) == "first")
+        #expect(buffer.append(" tail", now: 0.1) == nil)
+        #expect(buffer.flush(now: 0.2) == "first tail")
+        #expect(buffer.flush(now: 0.3) == nil)
+    }
+
     @Test("短回答全部保留在 live tail")
     func shortAnswerStaysInTail() {
         let result = StreamingMarkdownChunker.split("hello **world**", preferredChunkLength: 20)

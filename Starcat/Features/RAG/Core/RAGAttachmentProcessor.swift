@@ -14,6 +14,9 @@ struct RAGAttachmentContext: Equatable, Sendable {
     var content: String
     var imageData: Data? = nil
     var contentType: String? = nil
+    /// 真正的附件正文或图片可以作为本轮证据；仅粘贴的 GitHub URL 关系说明不可以据此
+    /// 生成仓库事实，避免把“用户给了一个链接”误判成“已经拿到了链接内容”。
+    var supportsFactualAnswer = true
 }
 
 enum RAGAttachmentError: Error, LocalizedError, Equatable {
