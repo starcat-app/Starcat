@@ -395,7 +395,12 @@ struct KnowledgeRAGService: Sendable {
                     var localMissingReasonKey: String?
                     let retrieval: RAGRetrievalResult
                     if candidates.isEmpty {
-                        retrieval = RAGRetrievalResult(candidates: [], bundles: [], childHits: [])
+                        retrieval = RAGRetrievalResult(
+                            candidates: [],
+                            bundles: [],
+                            childHits: [],
+                            diagnostics: retriever.diagnostics(candidateRepoCount: 0, outcome: .noCandidates)
+                        )
                         let missingReasonKey = hasScopedQuery
                             ? "rag.workspace.execution.noCandidates"
                             : "rag.workspace.execution.noKnowledgeRepos"
@@ -405,8 +410,31 @@ struct KnowledgeRAGService: Sendable {
                             summary: String.l10n(missingReasonKey)
                         )))
                     } else if plan.mode == .structuredOnly {
-                        retrieval = RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
+                        retrieval = RAGRetrievalResult(
+                            candidates: candidates,
+                            bundles: [],
+                            childHits: [],
+                            diagnostics: retriever.diagnostics(
+                                candidateRepoCount: candidates.count,
+                                outcome: .skippedStructured
+                            )
+                        )
                         continuation.yield(.execution(.retrievalCompleted(retrieval)))
+                    } else if !retriever.hasEnabledSources {
+                        retrieval = RAGRetrievalResult(
+                            candidates: candidates,
+                            bundles: [],
+                            childHits: [],
+                            diagnostics: retriever.diagnostics(
+                                candidateRepoCount: candidates.count,
+                                outcome: .sourcesDisabled
+                            )
+                        )
+                        localMissingReasonKey = "rag.workspace.execution.noEvidence"
+                        continuation.yield(.execution(.terminated(
+                            .retrieval,
+                            summary: String.l10n("rag.workspace.execution.noEvidence")
+                        )))
                     } else {
                         if try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) {
                             retrieval = try await retriever.retrieve(
@@ -428,7 +456,15 @@ struct KnowledgeRAGService: Sendable {
                                 continuation.yield(.execution(.retrievalCompleted(retrieval)))
                             }
                         } else {
-                            retrieval = RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
+                            retrieval = RAGRetrievalResult(
+                                candidates: candidates,
+                                bundles: [],
+                                childHits: [],
+                                diagnostics: retriever.diagnostics(
+                                    candidateRepoCount: candidates.count,
+                                    outcome: .noReadyChunks
+                                )
+                            )
                             localMissingReasonKey = "rag.workspace.execution.noIndex"
                             continuation.yield(.execution(.terminated(
                                 .retrieval,
@@ -436,12 +472,16 @@ struct KnowledgeRAGService: Sendable {
                             )))
                         }
                     }
-                    emitDebug(.retrieval, retrieval.bundles.map { bundle in
+                    let evidenceDetails: String = retrieval.bundles.map { bundle in
                         let hits = bundle.matchedChildren.map { hit in
                             "\(hit.kind.rawValue) score=\(hit.score) source=\(hit.chunk.source.rawValue) section=\(hit.chunk.sectionPath)"
                         }.joined(separator: "\n")
                         return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
-                    }.joined(separator: "\n---\n"))
+                    }.joined(separator: "\n---\n")
+                    let diagnosticsPayload = retrieval.diagnostics?.debugPayload() ?? "检索漏斗诊断不可用。"
+                    emitDebug(.retrieval, [diagnosticsPayload, evidenceDetails]
+                        .filter { !$0.isEmpty }
+                        .joined(separator: "\n\n最终证据:\n"))
                     continuation.yield(.retrieval(retrieval))
 
                     var remoteBlocks: [RAGRemoteContextBlock] = []

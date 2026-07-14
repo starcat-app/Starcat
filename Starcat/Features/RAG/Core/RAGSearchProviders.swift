@@ -122,6 +122,18 @@ struct RAGHybridFusionConfiguration: Equatable, Sendable {
     var totalLimit = 24
 }
 
+/// Fusion 在最终上限裁剪前后的计数，供 Retriever 的 Debug 漏斗解释结果来源。
+struct RAGHybridFusionDiagnostics: Equatable, Sendable {
+    var uniqueCount = 0
+    var perRepositoryLimitFilteredCount = 0
+    var totalLimitFilteredCount = 0
+}
+
+struct RAGHybridFusionResult: Equatable, Sendable {
+    var hits: [RAGChildHit]
+    var diagnostics: RAGHybridFusionDiagnostics
+}
+
 /// 用户可控制的 RAG 证据筛选边界。
 ///
 /// 这些参数只决定“哪些本地证据进入本轮上下文”，不会改变索引、embedding 模型或融合权重。
@@ -176,6 +188,18 @@ struct RAGHybridFusionEngine: Sendable {
         vectorHits: [RAGChildHit],
         preferredRepoIDs: Set<Int64> = []
     ) -> [RAGChildHit] {
+        fuseWithDiagnostics(
+            keywordHits: keywordHits,
+            vectorHits: vectorHits,
+            preferredRepoIDs: preferredRepoIDs
+        ).hits
+    }
+
+    func fuseWithDiagnostics(
+        keywordHits: [RAGChildHit],
+        vectorHits: [RAGChildHit],
+        preferredRepoIDs: Set<Int64> = []
+    ) -> RAGHybridFusionResult {
         struct Accumulator {
             var chunk: RAGChunk
             var score: Double = 0
@@ -250,14 +274,26 @@ struct RAGHybridFusionEngine: Sendable {
         }
 
         var repoCounts: [Int64: Int] = [:]
-        return ranked.filter { hit in
+        var perRepositoryAccepted: [RAGChildHit] = []
+        var perRepositoryLimitFilteredCount = 0
+        for hit in ranked {
             let count = repoCounts[hit.chunk.repoId, default: 0]
-            guard count < configuration.perRepoLimit else { return false }
+            guard count < configuration.perRepoLimit else {
+                perRepositoryLimitFilteredCount += 1
+                continue
+            }
             repoCounts[hit.chunk.repoId] = count + 1
-            return true
+            perRepositoryAccepted.append(hit)
         }
-        .prefix(configuration.totalLimit)
-        .map { $0 }
+        let totalLimitFilteredCount = max(perRepositoryAccepted.count - configuration.totalLimit, 0)
+        return RAGHybridFusionResult(
+            hits: Array(perRepositoryAccepted.prefix(configuration.totalLimit)),
+            diagnostics: RAGHybridFusionDiagnostics(
+                uniqueCount: ranked.count,
+                perRepositoryLimitFilteredCount: perRepositoryLimitFilteredCount,
+                totalLimitFilteredCount: totalLimitFilteredCount
+            )
+        )
     }
 
     private func sourceWeight(_ source: RAGChunkSource) -> Double {

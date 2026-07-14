@@ -591,6 +591,14 @@ struct KnowledgeRAGCoreTests {
 
         #expect(Set(result.childHits.compactMap(\.chunk.id)) == [82, 85])
         #expect(result.childHits.contains { $0.kind == .keyword })
+        let diagnostics = try #require(result.diagnostics)
+        #expect(diagnostics.keywordRawCount == 1)
+        #expect(diagnostics.keywordSourceFilteredCount == 0)
+        #expect(diagnostics.vectorRawCount == 3)
+        #expect(diagnostics.vectorSourceFilteredCount == 1)
+        #expect(diagnostics.vectorSimilarityFilteredCount == 1)
+        #expect(diagnostics.finalChildHitCount == 2)
+        #expect(diagnostics.debugPayload().contains("vector.filteredBySimilarity: 1"))
     }
 
     @Test("检索设置会限制最终证据总数与单仓库证据数")
@@ -606,9 +614,9 @@ struct KnowledgeRAGCoreTests {
                 backendName: "SQLite",
                 hits: [
                     RAGChildHit(chunk: firstRepoFirst, score: 1, kind: .keyword),
-                    RAGChildHit(chunk: firstRepoSecond, score: 0.5, kind: .keyword),
-                    RAGChildHit(chunk: secondRepoFirst, score: 1.0 / 3, kind: .keyword),
-                    RAGChildHit(chunk: thirdRepoFirst, score: 0.25, kind: .keyword)
+                    RAGChildHit(chunk: firstRepoSecond, score: 1, kind: .keyword),
+                    RAGChildHit(chunk: secondRepoFirst, score: 1, kind: .keyword),
+                    RAGChildHit(chunk: thirdRepoFirst, score: 1, kind: .keyword)
                 ],
                 shouldThrow: false
             ),
@@ -637,6 +645,45 @@ struct KnowledgeRAGCoreTests {
 
         #expect(result.childHits.count == 3)
         #expect(Set(result.childHits.map(\.chunk.repoId)) == [1, 2, 3])
+        let diagnostics = try #require(result.diagnostics)
+        #expect(diagnostics.fusion.uniqueCount == 4)
+        #expect(diagnostics.fusion.perRepositoryLimitFilteredCount == 1)
+        #expect(diagnostics.fusion.totalLimitFilteredCount == 0)
+    }
+
+    @Test("关闭全部证据来源时返回可解释的检索诊断")
+    func retrievalDiagnosticsExplainDisabledSources() async throws {
+        let database = try InMemoryDatabaseManager()
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: StubRAGKeywordProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            embeddingClient: SpyRAGAIClient(),
+            embeddingModel: "embed",
+            retrievalSettings: RAGRetrievalSettings(
+                minimumVectorSimilarity: 0.65,
+                finalEvidenceChunkLimit: 8,
+                perRepositoryEvidenceLimit: 3,
+                evidenceTokenBudget: 8_000,
+                enabledSources: []
+            )
+        )
+
+        let result = try await retriever.retrieve(
+            semanticQuery: "database",
+            candidates: [RAGRepoCandidate(
+                repo: fixtureRepo(id: 1, isPrivate: false),
+                status: .using,
+                libraryUpdatedAt: nil,
+                tagNames: []
+            )],
+            explicitMode: .only,
+            explicitRepoIDs: []
+        )
+
+        let diagnostics = try #require(result.diagnostics)
+        #expect(diagnostics.outcome == .sourcesDisabled)
+        #expect(diagnostics.debugPayload().contains("enabledSources: <none>"))
     }
 
     @Test("Parent context 围绕后段命中而不是只取章节开头")

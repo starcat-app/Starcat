@@ -3,18 +3,18 @@
 //  Starcat
 //
 //  RAG 工作台配置 Sheet：提示词与检索策略共用一个入口。
-//  提示词部分直接编辑运行时配置；检索页当前只承载可验证的界面状态，待检索
-//  设置模型接入后再统一写入 AppSettings，避免 UI 验收阶段提前改变真实召回行为。
+//  提示词写入 `AppSettings.ragPromptSettings`；检索写入
+//  `AppSettings.ragRetrievalSettings`（UserDefaults JSON），下一轮问答由
+//  `makeKnowledgeRAGService` 读入生效。
 //
 //  UI（2026-07-13）：
 //  - System 吃主要高度、User 次之；重置放在 segmented 右侧。
 //  - 字号直接读 `settings.interfaceScale`（与独立窗口同一档位），不只缩放外框。
 //  - 占位符说明收进 popover，避免底部一长串 token 且无含义。
 //  - 2026-07-14：一行 4 段 segmented（回答 / 规划 / 压缩 / 标题）。
-//  - 2026-07-14：增加提示词 / 检索一级分段，先完成检索配置界面验收。
-//  - 2026-07-14：检索页对齐「侧栏 + 内容卡片」设置布局——收窄窗口、滚动区给
-//    滚动条留 gutter、证据来源单行、预设切换时静默写字段避免被踢回「自定义」。
-//  - 2026-07-14：由 PromptSettingsSheet 重命名为 SettingsSheet（不止编辑 Prompt）。
+//  - 2026-07-14：增加提示词 / 检索一级分段。
+//  - 2026-07-14：检索页对齐「侧栏 + 内容卡片」；预设切换静默写字段；保存持久化。
+//  - 2026-07-14：由 PromptSettingsSheet 重命名为 SettingsSheet。
 //
 
 import SwiftUI
@@ -48,6 +48,25 @@ private enum RAGRetrievalPreset: String, CaseIterable, Identifiable {
         case .broad: return "rag.workspace.retrieval.preset.broad"
         case .custom: return "rag.workspace.retrieval.preset.custom"
         }
+    }
+
+    /// UI 档位 → 持久化模型；`.custom` 无固定表。
+    var builtInSettings: RAGRetrievalSettings? {
+        switch self {
+        case .balanced: return .balanced
+        case .strict: return .strict
+        case .broad: return .broad
+        case .custom: return nil
+        }
+    }
+
+    /// 与三档内置完全一致（含 enabledSources）才算命中，否则一律自定义。
+    static func matching(settings: RAGRetrievalSettings) -> RAGRetrievalPreset {
+        let normalized = settings.normalized()
+        if normalized == .balanced { return .balanced }
+        if normalized == .strict { return .strict }
+        if normalized == .broad { return .broad }
+        return .custom
     }
 }
 
@@ -128,22 +147,32 @@ struct RAGWorkspaceSettingsSheet: View {
     @State private var tab: RAGPromptEditorTab = .generator
     @State private var draft: RAGPromptSettings
     @State private var isPlaceholderPopoverPresented = false
-    // 下列值刻意只停留在 Sheet 内。用户正在验证界面，检索器尚未读取这些值。
-    @State private var retrievalPreset: RAGRetrievalPreset = .balanced
-    @State private var minimumVectorSimilarity = 0.65
-    @State private var finalEvidenceChunkLimit = "8"
-    @State private var perRepositoryEvidenceLimit = "3"
-    @State private var evidenceTokenBudget = "8000"
-    @State private var includesReadme = true
-    @State private var includesNotes = true
-    @State private var includesSummary = true
-    @State private var includesMetadata = true
+    /// Sheet 内草稿；点「保存」才写入 `AppSettings.ragRetrievalSettings`。
+    @State private var retrievalPreset: RAGRetrievalPreset
+    @State private var minimumVectorSimilarity: Double
+    @State private var finalEvidenceChunkLimit: String
+    @State private var perRepositoryEvidenceLimit: String
+    @State private var evidenceTokenBudget: String
+    @State private var includesReadme: Bool
+    @State private var includesNotes: Bool
+    @State private var includesSummary: Bool
+    @State private var includesMetadata: Bool
     /// `apply(_:)` 写字段期间抬起，挡住误判「自定义」；用户手动拖滑杆 / 改数字时则放行。
     @State private var isApplyingRetrievalPreset = false
 
     init(settings: AppSettings) {
         self.settings = settings
         _draft = State(initialValue: settings.ragPromptSettings)
+        let retrieval = settings.ragRetrievalSettings.normalized()
+        _retrievalPreset = State(initialValue: RAGRetrievalPreset.matching(settings: retrieval))
+        _minimumVectorSimilarity = State(initialValue: retrieval.minimumVectorSimilarity)
+        _finalEvidenceChunkLimit = State(initialValue: String(retrieval.finalEvidenceChunkLimit))
+        _perRepositoryEvidenceLimit = State(initialValue: String(retrieval.perRepositoryEvidenceLimit))
+        _evidenceTokenBudget = State(initialValue: String(retrieval.evidenceTokenBudget))
+        _includesReadme = State(initialValue: retrieval.enabledSources.contains(.readme))
+        _includesNotes = State(initialValue: retrieval.enabledSources.contains(.notes))
+        _includesSummary = State(initialValue: retrieval.enabledSources.contains(.summary))
+        _includesMetadata = State(initialValue: retrieval.enabledSources.contains(.metadata))
     }
 
     /// 直接订阅设置档位，避免 sheet 只缩放外框、字体仍停在 standard。
@@ -277,9 +306,9 @@ struct RAGWorkspaceSettingsSheet: View {
             Button("common.cancel") { dismiss() }
                 .font(ragFont(.body, scale: interfaceScale))
             Button("rag.workspace.prompt.save") {
-                if section == .prompts {
-                    settings.ragPromptSettings = draft
-                }
+                // 两个分区共用同一草稿生命周期：无论停在哪一栏，保存都一并写入。
+                settings.ragPromptSettings = draft
+                settings.ragRetrievalSettings = buildRetrievalSettings()
                 dismiss()
             }
             .font(ragFont(.body, scale: interfaceScale))
@@ -436,10 +465,10 @@ struct RAGWorkspaceSettingsSheet: View {
                 .font(ragFont(.caption2, scale: interfaceScale))
                 .foregroundStyle(.secondary)
             HStack(spacing: interfaceScale.scaled(14)) {
-                Toggle("rag.workspace.retrieval.source.readme", isOn: $includesReadme)
-                Toggle("rag.workspace.retrieval.source.notes", isOn: $includesNotes)
-                Toggle("rag.workspace.retrieval.source.summary", isOn: $includesSummary)
-                Toggle("rag.workspace.retrieval.source.metadata", isOn: $includesMetadata)
+                Toggle("rag.workspace.retrieval.source.readme", isOn: includesReadmeBinding)
+                Toggle("rag.workspace.retrieval.source.notes", isOn: includesNotesBinding)
+                Toggle("rag.workspace.retrieval.source.summary", isOn: includesSummaryBinding)
+                Toggle("rag.workspace.retrieval.source.metadata", isOn: includesMetadataBinding)
                 Spacer(minLength: 0)
             }
             .toggleStyle(.checkbox)
@@ -510,12 +539,39 @@ struct RAGWorkspaceSettingsSheet: View {
         )
     }
 
-    /// 预设切换程序化写字段期间禁止误标自定义。
+    private var includesReadmeBinding: Binding<Bool> {
+        sourceToggleBinding(get: { includesReadme }, set: { includesReadme = $0 })
+    }
+
+    private var includesNotesBinding: Binding<Bool> {
+        sourceToggleBinding(get: { includesNotes }, set: { includesNotes = $0 })
+    }
+
+    private var includesSummaryBinding: Binding<Bool> {
+        sourceToggleBinding(get: { includesSummary }, set: { includesSummary = $0 })
+    }
+
+    private var includesMetadataBinding: Binding<Bool> {
+        sourceToggleBinding(get: { includesMetadata }, set: { includesMetadata = $0 })
+    }
+
+    private func sourceToggleBinding(
+        get: @escaping () -> Bool,
+        set: @escaping (Bool) -> Void
+    ) -> Binding<Bool> {
+        Binding(
+            get: get,
+            set: { newValue in
+                set(newValue)
+                markRetrievalCustomIfNeeded()
+            }
+        )
+    }
+
+    /// 用当前草稿反推 UI 档位：与三档内置完全一致才显示对应档，否则自定义。
     private func markRetrievalCustomIfNeeded() {
         guard !isApplyingRetrievalPreset else { return }
-        if retrievalPreset != .custom {
-            retrievalPreset = .custom
-        }
+        retrievalPreset = RAGRetrievalPreset.matching(settings: buildRetrievalSettings())
     }
 
     private func sectionTitle(_ key: LocalizedStringKey) -> some View {
@@ -561,35 +617,60 @@ struct RAGWorkspaceSettingsSheet: View {
         }
     }
 
+    /// 把当前 UI 草稿收成持久化模型；非法数字回落到草稿对应项 / 平衡档默认。
+    private func buildRetrievalSettings() -> RAGRetrievalSettings {
+        var sources = Set<RAGChunkSource>()
+        if includesReadme { sources.insert(.readme) }
+        if includesNotes { sources.insert(.notes) }
+        if includesSummary { sources.insert(.summary) }
+        if includesMetadata { sources.insert(.metadata) }
+
+        return RAGRetrievalSettings(
+            minimumVectorSimilarity: minimumVectorSimilarity,
+            finalEvidenceChunkLimit: parseInt(
+                finalEvidenceChunkLimit,
+                fallback: RAGRetrievalSettings.balanced.finalEvidenceChunkLimit
+            ),
+            perRepositoryEvidenceLimit: parseInt(
+                perRepositoryEvidenceLimit,
+                fallback: RAGRetrievalSettings.balanced.perRepositoryEvidenceLimit
+            ),
+            evidenceTokenBudget: parseInt(
+                evidenceTokenBudget,
+                fallback: RAGRetrievalSettings.balanced.evidenceTokenBudget
+            ),
+            enabledSources: sources
+        ).normalized()
+    }
+
+    private func parseInt(_ text: String, fallback: Int) -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Int(trimmed) ?? fallback
+    }
+
+    private func hydrate(from retrieval: RAGRetrievalSettings) {
+        let normalized = retrieval.normalized()
+        minimumVectorSimilarity = normalized.minimumVectorSimilarity
+        finalEvidenceChunkLimit = String(normalized.finalEvidenceChunkLimit)
+        perRepositoryEvidenceLimit = String(normalized.perRepositoryEvidenceLimit)
+        evidenceTokenBudget = String(normalized.evidenceTokenBudget)
+        includesReadme = normalized.enabledSources.contains(.readme)
+        includesNotes = normalized.enabledSources.contains(.notes)
+        includesSummary = normalized.enabledSources.contains(.summary)
+        includesMetadata = normalized.enabledSources.contains(.metadata)
+    }
+
     private func apply(_ preset: RAGRetrievalPreset) {
-        guard preset != .custom else {
+        guard let builtIn = preset.builtInSettings else {
             retrievalPreset = .custom
             return
         }
 
-        // 先抬门闩再写字段：否则 TextField Binding.set 会立刻把 preset 踢回 custom。
+        // 先抬门闩再写字段：否则 Binding.set 会立刻把 preset 踢回 custom。
         isApplyingRetrievalPreset = true
-        switch preset {
-        case .balanced:
-            minimumVectorSimilarity = 0.65
-            finalEvidenceChunkLimit = "8"
-            perRepositoryEvidenceLimit = "3"
-            evidenceTokenBudget = "8000"
-        case .strict:
-            minimumVectorSimilarity = 0.75
-            finalEvidenceChunkLimit = "5"
-            perRepositoryEvidenceLimit = "2"
-            evidenceTokenBudget = "6000"
-        case .broad:
-            minimumVectorSimilarity = 0.55
-            finalEvidenceChunkLimit = "10"
-            perRepositoryEvidenceLimit = "4"
-            evidenceTokenBudget = "12000"
-        case .custom:
-            break
-        }
+        hydrate(from: builtIn)
         retrievalPreset = preset
-        // 投递到下一轮主队列再放行：同帧内可能还有 onChange / Binding 扫尾。
+        // 投递到下一轮主队列再放行：同帧内可能还有 Binding 扫尾。
         Task { @MainActor in
             isApplyingRetrievalPreset = false
         }

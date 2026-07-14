@@ -544,6 +544,92 @@ struct RAGRetrievalResult: Equatable, Sendable {
     var candidates: [RAGRepoCandidate]
     var bundles: [RepoContextBundle]
     var childHits: [RAGChildHit]
+    /// 仅随当前问答内存流转，用于 Debug 解释候选为何在检索漏斗中被丢弃；不写入会话历史。
+    var diagnostics: RAGRetrievalDiagnostics? = nil
+}
+
+/// RAG 检索的可解释性快照。数值只统计分片数量，不包含分片正文，避免 Debug 导出扩大数据暴露面。
+struct RAGRetrievalDiagnostics: Equatable, Sendable {
+    enum Outcome: String, Equatable, Sendable {
+        case completed
+        case noCandidates = "no_candidates"
+        case noReadyChunks = "no_ready_chunks"
+        case sourcesDisabled = "sources_disabled"
+        case skippedStructured = "skipped_structured"
+        case noEvidence = "no_evidence"
+    }
+
+    var settings: RAGRetrievalSettings
+    var candidateRepoCount: Int
+    var keywordRawCount = 0
+    var keywordSourceFilteredCount = 0
+    var keywordErrorDescription: String?
+    var vectorRawCount = 0
+    var vectorSourceFilteredCount = 0
+    var vectorSimilarityFilteredCount = 0
+    var vectorErrorDescription: String?
+    var fusion: RAGHybridFusionDiagnostics = .init()
+    var minimumEvidenceScoreFilteredCount = 0
+    var finalChildHitCount = 0
+    var bundleCount = 0
+    var outcome: Outcome
+
+    func debugPayload() -> String {
+        let sourceNames = settings.enabledSources
+            .map(\.rawValue)
+            .sorted()
+            .joined(separator: ", ")
+        let conclusion: String
+        switch outcome {
+        case .completed:
+            conclusion = "成功：保留 \(finalChildHitCount) 条证据分片，打包为 \(bundleCount) 个仓库上下文。"
+        case .noCandidates:
+            conclusion = "无本地证据：查询范围内没有候选仓库。"
+        case .noReadyChunks:
+            conclusion = "无本地证据：候选仓库没有当前 embedding 模型的已就绪分片。"
+        case .sourcesDisabled:
+            conclusion = "无本地证据：当前没有启用任何证据来源。"
+        case .skippedStructured:
+            conclusion = "未执行分片检索：当前查询只读取结构化仓库数据。"
+        case .noEvidence:
+            if vectorRawCount > 0, vectorSimilarityFilteredCount == vectorRawCount - vectorSourceFilteredCount {
+                conclusion = "无本地证据：所有启用来源的向量命中均低于当前相似度阈值。"
+            } else if keywordRawCount + vectorRawCount == 0 {
+                conclusion = "无本地证据：关键词与向量召回均未返回候选分片。"
+            } else {
+                conclusion = "无本地证据：候选在来源、阈值或融合裁剪后未留下可用分片。"
+            }
+        }
+        return """
+        检索配置:
+        minimumVectorSimilarity: \(String(format: "%.2f", settings.minimumVectorSimilarity))
+        finalEvidenceChunkLimit: \(settings.finalEvidenceChunkLimit)
+        perRepositoryEvidenceLimit: \(settings.perRepositoryEvidenceLimit)
+        evidenceTokenBudget: \(settings.evidenceTokenBudget)
+        enabledSources: \(sourceNames.isEmpty ? "<none>" : sourceNames)
+
+        检索漏斗:
+        candidateRepos: \(candidateRepoCount)
+        keyword.raw: \(keywordRawCount)
+        keyword.filteredBySource: \(keywordSourceFilteredCount)
+        keyword.accepted: \(keywordRawCount - keywordSourceFilteredCount)
+        keyword.error: \(keywordErrorDescription ?? "<none>")
+        vector.raw: \(vectorRawCount)
+        vector.filteredBySource: \(vectorSourceFilteredCount)
+        vector.filteredBySimilarity: \(vectorSimilarityFilteredCount)
+        vector.accepted: \(vectorRawCount - vectorSourceFilteredCount - vectorSimilarityFilteredCount)
+        vector.error: \(vectorErrorDescription ?? "<none>")
+        fusion.unique: \(fusion.uniqueCount)
+        fusion.filteredByPerRepositoryLimit: \(fusion.perRepositoryLimitFilteredCount)
+        fusion.filteredByTotalLimit: \(fusion.totalLimitFilteredCount)
+        fusion.filteredByMinimumEvidenceScore: \(minimumEvidenceScoreFilteredCount)
+        finalChildHits: \(finalChildHitCount)
+        bundles: \(bundleCount)
+
+        结论:
+        \(conclusion)
+        """
+    }
 }
 
 /// 用户点击后会恢复本轮仓库范围并直接发送。仓库 ID 必须随消息持久化，不能只保存一段

@@ -26,6 +26,7 @@ struct KnowledgeRAGRetriever: Sendable {
     private let minimumEvidenceScore: Double
     private let minimumVectorSimilarity: Double
     private let enabledSources: Set<RAGChunkSource>
+    private let retrievalSettings: RAGRetrievalSettings
 
     init(
         chunkRepository: any RAGChunkRepositoryProtocol,
@@ -62,11 +63,26 @@ struct KnowledgeRAGRetriever: Sendable {
         self.minimumEvidenceScore = minimumEvidenceScore
         self.minimumVectorSimilarity = retrievalSettings.minimumVectorSimilarity
         self.enabledSources = retrievalSettings.enabledSources
+        self.retrievalSettings = retrievalSettings
     }
 
     func hasReadyChunks(repoIDs: [Int64]) async throws -> Bool {
         guard !repoIDs.isEmpty else { return false }
         return try await chunkRepository.hasReadyChunks(model: embeddingModel, repoIDs: repoIDs)
+    }
+
+    var hasEnabledSources: Bool { !enabledSources.isEmpty }
+
+    /// Service 在 Retriever 尚未运行（例如没有 ready chunk）时，也要能导出本轮生效设置与终止原因。
+    func diagnostics(
+        candidateRepoCount: Int,
+        outcome: RAGRetrievalDiagnostics.Outcome
+    ) -> RAGRetrievalDiagnostics {
+        RAGRetrievalDiagnostics(
+            settings: retrievalSettings,
+            candidateRepoCount: candidateRepoCount,
+            outcome: outcome
+        )
     }
 
     func retrieve(
@@ -77,8 +93,21 @@ struct KnowledgeRAGRetriever: Sendable {
         progress: @Sendable (RAGRetrievalProgress) -> Void = { _ in }
     ) async throws -> RAGRetrievalResult {
         let query = semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, !candidates.isEmpty, !enabledSources.isEmpty else {
-            return RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
+        guard !query.isEmpty, !candidates.isEmpty else {
+            return RAGRetrievalResult(
+                candidates: candidates,
+                bundles: [],
+                childHits: [],
+                diagnostics: diagnostics(candidateRepoCount: candidates.count, outcome: .noCandidates)
+            )
+        }
+        guard !enabledSources.isEmpty else {
+            return RAGRetrievalResult(
+                candidates: candidates,
+                bundles: [],
+                childHits: [],
+                diagnostics: diagnostics(candidateRepoCount: candidates.count, outcome: .sourcesDisabled)
+            )
         }
 
         let publicRepoIDs = candidates.filter { !$0.repo.isPrivate }.map(\.repo.id)
@@ -109,22 +138,39 @@ struct KnowledgeRAGRetriever: Sendable {
         }
         let eligibleKeywordHits = keyword.hits.filter { enabledSources.contains($0.chunk.source) }
         // 向量门槛只作用于 vector 分支；keyword 精确命中仍可独立进入融合，符合设置页的说明。
-        let eligibleVectorHits = vector.hits.filter {
-            enabledSources.contains($0.chunk.source)
-                && ($0.vectorSimilarity ?? $0.score) >= minimumVectorSimilarity
+        let sourceEligibleVectorHits = vector.hits.filter { enabledSources.contains($0.chunk.source) }
+        let eligibleVectorHits = sourceEligibleVectorHits.filter {
+            ($0.vectorSimilarity ?? $0.score) >= minimumVectorSimilarity
         }
         progress(.keywordSearchCompleted(eligibleKeywordHits.count))
         progress(.semanticSearchCompleted(eligibleVectorHits.count))
         if failures.count == 2, let error = failures.first { throw error }
         let preferred = explicitMode == .prefer ? Set(explicitRepoIDs) : []
-        let hits = fusion.fuse(
+        let fusionResult = fusion.fuseWithDiagnostics(
             keywordHits: eligibleKeywordHits,
             vectorHits: eligibleVectorHits,
             preferredRepoIDs: preferred
-        ).filter { $0.score >= minimumEvidenceScore }
+        )
+        let hits = fusionResult.hits.filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)
+        let diagnostics = RAGRetrievalDiagnostics(
+            settings: retrievalSettings,
+            candidateRepoCount: candidates.count,
+            keywordRawCount: keyword.hits.count,
+            keywordSourceFilteredCount: keyword.hits.count - eligibleKeywordHits.count,
+            keywordErrorDescription: keyword.error?.localizedDescription,
+            vectorRawCount: vector.hits.count,
+            vectorSourceFilteredCount: vector.hits.count - sourceEligibleVectorHits.count,
+            vectorSimilarityFilteredCount: sourceEligibleVectorHits.count - eligibleVectorHits.count,
+            vectorErrorDescription: vector.error?.localizedDescription,
+            fusion: fusionResult.diagnostics,
+            minimumEvidenceScoreFilteredCount: fusionResult.hits.count - hits.count,
+            finalChildHitCount: hits.count,
+            bundleCount: bundles.count,
+            outcome: bundles.isEmpty ? .noEvidence : .completed
+        )
         progress(.evidencePacked(hitCount: hits.count, bundleCount: bundles.count))
-        return RAGRetrievalResult(candidates: candidates, bundles: bundles, childHits: hits)
+        return RAGRetrievalResult(candidates: candidates, bundles: bundles, childHits: hits, diagnostics: diagnostics)
     }
 
     private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> [RepoContextBundle] {
