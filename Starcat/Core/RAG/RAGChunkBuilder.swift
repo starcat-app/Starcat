@@ -28,6 +28,17 @@ struct RAGChunkBuildInput: Sendable {
     var summaryText: String?
     var summarySourceID: String
     var tags: [String]
+    /// Metadata 的跨表事实在索引器一次聚合，Builder 只负责稳定序列化，不直接访问数据库。
+    var metadataSnapshot: RAGMetadataSnapshot? = nil
+}
+
+/// 单项目 Metadata 分片需要的本地事实快照。
+///
+/// Release、Health 和 OpenSSF 都是本地缓存；这里不持有 API，也不允许构建 Metadata 时触发网络。
+struct RAGMetadataSnapshot: Sendable {
+    var latestRelease: ReleaseRecord?
+    var health: RepoHealthSnapshot?
+    var openSSF: OpenSSFScoreRecord?
 }
 
 struct RAGChunkBuildOutput: Equatable, Sendable {
@@ -55,7 +66,12 @@ struct RAGChunkBuilder: Sendable {
                 text: input.summaryText,
                 sourceID: input.summarySourceID
             ),
-            metadata: buildMetadata(repo: input.repo, note: input.note, tags: input.tags)
+            metadata: buildMetadata(
+                repo: input.repo,
+                note: input.note,
+                tags: input.tags,
+                snapshot: input.metadataSnapshot
+            )
         )
     }
 
@@ -129,28 +145,89 @@ struct RAGChunkBuilder: Sendable {
         )
     }
 
-    func buildMetadata(repo: Repo, note: RepoNote?, tags: [String]) -> [RAGChunkDraft] {
-        let topics = repo.topicsArray.sorted().joined(separator: ", ")
-        let tagText = tags.sorted().joined(separator: ", ")
-        let status = RepoStatus.parse(note?.status ?? RepoStatus.unread.rawValue).rawValue
-        let lines = [
+    /// 序列化项目的可检索事实。空值直接省略，不能把“未拉到”伪造成 Unknown。
+    ///
+    /// Metadata 被明确设计为 FTS-only：动态数字和时间保留原值，更新时只改倒排索引，
+    /// 不生成 embedding，从而既能精确召回也不消耗向量额度。
+    func buildMetadata(
+        repo: Repo,
+        note: RepoNote?,
+        tags: [String],
+        snapshot: RAGMetadataSnapshot?
+    ) -> [RAGChunkDraft] {
+        var lines = [
             "Repository: \(repo.fullName)",
-            "Description: \(repo.description ?? "")",
-            "Language: \(repo.language ?? "Unknown")",
-            "Topics: \(topics)",
-            "Stars bucket: \(Self.bucket(repo.starsCount))",
-            "Forks bucket: \(Self.bucket(repo.forksCount))",
-            "Watchers bucket: \(Self.bucket(repo.watchersCount))",
-            "Open issues bucket: \(Self.bucket(repo.openIssuesCount ?? 0))",
-            "License: \(repo.license ?? "Unknown")",
+            "GitHub URL: \(repo.htmlUrl)",
+            "Stars: \(repo.starsCount)",
+            "Forks: \(repo.forksCount)",
+            "Watchers: \(repo.watchersCount)",
             "Archived: \(repo.isArchived)",
             "Fork: \(repo.isFork)",
+            "Private: \(repo.isPrivate)",
             "Starred: \(repo.isStarred)",
-            "Status: \(status)",
-            "Tags: \(tagText)",
-            "Library updated at: \(note?.libraryUpdatedAt ?? "Unknown")",
-            "Repository updated at: \(repo.updatedAt ?? "Unknown")"
+            "Access state: \(repo.accessState.rawValue)",
+            "Status: \(RepoStatus.parse(note?.status ?? RepoStatus.unread.rawValue).rawValue)"
         ]
+
+        func append(_ label: String, _ value: String?) {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return }
+            lines.append("\(label): \(value)")
+        }
+        func append(_ label: String, _ value: Int?) {
+            guard let value else { return }
+            lines.append("\(label): \(value)")
+        }
+        func append(_ label: String, _ value: Double?) {
+            guard let value else { return }
+            lines.append("\(label): \(value)")
+        }
+
+        append("Description", repo.description)
+        append("Homepage", repo.homepage)
+        append("Clone URL", repo.cloneUrl)
+        append("SSH URL", repo.sshUrl)
+        append("Language", repo.language)
+        append("Topics", repo.topicsArray.sorted().joined(separator: ", "))
+        append("License", repo.license)
+        append("Default branch", repo.defaultBranch)
+        append("Subscribers", repo.subscribersCount)
+        append("Open issues", repo.openIssuesCount)
+        append("Access reason", repo.accessReason)
+        append("Access checked at", repo.accessCheckedAt)
+        append("Created at", repo.createdAt)
+        append("Repository updated at", repo.updatedAt)
+        append("Pushed at", repo.pushedAt)
+        append("Starred at", repo.starredAt)
+        append("Repository cached at", repo.cachedAt)
+        append("Library state", note?.libraryState)
+        append("Library updated at", note?.libraryUpdatedAt)
+        append("Tags", tags.sorted().joined(separator: ", "))
+
+        if let release = snapshot?.latestRelease {
+            append("Latest release tag", release.tagName)
+            append("Latest release name", release.name)
+            append("Latest release URL", release.htmlUrl)
+            append("Latest release published at", release.publishedAt)
+            append("Latest release created at", release.createdAtRemote)
+            lines.append("Latest release prerelease: \(release.isPrerelease)")
+            lines.append("Latest release draft: \(release.isDraft)")
+            let assets = ReleaseAssetCodec.decode(release.assetsJson)
+            lines.append("Latest release asset count: \(assets.count)")
+            lines.append("Latest release download count: \(assets.reduce(0) { $0 + $1.downloadCount })")
+            append("Latest release fetched at", release.fetchedAt)
+        }
+        if let health = snapshot?.health {
+            append("Repository health score", health.overallScore)
+            append("Repository health grade", health.grade)
+            append("Repository health status", health.fetchStatus.rawValue)
+            append("Repository health computed at", health.computedAt)
+        }
+        if let openSSF = snapshot?.openSSF {
+            append("OpenSSF status", openSSF.fetchStatus.rawValue)
+            append("OpenSSF score", openSSF.aggregateScore)
+            append("OpenSSF score date", openSSF.scoreDate)
+            append("OpenSSF fetched at", openSSF.fetchedAt)
+        }
         let content = lines.joined(separator: "\n")
         return [RAGChunkDraft(
             repoId: repo.id,
@@ -450,17 +527,4 @@ struct RAGChunkBuilder: Sendable {
         return false
     }
 
-    private static func bucket(_ value: Int) -> String {
-        let step: Int
-        switch value {
-        case ..<100: step = 1
-        case ..<1_000: step = 10
-        case ..<10_000: step = 100
-        case ..<100_000: step = 1_000
-        default: step = 10_000
-        }
-        let lower = (value / step) * step
-        let upper = lower + step - 1
-        return step == 1 ? String(value) : "\(lower)-\(upper)"
-    }
 }

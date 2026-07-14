@@ -884,6 +884,11 @@ final class AppDependencies {
         self.ragChunkRepository = ragChunkRepo
         self.ragCandidateRepository = GRDBRAGRepoCandidateRepository(database: db)
         self.ragConversationStore = GRDBRAGConversationStore(database: db)
+        // Metadata 索引器只读取这三类本地缓存。提前构造并在后续服务装配中复用，
+        // 避免为了索引快照创建第二套 Repository 实例或触发网络请求。
+        let metadataReleaseRepo = GRDBReleaseRepository(database: db)
+        let metadataHealthRepo = GRDBRepoHealthRepository(database: db)
+        let metadataOpenSSFRepo = GRDBOpenSSFScoreRepository(database: db)
         self.knowledgeRAGIndexBuilder = KnowledgeRAGIndexBuilder(
             chunkRepository: ragChunkRepo,
             repoRepository: repo,
@@ -892,6 +897,9 @@ final class AppDependencies {
             noteRepository: self.repoNoteRepository,
             summaryRepository: summaryRepo,
             repoTagRepository: repoTagRepo,
+            releaseRepository: metadataReleaseRepo,
+            healthRepository: metadataHealthRepo,
+            openSSFRepository: metadataOpenSSFRepo,
             settings: self.settings,
             entitlementGate: self.entitlementGate
         )
@@ -1040,7 +1048,7 @@ final class AppDependencies {
         // 成功写入后需要通知 Repo Health 重算，装配顺序必须先拿到 Health service。
         let openSSFAPI = OpenSSFScoreAPI()
         self.openSSFScoreAPI = openSSFAPI
-        let openSSFRepo = GRDBOpenSSFScoreRepository(database: db)
+        let openSSFRepo = metadataOpenSSFRepo
         self.openSSFScoreRepository = openSSFRepo
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
@@ -1058,7 +1066,7 @@ final class AppDependencies {
             entitlementGate: self.entitlementGate
         )
         self.releaseSubscriptionRepository = releaseSubRepo
-        let releaseRecordRepo = GRDBReleaseRepository(database: db)
+        let releaseRecordRepo = metadataReleaseRepo
         self.releaseRepository = releaseRecordRepo
         let monitor = ReleaseMonitor(
             apiClient: api,
@@ -1073,7 +1081,7 @@ final class AppDependencies {
         // Repo Health：自动路径只聚合已有本地缓存；用户点击 Health 面板刷新时只主动
         // 更新 GitHub Releases 信号，OpenSSF 交给后台 poller 缓慢补齐。
         // 装配必须晚于 Release / OpenSSF 仓库。
-        let healthRepo = GRDBRepoHealthRepository(database: db)
+        let healthRepo = metadataHealthRepo
         self.repoHealthRepository = healthRepo
         let healthService = RepoHealthService(
             repository: healthRepo,

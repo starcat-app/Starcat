@@ -60,6 +60,10 @@ final class KnowledgeRAGIndexBuilder {
     private let noteRepository: any RepoNoteRepositoryProtocol
     private let summaryRepository: any AISummaryRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
+    /// 都是本地缓存读取接口；Metadata 重建禁止触发 GitHub / OpenSSF 网络请求。
+    private let releaseRepository: (any ReleaseRepositoryProtocol)?
+    private let healthRepository: (any RepoHealthRepositoryProtocol)?
+    private let openSSFRepository: (any OpenSSFScoreRepositoryProtocol)?
     private let settings: AppSettings
     private let entitlementGate: EntitlementGate
     private let keychain: any KeychainManaging
@@ -78,6 +82,8 @@ final class KnowledgeRAGIndexBuilder {
     private var refreshSummaryRestoreTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
+    /// 同一 repo 在 debounce 窗口内的多个事实变更要合并，不能让 notes 事件覆盖 metadata 事件。
+    private var debouncedSources: [Int64: Set<RAGChunkSource>] = [:]
     private var isSuspendedForDatabaseChange = false
     private var activeOperationCount = 0
     private var idleContinuations: [CheckedContinuation<Void, Never>] = []
@@ -90,6 +96,9 @@ final class KnowledgeRAGIndexBuilder {
         noteRepository: any RepoNoteRepositoryProtocol,
         summaryRepository: any AISummaryRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
+        releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
+        healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
+        openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         settings: AppSettings,
         entitlementGate: EntitlementGate,
         keychain: any KeychainManaging = KeychainManager.shared,
@@ -103,6 +112,9 @@ final class KnowledgeRAGIndexBuilder {
         self.noteRepository = noteRepository
         self.summaryRepository = summaryRepository
         self.repoTagRepository = repoTagRepository
+        self.releaseRepository = releaseRepository
+        self.healthRepository = healthRepository
+        self.openSSFRepository = openSSFRepository
         self.settings = settings
         self.entitlementGate = entitlementGate
         self.keychain = keychain
@@ -149,6 +161,7 @@ final class KnowledgeRAGIndexBuilder {
         refreshSummaryRestoreTask = nil
         observationTasks.removeAll()
         debouncedSourceTasks.removeAll()
+        debouncedSources.removeAll()
         await waitUntilIdle()
         status = .idle
         refreshSummary = nil
@@ -194,7 +207,7 @@ final class KnowledgeRAGIndexBuilder {
             let stream = NotificationCenter.default.notifications(named: .repoTagsDidChange)
             for await notification in stream {
                 guard let repoID = notification.userInfo?["repoId"] as? Int64 else { continue }
-                await self?.refresh(repoID: repoID, sources: [.metadata])
+                self?.scheduleDebouncedRefresh(repoID: repoID, sources: [.metadata])
             }
         })
         observationTasks.append(Task { [weak self] in
@@ -206,6 +219,20 @@ final class KnowledgeRAGIndexBuilder {
                 await self?.indexNewlyAddedKnowledgeRepository(repoID: repoID)
             }
         })
+        for notificationName in [
+            Notification.Name.repoStatusDidChange,
+            .releaseRecordsDidChange,
+            .repoHealthSnapshotDidChange,
+            .openSSFScoreDidChange
+        ] {
+            observationTasks.append(Task { [weak self] in
+                let stream = NotificationCenter.default.notifications(named: notificationName)
+                for await notification in stream {
+                    guard let repoID = notification.userInfo?["repoId"] as? Int64 else { continue }
+                    self?.scheduleDebouncedRefresh(repoID: repoID, sources: [.metadata])
+                }
+            })
+        }
     }
 
     /// 全量重建只表示“重新计算 source diff + 补齐待处理 embedding”，内容未变的 ready chunk
@@ -296,8 +323,7 @@ final class KnowledgeRAGIndexBuilder {
         try await embedPendingChunks()
     }
 
-    /// GitHub stars 同步完成后批量刷新 metadata source，再统一补 embedding。
-    /// 数值字段已在 RAGChunkBuilder 中 bucket 化，未跨 bucket 的变化会复用原向量。
+    /// GitHub stars 同步完成后批量刷新 metadata source。Metadata 是 FTS-only，不会产生 embedding。
     func refreshMetadataForKnowledgeRepos() async {
         guard beginOperation() else { return }
         defer { endOperation() }
@@ -308,6 +334,7 @@ final class KnowledgeRAGIndexBuilder {
                 try Task.checkCancellation()
                 try await rebuildSources(for: repo, summary: nil, sources: [.metadata])
             }
+            // 其它 source 的 pending chunk 仍可能来自此前编辑；这里补齐不会包含 Metadata。
             try await embedPendingChunks()
         } catch EntitlementGateError.requiresPro {
             return
@@ -318,11 +345,15 @@ final class KnowledgeRAGIndexBuilder {
 
     private func scheduleDebouncedRefresh(repoID: Int64, sources: Set<RAGChunkSource>) {
         guard !isSuspendedForDatabaseChange else { return }
+        debouncedSources[repoID, default: []].formUnion(sources)
         debouncedSourceTasks[repoID]?.cancel()
         debouncedSourceTasks[repoID] = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(1.5))
-                await self?.refresh(repoID: repoID, sources: sources)
+                guard let self else { return }
+                let mergedSources = self.debouncedSources.removeValue(forKey: repoID) ?? sources
+                self.debouncedSourceTasks[repoID] = nil
+                await self.refresh(repoID: repoID, sources: mergedSources)
             } catch {
                 // 新编辑会取消旧 debounce；取消不是索引错误。
             }
@@ -357,13 +388,15 @@ final class KnowledgeRAGIndexBuilder {
         let tags = try await repoTagRepository.fetchTags(forRepo: repo.id).map(\.name)
         let readme = sources.contains(.readme) ? try await readmeRepository.findContent(repoId: repo.id) : nil
         let summaryText = summary.flatMap(Self.summaryText)
+        let metadataSnapshot = sources.contains(.metadata) ? await loadMetadataSnapshot(repoID: repo.id) : nil
         let output = builder.build(RAGChunkBuildInput(
             repo: repo,
             readme: readme,
             note: note,
             summaryText: summaryText,
             summarySourceID: summary?.model ?? "",
-            tags: tags
+            tags: tags,
+            metadataSnapshot: metadataSnapshot
         ))
 
         if sources.contains(.readme) {
@@ -378,6 +411,29 @@ final class KnowledgeRAGIndexBuilder {
         if sources.contains(.metadata) {
             _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .metadata, drafts: output.metadata)
         }
+    }
+
+    /// 从本地缓存聚合 Metadata；单项读取失败时省略该项，不让辅助缓存阻断主索引。
+    private func loadMetadataSnapshot(repoID: Int64) async -> RAGMetadataSnapshot {
+        let latestRelease: ReleaseRecord?
+        if let releaseRepository {
+            latestRelease = try? await releaseRepository.latest(forRepo: repoID)
+        } else {
+            latestRelease = nil
+        }
+        let health: RepoHealthSnapshot?
+        if let healthRepository {
+            health = try? await healthRepository.snapshot(for: repoID)
+        } else {
+            health = nil
+        }
+        let openSSF: OpenSSFScoreRecord?
+        if let openSSFRepository {
+            openSSF = try? await openSSFRepository.record(for: repoID)
+        } else {
+            openSSF = nil
+        }
+        return RAGMetadataSnapshot(latestRelease: latestRelease, health: health, openSSF: openSSF)
     }
 
     /// 仅补齐本地没有 Markdown 的 README。索引器不能假设详情页或后台预拉已经访问过仓库，
@@ -424,12 +480,26 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     private func embedPendingChunks(recordsRefreshSummary: Bool = false) async throws {
-        let (client, model) = try makeEmbeddingClient()
-        try await chunkRepository.markStaleForOtherModels(currentModel: model)
-
+        // 模型切换不依赖 API key：先把旧模型向量标 stale，再决定是否真的需要发 embedding 请求。
+        let resolvedModel = resolvedEmbeddingModel()
+        try await chunkRepository.markStaleForOtherModels(currentModel: resolvedModel)
         var processed = 0
         var pending = try await chunkRepository.fetchChunksNeedingEmbedding(limit: Int.max)
         let total = pending.count
+        // Metadata-only 更新不能要求用户配置 embedding API；它只需刷新本地 FTS / 可选关键词后端。
+        guard total > 0 else {
+            try await syncExternalBackends(model: resolvedModel)
+            let coverage = try await chunkRepository.coverage(model: resolvedModel)
+            status = .completed(coverage)
+            if recordsRefreshSummary {
+                await markRefreshSummaryCompleted(at: Date())
+            }
+            NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
+            return
+        }
+
+        let (client, model) = try makeEmbeddingClient()
+
         if recordsRefreshSummary {
             let coverage = try await chunkRepository.coverage(model: model)
             updateRefreshSummary(
@@ -531,9 +601,9 @@ final class KnowledgeRAGIndexBuilder {
         // 默认只同步公开仓库；私有仓库继续使用 SQLite FTS5 + 本地向量检索。
         let repos = try await repoRepository.fetchKnowledgeRepos()
         let repoIDs = repos.filter { !$0.isPrivate }.map(\.id)
-        let chunks = try await chunkRepository.fetchReadyChunks(model: model, repoIDs: repoIDs)
         do {
             if configuration.keywordBackend == .meilisearch {
+                let chunks = try await chunkRepository.fetchKeywordSearchableChunks(model: model, repoIDs: repoIDs)
                 let provider = MeilisearchRAGProvider(
                     configuration: configuration.meilisearch,
                     apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
@@ -542,6 +612,7 @@ final class KnowledgeRAGIndexBuilder {
                 try await provider.replaceAll(chunks: chunks)
             }
             if configuration.vectorBackend == .qdrant {
+                let chunks = try await chunkRepository.fetchReadyChunks(model: model, repoIDs: repoIDs)
                 let provider = QdrantRAGProvider(
                     configuration: configuration.qdrant,
                     apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),

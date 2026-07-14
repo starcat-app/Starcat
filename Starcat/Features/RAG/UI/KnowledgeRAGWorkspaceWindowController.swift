@@ -1496,6 +1496,7 @@ private struct KnowledgeRAGBrowserView: View {
         case .pending: return "rag.browser.status.pending"
         case .failed: return "rag.browser.status.failed"
         case .stale: return "rag.browser.status.stale"
+        case .keywordOnly: return "rag.browser.status.keywordOnly"
         }
     }
 
@@ -1505,6 +1506,7 @@ private struct KnowledgeRAGBrowserView: View {
         case .pending: return .orange
         case .failed: return .red
         case .stale: return .purple
+        case .keywordOnly: return .blue
         }
     }
 
@@ -1524,6 +1526,7 @@ private struct KnowledgeRAGBrowserView: View {
         case .pending: return "clock.fill"
         case .failed: return "exclamationmark.triangle.fill"
         case .stale: return "clock.arrow.circlepath"
+        case .keywordOnly: return "text.magnifyingglass"
         }
     }
 

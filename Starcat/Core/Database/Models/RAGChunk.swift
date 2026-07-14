@@ -34,6 +34,8 @@ enum RAGEmbeddingStatus: String, CaseIterable, Codable, Sendable {
     case ready
     case failed
     case stale
+    /// Metadata 是精确事实索引：只进入 FTS，避免动态 GitHub 数据反复消耗 embedding 配额。
+    case keywordOnly = "keyword_only"
 }
 
 struct RAGChunk: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Equatable, Sendable {

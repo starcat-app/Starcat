@@ -97,14 +97,22 @@ struct RAGChunkBuilderTests {
         #expect(chunks.allSatisfy { $0.content.contains("| Name | Value |") })
     }
 
-    @Test("metadata 包含基础信息并对波动数字分桶")
+    @Test("metadata 保留动态事实原值并省略缺失字段")
     func metadataIncludesRepoFacts() {
         let repo = fixtureRepo(stars: 12_345)
-        let chunks = RAGChunkBuilder().buildMetadata(repo: repo, note: nil, tags: ["database", "swift"])
+        let chunks = RAGChunkBuilder().buildMetadata(
+            repo: repo,
+            note: nil,
+            tags: ["database", "swift"],
+            snapshot: nil
+        )
         let content = chunks[0].content
         #expect(content.contains("Repository: octo/demo"))
-        #expect(content.contains("Stars bucket: 12000-12999"))
+        #expect(content.contains("GitHub URL: https://github.com/octo/demo"))
+        #expect(content.contains("Stars: 12345"))
+        #expect(content.contains("Homepage: https://example.com/demo"))
         #expect(content.contains("Tags: database, swift"))
+        #expect(!content.contains("Unknown"))
     }
 
     @Test("重复 heading 使用 occurrence 消歧稳定 key")
@@ -161,7 +169,7 @@ struct RAGChunkBuilderTests {
             watchersCount: 10,
             topics: "[\"database\",\"swift\"]",
             license: "MIT",
-            homepage: nil,
+            homepage: "https://example.com/demo",
             htmlUrl: "https://github.com/octo/demo",
             cloneUrl: nil,
             sshUrl: nil,
@@ -173,7 +181,9 @@ struct RAGChunkBuilderTests {
             createdAt: nil,
             updatedAt: "2026-07-10T00:00:00Z",
             starredAt: nil,
-            cachedAt: nil
+            cachedAt: nil,
+            defaultBranch: "main",
+            openIssuesCount: 7
         )
     }
 }

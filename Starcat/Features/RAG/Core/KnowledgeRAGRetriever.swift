@@ -222,7 +222,12 @@ struct KnowledgeRAGRetriever: Sendable {
                 guard let inputIndex = requestCandidates.firstIndex(of: item.hit) else { return nil }
                 return .init(inputIndex: inputIndex, rerankScore: item.score)
             }
-            let scoreByInputIndex = Dictionary(uniqueKeysWithValues: responseResults.map { ($0.inputIndex, $0.rerankScore) })
+            // 异常服务可能重复返回相同 index；诊断不能因远端坏数据崩溃，最后一个结果即可
+            // 覆盖前一个同 index 分数，实际排序仍沿用 provider 已解析出的返回顺序。
+            var scoreByInputIndex: [Int: Double] = [:]
+            for result in responseResults {
+                scoreByInputIndex[result.inputIndex] = result.rerankScore
+            }
             let appliedOrder = appliedHits.enumerated().map { index, hit in
                 let inputIndex = requestCandidates.firstIndex(of: hit)
                 return RAGRerankTrace.AppliedItem(

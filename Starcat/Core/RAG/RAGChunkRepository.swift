@@ -18,11 +18,14 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
+    /// 检查当前检索是否至少有一个可用 source；包含当前模型向量和 FTS-only Metadata。
     func hasReadyChunks(model: String, repoIDs: [Int64]) async throws -> Bool
     /// 只读取向量扫描所需的列；调用方必须按页消费，避免大知识库把正文和全部向量同时留在内存。
     func fetchReadyEmbeddings(model: String, repoIDs: [Int64], afterID: Int64?, limit: Int) async throws -> [RAGChunkEmbedding]
     func fetchReadyChunks(ids: [Int64], model: String) async throws -> [RAGChunk]
     func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
+    /// 关键词后端可同步当前模型的向量分片与本地 FTS-only Metadata；向量后端只能使用 ready 分片。
+    func fetchKeywordSearchableChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
     func markReady(_ embeddings: [Int64: [Float]], model: String) async throws
     func markFailed(chunkIDs: [Int64], error: String) async throws
@@ -173,7 +176,21 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     row.tokenCount = overrideContent == nil ? draft.tokenCount : max(1, effectiveContent.count / 4)
                     row.isTruncated = draft.isTruncated
                     row.updatedAt = now
-                    if contentChanged && overrideContent == nil {
+                    if source == .metadata {
+                        // Metadata 是精确事实索引；即使旧版本遗留了向量，也必须在此清掉，
+                        // 这样动态 GitHub 字段变化不会重新进入 embedding 队列。
+                        row.embeddingModel = nil
+                        row.embeddingDim = nil
+                        row.embedding = nil
+                        row.embeddingStatus = .keywordOnly
+                        row.embeddingError = nil
+                        row.indexedAt = nil
+                        if contentChanged && overrideContent == nil {
+                            changed += 1
+                        } else {
+                            reused += 1
+                        }
+                    } else if contentChanged && overrideContent == nil {
                         row.embeddingModel = nil
                         row.embeddingDim = nil
                         row.embedding = nil
@@ -185,7 +202,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         reused += 1
                     }
                     try row.update(db)
-                    if row.embeddingStatus != .ready, let id = row.id {
+                    if row.embeddingStatus == .pending || row.embeddingStatus == .failed || row.embeddingStatus == .stale,
+                       let id = row.id {
                         pendingIDs.append(id)
                     }
                 } else {
@@ -208,14 +226,14 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         embeddingModel: nil,
                         embeddingDim: nil,
                         embedding: nil,
-                        embeddingStatus: .pending,
+                        embeddingStatus: source == .metadata ? .keywordOnly : .pending,
                         embeddingError: nil,
                         indexedAt: nil,
                         createdAt: now,
                         updatedAt: now
                     )
                     try row.insert(db)
-                    if let id = row.id { pendingIDs.append(id) }
+                    if source != .metadata, let id = row.id { pendingIDs.append(id) }
                     inserted += 1
                 }
             }
@@ -326,8 +344,10 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         SELECT 1
                         FROM rag_chunks c
                         JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
-                        WHERE c.embedding_status = 'ready'
-                          AND c.embedding_model = ?
+                        WHERE (
+                            (c.embedding_status = 'ready' AND c.embedding_model = ?)
+                            OR c.embedding_status = 'keyword_only'
+                          )
                           AND c.repo_id IN (\(placeholders))
                           AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                     )
@@ -420,6 +440,32 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         return chunks
     }
 
+    func fetchKeywordSearchableChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk] {
+        guard !repoIDs.isEmpty else { return [] }
+        var chunks: [RAGChunk] = []
+        for repoIDBatch in Self.idBatches(repoIDs) {
+            let batch = try await database.writer.read { db in
+                let placeholders = Array(repeating: "?", count: repoIDBatch.count).joined(separator: ",")
+                var arguments: [any DatabaseValueConvertible] = [model]
+                arguments.append(contentsOf: repoIDBatch)
+                return try RAGChunk.fetchAll(db, sql: """
+                    SELECT c.*
+                    FROM rag_chunks c
+                    JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                    WHERE (
+                        (c.embedding_status = 'ready' AND c.embedding_model = ?)
+                        OR c.embedding_status = 'keyword_only'
+                      )
+                      AND c.repo_id IN ((placeholders))
+                      AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                    ORDER BY c.repo_id, c.source, c.chunk_index
+                    """, arguments: StatementArguments(arguments))
+            }
+            chunks.append(contentsOf: batch)
+        }
+        return chunks
+    }
+
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit] {
         let ftsQuery = FTSQuery.sanitize(query)
         guard !ftsQuery.isEmpty, !repoIDs.isEmpty, limit > 0 else { return [] }
@@ -434,8 +480,10 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 JOIN rag_chunks c ON c.id = rag_chunks_fts.rowid
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 WHERE rag_chunks_fts MATCH ?
-                  AND c.embedding_status = 'ready'
-                  AND c.embedding_model = ?
+                  AND (
+                    (c.embedding_status = 'ready' AND c.embedding_model = ?)
+                    OR c.embedding_status = 'keyword_only'
+                  )
                   AND c.repo_id IN (\(placeholders))
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY keyword_rank ASC
@@ -482,7 +530,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             try db.execute(sql: """
                 UPDATE rag_chunks
                 SET embedding_status = 'stale'
-                WHERE embedding_model IS NOT NULL AND embedding_model != ?
+                WHERE embedding_status != 'keyword_only'
+                  AND embedding_model IS NOT NULL AND embedding_model != ?
                 """, arguments: [currentModel])
         }
     }
@@ -492,9 +541,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             let row = try Row.fetchOne(db, sql: """
                 SELECT
                     (SELECT COUNT(*) FROM repo_notes WHERE library_state = 'in_library') AS knowledge_repos,
-                    COUNT(DISTINCT CASE WHEN c.embedding_status = 'ready' AND c.embedding_model = ? THEN c.repo_id END) AS indexed_repos,
+                    COUNT(DISTINCT CASE WHEN (c.embedding_status = 'ready' AND c.embedding_model = ?) OR c.embedding_status = 'keyword_only' THEN c.repo_id END) AS indexed_repos,
                     COUNT(c.id) AS total_chunks,
-                    SUM(CASE WHEN c.embedding_status = 'ready' AND c.embedding_model = ? THEN 1 ELSE 0 END) AS ready_chunks,
+                    SUM(CASE WHEN (c.embedding_status = 'ready' AND c.embedding_model = ?) OR c.embedding_status = 'keyword_only' THEN 1 ELSE 0 END) AS ready_chunks,
                     SUM(CASE WHEN c.embedding_status = 'pending' THEN 1 ELSE 0 END) AS pending_chunks,
                     SUM(CASE WHEN c.embedding_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
                     SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END) AS stale_chunks
@@ -582,7 +631,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 SELECT
                     n.repo_id AS repo_id,
                     COUNT(c.id) AS total_chunks,
-                    SUM(CASE WHEN c.embedding_status = 'ready' AND c.embedding_model = ? THEN 1 ELSE 0 END) AS ready_chunks,
+                    SUM(CASE WHEN (c.embedding_status = 'ready' AND c.embedding_model = ?) OR c.embedding_status = 'keyword_only' THEN 1 ELSE 0 END) AS ready_chunks,
                     SUM(CASE WHEN c.embedding_status = 'pending' THEN 1 ELSE 0 END) AS pending_chunks,
                     SUM(CASE WHEN c.embedding_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
                     SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END) AS stale_chunks
@@ -709,7 +758,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 UPDATE rag_chunks
                 SET title = ?, section_path = ?, content = ?, content_hash = ?, token_count = ?,
                     embedding_model = NULL, embedding_dim = NULL, embedding = NULL,
-                    embedding_status = 'pending', embedding_error = NULL, indexed_at = NULL, updated_at = ?
+                    embedding_status = CASE WHEN source = 'metadata' THEN 'keyword_only' ELSE 'pending' END,
+                    embedding_error = NULL, indexed_at = NULL, updated_at = ?
                 WHERE id = ?
                 """, arguments: [cleanTitle, sectionPath, cleanContent, RAGChunk.hash(cleanContent), tokenCount, now, id])
         }
@@ -751,7 +801,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     UPDATE rag_chunks
                     SET title = ?, section_path = ?, content = ?, content_hash = ?, token_count = ?,
                         embedding_model = NULL, embedding_dim = NULL, embedding = NULL,
-                        embedding_status = 'pending', embedding_error = NULL, indexed_at = NULL, updated_at = ?
+                    embedding_status = CASE WHEN source = 'metadata' THEN 'keyword_only' ELSE 'pending' END,
+                    embedding_error = NULL, indexed_at = NULL, updated_at = ?
                     WHERE id = ?
                     """, arguments: [originalTitle, originalPath, originalContent, RAGChunk.hash(originalContent), max(1, originalContent.count / 4), now, id])
             }

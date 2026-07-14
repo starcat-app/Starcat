@@ -53,7 +53,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("RAG v7/v8 应在已应用迁移列表中，并带上最终会话与推荐问题列")
+    @Test("RAG v7/v8/v9 应在已应用迁移列表中，并带上最终会话与推荐问题列")
     func knowledgeRAGMigrationSealed() throws {
         let db = try makeDB()
         try db.read { db in
@@ -62,6 +62,7 @@ struct DatabaseMigrationsV1Tests {
             let applied = try migrator.appliedMigrations(db)
             #expect(applied.contains("v7-knowledge-rag"))
             #expect(applied.contains("v8-rag-suggested-actions"))
+            #expect(applied.contains("v9-rag-metadata-keyword-only"))
 
             let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
             #expect(conversationColumns.contains("is_pinned"))

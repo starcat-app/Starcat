@@ -771,12 +771,18 @@ struct KnowledgeRAGCoreTests {
         #expect(reordered.childHits.compactMap(\.chunk.id) == [303, 302, 301])
         #expect(reordered.diagnostics?.rerank?.state == .completed)
         #expect(reordered.diagnostics?.rerank?.provider == .huggingFaceTEI)
+        let rerankTrace = try #require(reordered.diagnostics?.rerank?.trace)
+        #expect(rerankTrace.query == "query")
+        #expect(rerankTrace.inputCandidates.map(\.repositoryName) == ["octo/demo-1", "octo/demo-2", "octo/demo-3"])
+        #expect(rerankTrace.responseResults.map(\.inputIndex) == [2, 1, 0])
+        #expect(rerankTrace.appliedOrder.compactMap(\.inputIndex) == [2, 1, 0])
 
         let fallback = try await makeRetriever(
             reranker: StubRAGReranker(order: [], shouldThrow: true)
         ).retrieve(semanticQuery: "query", candidates: candidates, explicitMode: .only, explicitRepoIDs: [])
         #expect(fallback.childHits.compactMap(\.chunk.id) == [301, 302, 303])
         #expect(fallback.diagnostics?.rerank?.state == .failedFallback)
+        #expect(fallback.diagnostics?.rerank?.trace?.responseResults.isEmpty == true)
     }
 
     @Test("Hugging Face TEI Rerank 使用 texts 协议并解析 score")

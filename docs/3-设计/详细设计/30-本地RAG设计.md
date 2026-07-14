@@ -151,9 +151,9 @@ CREATE INDEX idx_rag_chunks_model ON rag_chunks(embedding_model);
 | `chunk_index` | 同 repo + source 内的展示顺序,不用于判断内容是否同一段 |
 | `section_path` | README heading path,如 `Installation > macOS` |
 | `title` | chunk 展示标题,优先取 heading |
-| `content_hash` | 用于 diff,未变化不重新 embedding |
+| `content_hash` | 用于 diff；Metadata 变化只更新 FTS，其它 source 未变化不重新 embedding |
 | `embedding` | Float32 BLOB,与 `RepoEmbedding` 一致 |
-| `embedding_status` | `pending` / `ready` / `failed` / `stale` |
+| `embedding_status` | `pending` / `ready` / `failed` / `stale` / `keyword_only` |
 
 不复用 `repo_embeddings`:
 
@@ -271,8 +271,8 @@ CREATE TABLE rag_message_remote_contexts (
 | README markdown | 是 | 主要知识源 |
 | 用户 notes | 是 | 用户私有判断,权重高 |
 | AI summary | 是 | 已生成则纳入,不为 RAG 临时生成 |
-| repo metadata | 是 | fullName、description、topics、language、stars、forks、watchers、issues、license、archived/fork、是否 starred、status、tags、libraryUpdatedAt 等基础信息 |
-| Repo Health / OpenSSF | 可后续 | 更适合结构化 filter,第一版不强制 |
+| repo metadata | 是 | 本地缓存的项目事实：URL、主页、描述、语言、topics、原始计数、时间、状态、tags、Release、Health、OpenSSF 等 |
+| Repo Health / OpenSSF | 是 | 作为 Metadata 的本地缓存字段，不为索引额外发网络请求 |
 | CodeFlow / Codebase memory | 不做 | 属于代码语义检索,另行设计 |
 
 约束:
@@ -422,9 +422,9 @@ AI summary:
 metadata:
 
 - source = `metadata`。
-- 内容包含 repo 的基础信息: fullName、description、topics、language、stars、forks、watchers、openIssues、license、archived/fork、是否 starred、RepoStatus、tags、libraryUpdatedAt。
+- 内容包含本地可得的项目事实：GitHub URL / Homepage、描述、语言、topics、原始 stars/forks/watchers/subscribers/openIssues、分支、状态、时间、tags，以及最新缓存 Release、Repo Health、OpenSSF；缺失字段省略，不写 `Unknown`。
 - 用于召回“我之前入库过哪个 Swift Markdown 渲染库”“知识库里 star 数最高的向量数据库是哪几个”“哪些已入库项目还没读”这类问题。
-- metadata chunk 只表达结构化事实,不承载 README 正文。Retriever 中它的 source 权重低于 notes / summary / readme,避免“star 数高”压过真正内容相关性。
+- metadata chunk 只表达结构化事实,不承载 README 正文；它只进入 FTS keyword 检索，不生成向量。Retriever 中它的 source 权重低于 notes / summary / readme,避免“star 数高”压过真正内容相关性。
 
 ## 6. 索引构建
 
@@ -450,7 +450,7 @@ fetchKnowledgeRepos
   -> build chunk drafts
   -> diff by (repo_id, source, source_id, chunk_key, content_hash)
   -> delete stale chunks for repo/source
-  -> embed changed chunks in batch
+  -> metadata 直接标记 keyword_only；其它 changed chunks 批量 embedding
   -> upsert embedding + indexed_at
 ```
 
@@ -464,7 +464,7 @@ fetchKnowledgeRepos
 - notes 保存后,如果 repo 在知识库,debounce 后更新 notes chunk。
 - AI summary 写入后,`AISummaryRepository` 发送 `.aiSummaryDidChange`;如果 repo 在知识库,
   只更新 summary chunk。不能只依赖某个摘要生成页面的回调。
-- repo metadata 更新后,如果 repo 在知识库,按 metadata 更新策略决定是否更新 metadata chunk。
+- GitHub 同步完成、标签 / 阅读状态 / 入库状态、Release 缓存、Repo Health、OpenSSF 缓存变更后，如果 repo 在知识库，按 repo 合并 debounce 后只更新 metadata chunk。
 - 用户清空全部 README cache 时,README 事件不带 `repoId`;索引器执行一次知识库 source diff,
   删除失效 readme chunks,并复用其它未变化 source 的 embedding。
 
@@ -484,7 +484,7 @@ RAG chunk 更新按 source 独立执行。一个来源变化不能顺手重建�
 | notes 变了 | 只重建 `source = notes`; notes 为空时删除或标记 stale notes chunk |
 | 之前没有 AI summary,现在生成了 | 新增 `source = summary` chunk 并 embedding |
 | AI summary 重新生成 | 只更新 `source = summary` |
-| repo metadata 变了 | 只更新 `source = metadata`,且遵守数字字段 bucket / 节流规则 |
+| repo metadata 变了 | 只更新 `source = metadata`；原始动态字段写入 FTS，不进入 embedding |
 | repo 移出知识库 | 不删除 chunk,Retriever 不再召回 |
 | repo 重新入库 | 复用旧 chunk,必要时补 pending / stale embedding |
 
@@ -525,6 +525,7 @@ chunk 内容更新和 embedding 更新不是同一个瞬间完成。为了避免
 | `ready` | content 与 embedding 对应当前 model | 是 |
 | `failed` | embedding 失败,保留错误信息 | 否 |
 | `stale` | 内容或模型已过期,等待重建 | 否 |
+| `keyword_only` | Metadata 精确事实索引，仅 FTS 可召回 | 仅关键词 |
 
 更新流程:
 
@@ -585,23 +586,14 @@ AI summary 更新只影响 `source = summary`:
 
 ### 6.9 Metadata 更新
 
-Metadata chunk 包含 stars / forks / watchers / openIssues 等数字字段,但这些字段不应该每次轻微变化都触发 embedding。
+Metadata 是独立的 `source = metadata` 精确事实索引，状态固定为 `keyword_only`：每次内容变化更新 FTS5，但不创建 pending embedding，也不参与向量召回。因此 stars、forks、watchers、issues、push 时间、Release、Health、OpenSSF 等易变字段保留原值，无需 bucket。
 
 规则:
 
-- `description/topics/language/license/archived/fork/status/tags/libraryUpdatedAt` 变化: 正常更新 metadata chunk。
-- `stars/forks/watchers/openIssues` 变化: 转成 bucket 文本后比较,只有跨 bucket 才更新。
-- 精确排序和筛选不要依赖 embedding 文本,应走 repo 结构化字段查询。
-
-建议 bucket:
-
-| 字段 | bucket 示例 |
-|---|---|
-| stars | `0-99` / `100-999` / `1k-9k` / `10k-49k` / `50k+` |
-| forks | `0-49` / `50-499` / `500-4k` / `5k+` |
-| openIssues | `0` / `1-19` / `20-99` / `100+` |
-
-这样用户问“知识库里 star 数最高的向量数据库”时,RAG 可以知道项目大致热度;真正排序仍由结构化字段完成。
+- 数据只从本地 `repos` / `repo_notes` / tags / releases / health / OpenSSF 缓存聚合，重建绝不请求网络。
+- 同一 repo 的连续事实变更合并 debounce；notes 仍是单独 source，不与 Metadata 混写。
+- FTS keyword 查询接受当前 model 的 `ready` chunk 和 `keyword_only` Metadata；向量查询只读取 `ready` + 当前 model。
+- 精确筛选、统计、排序仍优先使用结构化表；Metadata 用于文本问题中的可引用事实召回。
 
 ### 6.10 覆盖率统计
 

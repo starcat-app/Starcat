@@ -171,6 +171,14 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
                 )
             }
         }
+        // Metadata 只读本地 Release 缓存；写入完成后按 repo 通知，避免一次轮询触发全库重建。
+        for repoID in Set(records.map(\.repoId)) {
+            NotificationCenter.default.post(
+                name: .releaseRecordsDidChange,
+                object: nil,
+                userInfo: ["repoId": repoID]
+            )
+        }
     }
 
     func markRead(releaseId: Int64, isRead: Bool) async throws {
@@ -196,6 +204,11 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
             try db.execute(sql: "UPDATE releases SET is_read = 1")
         }
     }
+}
+
+extension Notification.Name {
+    /// Release 本地缓存写入完成。userInfo 中的 repoId 是需要重建 Metadata 的项目。
+    static let releaseRecordsDidChange = Notification.Name("StarcatReleaseRecordsDidChange")
 }
 
 // MARK: - Errors

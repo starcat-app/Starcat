@@ -140,6 +140,51 @@ struct RAGChunkRepositoryTests {
         #expect(hits.map(\.chunk.repoId) == [10])
     }
 
+    @Test("Metadata 只走 FTS，不进入 embedding 队列或向量召回")
+    func metadataIsKeywordOnly() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 43)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 43, state: .inLibrary)
+        let metadata = RAGChunkDraft(
+            repoId: 43,
+            source: .metadata,
+            sourceId: "",
+            parentType: .metadata,
+            parentKey: "metadata",
+            parentTitle: "Repository metadata",
+            chunkKey: "metadata:0",
+            chunkIndex: 0,
+            sectionPath: "Metadata",
+            title: "Metadata",
+            content: "Homepage: https://example.com/starcat",
+            tokenCount: 8,
+            isTruncated: false
+        )
+
+        let result = try await repository.replaceSource(repoId: 43, source: .metadata, drafts: [metadata])
+        #expect(result.pendingChunkIDs.isEmpty)
+        let chunk = try #require(try await repository.fetchKnowledgeChunks(repoId: 43).first)
+        #expect(chunk.embeddingStatus == .keywordOnly)
+        #expect(chunk.embedding == nil)
+        #expect(try await repository.fetchChunksNeedingEmbedding(limit: 10).isEmpty)
+        #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [43]))
+
+        let keywordHits = try await repository.keywordSearch(
+            query: "homepage",
+            model: "embed-v1",
+            repoIDs: [43],
+            limit: 10
+        )
+        #expect(keywordHits.map(\.chunk.id) == [chunk.id])
+        let vectorHits = try await SQLiteRAGVectorSearchProvider(repository: repository).search(
+            queryVector: [1, 0],
+            model: "embed-v1",
+            repoIDs: [43],
+            limit: 10
+        )
+        #expect(vectorHits.isEmpty)
+    }
+
     @Test("ready 检查只返回知识库中当前模型的可用分片")
     func readyChunkExistencePreservesRetrievalBoundary() async throws {
         let (database, repository) = try makeRepository()

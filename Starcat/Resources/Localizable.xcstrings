@@ -25095,6 +25095,22 @@
         }
       }
     },
+    "rag.browser.status.keywordOnly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅关键词"
+          }
+        }
+      }
+    },
     "rag.browser.status.ready": {
       "localizations": {
         "en": {
@@ -54624,13 +54640,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How many fused candidates are sent to the reranker before evidence limits apply."
+            "value": "Maximum number of fused retrieval chunks sent to Rerank for reordering.\nExample: if retrieval finds 100 chunks and this is set to 24, only the top 24 fused chunks are sent to Rerank. The Final Chunk Limit then selects the chunks used for the LLM answer."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在证据上限裁剪前，发送给 Rerank 的综合检索候选数量。"
+            "value": "最多将多少条综合检索分片发送给 Rerank 重新排序。\n示例：检索到 100 条分片时，若设为 24，则只发送综合排序靠前的 24 条给 Rerank；重排后再按“最终分片上限”选取分片供 LLM 回答。"
           }
         }
       }

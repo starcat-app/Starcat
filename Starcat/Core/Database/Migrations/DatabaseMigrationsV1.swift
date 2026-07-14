@@ -33,7 +33,7 @@
 //  **正式版后的追加迁移（不要与上方「原 vN」混淆）**：
 //  - `v2-undo-star` / `v3-agent-runs` / `v4-agent-tool-outputs` /
 //    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag` /
-//    `v8-rag-suggested-actions`
+//    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only`
 //
 
 import Foundation
@@ -58,6 +58,27 @@ enum DatabaseMigrations {
         registerV6(into: &migrator)
         registerV7(into: &migrator)
         registerV8(into: &migrator)
+        registerV9(into: &migrator)
+    }
+
+    // MARK: - v9-rag-metadata-keyword-only：动态 Metadata 改为纯 FTS（2026-07-14）
+
+    /// 已发布用户原有 Metadata 可能带旧 embedding。该迁移只清理可重建缓存并标记为
+    /// keyword_only；表不存在时 no-op，以支持尚未获得 v7 RAG schema 的旧安装。
+    private static func registerV9(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v9-rag-metadata-keyword-only") { db in
+            guard try db.tableExists("rag_chunks") else { return }
+            try db.execute(sql: """
+                UPDATE rag_chunks
+                SET embedding = NULL,
+                    embedding_dim = NULL,
+                    embedding_model = NULL,
+                    embedding_status = 'keyword_only',
+                    embedding_error = NULL,
+                    indexed_at = NULL
+                WHERE source = 'metadata'
+                """)
+        }
     }
 
     // MARK: - v8-rag-suggested-actions：RAG 推荐问题持久化（2026-07-14）
