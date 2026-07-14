@@ -230,6 +230,9 @@ private final class KnowledgeRAGBrowserViewModel {
     }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
+    /// 测试面板维护独立草稿，连续调参不会在用户明确保存前污染正式问答配置。
+    var retrievalTestSettings: RAGRetrievalSettings
+    var retrievalTestDiagnostics: RAGRetrievalDiagnostics?
     var isTestingRetrieval = false
     /// 仅在服务端成功返回后置位，用于区分“尚未测试”和“测试完成但无命中”。
     var hasCompletedRetrievalTest = false
@@ -238,6 +241,7 @@ private final class KnowledgeRAGBrowserViewModel {
     init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         self.dependencies = dependencies
         self.homeViewModel = homeViewModel
+        self.retrievalTestSettings = dependencies.settings.ragRetrievalSettings.normalized()
     }
 
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
@@ -312,18 +316,44 @@ private final class KnowledgeRAGBrowserViewModel {
     func runRetrievalTest() {
         let query = retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isTestingRetrieval else { return }
+        let testSettings = retrievalTestSettings.normalized()
         isTestingRetrieval = true
         hasCompletedRetrievalTest = false
         retrievalHits = []
+        retrievalTestDiagnostics = nil
         Task { [weak self] in
             guard let self else { return }
             defer { isTestingRetrieval = false }
             do {
-                let service = try dependencies.makeKnowledgeRAGService(selectedModelID: nil)
-                retrievalHits = try await service.testRetrieval(query: query).childHits.sorted { $0.score > $1.score }
+                let service = try dependencies.makeKnowledgeRAGService(
+                    selectedModelID: nil,
+                    retrievalSettingsOverride: testSettings
+                )
+                let result = try await service.testRetrieval(query: query)
+                retrievalHits = result.childHits.sorted { $0.score > $1.score }
+                retrievalTestDiagnostics = result.diagnostics
                 hasCompletedRetrievalTest = true
             } catch { errorMessage = error.localizedDescription }
         }
+    }
+
+    var hasUnsavedRetrievalTestSettings: Bool {
+        retrievalTestSettings.normalized() != dependencies.settings.ragRetrievalSettings.normalized()
+    }
+
+    func restoreSavedRetrievalTestSettings() {
+        retrievalTestSettings = dependencies.settings.ragRetrievalSettings.normalized()
+    }
+
+    func saveRetrievalTestSettings() {
+        retrievalTestSettings = retrievalTestSettings.normalized()
+        dependencies.settings.ragRetrievalSettings = retrievalTestSettings
+    }
+
+    func updateRetrievalTestSettings(_ update: (inout RAGRetrievalSettings) -> Void) {
+        var settings = retrievalTestSettings
+        update(&settings)
+        retrievalTestSettings = settings.normalized()
     }
 
     func repositoryName(for id: Int64) -> String {
@@ -489,6 +519,7 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var hoveredRepositoryID: Int64?
     @State private var hoveredChunkID: Int64?
     @State private var isRetrievalTestExpanded = false
+    @State private var isRetrievalTestSettingsExpanded = false
     @State private var knowledgeHeroCollapseProgress: CGFloat = 0
     @State private var permanentlyDeletingChunk: RAGManagedChunk?
 
@@ -777,6 +808,10 @@ private struct KnowledgeRAGBrowserView: View {
             .padding(.leading, 7)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.24)))
+            retrievalTestSettingsPanel
+            if let diagnostics = viewModel.retrievalTestDiagnostics {
+                retrievalTestSummary(diagnostics)
+            }
             if !viewModel.retrievalHits.isEmpty {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -803,6 +838,164 @@ private struct KnowledgeRAGBrowserView: View {
         }
     }
 
+    /// 草稿参数直接传入本次检索 Service；只有点保存才写入工作台正式设置。
+    private var retrievalTestSettingsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                    isRetrievalTestSettingsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isRetrievalTestSettingsExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("rag.browser.retrieval.settings.title")
+                        .font(.caption.weight(.semibold))
+                    if viewModel.hasUnsavedRetrievalTestSettings {
+                        Text("rag.browser.retrieval.settings.unsaved")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    Spacer()
+                    Text("rag.browser.retrieval.settings.draftHint")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isRetrievalTestSettingsExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("rag.workspace.retrieval.minimumSimilarity")
+                            .font(.caption.weight(.medium))
+                        Spacer()
+                        Text(String(format: "%.2f", locale: locale, viewModel.retrievalTestSettings.minimumVectorSimilarity))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: retrievalTestSimilarityBinding, in: 0...1, step: 0.01)
+
+                    HStack(alignment: .top, spacing: 10) {
+                        retrievalTestNumberField(
+                            titleKey: "rag.workspace.retrieval.finalChunkLimit",
+                            text: retrievalTestFinalLimitBinding
+                        )
+                        retrievalTestNumberField(
+                            titleKey: "rag.workspace.retrieval.perRepositoryLimit",
+                            text: retrievalTestPerRepositoryLimitBinding
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("rag.workspace.retrieval.sources.title")
+                            .font(.caption.weight(.medium))
+                        HStack(spacing: 10) {
+                            ForEach(RAGChunkSource.allCases, id: \.self) { source in
+                                Toggle(source.titleKey, isOn: retrievalTestSourceBinding(source))
+                                    .font(.caption)
+                                    .toggleStyle(.checkbox)
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "text.word.spacing")
+                            .foregroundStyle(.secondary)
+                        Text(String(format: String.l10n("rag.browser.retrieval.settings.tokenBudgetNote"), viewModel.retrievalTestSettings.evidenceTokenBudget))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button("rag.browser.retrieval.settings.restore") {
+                            viewModel.restoreSavedRetrievalTestSettings()
+                        }
+                        .buttonStyle(.bordered)
+                        Button("rag.browser.retrieval.settings.save") {
+                            viewModel.saveRetrievalTestSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!viewModel.hasUnsavedRetrievalTestSettings)
+                    }
+                }
+                .padding(10)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
+    }
+
+    private func retrievalTestSummary(_ diagnostics: RAGRetrievalDiagnostics) -> some View {
+        Text(String(
+            format: String.l10n("rag.browser.retrieval.summary.format"),
+            locale: locale,
+            diagnostics.settings.minimumVectorSimilarity,
+            diagnostics.vectorRawCount,
+            diagnostics.vectorSimilarityFilteredCount,
+            diagnostics.finalChildHitCount
+        ))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+    }
+
+    private func retrievalTestNumberField(titleKey: LocalizedStringKey, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(titleKey)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+            TextField("", text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption.monospacedDigit())
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var retrievalTestSimilarityBinding: Binding<Double> {
+        Binding(
+            get: { viewModel.retrievalTestSettings.minimumVectorSimilarity },
+            set: { value in viewModel.updateRetrievalTestSettings { $0.minimumVectorSimilarity = value } }
+        )
+    }
+
+    private var retrievalTestFinalLimitBinding: Binding<String> {
+        retrievalTestIntegerBinding(\.finalEvidenceChunkLimit)
+    }
+
+    private var retrievalTestPerRepositoryLimitBinding: Binding<String> {
+        retrievalTestIntegerBinding(\.perRepositoryEvidenceLimit)
+    }
+
+    private func retrievalTestIntegerBinding(_ keyPath: WritableKeyPath<RAGRetrievalSettings, Int>) -> Binding<String> {
+        Binding(
+            get: { String(viewModel.retrievalTestSettings[keyPath: keyPath]) },
+            set: { rawValue in
+                let digits = rawValue.filter(\.isNumber)
+                guard let value = Int(digits) else { return }
+                viewModel.updateRetrievalTestSettings { $0[keyPath: keyPath] = value }
+            }
+        )
+    }
+
+    private func retrievalTestSourceBinding(_ source: RAGChunkSource) -> Binding<Bool> {
+        Binding(
+            get: { viewModel.retrievalTestSettings.enabledSources.contains(source) },
+            set: { isEnabled in
+                viewModel.updateRetrievalTestSettings { settings in
+                    if isEnabled {
+                        settings.enabledSources.insert(source)
+                    } else {
+                        settings.enabledSources.remove(source)
+                    }
+                }
+            }
+        )
+    }
+
     private func retrievalHitRow(_ hit: RAGChildHit, rowIndex: Int) -> some View {
         Button {
             inspectingHit = RAGRetrievalHitInspection(hit: hit, repositoryName: viewModel.repositoryName(for: hit.chunk.repoId))
@@ -811,7 +1004,7 @@ private struct KnowledgeRAGBrowserView: View {
                 HStack(spacing: 6) {
                     Text(viewModel.repositoryName(for: hit.chunk.repoId)).font(.caption.weight(.semibold)).lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(String(format: "%.3f", hit.score)).font(.caption.monospaced()).foregroundStyle(.primary)
+                    retrievalScoreLabel("rag.browser.retrieval.rankScore", value: hit.score)
                 }
                 Text(hit.chunk.sectionPath.isEmpty ? hit.chunk.title : hit.chunk.sectionPath)
                     .font(.caption)
@@ -821,6 +1014,10 @@ private struct KnowledgeRAGBrowserView: View {
                     Text(sourceKey(hit.chunk.source))
                     Text("·")
                     Text(hit.kind.rawValue)
+                    Spacer(minLength: 6)
+                    if let vectorSimilarity = hit.vectorSimilarity {
+                        retrievalScoreLabel("rag.browser.retrieval.vectorSimilarity", value: vectorSimilarity)
+                    }
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -835,6 +1032,17 @@ private struct KnowledgeRAGBrowserView: View {
         .pointerStyle(.link)
         .onHover { isHovering in
             hoveredRetrievalHitID = isHovering ? hit.chunk.id : nil
+        }
+    }
+
+    private func retrievalScoreLabel(_ titleKey: LocalizedStringKey, value: Double) -> some View {
+        HStack(spacing: 3) {
+            Text(titleKey)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(String(format: "%.3f", value))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.primary)
         }
     }
 
@@ -1184,7 +1392,7 @@ private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.dismiss) private var dismiss
     let chunk: RAGChunk
     let isExcluded: Bool?
-    let retrievalMetadata: (repositoryName: String, kind: String, score: Double)?
+    let retrievalMetadata: (repositoryName: String, kind: String, score: Double, vectorSimilarity: Double?)?
     let onSave: ((String, String, String) async -> Void)?
     @State private var title: String
     @State private var sectionPath: String
@@ -1203,7 +1411,7 @@ private struct KnowledgeRAGChunkEditor: View {
     init(hit: RAGRetrievalHitInspection) {
         chunk = hit.hit.chunk
         isExcluded = nil
-        retrievalMetadata = (hit.repositoryName, hit.hit.kind.rawValue, hit.hit.score)
+        retrievalMetadata = (hit.repositoryName, hit.hit.kind.rawValue, hit.hit.score, hit.hit.vectorSimilarity)
         onSave = nil
         _title = State(initialValue: hit.hit.chunk.title)
         _sectionPath = State(initialValue: hit.hit.chunk.sectionPath)
@@ -1226,7 +1434,12 @@ private struct KnowledgeRAGChunkEditor: View {
                     Text(chunk.source.rawValue).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Text(retrievalMetadata.kind).font(.caption).foregroundStyle(.secondary)
+                    Text("rag.browser.retrieval.rankScore").font(.caption).foregroundStyle(.secondary)
                     Text(String(format: "%.3f", retrievalMetadata.score)).font(.caption.monospaced())
+                    if let vectorSimilarity = retrievalMetadata.vectorSimilarity {
+                        Text("rag.browser.retrieval.vectorSimilarity").font(.caption).foregroundStyle(.secondary)
+                        Text(String(format: "%.3f", vectorSimilarity)).font(.caption.monospaced())
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: 4) {

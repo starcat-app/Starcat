@@ -432,10 +432,12 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     var clarificationQuestion: String?
     var fallbackQuestions: [String]
     var userVisiblePlan: RAGUserVisiblePlan
+    /// 仅允许受限 DSL；模型不能借此传入任意 SQL、字段名或 Join。
+    var analytics: KnowledgeBaseAnalyticsPlan?
 
     enum CodingKeys: String, CodingKey {
         case mode, semanticQuery, filters, sort, candidateLimit, remoteContextRequests
-        case webSearchRequests, requiresLiveEvidence
+        case webSearchRequests, requiresLiveEvidence, analytics
         case confidence, clarificationQuestion, fallbackQuestions, userVisiblePlan
     }
 
@@ -451,7 +453,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         confidence: RAGQueryPlanConfidence = .high,
         clarificationQuestion: String? = nil,
         fallbackQuestions: [String] = [],
-        userVisiblePlan: RAGUserVisiblePlan = .init()
+        userVisiblePlan: RAGUserVisiblePlan = .init(),
+        analytics: KnowledgeBaseAnalyticsPlan? = nil
     ) {
         self.mode = mode
         self.semanticQuery = semanticQuery
@@ -465,6 +468,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         self.clarificationQuestion = clarificationQuestion
         self.fallbackQuestions = fallbackQuestions
         self.userVisiblePlan = userVisiblePlan
+        self.analytics = analytics
     }
 
     init(from decoder: Decoder) throws {
@@ -481,6 +485,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         clarificationQuestion = try container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
         fallbackQuestions = try container.decodeIfPresent([String].self, forKey: .fallbackQuestions) ?? []
         userVisiblePlan = try container.decodeIfPresent(RAGUserVisiblePlan.self, forKey: .userVisiblePlan) ?? .init()
+        analytics = try container.decodeIfPresent(KnowledgeBaseAnalyticsPlan.self, forKey: .analytics)
     }
 }
 

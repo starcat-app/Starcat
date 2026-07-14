@@ -56,6 +56,7 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
         case plannerResponse = "planner_response"
         case plan
         case candidates
+        case structuredAnalytics = "structured_analytics"
         case retrieval
         case remoteRequest = "remote_request"
         case remoteResponse = "remote_response"
@@ -256,6 +257,8 @@ struct KnowledgeRAGService: Sendable {
     private let promptBuilder: KnowledgeRAGPromptBuilder
     /// 全局聚合事实与向量证据分离；读取失败时不能让原有问答失败。
     private let metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider?
+    /// 结构化分析的执行权留在本地。模型仅能给出 `KnowledgeBaseAnalyticsPlan`。
+    private let analyticsExecutor: (any KnowledgeBaseAnalyticsExecuting)?
     /// 压缩 / 标题与 Generator/Planner 一样走可配置模板；缺省用英文默认值。
     private let compressorPromptConfiguration: AIPromptConfiguration
     private let titlePromptConfiguration: AIPromptConfiguration
@@ -273,6 +276,7 @@ struct KnowledgeRAGService: Sendable {
         generatorParameters: AIModelParameters,
         promptBuilder: KnowledgeRAGPromptBuilder = .init(),
         metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider? = nil,
+        analyticsExecutor: (any KnowledgeBaseAnalyticsExecuting)? = nil,
         compressorPromptConfiguration: AIPromptConfiguration = RAGDefaultPrompts.compressor,
         titlePromptConfiguration: AIPromptConfiguration = RAGDefaultPrompts.title,
         outputLanguage: String = "English"
@@ -288,6 +292,7 @@ struct KnowledgeRAGService: Sendable {
         self.generatorParameters = generatorParameters
         self.promptBuilder = promptBuilder
         self.metadataSnapshotProvider = metadataSnapshotProvider
+        self.analyticsExecutor = analyticsExecutor
         self.compressorPromptConfiguration = compressorPromptConfiguration
         self.titlePromptConfiguration = titlePromptConfiguration
         self.outputLanguage = outputLanguage
@@ -395,6 +400,7 @@ struct KnowledgeRAGService: Sendable {
                     remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
                     webSearchRequests: \(plan.webSearchRequests.map { "\($0.query): \($0.reason)" }.joined(separator: "\n"))
                     requiresLiveEvidence: \(plan.requiresLiveEvidence)
+                    analytics: \(String(reflecting: plan.analytics))
                     """)
                     continuation.yield(.plan(plan))
                     continuation.yield(.execution(.planningCompleted(plan)))
@@ -427,11 +433,41 @@ struct KnowledgeRAGService: Sendable {
 
                     continuation.yield(.state(.retrieving))
                     continuation.yield(.execution(.started(.retrieval)))
-                    let candidates = try await candidateRepository.fetchCandidates(
-                        plan: plan,
-                        explicitRepoIDs: request.composerContext.explicitRepoIDs,
-                        explicitMode: request.composerContext.explicitRepoMode
-                    )
+                    let analyticsResult: KnowledgeBaseAnalyticsResult?
+                    if let analyticsPlan = plan.analytics, let analyticsExecutor {
+                        analyticsResult = try await analyticsExecutor.execute(
+                            plan: analyticsPlan,
+                            filters: plan.filters
+                        )
+                        emitDebug(.structuredAnalytics, """
+                        validated_analytics:
+                        dimension: \(analyticsPlan.dimension?.rawValue ?? "<none>")
+                        measure: \(analyticsPlan.measure.rawValue)
+                        direction: \(analyticsPlan.direction.rawValue)
+                        limit: \(analyticsPlan.limit)
+
+                        enforced_scope: library_state = in_library
+                        filters: \(String(reflecting: plan.filters))
+                        raw_sql: not recorded; local executor maps the validated DSL to fixed SQL.
+
+                        result:
+                        \(analyticsResult?.promptContext() ?? "<none>")
+                        """)
+                    } else {
+                        analyticsResult = nil
+                    }
+                    // analytics 已由固定聚合 SQL 给出完整结果；再加载 1,000 个候选并塞入
+                    // structured rows 既浪费 I/O，也会让“排行”答案混入无关的项目清单。
+                    let candidates: [RAGRepoCandidate]
+                    if plan.analytics == nil {
+                        candidates = try await candidateRepository.fetchCandidates(
+                            plan: plan,
+                            explicitRepoIDs: request.composerContext.explicitRepoIDs,
+                            explicitMode: request.composerContext.explicitRepoMode
+                        )
+                    } else {
+                        candidates = []
+                    }
                     emitDebug(.candidates, candidates.map { candidate in
                         """
                         repo: \(candidate.repo.fullName)
@@ -637,6 +673,7 @@ struct KnowledgeRAGService: Sendable {
                     }
 
                     let hasStructuredEvidence = plan.mode == .structuredOnly && !retrieval.candidates.isEmpty
+                    let hasAnalyticsEvidence = analyticsResult != nil
                     let hasLocalEvidence = !retrieval.bundles.isEmpty
                     let hasRemoteEvidence = remoteBlocks.contains {
                         $0.outcome == .success && $0.resultCount > 0 && !$0.content.isEmpty
@@ -657,7 +694,7 @@ struct KnowledgeRAGService: Sendable {
                         continuation.finish()
                         return
                     }
-                    guard hasStructuredEvidence || hasLocalEvidence || hasRemoteEvidence || hasAttachmentEvidence else {
+                    guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence || hasRemoteEvidence || hasAttachmentEvidence else {
                         let answerKey: String
                         let terminalState: RAGAnswerState
                         if localMissingReasonKey == "rag.workspace.execution.noIndex" {
@@ -701,6 +738,7 @@ struct KnowledgeRAGService: Sendable {
                         plan: plan,
                         retrieval: retrieval,
                         metadataSnapshot: metadataSnapshot,
+                        analyticsResult: analyticsResult,
                         remoteBlocks: remoteBlocks,
                         attachmentContexts: attachmentContexts,
                         history: history,

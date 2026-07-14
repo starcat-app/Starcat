@@ -12,6 +12,35 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @Test("知识库结构化分析只执行白名单 DSL 并返回 Star 排行")
+    func knowledgeBaseAnalyticsExecutesWhitelistedRanking() async throws {
+        let database = try InMemoryDatabaseManager()
+        for id in 1...3 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: Int64(id), state: .inLibrary)
+        }
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET stars_count = 80 WHERE id = 1")
+            try db.execute(sql: "UPDATE repos SET stars_count = 120 WHERE id = 2")
+            try db.execute(sql: "UPDATE repos SET stars_count = 10 WHERE id = 3")
+        }
+
+        let result = try await KnowledgeBaseAnalyticsExecutor(database: database).execute(
+            plan: .init(dimension: .repository, measure: .maxStars, limit: 1),
+            filters: .init()
+        )
+
+        #expect(result.rows == [.init(dimensionValue: "octo/demo-2", value: 120)])
+        #expect(result.promptContext().contains("octo/demo-2: 120"))
+
+        let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
+            {"mode":"structured_only","semanticQuery":"ignored","filters":{},"analytics":{"dimension":"repository","measure":"max_stars","direction":"desc","limit":9999},"remoteContextRequests":[],"confidence":"high","userVisiblePlan":{}}
+            """, fallbackQuestion: "Star 最多的项目")
+        #expect(plan.mode == .structuredOnly)
+        #expect(plan.semanticQuery.isEmpty)
+        #expect(plan.analytics?.limit == 100)
+    }
+
     @Test("知识库元数据快照提供全局统计与 Star Top 10")
     func knowledgeBaseMetadataSnapshotProvidesGlobalFacts() async throws {
         let database = try InMemoryDatabaseManager()

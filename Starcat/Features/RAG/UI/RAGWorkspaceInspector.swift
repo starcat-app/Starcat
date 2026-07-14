@@ -674,22 +674,35 @@ struct RAGWorkspaceInspector: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Spacer()
+                // 与「清空」同款 bordered 小按钮：复制全部 Debug Markdown。
                 CopyFeedbackButton(
                     providesContent: { viewModel.debugTraceText },
-                    tooltip: "rag.workspace.debug.copyAll"
+                    tooltip: "rag.workspace.debug.copyAll",
+                    style: .bordered
                 ) { didCopy in
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(iconFont(size: 11, weight: .medium))
                         .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                        .frame(width: 14, height: 14)
                 }
+                .controlSize(.small)
                 .disabled(viewModel.debugTraces.isEmpty)
-                Button("rag.workspace.debug.clear") {
+
+                Button {
                     viewModel.clearDebugTraces()
                     expandedDebugTraceIDs = []
                     expandedDebugEventIDs = []
                     pendingExpandDebugEventIDs = []
+                } label: {
+                    Image(systemName: "trash")
+                        .font(iconFont(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 14)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .help("rag.workspace.debug.clear")
+                .accessibilityLabel(Text("rag.workspace.debug.clear"))
                 .disabled(viewModel.debugTraces.isEmpty)
             }
 
@@ -700,85 +713,84 @@ struct RAGWorkspaceInspector: View {
             } else {
                 ForEach(viewModel.debugTraces.sorted { $0.startedAt > $1.startedAt }) { trace in
                     let isExpanded = expandedDebugTraceIDs.contains(trace.id)
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 6) {
-                            Button {
-                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                                    if isExpanded {
-                                        expandedDebugTraceIDs.remove(trace.id)
-                                        // 收起外层时清掉内部展开，下次进来仍默认折叠。
-                                        let eventIDs = Set(trace.events.map(\.id))
-                                        expandedDebugEventIDs.subtract(eventIDs)
-                                        pendingExpandDebugEventIDs.subtract(eventIDs)
-                                    } else {
-                                        expandedDebugTraceIDs.insert(trace.id)
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                        .font(ragFont(.caption2, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 12)
-                                        .fixedSize()
-                                    Image(systemName: debugTraceCategoryIcon(trace.category))
-                                        .font(iconFont(size: 11, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 14)
-                                        .accessibilityHidden(true)
-                                    // 英文标题更长：不够宽时只截标题，不挤换时间戳。
-                                    Text(debugTraceCategoryKey(trace.category))
-                                        .font(ragFont(.caption, weight: .semibold))
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                        .layoutPriority(0)
-                                    Spacer(minLength: 4)
-                                    // 固定 `yyyy-MM-dd HH:mm` 单行；避免窄侧栏把日期/时间折成两行。
-                                    Text(debugTraceCompactTimestamp(trace.startedAt))
-                                        .font(ragFont(.caption2, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .fixedSize(horizontal: true, vertical: false)
-                                        .layoutPriority(1)
-                                    Image(systemName: debugTraceStateIcon(trace.state))
-                                        .font(iconFont(size: 11, weight: .semibold))
-                                        .foregroundStyle(debugTraceStateColor(trace.state))
-                                        .fixedSize()
-                                        .layoutPriority(1)
-                                        .help(debugTraceStateKey(trace.state))
-                                }
-                                .contentShape(Rectangle())
+                    VStack(alignment: .leading, spacing: 8) {
+                        // 整行可折叠；导出叠在 chevron 左侧独立点击，避免误触展开。
+                        Button {
+                            toggleDebugTraceExpansion(trace)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: debugTraceCategoryIcon(trace.category))
+                                    .font(iconFont(size: 11, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14)
+                                    .accessibilityHidden(true)
+                                // 英文标题更长：不够宽时只截标题，不挤换时间戳。
+                                Text(debugTraceCategoryKey(trace.category))
+                                    .font(ragFont(.caption, weight: .semibold))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .layoutPriority(0)
+                                Spacer(minLength: 4)
+                                // 固定 `yyyy-MM-dd HH:mm` 单行；避免窄侧栏把日期/时间折成两行。
+                                Text(debugTraceCompactTimestamp(trace.startedAt))
+                                    .font(ragFont(.caption2, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .layoutPriority(1)
+                                Image(systemName: debugTraceStateIcon(trace.state))
+                                    .font(iconFont(size: 11, weight: .semibold))
+                                    .foregroundStyle(debugTraceStateColor(trace.state))
+                                    .fixedSize()
+                                    .layoutPriority(1)
+                                    .help(debugTraceStateKey(trace.state))
+                                // 给导出留位，chevron 始终贴行尾。
+                                Color.clear
+                                    .frame(width: 14)
+                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                    .font(ragFont(.caption2, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 12)
                             }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
-
-                            // 导出独立于折叠，避免点图标误触发展开。
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .overlay(alignment: .trailing) {
                             Button {
                                 viewModel.exportDebugTrace(trace)
                             } label: {
                                 Image(systemName: "square.and.arrow.up")
                                     .font(iconFont(size: 11, weight: .medium))
                                     .foregroundStyle(.secondary)
+                                    .frame(width: 14, height: 14)
                             }
                             .buttonStyle(.plain)
                             .focusEffectDisabled()
-                            .fixedSize()
                             .help("rag.workspace.debug.export")
+                            // 14 导出 + 6 间距，叠在 clear slot 上，chevron 仍最右。
+                            .padding(.trailing, 18)
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .padding(.bottom, isExpanded ? 0 : 10)
 
                         if isExpanded {
-                            // Stage 默认折叠：外层展开只渲染标题行，payload 点开后再进视图树。
-                            // 右侧秒数是本步耗时（相对上一条），不是从 ask 开始的累计时间。
+                            // 子 stage 相对父行缩进，恢复「问答 → 各阶段」层级。
                             let stepDurations = debugEventStepDurations(for: trace.events)
-                            ForEach(trace.events) { event in
-                                debugEventRow(
-                                    event,
-                                    stepDurationSeconds: stepDurations[event.id] ?? event.elapsedSeconds
-                                )
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(trace.events) { event in
+                                    debugEventRow(
+                                        event,
+                                        stepDurationSeconds: stepDurations[event.id] ?? event.elapsedSeconds
+                                    )
+                                }
                             }
+                            .padding(.leading, 18)
+                            .padding(.trailing, 10)
+                            .padding(.bottom, 8)
                         }
                     }
-                    .padding(10)
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                 }
             }
@@ -791,51 +803,60 @@ struct RAGWorkspaceInspector: View {
         let isExpanded = expandedDebugEventIDs.contains(event.id)
         let isExpandPending = pendingExpandDebugEventIDs.contains(event.id)
         return VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Button {
-                    toggleDebugEventExpansion(event)
-                } label: {
-                    HStack(spacing: 6) {
-                        // 展开中用小转圈替代 chevron，提示「已接收点击、正在挂载正文」。
-                        if isExpandPending {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .frame(width: 12, height: 12)
-                        } else {
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(ragFont(.caption2, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 12)
-                        }
-                        Image(systemName: debugStageIcon(event.stage))
-                            .font(iconFont(size: 11, weight: .semibold))
-                            .foregroundStyle(debugStageColor(event.stage))
-                            .frame(width: 14)
-                            .accessibilityHidden(true)
-                        Text(debugStageKey(event.stage))
-                            .font(ragFont(.caption, weight: .semibold))
-                        Spacer(minLength: 4)
-                        Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, stepDurationSeconds))
-                            .font(ragFont(.caption2, design: .monospaced))
+            // 与父行一致：chevron 贴最右；复制叠在其左侧独立点击。
+            Button {
+                toggleDebugEventExpansion(event)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: debugStageIcon(event.stage))
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(debugStageColor(event.stage))
+                        .frame(width: 14)
+                        .accessibilityHidden(true)
+                    Text(debugStageKey(event.stage))
+                        .font(ragFont(.caption, weight: .semibold))
+                    Spacer(minLength: 4)
+                    Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, stepDurationSeconds))
+                        .font(ragFont(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .help("rag.workspace.debug.stepDuration.help")
+                    // 给复制留位；展开中用小转圈替代右侧 chevron。
+                    Color.clear
+                        .frame(width: 10)
+                    if isExpandPending {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(ragFont(.caption2, weight: .semibold))
                             .foregroundStyle(.secondary)
-                            .help("rag.workspace.debug.stepDuration.help")
+                            .frame(width: 12)
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                // Prompt / 返回等大段正文挂载前禁止再点，否则会 toggle 成「展开又立刻折叠」。
-                .disabled(isExpandPending)
-                .opacity(isExpandPending ? 0.72 : 1)
-
-                // 复制独立于折叠，折叠态也能直接拷整段 payload。
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            // Prompt / 返回等大段正文挂载前禁止再点，否则会 toggle 成「展开又立刻折叠」。
+            .disabled(isExpandPending)
+            .opacity(isExpandPending ? 0.72 : 1)
+            .overlay(alignment: .trailing) {
+                // 复制独立于折叠。字号必须明显小于 body 默认 Symbol：
+                // `doc.on.doc` 同字号也比标题行 `checkmark.circle.fill` 显大，
+                // 与 AI 气泡复制一致用 9pt + 10×10 锁死，避免 feedback 成功勾再次撑开。
                 CopyFeedbackButton(
                     providesContent: { event.renderedPayload() },
                     tooltip: "rag.workspace.debug.copy"
                 ) { didCopy in
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(iconFont(size: 9, weight: .regular))
                         .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                        .frame(width: 10, height: 10)
+                        .fixedSize()
                 }
+                // 10 复制位 + 6 间距，叠在 clear slot 上，chevron / 转圈仍最右。
+                .padding(.trailing, 18)
             }
 
             if isExpanded {
@@ -847,8 +868,9 @@ struct RAGWorkspaceInspector: View {
                     }
             }
         }
-        .padding(10)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
     }
 
     /// 仅检索诊断拥有稳定的结构化指标；Prompt、模型响应等自由文本可能含端口、模型版本或参数，
@@ -887,6 +909,21 @@ struct RAGWorkspaceInspector: View {
         return durations
     }
 
+    /// 父级 trace 折叠：收起时同步清掉内部 stage 展开态。
+    private func toggleDebugTraceExpansion(_ trace: RAGDebugTrace) {
+        let isExpanded = expandedDebugTraceIDs.contains(trace.id)
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+            if isExpanded {
+                expandedDebugTraceIDs.remove(trace.id)
+                let eventIDs = Set(trace.events.map(\.id))
+                expandedDebugEventIDs.subtract(eventIDs)
+                pendingExpandDebugEventIDs.subtract(eventIDs)
+            } else {
+                expandedDebugTraceIDs.insert(trace.id)
+            }
+        }
+    }
+
     /// 折叠可立刻切；展开先加 pending 锁，等 payload `onAppear`（或超时兜底）再解锁。
     private func toggleDebugEventExpansion(_ event: RAGDebugEvent) {
         let isExpanded = expandedDebugEventIDs.contains(event.id)
@@ -923,6 +960,7 @@ struct RAGWorkspaceInspector: View {
         case .plannerResponse: return "rag.workspace.debug.stage.plannerResponse"
         case .plan: return "rag.workspace.debug.stage.plan"
         case .candidates: return "rag.workspace.debug.stage.candidates"
+        case .structuredAnalytics: return "rag.workspace.debug.stage.structuredAnalytics"
         case .retrieval: return "rag.workspace.debug.stage.retrieval"
         case .remoteRequest: return "rag.workspace.debug.stage.remoteRequest"
         case .remoteResponse: return "rag.workspace.debug.stage.remoteResponse"
@@ -950,6 +988,8 @@ struct RAGWorkspaceInspector: View {
             return "list.bullet.rectangle"
         case .candidates:
             return "building.2"
+        case .structuredAnalytics:
+            return "chart.bar.xaxis"
         case .retrieval:
             return "magnifyingglass"
         case .remoteRequest:
@@ -1092,9 +1132,16 @@ struct RAGWorkspaceInspector: View {
     /// 公式随命中方式变化；特别是 hybrid 不能误用 vector-only 公式解释。
     func retrievalScoreExplanation(_ citation: RAGCitation) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("rag.workspace.inspector.retrievalScore.explanationTitle")
-                .font(ragFont(.headline, weight: .semibold))
-                .foregroundStyle(.primary)
+            HStack(spacing: 6) {
+                // 与设置页 / 占位符 popover 同款：标题旁默认色图标，标明「公式说明」。
+                Image(systemName: "function")
+                    .font(iconFont(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("rag.workspace.inspector.retrievalScore.explanationTitle")
+                    .font(ragFont(.headline, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
 
             if let scoreBreakdown = citation.scoreBreakdown {
                 Text("rag.workspace.inspector.retrievalScore.actualCalculation")

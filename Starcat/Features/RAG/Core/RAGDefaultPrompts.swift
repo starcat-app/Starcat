@@ -88,7 +88,8 @@ enum RAGDefaultPrompts {
         4. When using temporary network context, keep [R1]-style markers and state that they are live GitHub or External Search information for this turn.
         5. If evidence is insufficient, say so directly. Do not present uncertain claims as facts.
         6. For structured_only counting questions, use structured_candidate_count. Lists may only use the structured rows actually provided. When structured_rows_truncated=true, say the list is truncated; do not pretend it is complete. These database facts do not require forged chunk citations.
-        7. Prefer concise, scannable answers.
+        7. When an "Authoritative local structured analytics result" is present, use its exact rows for aggregation or ranking. It is a database fact and does not require S citations.
+        8. Prefer concise, scannable answers.
         """,
         userPromptTemplate: """
         {questionSection}{evidenceSection}{remoteSection}{attachmentSection}
@@ -133,6 +134,7 @@ enum RAGDefaultPrompts {
           "remoteContextRequests":[{"resource":"github_issues","query":"keywords only","reason":"string","maxRepos":5,"perRepoLimit":10,"state":"all|open|closed","sort":"created|updated","order":"asc|desc"}],
           "webSearchRequests":[{"query":"concise public web search query","reason":"string","maxResults":8}],
           "requiresLiveEvidence":false,
+          "analytics":null or {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks","direction":"asc|desc","limit":10},
           "confidence":"high|medium|needs_clarification",
           "clarificationQuestion":null or string,
           "fallbackQuestions":["short actionable question"],

@@ -23402,13 +23402,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%.3fs"
+            "value": "%.1fs"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%.3f 秒"
+            "value": "%.1f 秒"
           }
         }
       }
@@ -23473,6 +23473,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "候选仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.stage.structuredAnalytics": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Structured analytics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结构化分析"
           }
         }
       }
@@ -24181,6 +24197,48 @@
         }
       }
     },
+    "rag.browser.retrieval.settings.draftHint": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Applies to this test only" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅用于本次测试" } }
+      }
+    },
+    "rag.browser.retrieval.settings.restore": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Restore Saved" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复已保存配置" } }
+      }
+    },
+    "rag.browser.retrieval.settings.save": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Save as RAG Settings" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "保存为 RAG 配置" } }
+      }
+    },
+    "rag.browser.retrieval.settings.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Test Parameters" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "测试参数" } }
+      }
+    },
+    "rag.browser.retrieval.settings.tokenBudgetNote": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld-token evidence budget applies to answer context, not this retrieval test." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld Token 证据预算仅影响回答上下文，不影响本次召回测试。" } }
+      }
+    },
+    "rag.browser.retrieval.settings.unsaved": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unsaved" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未保存" } }
+      }
+    },
+    "rag.browser.retrieval.summary.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Threshold %.2f · Vector %lld · Threshold filtered %lld · Final %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "阈值 %.2f · 向量命中 %lld · 阈值过滤 %lld · 最终保留 %lld" } }
+      }
+    },
     "rag.browser.retrieval.noHitsMessage": {
       "localizations": {
         "en": {
@@ -24261,6 +24319,12 @@
         }
       }
     },
+    "rag.browser.retrieval.rankScore": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hybrid retrieval score" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "综合检索分" } }
+      }
+    },
     "rag.browser.retrieval.title": {
       "localizations": {
         "en": {
@@ -24275,6 +24339,12 @@
             "value": "召回测试"
           }
         }
+      }
+    },
+    "rag.browser.retrieval.vectorSimilarity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Vector similarity" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量相似度" } }
       }
     },
     "rag.browser.source.metadata": {

@@ -224,7 +224,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             "previousUserQuestion": context.previousUserQuestion ?? "<none>",
             "previousReferencedRepositories": previousRepos.isEmpty ? "[]" : "[\(previousRepos)]",
             "webSearchEnabled": String(context.webSearchEnabled)
-        ])
+        ]) + Self.analyticsCapabilityPrompt
     }
 
     static func decodeAndValidate(_ raw: String, fallbackQuestion: String) throws -> RAGQueryPlan {
@@ -253,6 +253,15 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         plan.remoteContextRequests = normalizeRemoteContextRequests(plan.remoteContextRequests)
         plan.webSearchRequests = normalizeWebSearchRequests(plan.webSearchRequests)
         plan.fallbackQuestions = normalizedFallbackQuestions(plan.fallbackQuestions)
+        if let analytics = plan.analytics {
+            plan.analytics = try analytics.validated()
+            // 聚合/排行由本地执行器完成，不需要分片检索，也不能附带任意联网副作用。
+            plan.mode = .structuredOnly
+            plan.semanticQuery = ""
+            plan.remoteContextRequests = []
+            plan.webSearchRequests = []
+            plan.requiresLiveEvidence = false
+        }
 
         switch plan.mode {
         case .semanticOnly:
@@ -267,7 +276,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
                 plan.mode = .semanticOnly
             }
         case .structuredOnly:
-            guard plan.filters.hasEffectiveConditions || plan.sort != nil else {
+            guard plan.analytics != nil || plan.filters.hasEffectiveConditions || plan.sort != nil else {
                 throw RAGQueryPlannerError.invalidPlan("structured_only 没有结构化条件")
             }
         case .guidedDiscovery:
@@ -303,6 +312,15 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             .map { String($0.prefix(180)) }
         return plan
     }
+
+    /// 作为不可编辑的附加约束拼到 Planner 请求。即使用户保留旧自定义模板，模型也仍能知道
+    /// 可选择的业务 DSL；同时不暴露 SQLite 表、列或 SQL 语法。
+    private static let analyticsCapabilityPrompt = """
+
+    For aggregate/ranking/filter questions, optionally include analytics. It is a local-only DSL:
+    {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks","direction":"asc|desc","limit":1}
+    Use analytics only for a database aggregation or ranking. Never use SQL, table names, column names, expressions, or additional analytics fields. Set mode=structured_only when analytics is present.
+    """
 
     private static func validateRanges(_ filters: RAGRepoFilter) throws {
         let values = [filters.minStars, filters.maxStars, filters.minForks, filters.maxForks].compactMap { $0 }

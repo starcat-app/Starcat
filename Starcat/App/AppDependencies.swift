@@ -448,7 +448,10 @@ final class AppDependencies {
 
     /// 按当前输入框选择创建一次问答所需的不可变 runtime。模型切换只影响本轮 Generator /
     /// Planner；embedding 仍固定使用 Settings 的 embedding task，避免同一索引混入不同向量空间。
-    func makeKnowledgeRAGService(selectedModelID: String?) throws -> KnowledgeRAGService {
+    func makeKnowledgeRAGService(
+        selectedModelID: String?,
+        retrievalSettingsOverride: RAGRetrievalSettings? = nil
+    ) throws -> KnowledgeRAGService {
         // 工作台可在非 Pro 状态下打开以查看历史和索引覆盖，但创建服务就意味着将发起模型调用，
         // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
         try entitlementGate.requirePro(.knowledgeRAG)
@@ -509,11 +512,12 @@ final class AppDependencies {
             privateRepoVectorProvider: localVector,
             embeddingClient: embeddingClient,
             embeddingModel: embeddingSelection.modelName,
-            retrievalSettings: settings.ragRetrievalSettings
+            retrievalSettings: (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized()
         )
         let outputLanguage = LocaleStore.shared.selection.aiOutputLanguageDescriptor
         let ragPrompts = settings.ragPromptSettings
-        let retrievalSettings = settings.ragRetrievalSettings
+        // 召回测试传入的草稿只在本次 Service 生命周期内生效；正常问答继续使用已保存配置。
+        let retrievalSettings = (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized()
         let planner = KnowledgeRAGQueryPlanner(
             client: chatClient,
             model: chatSelection.modelName,
@@ -545,6 +549,7 @@ final class AppDependencies {
                 database: database,
                 embeddingModel: embeddingSelection.modelName
             ),
+            analyticsExecutor: KnowledgeBaseAnalyticsExecutor(database: database),
             compressorPromptConfiguration: ragPrompts.compressor,
             titlePromptConfiguration: ragPrompts.title,
             outputLanguage: outputLanguage
