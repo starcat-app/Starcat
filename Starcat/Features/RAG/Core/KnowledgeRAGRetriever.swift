@@ -14,6 +14,7 @@ struct KnowledgeRAGRetriever: Sendable {
     private let chunkRepository: any RAGChunkRepositoryProtocol
     private let keywordProvider: any RAGKeywordSearchProvider
     private let vectorProvider: any RAGVectorSearchProvider
+    private let reranker: (any RAGReranking)?
     private let privateRepoKeywordProvider: any RAGKeywordSearchProvider
     private let privateRepoVectorProvider: any RAGVectorSearchProvider
     private let fusion: RAGHybridFusionEngine
@@ -42,7 +43,8 @@ struct KnowledgeRAGRetriever: Sendable {
         repoLimit: Int = 5,
         parentTokenLimit: Int = 1_600,
         minimumEvidenceScore: Double = 0.08,
-        retrievalSettings: RAGRetrievalSettings = .balanced
+        retrievalSettings: RAGRetrievalSettings = .balanced,
+        reranker: (any RAGReranking)? = nil
     ) {
         let retrievalSettings = retrievalSettings.normalized()
         var fusionConfiguration = fusion.configuration
@@ -51,6 +53,7 @@ struct KnowledgeRAGRetriever: Sendable {
         self.chunkRepository = chunkRepository
         self.keywordProvider = keywordProvider
         self.vectorProvider = vectorProvider
+        self.reranker = reranker
         self.privateRepoKeywordProvider = privateRepoKeywordProvider ?? keywordProvider
         self.privateRepoVectorProvider = privateRepoVectorProvider ?? vectorProvider
         self.fusion = RAGHybridFusionEngine(configuration: fusionConfiguration)
@@ -146,11 +149,14 @@ struct KnowledgeRAGRetriever: Sendable {
         progress(.semanticSearchCompleted(eligibleVectorHits.count))
         if failures.count == 2, let error = failures.first { throw error }
         let preferred = explicitMode == .prefer ? Set(explicitRepoIDs) : []
-        let fusionResult = fusion.fuseWithDiagnostics(
+        let fusedCandidates = fusion.fuseWithDiagnostics(
             keywordHits: eligibleKeywordHits,
             vectorHits: eligibleVectorHits,
-            preferredRepoIDs: preferred
+            preferredRepoIDs: preferred,
+            appliesLimits: false
         )
+        let rerankResult = await rerankCandidates(fusedCandidates.hits, query: query)
+        let fusionResult = fusion.applyLimits(to: rerankResult.hits)
         let hits = fusionResult.hits.filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)
         let diagnostics = RAGRetrievalDiagnostics(
@@ -165,12 +171,48 @@ struct KnowledgeRAGRetriever: Sendable {
             vectorErrorDescription: vector.error?.localizedDescription,
             fusion: fusionResult.diagnostics,
             minimumEvidenceScoreFilteredCount: fusionResult.hits.count - hits.count,
+            rerank: rerankResult.diagnostics,
             finalChildHitCount: hits.count,
             bundleCount: bundles.count,
             outcome: bundles.isEmpty ? .noEvidence : .completed
         )
         progress(.evidencePacked(hitCount: hits.count, bundleCount: bundles.count))
         return RAGRetrievalResult(candidates: candidates, bundles: bundles, childHits: hits, diagnostics: diagnostics)
+    }
+
+    private func rerankCandidates(_ candidates: [RAGChildHit], query: String) async -> (hits: [RAGChildHit], diagnostics: RAGRerankDiagnostics) {
+        guard let reranker else {
+            return (candidates, RAGRerankDiagnostics(state: .disabled))
+        }
+        guard !candidates.isEmpty else {
+            return (candidates, RAGRerankDiagnostics(state: .skipped, provider: reranker.provider))
+        }
+        let startedAt = Date()
+        do {
+            let reranked = try await reranker.rerank(query: query, candidates: candidates)
+            // 服务端漏掉个别 index 时，保留未返回候选的原融合顺序，避免 Rerank 响应不完整导致证据消失。
+            let rerankedIDs = Set(reranked.compactMap { $0.hit.chunk.id })
+            let trailing = candidates.filter { hit in
+                guard let id = hit.chunk.id else { return true }
+                return !rerankedIDs.contains(id)
+            }
+            return (reranked.map(\.hit) + trailing, RAGRerankDiagnostics(
+                state: .completed,
+                provider: reranker.provider,
+                candidateCount: candidates.count,
+                rerankedCount: reranked.count,
+                elapsedSeconds: Date().timeIntervalSince(startedAt)
+            ))
+        } catch {
+            AppLog.ai.warning("RAG rerank degraded: \(error.localizedDescription, privacy: .public)")
+            return (candidates, RAGRerankDiagnostics(
+                state: .failedFallback,
+                provider: reranker.provider,
+                candidateCount: candidates.count,
+                elapsedSeconds: Date().timeIntervalSince(startedAt),
+                errorDescription: error.localizedDescription
+            ))
+        }
     }
 
     private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> [RepoContextBundle] {

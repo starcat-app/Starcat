@@ -420,9 +420,9 @@ struct AppSettingsTests {
 
         let restored = AppSettings(defaults: defaults).ragRetrievalSettings
         #expect(restored.minimumVectorSimilarity == 1)
-        #expect(restored.finalEvidenceChunkLimit == 12)
+        #expect(restored.finalEvidenceChunkLimit == 50)
         #expect(restored.perRepositoryEvidenceLimit == 1)
-        #expect(restored.evidenceTokenBudget == 16_000)
+        #expect(restored.evidenceTokenBudget == 1_024_000)
         #expect(restored.enabledSources == [.notes])
     }
 

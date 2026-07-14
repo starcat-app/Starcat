@@ -11,7 +11,7 @@
 //  - System 吃主要高度、User 次之；重置放在 segmented 右侧。
 //  - 字号直接读 `settings.interfaceScale`（与独立窗口同一档位），不只缩放外框。
 //  - 占位符说明收进 popover，避免底部一长串 token 且无含义。
-//  - 2026-07-14：一行 4 段 segmented（回答 / 规划 / 压缩 / 标题）。
+//  - 2026-07-14：一行 4 段 segmented（问答 / 规划 / 压缩 / 标题）。
 //  - 2026-07-14：增加提示词 / 检索一级分段。
 //  - 2026-07-14：检索页对齐「侧栏 + 内容卡片」；预设切换静默写字段；保存持久化。
 //  - 2026-07-14：由 PromptSettingsSheet 重命名为 SettingsSheet。
@@ -158,6 +158,13 @@ struct RAGWorkspaceSettingsSheet: View {
     @State private var includesNotes: Bool
     @State private var includesSummary: Bool
     @State private var includesMetadata: Bool
+    @State private var rerankEnabled: Bool
+    @State private var rerankProvider: RAGRerankProvider
+    @State private var rerankEndpoint: String
+    @State private var rerankModel: String
+    @State private var rerankAPIKey: String
+    @State private var rerankCandidateLimit: String
+    @State private var rerankCredentialError: String?
     /// `apply(_:)` 写字段期间抬起，挡住误判「自定义」；用户手动拖滑杆 / 改数字时则放行。
     @State private var isApplyingRetrievalPreset = false
 
@@ -174,6 +181,15 @@ struct RAGWorkspaceSettingsSheet: View {
         _includesNotes = State(initialValue: retrieval.enabledSources.contains(.notes))
         _includesSummary = State(initialValue: retrieval.enabledSources.contains(.summary))
         _includesMetadata = State(initialValue: retrieval.enabledSources.contains(.metadata))
+        let rerank = settings.ragRerankConfiguration.normalized
+        _rerankEnabled = State(initialValue: rerank.isEnabled)
+        _rerankProvider = State(initialValue: rerank.provider)
+        _rerankEndpoint = State(initialValue: rerank.endpoint)
+        _rerankModel = State(initialValue: rerank.model)
+        _rerankAPIKey = State(initialValue: (try? KeychainManager.shared.loadAIKey(
+            forProvider: RAGRerankConfiguration.keychainID
+        )) ?? "")
+        _rerankCandidateLimit = State(initialValue: String(rerank.candidateLimit))
     }
 
     /// 直接订阅设置档位，避免 sheet 只缩放外框、字体仍停在 standard。
@@ -304,8 +320,11 @@ struct RAGWorkspaceSettingsSheet: View {
                 .font(ragFont(.body, scale: interfaceScale))
             Button("rag.workspace.prompt.save") {
                 // 两个分区共用同一草稿生命周期：无论停在哪一栏，保存都一并写入。
+                // 未启用 Rerank 时不碰 Keychain，避免仅保存提示词/检索草稿时意外覆盖已有 Token。
+                guard !rerankEnabled || saveRerankAPIKey() else { return }
                 settings.ragPromptSettings = draft
                 settings.ragRetrievalSettings = buildRetrievalSettings()
+                settings.ragRerankConfiguration = buildRerankConfiguration()
                 dismiss()
             }
             .font(ragFont(.body, scale: interfaceScale))
@@ -412,6 +431,12 @@ struct RAGWorkspaceSettingsSheet: View {
                 ) {
                     retrievalSourcesSection
                 }
+                settingsGroup(
+                    titleKey: "rag.workspace.rerank.title",
+                    systemImage: "arrow.up.arrow.down.circle"
+                ) {
+                    rerankSection
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // overlay 滚动条盖住右缘控件；尾部 gutter 让数字框 / picker 仍可点。
@@ -479,6 +504,68 @@ struct RAGWorkspaceSettingsSheet: View {
                 hintKey: "rag.workspace.retrieval.tokenBudget.hint",
                 text: evidenceTokenBudgetBinding
             )
+        }
+    }
+
+    /// Rerank 服务由用户自行配置；关闭时保留协议、地址和模型，方便临时停用后再次启用。
+    private var rerankSection: some View {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
+            Toggle("rag.workspace.rerank.enabled", isOn: $rerankEnabled)
+                .font(ragFont(.body, scale: interfaceScale, weight: .medium))
+            Text("rag.workspace.rerank.enabled.hint")
+                .font(ragFont(.caption2, scale: interfaceScale))
+                .foregroundStyle(.secondary)
+            if rerankEnabled {
+                Divider()
+                Picker("rag.workspace.rerank.provider", selection: $rerankProvider) {
+                    Text("rag.workspace.rerank.provider.tei").tag(RAGRerankProvider.huggingFaceTEI)
+                    Text("rag.workspace.rerank.provider.cohere").tag(RAGRerankProvider.cohereCompatible)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .onChange(of: rerankProvider) { previous, current in
+                    // 仅在用户未改过默认地址时切换，手动填写的自托管地址不能被静默覆盖。
+                    if rerankEndpoint == previous.defaultEndpoint {
+                        rerankEndpoint = current.defaultEndpoint
+                    }
+                }
+                Divider()
+                // URL 往往很长：输入框吃满标题右侧到容器右缘，溢出只水平滚动不换行。
+                settingTextFieldRow(
+                    titleKey: "rag.workspace.rerank.endpoint",
+                    hintKey: "rag.workspace.rerank.endpoint.hint",
+                    text: $rerankEndpoint,
+                    expandsToTrailingEdge: true
+                )
+                if rerankProvider == .cohereCompatible {
+                    Divider()
+                    settingTextFieldRow(
+                        titleKey: "rag.workspace.rerank.model",
+                        hintKey: "rag.workspace.rerank.model.hint",
+                        text: $rerankModel,
+                        expandsToTrailingEdge: true
+                    )
+                }
+                Divider()
+                settingTextFieldRow(
+                    titleKey: "rag.workspace.rerank.apiKey",
+                    hintKey: "rag.workspace.rerank.apiKey.hint",
+                    text: $rerankAPIKey,
+                    expandsToTrailingEdge: true,
+                    isSecure: true
+                )
+                Divider()
+                settingTextFieldRow(
+                    titleKey: "rag.workspace.rerank.candidateLimit",
+                    hintKey: "rag.workspace.rerank.candidateLimit.hint",
+                    text: rerankCandidateLimitBinding
+                )
+                if let rerankCredentialError {
+                    Text(rerankCredentialError)
+                        .font(ragFont(.caption2, scale: interfaceScale))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -581,7 +668,7 @@ struct RAGWorkspaceSettingsSheet: View {
         Binding(
             get: { finalEvidenceChunkLimit },
             set: { newValue in
-                finalEvidenceChunkLimit = newValue
+                finalEvidenceChunkLimit = Self.filteredChunkLimitDigits(newValue)
                 markRetrievalCustomIfNeeded()
             }
         )
@@ -591,7 +678,7 @@ struct RAGWorkspaceSettingsSheet: View {
         Binding(
             get: { perRepositoryEvidenceLimit },
             set: { newValue in
-                perRepositoryEvidenceLimit = newValue
+                perRepositoryEvidenceLimit = Self.filteredChunkLimitDigits(newValue)
                 markRetrievalCustomIfNeeded()
             }
         )
@@ -601,8 +688,17 @@ struct RAGWorkspaceSettingsSheet: View {
         Binding(
             get: { evidenceTokenBudget },
             set: { newValue in
-                evidenceTokenBudget = newValue
+                evidenceTokenBudget = Self.filteredTokenBudgetDigits(newValue)
                 markRetrievalCustomIfNeeded()
+            }
+        )
+    }
+
+    private var rerankCandidateLimitBinding: Binding<String> {
+        Binding(
+            get: { rerankCandidateLimit },
+            set: { newValue in
+                rerankCandidateLimit = newValue.filter(\.isNumber)
             }
         )
     }
@@ -661,27 +757,71 @@ struct RAGWorkspaceSettingsSheet: View {
         }
     }
 
+    /// - Parameter expandsToTrailingEdge: 为 true 时输入框从标题右侧铺满到容器右缘（URL / 模型名等长文本）；
+    ///   默认 false 保持短数字框（证据上限 / Token 预算 / 候选数等）。
+    @ViewBuilder
     private func settingTextFieldRow(
         titleKey: LocalizedStringKey,
         hintKey: LocalizedStringKey,
-        text: Binding<String>
+        text: Binding<String>,
+        expandsToTrailingEdge: Bool = false,
+        isSecure: Bool = false
     ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
+        if expandsToTrailingEdge {
+            // 长文本：标题与输入框同一行，说明放整行下方，避免长 hint 挤占输入宽度。
             VStack(alignment: .leading, spacing: 3) {
-                Text(titleKey)
-                    .font(ragFont(.callout, scale: interfaceScale, weight: .medium))
-                    .foregroundStyle(.primary)
+                HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
+                    Text(titleKey)
+                        .font(ragFont(.callout, scale: interfaceScale, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: true, vertical: false)
+                    if isSecure {
+                        SecureField("", text: text)
+                            .textFieldStyle(.roundedBorder)
+                            .font(interfaceScale.font(.code))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        TextField("", text: text)
+                            .textFieldStyle(.roundedBorder)
+                            .font(interfaceScale.font(.code))
+                            .lineLimit(1)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
                 Text(hintKey)
                     .font(ragFont(.caption2, scale: interfaceScale))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: interfaceScale.scaled(12))
-            TextField("", text: text)
-                .textFieldStyle(.roundedBorder)
-                .font(interfaceScale.font(.code))
-                .frame(width: interfaceScale.scaled(80))
-                .multilineTextAlignment(.trailing)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(titleKey)
+                        .font(ragFont(.callout, scale: interfaceScale, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Text(hintKey)
+                        .font(ragFont(.caption2, scale: interfaceScale))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: interfaceScale.scaled(12))
+                if isSecure {
+                    SecureField("", text: text)
+                        .textFieldStyle(.roundedBorder)
+                        .font(interfaceScale.font(.code))
+                        .lineLimit(1)
+                        .frame(width: interfaceScale.scaled(80), alignment: .trailing)
+                } else {
+                    TextField("", text: text)
+                        .textFieldStyle(.roundedBorder)
+                        .font(interfaceScale.font(.code))
+                        .lineLimit(1)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: interfaceScale.scaled(80), alignment: .trailing)
+                }
+            }
         }
     }
 
@@ -711,9 +851,52 @@ struct RAGWorkspaceSettingsSheet: View {
         ).normalized()
     }
 
+    private func buildRerankConfiguration() -> RAGRerankConfiguration {
+        RAGRerankConfiguration(
+            isEnabled: rerankEnabled,
+            provider: rerankProvider,
+            endpoint: rerankEndpoint,
+            model: rerankModel,
+            candidateLimit: parseInt(rerankCandidateLimit, fallback: 24)
+        ).normalized
+    }
+
+    /// Token 只在用户点击保存时写入 Keychain；不跟随草稿写入 UserDefaults，也不会出现在 Debug Trace。
+    private func saveRerankAPIKey() -> Bool {
+        do {
+            let value = rerankAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty {
+                try KeychainManager.shared.deleteAIKey(forProvider: RAGRerankConfiguration.keychainID)
+            } else {
+                try KeychainManager.shared.storeAIKey(value, forProvider: RAGRerankConfiguration.keychainID)
+            }
+            rerankCredentialError = nil
+            return true
+        } catch {
+            rerankCredentialError = error.localizedDescription
+            return false
+        }
+    }
+
     private func parseInt(_ text: String, fallback: Int) -> Int {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return Int(trimmed) ?? fallback
+    }
+
+    /// 分片上限输入：只留数字；按已输入值钳到 1…50 再回写。
+    private static func filteredChunkLimitDigits(_ raw: String) -> String {
+        let digits = raw.filter(\.isNumber)
+        guard !digits.isEmpty else { return "" }
+        guard let value = Int(digits) else { return digits }
+        return String(min(max(value, 1), 50))
+    }
+
+    /// Token 预算：仅数字；输入中只顶住上限 1_024_000，下限 2000 留给保存时 `normalized()`。
+    private static func filteredTokenBudgetDigits(_ raw: String) -> String {
+        let digits = raw.filter(\.isNumber)
+        guard !digits.isEmpty else { return "" }
+        guard let value = Int(digits) else { return digits }
+        return String(min(value, 1_024_000))
     }
 
     private func hydrate(from retrieval: RAGRetrievalSettings) {

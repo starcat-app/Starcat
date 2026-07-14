@@ -63,6 +63,85 @@ struct RAGQdrantConfiguration: Codable, Equatable, Sendable {
     }
 }
 
+/// Starcat 第一阶段支持的 Rerank HTTP 协议。
+///
+/// 不以“模型”作为协议判断条件：同一模型可由不同服务承载，而请求/响应字段才决定客户端适配方式。
+enum RAGRerankProvider: String, CaseIterable, Codable, Sendable, Identifiable {
+    case huggingFaceTEI = "huggingface_tei"
+    case cohereCompatible = "cohere_compatible"
+
+    var id: String { rawValue }
+
+    var defaultEndpoint: String {
+        switch self {
+        case .huggingFaceTEI: return "http://127.0.0.1:8080/rerank"
+        case .cohereCompatible: return "https://api.cohere.com/v2/rerank"
+        }
+    }
+
+}
+
+/// Rerank 是召回后的可选重排序步骤；地址、协议、模型和开关均由用户控制，不假定服务位于本机。
+struct RAGRerankConfiguration: Codable, Equatable, Sendable {
+    /// API Token 与配置分开存放，避免令牌进入 UserDefaults、Debug Trace 或导出文件。
+    static let keychainID = "rag-rerank"
+
+    var isEnabled = false
+    var provider: RAGRerankProvider = .huggingFaceTEI
+    var endpoint = RAGRerankProvider.huggingFaceTEI.defaultEndpoint
+    var model = ""
+    var candidateLimit = 24
+
+    var normalized: RAGRerankConfiguration {
+        var value = self
+        value.endpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.candidateLimit = min(max(candidateLimit, 10), 60)
+        return value
+    }
+
+    var validationMessage: String? {
+        let value = normalized
+        guard let url = URL(string: value.endpoint),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else { return "Rerank endpoint 无效" }
+        if value.provider == .cohereCompatible, value.model.isEmpty {
+            return "Cohere-compatible Rerank 模型不能为空"
+        }
+        return nil
+    }
+
+    /// 初版曾只保存 endpoint/model/candidateLimit；缺少 provider 时按原 Cohere 风格协议读取，
+    /// 既不让已保存设置解码失败，也不会把旧地址误发成 TEI 请求。
+    init(
+        isEnabled: Bool = false,
+        provider: RAGRerankProvider = .huggingFaceTEI,
+        endpoint: String = RAGRerankProvider.huggingFaceTEI.defaultEndpoint,
+        model: String = "",
+        candidateLimit: Int = 24
+    ) {
+        self.isEnabled = isEnabled
+        self.provider = provider
+        self.endpoint = endpoint
+        self.model = model
+        self.candidateLimit = candidateLimit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled, provider, endpoint, model, candidateLimit
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try values.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        provider = try values.decodeIfPresent(RAGRerankProvider.self, forKey: .provider) ?? .cohereCompatible
+        endpoint = try values.decodeIfPresent(String.self, forKey: .endpoint) ?? provider.defaultEndpoint
+        model = try values.decodeIfPresent(String.self, forKey: .model) ?? ""
+        candidateLimit = try values.decodeIfPresent(Int.self, forKey: .candidateLimit) ?? 24
+    }
+}
+
 struct RAGBackendConfiguration: Codable, Equatable, Sendable {
     static let meilisearchKeychainID = "rag-backend-meilisearch"
     static let qdrantKeychainID = "rag-backend-qdrant"

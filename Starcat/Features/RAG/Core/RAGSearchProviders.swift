@@ -134,6 +134,152 @@ struct RAGHybridFusionResult: Equatable, Sendable {
     var diagnostics: RAGHybridFusionDiagnostics
 }
 
+protocol RAGReranking: Sendable {
+    /// Debug Trace 只记录协议类型，不记录 endpoint、Token 或候选正文。
+    var provider: RAGRerankProvider { get }
+    func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)]
+}
+
+/// Hugging Face Text Embeddings Inference 的 `/rerank` 协议适配。
+///
+/// TEI 在容器启动时确定模型，因此不能发送 Cohere 的 `model` / `top_n` 字段；协议边界独立
+/// 于召回流程，避免服务端字段差异渗透到 RAG 排序逻辑。
+struct HuggingFaceTEIRAGReranker: RAGReranking {
+    private let configuration: RAGRerankConfiguration
+    private let apiKey: String?
+    private let httpClient: any RAGHTTPClientProtocol
+
+    let provider: RAGRerankProvider = .huggingFaceTEI
+
+    init(
+        configuration: RAGRerankConfiguration,
+        apiKey: String? = nil,
+        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient()
+    ) {
+        self.configuration = configuration.normalized
+        let normalizedAPIKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.apiKey = normalizedAPIKey.isEmpty ? nil : normalizedAPIKey
+        self.httpClient = httpClient
+    }
+
+    func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
+        guard configuration.validationMessage == nil, let url = URL(string: configuration.endpoint) else {
+            throw RAGExternalBackendError.invalidConfiguration(configuration.validationMessage ?? "Rerank endpoint 无效")
+        }
+        let selected = Array(candidates.prefix(configuration.candidateLimit))
+        guard !selected.isEmpty else { return [] }
+        let documents = selected.map { hit in
+            [hit.chunk.title, hit.chunk.sectionPath, String(hit.chunk.content.prefix(6_000))]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+        }
+        let body = TEIRerankRequest(query: query, texts: documents)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await httpClient.data(for: request)
+        guard (200...299).contains(response.statusCode) else {
+            throw RAGExternalBackendError.http(backend: "Hugging Face TEI Rerank", status: response.statusCode, message: String(data: data, encoding: .utf8) ?? "")
+        }
+        let results = try JSONDecoder().decode([TEIRerankResult].self, from: data)
+        guard !results.isEmpty else { throw RAGExternalBackendError.invalidResponse("Hugging Face TEI Rerank") }
+        return results.compactMap { result in
+            guard selected.indices.contains(result.index) else { return nil }
+            return (selected[result.index], result.score)
+        }.sorted { $0.score > $1.score }
+    }
+
+    private struct TEIRerankRequest: Encodable {
+        let query: String
+        let texts: [String]
+    }
+
+    private struct TEIRerankResult: Decodable {
+        let index: Int
+        let score: Double
+    }
+}
+
+/// Cohere v2 Rerank 兼容协议适配。
+///
+/// 服务方必须返回 `results[].index/relevance_score`；这与 TEI 的顶层数组 `score` 刻意分开，
+/// 避免“兼容”名称掩盖两个不可互换的 JSON 协议。
+struct CohereCompatibleRAGReranker: RAGReranking {
+    private let configuration: RAGRerankConfiguration
+    private let apiKey: String?
+    private let httpClient: any RAGHTTPClientProtocol
+
+    let provider: RAGRerankProvider = .cohereCompatible
+
+    init(
+        configuration: RAGRerankConfiguration,
+        apiKey: String? = nil,
+        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient()
+    ) {
+        self.configuration = configuration.normalized
+        let normalizedAPIKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.apiKey = normalizedAPIKey.isEmpty ? nil : normalizedAPIKey
+        self.httpClient = httpClient
+    }
+
+    func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
+        guard configuration.validationMessage == nil, let url = URL(string: configuration.endpoint) else {
+            throw RAGExternalBackendError.invalidConfiguration(configuration.validationMessage ?? "Rerank endpoint 无效")
+        }
+        let selected = Array(candidates.prefix(configuration.candidateLimit))
+        guard !selected.isEmpty else { return [] }
+        let documents = selected.map(Self.rerankDocument)
+        let body = CohereRerankRequest(
+            model: configuration.model,
+            query: query,
+            documents: documents,
+            topN: selected.count
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await httpClient.data(for: request)
+        guard (200...299).contains(response.statusCode) else {
+            throw RAGExternalBackendError.http(backend: "Cohere-compatible Rerank", status: response.statusCode, message: String(data: data, encoding: .utf8) ?? "")
+        }
+        let decoded = try JSONDecoder().decode(CohereRerankResponse.self, from: data)
+        guard !decoded.results.isEmpty else { throw RAGExternalBackendError.invalidResponse("Cohere-compatible Rerank") }
+        return decoded.results.compactMap { result in
+            guard selected.indices.contains(result.index) else { return nil }
+            return (selected[result.index], result.relevanceScore)
+        }.sorted { $0.score > $1.score }
+    }
+
+    private static func rerankDocument(_ hit: RAGChildHit) -> String {
+        [hit.chunk.title, hit.chunk.sectionPath, String(hit.chunk.content.prefix(6_000))]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    private struct CohereRerankRequest: Encodable {
+        let model: String
+        let query: String
+        let documents: [String]
+        let topN: Int
+        enum CodingKeys: String, CodingKey { case model, query, documents; case topN = "top_n" }
+    }
+
+    private struct CohereRerankResponse: Decodable {
+        let results: [Item]
+        struct Item: Decodable {
+            let index: Int
+            let relevanceScore: Double
+            enum CodingKeys: String, CodingKey { case index; case relevanceScore = "relevance_score" }
+        }
+    }
+}
+
 /// 用户可控制的 RAG 证据筛选边界。
 ///
 /// 这些参数只决定“哪些本地证据进入本轮上下文”，不会改变索引、embedding 模型或融合权重。
@@ -170,12 +316,13 @@ struct RAGRetrievalSettings: Codable, Equatable, Sendable {
     )
 
     /// 让手工输入和旧 JSON 都落在安全范围内，避免一次配置把上下文撑爆。
+    /// 分片上限 UI / 持久化统一钳在 1…50；Token 预算钳在 2000…1_024_000。
     func normalized() -> RAGRetrievalSettings {
         var settings = self
         settings.minimumVectorSimilarity = min(max(settings.minimumVectorSimilarity, 0), 1)
-        settings.finalEvidenceChunkLimit = min(max(settings.finalEvidenceChunkLimit, 3), 12)
-        settings.perRepositoryEvidenceLimit = min(max(settings.perRepositoryEvidenceLimit, 1), 5)
-        settings.evidenceTokenBudget = min(max(settings.evidenceTokenBudget, 2_000), 16_000)
+        settings.finalEvidenceChunkLimit = min(max(settings.finalEvidenceChunkLimit, 1), 50)
+        settings.perRepositoryEvidenceLimit = min(max(settings.perRepositoryEvidenceLimit, 1), 50)
+        settings.evidenceTokenBudget = min(max(settings.evidenceTokenBudget, 2_000), 1_024_000)
         return settings
     }
 }
@@ -198,7 +345,8 @@ struct RAGHybridFusionEngine: Sendable {
     func fuseWithDiagnostics(
         keywordHits: [RAGChildHit],
         vectorHits: [RAGChildHit],
-        preferredRepoIDs: Set<Int64> = []
+        preferredRepoIDs: Set<Int64> = [],
+        appliesLimits: Bool = true
     ) -> RAGHybridFusionResult {
         struct Accumulator {
             var chunk: RAGChunk
@@ -273,6 +421,17 @@ struct RAGHybridFusionEngine: Sendable {
             return lhs.score > rhs.score
         }
 
+        guard appliesLimits else {
+            return RAGHybridFusionResult(
+                hits: ranked,
+                diagnostics: RAGHybridFusionDiagnostics(uniqueCount: ranked.count)
+            )
+        }
+        return applyLimits(to: ranked)
+    }
+
+    /// Rerank 必须发生在多样性/总数裁剪前；否则只能重排已被截成少数的候选，收益很低。
+    func applyLimits(to ranked: [RAGChildHit]) -> RAGHybridFusionResult {
         var repoCounts: [Int64: Int] = [:]
         var perRepositoryAccepted: [RAGChildHit] = []
         var perRepositoryLimitFilteredCount = 0

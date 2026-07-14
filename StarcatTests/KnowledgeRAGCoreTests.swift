@@ -728,6 +728,128 @@ struct KnowledgeRAGCoreTests {
         #expect(diagnostics.fusion.totalLimitFilteredCount == 0)
     }
 
+    @Test("Rerank 在最终证据裁剪前重排，失败时保留综合检索顺序")
+    func rerankReordersBeforeEvidenceLimitsAndFallsBack() async throws {
+        let database = try InMemoryDatabaseManager()
+        let first = fixtureChunk(id: 301, repoID: 1, source: .readme)
+        let second = fixtureChunk(id: 302, repoID: 2, source: .readme)
+        let third = fixtureChunk(id: 303, repoID: 3, source: .readme)
+        let candidates = [1, 2, 3].map {
+            RAGRepoCandidate(repo: fixtureRepo(id: Int64($0), isPrivate: false), status: .using, libraryUpdatedAt: nil, tagNames: [])
+        }
+        func makeRetriever(reranker: (any RAGReranking)?) -> KnowledgeRAGRetriever {
+            KnowledgeRAGRetriever(
+                chunkRepository: GRDBRAGChunkRepository(database: database),
+                keywordProvider: StubRAGKeywordProvider(
+                    backendName: "SQLite",
+                    hits: [
+                        RAGChildHit(chunk: first, score: 1, kind: .keyword),
+                        RAGChildHit(chunk: second, score: 0.5, kind: .keyword),
+                        RAGChildHit(chunk: third, score: 0.33, kind: .keyword)
+                    ],
+                    shouldThrow: false
+                ),
+                vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+                embeddingClient: SpyRAGAIClient(),
+                embeddingModel: "embed",
+                // 本测试只验证 Rerank 与证据上限的先后顺序，不能让最低证据分数再次裁掉候选。
+                minimumEvidenceScore: 0,
+                retrievalSettings: RAGRetrievalSettings(
+                    minimumVectorSimilarity: 0.65,
+                    finalEvidenceChunkLimit: 3,
+                    perRepositoryEvidenceLimit: 1,
+                    evidenceTokenBudget: 8_000,
+                    enabledSources: [.readme]
+                ),
+                reranker: reranker
+            )
+        }
+
+        let reordered = try await makeRetriever(
+            reranker: StubRAGReranker(order: [303, 302, 301])
+        ).retrieve(semanticQuery: "query", candidates: candidates, explicitMode: .only, explicitRepoIDs: [])
+        #expect(reordered.childHits.compactMap(\.chunk.id) == [303, 302, 301])
+        #expect(reordered.diagnostics?.rerank?.state == .completed)
+        #expect(reordered.diagnostics?.rerank?.provider == .huggingFaceTEI)
+
+        let fallback = try await makeRetriever(
+            reranker: StubRAGReranker(order: [], shouldThrow: true)
+        ).retrieve(semanticQuery: "query", candidates: candidates, explicitMode: .only, explicitRepoIDs: [])
+        #expect(fallback.childHits.compactMap(\.chunk.id) == [301, 302, 303])
+        #expect(fallback.diagnostics?.rerank?.state == .failedFallback)
+    }
+
+    @Test("Hugging Face TEI Rerank 使用 texts 协议并解析 score")
+    func huggingFaceTEIRerankerUsesTEIProtocol() async throws {
+        let first = fixtureChunk(id: 401, repoID: 1, source: .readme)
+        let second = fixtureChunk(id: 402, repoID: 2, source: .readme)
+        let client = RecordingRAGHTTPClient(
+            data: Data(#"[{"index":1,"score":0.91},{"index":0,"score":0.15}]"#.utf8)
+        )
+        let reranker = HuggingFaceTEIRAGReranker(
+            configuration: RAGRerankConfiguration(
+                isEnabled: true,
+                provider: .huggingFaceTEI,
+                endpoint: "http://127.0.0.1:8080/rerank",
+                candidateLimit: 10
+            ),
+            apiKey: "tei-token",
+            httpClient: client
+        )
+
+        let result = try await reranker.rerank(
+            query: "SwiftUI",
+            candidates: [RAGChildHit(chunk: first, score: 0.4, kind: .vector), RAGChildHit(chunk: second, score: 0.3, kind: .vector)]
+        )
+
+        #expect(result.compactMap(\.hit.chunk.id) == [402, 401])
+        let request = try #require(await client.lastRequest())
+        #expect(request.url?.path == "/rerank")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tei-token")
+        let body = try #require(request.httpBody)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["query"] as? String == "SwiftUI")
+        #expect((json["texts"] as? [String])?.count == 2)
+        #expect(json["documents"] == nil)
+        #expect(json["model"] == nil)
+    }
+
+    @Test("Cohere-compatible Rerank 使用 model/documents/top_n 协议")
+    func cohereCompatibleRerankerUsesCohereProtocol() async throws {
+        let first = fixtureChunk(id: 501, repoID: 1, source: .readme)
+        let second = fixtureChunk(id: 502, repoID: 2, source: .readme)
+        let client = RecordingRAGHTTPClient(
+            data: Data(#"{"results":[{"index":1,"relevance_score":0.98},{"index":0,"relevance_score":0.21}]}"#.utf8)
+        )
+        let reranker = CohereCompatibleRAGReranker(
+            configuration: RAGRerankConfiguration(
+                isEnabled: true,
+                provider: .cohereCompatible,
+                endpoint: "https://rerank.example.test/v2/rerank",
+                model: "rerank-v4.0-pro",
+                candidateLimit: 10
+            ),
+            apiKey: "cohere-token",
+            httpClient: client
+        )
+
+        let result = try await reranker.rerank(
+            query: "SwiftUI",
+            candidates: [RAGChildHit(chunk: first, score: 0.4, kind: .vector), RAGChildHit(chunk: second, score: 0.3, kind: .vector)]
+        )
+
+        #expect(result.compactMap(\.hit.chunk.id) == [502, 501])
+        let request = try #require(await client.lastRequest())
+        #expect(request.url?.path == "/v2/rerank")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer cohere-token")
+        let body = try #require(request.httpBody)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["model"] as? String == "rerank-v4.0-pro")
+        #expect((json["documents"] as? [String])?.count == 2)
+        #expect(json["top_n"] as? Int == 2)
+        #expect(json["texts"] == nil)
+    }
+
     @Test("关闭全部证据来源时返回可解释的检索诊断")
     func retrievalDiagnosticsExplainDisabledSources() async throws {
         let database = try InMemoryDatabaseManager()
@@ -2418,6 +2540,20 @@ private struct StubRAGVectorProvider: RAGVectorSearchProvider {
     }
 }
 
+private struct StubRAGReranker: RAGReranking {
+    let order: [Int64]
+    var shouldThrow = false
+    let provider: RAGRerankProvider = .huggingFaceTEI
+
+    func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
+        if shouldThrow { throw StubRAGProviderError.unavailable }
+        return order.enumerated().compactMap { index, id in
+            guard let hit = candidates.first(where: { $0.chunk.id == id }) else { return nil }
+            return (hit, Double(order.count - index))
+        }
+    }
+}
+
 private struct StaticRAGHTTPClient: RAGHTTPClientProtocol {
     let data: Data
     let statusCode: Int
@@ -2430,6 +2566,31 @@ private struct StaticRAGHTTPClient: RAGHTTPClientProtocol {
             headerFields: nil
         )!
         return (data, response)
+    }
+}
+
+/// 适配器测试需要断言发送的协议字段，因此记录请求而非仅返回固定响应。
+private actor RecordingRAGHTTPClient: RAGHTTPClientProtocol {
+    private let data: Data
+    private var recordedRequest: URLRequest?
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequest = request
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "http://127.0.0.1")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (data, response)
+    }
+
+    func lastRequest() -> URLRequest? {
+        recordedRequest
     }
 }
 

@@ -436,13 +436,38 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.caption))
                     .foregroundStyle(.orange)
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
-                Button("rag.workspace.inspector.citationStarcatDetail") { viewModel.openCitation(citation) }
-                Button("rag.workspace.inspector.citationGitHub") { viewModel.openGitHub(citation) }
+                // logo-only：与知识库详情同源，文案降级为 help / accessibility。
+                Button {
+                    viewModel.openCitation(citation)
+                } label: {
+                    // App Icon 带玻璃外框，缩小时看不清；用 CompactMark 放大主体。
+                    StarcatCompactMark(size: 16)
+                        .squareLogoActionChrome()
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.inspector.citationStarcatDetail")
+                .accessibilityLabel(Text("rag.workspace.inspector.citationStarcatDetail"))
+
+                Button {
+                    viewModel.openGitHub(citation)
+                } label: {
+                    // Devicons 经典 mark；template 以适配明暗主题。
+                    Image("github")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                        .foregroundStyle(.primary)
+                        .squareLogoActionChrome()
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.inspector.citationGitHub")
+                .accessibilityLabel(Text("rag.workspace.inspector.citationGitHub"))
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .padding(.top, 2)
     }
@@ -653,15 +678,16 @@ struct RAGWorkspaceInspector: View {
             Divider()
             VStack(alignment: .trailing, spacing: 13) {
                 indexProgressLabel
-                Button {
+                // icon-only：统一走 SyncIconButton，文案保留为 tooltip / accessibility。
+                SyncIconButton(
+                    isRefreshing: viewModel.isIndexing,
+                    disabled: viewModel.isIndexing,
+                    font: .caption,
+                    frameSize: 18,
+                    tooltip: String.l10n("rag.workspace.index.rebuild")
+                ) {
                     viewModel.rebuildIndex()
-                } label: {
-                    HStack(spacing: 6) {
-                        rebuildIndexIcon
-                        Text("rag.workspace.index.rebuild")
-                    }
                 }
-                .disabled(viewModel.isIndexing)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -1384,19 +1410,6 @@ struct RAGWorkspaceInspector: View {
 
     func indexIssueSourceTitle(_ source: RAGChunkSource) -> LocalizedStringKey {
         source.titleKey
-    }
-
-    @ViewBuilder
-    var rebuildIndexIcon: some View {
-        // 与旁边按钮文案对齐：默认继承 control 字号会偏大，收到 caption。
-        if reduceMotion {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.caption)
-        } else {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.caption)
-                .symbolEffect(.rotate, options: .repeating, isActive: viewModel.isIndexing)
-        }
     }
 
     @ViewBuilder

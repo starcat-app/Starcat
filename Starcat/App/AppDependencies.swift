@@ -472,6 +472,7 @@ final class AppDependencies {
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
         let backendConfiguration = settings.ragBackendConfiguration
+        let rerankConfiguration = settings.ragRerankConfiguration.normalized
 
         let keywordProvider: any RAGKeywordSearchProvider
         if backendConfiguration.keywordBackend == .meilisearch,
@@ -502,6 +503,18 @@ final class AppDependencies {
         } else {
             vectorProvider = localVector
         }
+        let reranker: (any RAGReranking)?
+        if rerankConfiguration.isEnabled {
+            let rerankAPIKey = try KeychainManager.shared.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)
+            switch rerankConfiguration.provider {
+            case .huggingFaceTEI:
+                reranker = HuggingFaceTEIRAGReranker(configuration: rerankConfiguration, apiKey: rerankAPIKey)
+            case .cohereCompatible:
+                reranker = CohereCompatibleRAGReranker(configuration: rerankConfiguration, apiKey: rerankAPIKey)
+            }
+        } else {
+            reranker = nil
+        }
         let retriever = KnowledgeRAGRetriever(
             chunkRepository: ragChunkRepository,
             keywordProvider: keywordProvider,
@@ -512,7 +525,8 @@ final class AppDependencies {
             privateRepoVectorProvider: localVector,
             embeddingClient: embeddingClient,
             embeddingModel: embeddingSelection.modelName,
-            retrievalSettings: (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized()
+            retrievalSettings: (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized(),
+            reranker: reranker
         )
         let outputLanguage = LocaleStore.shared.selection.aiOutputLanguageDescriptor
         let ragPrompts = settings.ragPromptSettings
