@@ -99,6 +99,30 @@ struct RAGContextBudget: Sendable {
         max(inputLimitTokens - tokensBySegment.values.reduce(0, +), 0)
     }
 
+    /// 历史最多只能占可输入空间的一部分，必须为当前问题和 RAG 证据留下位置。
+    /// 这份规则同时供 Prompt Builder 与会话压缩策略使用，避免两处对“历史快满”的
+    /// 判断漂移：前者悄悄裁掉原文，后者却还没有开始生成摘要。
+    static func historyTokenLimit(
+        contextWindowTokens: Int,
+        requestedOutputTokens: Int
+    ) -> Int {
+        let budget = RAGContextBudget(
+            contextWindowTokens: contextWindowTokens,
+            requestedOutputTokens: requestedOutputTokens
+        )
+        return historyTokenLimit(
+            remainingInputTokens: budget.inputLimitTokens,
+            inputLimitTokens: budget.inputLimitTokens
+        )
+    }
+
+    static func historyTokenLimit(
+        remainingInputTokens: Int,
+        inputLimitTokens: Int
+    ) -> Int {
+        min(remainingInputTokens, max(inputLimitTokens * 35 / 100, 512))
+    }
+
     /// 截断并归属一个实际会进入请求的分段。返回的字符串就是调用方必须使用的文本，
     /// 不能再拿原始值拼 Prompt，否则 UI 会与真实请求脱节。
     mutating func consume(

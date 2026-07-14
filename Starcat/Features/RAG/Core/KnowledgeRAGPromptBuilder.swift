@@ -249,7 +249,10 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         _ history: [AIChatMessage],
         budget: inout RAGContextBudget
     ) -> [AIChatMessage] {
-        let historyLimit = min(budget.remainingInputTokens, max(budget.inputLimitTokens * 35 / 100, 512))
+        let historyLimit = RAGContextBudget.historyTokenLimit(
+            remainingInputTokens: budget.remainingInputTokens,
+            inputLimitTokens: budget.inputLimitTokens
+        )
         var remaining = historyLimit
         var result: [AIChatMessage] = []
         for message in history.reversed() {

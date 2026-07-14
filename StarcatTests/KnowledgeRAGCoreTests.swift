@@ -567,6 +567,53 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.lastChatRequest?.systemPrompt.contains("English") == true)
     }
 
+    @Test("会话压缩遵守所选模型的 Context Window")
+    func conversationCompressionRespectsContextWindow() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "保留用户的核心目标。")
+        var parameters = AIModelParameters.summaryDefault
+        parameters.contextWindowTokens = 4 * 1_024
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "unused")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: parameters
+        )
+        let message = RAGStoredMessage(
+            id: UUID(),
+            conversationID: UUID(),
+            role: .user,
+            content: String(repeating: "需要保留的会话事实。", count: 2_000),
+            model: nil,
+            citations: [],
+            remoteContextAudits: [],
+            createdAt: "2026-07-14T00:00:00Z"
+        )
+
+        _ = try await service.compressConversationHistory(
+            existingSummary: String(repeating: "已有摘要。", count: 2_000),
+            messages: [message],
+            isDebugEnabled: false,
+            debugEndpoint: nil
+        )
+
+        let request = try #require(spy.lastChatRequest)
+        let requestedTokens = TokenEstimator.estimate(text: request.systemPrompt)
+            + TokenEstimator.estimate(text: request.userPrompt)
+            + request.parameters.maxCompletionTokens
+        #expect(request.parameters.maxCompletionTokens == 1_024)
+        #expect(requestedTokens <= 4 * 1_024)
+    }
+
     @Test("调用方未提供确认器时默认跳过远程上下文")
     func missingConsentDoesNotFetchRemoteContext() async throws {
         let database = try InMemoryDatabaseManager()
@@ -769,7 +816,7 @@ struct KnowledgeRAGCoreTests {
             from: detail.messages,
             contextSummary: detail.contextSummary
         )
-        #expect(history.count == 1 + RAGConversationHistoryBuilder.recentLimit)
+        #expect(history.count == 1 + (detail.messages.count - 2))
         #expect(history.first?.content.contains("会话压缩摘要") == true)
         #expect(history.first?.content.contains("上下文预算") == true)
     }
@@ -1239,15 +1286,15 @@ struct KnowledgeRAGCoreTests {
         #expect(!columns.contains("content"))
     }
 
-    @Test("多轮历史保留最近三轮并压缩早期消息")
-    func conversationHistoryIsBounded() {
+    @Test("大窗口短会话不会因固定消息条数被提前压缩")
+    func conversationHistoryWaitsForTokenBudget() {
         let conversationID = UUID()
         let messages = (0..<8).map { index in
             RAGStoredMessage(
                 id: UUID(),
                 conversationID: conversationID,
                 role: index.isMultiple(of: 2) ? .user : .assistant,
-                content: "消息 \(index) " + String(repeating: "内容", count: 200),
+                content: "消息 \(index) 简短内容",
                 model: index.isMultiple(of: 2) ? nil : "test-model",
                 citations: [],
                 remoteContextAudits: [],
@@ -1255,13 +1302,64 @@ struct KnowledgeRAGCoreTests {
             )
         }
 
+        let target = RAGConversationHistoryBuilder.compressionCoverageTarget(
+            messages: messages,
+            existingSummary: nil,
+            contextWindowTokens: 32 * 1_024,
+            maximumOutputTokens: 8 * 1_024
+        )
         let history = RAGConversationHistoryBuilder.build(from: messages)
-        #expect(history.count == 7)
-        #expect(history.first?.role == .user)
-        #expect(history.first?.content.contains("受限摘要") == true)
+        #expect(target == 0)
+        #expect(history.count == 8)
         #expect(history.first?.content.contains("消息 0") == true)
         #expect(history.last?.content.contains("消息 7") == true)
-        #expect(history.dropFirst().allSatisfy { $0.content.count <= 500 })
+    }
+
+    @Test("小窗口长历史按 token 预算触发压缩")
+    func conversationHistoryCompressesForSmallWindow() {
+        let conversationID = UUID()
+        let messages = (0..<8).map { index in
+            RAGStoredMessage(
+                id: UUID(),
+                conversationID: conversationID,
+                role: index.isMultiple(of: 2) ? .user : .assistant,
+                content: "消息 \(index) " + String(repeating: "long context ", count: 1_000),
+                model: index.isMultiple(of: 2) ? nil : "test-model",
+                citations: [],
+                remoteContextAudits: [],
+                createdAt: "2026-07-11T00:00:0\(index)Z"
+            )
+        }
+
+        let target = RAGConversationHistoryBuilder.compressionCoverageTarget(
+            messages: messages,
+            existingSummary: nil,
+            contextWindowTokens: 4 * 1_024,
+            maximumOutputTokens: 8 * 1_024
+        )
+        #expect(target == 2)
+    }
+
+    @Test("压缩降级优先保留刚离窗的新消息")
+    func conversationFallbackKeepsNewlyCoveredMessages() {
+        let conversationID = UUID()
+        let message = RAGStoredMessage(
+            id: UUID(),
+            conversationID: conversationID,
+            role: .user,
+            content: "必须保留的新约束：仅使用知识库证据。",
+            model: nil,
+            citations: [],
+            remoteContextAudits: [],
+            createdAt: "2026-07-11T00:00:00Z"
+        )
+
+        let fallback = RAGConversationContextCompressor.fallback(
+            existingSummary: String(repeating: "过期摘要 ", count: 2_000),
+            messages: [message],
+            tokenBudget: 512
+        )
+        #expect(fallback.contains("必须保留的新约束"))
     }
 
     @Test("大纲轨只投影完整问答轮次，跳过未完成用户消息")

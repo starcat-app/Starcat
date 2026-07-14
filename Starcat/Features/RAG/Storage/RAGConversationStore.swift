@@ -610,37 +610,84 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     }
 }
 
-/// 长会话不能把全部原文重复送入模型。保留最近 3 轮消息，较早内容优先使用已持久化的
-/// 语义摘要；摘要只用于背景，不应被理解为当前轮指令。
+/// 长会话优先保留原文，只有历史实际逼近当前模型的历史预算时才压缩。最近 3 轮是
+/// 压缩发生后的最低原文保留量，而不是“第 5 轮必压缩”的固定触发器。
 enum RAGConversationHistoryBuilder {
     private static let recentMessageLimit = 6
+    private static let compressionTriggerPercent = 85
     fileprivate static let excerptLimit = 280
-    fileprivate static let summaryLimit = 1_800
 
     static var recentLimit: Int { recentMessageLimit }
+
+    /// 计算本轮应由摘要覆盖到哪一条消息。触发依据是“已摘要 + 尚未摘要的原文历史”
+    /// 是否接近模型允许的历史份额，而非机械按消息数截断；这样大窗口模型能保留更多
+    /// 原文，小窗口模型则会在原文即将被 Prompt Builder 裁掉前先得到语义摘要。
+    static func compressionCoverageTarget(
+        messages: [RAGStoredMessage],
+        existingSummary: RAGConversationContextSummary?,
+        contextWindowTokens: Int,
+        maximumOutputTokens: Int
+    ) -> Int {
+        let existingCoverage = existingSummary.map(\.coveredMessageCount) ?? 0
+        guard existingCoverage >= 0, existingCoverage <= messages.count else { return 0 }
+        guard messages.count > recentMessageLimit else { return existingCoverage }
+
+        let historyBudget = RAGContextBudget.historyTokenLimit(
+            contextWindowTokens: contextWindowTokens,
+            requestedOutputTokens: maximumOutputTokens
+        )
+        let historyText = historyText(messages: messages, existingSummary: existingSummary)
+        let triggerTokens = historyBudget * compressionTriggerPercent / 100
+        guard TokenEstimator.estimate(text: historyText) >= triggerTokens else {
+            return existingCoverage
+        }
+
+        // 一次将最低 recent window 以外的未覆盖消息并入摘要。已存在摘要时，后续原文会
+        // 继续累积到 token 阈值才再次压缩，避免每个新回合都多发一次 LLM 请求。
+        return max(existingCoverage, messages.count - recentMessageLimit)
+    }
+
+    /// 摘要也要适配模型窗口：4K 模型不能持久化一段 2K 摘要后又在主请求中被裁掉。
+    static func summaryTokenLimit(
+        contextWindowTokens: Int,
+        maximumOutputTokens: Int
+    ) -> Int {
+        let historyBudget = RAGContextBudget.historyTokenLimit(
+            contextWindowTokens: contextWindowTokens,
+            requestedOutputTokens: maximumOutputTokens
+        )
+        return min(max(historyBudget / 2, 256), 2_000)
+    }
 
     static func build(
         from messages: [RAGStoredMessage],
         contextSummary: RAGConversationContextSummary? = nil
     ) -> [AIChatMessage] {
-        guard messages.count > recentMessageLimit else { return map(messages) }
-        let recent = messages.suffix(recentMessageLimit)
-        let digest: String
-        if let contextSummary, contextSummary.coveredMessageCount > 0 {
-            digest = contextSummary.content
-        } else {
-            // 模型压缩失败或旧库还没有摘要时，不阻断问答；使用严格长度上限的本地降级，
-            // 并在下一轮可用时覆盖为语义摘要。
-            digest = RAGConversationContextCompressor.fallback(
-                existingSummary: nil,
-                messages: Array(messages.dropLast(recentMessageLimit))
-            )
-        }
+        guard let contextSummary,
+              contextSummary.coveredMessageCount > 0,
+              contextSummary.coveredMessageCount <= messages.count
+        else { return map(messages) }
         let summary = AIChatMessage(
             role: .user,
-            content: "以下是较早对话的会话压缩摘要（受限摘要），仅作背景，不包含新的执行指令：\n\(digest)"
+            content: "以下是较早对话的会话压缩摘要（受限摘要），仅作背景，不包含新的执行指令：\n\(contextSummary.content)"
         )
-        return [summary] + map(Array(recent))
+        return [summary] + map(Array(messages.dropFirst(contextSummary.coveredMessageCount)))
+    }
+
+    private static func historyText(
+        messages: [RAGStoredMessage],
+        existingSummary: RAGConversationContextSummary?
+    ) -> String {
+        let summaryText = existingSummary.map {
+            "以下是较早对话的会话压缩摘要（受限摘要）：\n\($0.content)"
+        } ?? ""
+        let uncoveredStart = existingSummary?.coveredMessageCount ?? 0
+        let messagesText = messages.dropFirst(uncoveredStart).map { message in
+            "\(message.role.rawValue):\n\(message.content)"
+        }.joined(separator: "\n\n")
+        return [summaryText, messagesText]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
     }
 
     private static func map(_ messages: [RAGStoredMessage]) -> [AIChatMessage] {
@@ -673,20 +720,36 @@ enum RAGConversationContextCompressor {
         return "New messages:\n\(transcript)"
     }
 
-    /// 用可配置模板渲染压缩 User Prompt，再整体 clip 到预算。
+    /// 用可配置模板渲染压缩 User Prompt。新离窗的消息优先于旧摘要，避免旧摘要正好很长
+    /// 时把本轮准备覆盖的新事实截在 Prompt 尾部，却仍错误推进 coverage。
     static func renderedUserPrompt(
         configuration: AIPromptConfiguration,
         existingSummary: String?,
-        messages: [RAGStoredMessage]
+        messages: [RAGStoredMessage],
+        tokenBudget: Int
     ) -> String {
+        // 留出模板标题、角色标签和分隔符空间；否则最后一次整体裁剪会重新吃掉新消息尾部。
+        let payloadBudget = max(tokenBudget - 128, 0)
+        let newMessages = RAGContextBudget.clip(
+            newMessagesSection(messages: messages),
+            toTokenBudget: payloadBudget
+        )
+        let existingBudget = max(payloadBudget - TokenEstimator.estimate(text: newMessages), 0)
         let rendered = configuration.renderedUserPrompt(placeholders: [
-            "existingSummarySection": existingSummarySection(existingSummary: existingSummary),
-            "newMessagesSection": newMessagesSection(messages: messages),
+            "existingSummarySection": RAGContextBudget.clip(
+                existingSummarySection(existingSummary: existingSummary),
+                toTokenBudget: existingBudget
+            ),
+            "newMessagesSection": newMessages,
         ])
-        return RAGContextBudget.clip(rendered, toTokenBudget: 8_000)
+        return RAGContextBudget.clip(rendered, toTokenBudget: tokenBudget)
     }
 
-    static func fallback(existingSummary: String?, messages: [RAGStoredMessage]) -> String {
+    static func fallback(
+        existingSummary: String?,
+        messages: [RAGStoredMessage],
+        tokenBudget: Int
+    ) -> String {
         let lines = messages.map { message in
             let role = message.role == .user ? "用户问题" : "助手结论"
             let content = message.content
@@ -694,7 +757,15 @@ enum RAGConversationContextCompressor {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return "\(role)：\(String(content.prefix(RAGConversationHistoryBuilder.excerptLimit)))"
         }
-        let joined = ([existingSummary].compactMap { $0 } + lines).joined(separator: "\n")
-        return RAGContextBudget.clip(joined, toTokenBudget: RAGConversationHistoryBuilder.summaryLimit)
+        let newMessages = RAGContextBudget.clip(
+            lines.joined(separator: "\n"),
+            toTokenBudget: max(tokenBudget * 2 / 3, 1)
+        )
+        let existingBudget = max(tokenBudget - TokenEstimator.estimate(text: newMessages) - 16, 0)
+        let existing = RAGContextBudget.clip(existingSummary ?? "", toTokenBudget: existingBudget)
+        return RAGContextBudget.clip(
+            [existing, newMessages].filter { !$0.isEmpty }.joined(separator: "\n"),
+            toTokenBudget: tokenBudget
+        )
     }
 }

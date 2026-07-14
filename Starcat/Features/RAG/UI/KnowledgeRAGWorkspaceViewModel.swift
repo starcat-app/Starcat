@@ -1221,17 +1221,17 @@ final class KnowledgeRAGWorkspaceViewModel {
         debugTraceID: UUID?,
         debugTraceStartedAt: Date
     ) async throws -> [AIChatMessage] {
-        let coveredCount = max(messages.count - RAGConversationHistoryBuilder.recentLimit, 0)
-        guard coveredCount > 0 else {
-            return RAGConversationHistoryBuilder.build(
-                from: messages,
-                contextSummary: conversationContextSummary
-            )
-        }
-
         let validSummary = conversationContextSummary.flatMap { summary in
-            summary.coveredMessageCount <= coveredCount ? summary : nil
+            summary.coveredMessageCount >= 0 && summary.coveredMessageCount <= messages.count
+                ? summary
+                : nil
         }
+        let coveredCount = RAGConversationHistoryBuilder.compressionCoverageTarget(
+            messages: messages,
+            existingSummary: validSummary,
+            contextWindowTokens: selectedModelParameters.resolvedContextWindowTokens,
+            maximumOutputTokens: selectedModelParameters.maxCompletionTokens
+        )
         if validSummary?.coveredMessageCount == coveredCount {
             return RAGConversationHistoryBuilder.build(from: messages, contextSummary: validSummary)
         }
@@ -1269,7 +1269,11 @@ final class KnowledgeRAGWorkspaceViewModel {
             // Provider 不可用时仍走相同的 coverage，避免下一轮又把旧原文无限带回请求。
             compressed = RAGConversationContextCompressor.fallback(
                 existingSummary: validSummary?.content,
-                messages: newlyCovered
+                messages: newlyCovered,
+                tokenBudget: RAGConversationHistoryBuilder.summaryTokenLimit(
+                    contextWindowTokens: selectedModelParameters.resolvedContextWindowTokens,
+                    maximumOutputTokens: selectedModelParameters.maxCompletionTokens
+                )
             )
         }
         let summary = RAGConversationContextSummary(

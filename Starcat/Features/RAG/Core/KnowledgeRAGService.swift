@@ -581,16 +581,28 @@ struct KnowledgeRAGService: Sendable {
         var parameters = generatorParameters
         parameters.temperature = 0.1
         parameters.topP = 0.9
-        parameters.maxCompletionTokens = min(max(parameters.maxCompletionTokens, 512), 2_000)
+        let requestedOutputTokens = min(max(parameters.maxCompletionTokens, 512), 2_000)
+        var compressionBudget = RAGContextBudget(
+            contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
+            requestedOutputTokens: requestedOutputTokens
+        )
+        // 压缩请求与主问答使用同一模型窗口。先预留输出并裁掉输入，避免 4K 模型仍收到
+        // “8K 输入 + 2K 输出”的压缩调用而超窗。
+        parameters.maxCompletionTokens = compressionBudget.reservedOutputTokens
         parameters.streamEnabled = false
-        let request = AIChatRequest(
-            systemPrompt: compressorPromptConfiguration.renderedSystemPrompt(placeholders: [
+        let systemPrompt = compressionBudget.consume(
+            compressorPromptConfiguration.renderedSystemPrompt(placeholders: [
                 "outputLanguage": outputLanguage,
             ]),
+            kind: .system
+        )
+        let request = AIChatRequest(
+            systemPrompt: systemPrompt,
             userPrompt: RAGConversationContextCompressor.renderedUserPrompt(
                 configuration: compressorPromptConfiguration,
                 existingSummary: existingSummary,
-                messages: messages
+                messages: messages,
+                tokenBudget: compressionBudget.remainingInputTokens
             ),
             model: generatorModel,
             parameters: parameters
@@ -618,7 +630,10 @@ struct KnowledgeRAGService: Sendable {
             try Task.checkCancellation()
             let summary = RAGContextBudget.clip(
                 response.content.trimmingCharacters(in: .whitespacesAndNewlines),
-                toTokenBudget: 2_000
+                toTokenBudget: RAGConversationHistoryBuilder.summaryTokenLimit(
+                    contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
+                    maximumOutputTokens: generatorParameters.maxCompletionTokens
+                )
             )
             guard !summary.isEmpty else { throw AIClientError.emptyResponse }
             if isDebugEnabled {
