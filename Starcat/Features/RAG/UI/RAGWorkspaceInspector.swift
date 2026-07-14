@@ -706,7 +706,7 @@ struct RAGWorkspaceInspector: View {
 
                 // 复制独立于折叠，折叠态也能直接拷整段 payload。
                 CopyFeedbackButton(
-                    providesContent: { event.payload },
+                    providesContent: { event.renderedPayload() },
                     tooltip: "rag.workspace.debug.copy"
                 ) { didCopy in
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
@@ -715,7 +715,7 @@ struct RAGWorkspaceInspector: View {
             }
 
             if isExpanded {
-                Text(event.payload)
+                highlightedDebugPayload(event.renderedPayload())
                     .font(ragFont(.caption2, design: .monospaced))
                     .textSelection(.enabled)
                     .onAppear {
@@ -725,6 +725,23 @@ struct RAGWorkspaceInspector: View {
         }
         .padding(10)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    /// 数值是检索配置和漏斗判读的关键线索；在保留等宽调试文本可复制性的同时，用系统强调色
+    /// 标出阈值、上限、Token 预算、召回和过滤计数，避免用户在长行里肉眼搜索数字。
+    private func highlightedDebugPayload(_ payload: String) -> Text {
+        let numberPattern = #"(?:\d+\.\d+|\d+)"#
+        var result = Text("")
+        var cursor = payload.startIndex
+
+        while let range = payload.range(of: numberPattern, options: .regularExpression, range: cursor..<payload.endIndex) {
+            result = result + Text(String(payload[cursor..<range.lowerBound]))
+            result = result + Text(String(payload[range]))
+                .fontWeight(.semibold)
+                .foregroundColor(.accentColor)
+            cursor = range.upperBound
+        }
+        return result + Text(String(payload[cursor...]))
     }
 
     /// 由累计 `elapsedSeconds` 差分得到本步耗时；首条相对 ask 起点。

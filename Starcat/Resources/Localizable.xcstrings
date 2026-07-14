@@ -23123,6 +23123,12 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索结果" } }
       }
     },
+    "rag.workspace.debug.retrieval.evidenceDetails.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Final Evidence" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终证据" } }
+      }
+    },
     "rag.workspace.debug.retrieval.funnel.candidatesFormat": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Searched %lld candidate repositories." } },
@@ -53596,13 +53602,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restore Defaults for Current Tab"
+            "value": "Restore the current tab to default prompts"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "恢复当前页默认提示词"
+            "value": "将当前页提示词恢复为默认"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.restoreDefaults": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore Defaults"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认"
           }
         }
       }
@@ -53613,13 +53636,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Answer Generator"
+            "value": "Answer"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "回答生成"
+            "value": "回答"
           }
         }
       }
@@ -53630,13 +53653,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Query Planner"
+            "value": "Planner"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查询规划"
+            "value": "规划"
           }
         }
       }
@@ -53647,13 +53670,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Context Compression"
+            "value": "Compress"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上下文压缩"
+            "value": "压缩"
           }
         }
       }
@@ -53664,13 +53687,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Title Generation"
+            "value": "Title"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标题生成"
+            "value": "标题"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.type.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
           }
         }
       }
@@ -53698,13 +53738,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "User Prompt Template"
+            "value": "User Prompt"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "User 提示词模板"
+            "value": "User 提示词"
           }
         }
       }

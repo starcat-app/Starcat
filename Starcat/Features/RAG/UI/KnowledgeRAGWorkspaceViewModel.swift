@@ -924,7 +924,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 let step = stepDurations[event.id] ?? event.elapsedSeconds
                 return """
                 [\(event.stage.rawValue)] \(String(format: "%.3f", step))s (elapsed +\(String(format: "%.3f", event.elapsedSeconds))s)
-                \(event.payload)
+                \(event.renderedPayload())
                 """
             }.joined(separator: "\n\n")
             return """
@@ -979,7 +979,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         let body = trace.events.map { event in
             let step = stepDurations[event.id] ?? event.elapsedSeconds
             let title = "## \(event.stage.rawValue) (\(String(format: "%.3f", step))s, elapsed +\(String(format: "%.3f", event.elapsedSeconds))s)"
-            return title + "\n\n" + fencedDebugPayload(event.payload)
+            return title + "\n\n" + fencedDebugPayload(event.renderedPayload())
         }.joined(separator: "\n\n")
         return header + "\n" + body + "\n"
     }
@@ -1858,13 +1858,23 @@ final class KnowledgeRAGWorkspaceViewModel {
         guard isDebugModeEnabled, let traceID,
               let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
         let boundedPayload = String(
-            decoding: (event.payload ?? "").utf8.prefix(DebugTraceLimit.maxPayloadUTF8Bytes),
+            decoding: event.payload.utf8.prefix(DebugTraceLimit.maxPayloadUTF8Bytes),
             as: UTF8.self
         )
+        let boundedRetrievalPayload = event.retrievalPayload.map { payload in
+            RAGRetrievalDebugPayload(
+                diagnostics: payload.diagnostics,
+                evidenceDetails: String(
+                    decoding: payload.evidenceDetails.utf8.prefix(DebugTraceLimit.maxPayloadUTF8Bytes),
+                    as: UTF8.self
+                )
+            )
+        }
         let boundedEvent = RAGDebugEvent(
             stage: event.stage,
             elapsedSeconds: event.elapsedSeconds,
-            payload: boundedPayload
+            payload: boundedPayload,
+            retrievalPayload: boundedRetrievalPayload
         )
         // GitHub 远程上下文会并发完成；continuation 的送达顺序不保证严格等于发生时间。
         // 按 Trace 相对时间插入，Inspector 的相邻事件耗时始终可解释，且缓存/网络混合时
@@ -1899,7 +1909,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                 RAGDebugEvent(
                     stage: event.stage,
                     elapsedSeconds: offset + event.elapsedSeconds,
-                    payload: event.payload
+                    payload: event.payload,
+                    retrievalPayload: event.retrievalPayload
                 ),
                 to: traceID
             )
@@ -1927,7 +1938,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private var debugPayloadByteCount: Int {
         debugTraces.reduce(0) { traceTotal, trace in
-            traceTotal + trace.events.reduce(0) { $0 + $1.payload.utf8.count }
+            traceTotal + trace.events.reduce(0) { $0 + $1.storedPayloadUTF8ByteCount }
         }
     }
 

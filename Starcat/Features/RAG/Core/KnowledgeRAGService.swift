@@ -71,6 +71,48 @@ struct RAGDebugEvent: Identifiable, Sendable {
     let stage: Stage
     let elapsedSeconds: TimeInterval
     let payload: String
+    /// 检索诊断保留结构化快照而非已翻译文本。Debug Trace 可在用户切换显示语言后重新渲染，
+    /// 不会出现标题是英文、正文仍停留在旧语言的割裂状态。
+    let retrievalPayload: RAGRetrievalDebugPayload?
+
+    init(
+        stage: Stage,
+        elapsedSeconds: TimeInterval,
+        payload: String,
+        retrievalPayload: RAGRetrievalDebugPayload? = nil
+    ) {
+        self.stage = stage
+        self.elapsedSeconds = elapsedSeconds
+        self.payload = payload
+        self.retrievalPayload = retrievalPayload
+    }
+
+    /// 统一在展示、复制或导出时生成文本；普通调试事件仍直接使用原始 payload。
+    func renderedPayload() -> String {
+        retrievalPayload?.renderedText() ?? payload
+    }
+
+    /// 内存上限按真实保存的字节数计算；结构化检索事件的最终证据不在 `payload` 内，不能漏算。
+    var storedPayloadUTF8ByteCount: Int {
+        payload.utf8.count + (retrievalPayload?.evidenceDetails.utf8.count ?? 0)
+    }
+}
+
+/// 检索阶段的可本地化调试快照。最终证据保持技术明细原文，用户可据此复核真正被送入模型的分片。
+struct RAGRetrievalDebugPayload: Sendable {
+    let diagnostics: RAGRetrievalDiagnostics?
+    let evidenceDetails: String
+
+    func renderedText() -> String {
+        let diagnosticsText = diagnostics?.debugPayload()
+            ?? String.l10n("rag.workspace.debug.retrieval.unavailable")
+        guard !evidenceDetails.isEmpty else { return diagnosticsText }
+        return [
+            diagnosticsText,
+            String.l10n("rag.workspace.debug.retrieval.evidenceDetails.title"),
+            evidenceDetails
+        ].joined(separator: "\n\n")
+    }
 }
 
 /// 一次独立的调试调用。问答与标题生成分别保存，不能共享平铺的事件数组。
@@ -478,11 +520,17 @@ struct KnowledgeRAGService: Sendable {
                         }.joined(separator: "\n")
                         return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
                     }.joined(separator: "\n---\n")
-                    let diagnosticsPayload = retrieval.diagnostics?.debugPayload()
-                        ?? String.l10n("rag.workspace.debug.retrieval.unavailable")
-                    emitDebug(.retrieval, [diagnosticsPayload, evidenceDetails]
-                        .filter { !$0.isEmpty }
-                        .joined(separator: "\n\n最终证据:\n"))
+                    if request.isDebugEnabled {
+                        continuation.yield(.debug(RAGDebugEvent(
+                            stage: .retrieval,
+                            elapsedSeconds: Date().timeIntervalSince(startedAt),
+                            payload: "",
+                            retrievalPayload: RAGRetrievalDebugPayload(
+                                diagnostics: retrieval.diagnostics,
+                                evidenceDetails: evidenceDetails
+                            )
+                        )))
+                    }
                     continuation.yield(.retrieval(retrieval))
 
                     var remoteBlocks: [RAGRemoteContextBlock] = []

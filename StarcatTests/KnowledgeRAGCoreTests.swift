@@ -699,6 +699,37 @@ struct KnowledgeRAGCoreTests {
         ))
     }
 
+    @Test("检索 Debug 事件延迟本地化并保留最终证据")
+    func retrievalDebugEventRendersStructuredPayloadOnDemand() {
+        let diagnostics = RAGRetrievalDiagnostics(
+            settings: RAGRetrievalSettings(
+                minimumVectorSimilarity: 0.65,
+                finalEvidenceChunkLimit: 8,
+                perRepositoryEvidenceLimit: 3,
+                evidenceTokenBudget: 8_000,
+                enabledSources: [.readme]
+            ),
+            candidateRepoCount: 1,
+            finalChildHitCount: 3,
+            bundleCount: 1,
+            outcome: .completed
+        )
+        let event = RAGDebugEvent(
+            stage: .retrieval,
+            elapsedSeconds: 1,
+            payload: "",
+            retrievalPayload: RAGRetrievalDebugPayload(
+                diagnostics: diagnostics,
+                evidenceDetails: "repo: example/repository"
+            )
+        )
+
+        let rendered = event.renderedPayload()
+        #expect(rendered.contains(String.l10n("rag.workspace.debug.retrieval.settings.title")))
+        #expect(rendered.contains(String.l10n("rag.workspace.debug.retrieval.evidenceDetails.title")))
+        #expect(rendered.contains("repo: example/repository"))
+    }
+
     @Test("Parent context 围绕后段命中而不是只取章节开头")
     func parentContextIncludesAnchorChunk() throws {
         let chunks = (1...4).map { index -> RAGChunk in

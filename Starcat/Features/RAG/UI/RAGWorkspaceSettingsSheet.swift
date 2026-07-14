@@ -100,41 +100,42 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
         switch self {
         case .generator:
             return [
-                .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguage"),
-                .init(token: "{questionSection}", meaningKey: "rag.workspace.prompt.placeholder.questionSection"),
-                .init(token: "{evidenceSection}", meaningKey: "rag.workspace.prompt.placeholder.evidenceSection"),
-                .init(token: "{remoteSection}", meaningKey: "rag.workspace.prompt.placeholder.remoteSection"),
-                .init(token: "{attachmentSection}", meaningKey: "rag.workspace.prompt.placeholder.attachmentSection"),
+                .init(token: "{outputLanguage}", systemImage: "globe", meaningKey: "rag.workspace.prompt.placeholder.outputLanguage"),
+                .init(token: "{questionSection}", systemImage: "text.bubble", meaningKey: "rag.workspace.prompt.placeholder.questionSection"),
+                .init(token: "{evidenceSection}", systemImage: "doc.text.magnifyingglass", meaningKey: "rag.workspace.prompt.placeholder.evidenceSection"),
+                .init(token: "{remoteSection}", systemImage: "network", meaningKey: "rag.workspace.prompt.placeholder.remoteSection"),
+                .init(token: "{attachmentSection}", systemImage: "paperclip", meaningKey: "rag.workspace.prompt.placeholder.attachmentSection"),
             ]
         case .planner:
             return [
-                .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguagePlanner"),
-                .init(token: "{question}", meaningKey: "rag.workspace.prompt.placeholder.question"),
-                .init(token: "{explicitRepositories}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepositories"),
-                .init(token: "{explicitRepoMode}", meaningKey: "rag.workspace.prompt.placeholder.explicitRepoMode"),
-                .init(token: "{attachmentDescriptors}", meaningKey: "rag.workspace.prompt.placeholder.attachmentDescriptors"),
-                .init(token: "{pastedGitHubLinks}", meaningKey: "rag.workspace.prompt.placeholder.pastedGitHubLinks"),
-                .init(token: "{previousUserQuestion}", meaningKey: "rag.workspace.prompt.placeholder.previousUserQuestion"),
-                .init(token: "{previousReferencedRepositories}", meaningKey: "rag.workspace.prompt.placeholder.previousReferencedRepositories"),
+                .init(token: "{outputLanguage}", systemImage: "globe", meaningKey: "rag.workspace.prompt.placeholder.outputLanguagePlanner"),
+                .init(token: "{question}", systemImage: "text.bubble", meaningKey: "rag.workspace.prompt.placeholder.question"),
+                .init(token: "{explicitRepositories}", systemImage: "building.2", meaningKey: "rag.workspace.prompt.placeholder.explicitRepositories"),
+                .init(token: "{explicitRepoMode}", systemImage: "switch.2", meaningKey: "rag.workspace.prompt.placeholder.explicitRepoMode"),
+                .init(token: "{attachmentDescriptors}", systemImage: "paperclip", meaningKey: "rag.workspace.prompt.placeholder.attachmentDescriptors"),
+                .init(token: "{pastedGitHubLinks}", systemImage: "link", meaningKey: "rag.workspace.prompt.placeholder.pastedGitHubLinks"),
+                .init(token: "{previousUserQuestion}", systemImage: "arrow.uturn.backward", meaningKey: "rag.workspace.prompt.placeholder.previousUserQuestion"),
+                .init(token: "{previousReferencedRepositories}", systemImage: "clock.arrow.circlepath", meaningKey: "rag.workspace.prompt.placeholder.previousReferencedRepositories"),
             ]
         case .compressor:
             return [
-                .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageCompressor"),
-                .init(token: "{existingSummarySection}", meaningKey: "rag.workspace.prompt.placeholder.existingSummarySection"),
-                .init(token: "{newMessagesSection}", meaningKey: "rag.workspace.prompt.placeholder.newMessagesSection"),
+                .init(token: "{outputLanguage}", systemImage: "globe", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageCompressor"),
+                .init(token: "{existingSummarySection}", systemImage: "doc.text", meaningKey: "rag.workspace.prompt.placeholder.existingSummarySection"),
+                .init(token: "{newMessagesSection}", systemImage: "text.badge.plus", meaningKey: "rag.workspace.prompt.placeholder.newMessagesSection"),
             ]
         case .title:
             return [
-                .init(token: "{outputLanguage}", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageTitle"),
-                .init(token: "{firstQuestion}", meaningKey: "rag.workspace.prompt.placeholder.firstQuestion"),
+                .init(token: "{outputLanguage}", systemImage: "globe", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageTitle"),
+                .init(token: "{firstQuestion}", systemImage: "text.bubble", meaningKey: "rag.workspace.prompt.placeholder.firstQuestion"),
             ]
         }
     }
 }
 
-/// 占位符条目：token 原文 + 含义 i18n key。
+/// 占位符条目：token 原文 + SF Symbol + 含义 i18n key。
 private struct RAGPromptPlaceholderItem: Identifiable {
     let token: String
+    let systemImage: String
     let meaningKey: LocalizedStringKey
     var id: String { token }
 }
@@ -298,18 +299,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 placeholderHelpButton
             }
             Spacer()
-            Button {
-                if section == .prompts {
-                    restoreCurrentTab()
-                } else {
-                    apply(.balanced)
-                }
-            } label: {
-                Text(section == .prompts
-                     ? "rag.workspace.prompt.restoreHelp"
-                     : "rag.workspace.retrieval.restoreDefaults")
-            }
-            .font(ragFont(.body, scale: interfaceScale))
+            // 恢复默认已放到各页 segmented 右侧的 ResetIconButton，底栏不再重复。
             Button("common.cancel") { dismiss() }
                 .font(ragFont(.body, scale: interfaceScale))
             Button("rag.workspace.prompt.save") {
@@ -355,23 +345,28 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     private var promptSettingsContent: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
-            HStack(spacing: interfaceScale.scaled(12)) {
-                Picker("rag.workspace.prompt.title", selection: $tab) {
-                    ForEach(RAGPromptEditorTab.allCases) { item in
-                        Text(item.titleKey).tag(item)
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
+            settingsGroup(
+                titleKey: "rag.workspace.prompt.type.title",
+                systemImage: "text.quote"
+            ) {
+                HStack(spacing: interfaceScale.scaled(12)) {
+                    Picker("rag.workspace.prompt.title", selection: $tab) {
+                        ForEach(RAGPromptEditorTab.allCases) { item in
+                            Text(item.titleKey).tag(item)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
 
-                ResetIconButton(
-                    help: Text("rag.workspace.prompt.restoreHelp"),
-                    font: interfaceScale.font(size: 13, weight: .medium),
-                    frameSize: interfaceScale.scaled(20)
-                ) {
-                    restoreCurrentTab()
+                    ResetIconButton(
+                        help: Text("rag.workspace.prompt.restoreHelp"),
+                        font: interfaceScale.font(size: 13, weight: .medium),
+                        frameSize: interfaceScale.scaled(20)
+                    ) {
+                        restoreCurrentTab()
+                    }
                 }
             }
 
@@ -393,25 +388,25 @@ struct RAGWorkspaceSettingsSheet: View {
     private var retrievalSettingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-                retrievalGroup(
+                settingsGroup(
                     titleKey: "rag.workspace.retrieval.preset.title",
                     systemImage: "slider.horizontal.3"
                 ) {
                     presetPicker
                 }
-                retrievalGroup(
+                settingsGroup(
                     titleKey: "rag.workspace.retrieval.common.title",
                     systemImage: "line.3.horizontal.decrease.circle"
                 ) {
                     retrievalCommonSection
                 }
-                retrievalGroup(
+                settingsGroup(
                     titleKey: "rag.workspace.retrieval.advanced.title",
                     systemImage: "gearshape.2"
                 ) {
                     retrievalAdvancedSection
                 }
-                retrievalGroup(
+                settingsGroup(
                     titleKey: "rag.workspace.retrieval.sources.title",
                     systemImage: "cylinder.split.1x2"
                 ) {
@@ -427,16 +422,26 @@ struct RAGWorkspaceSettingsSheet: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// 与 AI 索引阈值同款：四档 segmented，避免卡片标题「预设」再叠一行同名 label。
+    /// 与提示词页同款：预设 segmented + 右侧重置；点击恢复平衡档草稿（未点保存不落盘）。
     private var presetPicker: some View {
-        Picker("rag.workspace.retrieval.preset.title", selection: retrievalPresetBinding) {
-            ForEach(RAGRetrievalPreset.allCases) { preset in
-                Text(preset.titleKey).tag(preset)
+        HStack(spacing: interfaceScale.scaled(12)) {
+            Picker("rag.workspace.retrieval.preset.title", selection: retrievalPresetBinding) {
+                ForEach(RAGRetrievalPreset.allCases) { preset in
+                    Text(preset.titleKey).tag(preset)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+
+            ResetIconButton(
+                help: Text("rag.workspace.retrieval.restoreDefaults"),
+                font: interfaceScale.font(size: 13, weight: .medium),
+                frameSize: interfaceScale.scaled(20)
+            ) {
+                apply(.balanced)
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: .infinity)
     }
 
     private var retrievalCommonSection: some View {
@@ -477,13 +482,13 @@ struct RAGWorkspaceSettingsSheet: View {
         }
     }
 
-    /// 四个来源固定单行；图标 / 颜色与 Inspector 上下文 Source 共用 `RAGChunkSource` 映射。
+    /// 四个来源各占一行，英文长标签不会被挤成省略号。
     private var retrievalSourcesSection: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
             Text("rag.workspace.retrieval.sources.hint")
                 .font(ragFont(.caption2, scale: interfaceScale))
                 .foregroundStyle(.secondary)
-            HStack(spacing: interfaceScale.scaled(12)) {
+            VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
                 sourceToggle(
                     source: .readme,
                     titleKey: "rag.workspace.retrieval.source.readme",
@@ -504,7 +509,6 @@ struct RAGWorkspaceSettingsSheet: View {
                     titleKey: "rag.workspace.retrieval.source.metadata",
                     isOn: includesMetadataBinding
                 )
-                Spacer(minLength: 0)
             }
         }
     }
@@ -525,18 +529,19 @@ struct RAGWorkspaceSettingsSheet: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .toggleStyle(.checkbox)
     }
 
-    private func retrievalGroup<Content: View>(
+    private func settingsGroup<Content: View>(
         titleKey: LocalizedStringKey,
         systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
             HStack(spacing: interfaceScale.scaled(6)) {
-                // 分类标题旁只放默认色图标，不加色块底，避免检索页过花。
+                // 分类标题旁只放默认色图标，不加色块底，避免设置页过花。
                 Image(systemName: systemImage)
                     .font(interfaceScale.font(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -824,23 +829,38 @@ private struct RAGPromptPlaceholderPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
-            Text("rag.workspace.prompt.placeholders.title")
-                .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
-                .foregroundStyle(.primary)
+            HStack(spacing: interfaceScale.scaled(6)) {
+                Image(systemName: "curlybraces")
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("rag.workspace.prompt.placeholders.title")
+                    .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
 
             VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
                 ForEach(items) { item in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.token)
-                            .font(interfaceScale.font(.code, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .textSelection(.enabled)
-                        Text(item.meaningKey)
-                            .font(ragFont(.caption, scale: interfaceScale))
+                    HStack(alignment: .top, spacing: interfaceScale.scaled(8)) {
+                        // 与设置分组同款：默认色图标，不抢 token 阅读。
+                        Image(systemName: item.systemImage)
+                            .font(interfaceScale.font(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: interfaceScale.scaled(14), alignment: .center)
+                            .padding(.top, 2)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.token)
+                                .font(interfaceScale.font(.code, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                            Text(item.meaningKey)
+                                .font(ragFont(.caption, scale: interfaceScale))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
