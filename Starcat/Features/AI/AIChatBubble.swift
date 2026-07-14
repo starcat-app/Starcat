@@ -413,7 +413,7 @@ private struct AIChatAssistantHeader: View {
                 .font(interfaceScale.font(.body, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(isStreaming ? "ai.assistant.chat.processing" : "ai.assistant.chat.processed")
-                .font(interfaceScale.font(.body, weight: .medium))
+                .font(interfaceScale.font(.caption, weight: .medium))
                 .foregroundStyle(.secondary)
             processingDuration
         }
@@ -431,7 +431,7 @@ private struct AIChatAssistantHeader: View {
                     locale: locale,
                     duration
                 ))
-                .font(interfaceScale.font(.body, weight: .medium, design: .monospaced))
+                .font(interfaceScale.font(.caption, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
             }

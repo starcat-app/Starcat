@@ -58,7 +58,8 @@ struct RAGExecutionTimeline: View {
                     Text(titleKey(for: step.kind))
                         .font(interfaceScale.font(.body, weight: .medium))
                         .foregroundStyle(.primary)
-                    Spacer(minLength: 8)
+                    // 摘要、耗时与 chevron 均紧随标题，和主窗口 AI 对话的 Think 行保持一致；
+                    // 此处不能用 Spacer 将折叠信息推到窗口最右侧。
                     if !isExpanded, let summary = step.summary, !summary.isEmpty {
                         Text(summary)
                             .font(interfaceScale.font(.caption))
