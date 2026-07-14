@@ -23069,6 +23069,144 @@
         }
       }
     },
+    "rag.workspace.debug.retrieval.conclusion.allBelowThreshold": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No local evidence: every semantic candidate from enabled sources is below the current similarity threshold." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的本地证据：所有启用来源的语义候选都低于当前相似度阈值。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.completedFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ready to answer with %1$lld evidence chunks from %2$lld repositories." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保留 %1$lld 条证据分片，来自 %2$lld 个仓库，可用于回答。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.noCandidates": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No local evidence: no repositories matched the current scope." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的本地证据：当前范围内没有候选仓库。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.noEvidence": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No local evidence remained after source, similarity, or ranking filters." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的本地证据：候选在来源、相似度或排序过滤后未留下可用分片。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.noRawHits": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No local evidence: keyword and semantic search returned no candidate chunks." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的本地证据：关键词和语义检索都没有返回候选分片。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.noReadyChunks": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No local evidence: the candidate repositories have no ready chunks for the current embedding model." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的本地证据：候选仓库没有当前 embedding 模型的已就绪分片。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.skippedStructured": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Chunk retrieval was skipped because this question only uses structured repository data." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未执行分片检索：当前问题只读取结构化仓库数据。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.sourcesDisabled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No local evidence: all evidence sources are currently disabled." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的本地证据：当前没有启用任何证据来源。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.conclusion.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Result" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索结果" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.candidatesFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Searched %lld candidate repositories." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已在 %lld 个候选仓库中搜索。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.errorsFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search issue: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索异常：%@" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.keywordFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyword matches: %1$lld found, %2$lld excluded by source settings, %3$lld kept." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词匹配：找到 %1$lld 条，因来源设置排除 %2$lld 条，保留 %3$lld 条。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.rankingFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Evidence ranking: %1$lld unique chunks; %2$lld excluded by the per-repository limit, %3$lld by the total limit, and %4$lld by the evidence-score threshold." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "证据排序：去重后 %1$lld 条；因单仓库上限排除 %2$lld 条、因总数上限排除 %3$lld 条、因证据分阈值排除 %4$lld 条。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.resultFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Final evidence: %1$lld chunks from %2$lld repositories." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终证据：%1$lld 条分片，来自 %2$lld 个仓库。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.semanticFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Semantic matches: %1$lld found, %2$lld excluded by source settings, %3$lld below the similarity threshold, %4$lld kept." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义匹配：找到 %1$lld 条，因来源设置排除 %2$lld 条，低于相似度阈值排除 %3$lld 条，保留 %4$lld 条。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.funnel.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Retrieval Process" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索过程" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.settings.evidenceLimitsFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Evidence limits: up to %1$lld chunks total, with %2$lld per repository." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "证据数量限制：最多使用 %1$lld 条分片，每个仓库最多 %2$lld 条。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.settings.minimumSimilarityFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Minimum vector similarity: %.2f" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最低向量相似度：%.2f" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.settings.sourcesFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sources: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索来源：%@" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.settings.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Current Retrieval Settings" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前检索设置" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.settings.tokenBudgetFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Evidence context budget: %lld tokens." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "证据上下文预算：%lld Token。" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.sources.none": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "None" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未启用" } }
+      }
+    },
+    "rag.workspace.debug.retrieval.unavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Retrieval diagnostics are unavailable for this request." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮请求没有可用的检索诊断信息。" } }
+      }
+    },
     "rag.workspace.debug.clear": {
       "localizations": {
         "en": {
@@ -53372,15 +53510,15 @@
     "rag.workspace.retrieval.sources.hint": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Choose which knowledge sources can provide local evidence." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择可参与本地证据检索的知识来源。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Choose which knowledge sources can participate in local retrieval." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择可参与本地检索的数据来源。" } }
       }
     },
     "rag.workspace.retrieval.sources.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Evidence Sources" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "证据来源" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Data Sources" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "数据来源" } }
       }
     },
     "rag.workspace.retrieval.tokenBudget": {

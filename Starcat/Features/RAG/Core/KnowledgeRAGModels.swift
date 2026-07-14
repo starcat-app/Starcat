@@ -576,59 +576,63 @@ struct RAGRetrievalDiagnostics: Equatable, Sendable {
 
     func debugPayload() -> String {
         let sourceNames = settings.enabledSources
-            .map(\.rawValue)
+            .map(debugSourceTitle)
             .sorted()
             .joined(separator: ", ")
         let conclusion: String
         switch outcome {
         case .completed:
-            conclusion = "成功：保留 \(finalChildHitCount) 条证据分片，打包为 \(bundleCount) 个仓库上下文。"
+            conclusion = String(format: String.l10n("rag.workspace.debug.retrieval.conclusion.completedFormat"), finalChildHitCount, bundleCount)
         case .noCandidates:
-            conclusion = "无本地证据：查询范围内没有候选仓库。"
+            conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.noCandidates")
         case .noReadyChunks:
-            conclusion = "无本地证据：候选仓库没有当前 embedding 模型的已就绪分片。"
+            conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.noReadyChunks")
         case .sourcesDisabled:
-            conclusion = "无本地证据：当前没有启用任何证据来源。"
+            conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.sourcesDisabled")
         case .skippedStructured:
-            conclusion = "未执行分片检索：当前查询只读取结构化仓库数据。"
+            conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.skippedStructured")
         case .noEvidence:
             if vectorRawCount > 0, vectorSimilarityFilteredCount == vectorRawCount - vectorSourceFilteredCount {
-                conclusion = "无本地证据：所有启用来源的向量命中均低于当前相似度阈值。"
+                conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.allBelowThreshold")
             } else if keywordRawCount + vectorRawCount == 0 {
-                conclusion = "无本地证据：关键词与向量召回均未返回候选分片。"
+                conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.noRawHits")
             } else {
-                conclusion = "无本地证据：候选在来源、阈值或融合裁剪后未留下可用分片。"
+                conclusion = String.l10n("rag.workspace.debug.retrieval.conclusion.noEvidence")
             }
         }
         return """
-        检索配置:
-        minimumVectorSimilarity: \(String(format: "%.2f", settings.minimumVectorSimilarity))
-        finalEvidenceChunkLimit: \(settings.finalEvidenceChunkLimit)
-        perRepositoryEvidenceLimit: \(settings.perRepositoryEvidenceLimit)
-        evidenceTokenBudget: \(settings.evidenceTokenBudget)
-        enabledSources: \(sourceNames.isEmpty ? "<none>" : sourceNames)
+        \(String.l10n("rag.workspace.debug.retrieval.settings.title"))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.minimumSimilarityFormat"), settings.minimumVectorSimilarity))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.evidenceLimitsFormat"), settings.finalEvidenceChunkLimit, settings.perRepositoryEvidenceLimit))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.tokenBudgetFormat"), settings.evidenceTokenBudget))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.sourcesFormat"), sourceNames.isEmpty ? String.l10n("rag.workspace.debug.retrieval.sources.none") : sourceNames))
 
-        检索漏斗:
-        candidateRepos: \(candidateRepoCount)
-        keyword.raw: \(keywordRawCount)
-        keyword.filteredBySource: \(keywordSourceFilteredCount)
-        keyword.accepted: \(keywordRawCount - keywordSourceFilteredCount)
-        keyword.error: \(keywordErrorDescription ?? "<none>")
-        vector.raw: \(vectorRawCount)
-        vector.filteredBySource: \(vectorSourceFilteredCount)
-        vector.filteredBySimilarity: \(vectorSimilarityFilteredCount)
-        vector.accepted: \(vectorRawCount - vectorSourceFilteredCount - vectorSimilarityFilteredCount)
-        vector.error: \(vectorErrorDescription ?? "<none>")
-        fusion.unique: \(fusion.uniqueCount)
-        fusion.filteredByPerRepositoryLimit: \(fusion.perRepositoryLimitFilteredCount)
-        fusion.filteredByTotalLimit: \(fusion.totalLimitFilteredCount)
-        fusion.filteredByMinimumEvidenceScore: \(minimumEvidenceScoreFilteredCount)
-        finalChildHits: \(finalChildHitCount)
-        bundles: \(bundleCount)
+        \(String.l10n("rag.workspace.debug.retrieval.funnel.title"))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.candidatesFormat"), candidateRepoCount))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.keywordFormat"), keywordRawCount, keywordSourceFilteredCount, keywordRawCount - keywordSourceFilteredCount))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.semanticFormat"), vectorRawCount, vectorSourceFilteredCount, vectorSimilarityFilteredCount, vectorRawCount - vectorSourceFilteredCount - vectorSimilarityFilteredCount))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.rankingFormat"), fusion.uniqueCount, fusion.perRepositoryLimitFilteredCount, fusion.totalLimitFilteredCount, minimumEvidenceScoreFilteredCount))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.resultFormat"), finalChildHitCount, bundleCount))
+        \(debugErrorSummary())
 
-        结论:
+        \(String.l10n("rag.workspace.debug.retrieval.conclusion.title"))
         \(conclusion)
         """
+    }
+
+    private func debugSourceTitle(_ source: RAGChunkSource) -> String {
+        switch source {
+        case .readme: String.l10n("rag.browser.source.readme")
+        case .notes: String.l10n("rag.browser.source.notes")
+        case .summary: String.l10n("rag.browser.source.summary")
+        case .metadata: String.l10n("rag.browser.source.metadata")
+        }
+    }
+
+    private func debugErrorSummary() -> String {
+        let errors = [keywordErrorDescription, vectorErrorDescription].compactMap { $0 }
+        guard !errors.isEmpty else { return "" }
+        return String(format: String.l10n("rag.workspace.debug.retrieval.funnel.errorsFormat"), errors.joined(separator: "\n"))
     }
 }
 

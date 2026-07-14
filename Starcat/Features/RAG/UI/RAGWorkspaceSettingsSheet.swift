@@ -197,10 +197,17 @@ struct RAGWorkspaceSettingsSheet: View {
     /// 左栏只负责稳定导航；后续增加联网、模型等配置时不必重做布局。
     private var settingsSidebar: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
-            Text("rag.workspace.settings.title")
-                .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.bottom, interfaceScale.scaled(6))
+            HStack(spacing: interfaceScale.scaled(7)) {
+                Image(systemName: "gearshape")
+                    .font(interfaceScale.font(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: interfaceScale.scaled(16))
+                    .accessibilityHidden(true)
+                Text("rag.workspace.settings.title")
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.bottom, interfaceScale.scaled(6))
 
             ForEach(RAGSettingsSection.allCases) { item in
                 Button {
@@ -386,16 +393,28 @@ struct RAGWorkspaceSettingsSheet: View {
     private var retrievalSettingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-                retrievalGroup(titleKey: "rag.workspace.retrieval.preset.title") {
+                retrievalGroup(
+                    titleKey: "rag.workspace.retrieval.preset.title",
+                    systemImage: "slider.horizontal.3"
+                ) {
                     presetPicker
                 }
-                retrievalGroup(titleKey: "rag.workspace.retrieval.common.title") {
+                retrievalGroup(
+                    titleKey: "rag.workspace.retrieval.common.title",
+                    systemImage: "line.3.horizontal.decrease.circle"
+                ) {
                     retrievalCommonSection
                 }
-                retrievalGroup(titleKey: "rag.workspace.retrieval.advanced.title") {
+                retrievalGroup(
+                    titleKey: "rag.workspace.retrieval.advanced.title",
+                    systemImage: "gearshape.2"
+                ) {
                     retrievalAdvancedSection
                 }
-                retrievalGroup(titleKey: "rag.workspace.retrieval.sources.title") {
+                retrievalGroup(
+                    titleKey: "rag.workspace.retrieval.sources.title",
+                    systemImage: "cylinder.split.1x2"
+                ) {
                     retrievalSourcesSection
                 }
             }
@@ -458,30 +477,74 @@ struct RAGWorkspaceSettingsSheet: View {
         }
     }
 
-    /// 四个来源固定单行；窗口已收窄，间距压紧以免折行。
+    /// 四个来源固定单行；图标 / 颜色与 Inspector 上下文 Source 共用 `RAGChunkSource` 映射。
     private var retrievalSourcesSection: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
             Text("rag.workspace.retrieval.sources.hint")
                 .font(ragFont(.caption2, scale: interfaceScale))
                 .foregroundStyle(.secondary)
-            HStack(spacing: interfaceScale.scaled(14)) {
-                Toggle("rag.workspace.retrieval.source.readme", isOn: includesReadmeBinding)
-                Toggle("rag.workspace.retrieval.source.notes", isOn: includesNotesBinding)
-                Toggle("rag.workspace.retrieval.source.summary", isOn: includesSummaryBinding)
-                Toggle("rag.workspace.retrieval.source.metadata", isOn: includesMetadataBinding)
+            HStack(spacing: interfaceScale.scaled(12)) {
+                sourceToggle(
+                    source: .readme,
+                    titleKey: "rag.workspace.retrieval.source.readme",
+                    isOn: includesReadmeBinding
+                )
+                sourceToggle(
+                    source: .notes,
+                    titleKey: "rag.workspace.retrieval.source.notes",
+                    isOn: includesNotesBinding
+                )
+                sourceToggle(
+                    source: .summary,
+                    titleKey: "rag.workspace.retrieval.source.summary",
+                    isOn: includesSummaryBinding
+                )
+                sourceToggle(
+                    source: .metadata,
+                    titleKey: "rag.workspace.retrieval.source.metadata",
+                    isOn: includesMetadataBinding
+                )
                 Spacer(minLength: 0)
             }
-            .toggleStyle(.checkbox)
-            .font(ragFont(.callout, scale: interfaceScale))
         }
+    }
+
+    private func sourceToggle(
+        source: RAGChunkSource,
+        titleKey: LocalizedStringKey,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            // 与 `RAGWorkspaceInspector` 证据卡同款：11pt semibold + source.tintColor。
+            HStack(spacing: 5) {
+                Image(systemName: source.systemImageName)
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .foregroundStyle(source.tintColor)
+                Text(titleKey)
+                    .font(ragFont(.callout, scale: interfaceScale))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+        }
+        .toggleStyle(.checkbox)
     }
 
     private func retrievalGroup<Content: View>(
         titleKey: LocalizedStringKey,
+        systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
-            sectionTitle(titleKey)
+            HStack(spacing: interfaceScale.scaled(6)) {
+                // 分类标题旁只放默认色图标，不加色块底，避免检索页过花。
+                Image(systemName: systemImage)
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: interfaceScale.scaled(14))
+                    .accessibilityHidden(true)
+                sectionTitle(titleKey)
+                Spacer(minLength: 0)
+            }
             content()
                 .padding(interfaceScale.scaled(14))
                 .frame(maxWidth: .infinity, alignment: .leading)

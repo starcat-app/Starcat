@@ -478,7 +478,8 @@ struct KnowledgeRAGService: Sendable {
                         }.joined(separator: "\n")
                         return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
                     }.joined(separator: "\n---\n")
-                    let diagnosticsPayload = retrieval.diagnostics?.debugPayload() ?? "检索漏斗诊断不可用。"
+                    let diagnosticsPayload = retrieval.diagnostics?.debugPayload()
+                        ?? String.l10n("rag.workspace.debug.retrieval.unavailable")
                     emitDebug(.retrieval, [diagnosticsPayload, evidenceDetails]
                         .filter { !$0.isEmpty }
                         .joined(separator: "\n\n最终证据:\n"))

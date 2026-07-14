@@ -598,7 +598,15 @@ struct KnowledgeRAGCoreTests {
         #expect(diagnostics.vectorSourceFilteredCount == 1)
         #expect(diagnostics.vectorSimilarityFilteredCount == 1)
         #expect(diagnostics.finalChildHitCount == 2)
-        #expect(diagnostics.debugPayload().contains("vector.filteredBySimilarity: 1"))
+        #expect(diagnostics.debugPayload().contains(
+            String(
+                format: String.l10n("rag.workspace.debug.retrieval.funnel.semanticFormat"),
+                3,
+                1,
+                1,
+                1
+            )
+        ))
     }
 
     @Test("检索设置会限制最终证据总数与单仓库证据数")
@@ -683,7 +691,12 @@ struct KnowledgeRAGCoreTests {
 
         let diagnostics = try #require(result.diagnostics)
         #expect(diagnostics.outcome == .sourcesDisabled)
-        #expect(diagnostics.debugPayload().contains("enabledSources: <none>"))
+        #expect(diagnostics.debugPayload().contains(
+            String(
+                format: String.l10n("rag.workspace.debug.retrieval.settings.sourcesFormat"),
+                String.l10n("rag.workspace.debug.retrieval.sources.none")
+            )
+        ))
     }
 
     @Test("Parent context 围绕后段命中而不是只取章节开头")
