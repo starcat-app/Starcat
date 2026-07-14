@@ -243,7 +243,7 @@
 
 ### 13.5 数据与验证约束
 
-- [x] RAG 尚未随正式版发布：开发期更新 RAG 建表草稿，并通过 `ensurePrelaunch*` 升级已有开发数据库；不得要求删除本地数据库。正式发布时收口为单次正式 `registerVN` 迁移。
+- [x] RAG 已随正式版收口：最终 schema 走 `v7-knowledge-rag`；已从 v1 草稿与 `ensurePrelaunchRAGSchema` 抽离。
 - [x] 为预算分配、历史压缩、水位恢复、Prompt 结构、Context Usage 计算和会话选择滚动事件补单测。
 - [~] 关闭 Xcode 后运行相关 Suite 与全量 `xcodebuild test`；自动化已通过，真实长会话的字号、滚动、压缩、Context Usage 和 Prompt 质量人工验证待执行。
 

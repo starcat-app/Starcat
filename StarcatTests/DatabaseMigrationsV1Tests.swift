@@ -19,15 +19,16 @@ struct DatabaseMigrationsV1Tests {
         return mgr.writer
     }
 
-    @Test("v1 迁移应建出所有 P0 表")
+    @Test("全量迁移应建出所有 P0 表与知识库 RAG 表")
     func allTablesCreated() throws {
         let db = try makeDB()
         let expectedTables = [
             "repos", "starred_repos", "tags", "repo_tags",
             "repo_notes", "readmes", "saved_searches", "smart_collections",
             "sync_state", "tag_stats_cache", "open_ssf_scores",
-            "rag_chunks", "rag_chunks_fts", "rag_conversations",
-            "rag_messages", "rag_message_citations", "rag_message_remote_contexts"
+            "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
+            "rag_conversations", "rag_messages", "rag_message_citations",
+            "rag_message_remote_contexts"
         ]
         try db.read { db in
             for table in expectedTables {
@@ -49,6 +50,103 @@ struct DatabaseMigrationsV1Tests {
             #expect(triggers.contains("rag_chunks_ai"))
             #expect(triggers.contains("rag_chunks_ad"))
             #expect(triggers.contains("rag_chunks_au"))
+        }
+    }
+
+    @Test("v7-knowledge-rag 应在已应用迁移列表中，并带上最终会话列")
+    func knowledgeRAGMigrationSealed() throws {
+        let db = try makeDB()
+        try db.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v7-knowledge-rag"))
+
+            let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
+            #expect(conversationColumns.contains("is_pinned"))
+            #expect(conversationColumns.contains("group_id"))
+            #expect(conversationColumns.contains("context_summary"))
+            #expect(conversationColumns.contains("context_summary_message_count"))
+
+            let messageColumns = try db.columns(in: "rag_messages").map(\.name)
+            #expect(messageColumns.contains("execution_trace_json"))
+            #expect(messageColumns.contains("processing_duration"))
+        }
+    }
+
+    @Test("ensureKnowledgeRAGSchema 对旧草稿会话表应幂等补齐最终列")
+    func knowledgeRAGUpgradesLegacyConversationDraft() throws {
+        let queue = try DatabaseQueue()
+        try queue.write { db in
+            try db.execute(sql: "PRAGMA foreign_keys = ON")
+            try db.execute(sql: """
+                CREATE TABLE repos (
+                    id INTEGER PRIMARY KEY,
+                    owner TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    full_name TEXT NOT NULL,
+                    html_url TEXT NOT NULL
+                )
+                """)
+            // 模拟开发早期、尚无 pin/group/摘要列、也无附属审计表的草稿。
+            try db.execute(sql: """
+                CREATE TABLE rag_chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+                    source TEXT NOT NULL,
+                    source_id TEXT NOT NULL DEFAULT '',
+                    parent_type TEXT NOT NULL DEFAULT 'repo',
+                    parent_key TEXT NOT NULL,
+                    parent_title TEXT NOT NULL DEFAULT '',
+                    chunk_key TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    section_path TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    content TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    token_count INTEGER NOT NULL,
+                    is_truncated INTEGER NOT NULL DEFAULT 0,
+                    embedding_status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: """
+                CREATE TABLE rag_conversations (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    scope TEXT NOT NULL DEFAULT 'knowledge',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: """
+                CREATE TABLE rag_messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL
+                        REFERENCES rag_conversations(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """)
+            try DatabaseMigrations.ensureKnowledgeRAGSchema(db)
+
+            let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
+            #expect(conversationColumns.contains("is_pinned"))
+            #expect(conversationColumns.contains("group_id"))
+            #expect(conversationColumns.contains("context_summary"))
+            #expect(conversationColumns.contains("context_summary_message_count"))
+
+            let messageColumns = try db.columns(in: "rag_messages").map(\.name)
+            #expect(messageColumns.contains("execution_trace_json"))
+            #expect(messageColumns.contains("processing_duration"))
+
+            #expect(try db.tableExists("rag_conversation_groups"))
+            #expect(try db.tableExists("rag_message_remote_contexts"))
+            #expect(try db.tableExists("rag_index_refresh_summary"))
+            #expect(try db.tableExists("rag_chunk_overrides"))
+            #expect(try db.tableExists("rag_chunk_tombstones"))
         }
     }
 

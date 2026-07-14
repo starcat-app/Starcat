@@ -218,13 +218,13 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         }
     }
 
-    /// 开发期 / 未发布功能的 schema 补齐（当前主要用于 RAG）。
+    /// 历史开发库缺口补齐（非正式版演进通道）。
     ///
-    /// 正式版已发布功能的 schema 变更必须走 `registerVN`；这里只服务尚未随正式版
-    /// 发出的功能草稿，以及历史开发库缺口。RAG 收口进正式版后应改为单次迁移并收掉。
+    /// 正式版已发布功能的 schema 变更必须走 `registerVN`。RAG 已收口为
+    /// `v7-knowledge-rag`，此处不再旁路补 RAG。保留的是早期开发库可能缺失的
+    /// 非 RAG 表/索引（`IF NOT EXISTS`）。
     private static func repairPrelaunchDevelopmentSchema(on writer: any DatabaseWriter) throws {
         try writer.write { db in
-            try DatabaseMigrations.ensurePrelaunchRAGSchema(db)
             try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS repo_health_snapshots (
                     repo_id INTEGER PRIMARY KEY REFERENCES repos(id) ON DELETE CASCADE,

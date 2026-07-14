@@ -6,7 +6,7 @@
 
 - 先消除会话错位、输入丢失、长回答卡顿等 P1 主链风险，再增加 Context Usage 与语义压缩能力。
 - 每个小项均先补回归测试，再实施最小改动；完成一项才勾选一项、更新主进度索引并提交一次中文 commit，不 push。
-- RAG 尚未发布：涉及新增摘要/预算持久化时按开发期 schema 草稿和 `ensurePrelaunch*` 升级本机库；正式发布时再收口为单次 `registerVN` 迁移。
+- RAG 已随正式版收口：schema 变更走 `v7-knowledge-rag`（`ensureKnowledgeRAGSchema`）；不得再回写 v1 草稿或启动期旁路。
 - 每个阶段至少运行相关 Suite；阶段 2、4、6 完成后运行全量 `xcodebuild test`。真实 Provider、慢网络和大数据场景另列人工验收，不以单测替代。
 
 ## 阶段 0：基线与测试支架

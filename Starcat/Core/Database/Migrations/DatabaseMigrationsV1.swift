@@ -10,12 +10,12 @@
 //     v1 建表 SQL 来「偷偷加字段」。已发布用户的库不会重跑 v1。
 //  2. **正式版后只追加迁移**：已随正式版发出的 schema，加字段 / 建表 / 加索引一律
 //     `registerVN(into:)`；禁止回改已落地的 `v1-initial`，禁止要求用户删库重建。
-//  3. **未发布功能（如 RAG）开发期例外**：功能尚未随正式版发出时，可直接改该功能的
-//     建表草稿 SQL，并由 `ensurePrelaunchRAGSchema` 补齐本机/预览库；功能收口进正式版时
-//     再压成单次 `registerVN`，并从 v1/ensure 收口。开发期迁移若依赖未建表，必须对
-//    「表不存在」做 no-op（见 `v5-rag-conversation-pin`），避免炸死仅有 1.0.0 schema 的用户。
+//  3. **未发布功能收口**：开发期可改该功能草稿 SQL + `ensurePrelaunch*`；封版时压成单次
+//     `registerVN` 并从 v1/ensure 抽掉。依赖未建表的中间 migration 必须对「表不存在」
+//     no-op（见 `v5`/`v6`），避免炸死仅有 1.0.0 schema 的用户。
+//     RAG 已于 2026-07-14 收口为 `v7-knowledge-rag`。
 //  4. **不支持降级**（见 `docs/1-立项/开发前问题清单.md` §5.2）。
-//  5. GRDB 迁移名采用语义化字符串（如 `"v5-rag-conversation-pin"`）。
+//  5. GRDB 迁移名采用语义化字符串（如 `"v7-knowledge-rag"`）。
 //  6. 表创建顺序遵循外键依赖：先 repos / tags，再依赖它们的关联 / 缓存表。
 //  7. FTS5 触发器与 repos 表同步：外部内容模式 `content='repos', content_rowid='id'`
 //     + tokenize `unicode61 remove_diacritics 2`。
@@ -32,7 +32,7 @@
 //
 //  **正式版后的追加迁移（不要与上方「原 vN」混淆）**：
 //  - `v2-undo-star` / `v3-agent-runs` / `v4-agent-tool-outputs` /
-//    `v5-rag-conversation-pin` / …
+//    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag`
 //
 
 import Foundation
@@ -55,12 +55,26 @@ enum DatabaseMigrations {
         registerV4(into: &migrator)
         registerV5(into: &migrator)
         registerV6(into: &migrator)
+        registerV7(into: &migrator)
+    }
+
+    // MARK: - v7-knowledge-rag：知识库 RAG 整包最终 schema（2026-07-14）
+
+    /// 正式版升迁通道：App Store 1.0.0 等无 RAG 用户在此一次性建出最终表结构。
+    ///
+    /// 方案 A 收口：RAG 已从 `v1-initial` 草稿与 `ensurePrelaunchRAGSchema` 抽离；
+    /// 新装走 v1（无 RAG）→ … → v7 建表；已有开发期草稿库则在此幂等补齐。
+    /// `v5`/`v6` 保留为历史增量标识（已应用库不能删迁移名），对无表用户仍 no-op。
+    private static func registerV7(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v7-knowledge-rag") { db in
+            try ensureKnowledgeRAGSchema(db)
+        }
     }
 
     // MARK: - v6-rag-conversation-groups：RAG 会话一级分组（2026-07-12）
 
-    /// 仅一级目录：分组下只能挂会话，不能再嵌套分组。
-    /// 与 v5 相同：无 `rag_conversations` 的正式版用户整段 no-op。
+    /// 开发期增量：仅服务「库里已有 `rag_conversations`」的预览包。
+    /// 无表的正式版用户整段 no-op；最终整包以 `v7-knowledge-rag` 为准。
     private static func registerV6(into migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v6-rag-conversation-groups") { db in
             guard try db.tableExists("rag_conversations") else { return }
@@ -70,10 +84,8 @@ enum DatabaseMigrations {
 
     // MARK: - v5-rag-conversation-pin：RAG 会话置顶（2026-07-12）
 
-    /// RAG 尚未随正式版发布：开发期表结构仍可能变动。
-    /// 本迁移只服务「库里已经有 `rag_conversations`」的开发/预览包；
-    /// App Store `1.0.0` 等尚未建 RAG 表的用户必须整段跳过，否则会炸迁移。
-    /// RAG 功能收口进正式版时，应另落一条整包 `vN-knowledge-rag`，再从 v1/ensure 收口。
+    /// 开发期增量：仅服务「库里已经有 `rag_conversations`」的预览包。
+    /// App Store `1.0.0` 等尚未建 RAG 表的用户整段跳过；最终整包在 `v7-knowledge-rag`。
     private static func registerV5(into migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v5-rag-conversation-pin") { db in
             guard try db.tableExists("rag_conversations") else { return }
@@ -261,7 +273,7 @@ enum DatabaseMigrations {
             try createDiscoveryBulkMeta(db)
             try createRepoEmbeddings(db)
             try createAISummaries(db)
-            try createRAGSchema(db)
+            // RAG 已收口到 `v7-knowledge-rag`，不再出现在已冻结的 v1-initial 草稿里。
             try createReleaseSubscriptions(db)
             try createReleases(db)
             // R-06.4（2026-06-15）：Weekly 渐进式 SWR 双轨制专用 bulk 缓存表。
@@ -1382,7 +1394,7 @@ enum DatabaseMigrations {
             t.column("id", .text).primaryKey()
             t.column("title", .text).notNull()
             t.column("scope", .text).notNull().defaults(to: "knowledge")
-            // RAG 未随正式版发布前，开发期直接改此建表 SQL；收口时再压进单次 registerVN。
+            // 置顶排在列表最前；不改 updated_at，避免置顶本身影响「最近活跃」语义。
             t.column("is_pinned", .boolean).notNull().defaults(to: false)
             // 一级分组：NULL = 未分组；删除分组时会话回到未分组（ON DELETE SET NULL）。
             t.column("group_id", .text)
@@ -1413,7 +1425,7 @@ enum DatabaseMigrations {
             t.column("role", .text).notNull()
             t.column("content", .text).notNull()
             t.column("model", .text)
-            // RAG 尚未随正式版发布：保存脱敏的用户可见执行轨迹，历史重开仍可核验本轮过程。
+            // 脱敏的用户可见执行轨迹：历史重开仍可核验本轮过程。
             t.column("execution_trace_json", .text)
             // 从用户提交到最终 LLM 流结束的秒数，供历史回答保留本轮处理耗时。
             t.column("processing_duration", .double)
@@ -1481,12 +1493,10 @@ enum DatabaseMigrations {
         }
     }
 
-    /// RAG 尚未随正式版发布时的开发期 schema 补齐。
+    /// `v7-knowledge-rag` 的整包幂等入口：无表则建最终形态；有开发期草稿则补齐列/附属表。
     ///
-    /// - 已跑过旧版 `v1-initial` 的开发库不会重跑 v1，这里在表缺失时补齐当前 RAG 草稿 schema。
-    /// - **不是**正式版演进通道；RAG 功能收口进正式版时，应改为单次 `registerVN` 并收掉这里的补丁。
-    /// - 已发布、非 RAG 的正式版用户（如 App Store 1.0.0）若升到含 RAG 开发包，也走这里建表。
-    static func ensurePrelaunchRAGSchema(_ db: Database) throws {
+    /// 正式版升迁只走本函数（经 v7）；不再经启动期 `ensurePrelaunch*` 旁路。
+    static func ensureKnowledgeRAGSchema(_ db: Database) throws {
         guard try db.tableExists("rag_chunks") else {
             try createRAGSchema(db)
             return
@@ -1503,7 +1513,7 @@ enum DatabaseMigrations {
         if try !db.tableExists("rag_chunk_tombstones") {
             try createRAGChunkTombstoneSchema(db)
         }
-        // 开发期补列：旧库已有 citations 表时不会重跑 createRAGSchema。
+        // 旧草稿库已有 citations / messages / conversations 时不会重跑 createRAGSchema，在此补列。
         if try db.tableExists("rag_message_citations") {
             let citationColumns = try db.columns(in: "rag_message_citations").map(\.name)
             if !citationColumns.contains("marker") {
@@ -1535,7 +1545,7 @@ enum DatabaseMigrations {
                 }
             }
         }
-        // migrator 先于 ensure 执行：v5 在无表时会 no-op，因此这里补 is_pinned 给「刚被 ensure 建出的旧形态表」。
+        // v5/v6 对「当时尚无表」的用户会 no-op；开发期旧表在此补 is_pinned / 分组 / 摘要列。
         if try db.tableExists("rag_conversations") {
             let columns = try db.columns(in: "rag_conversations").map(\.name)
             if !columns.contains("is_pinned") {
@@ -1561,12 +1571,11 @@ enum DatabaseMigrations {
                     columns: ["is_pinned", "updated_at"]
                 )
             }
-            // v6 同理：无表用户靠 ensure；有旧表则补分组表 + group_id。
             try ensureRAGConversationGroupsSchema(db)
         }
     }
 
-    /// 幂等补齐一级会话分组表与 `group_id`（v6 / ensure 共用）。
+    /// 幂等补齐一级会话分组表与 `group_id`（v6 / v7 共用）。
     private static func ensureRAGConversationGroupsSchema(_ db: Database) throws {
         if try !db.tableExists("rag_conversation_groups") {
             try db.create(table: "rag_conversation_groups") { t in
