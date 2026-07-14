@@ -56,7 +56,9 @@ enum RAGAddToLibraryLogic {
         filteredCount: Int
     ) -> Bool {
         guard displayedLimit < filteredCount else { return false }
-        return appearingIndex >= max(displayedLimit - prefetchDistance, 0)
+        // index 从 0 开始：当前行出现后，尾部剩余数为 displayedLimit - index - 1。
+        // 因此剩余 <= prefetchDistance 的首个索引是 displayedLimit - prefetchDistance - 1。
+        return appearingIndex >= max(displayedLimit - prefetchDistance - 1, 0)
     }
 
     static func nextDisplayLimit(current: Int, filteredCount: Int) -> Int {
