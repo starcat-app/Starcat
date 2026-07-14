@@ -921,6 +921,54 @@ struct KnowledgeRAGCoreTests {
         #expect(rendered.contains("repo: example/repository"))
     }
 
+    @Test("Rerank Debug 作为独立 Trace 行，不写入检索详情")
+    func rerankDebugEventUsesDedicatedStage() {
+        let trace = RAGRerankTrace(
+            query: "How do I configure BetterDisplay?",
+            model: nil,
+            candidateLimit: 24,
+            inputCandidates: [
+                .init(
+                    inputIndex: 0,
+                    repositoryName: "waydabber/BetterDisplay",
+                    source: .readme,
+                    section: "Configuration",
+                    preRerankScore: 0.131
+                )
+            ],
+            responseResults: [.init(inputIndex: 0, rerankScore: 0.842)],
+            appliedOrder: [.init(rank: 1, inputIndex: 0, rerankScore: 0.842)]
+        )
+        let rerank = RAGRerankDiagnostics(
+            state: .completed,
+            provider: .huggingFaceTEI,
+            candidateCount: 11,
+            rerankedCount: 11,
+            elapsedSeconds: 0.42,
+            trace: trace
+        )
+        let event = RAGDebugEvent(
+            stage: .rerank,
+            elapsedSeconds: 1,
+            payload: "",
+            rerankPayload: RAGRerankDebugPayload(diagnostics: rerank)
+        )
+        let retrievalDiagnostics = RAGRetrievalDiagnostics(
+            settings: .balanced,
+            candidateRepoCount: 1,
+            rerank: rerank,
+            outcome: .completed
+        )
+
+        #expect(event.stage == .rerank)
+        #expect(event.renderedPayload().contains(String.l10n("rag.workspace.debug.rerank.request.title")))
+        #expect(event.renderedPayload().contains(trace.query))
+        #expect(event.renderedPayload().contains(trace.inputCandidates[0].repositoryName))
+        #expect(event.renderedPayload().contains(String.l10n("rag.workspace.debug.rerank.response.title")))
+        #expect(event.renderedPayload().contains(String.l10n("rag.workspace.debug.rerank.applied.title")))
+        #expect(!retrievalDiagnostics.debugPayload().contains(rerank.debugPayload()))
+    }
+
     @Test("RAG Debug 清空只删除当前会话的文件")
     func debugFilesDeleteOnlyCurrentConversation() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())

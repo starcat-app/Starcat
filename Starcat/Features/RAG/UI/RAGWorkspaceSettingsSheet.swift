@@ -214,17 +214,18 @@ struct RAGWorkspaceSettingsSheet: View {
     /// 左栏只负责稳定导航；后续增加联网、模型等配置时不必重做布局。
     private var settingsSidebar: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
-            HStack(spacing: interfaceScale.scaled(7)) {
+            // 侧栏顶栏是整页标题，不是和「提示词 / 检索」同级的导航项；字号跟右侧 detailHeader 对齐。
+            HStack(spacing: interfaceScale.scaled(8)) {
                 Image(systemName: "gearshape")
-                    .font(interfaceScale.font(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: interfaceScale.scaled(16))
+                    .frame(width: interfaceScale.scaled(18))
                     .accessibilityHidden(true)
                 Text("rag.workspace.settings.title")
-                    .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
             }
-            .padding(.bottom, interfaceScale.scaled(6))
+            .padding(.bottom, interfaceScale.scaled(8))
 
             ForEach(RAGSettingsSection.allCases) { item in
                 Button {

@@ -155,7 +155,12 @@ struct KnowledgeRAGRetriever: Sendable {
             preferredRepoIDs: preferred,
             appliesLimits: false
         )
-        let rerankResult = await rerankCandidates(fusedCandidates.hits, query: query)
+        let repositoryNames = Dictionary(uniqueKeysWithValues: candidates.map { ($0.repo.id, $0.repo.fullName) })
+        let rerankResult = await rerankCandidates(
+            fusedCandidates.hits,
+            query: query,
+            repositoryNames: repositoryNames
+        )
         let fusionResult = fusion.applyLimits(to: rerankResult.hits)
         let hits = fusionResult.hits.filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)
@@ -180,12 +185,28 @@ struct KnowledgeRAGRetriever: Sendable {
         return RAGRetrievalResult(candidates: candidates, bundles: bundles, childHits: hits, diagnostics: diagnostics)
     }
 
-    private func rerankCandidates(_ candidates: [RAGChildHit], query: String) async -> (hits: [RAGChildHit], diagnostics: RAGRerankDiagnostics) {
+    private func rerankCandidates(
+        _ candidates: [RAGChildHit],
+        query: String,
+        repositoryNames: [Int64: String]
+    ) async -> (hits: [RAGChildHit], diagnostics: RAGRerankDiagnostics) {
         guard let reranker else {
             return (candidates, RAGRerankDiagnostics(state: .disabled))
         }
         guard !candidates.isEmpty else {
             return (candidates, RAGRerankDiagnostics(state: .skipped, provider: reranker.provider))
+        }
+        // 内置 provider 会在发送前按 candidateLimit 截断。Trace 也使用同一份候选快照，
+        // 才能让 inputIndex 与服务端响应 index 一一对应。
+        let requestCandidates = reranker.debugCandidateLimit.map { Array(candidates.prefix($0)) } ?? candidates
+        let inputCandidates = requestCandidates.enumerated().map { index, hit in
+            RAGRerankTrace.InputCandidate(
+                inputIndex: index,
+                repositoryName: repositoryNames[hit.chunk.repoId] ?? "#\(hit.chunk.repoId)",
+                source: hit.chunk.source,
+                section: hit.chunk.sectionPath,
+                preRerankScore: hit.score
+            )
         }
         let startedAt = Date()
         do {
@@ -196,21 +217,58 @@ struct KnowledgeRAGRetriever: Sendable {
                 guard let id = hit.chunk.id else { return true }
                 return !rerankedIDs.contains(id)
             }
-            return (reranked.map(\.hit) + trailing, RAGRerankDiagnostics(
+            let appliedHits = reranked.map(\.hit) + trailing
+            let responseResults = reranked.compactMap { item -> RAGRerankTrace.ResponseResult? in
+                guard let inputIndex = requestCandidates.firstIndex(of: item.hit) else { return nil }
+                return .init(inputIndex: inputIndex, rerankScore: item.score)
+            }
+            let scoreByInputIndex = Dictionary(uniqueKeysWithValues: responseResults.map { ($0.inputIndex, $0.rerankScore) })
+            let appliedOrder = appliedHits.enumerated().map { index, hit in
+                let inputIndex = requestCandidates.firstIndex(of: hit)
+                return RAGRerankTrace.AppliedItem(
+                    rank: index + 1,
+                    inputIndex: inputIndex,
+                    rerankScore: inputIndex.flatMap { scoreByInputIndex[$0] }
+                )
+            }
+            let trace = RAGRerankTrace(
+                query: query,
+                model: reranker.debugModel,
+                candidateLimit: reranker.debugCandidateLimit,
+                inputCandidates: inputCandidates,
+                responseResults: responseResults,
+                appliedOrder: appliedOrder
+            )
+            return (appliedHits, RAGRerankDiagnostics(
                 state: .completed,
                 provider: reranker.provider,
-                candidateCount: candidates.count,
+                candidateCount: requestCandidates.count,
                 rerankedCount: reranked.count,
-                elapsedSeconds: Date().timeIntervalSince(startedAt)
+                elapsedSeconds: Date().timeIntervalSince(startedAt),
+                trace: trace
             ))
         } catch {
             AppLog.ai.warning("RAG rerank degraded: \(error.localizedDescription, privacy: .public)")
             return (candidates, RAGRerankDiagnostics(
                 state: .failedFallback,
                 provider: reranker.provider,
-                candidateCount: candidates.count,
+                candidateCount: requestCandidates.count,
                 elapsedSeconds: Date().timeIntervalSince(startedAt),
-                errorDescription: error.localizedDescription
+                errorDescription: error.localizedDescription,
+                trace: RAGRerankTrace(
+                    query: query,
+                    model: reranker.debugModel,
+                    candidateLimit: reranker.debugCandidateLimit,
+                    inputCandidates: inputCandidates,
+                    responseResults: [],
+                    appliedOrder: candidates.enumerated().map { index, hit in
+                        .init(
+                            rank: index + 1,
+                            inputIndex: requestCandidates.firstIndex(of: hit),
+                            rerankScore: nil
+                        )
+                    }
+                )
             ))
         }
     }

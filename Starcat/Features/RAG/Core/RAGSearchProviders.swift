@@ -135,9 +135,17 @@ struct RAGHybridFusionResult: Equatable, Sendable {
 }
 
 protocol RAGReranking: Sendable {
-    /// Debug Trace 只记录协议类型，不记录 endpoint、Token 或候选正文。
+    /// Debug Trace 记录请求实际采用的上限与模型，但不记录 endpoint、Token 或候选正文。
     var provider: RAGRerankProvider { get }
+    var debugCandidateLimit: Int? { get }
+    var debugModel: String? { get }
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)]
+}
+
+extension RAGReranking {
+    /// 自定义 reranker 不必为了 Debug 增加额外配置；实际内置 provider 会提供精确值。
+    var debugCandidateLimit: Int? { nil }
+    var debugModel: String? { nil }
 }
 
 /// Hugging Face Text Embeddings Inference 的 `/rerank` 协议适配。
@@ -150,6 +158,8 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
     private let httpClient: any RAGHTTPClientProtocol
 
     let provider: RAGRerankProvider = .huggingFaceTEI
+    var debugCandidateLimit: Int? { configuration.candidateLimit }
+    var debugModel: String? { nil }
 
     init(
         configuration: RAGRerankConfiguration,
@@ -213,6 +223,8 @@ struct CohereCompatibleRAGReranker: RAGReranking {
     private let httpClient: any RAGHTTPClientProtocol
 
     let provider: RAGRerankProvider = .cohereCompatible
+    var debugCandidateLimit: Int? { configuration.candidateLimit }
+    var debugModel: String? { configuration.model }
 
     init(
         configuration: RAGRerankConfiguration,

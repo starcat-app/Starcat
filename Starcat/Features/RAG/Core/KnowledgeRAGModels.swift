@@ -553,6 +553,40 @@ struct RAGRetrievalResult: Equatable, Sendable {
     var diagnostics: RAGRetrievalDiagnostics? = nil
 }
 
+/// Rerank 独立 Trace 的结构化明细。仅保留用于核对请求/响应映射的元数据与分数，
+/// 不复制发送给外部服务的分片正文，避免 Debug 文件成为知识库的另一份副本。
+struct RAGRerankTrace: Codable, Equatable, Sendable {
+    struct InputCandidate: Codable, Equatable, Sendable {
+        /// 与实际 Rerank 请求 documents/texts 数组相同的 0-based 下标。
+        var inputIndex: Int
+        var repositoryName: String
+        var source: RAGChunkSource
+        var section: String
+        var preRerankScore: Double
+    }
+
+    struct ResponseResult: Codable, Equatable, Sendable {
+        /// 服务响应中的原始输入下标，用于核对返回结果是否映射到正确候选。
+        var inputIndex: Int
+        var rerankScore: Double
+    }
+
+    struct AppliedItem: Codable, Equatable, Sendable {
+        /// 最终进入后续 evidence limit 前的排序位置，从 1 开始。
+        var rank: Int
+        /// `nil` 表示该候选未发送给 Rerank 服务（超过候选上限），保留原融合顺序追加在末尾。
+        var inputIndex: Int?
+        var rerankScore: Double?
+    }
+
+    var query: String
+    var model: String?
+    var candidateLimit: Int?
+    var inputCandidates: [InputCandidate]
+    var responseResults: [ResponseResult]
+    var appliedOrder: [AppliedItem]
+}
+
 /// Rerank 的执行结果。即使远端不可用也只降级排序，不能使正常 RAG 问答失败。
 struct RAGRerankDiagnostics: Codable, Equatable, Sendable {
     enum State: String, Codable, Equatable, Sendable { case disabled, skipped, completed, failedFallback }
@@ -563,6 +597,30 @@ struct RAGRerankDiagnostics: Codable, Equatable, Sendable {
     var rerankedCount = 0
     var elapsedSeconds: TimeInterval = 0
     var errorDescription: String?
+    /// 只在实际调用 Rerank 时写入，用于独立 Trace 按当前语言重新渲染。
+    var trace: RAGRerankTrace?
+
+    /// Rerank 独立 Trace 的用户可读正文；与检索漏斗分开，避免相同统计在两个入口重复出现。
+    func debugPayload() -> String {
+        switch state {
+        case .disabled:
+            return String.l10n("rag.workspace.debug.retrieval.rerank.disabled")
+        case .skipped:
+            return String(format: String.l10n("rag.workspace.debug.retrieval.rerank.skipped"), providerTitle)
+        case .completed:
+            return String(format: String.l10n("rag.workspace.debug.retrieval.rerank.completed"), providerTitle, candidateCount, rerankedCount, elapsedSeconds)
+        case .failedFallback:
+            return String(format: String.l10n("rag.workspace.debug.retrieval.rerank.failed"), providerTitle, candidateCount, errorDescription ?? String.l10n("rag.workspace.debug.retrieval.error.none"))
+        }
+    }
+
+    private var providerTitle: String {
+        switch provider {
+        case .huggingFaceTEI: return String.l10n("rag.workspace.rerank.provider.tei")
+        case .cohereCompatible: return String.l10n("rag.workspace.rerank.provider.cohere")
+        case nil: return String.l10n("rag.workspace.debug.retrieval.error.none")
+        }
+    }
 }
 
 /// RAG 检索的可解释性快照。数值只统计分片数量，不包含分片正文，避免 Debug 导出扩大数据暴露面。
@@ -632,34 +690,11 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.semanticFormat"), vectorRawCount, vectorSourceFilteredCount, vectorSimilarityFilteredCount, vectorRawCount - vectorSourceFilteredCount - vectorSimilarityFilteredCount))
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.rankingFormat"), fusion.uniqueCount, fusion.perRepositoryLimitFilteredCount, fusion.totalLimitFilteredCount, minimumEvidenceScoreFilteredCount))
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.resultFormat"), finalChildHitCount, bundleCount))
-        - \(rerankDebugText())
         \(debugErrorSummary())
 
         \(String.l10n("rag.workspace.debug.retrieval.conclusion.title"))
         \(conclusion)
         """
-    }
-
-    private func rerankDebugText() -> String {
-        let rerank = rerank ?? RAGRerankDiagnostics()
-        switch rerank.state {
-        case .disabled:
-            return String.l10n("rag.workspace.debug.retrieval.rerank.disabled")
-        case .skipped:
-            return String(format: String.l10n("rag.workspace.debug.retrieval.rerank.skipped"), rerankProviderTitle(rerank.provider))
-        case .completed:
-            return String(format: String.l10n("rag.workspace.debug.retrieval.rerank.completed"), rerankProviderTitle(rerank.provider), rerank.candidateCount, rerank.rerankedCount, rerank.elapsedSeconds)
-        case .failedFallback:
-            return String(format: String.l10n("rag.workspace.debug.retrieval.rerank.failed"), rerankProviderTitle(rerank.provider), rerank.candidateCount, rerank.errorDescription ?? String.l10n("rag.workspace.debug.retrieval.error.none"))
-        }
-    }
-
-    private func rerankProviderTitle(_ provider: RAGRerankProvider?) -> String {
-        switch provider {
-        case .huggingFaceTEI: return String.l10n("rag.workspace.rerank.provider.tei")
-        case .cohereCompatible: return String.l10n("rag.workspace.rerank.provider.cohere")
-        case nil: return String.l10n("rag.workspace.debug.retrieval.error.none")
-        }
     }
 
     private func debugSourceTitle(_ source: RAGChunkSource) -> String {

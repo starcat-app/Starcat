@@ -825,9 +825,15 @@ struct RAGWorkspaceInspector: View {
     }
 
     /// 单个 stage 行：默认只显示标题/本步耗时/复制；展开后才挂载 payload，避免大段文本拖垮侧栏。
-    func debugEventRow(_ event: RAGDebugEvent, stepDurationSeconds: TimeInterval) -> some View {
+    func debugEventRow(
+        _ event: RAGDebugEvent,
+        stepDurationSeconds: TimeInterval
+    ) -> some View {
         let isExpanded = expandedDebugEventIDs.contains(event.id)
         let isExpandPending = pendingExpandDebugEventIDs.contains(event.id)
+        // Rerank 在检索完成后才拿到远端耗时；其 Trace 行必须显示服务的真实耗时，不能显示
+        // 同一批 Debug event 的累计时间差。
+        let displayedDuration = event.rerankPayload?.diagnostics.elapsedSeconds ?? stepDurationSeconds
         return VStack(alignment: .leading, spacing: 7) {
             // 与父行一致：chevron 贴最右；复制叠在其左侧独立点击。
             Button {
@@ -842,7 +848,7 @@ struct RAGWorkspaceInspector: View {
                     Text(debugStageKey(event.stage))
                         .font(ragFont(.caption, weight: .semibold))
                     Spacer(minLength: 4)
-                    Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, stepDurationSeconds))
+                    Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, displayedDuration))
                         .font(ragFont(.caption2, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .help("rag.workspace.debug.stepDuration.help")
@@ -987,6 +993,7 @@ struct RAGWorkspaceInspector: View {
         case .plan: return "rag.workspace.debug.stage.plan"
         case .candidates: return "rag.workspace.debug.stage.candidates"
         case .structuredAnalytics: return "rag.workspace.debug.stage.structuredAnalytics"
+        case .rerank: return "rag.workspace.debug.stage.rerank"
         case .retrieval: return "rag.workspace.debug.stage.retrieval"
         case .remoteRequest: return "rag.workspace.debug.stage.remoteRequest"
         case .remoteResponse: return "rag.workspace.debug.stage.remoteResponse"
@@ -1016,6 +1023,8 @@ struct RAGWorkspaceInspector: View {
             return "building.2"
         case .structuredAnalytics:
             return "chart.bar.xaxis"
+        case .rerank:
+            return "arrow.up.arrow.down.circle"
         case .retrieval:
             return "magnifyingglass"
         case .remoteRequest:

@@ -23593,6 +23593,84 @@
         }
       }
     },
+    "rag.workspace.debug.rerank.applied.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Applied Order" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终应用顺序" } }
+      }
+    },
+    "rag.workspace.debug.rerank.appliedFallbackFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "#%lld: not sent to Rerank; retained the hybrid order." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "第 %lld 位：未发送至 Rerank，保留综合检索顺序。" } }
+      }
+    },
+    "rag.workspace.debug.rerank.appliedResultFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "#%1$lld: input [%2$lld], Rerank score %.6f" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "第 %1$lld 位：输入 [%2$lld]，Rerank 分 %.6f" } }
+      }
+    },
+    "rag.workspace.debug.rerank.candidateLimitFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candidate limit: %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选上限：%lld" } }
+      }
+    },
+    "rag.workspace.debug.rerank.inputCandidateFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "[%1$lld] Repository: %2$@ · Source: %3$@ · Section: %4$@ · Pre-rerank score: %.6f" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "[%1$lld] 仓库：%2$@ · 来源：%3$@ · 分区：%4$@ · 重排前综合检索分：%.6f" } }
+      }
+    },
+    "rag.workspace.debug.rerank.inputCountFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Input candidates: %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "输入候选：%lld 条" } }
+      }
+    },
+    "rag.workspace.debug.rerank.modelFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Model: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "模型：%@" } }
+      }
+    },
+    "rag.workspace.debug.rerank.providerFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Service type: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "服务类型：%@" } }
+      }
+    },
+    "rag.workspace.debug.rerank.queryFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Query: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询：%@" } }
+      }
+    },
+    "rag.workspace.debug.rerank.request.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rerank Request" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Rerank 请求" } }
+      }
+    },
+    "rag.workspace.debug.rerank.response.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rerank Response" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Rerank 返回" } }
+      }
+    },
+    "rag.workspace.debug.rerank.responseCountFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Returned results: %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "返回结果：%lld 条" } }
+      }
+    },
+    "rag.workspace.debug.rerank.responseResultFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Input [%lld], Rerank score: %.6f" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "输入 [%lld]，Rerank 分：%.6f" } }
+      }
+    },
     "rag.workspace.debug.retrieval.rerank.completed": {
       "localizations": {
         "en": {
@@ -25141,6 +25219,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "知识库"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.stage.rerank": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rerank"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重排序"
           }
         }
       }

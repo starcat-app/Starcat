@@ -57,6 +57,7 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
         case plan
         case candidates
         case structuredAnalytics = "structured_analytics"
+        case rerank
         case retrieval
         case remoteRequest = "remote_request"
         case remoteResponse = "remote_response"
@@ -77,29 +78,35 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
     /// 检索诊断保留结构化快照而非已翻译文本。Debug Trace 可在用户切换显示语言后重新渲染，
     /// 不会出现标题是英文、正文仍停留在旧语言的割裂状态。
     let retrievalPayload: RAGRetrievalDebugPayload?
+    /// Rerank 独立作为 Trace 行，避免用户必须展开“检索结果”才能确认是否实际调用。
+    let rerankPayload: RAGRerankDebugPayload?
 
     init(
         id: UUID = UUID(),
         stage: Stage,
         elapsedSeconds: TimeInterval,
         payload: String,
-        retrievalPayload: RAGRetrievalDebugPayload? = nil
+        retrievalPayload: RAGRetrievalDebugPayload? = nil,
+        rerankPayload: RAGRerankDebugPayload? = nil
     ) {
         self.id = id
         self.stage = stage
         self.elapsedSeconds = elapsedSeconds
         self.payload = payload
         self.retrievalPayload = retrievalPayload
+        self.rerankPayload = rerankPayload
     }
 
     /// 统一在展示、复制或导出时生成文本；普通调试事件仍直接使用原始 payload。
     func renderedPayload() -> String {
-        retrievalPayload?.renderedText() ?? payload
+        retrievalPayload?.renderedText() ?? rerankPayload?.renderedText() ?? payload
     }
 
     /// 内存上限按真实保存的字节数计算；结构化检索事件的最终证据不在 `payload` 内，不能漏算。
     var storedPayloadUTF8ByteCount: Int {
-        payload.utf8.count + (retrievalPayload?.evidenceDetails.utf8.count ?? 0)
+        payload.utf8.count
+            + (retrievalPayload?.evidenceDetails.utf8.count ?? 0)
+            + (rerankPayload?.storedPayloadUTF8ByteCount ?? 0)
     }
 }
 
@@ -117,6 +124,69 @@ struct RAGRetrievalDebugPayload: Codable, Sendable {
             String.l10n("rag.workspace.debug.retrieval.evidenceDetails.title"),
             evidenceDetails
         ].joined(separator: "\n\n")
+    }
+}
+
+/// 独立 Rerank Trace 的结构化快照。保留问题与候选映射以诊断排序，但不能写入地址、凭据或正文。
+struct RAGRerankDebugPayload: Codable, Sendable {
+    let diagnostics: RAGRerankDiagnostics
+
+    func renderedText() -> String {
+        guard let trace = diagnostics.trace else { return diagnostics.debugPayload() }
+        let provider = switch diagnostics.provider {
+        case .huggingFaceTEI: String.l10n("rag.workspace.rerank.provider.tei")
+        case .cohereCompatible: String.l10n("rag.workspace.rerank.provider.cohere")
+        case nil: String.l10n("rag.workspace.debug.retrieval.error.none")
+        }
+        var requestLines = [
+            String(format: String.l10n("rag.workspace.debug.rerank.providerFormat"), provider),
+            String(format: String.l10n("rag.workspace.debug.rerank.queryFormat"), trace.query),
+            String(format: String.l10n("rag.workspace.debug.rerank.inputCountFormat"), trace.inputCandidates.count)
+        ]
+        if let model = trace.model, !model.isEmpty {
+            requestLines.insert(String(format: String.l10n("rag.workspace.debug.rerank.modelFormat"), model), at: 1)
+        }
+        if let candidateLimit = trace.candidateLimit {
+            requestLines.append(String(format: String.l10n("rag.workspace.debug.rerank.candidateLimitFormat"), candidateLimit))
+        }
+        requestLines += trace.inputCandidates.map { candidate in
+            String(format: String.l10n("rag.workspace.debug.rerank.inputCandidateFormat"), candidate.inputIndex, candidate.repositoryName, sourceTitle(candidate.source), candidate.section, candidate.preRerankScore)
+        }
+
+        let responseLines = [
+            String(format: String.l10n("rag.workspace.debug.rerank.responseCountFormat"), trace.responseResults.count)
+        ] + trace.responseResults.map { result in
+            String(format: String.l10n("rag.workspace.debug.rerank.responseResultFormat"), result.inputIndex, result.rerankScore)
+        }
+        let appliedLines = trace.appliedOrder.map { item in
+            if let inputIndex = item.inputIndex, let rerankScore = item.rerankScore {
+                return String(format: String.l10n("rag.workspace.debug.rerank.appliedResultFormat"), item.rank, inputIndex, rerankScore)
+            }
+            return String(format: String.l10n("rag.workspace.debug.rerank.appliedFallbackFormat"), item.rank)
+        }
+        return [
+            diagnostics.debugPayload(),
+            String.l10n("rag.workspace.debug.rerank.request.title"),
+            requestLines.map { "- \($0)" }.joined(separator: "\n"),
+            String.l10n("rag.workspace.debug.rerank.response.title"),
+            responseLines.map { "- \($0)" }.joined(separator: "\n"),
+            String.l10n("rag.workspace.debug.rerank.applied.title"),
+            appliedLines.map { "- \($0)" }.joined(separator: "\n")
+        ].joined(separator: "\n\n")
+    }
+
+    var storedPayloadUTF8ByteCount: Int {
+        // 结构化内容会落入会话级 Debug 文件，按编码后的真实字节数参与内存上限计算。
+        (try? JSONEncoder().encode(self).count) ?? 0
+    }
+
+    private func sourceTitle(_ source: RAGChunkSource) -> String {
+        switch source {
+        case .readme: String.l10n("rag.browser.source.readme")
+        case .notes: String.l10n("rag.browser.source.notes")
+        case .summary: String.l10n("rag.browser.source.summary")
+        case .metadata: String.l10n("rag.browser.source.metadata")
+        }
     }
 }
 
@@ -565,6 +635,14 @@ struct KnowledgeRAGService: Sendable {
                         return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
                     }.joined(separator: "\n---\n")
                     if request.isDebugEnabled {
+                        if let rerank = retrieval.diagnostics?.rerank {
+                            continuation.yield(.debug(RAGDebugEvent(
+                                stage: .rerank,
+                                elapsedSeconds: Date().timeIntervalSince(startedAt),
+                                payload: "",
+                                rerankPayload: RAGRerankDebugPayload(diagnostics: rerank)
+                            )))
+                        }
                         continuation.yield(.debug(RAGDebugEvent(
                             stage: .retrieval,
                             elapsedSeconds: Date().timeIntervalSince(startedAt),
