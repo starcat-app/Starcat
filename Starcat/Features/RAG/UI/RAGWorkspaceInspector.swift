@@ -1185,8 +1185,7 @@ struct RAGWorkspaceInspector: View {
                 Text(actualScoreFormula(scoreBreakdown))
                     .font(ragFont(.caption2, design: .monospaced))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.60)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text("rag.workspace.inspector.retrievalScore.actualCalculationUnavailable")
@@ -1200,8 +1199,7 @@ struct RAGWorkspaceInspector: View {
             Text(retrievalScoreFormulaKey(for: citation.hitKind))
                 .font(ragFont(.caption2, design: .monospaced))
                 .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 7) {
@@ -1581,7 +1579,6 @@ private struct RAGInspectorTabBar: View {
                         Text(tab.titleKey)
                             .font(font)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.82)
                             .frame(width: tabWidth, height: Self.controlHeight - Self.horizontalInset * 2)
                             .foregroundStyle(selection == tab ? Color.white : Color.primary)
                             .background(

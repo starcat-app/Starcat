@@ -518,6 +518,7 @@ private struct KnowledgeRAGBrowserScrollOffsetKey: PreferenceKey {
 
 private struct KnowledgeRAGBrowserView: View {
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @State private var editingChunk: RAGManagedChunk?
@@ -538,8 +539,13 @@ private struct KnowledgeRAGBrowserView: View {
 
     /// body 字号下行高，用于 2…4 行高度钳制。
     private var retrievalQueryLineHeight: CGFloat {
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let font = retrievalQueryFont
         return font.ascender - font.descender + font.leading
+    }
+
+    /// 与主工作台 Composer 保持同一 13pt 高密度基准，并随全局界面字号档位缩放。
+    private var retrievalQueryFont: NSFont {
+        NSFont.systemFont(ofSize: interfaceScale.scaled(13))
     }
 
     private var retrievalQueryMinHeight: CGFloat {
@@ -848,7 +854,7 @@ private struct KnowledgeRAGBrowserView: View {
                 RAGComposerTextEditor(
                     text: $viewModel.retrievalQuery,
                     placeholder: String.l10n("rag.browser.retrieval.placeholder"),
-                    font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                    font: retrievalQueryFont,
                     maximumHeight: retrievalQueryMaxHeight,
                     onHeightChange: { retrievalQueryEditorHeight = $0 },
                     onMentionAnchorChange: { _ in },
@@ -869,7 +875,7 @@ private struct KnowledgeRAGBrowserView: View {
                         // 18pt 圆钮贴合 2～4 行输入框角位；24pt 会压过输入区观感。
                         Button { viewModel.runRetrievalTest() } label: {
                             Image(systemName: "testtube.2")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(interfaceScale.font(size: 9, weight: .semibold))
                                 .frame(width: 18, height: 18)
                         }
                         .buttonStyle(.plain)
@@ -1548,6 +1554,7 @@ private struct RAGRetrievalHitInspection: Identifiable {
 /// 分片窗口共用编辑与召回详情布局；编辑只提交人工覆盖层，只读模式绝不写回 README 等源数据。
 private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     let chunk: RAGChunk
     let isExcluded: Bool?
     let retrievalMetadata: (repositoryName: String, ownerAvatarURL: String?, kind: String, score: Double, vectorSimilarity: Double?)?
@@ -1657,7 +1664,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     // 只读详情走 Markdown；编辑态仍用 TextEditor 改原文。
                     ScrollView {
                         Markdown(content)
-                            .markdownTheme(Self.readOnlyChunkMarkdownTheme)
+                            .markdownTheme(readOnlyChunkMarkdownTheme(scale: interfaceScale))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
@@ -1708,15 +1715,19 @@ private struct KnowledgeRAGChunkEditor: View {
             }
         }
         .padding(18)
-        .frame(width: 680, height: 540, alignment: .topLeading)
+        .frame(
+            width: interfaceScale.scaled(680),
+            height: interfaceScale.scaled(540),
+            alignment: .topLeading
+        )
     }
 
     /// 与证据 popover 同分片 Markdown 气质，略放大以适配 680 详情窗。
-    private static var readOnlyChunkMarkdownTheme: Theme {
+    private func readOnlyChunkMarkdownTheme(scale: InterfaceScale) -> Theme {
         Theme()
             .text {
                 ForegroundColor(.primary)
-                FontSize(13)
+                FontSize(scale.scaled(13))
             }
             .code {
                 FontFamilyVariant(.monospaced)
@@ -1731,7 +1742,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     .markdownMargin(top: .em(0.4), bottom: .em(0.25))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(16)
+                        FontSize(scale.scaled(16))
                     }
             }
             .heading2 { configuration in
@@ -1739,7 +1750,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     .markdownMargin(top: .em(0.35), bottom: .em(0.2))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(15)
+                        FontSize(scale.scaled(15))
                     }
             }
             .heading3 { configuration in
@@ -1747,7 +1758,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     .markdownMargin(top: .em(0.3), bottom: .em(0.15))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(14)
+                        FontSize(scale.scaled(14))
                     }
             }
             .paragraph { configuration in
