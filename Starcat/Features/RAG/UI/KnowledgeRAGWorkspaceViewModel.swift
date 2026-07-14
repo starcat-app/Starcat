@@ -239,6 +239,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             return lastContextUsage
         }
         return KnowledgeRAGPromptBuilder(
+            // 与实际 Service 使用同一证据预算，避免 Composer 的 Context Usage 预览误导用户。
+            maxEvidenceTokens: dependencies.settings.ragRetrievalSettings.evidenceTokenBudget,
             promptConfiguration: dependencies.settings.ragPromptSettings.generator,
             outputLanguage: LocaleStore.shared.selection.aiOutputLanguageDescriptor
         ).preview(

@@ -53243,19 +53243,194 @@
         }
       }
     },
-    "rag.workspace.prompt.open": {
+    "rag.workspace.retrieval.advanced.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Advanced" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "高级" } }
+      }
+    },
+    "rag.workspace.retrieval.common.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Common" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "常用" } }
+      }
+    },
+    "rag.workspace.retrieval.finalChunkLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Final Evidence Chunk Limit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终证据分片上限" } }
+      }
+    },
+    "rag.workspace.retrieval.finalChunkLimit.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Maximum local evidence chunks used for one answer." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "一次回答最多使用的本地证据分片数。" } }
+      }
+    },
+    "rag.workspace.retrieval.minimumSimilarity": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Minimum Vector Similarity" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最低向量相似度" } }
+      }
+    },
+    "rag.workspace.retrieval.minimumSimilarity.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Vector results below this score are excluded. Exact keyword matches remain available." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "低于此分数的向量结果不会参与检索；关键词精确匹配不受影响。" } }
+      }
+    },
+    "rag.workspace.retrieval.perRepositoryLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Per-Repository Evidence Limit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "单仓库证据分片上限" } }
+      }
+    },
+    "rag.workspace.retrieval.perRepositoryLimit.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Prevents one repository from occupying all evidence." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "避免单个仓库占满全部证据。" } }
+      }
+    },
+    "rag.workspace.retrieval.preset.balanced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Balanced" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "平衡" } }
+      }
+    },
+    "rag.workspace.retrieval.preset.broad": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Broad" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "广泛" } }
+      }
+    },
+    "rag.workspace.retrieval.preset.custom": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Custom" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自定义" } }
+      }
+    },
+    "rag.workspace.retrieval.preset.strict": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Strict" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "严格" } }
+      }
+    },
+    "rag.workspace.retrieval.preset.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Preset" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "预设" } }
+      }
+    },
+    "rag.workspace.retrieval.restoreDefaults": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Restore Defaults" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复默认" } }
+      }
+    },
+    "rag.workspace.retrieval.source.metadata": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repository Metadata" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仓库元数据" } }
+      }
+    },
+    "rag.workspace.retrieval.source.notes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Personal Notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "个人笔记" } }
+      }
+    },
+    "rag.workspace.retrieval.source.readme": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "README" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "README" } }
+      }
+    },
+    "rag.workspace.retrieval.source.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI Summaries" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要" } }
+      }
+    },
+    "rag.workspace.retrieval.sources.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose which knowledge sources can provide local evidence." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择可参与本地证据检索的知识来源。" } }
+      }
+    },
+    "rag.workspace.retrieval.sources.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Evidence Sources" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "证据来源" } }
+      }
+    },
+    "rag.workspace.retrieval.tokenBudget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Evidence Context Token Budget" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "证据上下文 Token 预算" } }
+      }
+    },
+    "rag.workspace.retrieval.tokenBudget.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Maximum token budget reserved for local evidence." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "为本地证据预留的最大 Token 预算。" } }
+      }
+    },
+    "rag.workspace.settings.section.prompts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Prompts" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "提示词" } }
+      }
+    },
+    "rag.workspace.settings.section.retrieval": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Retrieval" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索" } }
+      }
+    },
+    "rag.workspace.settings.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RAG Settings" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RAG 配置" } }
+      }
+    },
+    "rag.workspace.settings.open": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prompt Settings"
+            "value": "RAG Settings"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "提示词设置"
+            "value": "RAG 配置"
           }
         }
       }

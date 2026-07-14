@@ -508,10 +508,12 @@ final class AppDependencies {
             privateRepoKeywordProvider: localKeyword,
             privateRepoVectorProvider: localVector,
             embeddingClient: embeddingClient,
-            embeddingModel: embeddingSelection.modelName
+            embeddingModel: embeddingSelection.modelName,
+            retrievalSettings: settings.ragRetrievalSettings
         )
         let outputLanguage = LocaleStore.shared.selection.aiOutputLanguageDescriptor
         let ragPrompts = settings.ragPromptSettings
+        let retrievalSettings = settings.ragRetrievalSettings
         let planner = KnowledgeRAGQueryPlanner(
             client: chatClient,
             model: chatSelection.modelName,
@@ -535,6 +537,7 @@ final class AppDependencies {
             generatorModel: chatSelection.modelName,
             generatorParameters: chatSelection.parameters,
             promptBuilder: KnowledgeRAGPromptBuilder(
+                maxEvidenceTokens: retrievalSettings.evidenceTokenBudget,
                 promptConfiguration: ragPrompts.generator,
                 outputLanguage: outputLanguage
             ),

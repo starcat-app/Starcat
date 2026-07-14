@@ -837,6 +837,11 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.ragPromptSettings, value: ragPromptSettings) }
     }
 
+    /// RAG 检索的用户可调边界；只影响新建的问答 runtime，不改动已保存的会话证据。
+    var ragRetrievalSettings: RAGRetrievalSettings {
+        didSet { persistJSON(key: Keys.ragRetrievalSettings, value: ragRetrievalSettings.normalized()) }
+    }
+
     /// RAG 工作台上次选用的聊天模型 ID（`AIModelDescriptor.id`）。
     ///
     /// 空字符串表示从未选过，打开工作台时回退到 `aiChatTask` 对齐的模型。
@@ -1495,6 +1500,11 @@ final class AppSettings {
             key: Keys.ragPromptSettings,
             defaults: defaults
         ) ?? .default
+        self.ragRetrievalSettings = (Self.decodeJSON(
+            RAGRetrievalSettings.self,
+            key: Keys.ragRetrievalSettings,
+            defaults: defaults
+        ) ?? .balanced).normalized()
         self.ragWorkspaceSelectedModelID = defaults.string(forKey: Keys.ragWorkspaceSelectedModelID) ?? ""
         self.ragWorkspaceDebugModeEnabled = defaults.object(forKey: Keys.ragWorkspaceDebugModeEnabled) as? Bool ?? false
         let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
@@ -1703,6 +1713,7 @@ final class AppSettings {
         aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
         ragBackendConfiguration = RAGBackendConfiguration()
         ragPromptSettings = .default
+        ragRetrievalSettings = .balanced
         ragWorkspaceSelectedModelID = ""
         ragWorkspaceDebugModeEnabled = false
 
@@ -2016,6 +2027,7 @@ final class AppSettings {
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let ragBackendConfiguration = "settings.ai.rag.backends.v1"
         static let ragPromptSettings = "settings.rag.prompts.v1"
+        static let ragRetrievalSettings = "settings.rag.retrieval.v1"
         static let ragWorkspaceSelectedModelID = "settings.rag.workspace.selectedModelID.v1"
         static let ragWorkspaceDebugModeEnabled = "settings.rag.workspace.debugModeEnabled.v1"
         static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
@@ -2099,6 +2111,7 @@ final class AppSettings {
             aiChatTask,
             ragBackendConfiguration,
             ragPromptSettings,
+            ragRetrievalSettings,
             ragWorkspaceSelectedModelID,
             ragWorkspaceDebugModeEnabled,
             chatHistoryStorageKind,

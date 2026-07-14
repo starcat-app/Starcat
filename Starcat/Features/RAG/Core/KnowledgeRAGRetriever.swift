@@ -24,6 +24,8 @@ struct KnowledgeRAGRetriever: Sendable {
     private let repoLimit: Int
     private let parentTokenLimit: Int
     private let minimumEvidenceScore: Double
+    private let minimumVectorSimilarity: Double
+    private let enabledSources: Set<RAGChunkSource>
 
     init(
         chunkRepository: any RAGChunkRepositoryProtocol,
@@ -38,14 +40,19 @@ struct KnowledgeRAGRetriever: Sendable {
         childLimit: Int = 60,
         repoLimit: Int = 5,
         parentTokenLimit: Int = 1_600,
-        minimumEvidenceScore: Double = 0.08
+        minimumEvidenceScore: Double = 0.08,
+        retrievalSettings: RAGRetrievalSettings = .balanced
     ) {
+        let retrievalSettings = retrievalSettings.normalized()
+        var fusionConfiguration = fusion.configuration
+        fusionConfiguration.perRepoLimit = retrievalSettings.perRepositoryEvidenceLimit
+        fusionConfiguration.totalLimit = retrievalSettings.finalEvidenceChunkLimit
         self.chunkRepository = chunkRepository
         self.keywordProvider = keywordProvider
         self.vectorProvider = vectorProvider
         self.privateRepoKeywordProvider = privateRepoKeywordProvider ?? keywordProvider
         self.privateRepoVectorProvider = privateRepoVectorProvider ?? vectorProvider
-        self.fusion = fusion
+        self.fusion = RAGHybridFusionEngine(configuration: fusionConfiguration)
         self.parentPacker = parentPacker
         self.embeddingClient = embeddingClient
         self.embeddingModel = embeddingModel
@@ -53,6 +60,8 @@ struct KnowledgeRAGRetriever: Sendable {
         self.repoLimit = repoLimit
         self.parentTokenLimit = parentTokenLimit
         self.minimumEvidenceScore = minimumEvidenceScore
+        self.minimumVectorSimilarity = retrievalSettings.minimumVectorSimilarity
+        self.enabledSources = retrievalSettings.enabledSources
     }
 
     func hasReadyChunks(repoIDs: [Int64]) async throws -> Bool {
@@ -68,7 +77,7 @@ struct KnowledgeRAGRetriever: Sendable {
         progress: @Sendable (RAGRetrievalProgress) -> Void = { _ in }
     ) async throws -> RAGRetrievalResult {
         let query = semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, !candidates.isEmpty else {
+        guard !query.isEmpty, !candidates.isEmpty, !enabledSources.isEmpty else {
             return RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
         }
 
@@ -98,13 +107,19 @@ struct KnowledgeRAGRetriever: Sendable {
         if let error = vector.error {
             AppLog.ai.warning("RAG vector retrieval degraded: \(error.localizedDescription, privacy: .public)")
         }
-        progress(.keywordSearchCompleted(keyword.hits.count))
-        progress(.semanticSearchCompleted(vector.hits.count))
+        let eligibleKeywordHits = keyword.hits.filter { enabledSources.contains($0.chunk.source) }
+        // 向量门槛只作用于 vector 分支；keyword 精确命中仍可独立进入融合，符合设置页的说明。
+        let eligibleVectorHits = vector.hits.filter {
+            enabledSources.contains($0.chunk.source)
+                && ($0.vectorSimilarity ?? $0.score) >= minimumVectorSimilarity
+        }
+        progress(.keywordSearchCompleted(eligibleKeywordHits.count))
+        progress(.semanticSearchCompleted(eligibleVectorHits.count))
         if failures.count == 2, let error = failures.first { throw error }
         let preferred = explicitMode == .prefer ? Set(explicitRepoIDs) : []
         let hits = fusion.fuse(
-            keywordHits: keyword.hits,
-            vectorHits: vector.hits,
+            keywordHits: eligibleKeywordHits,
+            vectorHits: eligibleVectorHits,
             preferredRepoIDs: preferred
         ).filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)

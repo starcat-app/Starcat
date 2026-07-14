@@ -122,6 +122,52 @@ struct RAGHybridFusionConfiguration: Equatable, Sendable {
     var totalLimit = 24
 }
 
+/// 用户可控制的 RAG 证据筛选边界。
+///
+/// 这些参数只决定“哪些本地证据进入本轮上下文”，不会改变索引、embedding 模型或融合权重。
+/// 保留 keyword 召回独立于向量阈值，确保仓库名、API 名和错误码等精确匹配不会被语义分数误杀。
+struct RAGRetrievalSettings: Codable, Equatable, Sendable {
+    var minimumVectorSimilarity: Double
+    var finalEvidenceChunkLimit: Int
+    var perRepositoryEvidenceLimit: Int
+    var evidenceTokenBudget: Int
+    var enabledSources: Set<RAGChunkSource>
+
+    static let balanced = RAGRetrievalSettings(
+        minimumVectorSimilarity: 0.65,
+        finalEvidenceChunkLimit: 8,
+        perRepositoryEvidenceLimit: 3,
+        evidenceTokenBudget: 8_000,
+        enabledSources: Set(RAGChunkSource.allCases)
+    )
+
+    static let strict = RAGRetrievalSettings(
+        minimumVectorSimilarity: 0.75,
+        finalEvidenceChunkLimit: 5,
+        perRepositoryEvidenceLimit: 2,
+        evidenceTokenBudget: 6_000,
+        enabledSources: Set(RAGChunkSource.allCases)
+    )
+
+    static let broad = RAGRetrievalSettings(
+        minimumVectorSimilarity: 0.55,
+        finalEvidenceChunkLimit: 10,
+        perRepositoryEvidenceLimit: 4,
+        evidenceTokenBudget: 12_000,
+        enabledSources: Set(RAGChunkSource.allCases)
+    )
+
+    /// 让手工输入和旧 JSON 都落在安全范围内，避免一次配置把上下文撑爆。
+    func normalized() -> RAGRetrievalSettings {
+        var settings = self
+        settings.minimumVectorSimilarity = min(max(settings.minimumVectorSimilarity, 0), 1)
+        settings.finalEvidenceChunkLimit = min(max(settings.finalEvidenceChunkLimit, 3), 12)
+        settings.perRepositoryEvidenceLimit = min(max(settings.perRepositoryEvidenceLimit, 1), 5)
+        settings.evidenceTokenBudget = min(max(settings.evidenceTokenBudget, 2_000), 16_000)
+        return settings
+    }
+}
+
 struct RAGHybridFusionEngine: Sendable {
     var configuration = RAGHybridFusionConfiguration()
 

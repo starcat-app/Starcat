@@ -106,8 +106,8 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
             onPinnedChange: { [weak window] isPinned in
                 window?.level = isPinned ? .floating : .normal
             },
-            onPromptSettings: { [chromeState] in
-                chromeState.isPromptSettingsPresented = true
+            onSettings: { [chromeState] in
+                chromeState.isSettingsPresented = true
             }
         ))
         // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。

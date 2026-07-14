@@ -543,6 +543,102 @@ struct KnowledgeRAGCoreTests {
         #expect(result.childHits.first?.kind == .keyword)
     }
 
+    @Test("检索设置仅过滤向量阈值，并尊重证据来源开关")
+    func retrievalSettingsFilterVectorAndSources() async throws {
+        let database = try InMemoryDatabaseManager()
+        let keywordChunk = fixtureChunk(id: 82, repoID: 1, source: .readme)
+        let lowSimilarityChunk = fixtureChunk(id: 83, repoID: 1, source: .readme)
+        let disabledSourceChunk = fixtureChunk(id: 84, repoID: 1, source: .metadata)
+        let highSimilarityChunk = fixtureChunk(id: 85, repoID: 1, source: .readme)
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: [RAGChildHit(chunk: keywordChunk, score: 1, kind: .keyword)],
+                shouldThrow: false
+            ),
+            vectorProvider: StubRAGVectorProvider(
+                backendName: "SQLite",
+                hits: [
+                    RAGChildHit(chunk: lowSimilarityChunk, score: 0.64, kind: .vector, vectorSimilarity: 0.64),
+                    RAGChildHit(chunk: disabledSourceChunk, score: 0.99, kind: .vector, vectorSimilarity: 0.99),
+                    RAGChildHit(chunk: highSimilarityChunk, score: 0.80, kind: .vector, vectorSimilarity: 0.80)
+                ],
+                shouldThrow: false
+            ),
+            embeddingClient: SpyRAGAIClient(),
+            embeddingModel: "embed",
+            retrievalSettings: RAGRetrievalSettings(
+                minimumVectorSimilarity: 0.65,
+                finalEvidenceChunkLimit: 8,
+                perRepositoryEvidenceLimit: 3,
+                evidenceTokenBudget: 8_000,
+                enabledSources: [.readme]
+            )
+        )
+
+        let result = try await retriever.retrieve(
+            semanticQuery: "database",
+            candidates: [RAGRepoCandidate(
+                repo: fixtureRepo(id: 1, isPrivate: false),
+                status: .using,
+                libraryUpdatedAt: nil,
+                tagNames: []
+            )],
+            explicitMode: .only,
+            explicitRepoIDs: []
+        )
+
+        #expect(Set(result.childHits.compactMap(\.chunk.id)) == [82, 85])
+        #expect(result.childHits.contains { $0.kind == .keyword })
+    }
+
+    @Test("检索设置会限制最终证据总数与单仓库证据数")
+    func retrievalSettingsCapFinalEvidence() async throws {
+        let database = try InMemoryDatabaseManager()
+        let firstRepoFirst = fixtureChunk(id: 86, repoID: 1, source: .readme)
+        let firstRepoSecond = fixtureChunk(id: 87, repoID: 1, source: .readme)
+        let secondRepoFirst = fixtureChunk(id: 88, repoID: 2, source: .readme)
+        let thirdRepoFirst = fixtureChunk(id: 89, repoID: 3, source: .readme)
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: [
+                    RAGChildHit(chunk: firstRepoFirst, score: 1, kind: .keyword),
+                    RAGChildHit(chunk: firstRepoSecond, score: 0.5, kind: .keyword),
+                    RAGChildHit(chunk: secondRepoFirst, score: 1.0 / 3, kind: .keyword),
+                    RAGChildHit(chunk: thirdRepoFirst, score: 0.25, kind: .keyword)
+                ],
+                shouldThrow: false
+            ),
+            vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            embeddingClient: SpyRAGAIClient(),
+            embeddingModel: "embed",
+            retrievalSettings: RAGRetrievalSettings(
+                minimumVectorSimilarity: 0.65,
+                finalEvidenceChunkLimit: 3,
+                perRepositoryEvidenceLimit: 1,
+                evidenceTokenBudget: 8_000,
+                enabledSources: [.readme]
+            )
+        )
+
+        let result = try await retriever.retrieve(
+            semanticQuery: "database",
+            candidates: [
+                RAGRepoCandidate(repo: fixtureRepo(id: 1, isPrivate: false), status: .using, libraryUpdatedAt: nil, tagNames: []),
+                RAGRepoCandidate(repo: fixtureRepo(id: 2, isPrivate: false), status: .using, libraryUpdatedAt: nil, tagNames: []),
+                RAGRepoCandidate(repo: fixtureRepo(id: 3, isPrivate: false), status: .using, libraryUpdatedAt: nil, tagNames: [])
+            ],
+            explicitMode: .only,
+            explicitRepoIDs: []
+        )
+
+        #expect(result.childHits.count == 3)
+        #expect(Set(result.childHits.map(\.chunk.repoId)) == [1, 2, 3])
+    }
+
     @Test("Parent context 围绕后段命中而不是只取章节开头")
     func parentContextIncludesAnchorChunk() throws {
         let chunks = (1...4).map { index -> RAGChunk in

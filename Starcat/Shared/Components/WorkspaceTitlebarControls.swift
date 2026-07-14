@@ -8,6 +8,7 @@
 //  - 左栏折叠 / 展开
 //  - 右栏折叠 / 展开
 //  - 窗口置顶 / 取消置顶
+//  - RAG 专用：打开配置 Sheet（提示词 + 检索）
 //
 
 import SwiftUI
@@ -21,8 +22,8 @@ final class WorkspaceChromeState {
     var isLeftColumnCollapsed: Bool = false
     var isRightColumnCollapsed: Bool = false
     var isPinned: Bool = false
-    /// RAG 工作台专用：titlebar `p.circle` 打开提示词 Sheet；Agent 不用。
-    var isPromptSettingsPresented: Bool = false
+    /// RAG 工作台专用：titlebar 齿轮打开配置 Sheet（提示词 + 检索）；Agent 不用。
+    var isSettingsPresented: Bool = false
 }
 
 /// 放在 `NSTitlebarAccessoryViewController` 内的窗口级图标按钮组。
@@ -30,8 +31,8 @@ struct WorkspaceTitlebarControls: View {
 
     @Bindable var chromeState: WorkspaceChromeState
     let onPinnedChange: (Bool) -> Void
-    /// RAG 工作台专用：右上角 `p.circle` 打开提示词设置；Agent 不传则不显示。
-    var onPromptSettings: (() -> Void)? = nil
+    /// RAG 工作台专用：右上角齿轮打开配置；Agent 不传则不显示。
+    var onSettings: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -66,13 +67,13 @@ struct WorkspaceTitlebarControls: View {
                 onPinnedChange(chromeState.isPinned)
             }
 
-            if let onPromptSettings {
+            if let onSettings {
                 controlButton(
-                    systemImage: "p.circle",
+                    systemImage: "gearshape",
                     isActive: false,
-                    helpKey: "rag.workspace.prompt.open"
+                    helpKey: "rag.workspace.settings.open"
                 ) {
-                    onPromptSettings()
+                    onSettings()
                 }
             }
         }

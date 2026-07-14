@@ -369,6 +369,7 @@ struct AppSettingsTests {
         #expect(s.ragPromptSettings.compressor.userPromptTemplate.contains("{newMessagesSection}"))
         #expect(s.ragPromptSettings.title.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.title.userPromptTemplate.contains("{firstQuestion}"))
+        #expect(s.ragRetrievalSettings == .balanced)
     }
 
     @Test("RAG: Generator/Planner/Compressor/Title 提示词配置应持久化")
@@ -403,6 +404,26 @@ struct AppSettingsTests {
         #expect(s2.ragPromptSettings.compressor.userPromptTemplate == "COMP_USER {existingSummarySection}{newMessagesSection}")
         #expect(s2.ragPromptSettings.title.systemPrompt == "TITLE_SYS {outputLanguage}")
         #expect(s2.ragPromptSettings.title.userPromptTemplate == "TITLE_USER {firstQuestion}")
+    }
+
+    @Test("RAG: 检索设置应持久化，并在读取时钳制安全范围")
+    func ragRetrievalSettingsPersistAndNormalize() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.ragRetrievalSettings = RAGRetrievalSettings(
+            minimumVectorSimilarity: 1.8,
+            finalEvidenceChunkLimit: 99,
+            perRepositoryEvidenceLimit: 0,
+            evidenceTokenBudget: 99_999,
+            enabledSources: [.notes]
+        )
+
+        let restored = AppSettings(defaults: defaults).ragRetrievalSettings
+        #expect(restored.minimumVectorSimilarity == 1)
+        #expect(restored.finalEvidenceChunkLimit == 12)
+        #expect(restored.perRepositoryEvidenceLimit == 1)
+        #expect(restored.evidenceTokenBudget == 16_000)
+        #expect(restored.enabledSources == [.notes])
     }
 
     @Test("RAG: 旧版只有 Generator/Planner 的提示词 JSON 升级后应补齐默认压缩与标题")

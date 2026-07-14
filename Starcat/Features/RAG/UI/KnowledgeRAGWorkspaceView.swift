@@ -54,8 +54,8 @@ struct KnowledgeRAGWorkspaceView: View {
             )
                 .appLocaleEnvironment()
         }
-        .sheet(isPresented: $chromeState.isPromptSettingsPresented) {
-            RAGWorkspacePromptSettingsSheet(settings: dependencies.settings)
+        .sheet(isPresented: $chromeState.isSettingsPresented) {
+            RAGWorkspaceSettingsSheet(settings: dependencies.settings)
         }
         .sheet(isPresented: $viewModel.isAddToLibraryPresented) {
             RAGAddToLibrarySheet()
