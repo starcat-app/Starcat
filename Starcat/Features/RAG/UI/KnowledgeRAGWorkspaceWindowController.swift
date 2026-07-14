@@ -737,33 +737,35 @@ private struct KnowledgeRAGBrowserView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                Button { viewModel.runRetrievalTest() } label: {
-                    Group {
-                        if viewModel.isTestingRetrieval {
-                            // 加载态占住按钮位，避免输入框下方再挂一颗 ProgressView。
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(.white)
-                        } else {
+                Group {
+                    if viewModel.isTestingRetrieval {
+                        // 加载中：系统默认 ProgressView，随明暗主题自动变色，不加彩色底。
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 24, height: 24)
+                            .accessibilityLabel(Text("rag.browser.retrieval.run"))
+                    } else {
+                        Button { viewModel.runRetrievalTest() } label: {
                             Image(systemName: "testtube.2")
                                 .font(.caption.weight(.semibold))
+                                .frame(width: 24, height: 24)
                         }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .foregroundStyle(.white)
+                        .background(
+                            Circle().fill(
+                                viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? Color.accentColor.opacity(0.4)
+                                    : Color.accentColor
+                            )
+                        )
+                        .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityLabel(Text("rag.browser.retrieval.run"))
+                        .help(Text("rag.browser.retrieval.run"))
+                        .pointerStyle(.link)
                     }
-                    .frame(width: 24, height: 24)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .foregroundStyle(.white)
-                .background(
-                    viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? Color.accentColor.opacity(0.4)
-                        : Color.accentColor,
-                    in: Circle()
-                )
-                .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isTestingRetrieval)
-                .accessibilityLabel(Text("rag.browser.retrieval.run"))
-                .help(Text("rag.browser.retrieval.run"))
-                .pointerStyle(.link)
                 // 相对输入框描边：右/下同为 6，贴角对称。
                 .padding(.leading, 8)
                 .padding(.top, 8)
