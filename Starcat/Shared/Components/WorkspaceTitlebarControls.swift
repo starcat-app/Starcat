@@ -21,7 +21,7 @@ final class WorkspaceChromeState {
     var isLeftColumnCollapsed: Bool = false
     var isRightColumnCollapsed: Bool = false
     var isPinned: Bool = false
-    /// RAG 工作台专用：titlebar 齿轮打开提示词 Sheet；Agent 不用。
+    /// RAG 工作台专用：titlebar `p.circle` 打开提示词 Sheet；Agent 不用。
     var isPromptSettingsPresented: Bool = false
 }
 
@@ -30,7 +30,7 @@ struct WorkspaceTitlebarControls: View {
 
     @Bindable var chromeState: WorkspaceChromeState
     let onPinnedChange: (Bool) -> Void
-    /// RAG 工作台专用：右上角齿轮打开提示词设置；Agent 不传则不显示。
+    /// RAG 工作台专用：右上角 `p.circle` 打开提示词设置；Agent 不传则不显示。
     var onPromptSettings: (() -> Void)? = nil
 
     var body: some View {
@@ -68,7 +68,7 @@ struct WorkspaceTitlebarControls: View {
 
             if let onPromptSettings {
                 controlButton(
-                    systemImage: "gearshape",
+                    systemImage: "p.circle",
                     isActive: false,
                     helpKey: "rag.workspace.prompt.open"
                 ) {
@@ -78,7 +78,7 @@ struct WorkspaceTitlebarControls: View {
         }
         .padding(.trailing, 10)
         // NSTitlebarAccessoryViewController 不会可靠地从 SwiftUI 内容推导尺寸。
-        // 按钮数可变（Agent 3 / RAG 4），用 fixedSize 避免齿轮被裁掉。
+        // 按钮数可变（Agent 3 / RAG 4），用 fixedSize 避免末尾按钮被裁掉。
         .fixedSize(horizontal: true, vertical: false)
         .frame(height: 32, alignment: .trailing)
         // titlebar accessory 是独立 hosting 树，不继承主窗口 locale。
