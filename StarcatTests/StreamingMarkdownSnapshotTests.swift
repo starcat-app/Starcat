@@ -49,6 +49,69 @@ struct StreamingMarkdownSnapshotTests {
         #expect(buffer.flush(now: 0.3) == nil)
     }
 
+    @Test("Think 首个 delta 展开且正文开始时无损折叠")
+    func reasoningPresentationTransitionsAtFirstAnswerDelta() {
+        var buffer = StreamingReasoningPresentationBuffer(
+            throttleInterval: 10,
+            immediateCharacterCount: 100
+        )
+
+        let first = buffer.append("先检查", now: 0)
+        #expect(first?.text == "先检查")
+        #expect(first?.isStreaming == true)
+        #expect(buffer.append("知识库证据", now: 0.1) == nil)
+
+        let completed = buffer.completeReasoning(now: 0.2)
+        #expect(completed?.text == "先检查知识库证据")
+        #expect(completed?.isStreaming == false)
+        #expect(buffer.completeReasoning(now: 0.3) == nil)
+        #expect(buffer.finish(now: 0.4) == nil)
+        #expect(buffer.text == "先检查知识库证据")
+    }
+
+    @Test("高频长 Think 低频发布且完成态保留全部内容")
+    func reasoningPresentationThrottlesWithoutDroppingContent() {
+        var buffer = StreamingReasoningPresentationBuffer(
+            throttleInterval: 0.15,
+            immediateCharacterCount: 256
+        )
+        var lastSnapshot: StreamingReasoningSnapshot?
+        var presentationCount = 0
+
+        for index in 0..<10_000 {
+            if let snapshot = buffer.append("x", now: Double(index) / 1_000) {
+                lastSnapshot = snapshot
+                presentationCount += 1
+            }
+        }
+        if let completed = buffer.completeReasoning(now: 10) {
+            lastSnapshot = completed
+            presentationCount += 1
+        }
+
+        #expect(buffer.text == String(repeating: "x", count: 10_000))
+        #expect(lastSnapshot?.text == buffer.text)
+        #expect(lastSnapshot?.isStreaming == false)
+        #expect(presentationCount < 100)
+    }
+
+    @Test("正文开始后的迟到 reasoning 不会重新展开")
+    func lateReasoningStaysCollapsedAndFlushesAtFinish() {
+        var buffer = StreamingReasoningPresentationBuffer(
+            throttleInterval: 10,
+            immediateCharacterCount: 100
+        )
+
+        #expect(buffer.completeReasoning(now: 0) == nil)
+        let late = buffer.append("迟到", now: 0.1)
+        #expect(late?.isStreaming == false)
+        #expect(buffer.append("内容", now: 0.2) == nil)
+
+        let completed = buffer.finish(now: 0.3)
+        #expect(completed?.text == "迟到内容")
+        #expect(completed?.isStreaming == false)
+    }
+
     @Test("短回答全部保留在 live tail")
     func shortAnswerStaysInTail() {
         let result = StreamingMarkdownChunker.split("hello **world**", preferredChunkLength: 20)

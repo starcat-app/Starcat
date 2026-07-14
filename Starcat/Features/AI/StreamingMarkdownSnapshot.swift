@@ -57,6 +57,87 @@ struct StreamingTextPresentationBuffer: Sendable {
     }
 }
 
+/// 主窗口 AI 对话中一次 Think 展示提交对应的状态。
+///
+/// `isStreaming` 只描述 reasoning 阶段：provider 明确结束 reasoning，或首个正文 delta
+/// 到达后即变为 `false`，让 UI 自动折叠 Think；整个 assistant 回答仍可继续流式生成。
+/// `revision` 专门用于滚动跟随，避免用增长文本作为 SwiftUI `onChange` 输入。
+struct StreamingReasoningSnapshot: Equatable, Sendable {
+    let text: String
+    let isStreaming: Bool
+    let revision: Int
+}
+
+/// 协调主窗口 AI 对话的 reasoning 展示边界。
+///
+/// reasoning 期间复用 `StreamingTextPresentationBuffer` 降频；provider 的
+/// `reasoningCompleted` 是首选完成边界，首个正文 delta 是兼容未发送该事件的兜底。
+/// 两条路径都会强制 flush 并发布完成态；取消、失败或只有 reasoning 没有正文时，再由
+/// `finish()` 无损收口。
+struct StreamingReasoningPresentationBuffer: Sendable {
+    private var textBuffer: StreamingTextPresentationBuffer
+    private var reasoningCompleted = false
+    private var completionPublished = false
+    private var revision = 0
+
+    var text: String { textBuffer.text }
+
+    init(throttleInterval: TimeInterval = 0.15, immediateCharacterCount: Int = 256) {
+        textBuffer = StreamingTextPresentationBuffer(
+            throttleInterval: throttleInterval,
+            immediateCharacterCount: immediateCharacterCount
+        )
+    }
+
+    /// 首个 delta 立即展开 Think；后续只在时间或字符阈值满足时发布完整快照。
+    mutating func append(_ delta: String, now: TimeInterval) -> StreamingReasoningSnapshot? {
+        guard let presentedText = textBuffer.append(delta, now: now) else { return nil }
+        if reasoningCompleted { completionPublished = true }
+        return makeSnapshot(text: presentedText, isStreaming: !reasoningCompleted)
+    }
+
+    /// 明确的完成事件和首个正文 delta 共用此入口；重复调用不会制造额外 UI 刷新。
+    mutating func completeReasoning(now: TimeInterval) -> StreamingReasoningSnapshot? {
+        guard !reasoningCompleted else { return nil }
+        reasoningCompleted = true
+        return makeCompletionSnapshot(now: now)
+    }
+
+    /// 成功、取消或失败退出前补发尚未展示的 reasoning，并确保状态为已完成。
+    mutating func finish(now: TimeInterval) -> StreamingReasoningSnapshot? {
+        reasoningCompleted = true
+        return makeCompletionSnapshot(now: now)
+    }
+
+    private mutating func makeCompletionSnapshot(
+        now: TimeInterval
+    ) -> StreamingReasoningSnapshot? {
+        guard !textBuffer.text.isEmpty else { return nil }
+
+        // 即使已发布过完成态，也要先尝试 flush：极少数 Provider 可能在正文开始后
+        // 继续送 reasoning delta，不能因此丢掉最后一小段。
+        if let presentedText = textBuffer.flush(now: now) {
+            completionPublished = true
+            return makeSnapshot(text: presentedText, isStreaming: false)
+        }
+        guard !completionPublished else { return nil }
+        completionPublished = true
+        return makeSnapshot(text: textBuffer.text, isStreaming: false)
+    }
+
+    private mutating func makeSnapshot(
+        text: String,
+        isStreaming: Bool
+    ) -> StreamingReasoningSnapshot {
+        revision += 1
+        return StreamingReasoningSnapshot(
+            text: text,
+            isStreaming: isStreaming,
+            revision: revision
+        )
+    }
+}
+
 /// 一次流式 UI 提交对应的展示数据。
 struct StreamingMarkdownSnapshot: Equatable, Sendable {
     let messageID: UUID

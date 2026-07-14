@@ -492,6 +492,7 @@ final class RepoAIInsightService {
         // 聊天链路只上抛本次新增 delta。正文与 provider 公开推理均由 ViewModel 单点累积，
         // 避免 SDK、service、UI 三层各复制一次不断增长的完整字符串。
         onReasoningDelta: (@MainActor (String) -> Void)? = nil,
+        onReasoningCompleted: (@MainActor () -> Void)? = nil,
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         try entitlementGate?.requirePro(.aiChat)
@@ -529,7 +530,7 @@ final class RepoAIInsightService {
             case .reasoningDelta(let delta):
                 onReasoningDelta?(delta)
             case .reasoningCompleted:
-                break
+                onReasoningCompleted?()
             case .delta(let delta):
                 accumulated += delta
                 onDelta?(delta)

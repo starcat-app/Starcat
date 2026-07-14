@@ -106,6 +106,32 @@ struct DiskChatHistoryStoreTests {
         #expect(loaded?.messages.count == 3)
     }
 
+    @Test("JSON 与 SQLite 后端都保留 assistant reasoning")
+    func reasoningRoundTripsAcrossStorageBackends() throws {
+        let stores = [try makeIsolatedStore(), try makeIsolatedSQLiteStore()]
+
+        for (store, root) in stores {
+            defer { cleanup(root) }
+            let assistant = ChatMessage(
+                role: .assistant,
+                content: "最终回答",
+                reasoning: "先检查上下文，再组织回答",
+                isStreaming: false
+            )
+            let session = ChatSession(title: "reasoning", messages: [assistant])
+
+            try store.saveSession(owner: "octo", repo: "demo", session: session)
+            let loaded = try store.loadSession(
+                owner: "octo",
+                repo: "demo",
+                sessionId: session.id
+            )
+
+            #expect(loaded?.messages.first?.reasoning == "先检查上下文，再组织回答")
+            #expect(loaded?.messages.first?.content == "最终回答")
+        }
+    }
+
     @Test("异步 listSessions 与同步入口结果一致")
     func listSessionsAsync() async throws {
         let (store, root) = try makeIsolatedStore()

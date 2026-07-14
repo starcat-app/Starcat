@@ -14,7 +14,8 @@
 //  关键约束：
 //  - SQLite 后端不接入主库 `DatabaseManager` / `DatabaseMigrationsV1`，避免大量聊天历史
 //    与 stars、tags、README 等主业务读写抢同一个 SQLite writer。
-//  - 本项目未上线，无需兼容已删除旧 schema；JSON chunk 作为一个正式后端保留。
+//  - SQLite 已承载正式版用户历史；schema 只能追加 migration，禁止回写 v1 或要求删库。
+//    JSON chunk 作为另一个正式后端保留。
 //  - facade 是 `@MainActor @Observable`，后端可以在内部把重 IO 放进 detached task。
 //
 
@@ -813,6 +814,7 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
                     id: message.id.uuidString,
                     role: message.role.rawValue,
                     content: message.content,
+                    reasoning: message.reasoning,
                     timestamp: message.timestamp.timeIntervalSince1970
                 )
                 try messageRow.insert(db)
@@ -937,6 +939,13 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
             try db.create(index: "idx_chat_sessions_repo_updated", on: "chat_sessions", columns: ["owner", "repo", "updated_at"])
             try db.create(index: "idx_chat_messages_session_ordinal", on: "chat_messages", columns: ["session_id", "ordinal"])
+        }
+        migrator.registerMigration("v2-chat-message-reasoning") { db in
+            // 独立 chat-history SQLite 也可能来自已发布版本。reasoning 是可空列，
+            // 旧消息迁移后自然保持 nil，新消息开始保存 provider 公开的 Think 内容。
+            try db.alter(table: "chat_messages") { table in
+                table.add(column: "reasoning", .text)
+            }
         }
         try migrator.migrate(writer)
     }
@@ -1069,6 +1078,7 @@ private struct ChatMessageSQLRow: Codable, FetchableRecord, MutablePersistableRe
     var id: String
     var role: String
     var content: String
+    var reasoning: String?
     var timestamp: Double
 
     enum CodingKeys: String, CodingKey {
@@ -1077,6 +1087,7 @@ private struct ChatMessageSQLRow: Codable, FetchableRecord, MutablePersistableRe
         case id
         case role
         case content
+        case reasoning
         case timestamp
     }
 
@@ -1085,6 +1096,7 @@ private struct ChatMessageSQLRow: Codable, FetchableRecord, MutablePersistableRe
             id: UUID(uuidString: id) ?? UUID(),
             role: ChatMessage.Role(rawValue: role) ?? .assistant,
             content: content,
+            reasoning: reasoning,
             timestamp: Date(timeIntervalSince1970: timestamp),
             isStreaming: false
         )

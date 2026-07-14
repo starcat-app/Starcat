@@ -281,11 +281,13 @@ private struct AIChatReasoningDisclosure: View {
 
     let content: String
     let isStreaming: Bool
+    let allowsTextSelection: Bool
     @State private var isExpanded: Bool
 
-    init(content: String, isStreaming: Bool) {
+    init(content: String, isStreaming: Bool, allowsTextSelection: Bool = true) {
         self.content = content
         self.isStreaming = isStreaming
+        self.allowsTextSelection = allowsTextSelection
         _isExpanded = State(initialValue: isStreaming)
     }
 
@@ -317,12 +319,19 @@ private struct AIChatReasoningDisclosure: View {
             .focusEffectDisabled()
 
             if isExpanded {
-                Text(content)
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 20)
+                Group {
+                    if allowsTextSelection {
+                        Text(content).textSelection(.enabled)
+                    } else {
+                        // 流式可变文本不创建 SelectionOverlay，避免长 Think 的每次
+                        // 快照都触发 AppKit 选择层和 SwiftUI AttributeGraph 重排。
+                        Text(content)
+                    }
+                }
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 20)
             }
         }
         .onChange(of: isStreaming) { _, streaming in
@@ -338,6 +347,7 @@ private struct AIChatReasoningDisclosure: View {
 /// 每次 revision 更新时，已有 chunk 通过 Equatable 跳过 body，避免全文重复 parse。
 struct AIStreamingChatBubble: View {
     let snapshot: StreamingMarkdownSnapshot
+    let reasoning: StreamingReasoningSnapshot?
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -345,14 +355,26 @@ struct AIStreamingChatBubble: View {
         HStack(alignment: .top, spacing: 8) {
             AIStarcatAssistantAvatar()
             VStack(alignment: .leading, spacing: 6) {
-                if snapshot.isEmpty {
+                if let reasoning {
+                    AIChatReasoningDisclosure(
+                        content: reasoning.text,
+                        isStreaming: reasoning.isStreaming,
+                        allowsTextSelection: false
+                    )
+                }
+
+                if snapshot.isEmpty, reasoning == nil {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("ai.assistant.chat.thinking")
                             .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                     }
-                } else {
+                } else if snapshot.isEmpty, reasoning?.isStreaming == false {
+                    // reasoning 已完成但正文首批快照尚未到达时，保留生成中反馈，
+                    // 避免折叠后短暂只剩一行静态 Think 标题。
+                    streamingIndicator
+                } else if !snapshot.isEmpty {
                     ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
                         StableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
                             .equatable()

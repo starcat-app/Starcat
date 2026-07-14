@@ -1193,6 +1193,12 @@ final class KnowledgeRAGWorkspaceViewModel {
         if let url = citation.sourceURL { NSWorkspace.shared.open(url) }
     }
 
+    /// 回答 / 中间结果里的外链分流。
+    ///
+    /// 设计约定（§11.7.5）：只有「GitHub **repo** 链接」才尝试开本地详情。
+    /// 因此仅当路径恰好是 `owner/repo`（无 `/issues`、`/pull/`、`/blob/` 等后缀）
+    /// 且本地已收录时，才开 Starcat 详情窗；issues / releases 等深层 URL 一律浏览器，
+    /// 避免像 `…/BetterDisplay/issues?q=…` 这种外链被误导向详情页。
     func handleLink(_ url: URL) {
         if openCitationLink(url) { return }
         let host = url.host?.lowercased()
@@ -1201,7 +1207,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             return
         }
         let parts = url.pathComponents.filter { $0 != "/" }
-        guard parts.count >= 2 else {
+        // `parts.count == 2` → 纯仓库首页；更深路径不是 repo 链接语义。
+        guard parts.count == 2 else {
             NSWorkspace.shared.open(url)
             return
         }

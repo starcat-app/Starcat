@@ -162,6 +162,10 @@ final class RepoAIChatViewModel {
     /// 随批次更新；UI 因此无需在每次提交时重新解析完整回答。
     private(set) var streamingPresentation: StreamingMarkdownSnapshot?
 
+    /// 流式 Think 的独立展示快照。完整 reasoning 留在 buffer，UI 只接收降频快照；
+    /// 首个正文 delta 到达后 `isStreaming` 变为 false，驱动折叠区自动收起。
+    private(set) var streamingReasoningPresentation: StreamingReasoningSnapshot?
+
     /// `messages.first` 在完整 session messages 数组中的下标。0 表示已经加载到最早消息。
     private(set) var messageStartIndex: Int = 0
 
@@ -514,6 +518,7 @@ final class RepoAIChatViewModel {
         persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
 
         streamingMessage = assistantPlaceholder
+        streamingReasoningPresentation = nil
         streamingPresentation = StreamingMarkdownSnapshot(
             messageID: assistantPlaceholder.id,
             timestamp: assistantPlaceholder.timestamp,
@@ -549,7 +554,7 @@ final class RepoAIChatViewModel {
         // 未闭合尾部走纯 Text；最终完成时才渲染一次完整 Markdown。
         var lastCommitAt: TimeInterval = 0
         var accumulated = ""
-        var accumulatedReasoning = ""
+        var reasoningPresentationBuffer = StreamingReasoningPresentationBuffer()
         var pendingCharacterCount = 0
         var renderRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
@@ -565,17 +570,29 @@ final class RepoAIChatViewModel {
                 codeFlowPageURL: codeFlowPageURL,
                 onReasoningDelta: { [weak self] delta in
                     guard let self else { return }
-                    accumulatedReasoning += delta
-                    guard var streaming = self.streamingMessage else { return }
-                    streaming.reasoning = accumulatedReasoning
-                    self.streamingMessage = streaming
+                    let now = Date.timeIntervalSinceReferenceDate
+                    if let snapshot = reasoningPresentationBuffer.append(delta, now: now) {
+                        self.streamingReasoningPresentation = snapshot
+                    }
+                },
+                onReasoningCompleted: { [weak self] in
+                    guard let self else { return }
+                    let now = Date.timeIntervalSinceReferenceDate
+                    if let snapshot = reasoningPresentationBuffer.completeReasoning(now: now) {
+                        self.streamingReasoningPresentation = snapshot
+                    }
                 }
             ) { [weak self] delta in
                 guard let self else { return }
+                let now = Date.timeIntervalSinceReferenceDate
+                // 部分 OpenAI-compatible 服务不会发送 reasoningCompleted；首个正文
+                // delta 复用同一入口兜底，保证 Think 一定会自动折叠。
+                if let reasoningSnapshot = reasoningPresentationBuffer.completeReasoning(now: now) {
+                    self.streamingReasoningPresentation = reasoningSnapshot
+                }
                 accumulated += delta
                 markdownAssembler.append(delta)
                 pendingCharacterCount += delta.count
-                let now = Date.timeIntervalSinceReferenceDate
                 guard now - lastCommitAt >= throttleInterval
                         || pendingCharacterCount >= immediateCommitCharacterCount else { return }
                 lastCommitAt = now
@@ -590,10 +607,13 @@ final class RepoAIChatViewModel {
                 )
             }
 
+            let reasoningFinishTime = Date.timeIntervalSinceReferenceDate
+            if let reasoningSnapshot = reasoningPresentationBuffer.finish(now: reasoningFinishTime) {
+                streamingReasoningPresentation = reasoningSnapshot
+            }
             if var completed = streamingMessage {
                 completed.content = final
-                let trimmedReasoning = accumulatedReasoning.trimmingCharacters(in: .whitespacesAndNewlines)
-                completed.reasoning = trimmedReasoning.isEmpty ? nil : accumulatedReasoning
+                completed.reasoning = Self.nonEmptyReasoning(reasoningPresentationBuffer.text)
                 completed.isStreaming = false
                 messages.append(completed)
                 totalMessageCount += 1
@@ -601,6 +621,7 @@ final class RepoAIChatViewModel {
                 sessionMessagesForPersist.append(completed)
             }
             streamingMessage = nil
+            streamingReasoningPresentation = nil
             streamingPresentation = nil
             persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
             await refreshSessions(repo: repo)
@@ -614,14 +635,19 @@ final class RepoAIChatViewModel {
             // CancellationError；只要 vm 的 sendTask 被 cancel,Task.isCancelled
             // 就是 true,统一靠这个判。
             if Task.isCancelled {
+                let reasoningFinishTime = Date.timeIntervalSinceReferenceDate
+                if let reasoningSnapshot = reasoningPresentationBuffer.finish(now: reasoningFinishTime) {
+                    streamingReasoningPresentation = reasoningSnapshot
+                }
                 if var stopped = streamingMessage {
                     stopped.content = accumulated
+                    stopped.reasoning = Self.nonEmptyReasoning(reasoningPresentationBuffer.text)
                     stopped.isStreaming = false
                     // 内容为空（用户在首个 token 之前就取消）→ 不留空助手消息，
                     // 避免出现一条"空气泡"。否则正常 append 到 messages。
                     let trimmedStopped = stopped.content
                         .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedStopped.isEmpty {
+                    if !trimmedStopped.isEmpty || stopped.reasoning != nil {
                         messages.append(stopped)
                         totalMessageCount += 1
                         trimVisibleMessagesIfNeeded()
@@ -629,6 +655,7 @@ final class RepoAIChatViewModel {
                     }
                 }
                 streamingMessage = nil
+                streamingReasoningPresentation = nil
                 streamingPresentation = nil
                 // errorMessage 不写、isContextOverflow 不动 —— 取消不是错误。
                 persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
@@ -636,6 +663,10 @@ final class RepoAIChatViewModel {
                 return
             }
 
+            let reasoningFinishTime = Date.timeIntervalSinceReferenceDate
+            if let reasoningSnapshot = reasoningPresentationBuffer.finish(now: reasoningFinishTime) {
+                streamingReasoningPresentation = reasoningSnapshot
+            }
             let rawDescription = error.localizedDescription
             let friendly = UserFacingError.map(
                 error,
@@ -653,6 +684,7 @@ final class RepoAIChatViewModel {
             friendly.record(category: "ai", operation: "chat.stream", service: "ai-provider")
             if var failed = streamingMessage {
                 failed.content = accumulated
+                failed.reasoning = Self.nonEmptyReasoning(reasoningPresentationBuffer.text)
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
                 // 失败占位文案走 i18n：英文 / 中文用户都能看懂自己语言的失败提示。
                 let prefix = failed.content
@@ -669,6 +701,7 @@ final class RepoAIChatViewModel {
                 sessionMessagesForPersist.append(failed)
             }
             streamingMessage = nil
+            streamingReasoningPresentation = nil
             streamingPresentation = nil
             // 失败 turn 也落盘（保留用户消息 + 失败占位，便于回看 / 复制问题反馈）。
             persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
@@ -697,6 +730,7 @@ final class RepoAIChatViewModel {
         guard !isSending else { return }
         messages.removeAll()
         streamingMessage = nil
+        streamingReasoningPresentation = nil
         streamingPresentation = nil
         hasExpandedVisibleHistory = false
         messageStartIndex = 0
@@ -720,6 +754,7 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = nil
         messages.removeAll()
         streamingMessage = nil
+        streamingReasoningPresentation = nil
         streamingPresentation = nil
         hasExpandedVisibleHistory = false
         messageStartIndex = 0
@@ -735,6 +770,7 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = session.carriedOverSummary
         messages = session.messages
         streamingMessage = nil
+        streamingReasoningPresentation = nil
         streamingPresentation = nil
         hasExpandedVisibleHistory = false
         messageStartIndex = 0
@@ -750,6 +786,7 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = page.session.carriedOverSummary
         messages = page.session.messages
         streamingMessage = nil
+        streamingReasoningPresentation = nil
         streamingPresentation = nil
         hasExpandedVisibleHistory = false
         messageStartIndex = page.messageStartIndex
@@ -827,6 +864,12 @@ final class RepoAIChatViewModel {
             return String(firstLine.prefix(30)) + "…"
         }
         return firstLine
+    }
+
+    /// 历史只保存 provider 真正返回的 reasoning；纯空白不生成可展开的 Think 区域。
+    private static func nonEmptyReasoning(_ reasoning: String) -> String? {
+        let trimmed = reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : reasoning
     }
 
     /// 错误描述里命中下列任一关键字 → 视为 context-window 溢出。
