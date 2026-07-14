@@ -32,6 +32,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         question: String,
         plan: RAGQueryPlan,
         retrieval: RAGRetrievalResult,
+        metadataSnapshot: KnowledgeBaseMetadataSnapshot? = nil,
         remoteBlocks: [RAGRemoteContextBlock],
         attachmentContexts: [RAGAttachmentContext],
         history: [AIChatMessage] = [],
@@ -128,12 +129,14 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             """.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // 先按分段裁剪并计量，再填进可编辑模板；删掉模板占位符 = 不注入对应段。
+        let metadataContext = metadataSnapshot.map { "\n\n\($0.promptContext())" } ?? ""
         let questionSection = budget.consume("""
             User question:
             \(question)
 
             Query plan:
             \(planBlock)
+            \(metadataContext)
             """, kind: .question, preferredLimit: 4_096)
         let evidenceBody = evidenceSections.joined(separator: "\n\n---\n\n")
         let evidenceSection = evidenceBody.isEmpty

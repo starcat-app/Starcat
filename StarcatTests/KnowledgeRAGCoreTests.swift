@@ -12,6 +12,46 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @Test("知识库元数据快照提供全局统计与 Star Top 10")
+    func knowledgeBaseMetadataSnapshotProvidesGlobalFacts() async throws {
+        let database = try InMemoryDatabaseManager()
+        for id in 1...3 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: Int64(id), state: .inLibrary)
+        }
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET stars_count = 80, language = 'Swift', pushed_at = datetime('now') WHERE id = 1")
+            try db.execute(sql: "UPDATE repos SET stars_count = 120, language = 'Python', is_starred = 0 WHERE id = 2")
+            try db.execute(sql: "UPDATE repos SET stars_count = 10, language = NULL WHERE id = 3")
+            try db.execute(sql: "UPDATE repo_notes SET status = 'using', library_updated_at = datetime('now') WHERE repo_id = 1")
+            try db.execute(sql: "UPDATE repo_notes SET status = 'inbox', library_updated_at = datetime('now') WHERE repo_id = 2")
+        }
+
+        let snapshot = try await KnowledgeBaseMetadataSnapshotProvider(
+            database: database,
+            embeddingModel: "embed-v1"
+        ).fetch()
+
+        #expect(snapshot.projectCount == 3)
+        #expect(snapshot.starredProjectCount == 2)
+        #expect(snapshot.retainedAfterUnstarCount == 1)
+        #expect(snapshot.knownLanguageProjectCount == 2)
+        #expect(snapshot.unknownLanguageProjectCount == 1)
+        #expect(snapshot.topStarredRepositories.first == .init(fullName: "octo/demo-2", stars: 120))
+        #expect(snapshot.promptContext().contains("octo/demo-2 (120 stars)"))
+
+        let prompt = KnowledgeRAGPromptBuilder().build(
+            question: "知识库有多少项目？",
+            plan: RAGQueryPlan(mode: .structuredOnly, semanticQuery: ""),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            metadataSnapshot: snapshot,
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+        #expect(prompt.userPrompt.contains("Authoritative local knowledge-base metadata snapshot"))
+        #expect(prompt.userPrompt.contains("3 in-library repositories"))
+    }
+
     @Test("索引刷新汇总分别记录仓库构建与向量分片")
     func indexRefreshSummaryKeepsRepositoryAndEmbeddingCountsSeparate() {
         let summary = RAGIndexRefreshSummary(
@@ -728,6 +768,32 @@ struct KnowledgeRAGCoreTests {
         #expect(rendered.contains(String.l10n("rag.workspace.debug.retrieval.settings.title")))
         #expect(rendered.contains(String.l10n("rag.workspace.debug.retrieval.evidenceDetails.title")))
         #expect(rendered.contains("repo: example/repository"))
+    }
+
+    @Test("RAG Debug 清空只删除当前会话的文件")
+    func debugFilesDeleteOnlyCurrentConversation() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("starcat-rag-debug-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = RAGDebugFileStore(rootOverride: root)
+        let conversationID = UUID()
+        let otherConversationID = UUID()
+        let older = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 1_000))
+        let newer = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 2_000))
+        let otherTrace = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 3_000))
+
+        try await store.save(trace: older, conversationID: conversationID, userMessageID: UUID())
+        try await store.save(trace: newer, conversationID: conversationID, userMessageID: UUID())
+        try await store.save(trace: otherTrace, conversationID: otherConversationID, userMessageID: UUID())
+
+        let loaded = try await store.load(conversationID: conversationID)
+        #expect(loaded.map(\.id) == [newer.id, older.id])
+
+        try await store.delete(conversationID: conversationID)
+        let afterDeletion = try await store.load(conversationID: conversationID)
+        #expect(afterDeletion.isEmpty)
+        #expect(try await store.load(conversationID: otherConversationID).map(\.id) == [otherTrace.id])
     }
 
     @Test("Parent context 围绕后段命中而不是只取章节开头")
@@ -2248,6 +2314,19 @@ struct KnowledgeRAGCoreTests {
             updatedAt: nil,
             starredAt: nil,
             cachedAt: nil
+        )
+    }
+
+    /// 文件存储测试不依赖真实 Provider，只验证一轮完整 Debug Trace 的 JSON round-trip。
+    private func fixtureDebugTrace(startedAt: Date) -> RAGDebugTrace {
+        RAGDebugTrace(
+            id: UUID(),
+            category: .questionAnswer,
+            startedAt: startedAt,
+            state: .completed,
+            events: [
+                RAGDebugEvent(stage: .request, elapsedSeconds: 0, payload: "question: test")
+            ]
         )
     }
 }

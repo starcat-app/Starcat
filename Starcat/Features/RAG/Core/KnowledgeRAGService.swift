@@ -16,6 +16,8 @@ enum KnowledgeRAGServiceEvent: Sendable {
     case remoteContextConfirmation([RAGResolvedRemoteWorkItem])
     case remoteContext([RAGRemoteContextBlock])
     case terminal(RAGTerminalResponse)
+    /// 将实际拼入 Generator Prompt 的同一份快照交给工作台，供用户核对数据库事实来源。
+    case metadataSnapshot(KnowledgeBaseMetadataSnapshot)
     /// 仅保存本轮内存快照，供 Composer 复用实际请求的 Context 占用；不写入历史记录。
     case contextUsage(RAGContextUsage)
     case debug(RAGDebugEvent)
@@ -47,8 +49,8 @@ enum RAGExecutionEvent: Sendable {
 ///
 /// 这不是诊断日志，也不会进入会话持久化；只有 `RAGServiceRequest.isDebugEnabled` 为 true
 /// 时才由 Service 发出，窗口关闭或关闭调试模式后即被释放。
-struct RAGDebugEvent: Identifiable, Sendable {
-    enum Stage: String, Sendable {
+struct RAGDebugEvent: Codable, Identifiable, Sendable {
+    enum Stage: String, Codable, Sendable {
         case request
         case plannerPrompt = "planner_prompt"
         case plannerResponse = "planner_response"
@@ -67,7 +69,7 @@ struct RAGDebugEvent: Identifiable, Sendable {
         case failure
     }
 
-    let id = UUID()
+    let id: UUID
     let stage: Stage
     let elapsedSeconds: TimeInterval
     let payload: String
@@ -76,11 +78,13 @@ struct RAGDebugEvent: Identifiable, Sendable {
     let retrievalPayload: RAGRetrievalDebugPayload?
 
     init(
+        id: UUID = UUID(),
         stage: Stage,
         elapsedSeconds: TimeInterval,
         payload: String,
         retrievalPayload: RAGRetrievalDebugPayload? = nil
     ) {
+        self.id = id
         self.stage = stage
         self.elapsedSeconds = elapsedSeconds
         self.payload = payload
@@ -99,7 +103,7 @@ struct RAGDebugEvent: Identifiable, Sendable {
 }
 
 /// 检索阶段的可本地化调试快照。最终证据保持技术明细原文，用户可据此复核真正被送入模型的分片。
-struct RAGRetrievalDebugPayload: Sendable {
+struct RAGRetrievalDebugPayload: Codable, Sendable {
     let diagnostics: RAGRetrievalDiagnostics?
     let evidenceDetails: String
 
@@ -116,13 +120,13 @@ struct RAGRetrievalDebugPayload: Sendable {
 }
 
 /// 一次独立的调试调用。问答与标题生成分别保存，不能共享平铺的事件数组。
-enum RAGDebugTraceCategory: String, Sendable {
+enum RAGDebugTraceCategory: String, Codable, Sendable {
     case questionAnswer = "question_answer"
     case conversationTitle = "conversation_title"
 }
 
-struct RAGDebugTrace: Identifiable, Sendable {
-    enum State: Sendable {
+struct RAGDebugTrace: Codable, Identifiable, Sendable {
+    enum State: String, Codable, Sendable {
         case running
         case completed
         case failed
@@ -250,6 +254,8 @@ struct KnowledgeRAGService: Sendable {
     private let generatorModel: String
     private let generatorParameters: AIModelParameters
     private let promptBuilder: KnowledgeRAGPromptBuilder
+    /// 全局聚合事实与向量证据分离；读取失败时不能让原有问答失败。
+    private let metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider?
     /// 压缩 / 标题与 Generator/Planner 一样走可配置模板；缺省用英文默认值。
     private let compressorPromptConfiguration: AIPromptConfiguration
     private let titlePromptConfiguration: AIPromptConfiguration
@@ -266,6 +272,7 @@ struct KnowledgeRAGService: Sendable {
         generatorModel: String,
         generatorParameters: AIModelParameters,
         promptBuilder: KnowledgeRAGPromptBuilder = .init(),
+        metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider? = nil,
         compressorPromptConfiguration: AIPromptConfiguration = RAGDefaultPrompts.compressor,
         titlePromptConfiguration: AIPromptConfiguration = RAGDefaultPrompts.title,
         outputLanguage: String = "English"
@@ -280,6 +287,7 @@ struct KnowledgeRAGService: Sendable {
         self.generatorModel = generatorModel
         self.generatorParameters = generatorParameters
         self.promptBuilder = promptBuilder
+        self.metadataSnapshotProvider = metadataSnapshotProvider
         self.compressorPromptConfiguration = compressorPromptConfiguration
         self.titlePromptConfiguration = titlePromptConfiguration
         self.outputLanguage = outputLanguage
@@ -681,16 +689,27 @@ struct KnowledgeRAGService: Sendable {
                         continuation.finish()
                         return
                     }
+                    let metadataSnapshot: KnowledgeBaseMetadataSnapshot?
+                    do {
+                        metadataSnapshot = try await metadataSnapshotProvider?.fetch()
+                    } catch {
+                        metadataSnapshot = nil
+                        AppLog.ai.warning("RAG metadata snapshot degraded: \(error.localizedDescription, privacy: .public)")
+                    }
                     let prompt = promptBuilder.build(
                         question: request.rawQuestion,
                         plan: plan,
                         retrieval: retrieval,
+                        metadataSnapshot: metadataSnapshot,
                         remoteBlocks: remoteBlocks,
                         attachmentContexts: attachmentContexts,
                         history: history,
                         contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
                         maximumOutputTokens: generatorParameters.maxCompletionTokens
                     )
+                    if let metadataSnapshot {
+                        continuation.yield(.metadataSnapshot(metadataSnapshot))
+                    }
                     continuation.yield(.contextUsage(prompt.contextUsage))
 
                     continuation.yield(.state(.generating))

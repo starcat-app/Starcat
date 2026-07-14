@@ -43,6 +43,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 打开独立详情窗需要共享主窗 HomeViewModel（star 状态 / registry）。
     private let homeViewModel: HomeViewModel
     private let conversationStore: any RAGConversationStoring
+    /// Debug 历史是可随时删除的辅助文件，刻意与主会话 SQLite 解耦。
+    private let debugFileStore: RAGDebugFileStore
     private var answerTask: Task<Void, Never>?
     /// 计时只覆盖用户实际等待的 RAG 主任务；标题生成和落库不延长用户看到的耗时。
     private var answerTimingTask: Task<Void, Never>?
@@ -121,6 +123,9 @@ final class KnowledgeRAGWorkspaceViewModel {
         failedChunks: 0,
         staleChunks: 0
     )
+    /// Inspector 常显的本地知识库事实。回答流会用实际注入 Prompt 的快照覆盖它，避免面板与
+    /// 当前轮模型看到的数据不一致；工作台初次打开时则主动读取一次，使用户无需先提问也能核验。
+    var knowledgeBaseMetadataSnapshot: KnowledgeBaseMetadataSnapshot?
     /// RAG 工作台内「从 Stars 加入知识库」Sheet；空库空态 / 左栏 / 失败态共用。
     var isAddToLibraryPresented = false
 
@@ -165,10 +170,15 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 当前会话已持久化的语义摘要；只覆盖 recent window 以外的消息，完整历史仍可浏览。
     private var conversationContextSummary: RAGConversationContextSummary?
 
-    init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+    init(
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel,
+        debugFileStore: RAGDebugFileStore = RAGDebugFileStore()
+    ) {
         self.dependencies = dependencies
         self.homeViewModel = homeViewModel
         self.conversationStore = dependencies.ragConversationStore
+        self.debugFileStore = debugFileStore
         let resolvedModelID = Self.resolveInitialModelID(
             savedModelID: dependencies.settings.ragWorkspaceSelectedModelID,
             availableModels: dependencies.knowledgeRAGChatModels,
@@ -352,6 +362,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             knowledgeCandidates = try await loadedCandidates
             knowledgeRepos = knowledgeCandidates.map(\.repo)
             try await refreshIndexCoverage()
+            await refreshKnowledgeBaseMetadataSnapshot()
             if let first = conversations.first {
                 await selectConversation(first.id)
             } else {
@@ -379,6 +390,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 let currentRepoIDs = Set(knowledgeRepos.map(\.id))
                 selectedRepoContexts.removeAll { !currentRepoIDs.contains($0.id) }
                 try await refreshIndexCoverage()
+                await refreshKnowledgeBaseMetadataSnapshot()
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -392,6 +404,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         for await _ in stream {
             guard !Task.isCancelled else { break }
             try? await refreshIndexCoverage()
+            await refreshKnowledgeBaseMetadataSnapshot()
         }
     }
 
@@ -407,6 +420,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedConversationID = conversation.id
             messages = []
             conversationContextSummary = nil
+            debugTraces = []
             resetTurnState()
         } catch {
             errorMessage = error.localizedDescription
@@ -426,6 +440,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedGroupID = nil
             messages = detail.messages
             conversationContextSummary = detail.contextSummary
+            // Debug 文件按会话目录存放。会话切换时仅载入当前会话，避免不同问题的诊断混在一起。
+            // 内存仍保持旧→新，才能让 FIFO 上限正确淘汰最早记录；Inspector 自己倒排展示。
+            debugTraces = ((try? await debugFileStore.load(conversationID: id)) ?? [])
+                .sorted { $0.startedAt < $1.startedAt }
             loadedMessageSequence &+= 1
             let initialCitation = messages.reversed().lazy.flatMap(\.citations).first
             resetTurnState()
@@ -440,6 +458,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         cancelConversationTitleGeneration(for: id)
         do {
             try await conversationStore.deleteConversation(id: id)
+            // Debug 文件是可丢弃数据：删除失败不能让已成功的会话删除回滚或报错。
+            try? await debugFileStore.delete(conversationID: id)
             conversations.removeAll { $0.id == id }
             if selectedConversationID == id {
                 if let next = conversations.first {
@@ -892,6 +912,12 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func clearDebugTraces() {
         debugTraces = []
+        guard let conversationID = selectedConversationID else { return }
+        Task {
+            // 清空只作用于当前会话目录，不能因 Debug 面板操作误删其它会话的可回溯记录。
+            // Debug 文件不存在或写保护都不应影响工作台的正常问答。
+            try? await debugFileStore.delete(conversationID: conversationID)
+        }
     }
 
     /// 左侧标题与索引摘要都指向同一真实数据浏览器，避免用户误以为“知识库”只是装饰标签。
@@ -918,7 +944,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     var debugTraceText: String {
-        debugTraces.sorted { $0.startedAt < $1.startedAt }.map { trace in
+        debugTraces.sorted { $0.startedAt > $1.startedAt }.map { trace in
             let stepDurations = Self.debugEventStepDurations(for: trace.events)
             let events = trace.events.map { event in
                 let step = stepDurations[event.id] ?? event.elapsedSeconds
@@ -1495,6 +1521,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 case .terminal(let response):
                     terminalReply = response.answer
                     suggestedActions = response.suggestedActions
+                case .metadataSnapshot(let snapshot): knowledgeBaseMetadataSnapshot = snapshot
                 case .contextUsage(let usage): lastContextUsage = usage
                 case .debug(let event):
                     appendDebugEvent(event, to: debugTraceID)
@@ -1606,7 +1633,12 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
             }
         }
-        finishDebugTrace(debugTraceID, state: debugTraceState(for: answerState))
+        let finishedDebugTrace = finishDebugTrace(debugTraceID, state: debugTraceState(for: answerState))
+        await persistDebugTrace(
+            finishedDebugTrace,
+            conversationID: conversationID,
+            userMessageID: userMessage.id
+        )
         remoteContextConsent = nil
         if answerState != .generating { streamingPresentation = nil }
         answerTask = nil
@@ -1917,9 +1949,29 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    private func finishDebugTrace(_ traceID: UUID?, state: RAGDebugTrace.State) {
-        guard let traceID, let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return }
+    @discardableResult
+    private func finishDebugTrace(_ traceID: UUID?, state: RAGDebugTrace.State) -> RAGDebugTrace? {
+        guard let traceID, let index = debugTraces.firstIndex(where: { $0.id == traceID }) else { return nil }
         debugTraces[index].state = state
+        return debugTraces[index]
+    }
+
+    /// 仅在本轮结束后写一次完整 JSON，避免 token 级 Debug event 产生高频磁盘 I/O。
+    private func persistDebugTrace(
+        _ trace: RAGDebugTrace?,
+        conversationID: UUID,
+        userMessageID: UUID
+    ) async {
+        guard let trace else { return }
+        do {
+            try await debugFileStore.save(
+                trace: trace,
+                conversationID: conversationID,
+                userMessageID: userMessageID
+            )
+        } catch {
+            // 文件 Debug 是可选辅助信息；失败时保留本轮内存展示，不能中断正常问答。
+        }
     }
 
     /// FIFO 清理最老事件/trace；普通会话与数据库永不依赖 debug trace，因此可安全释放。
@@ -2314,6 +2366,19 @@ final class KnowledgeRAGWorkspaceViewModel {
         indexCoverage = try await dependencies.knowledgeRAGIndexBuilder.coverage()
         indexIssueChunks = [:]
         indexIssueHasMore = []
+    }
+
+    /// 面板初次展示与知识库边界/索引变化后都从固定 SQL 重新读取。失败不能影响问答或索引刷新；
+    /// 下一次成功读取会自然覆盖旧值，而真正发送给模型的一轮快照仍由 Service 事件优先覆盖。
+    private func refreshKnowledgeBaseMetadataSnapshot() async {
+        do {
+            knowledgeBaseMetadataSnapshot = try await KnowledgeBaseMetadataSnapshotProvider(
+                database: dependencies.database,
+                embeddingModel: embeddingModel
+            ).fetch()
+        } catch {
+            AppLog.ai.warning("RAG metadata panel refresh degraded: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func resetTurnState() {

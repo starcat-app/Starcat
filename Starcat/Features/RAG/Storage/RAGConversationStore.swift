@@ -792,3 +792,109 @@ enum RAGConversationContextCompressor {
         )
     }
 }
+
+// MARK: - 可丢弃的 Debug 文件
+
+/// 与一轮用户提问关联的 Debug 文件信封。会话 ID 既存在目录名也存在 JSON 内，方便 Finder
+/// 排查，也让移动文件后的数据仍可被校验。
+struct RAGDebugFileRecord: Codable, Sendable {
+    static let schemaVersion = 1
+
+    let schemaVersion: Int
+    let conversationID: UUID
+    let userMessageID: UUID
+    let completedAt: Date
+    let trace: RAGDebugTrace
+}
+
+/// 只保存可丢弃的 Debug JSON。Actor 将 FileManager 访问串行化，避免同一会话的多轮请求
+/// 并发结束时互相影响目录创建与读取；每次写入使用 `.atomic`，半写文件不会进入历史列表。
+actor RAGDebugFileStore {
+    private let fileManager: FileManager
+    private let rootOverride: URL?
+
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    init(fileManager: FileManager = .default, rootOverride: URL? = nil) {
+        self.fileManager = fileManager
+        self.rootOverride = rootOverride
+    }
+
+    /// 保存一轮已结束的问答 Debug。标题生成等辅助 Trace 不落盘，避免没有用户问题锚点的孤儿文件。
+    func save(trace: RAGDebugTrace, conversationID: UUID, userMessageID: UUID, completedAt: Date = Date()) throws {
+        guard trace.category == .questionAnswer else { return }
+        let directory = try conversationDirectory(conversationID)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let record = RAGDebugFileRecord(
+            schemaVersion: RAGDebugFileRecord.schemaVersion,
+            conversationID: conversationID,
+            userMessageID: userMessageID,
+            completedAt: completedAt,
+            trace: trace
+        )
+        // ISO 8601 天然按时间排序；替换冒号使文件名也适用于 Finder 拖到其它常见文件系统。
+        let timestamp = trace.startedAt.ISO8601Format().replacingOccurrences(of: ":", with: "-")
+        let fileName = "\(timestamp)_\(trace.id.uuidString).json"
+        try encoder.encode(record).write(
+            to: directory.appendingPathComponent(fileName),
+            options: .atomic
+        )
+    }
+
+    /// 读取指定会话的所有可解析记录。损坏或旧 schema 文件直接跳过，Debug 历史不能阻塞会话加载。
+    func load(conversationID: UUID) throws -> [RAGDebugTrace] {
+        let directory = try conversationDirectory(conversationID)
+        guard fileManager.fileExists(atPath: directory.path) else { return [] }
+        let files = try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "json" }
+
+        return files.compactMap { url in
+            guard let data = try? Data(contentsOf: url),
+                  let record = try? decoder.decode(RAGDebugFileRecord.self, from: data),
+                  record.schemaVersion == RAGDebugFileRecord.schemaVersion,
+                  record.conversationID == conversationID else {
+                return nil
+            }
+            return record.trace
+        }.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// 只删除指定会话的可丢弃 Debug 目录；不会触及其它会话的调试历史。
+    /// 该操作同时用于删除会话和 Debug 面板的“清空”，不存在时视为成功。
+    func delete(conversationID: UUID) throws {
+        let directory = try conversationDirectory(conversationID)
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+        try fileManager.removeItem(at: directory)
+    }
+
+    private func rootDirectory() throws -> URL {
+        if let rootOverride { return rootOverride }
+        guard let appSupport = fileManager.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        return appSupport
+            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+            .appendingPathComponent("RAGDebug", isDirectory: true)
+    }
+
+    private func conversationDirectory(_ conversationID: UUID) throws -> URL {
+        try rootDirectory().appendingPathComponent(conversationID.uuidString, isDirectory: true)
+    }
+}

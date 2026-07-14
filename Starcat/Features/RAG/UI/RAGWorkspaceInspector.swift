@@ -136,6 +136,11 @@ struct RAGWorkspaceInspector: View {
 
     var evidenceInspector: some View {
         VStack(alignment: .leading, spacing: 10) {
+            knowledgeBaseMetadataPanel
+
+            // 元数据是面向整个知识库的事实，引用是本轮命中的证据；用分割线明确两者不能互相替代。
+            Divider().padding(.vertical, 2)
+
             if allCitations.isEmpty {
                 Text("rag.workspace.inspector.noCitations")
                     .font(ragFont(.body))
@@ -266,6 +271,115 @@ struct RAGWorkspaceInspector: View {
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: viewModel.selectedCitation?.id)
+    }
+
+    @ViewBuilder
+    var knowledgeBaseMetadataPanel: some View {
+        if let snapshot = viewModel.knowledgeBaseMetadataSnapshot {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("rag.workspace.inspector.metadata.title", systemImage: "cylinder.split.1x2")
+                        .font(ragFont(.callout, weight: .semibold))
+                    Spacer(minLength: 8)
+                    Text(snapshot.generatedAt, format: .dateTime.hour().minute().second())
+                        .font(ragFont(.caption2))
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("rag.workspace.inspector.metadata.subtitle")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    metadataStat("rag.workspace.inspector.metadata.projects", value: snapshot.projectCount)
+                    metadataStat("rag.workspace.inspector.metadata.starred", value: snapshot.starredProjectCount)
+                    metadataStat("rag.workspace.inspector.metadata.retained", value: snapshot.retainedAfterUnstarCount)
+                }
+
+                Divider()
+
+                metadataRow("rag.workspace.inspector.metadata.status", value: metadataDistribution(snapshot.statusCounts))
+                metadataRow(
+                    "rag.workspace.inspector.metadata.tags",
+                    value: "\(snapshot.taggedProjectCount) / \(snapshot.untaggedProjectCount) · \(snapshot.tagCount)"
+                )
+                metadataRow(
+                    "rag.workspace.inspector.metadata.languages",
+                    value: metadataDistribution(snapshot.topLanguages)
+                )
+                metadataRow(
+                    "rag.workspace.inspector.metadata.activity",
+                    value: "\(snapshot.addedInLast30DaysCount) / \(snapshot.pushedInLast30DaysCount)"
+                )
+                metadataRow(
+                    "rag.workspace.inspector.metadata.index",
+                    value: "\(snapshot.indexHealth.readyChunks) / \(snapshot.indexHealth.pendingChunks) / \(snapshot.indexHealth.failedChunks) / \(snapshot.indexHealth.staleChunks)"
+                )
+
+                if !snapshot.topStarredRepositories.isEmpty {
+                    Divider()
+                    Text("rag.workspace.inspector.metadata.starLeaders")
+                        .font(ragFont(.caption, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    ForEach(Array(snapshot.topStarredRepositories.enumerated()), id: \.offset) { index, repository in
+                        HStack(spacing: 6) {
+                            Text("\(index + 1)")
+                                .font(ragFont(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16, alignment: .trailing)
+                            Text(repository.fullName)
+                                .font(ragFont(.caption, weight: .medium, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 6)
+                            Text(repository.stars, format: .number)
+                                .font(ragFont(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+        } else {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("rag.workspace.inspector.metadata.loading")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    func metadataStat(_ titleKey: LocalizedStringKey, value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value, format: .number)
+                .font(ragFont(.headline, weight: .semibold, design: .rounded))
+            Text(titleKey)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    func metadataRow(_ titleKey: LocalizedStringKey, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(titleKey)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(ragFont(.caption, weight: .medium))
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+    }
+
+    func metadataDistribution(_ counts: [KnowledgeBaseMetadataSnapshot.NamedCount]) -> String {
+        counts.map { "\($0.name) \($0.count)" }.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -584,7 +698,7 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.body))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(viewModel.debugTraces.sorted { $0.startedAt < $1.startedAt }) { trace in
+                ForEach(viewModel.debugTraces.sorted { $0.startedAt > $1.startedAt }) { trace in
                     let isExpanded = expandedDebugTraceIDs.contains(trace.id)
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 6) {
@@ -607,6 +721,11 @@ struct RAGWorkspaceInspector: View {
                                         .foregroundStyle(.secondary)
                                         .frame(width: 12)
                                         .fixedSize()
+                                    Image(systemName: debugTraceCategoryIcon(trace.category))
+                                        .font(iconFont(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 14)
+                                        .accessibilityHidden(true)
                                     // 英文标题更长：不够宽时只截标题，不挤换时间戳。
                                     Text(debugTraceCategoryKey(trace.category))
                                         .font(ragFont(.caption, weight: .semibold))
@@ -688,6 +807,11 @@ struct RAGWorkspaceInspector: View {
                                 .foregroundStyle(.secondary)
                                 .frame(width: 12)
                         }
+                        Image(systemName: debugStageIcon(event.stage))
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(debugStageColor(event.stage))
+                            .frame(width: 14)
+                            .accessibilityHidden(true)
                         Text(debugStageKey(event.stage))
                             .font(ragFont(.caption, weight: .semibold))
                         Spacer(minLength: 4)
@@ -715,7 +839,7 @@ struct RAGWorkspaceInspector: View {
             }
 
             if isExpanded {
-                highlightedDebugPayload(event.renderedPayload())
+                debugPayloadText(for: event)
                     .font(ragFont(.caption2, design: .monospaced))
                     .textSelection(.enabled)
                     .onAppear {
@@ -725,6 +849,14 @@ struct RAGWorkspaceInspector: View {
         }
         .padding(10)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    /// 仅检索诊断拥有稳定的结构化指标；Prompt、模型响应等自由文本可能含端口、模型版本或参数，
+    /// 不应因其中出现数字而被误标为检索关键信息。
+    private func debugPayloadText(for event: RAGDebugEvent) -> Text {
+        let payload = event.renderedPayload()
+        guard event.retrievalPayload != nil else { return Text(payload) }
+        return highlightedDebugPayload(payload)
     }
 
     /// 数值是检索配置和漏斗判读的关键线索；在保留等宽调试文本可复制性的同时，用系统强调色
@@ -805,10 +937,64 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
+    /// Debug stage → SF Symbol；按「请求 / Prompt / 返回 / 检索 / 远程 / 失败」语义分组，便于扫读。
+    func debugStageIcon(_ stage: RAGDebugEvent.Stage) -> String {
+        switch stage {
+        case .request:
+            return "paperplane"
+        case .plannerPrompt:
+            return "brain"
+        case .plannerResponse:
+            return "text.bubble"
+        case .plan:
+            return "list.bullet.rectangle"
+        case .candidates:
+            return "building.2"
+        case .retrieval:
+            return "magnifyingglass"
+        case .remoteRequest:
+            return "network"
+        case .remoteResponse:
+            return "icloud.and.arrow.down"
+        case .remoteContext:
+            return "globe"
+        case .prompt:
+            return "text.quote"
+        case .response:
+            return "text.alignleft"
+        case .compressionPrompt:
+            return "arrow.down.right.and.arrow.up.left"
+        case .compressionResponse:
+            return "doc.text"
+        case .titlePrompt:
+            return "character.textbox"
+        case .titleResponse:
+            return "textformat"
+        case .failure:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    func debugStageColor(_ stage: RAGDebugEvent.Stage) -> Color {
+        switch stage {
+        case .failure:
+            return .orange
+        default:
+            return .secondary
+        }
+    }
+
     func debugTraceCategoryKey(_ category: RAGDebugTraceCategory) -> LocalizedStringKey {
         switch category {
         case .questionAnswer: return "rag.workspace.debug.category.questionAnswer"
         case .conversationTitle: return "rag.workspace.debug.category.conversationTitle"
+        }
+    }
+
+    func debugTraceCategoryIcon(_ category: RAGDebugTraceCategory) -> String {
+        switch category {
+        case .questionAnswer: return "books.vertical"
+        case .conversationTitle: return "textformat"
         }
     }
 

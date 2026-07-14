@@ -541,6 +541,10 @@ final class AppDependencies {
                 promptConfiguration: ragPrompts.generator,
                 outputLanguage: outputLanguage
             ),
+            metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider(
+                database: database,
+                embeddingModel: embeddingSelection.modelName
+            ),
             compressorPromptConfiguration: ragPrompts.compressor,
             titlePromptConfiguration: ragPrompts.title,
             outputLanguage: outputLanguage

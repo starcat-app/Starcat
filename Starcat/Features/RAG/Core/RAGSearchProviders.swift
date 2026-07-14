@@ -123,7 +123,7 @@ struct RAGHybridFusionConfiguration: Equatable, Sendable {
 }
 
 /// Fusion 在最终上限裁剪前后的计数，供 Retriever 的 Debug 漏斗解释结果来源。
-struct RAGHybridFusionDiagnostics: Equatable, Sendable {
+struct RAGHybridFusionDiagnostics: Codable, Equatable, Sendable {
     var uniqueCount = 0
     var perRepositoryLimitFilteredCount = 0
     var totalLimitFilteredCount = 0

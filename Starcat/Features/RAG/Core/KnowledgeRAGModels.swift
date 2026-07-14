@@ -549,8 +549,8 @@ struct RAGRetrievalResult: Equatable, Sendable {
 }
 
 /// RAG 检索的可解释性快照。数值只统计分片数量，不包含分片正文，避免 Debug 导出扩大数据暴露面。
-struct RAGRetrievalDiagnostics: Equatable, Sendable {
-    enum Outcome: String, Equatable, Sendable {
+struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Equatable, Sendable {
         case completed
         case noCandidates = "no_candidates"
         case noReadyChunks = "no_ready_chunks"

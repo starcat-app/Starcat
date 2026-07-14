@@ -20277,6 +20277,78 @@
         }
       }
     },
+    "rag.workspace.inspector.metadata.activity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Added / pushed (30d)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天入库 / 推送" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.index": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Index ready / pending / failed / stale" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "索引就绪 / 等待 / 失败 / 过期" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.languages": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Top languages" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主要语言" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.loading": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading knowledge-base metadata…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在读取知识库元数据…" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.projects": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In library" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库项目" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.retained": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Retained" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已取消星标仍保留" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.starLeaders": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Star leaders" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Star Top 10" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.starred": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Still starred" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仍在星标" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.status": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Status" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "整理状态" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.subtitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read-only local facts. The next answer receives this same snapshot." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "只读本地事实；下一轮回答会使用同一份快照。" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.tags": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tagged / untagged · distinct tags" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已标签 / 未标签 · 标签数" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Knowledge-base metadata" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库元数据" } }
+      }
+    },
     "rag.workspace.inspector.chunkMissing": {
       "localizations": {
         "en": {
