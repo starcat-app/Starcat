@@ -35,6 +35,7 @@ enum RAGExecutionEvent: Sendable {
     case retrieval(RAGRetrievalProgress)
     case retrievalCompleted(RAGRetrievalResult)
     case remoteContextPrepared([RAGResolvedRemoteWorkItem])
+    case webSearchPrepared([RAGWebSearchRequest])
     case remoteContextProgress(completed: Int, total: Int)
     case remoteContextCompleted([RAGRemoteContextBlock])
     case generationStarted(evidenceCount: Int)
@@ -201,6 +202,7 @@ struct KnowledgeRAGService: Sendable {
     private let candidateRepository: any RAGRepoCandidateRepositoryProtocol
     private let retriever: KnowledgeRAGRetriever
     private let remoteContextProvider: any KnowledgeRAGRemoteContextProviding
+    private let webSearchProvider: any RAGWebSearchProviding
     private let attachmentProcessor: any RAGAttachmentProcessing
     private let generatorClient: any AIClientProtocol
     private let generatorModel: String
@@ -216,6 +218,7 @@ struct KnowledgeRAGService: Sendable {
         candidateRepository: any RAGRepoCandidateRepositoryProtocol,
         retriever: KnowledgeRAGRetriever,
         remoteContextProvider: any KnowledgeRAGRemoteContextProviding = EmptyKnowledgeRAGRemoteContextProvider(),
+        webSearchProvider: any RAGWebSearchProviding = EmptyRAGWebSearchProvider(),
         attachmentProcessor: any RAGAttachmentProcessing = RAGAttachmentProcessor(),
         generatorClient: any AIClientProtocol,
         generatorModel: String,
@@ -229,6 +232,7 @@ struct KnowledgeRAGService: Sendable {
         self.candidateRepository = candidateRepository
         self.retriever = retriever
         self.remoteContextProvider = remoteContextProvider
+        self.webSearchProvider = webSearchProvider
         self.attachmentProcessor = attachmentProcessor
         self.generatorClient = generatorClient
         self.generatorModel = generatorModel
@@ -322,6 +326,13 @@ struct KnowledgeRAGService: Sendable {
                     if hasPlanningReasoning {
                         continuation.yield(.execution(.reasoningCompleted(.planningReasoning)))
                     }
+                    // Planner 是概率模型，可能漏报“最新 Issues”这类稳定的实时 GitHub 意图。
+                    // 执行层在这里补齐高置信请求，并只在 Composer 明确授权后保留普通 Web 查询。
+                    plan = RAGNetworkIntentResolver.resolve(
+                        question: request.rawQuestion,
+                        plan: plan,
+                        composerContext: request.composerContext
+                    )
                     plan.remoteContextRequests.removeAll {
                         request.composerContext.disabledRemoteResources.contains($0.resource)
                     }
@@ -332,6 +343,8 @@ struct KnowledgeRAGService: Sendable {
                     candidateLimit: \(plan.candidateLimit.map(String.init) ?? "<default>")
                     clarificationQuestion: \(plan.clarificationQuestion ?? "<none>")
                     remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
+                    webSearchRequests: \(plan.webSearchRequests.map { "\($0.query): \($0.reason)" }.joined(separator: "\n"))
+                    requiresLiveEvidence: \(plan.requiresLiveEvidence)
                     """)
                     continuation.yield(.plan(plan))
                     continuation.yield(.execution(.planningCompleted(plan)))
@@ -433,22 +446,32 @@ struct KnowledgeRAGService: Sendable {
 
                     var remoteBlocks: [RAGRemoteContextBlock] = []
                     let plannedRemoteRequests = plan.remoteContextRequests
+                    let plannedWebSearchRequests = plan.webSearchRequests
                     let resolvedRemoteWorkItems = Self.resolveRemoteWorkItems(
                         requests: plannedRemoteRequests,
                         candidates: candidates,
                         retrieval: retrieval,
                         explicitRepoIDs: request.composerContext.explicitRepoIDs
                     )
-                    if !resolvedRemoteWorkItems.isEmpty {
-                        continuation.yield(.state(.awaitingRemoteContextConfirmation))
-                        continuation.yield(.remoteContextConfirmation(resolvedRemoteWorkItems))
-                        // 非工作台调用方缺少确认 UI 时默认跳过。授权按确定的 repo × resource
-                        // 工作项记录，不能批准一个 resource 后顺带访问其它仓库。
-                        let approvedIDs = try await remoteContextConsent?.wait() ?? []
-                        let approvedWorkItems = resolvedRemoteWorkItems.filter { approvedIDs.contains($0.id) }
+                    if !resolvedRemoteWorkItems.isEmpty || !plannedWebSearchRequests.isEmpty {
+                        // 联网步骤必须在授权等待和真实请求之前出现，用户才能审计“为什么暂停”以及
+                        // 后续到底访问了什么。Composer 联网开关本身就是本轮显式授权，开启时不再
+                        // 为结构化 GitHub 请求重复弹确认；未开启仍保留 repo × resource 细粒度确认。
                         continuation.yield(.execution(.started(.remoteContext)))
+                        let approvedWorkItems: [RAGResolvedRemoteWorkItem]
+                        if request.composerContext.webSearchEnabled {
+                            approvedWorkItems = resolvedRemoteWorkItems
+                        } else if !resolvedRemoteWorkItems.isEmpty {
+                            continuation.yield(.state(.awaitingRemoteContextConfirmation))
+                            continuation.yield(.remoteContextConfirmation(resolvedRemoteWorkItems))
+                            let approvedIDs = try await remoteContextConsent?.wait() ?? []
+                            approvedWorkItems = resolvedRemoteWorkItems.filter { approvedIDs.contains($0.id) }
+                        } else {
+                            approvedWorkItems = []
+                        }
                         continuation.yield(.execution(.remoteContextPrepared(approvedWorkItems)))
-                        if approvedWorkItems.isEmpty {
+                        continuation.yield(.execution(.webSearchPrepared(plannedWebSearchRequests)))
+                        if approvedWorkItems.isEmpty && plannedWebSearchRequests.isEmpty {
                             plan.remoteContextRequests = []
                             continuation.yield(.execution(.terminated(
                                 .remoteContext,
@@ -457,32 +480,50 @@ struct KnowledgeRAGService: Sendable {
                         } else {
                             plan.remoteContextRequests = Self.uniqueRequests(in: approvedWorkItems)
                             continuation.yield(.state(.fetchingRemoteContext))
-                            let onProgress: @Sendable (RAGRemoteContextFetchProgress) -> Void = { progress in
-                                continuation.yield(.execution(.remoteContextProgress(
-                                    completed: progress.completed,
-                                    total: progress.total
-                                )))
+                            let totalNetworkRequests = approvedWorkItems.count + plannedWebSearchRequests.count
+                            if !approvedWorkItems.isEmpty {
+                                let onGitHubProgress: @Sendable (RAGRemoteContextFetchProgress) -> Void = { progress in
+                                    continuation.yield(.execution(.remoteContextProgress(
+                                        completed: progress.completed,
+                                        total: totalNetworkRequests
+                                    )))
+                                }
+                                let githubBlocks: [RAGRemoteContextBlock]
+                                if let debuggableProvider = remoteContextProvider as? any KnowledgeRAGDebuggableRemoteContextProviding {
+                                    githubBlocks = await debuggableProvider.fetch(
+                                        workItems: approvedWorkItems,
+                                        onProgress: onGitHubProgress,
+                                        onDebug: { event in
+                                            // 该回调来自 Provider 的 TaskGroup，不能捕获本地非 Sendable
+                                            // `emitDebug`。直接写入同一 continuation，时间仍相对问答 Trace。
+                                            guard request.isDebugEnabled else { return }
+                                            continuation.yield(.debug(RAGDebugEvent(
+                                                stage: event.stage,
+                                                elapsedSeconds: Date().timeIntervalSince(startedAt),
+                                                payload: event.payload
+                                            )))
+                                        }
+                                    )
+                                } else {
+                                    githubBlocks = await remoteContextProvider.fetch(
+                                        workItems: approvedWorkItems,
+                                        onProgress: onGitHubProgress
+                                    )
+                                }
+                                remoteBlocks.append(contentsOf: githubBlocks)
                             }
-                            if let debuggableProvider = remoteContextProvider as? any KnowledgeRAGDebuggableRemoteContextProviding {
-                                remoteBlocks = await debuggableProvider.fetch(
-                                    workItems: approvedWorkItems,
-                                    onProgress: onProgress,
-                                    onDebug: { event in
-                                        // 该回调来自 Provider 的 TaskGroup，不能捕获本地非 Sendable
-                                        // `emitDebug`。直接写入同一 continuation，时间仍相对问答 Trace。
-                                        guard request.isDebugEnabled else { return }
-                                        continuation.yield(.debug(RAGDebugEvent(
-                                            stage: event.stage,
-                                            elapsedSeconds: Date().timeIntervalSince(startedAt),
-                                            payload: event.payload
+                            if !plannedWebSearchRequests.isEmpty {
+                                let githubRequestCount = approvedWorkItems.count
+                                let webBlocks = await webSearchProvider.fetch(
+                                    requests: plannedWebSearchRequests,
+                                    onProgress: { progress in
+                                        continuation.yield(.execution(.remoteContextProgress(
+                                            completed: githubRequestCount + progress.completed,
+                                            total: totalNetworkRequests
                                         )))
                                     }
                                 )
-                            } else {
-                                remoteBlocks = await remoteContextProvider.fetch(
-                                    workItems: approvedWorkItems,
-                                    onProgress: onProgress
-                                )
+                                remoteBlocks.append(contentsOf: webBlocks)
                             }
                             emitDebug(.remoteContext, remoteBlocks.map { block in
                                 """
@@ -505,6 +546,19 @@ struct KnowledgeRAGService: Sendable {
                     }
                     let hasAttachmentEvidence = attachmentContexts.contains {
                         $0.supportsFactualAnswer && (!$0.content.isEmpty || $0.imageData != nil)
+                    }
+                    if plan.requiresLiveEvidence, !hasRemoteEvidence {
+                        let answerKey = remoteBlocks.contains(where: { $0.outcome == .failed })
+                            ? "rag.workspace.guidance.remoteFailedReply"
+                            : "rag.workspace.guidance.remoteEmptyReply"
+                        continuation.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
+                            plan: plan,
+                            composerContext: request.composerContext,
+                            answerKey: answerKey
+                        )))
+                        continuation.yield(.state(.noRelevantChunks))
+                        continuation.finish()
+                        return
                     }
                     guard hasStructuredEvidence || hasLocalEvidence || hasRemoteEvidence || hasAttachmentEvidence else {
                         let answerKey: String

@@ -96,6 +96,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var attachments: [RAGComposerAttachment] = []
     var githubLinkContexts: [RAGGitHubLinkReference] = []
+    /// 用户在 Composer 主动授权本轮联网。保持窗口级状态，连续追问无需重复开启；关闭后
+    /// Planner 产生的普通 Web 请求会在执行层被清除，GitHub 实时请求仍需逐项确认。
+    var webSearchEnabled = false
     /// 切换模型时立刻写入 AppSettings，关闭窗口后再开可恢复。
     var selectedModelID: String? {
         didSet {
@@ -1410,12 +1413,19 @@ final class KnowledgeRAGWorkspaceViewModel {
                     explicitRepoReferences: selectedRepoContexts.map {
                         RAGPlannerRepoReference(id: $0.id, fullName: $0.fullName)
                     },
+                    webSearchRepoReferences: selectedRepoContexts.compactMap { repo in
+                        guard !repo.isPrivate || dependencies.settings.externalSearchAllowPrivateRepos else {
+                            return nil
+                        }
+                        return RAGPlannerRepoReference(id: repo.id, fullName: repo.fullName)
+                    },
                     explicitRepoMode: explicitRepoMode,
                     selectedModelID: selectedModelID,
                     attachments: attachments,
                     pastedGitHubLinks: githubLinkContexts,
                     previousUserQuestion: previousUserQuestion,
                     previousReferencedRepos: previousReferencedRepos,
+                    webSearchEnabled: webSearchEnabled,
                     disabledRemoteResources: []
                 ),
                 conversationID: conversationID,
@@ -2082,7 +2092,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
         case .remoteContextPrepared(let workItems):
             updateExecutionStep(kind: .remoteContext) { step in
-                step.remoteAuditItems = workItems.map { workItem in
+                let githubItems = workItems.map { workItem in
                     RAGRemoteExecutionAuditItem(
                         id: workItem.id,
                         repoFullName: workItem.candidate.repo.fullName,
@@ -2095,9 +2105,37 @@ final class KnowledgeRAGWorkspaceViewModel {
                         resultCount: nil,
                         errorMessage: nil,
                         startedAt: nil,
-                        completedAt: nil
+                        completedAt: nil,
+                        providerName: "GitHub"
                     )
                 }
+                let githubIDs = Set(githubItems.map(\.id))
+                let existing = (step.remoteAuditItems ?? []).filter { !githubIDs.contains($0.id) }
+                step.remoteAuditItems = existing + githubItems
+            }
+
+        case .webSearchPrepared(let requests):
+            updateExecutionStep(kind: .remoteContext) { step in
+                let webItems = requests.map { request in
+                    RAGRemoteExecutionAuditItem(
+                        id: request.id,
+                        repoFullName: "",
+                        resource: .externalWeb,
+                        querySummary: request.query,
+                        requestURL: nil,
+                        status: .pending,
+                        transport: nil,
+                        httpStatusCode: nil,
+                        resultCount: nil,
+                        errorMessage: nil,
+                        startedAt: nil,
+                        completedAt: nil,
+                        providerName: "External Search"
+                    )
+                }
+                let webIDs = Set(webItems.map(\.id))
+                let existing = (step.remoteAuditItems ?? []).filter { !webIDs.contains($0.id) }
+                step.remoteAuditItems = existing + webItems
             }
 
         case .remoteContextProgress(let completed, let total):
@@ -2127,6 +2165,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                     completed.errorMessage = block.errorMessage
                     completed.startedAt = block.startedAt
                     completed.completedAt = block.completedAt
+                    completed.providerName = block.providerName ?? completed.providerName
+                    completed.querySummary = block.querySummary ?? completed.querySummary
+                    completed.resultPreviews = block.resultPreviews
                     return completed
                 }
                 step.details = []

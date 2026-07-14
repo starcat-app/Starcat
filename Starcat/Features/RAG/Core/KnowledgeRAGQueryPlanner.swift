@@ -222,7 +222,8 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             "attachmentDescriptors": attachments.isEmpty ? "[]" : "[\(attachments)]",
             "pastedGitHubLinks": links.isEmpty ? "[]" : "[\(links)]",
             "previousUserQuestion": context.previousUserQuestion ?? "<none>",
-            "previousReferencedRepositories": previousRepos.isEmpty ? "[]" : "[\(previousRepos)]"
+            "previousReferencedRepositories": previousRepos.isEmpty ? "[]" : "[\(previousRepos)]",
+            "webSearchEnabled": String(context.webSearchEnabled)
         ])
     }
 
@@ -250,6 +251,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         plan.semanticQuery = plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         plan.candidateLimit = plan.candidateLimit.map { min(max($0, 1), 1_000) }
         plan.remoteContextRequests = normalizeRemoteContextRequests(plan.remoteContextRequests)
+        plan.webSearchRequests = normalizeWebSearchRequests(plan.webSearchRequests)
         plan.fallbackQuestions = normalizedFallbackQuestions(plan.fallbackQuestions)
 
         switch plan.mode {
@@ -276,6 +278,8 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             plan.sort = nil
             plan.candidateLimit = nil
             plan.remoteContextRequests = []
+            plan.webSearchRequests = []
+            plan.requiresLiveEvidence = false
         case .needsClarification:
             guard let clarification = plan.clarificationQuestion?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !clarification.isEmpty else {
@@ -328,6 +332,9 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         var unique: [RAGRemoteContextRequest] = []
         for request in requests {
             guard unique.count < maxRequestCount else { break }
+            // 普通 Web 查询有独立的 Request/Provider；拒绝不可信 Planner 把它塞进
+            // GitHub repo 工作项，避免错误路由到 GitHub API。
+            guard request.resource != .externalWeb else { continue }
             let query = String(request.query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
             let identity = "\(request.resource.rawValue)|\(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))|\(request.state.rawValue)|\(request.sort.rawValue)|\(request.order.rawValue)"
             guard seen.insert(identity).inserted else { continue }
@@ -355,6 +362,23 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             normalized.maxRepos = maxRepos
             return normalized
         }
+    }
+
+    private static func normalizeWebSearchRequests(
+        _ requests: [RAGWebSearchRequest]
+    ) -> [RAGWebSearchRequest] {
+        var seen = Set<String>()
+        return requests.compactMap { request in
+            let query = String(request.query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
+            guard !query.isEmpty else { return nil }
+            let identity = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seen.insert(identity).inserted else { return nil }
+            return RAGWebSearchRequest(
+                query: query,
+                reason: String(request.reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300)),
+                maxResults: min(max(request.maxResults, 1), 10)
+            )
+        }.prefix(2).map { $0 }
     }
 
     private static func normalizedFallbackQuestions(_ questions: [String]) -> [String] {

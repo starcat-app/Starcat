@@ -4,6 +4,12 @@
 //
 //  RAG 回答前后的紧凑步骤轨迹。
 //
+//  步骤图标只表达状态，不按 kind 换语义符号：
+//  - running：`ellipsis.circle` + accent + `.symbolEffect(.pulse)`（reduceMotion 关闭）
+//  - completed：绿色 `checkmark.circle.fill`
+//  - 联网 failed/empty：橙色 `exclamationmark.circle.fill`
+//  - skipped：`arrowshape.turn.up.right` + secondary
+//
 
 import SwiftUI
 
@@ -42,9 +48,13 @@ struct RAGExecutionTimeline: View {
                     }
                 }
             } label: {
-                HStack(spacing: 8) {
+                // 图标槽与消息头 Starcat logo 同宽，glyph 居中，保证竖向轴线对齐。
+                HStack(spacing: 7) {
                     stepStatusIcon(step)
-                        .frame(width: 15, height: 15)
+                        .frame(
+                            width: RAGMessageAvatarMetrics.size,
+                            height: RAGMessageAvatarMetrics.size
+                        )
                     Text(titleKey(for: step.kind))
                         .font(interfaceScale.font(.body, weight: .medium))
                         .foregroundStyle(.primary)
@@ -94,7 +104,8 @@ struct RAGExecutionTimeline: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.leading, 23)
+                // 与标题行一致：logo 槽宽 + HStack spacing，让展开内容贴齐标题文字左缘。
+                .padding(.leading, RAGMessageAvatarMetrics.size + 7)
             }
         }
         .padding(.vertical, 3)
@@ -115,20 +126,42 @@ struct RAGExecutionTimeline: View {
         }
     }
 
-    @ViewBuilder
+    /// 三态状态图标：进行中 / 完成 / 联网降级；不按步骤类型换语义符号。
     private func stepStatusIcon(_ step: RAGExecutionStep) -> some View {
-        if step.state == .running {
-            ProgressView()
-                .controlSize(.mini)
-        } else if step.kind == .remoteContext,
-                  (step.remoteAuditItems ?? []).contains(where: { $0.status == .failed || $0.status == .empty }) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(interfaceScale.font(size: 14, weight: .semibold))
-                .foregroundStyle(Color.orange)
-        } else {
-            Image(systemName: step.state == .skipped ? "arrowshape.turn.up.right" : "checkmark.circle.fill")
-                .font(interfaceScale.font(size: 14, weight: .semibold))
-                .foregroundStyle(step.state == .skipped ? Color.secondary : Color.green)
+        let isRunning = step.state == .running
+        let isDegradedRemote = step.kind == .remoteContext
+            && (step.remoteAuditItems ?? []).contains(where: { $0.status == .failed || $0.status == .empty })
+        return Image(systemName: symbolName(for: step, isDegradedRemote: isDegradedRemote))
+            .font(interfaceScale.font(size: 14, weight: .semibold))
+            .foregroundStyle(stepIconColor(state: step.state, isDegradedRemote: isDegradedRemote))
+            .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+            .symbolEffect(
+                .pulse,
+                options: .repeating,
+                isActive: isRunning && !reduceMotion
+            )
+            .accessibilityLabel(Text(titleKey(for: step.kind)))
+    }
+
+    private func stepIconColor(state: RAGExecutionStepState, isDegradedRemote: Bool) -> Color {
+        switch state {
+        case .running:
+            return Color.accentColor
+        case .skipped:
+            return Color.secondary
+        case .completed:
+            return isDegradedRemote ? Color.orange : Color.green
+        }
+    }
+
+    private func symbolName(for step: RAGExecutionStep, isDegradedRemote: Bool) -> String {
+        switch step.state {
+        case .running:
+            return "ellipsis.circle"
+        case .skipped:
+            return "arrowshape.turn.up.right"
+        case .completed:
+            return isDegradedRemote ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
         }
     }
 
@@ -136,7 +169,7 @@ struct RAGExecutionTimeline: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 remoteAuditStatusIcon(item.status)
-                Text("\(item.repoFullName) · \(remoteResourceName(item.resource))")
+                Text(remoteAuditTitle(item))
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
@@ -186,6 +219,17 @@ struct RAGExecutionTimeline: View {
                 Link(String.l10n("rag.workspace.execution.remote.endpoint"), destination: url)
                     .font(interfaceScale.font(.captionSmall))
             }
+            ForEach(item.resultPreviews.prefix(5)) { preview in
+                Link(destination: preview.url) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.right.square")
+                        Text(preview.title)
+                            .lineLimit(1)
+                    }
+                }
+                .font(interfaceScale.font(.captionSmall))
+                .help(preview.url.absoluteString)
+            }
         }
         .padding(7)
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
@@ -209,6 +253,13 @@ struct RAGExecutionTimeline: View {
         String.l10n("rag.workspace.execution.remote.status.\(status.rawValue)")
     }
 
+    private func remoteAuditTitle(_ item: RAGRemoteExecutionAuditItem) -> String {
+        if item.resource == .externalWeb {
+            return "\(item.providerName ?? "External Search") · Web"
+        }
+        return "\(item.repoFullName) · \(remoteResourceName(item.resource))"
+    }
+
     private func remoteResourceName(_ resource: RAGRemoteContextResource) -> String {
         switch resource {
         case .githubIssues: return "GitHub Issues"
@@ -217,6 +268,7 @@ struct RAGExecutionTimeline: View {
         case .githubContributors: return "GitHub Contributors"
         case .githubCommitActivity: return "GitHub Commit Activity"
         case .githubSecurityAdvisories: return "GitHub Security Advisories"
+        case .externalWeb: return "Web Search"
         }
     }
 

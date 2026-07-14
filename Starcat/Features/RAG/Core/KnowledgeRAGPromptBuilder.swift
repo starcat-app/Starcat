@@ -148,7 +148,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         let remoteSection = rawRemoteText.isEmpty
             ? ""
             : budget.consume(
-                "\n\nGitHub temporary remote context:\n\(rawRemoteText)",
+                "\n\nTemporary network context:\n\(rawRemoteText)",
                 kind: .remoteContext,
                 preferredLimit: maxRemoteTokens
             )

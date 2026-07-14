@@ -52,18 +52,18 @@ struct AIChatBubble: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            switch message.role {
-            case .user:
+        switch message.role {
+        case .user:
+            HStack(alignment: .top, spacing: 8) {
                 Spacer(minLength: 40)
                 userBubble
-            case .assistant:
-                AIStarcatAssistantAvatar()
-                assistantBubble
-                Spacer(minLength: 40)
             }
+            .padding(.horizontal, 16)
+        case .assistant:
+            assistantBubble
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
     }
 
     // MARK: - 子视图
@@ -178,20 +178,21 @@ struct AIChatBubble: View {
         let reasoning = message.reasoning?.trimmingCharacters(in: .whitespacesAndNewlines)
         return VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 6) {
-                if let reasoning, !reasoning.isEmpty {
-                    AIChatReasoningDisclosure(content: reasoning, isStreaming: message.isStreaming)
+                AIChatAssistantHeader(
+                    startedAt: message.timestamp,
+                    isStreaming: message.isStreaming,
+                    completedAt: message.responseCompletedAt
+                )
+                if reasoning?.isEmpty == false || message.reasoningStartedAt != nil {
+                    AIChatReasoningDisclosure(
+                        content: reasoning ?? "",
+                        isStreaming: message.isStreaming,
+                        startedAt: message.reasoningStartedAt,
+                        completedAt: message.reasoningCompletedAt
+                    )
                 }
 
-                if message.content.isEmpty, reasoning?.isEmpty != false {
-                    // 占位指示：首个 token 还没到。ProgressView 自带旋转动画，
-                    // 已足够传达"在思考"，配文字辅助语义即可。
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("ai.assistant.chat.thinking")
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
+                if !message.content.isEmpty {
                     // dong4j 2026-06-04 16:05 反馈：助手回复 Markdown 里若有 H1/H2
                     // 会与角色标头 `## 🤖 AI (HH:mm)` 撞同级。`MarkdownHeadingDemoter`
                     // 先扫一遍最高级别，仅当 ≤ H2 时整体平移到 H3 起步（≥ H3 原样
@@ -200,9 +201,6 @@ struct AIChatBubble: View {
                     RepoAISummaryMarkdownView(
                         markdown: MarkdownHeadingDemoter.demoteToH3(message.content)
                     )
-                    if message.isStreaming {
-                        streamingIndicator
-                    }
                 }
             }
             .padding(.vertical, 2)
@@ -213,31 +211,6 @@ struct AIChatBubble: View {
             if !message.isStreaming, !message.content.isEmpty {
                 assistantFooter
             }
-        }
-    }
-
-    /// 流式输出过程中的"正在生成"动画。
-    ///
-    /// 使用 SF Symbol `variableColor.iterative.dimInactiveLayers`：
-    /// - `iterative`：三个点依次按顺序点亮（不是同时脉冲），节奏感更像"打字"；
-    /// - `dimInactiveLayers`：未点亮的点降低透明度而非完全隐藏，避免"消失—出现"
-    ///   闪烁；
-    /// - `options: .repeating`：持续循环到 view 消失（流式停后 `isStreaming = false`
-    ///   触发 view diff，此节点被移除，动画随之停止）。
-    /// 紫色与窗口顶部的"AI"按钮 / 头像渐变同色系，强化"这是 AI 在说话"。
-    private var streamingIndicator: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "ellipsis")
-                .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
-                .foregroundStyle(.purple.opacity(0.85))
-                .symbolEffect(
-                    .variableColor.iterative.dimInactiveLayers,
-                    options: .repeating,
-                    isActive: !reduceMotion
-                )
-            Text("ai.assistant.chat.generating")
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -278,15 +251,26 @@ struct AIChatBubble: View {
 private struct AIChatReasoningDisclosure: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
 
     let content: String
     let isStreaming: Bool
+    let startedAt: Date?
+    let completedAt: Date?
     let allowsTextSelection: Bool
     @State private var isExpanded: Bool
 
-    init(content: String, isStreaming: Bool, allowsTextSelection: Bool = true) {
+    init(
+        content: String,
+        isStreaming: Bool,
+        startedAt: Date? = nil,
+        completedAt: Date? = nil,
+        allowsTextSelection: Bool = true
+    ) {
         self.content = content
         self.isStreaming = isStreaming
+        self.startedAt = startedAt
+        self.completedAt = completedAt
         self.allowsTextSelection = allowsTextSelection
         _isExpanded = State(initialValue: isStreaming)
     }
@@ -298,27 +282,33 @@ private struct AIChatReasoningDisclosure: View {
                     isExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 7) {
-                    if isStreaming {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Color.green)
-                    }
+                HStack(spacing: 8) {
+                    // 第二行复用首行头像的 26pt 槽位并居中：图标中心线必须对齐。
+                    // 图标标准档为 14pt，满足状态辨识度且不超过首行 26pt App Icon。
+                    Image(systemName: isStreaming ? "ellipsis.circle" : "checkmark.circle.fill")
+                        .font(interfaceScale.font(size: 14, weight: .semibold))
+                        .foregroundStyle(isStreaming ? Color.secondary : Color.green)
+                        .symbolEffect(
+                            .pulse,
+                            options: .repeating,
+                            isActive: isStreaming && !reduceMotion
+                        )
+                        .frame(width: AIChatAvatarMetrics.size, height: AIChatAvatarMetrics.size)
                     Text("ai.assistant.chat.reasoning.title")
-                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .font(interfaceScale.font(.body, weight: .medium))
                         .foregroundStyle(.primary)
-                    Spacer(minLength: 8)
+                    reasoningDuration
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                        .font(interfaceScale.font(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 12)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
 
-            if isExpanded {
+            if isExpanded, !content.isEmpty {
                 Group {
                     if allowsTextSelection {
                         Text(content).textSelection(.enabled)
@@ -331,11 +321,35 @@ private struct AIChatReasoningDisclosure: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 20)
+                .padding(.leading, 23)
             }
         }
         .onChange(of: isStreaming) { _, streaming in
             if !streaming { isExpanded = false }
+        }
+        .onChange(of: content) { _, updatedContent in
+            // 发送瞬间先展示空的运行中步骤；首个 Think token 到达后与 RAG 一样展开内容。
+            if isStreaming, !updatedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                isExpanded = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var reasoningDuration: some View {
+        if let startedAt {
+            TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                let endedAt = completedAt ?? context.date
+                let duration = max(0, endedAt.timeIntervalSince(startedAt))
+                Text(String(
+                    format: String.l10n("ai.assistant.chat.reasoning.duration.format"),
+                    locale: locale,
+                    duration
+                ))
+                .font(interfaceScale.font(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
         }
     }
 }
@@ -348,33 +362,22 @@ private struct AIChatReasoningDisclosure: View {
 struct AIStreamingChatBubble: View {
     let snapshot: StreamingMarkdownSnapshot
     let reasoning: StreamingReasoningSnapshot?
-    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            AIStarcatAssistantAvatar()
-            VStack(alignment: .leading, spacing: 6) {
-                if let reasoning {
-                    AIChatReasoningDisclosure(
-                        content: reasoning.text,
-                        isStreaming: reasoning.isStreaming,
-                        allowsTextSelection: false
-                    )
-                }
+        VStack(alignment: .leading, spacing: 6) {
+                AIChatAssistantHeader(startedAt: snapshot.timestamp, isStreaming: true)
+                // ViewModel 在发送瞬间就创建 snapshot，因此这里永远是同一个 Think 步骤，
+                // 不再退回旧的 ProgressView + “思考中…”占位。
+                AIChatReasoningDisclosure(
+                    content: reasoning?.text ?? "",
+                    isStreaming: reasoning?.isStreaming ?? true,
+                    startedAt: reasoning?.startedAt,
+                    completedAt: reasoning?.completedAt,
+                    allowsTextSelection: false
+                )
 
-                if snapshot.isEmpty, reasoning == nil {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("ai.assistant.chat.thinking")
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                    }
-                } else if snapshot.isEmpty, reasoning?.isStreaming == false {
-                    // reasoning 已完成但正文首批快照尚未到达时，保留生成中反馈，
-                    // 避免折叠后短暂只剩一行静态 Think 标题。
-                    streamingIndicator
-                } else if !snapshot.isEmpty {
+                if !snapshot.isEmpty {
                     ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
                         StableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
                             .equatable()
@@ -387,29 +390,51 @@ struct AIStreamingChatBubble: View {
                             .font(interfaceScale.font(.bodyEmphasis))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-
-                    streamingIndicator
                 }
-            }
-            .padding(.vertical, 2)
-            Spacer(minLength: 40)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
         .padding(.horizontal, 16)
     }
+}
 
-    private var streamingIndicator: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "ellipsis")
-                .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
-                .foregroundStyle(.purple.opacity(0.85))
-                .symbolEffect(
-                    .variableColor.iterative.dimInactiveLayers,
-                    options: .repeating,
-                    isActive: !reduceMotion
-                )
-            Text("ai.assistant.chat.generating")
-                .font(interfaceScale.font(.captionSmall))
+/// 所有助手回复固定以此行开头；头像只属于第一行，不能把 Think 与正文压到头像右侧。
+private struct AIChatAssistantHeader: View {
+    let startedAt: Date
+    let isStreaming: Bool
+    var completedAt: Date?
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AIStarcatAssistantAvatar()
+            Text("Starcat")
+                .font(interfaceScale.font(.body, weight: .semibold))
                 .foregroundStyle(.secondary)
+            Text(isStreaming ? "ai.assistant.chat.processing" : "ai.assistant.chat.processed")
+                .font(interfaceScale.font(.body, weight: .medium))
+                .foregroundStyle(.secondary)
+            processingDuration
+        }
+    }
+
+    @ViewBuilder
+    private var processingDuration: some View {
+        // 旧历史记录没有完成时间，但它们已不在流式回复；此时不能继续以当前时间累加耗时。
+        if isStreaming || completedAt != nil {
+            TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                let endedAt = completedAt ?? context.date
+                let duration = max(0, endedAt.timeIntervalSince(startedAt))
+                Text(String(
+                    format: String.l10n("ai.assistant.chat.reasoning.duration.format"),
+                    locale: locale,
+                    duration
+                ))
+                .font(interfaceScale.font(.body, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
         }
     }
 }

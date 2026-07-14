@@ -65,6 +65,8 @@ struct StreamingTextPresentationBuffer: Sendable {
 struct StreamingReasoningSnapshot: Equatable, Sendable {
     let text: String
     let isStreaming: Bool
+    let startedAt: Date
+    let completedAt: Date?
     let revision: Int
 }
 
@@ -79,14 +81,26 @@ struct StreamingReasoningPresentationBuffer: Sendable {
     private var reasoningCompleted = false
     private var completionPublished = false
     private var revision = 0
+    let startedAt: Date
+    private(set) var completedAt: Date?
 
     var text: String { textBuffer.text }
 
-    init(throttleInterval: TimeInterval = 0.15, immediateCharacterCount: Int = 256) {
+    init(
+        startedAt: Date = .now,
+        throttleInterval: TimeInterval = 0.15,
+        immediateCharacterCount: Int = 256
+    ) {
+        self.startedAt = startedAt
         textBuffer = StreamingTextPresentationBuffer(
             throttleInterval: throttleInterval,
             immediateCharacterCount: immediateCharacterCount
         )
+    }
+
+    /// 用户发送后立即建立 Think 步骤，不能退回到与 RAG 无关的通用转圈占位。
+    mutating func begin() -> StreamingReasoningSnapshot {
+        makeSnapshot(text: "", isStreaming: true)
     }
 
     /// 首个 delta 立即展开 Think；后续只在时间或字符阈值满足时发布完整快照。
@@ -100,20 +114,20 @@ struct StreamingReasoningPresentationBuffer: Sendable {
     mutating func completeReasoning(now: TimeInterval) -> StreamingReasoningSnapshot? {
         guard !reasoningCompleted else { return nil }
         reasoningCompleted = true
+        completedAt = Date(timeIntervalSinceReferenceDate: now)
         return makeCompletionSnapshot(now: now)
     }
 
     /// 成功、取消或失败退出前补发尚未展示的 reasoning，并确保状态为已完成。
     mutating func finish(now: TimeInterval) -> StreamingReasoningSnapshot? {
         reasoningCompleted = true
+        completedAt = completedAt ?? Date(timeIntervalSinceReferenceDate: now)
         return makeCompletionSnapshot(now: now)
     }
 
     private mutating func makeCompletionSnapshot(
         now: TimeInterval
     ) -> StreamingReasoningSnapshot? {
-        guard !textBuffer.text.isEmpty else { return nil }
-
         // 即使已发布过完成态，也要先尝试 flush：极少数 Provider 可能在正文开始后
         // 继续送 reasoning delta，不能因此丢掉最后一小段。
         if let presentedText = textBuffer.flush(now: now) {
@@ -133,6 +147,8 @@ struct StreamingReasoningPresentationBuffer: Sendable {
         return StreamingReasoningSnapshot(
             text: text,
             isStreaming: isStreaming,
+            startedAt: startedAt,
+            completedAt: isStreaming ? nil : completedAt,
             revision: revision
         )
     }

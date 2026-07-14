@@ -815,6 +815,9 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
                     role: message.role.rawValue,
                     content: message.content,
                     reasoning: message.reasoning,
+                    reasoningStartedAt: message.reasoningStartedAt?.timeIntervalSince1970,
+                    reasoningCompletedAt: message.reasoningCompletedAt?.timeIntervalSince1970,
+                    responseCompletedAt: message.responseCompletedAt?.timeIntervalSince1970,
                     timestamp: message.timestamp.timeIntervalSince1970
                 )
                 try messageRow.insert(db)
@@ -945,6 +948,19 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
             // 旧消息迁移后自然保持 nil，新消息开始保存 provider 公开的 Think 内容。
             try db.alter(table: "chat_messages") { table in
                 table.add(column: "reasoning", .text)
+            }
+        }
+        migrator.registerMigration("v3-chat-message-reasoning-timing") { db in
+            // 历史库已发布；为 Think 耗时追加可空列，旧消息保持 nil，不能要求用户删库。
+            try db.alter(table: "chat_messages") { table in
+                table.add(column: "reasoning_started_at", .double)
+                table.add(column: "reasoning_completed_at", .double)
+            }
+        }
+        migrator.registerMigration("v4-chat-message-response-completion") { db in
+            // 回复总耗时与 Think 耗时语义不同，单独追加完成时刻，旧历史保持 nil。
+            try db.alter(table: "chat_messages") { table in
+                table.add(column: "response_completed_at", .double)
             }
         }
         try migrator.migrate(writer)
@@ -1079,6 +1095,9 @@ private struct ChatMessageSQLRow: Codable, FetchableRecord, MutablePersistableRe
     var role: String
     var content: String
     var reasoning: String?
+    var reasoningStartedAt: Double?
+    var reasoningCompletedAt: Double?
+    var responseCompletedAt: Double?
     var timestamp: Double
 
     enum CodingKeys: String, CodingKey {
@@ -1088,6 +1107,9 @@ private struct ChatMessageSQLRow: Codable, FetchableRecord, MutablePersistableRe
         case role
         case content
         case reasoning
+        case reasoningStartedAt = "reasoning_started_at"
+        case reasoningCompletedAt = "reasoning_completed_at"
+        case responseCompletedAt = "response_completed_at"
         case timestamp
     }
 
@@ -1097,6 +1119,9 @@ private struct ChatMessageSQLRow: Codable, FetchableRecord, MutablePersistableRe
             role: ChatMessage.Role(rawValue: role) ?? .assistant,
             content: content,
             reasoning: reasoning,
+            reasoningStartedAt: reasoningStartedAt.map(Date.init(timeIntervalSince1970:)),
+            reasoningCompletedAt: reasoningCompletedAt.map(Date.init(timeIntervalSince1970:)),
+            responseCompletedAt: responseCompletedAt.map(Date.init(timeIntervalSince1970:)),
             timestamp: Date(timeIntervalSince1970: timestamp),
             isStreaming: false
         )

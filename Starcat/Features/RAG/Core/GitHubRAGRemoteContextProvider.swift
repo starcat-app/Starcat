@@ -141,7 +141,9 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
                 resultCount: 0,
                 requestURL: requestURL(for: contextRequest, repo: repo),
                 startedAt: startedAt,
-                completedAt: Date()
+                completedAt: Date(),
+                providerName: "GitHub",
+                querySummary: contextRequest.query
             ))
         }
     }
@@ -169,6 +171,10 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             result = try await fetchCommitActivity(repo: repo, resource: contextRequest.resource, onDebug: onDebug)
         case .githubSecurityAdvisories:
             result = try await fetchSecurityAdvisories(repo: repo, limit: contextRequest.perRepoLimit, resource: contextRequest.resource, onDebug: onDebug)
+        case .externalWeb:
+            // 普通 Web 搜索由 RAGExternalWebSearchProvider 执行；到达这里说明调用方越过了
+            // resolver 的资源分流，必须失败而不是误发 GitHub 请求。
+            throw GitHubRemoteContextError.unsupportedResource
         }
         return RAGRemoteContextBlock(
             id: workItem.id,
@@ -185,7 +191,10 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             resultCount: result.count,
             requestURL: result.url,
             startedAt: startedAt,
-            completedAt: Date()
+            completedAt: Date(),
+            providerName: "GitHub",
+            querySummary: contextRequest.query,
+            resultPreviews: result.previews
         )
     }
 
@@ -233,7 +242,16 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         let content = lines.isEmpty
             ? "没有匹配的公开结果。"
             : "observed_themes=\(themes.isEmpty ? "none" : themes)\n\n\(lines.joined(separator: "\n\n"))"
-        return RemoteFetchResult(content: content, url: components.url, count: min(scopedItems.count, request.perRepoLimit))
+        let previews = scopedItems.prefix(min(request.perRepoLimit, 5)).compactMap { item -> RAGRemoteResultPreview? in
+            guard let url = URL(string: item.htmlURL) else { return nil }
+            return RAGRemoteResultPreview(title: "#\(item.number) \(item.title)", url: url, providerName: "GitHub")
+        }
+        return RemoteFetchResult(
+            content: content,
+            url: components.url,
+            count: min(scopedItems.count, request.perRepoLimit),
+            previews: previews
+        )
     }
 
     private func fetchReleases(
@@ -339,6 +357,8 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             return repoAPIURL(repo, suffix: "stats/commit_activity")
         case .githubSecurityAdvisories:
             return repoAPIURL(repo, suffix: "security-advisories", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+        case .externalWeb:
+            return nil
         }
     }
 
@@ -408,6 +428,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         case .githubContributors: return "GitHub Contributors"
         case .githubCommitActivity: return "GitHub Commit Activity"
         case .githubSecurityAdvisories: return "GitHub Security Advisories"
+        case .externalWeb: return "Web Search"
         }
     }
 
@@ -451,6 +472,7 @@ private struct RemoteFetchResult: Sendable {
     var content: String
     var url: URL?
     var count: Int
+    var previews: [RAGRemoteResultPreview] = []
 }
 
 private struct IndexedRemoteBlock: Sendable {
@@ -484,10 +506,12 @@ actor RAGRemoteContextMemoryCache {
 
 enum GitHubRemoteContextError: Error, LocalizedError {
     case http(status: Int, message: String)
+    case unsupportedResource
 
     var errorDescription: String? {
         switch self {
         case .http(let status, let message): return "GitHub HTTP \(status)：\(message)"
+        case .unsupportedResource: return "GitHub Provider 不支持普通 Web 搜索"
         }
     }
 }

@@ -5090,13 +5090,61 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Model reasoning"
+            "value": "Think"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型推理"
+            "value": "思考"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.reasoning.duration.format": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.1f s"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.1f 秒"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.processed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已处理"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.processing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理中"
           }
         }
       }
@@ -19433,6 +19481,18 @@
         }
       }
     },
+    "rag.workspace.composer.webSearch.off": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Enable web search" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "开启联网搜索" } }
+      }
+    },
+    "rag.workspace.composer.webSearch.on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Disable web search" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭联网搜索" } }
+      }
+    },
     "rag.workspace.composer.clearContext": {
       "localizations": {
         "en": {
@@ -21556,13 +21616,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fetching GitHub context: %1$lld of %2$lld"
+            "value": "Fetching online context: %1$lld of %2$lld"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在获取 GitHub 上下文：%1$lld / %2$lld"
+            "value": "正在获取联网上下文：%1$lld / %2$lld"
           }
         }
       }
@@ -21626,7 +21686,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已获取 %lld 条 GitHub 上下文"
+            "value": "已从 %lld 个联网来源获取上下文"
           }
         }
       }
@@ -21636,15 +21696,33 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search GitHub online"
+            "value": "Search online"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "联网搜索 GitHub"
+            "value": "联网搜索"
           }
         }
+      }
+    },
+    "rag.workspace.network.noProvider": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No External Search provider is available. Enable and verify one in Settings first." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的 External Search Provider，请先在设置中启用并验证。" } }
+      }
+    },
+    "rag.workspace.network.reason.liveGitHub": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The question asks for current GitHub data." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题需要 GitHub 当前实时数据。" } }
+      }
+    },
+    "rag.workspace.network.reason.userEnabled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Web search was explicitly enabled in the composer." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "用户已在输入框中主动开启联网搜索。" } }
       }
     },
     "rag.workspace.execution.retrieval.candidatesFormat": {
@@ -21908,13 +21986,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fetching GitHub context..."
+            "value": "Fetching online context..."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在获取 GitHub 上下文..."
+            "value": "正在获取联网上下文..."
           }
         }
       }
@@ -54131,14 +54209,14 @@
     },
     "rag.workspace.guidance.remoteFailedReply": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The GitHub online search failed, and there is no other evidence available for this question. See the online-search audit details and try again later." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub 联网搜索失败，且本轮没有其他可用证据。你可以展开联网审计查看原因，稍后再试。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "The online search failed, so no fresh evidence is available for this question. Expand the online-search audit for details and try again later." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "联网搜索失败，本轮无法获得回答该问题所需的新鲜证据。你可以展开联网搜索查看原因，稍后再试。" } }
       }
     },
     "rag.workspace.guidance.remoteEmptyReply": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No matching public GitHub results were found, and there is no other evidence available for this question." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有找到匹配的 GitHub 公开结果，且本轮没有其他可用证据。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "No matching public results were found, so no fresh evidence is available for this question." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "联网搜索没有找到匹配的公开结果，本轮无法获得回答该问题所需的新鲜证据。" } }
       }
     },
     "rag.workspace.guidance.noEvidenceReply": {

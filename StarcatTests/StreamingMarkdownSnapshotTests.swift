@@ -6,6 +6,7 @@
 //  为纯文本，避免中间态 Markdown 解析改变仍在增长的结构。
 //
 
+import Foundation
 import Testing
 @testable import Starcat
 
@@ -69,6 +70,22 @@ struct StreamingMarkdownSnapshotTests {
         #expect(buffer.text == "先检查知识库证据")
     }
 
+    @Test("发送后立即建立 Think 步骤，空 reasoning 也能正常结束")
+    func reasoningPresentationShowsInitialStepWithoutReasoningTokens() {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 10)
+        var buffer = StreamingReasoningPresentationBuffer(startedAt: startedAt)
+
+        let initial = buffer.begin()
+        #expect(initial.text.isEmpty)
+        #expect(initial.isStreaming)
+        #expect(initial.startedAt == startedAt)
+
+        let completed = buffer.completeReasoning(now: 10.6)
+        #expect(completed?.text.isEmpty == true)
+        #expect(completed?.isStreaming == false)
+        #expect(completed?.completedAt == Date(timeIntervalSinceReferenceDate: 10.6))
+    }
+
     @Test("高频长 Think 低频发布且完成态保留全部内容")
     func reasoningPresentationThrottlesWithoutDroppingContent() {
         var buffer = StreamingReasoningPresentationBuffer(
@@ -102,7 +119,9 @@ struct StreamingMarkdownSnapshotTests {
             immediateCharacterCount: 100
         )
 
-        #expect(buffer.completeReasoning(now: 0) == nil)
+        let emptyCompletion = buffer.completeReasoning(now: 0)
+        #expect(emptyCompletion?.text.isEmpty == true)
+        #expect(emptyCompletion?.isStreaming == false)
         let late = buffer.append("迟到", now: 0.1)
         #expect(late?.isStreaming == false)
         #expect(buffer.append("内容", now: 0.2) == nil)

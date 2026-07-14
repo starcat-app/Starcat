@@ -55,6 +55,9 @@ struct RAGPlannerRepoReference: Equatable, Sendable {
 struct RAGComposerContext: Equatable, Sendable {
     var explicitRepoIDs: [Int64] = []
     var explicitRepoReferences: [RAGPlannerRepoReference] = []
+    /// 允许发送给 External Search 的仓库身份。私有仓库只有在设置页明确允许后才进入此数组；
+    /// 与 Planner 的本地范围分开，避免主动联网开关意外扩大私有元数据出站范围。
+    var webSearchRepoReferences: [RAGPlannerRepoReference] = []
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var selectedModelID: String?
     var attachments: [RAGComposerAttachment] = []
@@ -63,6 +66,9 @@ struct RAGComposerContext: Equatable, Sendable {
     /// 发送给 Planner，又保留“继续比较它们”这类最小指代消解能力。
     var previousUserQuestion: String?
     var previousReferencedRepos: [RAGPlannerRepoReference] = []
+    /// Composer 的 `globe` 开关是本轮明确联网授权。开启后 GitHub 临时上下文无需再次
+    /// 确认，普通 External Search 也可以直接执行；关闭时仍保留原有 GitHub 逐项确认。
+    var webSearchEnabled = false
     /// 用户可以在执行前移除 Planner 建议的远程上下文 chip。
     var disabledRemoteResources: Set<RAGRemoteContextResource> = []
 }
@@ -213,6 +219,8 @@ enum RAGRemoteContextResource: String, CaseIterable, Codable, Sendable {
     case githubContributors = "github_contributors"
     case githubCommitActivity = "github_commit_activity"
     case githubSecurityAdvisories = "github_security_advisories"
+    /// 普通互联网结果由 External Search Provider 提供，不会进入 GitHub Provider。
+    case externalWeb = "external_web"
 }
 
 enum RAGRemoteIssueState: String, Codable, Sendable {
@@ -270,6 +278,38 @@ struct RAGRemoteContextRequest: Codable, Equatable, Sendable {
         state = try container.decodeIfPresent(RAGRemoteIssueState.self, forKey: .state) ?? .all
         sort = try container.decodeIfPresent(RAGRemoteIssueSort.self, forKey: .sort) ?? .updated
         order = try container.decodeIfPresent(RAGSortDirection.self, forKey: .order) ?? .descending
+    }
+}
+
+/// Planner 或 Composer 主动联网开关产生的普通 Web 查询。
+///
+/// 与 GitHub `repo × resource` 请求分开建模，是为了不让开放互联网查询伪装成某个仓库的
+/// 结构化 GitHub API 请求；执行层仍会把两类结果汇总到同一个用户可见联网步骤。
+struct RAGWebSearchRequest: Codable, Equatable, Identifiable, Sendable {
+    var query: String
+    var reason: String
+    var maxResults: Int
+
+    /// 查询经本地限制为 240 字并去重，因此可以直接作为同一轮执行轨迹里的稳定身份。
+    var id: String {
+        "external_web:\(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))"
+    }
+
+    init(query: String, reason: String, maxResults: Int = 8) {
+        self.query = query
+        self.reason = reason
+        self.maxResults = maxResults
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case query, reason, maxResults
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        query = try container.decodeIfPresent(String.self, forKey: .query) ?? ""
+        reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        maxResults = try container.decodeIfPresent(Int.self, forKey: .maxResults) ?? 8
     }
 }
 
@@ -385,6 +425,9 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     var sort: RAGRepoSort?
     var candidateLimit: Int?
     var remoteContextRequests: [RAGRemoteContextRequest]
+    var webSearchRequests: [RAGWebSearchRequest]
+    /// 为 true 时，本地知识片段不能替代实时结果；联网失败必须明确终止而不是生成旧答案。
+    var requiresLiveEvidence: Bool
     var confidence: RAGQueryPlanConfidence
     var clarificationQuestion: String?
     var fallbackQuestions: [String]
@@ -392,6 +435,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case mode, semanticQuery, filters, sort, candidateLimit, remoteContextRequests
+        case webSearchRequests, requiresLiveEvidence
         case confidence, clarificationQuestion, fallbackQuestions, userVisiblePlan
     }
 
@@ -402,6 +446,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         sort: RAGRepoSort? = nil,
         candidateLimit: Int? = nil,
         remoteContextRequests: [RAGRemoteContextRequest] = [],
+        webSearchRequests: [RAGWebSearchRequest] = [],
+        requiresLiveEvidence: Bool = false,
         confidence: RAGQueryPlanConfidence = .high,
         clarificationQuestion: String? = nil,
         fallbackQuestions: [String] = [],
@@ -413,6 +459,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         self.sort = sort
         self.candidateLimit = candidateLimit
         self.remoteContextRequests = remoteContextRequests
+        self.webSearchRequests = webSearchRequests
+        self.requiresLiveEvidence = requiresLiveEvidence
         self.confidence = confidence
         self.clarificationQuestion = clarificationQuestion
         self.fallbackQuestions = fallbackQuestions
@@ -427,6 +475,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         sort = try container.decodeIfPresent(RAGRepoSort.self, forKey: .sort)
         candidateLimit = try container.decodeIfPresent(Int.self, forKey: .candidateLimit)
         remoteContextRequests = try container.decodeIfPresent([RAGRemoteContextRequest].self, forKey: .remoteContextRequests) ?? []
+        webSearchRequests = try container.decodeIfPresent([RAGWebSearchRequest].self, forKey: .webSearchRequests) ?? []
+        requiresLiveEvidence = try container.decodeIfPresent(Bool.self, forKey: .requiresLiveEvidence) ?? false
         confidence = try container.decodeIfPresent(RAGQueryPlanConfidence.self, forKey: .confidence) ?? .medium
         clarificationQuestion = try container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
         fallbackQuestions = try container.decodeIfPresent([String].self, forKey: .fallbackQuestions) ?? []
@@ -566,11 +616,84 @@ struct RAGRemoteExecutionAuditItem: Identifiable, Codable, Equatable, Sendable {
     var errorMessage: String?
     var startedAt: Date?
     var completedAt: Date?
+    /// External Search 使用；GitHub 项继续由 repo + resource 表达来源。
+    var providerName: String? = nil
+    /// 只保存标题与公开 URL，禁止写入网页正文或 Provider 原始响应。
+    var resultPreviews: [RAGRemoteResultPreview] = []
+
+    enum CodingKeys: String, CodingKey {
+        case id, repoFullName, resource, querySummary, requestURL, status, transport
+        case httpStatusCode, resultCount, errorMessage, startedAt, completedAt
+        case providerName, resultPreviews
+    }
+
+    /// 旧会话 execution trace 没有 Provider 和结果预览；缺失时必须按空值恢复，不能让
+    /// 整条历史执行轨迹因新增审计字段而解码失败。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        repoFullName = try container.decode(String.self, forKey: .repoFullName)
+        resource = try container.decode(RAGRemoteContextResource.self, forKey: .resource)
+        querySummary = try container.decodeIfPresent(String.self, forKey: .querySummary) ?? ""
+        requestURL = try container.decodeIfPresent(URL.self, forKey: .requestURL)
+        status = try container.decode(RAGRemoteExecutionStatus.self, forKey: .status)
+        transport = try container.decodeIfPresent(RAGRemoteTransport.self, forKey: .transport)
+        httpStatusCode = try container.decodeIfPresent(Int.self, forKey: .httpStatusCode)
+        resultCount = try container.decodeIfPresent(Int.self, forKey: .resultCount)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt)
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+        providerName = try container.decodeIfPresent(String.self, forKey: .providerName)
+        resultPreviews = try container.decodeIfPresent([RAGRemoteResultPreview].self, forKey: .resultPreviews) ?? []
+    }
+
+    init(
+        id: String,
+        repoFullName: String,
+        resource: RAGRemoteContextResource,
+        querySummary: String,
+        requestURL: URL?,
+        status: RAGRemoteExecutionStatus,
+        transport: RAGRemoteTransport?,
+        httpStatusCode: Int?,
+        resultCount: Int?,
+        errorMessage: String?,
+        startedAt: Date?,
+        completedAt: Date?,
+        providerName: String? = nil,
+        resultPreviews: [RAGRemoteResultPreview] = []
+    ) {
+        self.id = id
+        self.repoFullName = repoFullName
+        self.resource = resource
+        self.querySummary = querySummary
+        self.requestURL = requestURL
+        self.status = status
+        self.transport = transport
+        self.httpStatusCode = httpStatusCode
+        self.resultCount = resultCount
+        self.errorMessage = errorMessage
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.providerName = providerName
+        self.resultPreviews = resultPreviews
+    }
+}
+
+/// 联网审计中的最小结果预览。正文只进入本轮 Prompt，不随会话长期保存。
+struct RAGRemoteResultPreview: Codable, Equatable, Identifiable, Sendable {
+    var title: String
+    var url: URL
+    var providerName: String?
+
+    var id: String { url.absoluteString }
 }
 
 struct RAGRemoteContextBlock: Identifiable, Equatable, Sendable {
     var id: String
-    var repoId: Int64
+    /// GitHub 临时上下文绑定仓库；普通 Web 搜索没有 repo 外键，因此保持 nil 且不写入
+    /// `rag_message_remote_contexts`，只持久化脱敏 execution trace。
+    var repoId: Int64?
     var resource: RAGRemoteContextResource
     var title: String
     var sourceURL: URL?
@@ -584,6 +707,9 @@ struct RAGRemoteContextBlock: Identifiable, Equatable, Sendable {
     var requestURL: URL? = nil
     var startedAt: Date? = nil
     var completedAt: Date? = nil
+    var providerName: String? = nil
+    var querySummary: String? = nil
+    var resultPreviews: [RAGRemoteResultPreview] = []
 }
 
 /// 会话历史只保留远程上下文的审计元数据，不保存 issues / PR 正文，避免把临时网络内容变成

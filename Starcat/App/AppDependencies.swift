@@ -520,11 +520,17 @@ final class AppDependencies {
             outputLanguage: outputLanguage
         )
         let githubToken = try? KeychainManager.shared.loadGithubToken()
+        let externalSearchSnapshot = ExternalSearchRegistry.SettingsSnapshot(settings: settings)
         return KnowledgeRAGService(
             planner: planner,
             candidateRepository: ragCandidateRepository,
             retriever: retriever,
             remoteContextProvider: GitHubRAGRemoteContextProvider(token: githubToken),
+            webSearchProvider: RAGExternalWebSearchProvider(
+                settingsSnapshot: externalSearchSnapshot,
+                selection: settings.externalContextProviderSelection,
+                aggregateEnabled: settings.aggregateExternalContextSearchEnabled && settings.isProUser
+            ),
             generatorClient: chatClient,
             generatorModel: chatSelection.modelName,
             generatorParameters: chatSelection.parameters,

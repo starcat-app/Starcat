@@ -621,7 +621,28 @@ struct RAGWorkspaceAnswerSurface: View {
                     .foregroundStyle(.secondary)
                     .help("rag.workspace.composer.attach")
 
-                    // Prompt 预算快照：放在附件右侧，靠近发送区，避免挤在模型菜单旁。
+                    // Globe 是普通互联网搜索的显式授权。蓝色表示后续问题可访问设置页中
+                    // 已启用的 External Search Provider；发送中禁用，避免误解为能改变当前请求。
+                    Button {
+                        viewModel.webSearchEnabled.toggle()
+                    } label: {
+                        Image(systemName: "globe")
+                            .font(iconFont(size: 13, weight: .medium))
+                            .foregroundStyle(viewModel.webSearchEnabled ? Color.accentColor : .secondary)
+                            .frame(width: 24, height: 24)
+                            .background(
+                                viewModel.webSearchEnabled ? Color.accentColor.opacity(0.14) : Color.clear,
+                                in: Circle()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .disabled(viewModel.isAnswering)
+                    .help(viewModel.webSearchEnabled
+                          ? "rag.workspace.composer.webSearch.on"
+                          : "rag.workspace.composer.webSearch.off")
+
+                    // Prompt 预算快照：放在联网开关右侧，靠近发送区，避免挤在模型菜单旁。
                     RAGContextUsageButton(usage: viewModel.composerContextUsage)
 
                     if viewModel.isAnswering {
@@ -1108,6 +1129,7 @@ struct RAGWorkspaceAnswerSurface: View {
         case .githubContributors: return "GitHub Contributors"
         case .githubCommitActivity: return "GitHub Commit Activity"
         case .githubSecurityAdvisories: return "GitHub Security Advisories"
+        case .externalWeb: return "Web Search"
         }
     }
 

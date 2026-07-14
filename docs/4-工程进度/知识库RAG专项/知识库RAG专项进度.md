@@ -27,6 +27,7 @@
 - [x] RAG 是独立知识库问答工作台，不并入 Agent Workspace 作为唯一入口。
 - [x] 第一版只读，不修改 tags、notes、status、star 或 libraryState。
 - [x] issues / PR / releases 等 GitHub 数据是本轮临时上下文，不写 `rag_chunks`。
+- [x] 用户主动开启的 External Search 结果只作为本轮临时上下文，不写索引或远程正文历史。
 - [x] 附件和图片是本轮临时上下文，不写索引、notes 或 CloudKit。
 - [x] 本次交付包含可选 Meilisearch / Qdrant 客户端能力，但不要求用户部署服务。
 - [x] 本次不做 Code RAG、Agent/MCP 联动、CloudKit 会话同步和 reranker。
@@ -62,7 +63,7 @@
 
 - [x] AI Query Planner 只输出结构化 JSON，不直接回答问题。
 - [x] 支持 `semantic_only / filtered_semantic / structured_only / needs_clarification`。
-- [x] schema 包含 filters、sort、candidateLimit、remoteContextRequests、confidence 和 userVisiblePlan。
+- [x] schema 包含 filters、sort、candidateLimit、remoteContextRequests、webSearchRequests、requiresLiveEvidence、confidence 和 userVisiblePlan。
 - [x] 本地验证枚举、日期、字段和范围；invalid JSON 重试一次，仍失败则降级语义检索。
 - [x] remote `maxRepos/perRepoLimit` 在本地钳制，普通问题不声明远程请求。
 - [x] SQL candidates 支持 status、language、tags、stars/forks、license、日期、archived/fork 等条件。
@@ -79,7 +80,7 @@
 
 - [x] `KnowledgeRAGService` 完成 Planner -> candidates -> retrieval -> remote -> attachments -> Generator 状态机。
 - [x] 支持 `AsyncThrowingStream` streaming 和 Task cancellation。
-- [x] Prompt 明确区分 local indexed、GitHub remote ephemeral 和 attachment context。
+- [x] Prompt 明确区分 local indexed、GitHub / External Search 临时网络上下文和 attachment context。
 - [x] 本地为 matched child 分配 `[S<n>]`，生成前绑定 citation metadata。
 - [x] 只恢复答案实际保留且属于本轮映射的 citation marker。
 - [x] citation 包含 repo/chunk/source/section/score/hitKind/sourceURL。
@@ -90,7 +91,7 @@
 - [x] 多轮会话保留近期 3 轮原文；更早消息按覆盖水位压缩为持久化语义摘要，压缩失败时使用受限本地摘要且原文不丢失。
 - [x] 支持新建、继续和删除会话，支持复制与导出 Markdown。
 - [x] 用户数据库切换前取消当前问答并销毁工作台，同时暂停 source 监听并等待所有在途索引任务退出，防止旧账户历史或 chunk 误写新账户数据库。
-- [x] 统一证据门禁只接受 structured rows、本地命中 bundles、成功非空的 GitHub blocks 或真实附件；semantic candidates 和 GitHub URL 不冒充证据。
+- [x] 统一证据门禁只接受 structured rows、本地命中 bundles、成功非空的网络 blocks 或真实附件；semantic candidates 和 URL 不冒充证据，实时问题还必须取得成功网络证据。
 - [x] 支持 attachment-only / remote-only 生成；所有来源均无证据时不调用 Generator，返回明确不足说明与最多 3 个推荐问题。
 - [x] 推荐问题随 assistant message 持久化；点击后恢复原轮显式 repo scope，再作为新问题发送。
 
@@ -108,7 +109,10 @@
 - [x] 历史恢复时 Inspector 展示远程上下文审计 metadata，不回放临时网络正文。
 - [x] 远程确认粒度收敛为 `repo × resource`；目标 repo 只来自显式选择或实际检索命中，不用任意知识库前 5 个兜底。
 - [x] Issues / PR 统一调用 `/search/issues`，固定目标 repo 与类型，清洗范围 qualifier 并二次过滤跨 repo / 类型错误结果。
-- [x] 对话步骤新增可折叠“联网搜索 GitHub”，逐项展示并持久化 network/cache、HTTP、结果数、耗时、脱敏 endpoint 与错误。
+- [x] 执行层为最新 Issues / PR / Release 等高置信实时问题兜底，Planner 漏报时仍生成受限 GitHub 请求。
+- [x] Composer 主动联网复用 AnySearch、Tavily、Exa 或 Brave Search；GitHub 已可精确回答时不重复普通 Web Search。
+- [x] 对话步骤统一为可折叠“联网搜索”，请求前出现，完成后自动折叠；展示 Provider/query、network/cache、HTTP、结果数、耗时、脱敏 endpoint 与最多 5 条结果链接。
+- [x] 未授权的私有仓库身份不进入 External Search query；Web 正文不持久化，旧联网审计可兼容解码。
 
 ## 7. 工作台 UI/UX
 
@@ -121,6 +125,7 @@
 - [x] `@repo` picker 支持上/下高亮、Enter 插入和 Esc 关闭；范围模式仅由显式菜单改变。
 - [x] 模型下拉只切换本轮 Planner/Generator，不修改全局设置或 embedding model。
 - [x] 附件 chip 显示文件名、MIME、大小和处理方式；可删除并同步执行上下文。
+- [x] 附件右侧新增联网开关；开启即授权本轮 External Search 与 GitHub 请求，关闭时 GitHub 继续逐项确认。
 - [x] 支持文本、源码、JSON、PDF 和图片；单轮 5 个、单文件 10 MB、总计 20 MB。
 - [x] 不支持或超预算附件在发送前阻断。
 - [x] OpenAI-compatible 无统一 vision capability 字段，不按模型名猜测；图片按 multimodal content
@@ -172,6 +177,8 @@
 
 > 2026-07-14: 同一修复的全量 `xcodebuild test` 排除既有分页预取断言后退出码 0；Swift Testing 1375 项 / 171 suites 通过（1 个既有 known issue），XCTest 46 项通过、1 项按设计跳过。
 
+> 2026-07-14: 主动联网实现通过 Debug build、xcstrings JSON 与 diff 检查；10 个定向用例覆盖 GitHub 意图兜底、External Search 零本地证据生成、实时证据拒绝旧答案、私有仓库隔离、旧审计解码、持久化边界和 Prompt 迁移，全部通过。组合 Suite 仍命中本专项既有 `addToLibraryPaginationWindowsAndPrefetches` 分页预取断言，与本轮联网链路无关。
+
 ## 10. 真实数据人工验收
 
 - [ ] 验证已 star 已入库、已 star 未入库、未 star 已入库三类 repo 的索引边界。
@@ -180,6 +187,9 @@
 - [ ] 用两个 `@repo` 做对比，并验证 only/prefer/exclude。
 - [ ] 切换模型、上传文本/PDF/图片和不支持附件，验证本轮上下文与阻断状态。
 - [ ] 验证 Issues/Releases/PR 确认、跳过、断网/限流降级和 Inspector 信息。
+- [ ] 使用 `@waydabber/BetterDisplay 这个项目最新的 open issues 是什么`，确认无需 Planner 正确声明也会显示“联网搜索”，并按 `updated desc` 返回 open Issues。
+- [ ] 开启 Composer 联网后询问知识库外的当前事实，确认显示所选 External Search Provider、query、命中数与可点击结果；关闭后不发起普通 Web Search。
+- [ ] 验证无搜索 Provider、断网、零结果和实时证据失败均明确拒答；私有仓库名称只在 Settings 授权后进入外部 query。
 - [ ] 验证历史恢复、citation 定位、本地/外部 GitHub 链接分流和 Markdown 导出。
 - [ ] 在索引构建和问答进行中切换账号,验证工作台关闭且 chunk/历史不串库。
 - [ ] 验证 Local 默认后端不依赖外部服务。

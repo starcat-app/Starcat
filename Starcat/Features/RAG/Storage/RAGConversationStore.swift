@@ -309,6 +309,9 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 ])
             }
             for block in remoteContexts {
+                // 通用 Web 结果没有 repo 外键，正文也只允许存在于本轮 Prompt。执行轨迹已保存
+                // Provider、查询和结果 URL，专用 remote context 表继续只记录 GitHub 审计。
+                guard let repoID = block.repoId else { continue }
                 try db.execute(sql: """
                     INSERT INTO rag_message_remote_contexts (
                         id, message_id, repo_id, resource, title, source_url, fetched_at, error_message
@@ -316,7 +319,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     """, arguments: [
                         "\(assistantID.uuidString):\(block.id)",
                         assistantID.uuidString,
-                        block.repoId,
+                        repoID,
                         block.resource.rawValue,
                         block.title,
                         block.sourceURL?.absoluteString,

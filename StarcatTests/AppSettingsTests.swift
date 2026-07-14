@@ -423,18 +423,27 @@ struct AppSettingsTests {
         #expect(settings.ragPromptSettings.title == RAGDefaultPrompts.title)
     }
 
-    @Test("RAG: 已保存的旧默认 Planner 应升级，自定义 Planner 不应被覆盖")
+    @Test("RAG: 已发布的旧默认 Prompt 应升级，自定义 Planner 不应被覆盖")
     func ragPromptSettingsUpgradeOnlyPublishedPlannerDefault() {
         let legacyDefaults = makeIsolatedDefaults()
         let legacySettings = AppSettings(defaults: legacyDefaults)
         legacySettings.ragPromptSettings = RAGPromptSettings(
-            generator: RAGDefaultPrompts.generator,
-            planner: RAGDefaultPrompts.plannerBeforeGuidedDiscovery
+            generator: RAGDefaultPrompts.generatorBeforeExternalWeb,
+            planner: RAGDefaultPrompts.plannerBeforeNetworkSearch
         )
 
         let upgraded = AppSettings(defaults: legacyDefaults)
+        #expect(upgraded.ragPromptSettings.generator == RAGDefaultPrompts.generator)
         #expect(upgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
-        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("guided_discovery"))
+        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("webSearchRequests"))
+
+        let oldestDefaults = makeIsolatedDefaults()
+        let oldestSettings = AppSettings(defaults: oldestDefaults)
+        oldestSettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: RAGDefaultPrompts.plannerBeforeGuidedDiscovery
+        )
+        #expect(AppSettings(defaults: oldestDefaults).ragPromptSettings.planner == RAGDefaultPrompts.planner)
 
         let customDefaults = makeIsolatedDefaults()
         let customSettings = AppSettings(defaults: customDefaults)

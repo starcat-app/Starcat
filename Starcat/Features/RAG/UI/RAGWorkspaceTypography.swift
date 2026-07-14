@@ -54,7 +54,7 @@ extension View {
 
 /// 用户 / AI 消息头像统一边长，保证两侧视觉对称。
 enum RAGMessageAvatarMetrics {
-    static let size: CGFloat = 20
+    static let size: CGFloat = 26
     static let cornerRadius: CGFloat = 5
 }
 

@@ -113,6 +113,102 @@ struct KnowledgeRAGCoreTests {
         #expect(plan.fallbackQuestions == ["介绍知识库中的 Swift 项目", "比较两个相关项目"])
     }
 
+    @Test("执行层为最新 open issues 补齐 GitHub 实时请求")
+    func networkIntentResolverBackfillsLiveGitHubIssues() {
+        let resolved = RAGNetworkIntentResolver.resolve(
+            question: "这个项目最新的 open issues 是什么",
+            plan: RAGQueryPlan(mode: .guidedDiscovery, semanticQuery: ""),
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "waydabber/BetterDisplay")]
+            )
+        )
+
+        #expect(resolved.remoteContextRequests.count == 1)
+        #expect(resolved.remoteContextRequests.first?.resource == .githubIssues)
+        #expect(resolved.remoteContextRequests.first?.state == .open)
+        #expect(resolved.remoteContextRequests.first?.query.isEmpty == true)
+        #expect(resolved.mode == .semanticOnly)
+        #expect(resolved.requiresLiveEvidence)
+        #expect(resolved.webSearchRequests.isEmpty)
+    }
+
+    @Test("Composer 联网开关把知识库外事实问题转为受限 Web 查询")
+    func networkIntentResolverCreatesExplicitWebQuery() {
+        let resolved = RAGNetworkIntentResolver.resolve(
+            question: "这个项目与同类方案有什么区别？",
+            plan: RAGQueryPlan(mode: .guidedDiscovery, semanticQuery: ""),
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "waydabber/BetterDisplay")],
+                webSearchRepoReferences: [.init(id: 21, fullName: "waydabber/BetterDisplay")],
+                webSearchEnabled: true
+            )
+        )
+
+        #expect(resolved.mode == .semanticOnly)
+        #expect(resolved.webSearchRequests.count == 1)
+        #expect(resolved.webSearchRequests.first?.query.contains("waydabber/BetterDisplay") == true)
+        #expect(resolved.remoteContextRequests.isEmpty)
+    }
+
+    @Test("关闭 Composer 联网后丢弃 Planner 普通 Web 请求")
+    func networkIntentResolverRequiresExplicitWebConsent() {
+        let resolved = RAGNetworkIntentResolver.resolve(
+            question: "搜索网络资料",
+            plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "搜索网络资料",
+                webSearchRequests: [.init(query: "Starcat RAG", reason: "补充资料")]
+            ),
+            composerContext: .init(webSearchEnabled: false)
+        )
+
+        #expect(resolved.webSearchRequests.isEmpty)
+    }
+
+    @Test("未授权的私有仓库身份不会进入 External Search 查询")
+    func networkIntentResolverDoesNotLeakPrivateRepoName() {
+        let resolved = RAGNetworkIntentResolver.resolve(
+            question: "查找这个项目的外部评测",
+            plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "外部评测",
+                webSearchRequests: [
+                    .init(query: "secret/private-repo 外部评测", reason: "Planner 复述了私有仓库名")
+                ]
+            ),
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [99],
+                explicitRepoReferences: [.init(id: 99, fullName: "secret/private-repo")],
+                webSearchRepoReferences: [],
+                webSearchEnabled: true
+            )
+        )
+
+        #expect(resolved.webSearchRequests.first?.query == "外部评测")
+        #expect(resolved.webSearchRequests.first?.query.contains("secret/private-repo") == false)
+    }
+
+    @Test("旧联网审计缺少 Provider 与结果预览时仍可解码")
+    func legacyRemoteAuditDecodesWithoutNewFields() throws {
+        let data = Data(#"""
+            {
+              "id":"21:github_issues:0",
+              "repoFullName":"octo/demo",
+              "resource":"github_issues",
+              "querySummary":"crash",
+              "status":"succeeded",
+              "resultCount":1
+            }
+            """#.utf8)
+
+        let item = try JSONDecoder().decode(RAGRemoteExecutionAuditItem.self, from: data)
+
+        #expect(item.providerName == nil)
+        #expect(item.resultPreviews.isEmpty)
+    }
+
     @Test("Planner: 只接收显式仓库身份、上一条用户问题和上一轮引用仓库")
     func plannerReceivesMinimalConversationContext() async throws {
         let spy = SpyRAGAIClient(chatResponse: """
@@ -597,28 +693,17 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.lastChatRequest?.userPrompt.contains("这是本轮附件事实") == true)
     }
 
-    @Test("本地无分片但显式仓库的 GitHub 实时证据可独立生成回答")
+    @Test("Planner 漏报时执行层仍用显式仓库的 GitHub 实时证据回答")
     func remoteOnlyEvidenceCanGenerateAnswer() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 21)
         try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
         let chunks = GRDBRAGChunkRepository(database: database)
         let spy = SpyRAGAIClient(chatResponse: "最新 Issue 回答 [R1]")
-        let remoteRequest = RAGRemoteContextRequest(
-            resource: .githubIssues,
-            query: "crash",
-            reason: "需要实时 Issue",
-            maxRepos: 1,
-            perRepoLimit: 5,
-            state: .open,
-            sort: .updated,
-            order: .descending
-        )
         let service = KnowledgeRAGService(
             planner: FixedRAGPlanner(plan: RAGQueryPlan(
                 mode: .semanticOnly,
-                semanticQuery: "最新 Issue",
-                remoteContextRequests: [remoteRequest]
+                semanticQuery: "最新 Issue"
             )),
             candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
             retriever: KnowledgeRAGRetriever(
@@ -647,6 +732,7 @@ struct KnowledgeRAGCoreTests {
         let consent = RAGRemoteContextConsent()
         await consent.resolve(["21:github_issues:0"])
         var answer: String?
+        var didStartNetworkStep = false
         for try await event in service.ask(
             request: RAGServiceRequest(
                 rawQuestion: "这个项目最新的 Issues 是什么？",
@@ -656,12 +742,101 @@ struct KnowledgeRAGCoreTests {
             remoteContextConsent: consent
         ) {
             if case .completed(let value, _, _, _) = event { answer = value }
+            if case .execution(.started(.remoteContext)) = event { didStartNetworkStep = true }
         }
 
         #expect(answer == "最新 Issue 回答 [R1]")
         #expect(spy.callCount == 1)
         #expect(spy.lastChatRequest?.userPrompt.contains("[R1]") == true)
         #expect(spy.lastChatRequest?.userPrompt.contains("Local knowledge-base evidence") == false)
+        #expect(didStartNetworkStep)
+    }
+
+    @Test("主动联网可在知识库零命中时用 External Search 证据生成回答")
+    func explicitWebSearchCanGenerateAnswerWithoutLocalChunks() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "联网证据回答 [R1]")
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "Swift 6.2 最新变化"
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            webSearchProvider: FixedWebSearchProvider(),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var preparedQueries: [String] = []
+        var answer: String?
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "Swift 6.2 最新变化",
+            composerContext: .init(webSearchEnabled: true),
+            conversationID: nil
+        )) {
+            if case .execution(.webSearchPrepared(let requests)) = event {
+                preparedQueries = requests.map(\.query)
+            }
+            if case .completed(let value, _, _, _) = event { answer = value }
+        }
+
+        #expect(preparedQueries == ["Swift 6.2 最新变化"])
+        #expect(answer == "联网证据回答 [R1]")
+        #expect(spy.lastChatRequest?.userPrompt.contains("Temporary network context") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("Swift evolution proposal") == true)
+    }
+
+    @Test("实时问题联网无结果时不得使用本地结构化数据生成旧答案")
+    func liveEvidenceGateRejectsStaleLocalFallback() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 31)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 31, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "不应生成")
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .structuredOnly,
+                semanticQuery: "",
+                webSearchRequests: [.init(query: "当前公开状态", reason: "需要实时证据")],
+                requiresLiveEvidence: true
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            webSearchProvider: EmptyFixedWebSearchProvider(),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var terminal: RAGTerminalResponse?
+        var answer: String?
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "这个项目当前的公开状态是什么？",
+            composerContext: .init(webSearchEnabled: true),
+            conversationID: nil
+        )) {
+            if case .terminal(let response) = event { terminal = response }
+            if case .completed(let value, _, _, _) = event { answer = value }
+        }
+
+        #expect(terminal != nil)
+        #expect(answer == nil)
+        #expect(spy.callCount == 0)
     }
 
     @Test("semantic 零命中时不得把候选仓库元数据伪装为证据")
@@ -1529,16 +1704,28 @@ struct KnowledgeRAGCoreTests {
             answer: "有一个待处理问题。",
             model: "test-model",
             citations: [],
-            remoteContexts: [RAGRemoteContextBlock(
-                id: "issues-43",
-                repoId: 43,
-                resource: .githubIssues,
-                title: "GitHub Issues",
-                sourceURL: URL(string: "https://github.com/octo/demo-43/issues"),
-                content: "这段远程正文不应写入历史表。",
-                fetchedAt: fetchedAt,
-                errorMessage: nil
-            )]
+            remoteContexts: [
+                RAGRemoteContextBlock(
+                    id: "issues-43",
+                    repoId: 43,
+                    resource: .githubIssues,
+                    title: "GitHub Issues",
+                    sourceURL: URL(string: "https://github.com/octo/demo-43/issues"),
+                    content: "这段远程正文不应写入历史表。",
+                    fetchedAt: fetchedAt,
+                    errorMessage: nil
+                ),
+                RAGRemoteContextBlock(
+                    id: "external-web",
+                    repoId: nil,
+                    resource: .externalWeb,
+                    title: "Tavily · Web Search",
+                    sourceURL: URL(string: "https://example.com/result"),
+                    content: "普通 Web 正文同样不能写入 GitHub 审计表。",
+                    fetchedAt: fetchedAt,
+                    errorMessage: nil
+                ),
+            ]
         )
 
         let loaded = try await store.loadConversation(id: conversation.id)
@@ -1548,6 +1735,7 @@ struct KnowledgeRAGCoreTests {
         #expect(audit.repoID == 43)
         #expect(audit.sourceURL?.absoluteString == "https://github.com/octo/demo-43/issues")
         #expect(audit.fetchedAt == ISO8601DateFormatter.shared.string(from: fetchedAt))
+        #expect(detail.messages.last?.remoteContextAudits.count == 1)
         let columns = try await database.writer.read { db in
             try Row.fetchAll(db, sql: "PRAGMA table_info(rag_message_remote_contexts)")
                 .map { (row: Row) -> String in row["name"] }
@@ -2008,6 +2196,66 @@ private struct FixedRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
     ) async -> [RAGRemoteContextBlock] {
         onProgress(.init(completed: workItems.count, total: workItems.count))
         return blocks
+    }
+}
+
+private struct FixedWebSearchProvider: RAGWebSearchProviding {
+    func fetch(
+        requests: [RAGWebSearchRequest],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
+    ) async -> [RAGRemoteContextBlock] {
+        requests.enumerated().map { index, request in
+            onProgress(.init(completed: index + 1, total: requests.count))
+            let now = Date()
+            return RAGRemoteContextBlock(
+                id: request.id,
+                repoId: nil,
+                resource: .externalWeb,
+                title: "Tavily · Web Search",
+                sourceURL: URL(string: "https://example.com/swift"),
+                content: "Swift evolution proposal and release notes",
+                fetchedAt: now,
+                errorMessage: nil,
+                resultCount: 1,
+                startedAt: now,
+                completedAt: now,
+                providerName: "Tavily",
+                querySummary: request.query,
+                resultPreviews: [.init(
+                    title: "Swift release notes",
+                    url: URL(string: "https://example.com/swift")!,
+                    providerName: "Tavily"
+                )]
+            )
+        }
+    }
+}
+
+private struct EmptyFixedWebSearchProvider: RAGWebSearchProviding {
+    func fetch(
+        requests: [RAGWebSearchRequest],
+        onProgress: @escaping @Sendable (RAGRemoteContextFetchProgress) -> Void
+    ) async -> [RAGRemoteContextBlock] {
+        requests.enumerated().map { index, request in
+            onProgress(.init(completed: index + 1, total: requests.count))
+            let now = Date()
+            return RAGRemoteContextBlock(
+                id: request.id,
+                repoId: nil,
+                resource: .externalWeb,
+                title: "Tavily · Web Search",
+                sourceURL: nil,
+                content: "",
+                fetchedAt: now,
+                errorMessage: nil,
+                outcome: .empty,
+                resultCount: 0,
+                startedAt: now,
+                completedAt: now,
+                providerName: "Tavily",
+                querySummary: request.query
+            )
+        }
     }
 }
 

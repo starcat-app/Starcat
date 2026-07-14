@@ -699,12 +699,14 @@ struct RAGServiceRequest: Sendable {
 struct RAGComposerContext: Sendable {
     var explicitRepoIDs: [Int64]
     var explicitRepoReferences: [RAGPlannerRepoReference]
+    var webSearchRepoReferences: [RAGPlannerRepoReference]
     var explicitRepoMode: RAGExplicitRepoMode
     var selectedModelID: String?
     var attachments: [RAGComposerAttachment]
     var pastedGitHubLinks: [RAGGitHubLinkReference]
     var previousUserQuestion: String?
     var previousReferencedRepos: [RAGPlannerRepoReference]
+    var webSearchEnabled: Bool
 }
 
 enum RAGExplicitRepoMode: String, Sendable {
@@ -750,6 +752,7 @@ enum RAGGitHubLinkRelation: String, Sendable {
 - 如果用户说“以 @repo 为参考,再找类似项目”,才使用 `.prefer`。
 - `selectedModelID` 只影响本轮或当前会话,不自动修改 Settings 全局模型。
 - 附件是本轮临时上下文,不进入 RAG 索引。
+- `webSearchEnabled` 由 Composer 的联网按钮显式控制；`webSearchRepoReferences` 只包含允许发送给外部搜索服务的仓库身份。
 - Planner 只接收当前问题、显式 repo 的 id/fullName、附件描述、粘贴链接描述、上一条用户问题与上一条回答实际引用的 repo；不接收分片正文、远程正文、完整历史或上一条回答正文。
 - `previousReferencedRepos` 来自已持久化 citation metadata，不允许从自然语言回答中反推仓库范围。
 - 配置解码时只会把已发布的上一版官方默认 Planner 模板升级为新模板；任何用户自定义 Planner 提示词都必须原样保留。
@@ -764,6 +767,8 @@ struct RAGQueryPlan: Codable, Sendable {
     var sort: RAGRepoSort?
     var candidateLimit: Int?
     var remoteContextRequests: [RAGRemoteContextRequest]
+    var webSearchRequests: [RAGWebSearchRequest]
+    var requiresLiveEvidence: Bool
     var fallbackQuestions: [String]
     var confidence: RAGQueryPlanConfidence
     var clarificationQuestion: String?
@@ -1001,11 +1006,11 @@ Planner:
 
 UI 追问,不进入 SQL / retrieval。
 
-### 7.5 远程临时上下文意图
+### 7.5 联网临时上下文意图
 
-RAG 不是通用联网搜索,但可以在用户问题需要“当前 GitHub 现场信息”时,为候选 repo 临时补充远程上下文。例如 issues、PR、release、contributors、commit activity、安全公告等数据不进入本地 chunk 索引,只在本轮问答中作为 `remoteContextBlocks` 送给 Generator。
+RAG 联网有两条受控路径：GitHub 结构化实时查询，以及用户在 Composer 明确开启的 External Search。两者取得的正文都不进入本地 chunk 索引，只在本轮问答中作为 `remoteContextBlocks` 送给 Generator。
 
-Planner 负责判断是否需要远程上下文,并输出 `remoteContextRequests`:
+Planner 负责声明 `remoteContextRequests`、`webSearchRequests` 与 `requiresLiveEvidence`。执行层不完全依赖概率性规划：当问题同时明确包含“最新/当前/open/closed”等实时语义与 Issues、PR、Release、Contributors、Commit Activity 或 Security Advisories 资源时，`RAGNetworkIntentResolver` 必须补齐 GitHub 请求。这样“这个项目最新的 open issues 是什么”即使被 Planner 错判为 `guided_discovery`，也会恢复为可执行计划。
 
 | 用户语义 | resource | 介入条件 |
 |---|---|---|
@@ -1058,12 +1063,15 @@ Planner:
 约束:
 
 - Planner 只声明意图,不直接访问网络。
-- 没有远程语义时必须返回空数组,不能为了“更完整”默认联网。
+- Composer 未开启联网时丢弃普通 `webSearchRequests`，不能为了“更完整”默认搜索全网。
 - 远程上下文必须受候选 repo 限制,不能从整个 GitHub 搜索后绕过知识库边界。
 - `maxRepos` 默认 5,`perRepoLimit` 默认 10,本地校验时必须钳制上限。
-- 远程上下文失败不改变本地 plan mode,只进入降级上下文。
+- `requiresLiveEvidence = true` 时，远程空结果或失败不能降级为只使用本地旧内容回答。
 - `query` 只能包含主题关键词，禁止输出 `repo:`、`org:`、`user:`、`is:`、`type:`、`in:`；执行层仍会再次清洗，不能只信任 Prompt。
-- Issues / PR 可声明 `state = all/open/closed`、`sort = created/updated` 和 `order = asc/desc`；“最新 Issues”默认使用 `state=all&sort=created&order=desc`。
+- Issues / PR 可声明 `state = all/open/closed`、`sort = created/updated` 和 `order = asc/desc`；“open issues”固定为 `state=open`，“最新”默认使用 `sort=updated&order=desc`。
+- 开启 Composer 联网后，如果已有 GitHub 结构化请求，不重复调用普通 Web Search，避免两份现场数据互相冲突。
+- External Search 复用 AnySearch、Tavily、Exa 或 Brave Search；最多执行 2 条 query，每条最多 10 个结果，并按 URL 去重。
+- 私有仓库身份只有在 Settings 明确允许时才能进入 `webSearchRepoReferences`；否则普通 Web query 只能使用用户原问题。
 
 ### 7.6 Planner 校验与降级
 
@@ -1075,12 +1083,13 @@ Planner 输出必须做校验:
 4. number 范围合法性。
 5. mode 与字段一致性。
 6. `remoteContextRequests` 的 resource、maxRepos、perRepoLimit 合法性。
+7. `webSearchRequests` 的 query、maxResults、总请求数合法性，并与 Composer 联网授权一致。
 
 mode 与字段约束:
 
 | mode | 必须满足 |
 |---|---|
-| `guided_discovery` | 清空 filters、sort、candidateLimit 和远程请求，`fallbackQuestions` 最多 3 条 |
+| `guided_discovery` | 默认清空 filters、sort、candidateLimit 和联网请求，`fallbackQuestions` 最多 3 条；执行层补出合法 GitHub/Web 请求后恢复为 `semantic_only` |
 | `semantic_only` | `semanticQuery` 非空,filters 为空或无有效字段 |
 | `filtered_semantic` | `semanticQuery` 非空,filters 或 sort 至少有一个有效字段 |
 | `structured_only` | `semanticQuery` 可空,filters 或 sort 至少有一个有效字段 |
@@ -1119,6 +1128,7 @@ user question
     -> matched: guided terminal response
   -> AI Query Planner
     -> invalid JSON: retry once
+    -> deterministic network intent resolver
     -> guided_discovery: guided terminal response
     -> needs_clarification: ask user
     -> semantic_only
@@ -1150,7 +1160,8 @@ structured_only:
   -> answer as list/table
 
 unified evidence gate:
-  -> structured rows exist OR local bundles exist OR successful remote blocks exist OR real attachments exist
+  -> structured rows exist OR local bundles exist OR successful network blocks exist OR real attachments exist
+  -> when requiresLiveEvidence: successful non-empty network block must exist
   -> yes: Generator
   -> no: terminal response + up to 3 suggested questions
 ```
@@ -1230,7 +1241,7 @@ WHERE c.repo_id IN candidateRepoIDs
 
 这种情况下不调用 Generator 编答案。UI 可以展示“候选但证据不足”的 repo 列表,但必须标注证据不足。
 
-最终是否调用 Generator 由统一证据门禁决定，而不是只看本地分片：真实附件或成功且 `resultCount > 0` 的 GitHub 临时上下文可以独立支撑回答；仅有 GitHub URL 描述、远程空结果、远程失败或 semantic candidate metadata 都不算证据。无证据回复附带最多 3 个 `RAGSuggestedQuestionAction`，点击后恢复原轮 `explicitRepoIDs/explicitRepoMode` 再发送，避免把建议问题意外扩大到整个知识库。
+最终是否调用 Generator 由统一证据门禁决定，而不是只看本地分片：真实附件或成功且 `resultCount > 0` 的 GitHub / External Search 临时上下文可以独立支撑回答；仅有 URL 描述、远程空结果、远程失败或 semantic candidate metadata 都不算证据。实时问题还必须通过 live evidence 门禁，不能以旧本地证据降级回答。无证据回复附带最多 3 个 `RAGSuggestedQuestionAction`，点击后恢复原轮 `explicitRepoIDs/explicitRepoMode` 再发送，避免把建议问题意外扩大到整个知识库。
 
 ### 7.10 UI Query Plan Chips
 
@@ -1269,7 +1280,7 @@ RAG 工作台在回答前或回答顶部展示 plan:
 - 如果选中 repo 没有 ready chunks,返回 `no_index`,不要扩大到其他 repo。
 - 如果选中 repo 有 chunks 但无相关证据,返回 `no_evidence`,不要让 Planner 自行放宽范围。
 
-issues / releases 这类远程上下文不由输入框命令强制触发。执行层只根据 Query Planner 输出的 `remoteContextRequests` 进入远程上下文流程,并在 UI 中展示可删除的确认 chip;用户删除后本轮跳过对应远程上下文。
+issues / releases 这类 GitHub 结构化上下文由 Planner 与执行层确定性规则共同触发。Composer 未开启联网时仍展示逐项确认；开启联网后，按钮本身就是本轮明确授权，并允许 Planner 产生普通 Web 查询。
 
 ## 8. Retriever
 
@@ -1961,7 +1972,7 @@ Citation chip 点击后的行为:
 
 这要求 ViewModel 只负责分流和回调,不要在 RAG UI 内重新实现详情页。
 
-### 11.6 Remote Context 展示
+### 11.6 联网临时上下文展示
 
 右侧 Inspector 不单独增加 Remote Context tab。使用 issues / releases / PR 等远程临时上下文时，
 Evidence 页在本地 citations 后显示轻量远程证据分组：
@@ -1972,11 +1983,15 @@ Evidence 页在本地 citations 后显示轻量远程证据分组：
 - 展示失败降级原因,例如 rate limit、无权限、网络超时。
 - 不把 remote context 展示成已索引 chunk,也不提供“打开 chunk”动作。
 
-Planner 产出远程请求后，Answer Surface 进入确认态并显示资源 chips。用户可以取消单个资源、确认
-保留项或全部跳过；未确认的资源不会发起网络请求。非 UI 调用方没有提供确认器时按“全部跳过”
-处理，不能把缺少确认器解释成默认批准。
+Planner 产出 GitHub 结构化请求后，Composer 未开启联网时，Answer Surface 进入确认态并显示资源
+chips。用户可以取消单个资源、确认保留项或全部跳过；未确认的资源不会发起网络请求。非 UI 调用方
+没有提供确认器时按“全部跳过”处理，不能把缺少确认器解释成默认批准。Composer 已开启联网时，
+按钮本身就是本轮明确授权，GitHub 请求自动批准，普通 Web 请求允许执行。
 
-对话步骤同时增加可折叠的“联网搜索 GitHub”执行项。父步骤按既有 timeline 规则运行时展开、结束后折叠；子项按 `repo × resource` 展示 pending/running/succeeded/empty/failed/skipped，以及 network/cache、HTTP 状态、结果数、耗时、脱敏 endpoint 和错误。审计随回答持久化，但不保存 token、Authorization header 或远程正文。
+对话步骤统一显示可折叠的“联网搜索”执行项，而且必须在真正发起网络请求前出现。父步骤按既有
+timeline 规则运行时展开、结束后折叠；GitHub 子项按 `repo × resource` 展示状态、network/cache、
+HTTP、结果数、耗时与脱敏 endpoint，External Search 子项展示 Provider、query、结果数、耗时与最多
+5 条可点击标题/URL。审计随回答持久化，但不保存 token、Authorization header 或远程正文。
 
 ### 11.7 Command Composer
 
@@ -1990,7 +2005,7 @@ RAG 输入框不应只是普通多行文本框,而应是 `RAGCommandComposerView
 ├────────────────────────────────────────────────────────────┤
 │ 输入: @GRDB 和 @SQLite.swift 对比本地数据库能力...          │
 ├────────────────────────────────────────────────────────────┤
-│ + 附件   模型下拉   发送                                    │
+│ + 附件   ◉ 联网   模型下拉   发送                            │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -2021,19 +2036,21 @@ Composer 内提供模型下拉:
 - OpenAI-compatible `/models` 没有统一 vision capability 字段，Starcat 不用模型名猜能力。图片按
   multimodal content parts 发送；服务端明确拒绝时原样展示错误，用户可切换模型或移除图片。
 
-#### 11.7.3 远程上下文确认
+#### 11.7.3 联网开关与远程上下文确认
 
-issues / releases / PR 等远程临时上下文由 Query Planner 根据自然语言判断,不是通过输入框命令触发。
+附件按钮右侧提供联网按钮。关闭时只允许经过逐项确认的 GitHub 结构化请求；开启时允许本轮使用
+External Search，并视为本轮 GitHub 请求的明确授权。按钮状态在当前工作台窗口内保持，不写全局
+Settings。
 
 交互流程:
 
 1. 用户正常输入问题。
-2. Planner 输出 `remoteContextRequests`。
-3. UI 在 Query Plan chips 中显示“GitHub Issues 临时上下文”等 chip。
-4. 用户可删除 chip。
-5. 执行层只对保留下来的 remote request 拉取远程上下文。
+2. Planner 输出 `remoteContextRequests` / `webSearchRequests`，执行层补齐高置信 GitHub 实时意图。
+3. 对话 timeline 先创建“联网搜索”步骤，再发起实际请求。
+4. 关闭联网时，UI 对 GitHub 请求显示确认 chips；开启联网时直接执行已校验请求。
+5. 完成后步骤自动折叠，用户可随时展开查看 Provider、query、命中数与结果链接。
 
-这样用户不需要记命令,也能在真正联网前看到本轮会额外查什么。
+这样用户既能主动用网络丰富上下文，也能确认真正送给 Generator 的联网来源。
 
 #### 11.7.4 附件与图片
 
@@ -2241,6 +2258,7 @@ Settings -> Storage 建议增加:
 ### 15.6 Remote Context tests
 
 - 没有 remote request 时不调用 `KnowledgeRAGRemoteContextProvider`。
+- Planner 漏报时，“这个项目最新的 open issues 是什么”仍补出 `github_issues + open + updated desc`。
 - remote provider 只接收由显式 repo 或实际命中 repo 解析出的已批准 work items。
 - Issues / PR 强制绑定目标 repo，过滤可扩大范围的 query qualifier，并剔除跨 repo 与错误类型结果。
 - issues provider 输出 LLM 友好的文本块,不透传 raw JSON。
@@ -2251,7 +2269,10 @@ Settings -> Storage 建议增加:
 - 完成回答后只把 resource/source URL/fetchedAt/降级原因写入 `rag_message_remote_contexts`，表结构不得出现远程正文列。
 - structured_only + remote request 必须先有 SQL 候选 repo。
 - remote-only 有成功非空 block 时允许生成；远程空结果或失败不能单独通过证据门禁。
-- 执行轨迹记录 cache/network、HTTP 状态、结果数、耗时、脱敏 URL 与错误。
+- Composer 联网关闭时丢弃普通 Web 请求；开启时零本地命中也可由成功 Web block 支撑生成。
+- 未获授权的私有仓库 fullName 不进入 External Search query。
+- 旧历史缺少 Provider 与结果预览字段时仍可解码。
+- 执行轨迹记录 Provider/query、cache/network、HTTP 状态、结果数、耗时、脱敏 URL 与错误。
 
 ### 15.7 Generator tests
 
@@ -2318,7 +2339,8 @@ Settings -> Storage 建议增加:
 第一版不做:
 
 - 不做 starred/all 范围的正式 RAG UI。
-- 不做通用联网 web RAG;只允许对本轮候选 repo 拉取受控的远程临时上下文。
+- 不做自动、无授权的通用 Web RAG；普通 External Search 必须由 Composer 本轮联网开关授权。
+- 不把 Web 结果写入 `rag_chunks`，也不持久化 Web 正文。
 - 不要求用户必须部署 Meilisearch / Qdrant。
 - 不在第一版内置或托管 Meilisearch / Qdrant 进程。
 - 不做本地 reranker 模型。

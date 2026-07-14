@@ -1271,6 +1271,7 @@ struct RAGWorkspaceInspector: View {
         case .githubContributors: return "GitHub Contributors"
         case .githubCommitActivity: return "GitHub Commit Activity"
         case .githubSecurityAdvisories: return "GitHub Security Advisories"
+        case .externalWeb: return "Web Search"
         }
     }
 }

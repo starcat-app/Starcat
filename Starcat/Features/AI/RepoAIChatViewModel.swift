@@ -43,6 +43,11 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
     var content: String
     /// Provider 公开的推理文本。它属于同一条 assistant 消息，但不混入正文或下一轮 history。
     var reasoning: String?
+    /// Think 步骤的真实起止时间，用于与 RAG 一致地展示已处理耗时；旧历史可为 nil。
+    var reasoningStartedAt: Date?
+    var reasoningCompletedAt: Date?
+    /// 整条回复完成时间，用于展示 RAG 同款“已处理”总耗时。
+    var responseCompletedAt: Date?
     let timestamp: Date
     /// 流式生成是否还在进行。完成后置 false，UI 据此显示"光标 / 打字中"指示。
     var isStreaming: Bool
@@ -52,6 +57,9 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         role: Role,
         content: String,
         reasoning: String? = nil,
+        reasoningStartedAt: Date? = nil,
+        reasoningCompletedAt: Date? = nil,
+        responseCompletedAt: Date? = nil,
         timestamp: Date = Date(),
         isStreaming: Bool = false
     ) {
@@ -59,6 +67,9 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         self.role = role
         self.content = content
         self.reasoning = reasoning
+        self.reasoningStartedAt = reasoningStartedAt
+        self.reasoningCompletedAt = reasoningCompletedAt
+        self.responseCompletedAt = responseCompletedAt
         self.timestamp = timestamp
         self.isStreaming = isStreaming
     }
@@ -66,7 +77,7 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
     // 自定义 Codable：跳过 `isStreaming`（落盘的消息恒为 false），其余字段照常。
     // 老 JSON（理论上不存在，HOM-70 首版上线）若缺这个字段也能正常 decode。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, reasoning, timestamp
+        case id, role, content, reasoning, reasoningStartedAt, reasoningCompletedAt, responseCompletedAt, timestamp
     }
 
     init(from decoder: Decoder) throws {
@@ -75,6 +86,9 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         self.role = try container.decode(Role.self, forKey: .role)
         self.content = try container.decode(String.self, forKey: .content)
         self.reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+        self.reasoningStartedAt = try container.decodeIfPresent(Date.self, forKey: .reasoningStartedAt)
+        self.reasoningCompletedAt = try container.decodeIfPresent(Date.self, forKey: .reasoningCompletedAt)
+        self.responseCompletedAt = try container.decodeIfPresent(Date.self, forKey: .responseCompletedAt)
         self.timestamp = try container.decode(Date.self, forKey: .timestamp)
         self.isStreaming = false
     }
@@ -85,6 +99,9 @@ struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         try container.encode(role, forKey: .role)
         try container.encode(content, forKey: .content)
         try container.encodeIfPresent(reasoning, forKey: .reasoning)
+        try container.encodeIfPresent(reasoningStartedAt, forKey: .reasoningStartedAt)
+        try container.encodeIfPresent(reasoningCompletedAt, forKey: .reasoningCompletedAt)
+        try container.encodeIfPresent(responseCompletedAt, forKey: .responseCompletedAt)
         try container.encode(timestamp, forKey: .timestamp)
     }
 }
@@ -494,7 +511,16 @@ final class RepoAIChatViewModel {
         if currentSessionId == nil { startEmptySession() }
 
         let userMessage = ChatMessage(role: .user, content: trimmed)
-        let assistantPlaceholder = ChatMessage(role: .assistant, content: "", isStreaming: true)
+        let reasoningStartedAt = Date()
+        let assistantPlaceholder = ChatMessage(
+            role: .assistant,
+            content: "",
+            reasoningStartedAt: reasoningStartedAt,
+            isStreaming: true
+        )
+        var reasoningPresentationBuffer = StreamingReasoningPresentationBuffer(
+            startedAt: reasoningStartedAt
+        )
 
         // 用完整磁盘历史（不含本轮新加的两条）拼 prompt history。UI 里的 `messages`
         // 可能只加载了尾部 2 条，不能用它直接发给模型，否则长对话会丢上下文。
@@ -518,7 +544,7 @@ final class RepoAIChatViewModel {
         persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
 
         streamingMessage = assistantPlaceholder
-        streamingReasoningPresentation = nil
+        streamingReasoningPresentation = reasoningPresentationBuffer.begin()
         streamingPresentation = StreamingMarkdownSnapshot(
             messageID: assistantPlaceholder.id,
             timestamp: assistantPlaceholder.timestamp,
@@ -554,7 +580,6 @@ final class RepoAIChatViewModel {
         // 未闭合尾部走纯 Text；最终完成时才渲染一次完整 Markdown。
         var lastCommitAt: TimeInterval = 0
         var accumulated = ""
-        var reasoningPresentationBuffer = StreamingReasoningPresentationBuffer()
         var pendingCharacterCount = 0
         var renderRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
@@ -614,6 +639,8 @@ final class RepoAIChatViewModel {
             if var completed = streamingMessage {
                 completed.content = final
                 completed.reasoning = Self.nonEmptyReasoning(reasoningPresentationBuffer.text)
+                completed.reasoningCompletedAt = reasoningPresentationBuffer.completedAt
+                completed.responseCompletedAt = Date()
                 completed.isStreaming = false
                 messages.append(completed)
                 totalMessageCount += 1
@@ -642,6 +669,8 @@ final class RepoAIChatViewModel {
                 if var stopped = streamingMessage {
                     stopped.content = accumulated
                     stopped.reasoning = Self.nonEmptyReasoning(reasoningPresentationBuffer.text)
+                    stopped.reasoningCompletedAt = reasoningPresentationBuffer.completedAt
+                    stopped.responseCompletedAt = Date()
                     stopped.isStreaming = false
                     // 内容为空（用户在首个 token 之前就取消）→ 不留空助手消息，
                     // 避免出现一条"空气泡"。否则正常 append 到 messages。
@@ -685,6 +714,8 @@ final class RepoAIChatViewModel {
             if var failed = streamingMessage {
                 failed.content = accumulated
                 failed.reasoning = Self.nonEmptyReasoning(reasoningPresentationBuffer.text)
+                failed.reasoningCompletedAt = reasoningPresentationBuffer.completedAt
+                failed.responseCompletedAt = Date()
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
                 // 失败占位文案走 i18n：英文 / 中文用户都能看懂自己语言的失败提示。
                 let prefix = failed.content

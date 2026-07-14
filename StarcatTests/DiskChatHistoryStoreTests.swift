@@ -116,6 +116,9 @@ struct DiskChatHistoryStoreTests {
                 role: .assistant,
                 content: "最终回答",
                 reasoning: "先检查上下文，再组织回答",
+                reasoningStartedAt: Date(timeIntervalSince1970: 100),
+                reasoningCompletedAt: Date(timeIntervalSince1970: 102.5),
+                responseCompletedAt: Date(timeIntervalSince1970: 105),
                 isStreaming: false
             )
             let session = ChatSession(title: "reasoning", messages: [assistant])
@@ -128,6 +131,9 @@ struct DiskChatHistoryStoreTests {
             )
 
             #expect(loaded?.messages.first?.reasoning == "先检查上下文，再组织回答")
+            #expect(loaded?.messages.first?.reasoningStartedAt == Date(timeIntervalSince1970: 100))
+            #expect(loaded?.messages.first?.reasoningCompletedAt == Date(timeIntervalSince1970: 102.5))
+            #expect(loaded?.messages.first?.responseCompletedAt == Date(timeIntervalSince1970: 105))
             #expect(loaded?.messages.first?.content == "最终回答")
         }
     }
