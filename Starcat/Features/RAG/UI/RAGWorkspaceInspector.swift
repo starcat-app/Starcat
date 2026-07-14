@@ -802,7 +802,7 @@ struct RAGWorkspaceInspector: View {
                         .padding(.bottom, isExpanded ? 0 : 10)
 
                         if isExpanded {
-                            // 子 stage 相对父行缩进，恢复「问答 → 各阶段」层级。
+                            // 子 stage 相对父行轻缩进即可，过大空白会浪费窄侧栏。
                             let stepDurations = debugEventStepDurations(for: trace.events)
                             VStack(alignment: .leading, spacing: 6) {
                                 ForEach(trace.events) { event in
@@ -812,7 +812,7 @@ struct RAGWorkspaceInspector: View {
                                     )
                                 }
                             }
-                            .padding(.leading, 18)
+                            .padding(.leading, 8)
                             .padding(.trailing, 10)
                             .padding(.bottom, 8)
                         }

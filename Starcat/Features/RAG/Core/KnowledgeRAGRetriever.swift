@@ -4,7 +4,7 @@
 //
 //  Repo-aware parent-child 检索编排。
 //
-//  child chunk 用于找准证据，命中后按 parent_key 扩展章节，再按 repo 聚合为
+//  child chunk 用于找准分片，命中后按 parent_key 扩展章节，再按 repo 聚合为
 //  RepoContextBundle。Generator 因而拿到的是“repo + 完整相关章节”，不是失去归属的碎片。
 //
 
@@ -211,7 +211,7 @@ struct KnowledgeRAGRetriever: Sendable {
         let startedAt = Date()
         do {
             let reranked = try await reranker.rerank(query: query, candidates: candidates)
-            // 服务端漏掉个别 index 时，保留未返回候选的原融合顺序，避免 Rerank 响应不完整导致证据消失。
+            // 服务端漏掉个别 index 时，保留未返回候选的原融合顺序，避免 Rerank 响应不完整导致分片丢失。
             let rerankedIDs = Set(reranked.compactMap { $0.hit.chunk.id })
             let trailing = candidates.filter { hit in
                 guard let id = hit.chunk.id else { return true }
@@ -407,7 +407,7 @@ private struct RAGRetrievalBranchResult: Sendable {
 }
 
 /// Section parent 必须围绕实际命中的 child 取上下文，而不是总从章节开头截取。否则超长
-/// README 中后段命中会生成“citation 指向后段、prompt 却只含开头”的错误证据关系。
+/// README 中后段命中会生成“citation 指向后段、prompt 却只含开头”的错误分片关系。
 struct RAGParentContextPacker: Sendable {
     func select(chunks: [RAGChunk], anchorChunkID: Int64?, tokenLimit: Int) -> [RAGChunk] {
         guard !chunks.isEmpty else { return [] }

@@ -292,9 +292,9 @@ struct CohereCompatibleRAGReranker: RAGReranking {
     }
 }
 
-/// 用户可控制的 RAG 证据筛选边界。
+/// 用户可控制的 RAG 分片筛选边界。
 ///
-/// 这些参数只决定“哪些本地证据进入本轮上下文”，不会改变索引、embedding 模型或融合权重。
+/// 这些参数只决定“哪些本地分片进入本轮上下文”，不会改变索引、embedding 模型或融合权重。
 /// 保留 keyword 召回独立于向量阈值，确保仓库名、API 名和错误码等精确匹配不会被语义分数误杀。
 struct RAGRetrievalSettings: Codable, Equatable, Sendable {
     var minimumVectorSimilarity: Double
@@ -377,7 +377,7 @@ struct RAGHybridFusionEngine: Sendable {
             var value = values[id] ?? Accumulator(chunk: hit.chunk)
             value.score += configuration.keywordWeight / (configuration.rrfConstant + Double(index + 1))
             // Keyword provider 把严格字面命中的相对排名归一化为 1/rank。只使用 RRF 项时
-            // 首名约 0.016，会被 Retriever 的证据阈值误判为无证据；保留该信号才能让
+            // 首名约 0.016，会被 Retriever 的综合检索分阈值误判为无分片；保留该信号才能让
             // repo 名、API、错误码等精确查询独立成立。
             value.score += max(hit.score, 0) * configuration.keywordScoreWeight
             value.keyword = true

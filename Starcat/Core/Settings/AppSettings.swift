@@ -837,7 +837,7 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.ragPromptSettings, value: ragPromptSettings) }
     }
 
-    /// RAG 检索的用户可调边界；只影响新建的问答 runtime，不改动已保存的会话证据。
+    /// RAG 检索的用户可调边界；只影响新建的问答 runtime，不改动已保存的会话分片快照。
     var ragRetrievalSettings: RAGRetrievalSettings {
         didSet { persistJSON(key: Keys.ragRetrievalSettings, value: ragRetrievalSettings.normalized()) }
     }

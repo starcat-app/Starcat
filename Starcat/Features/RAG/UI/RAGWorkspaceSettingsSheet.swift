@@ -759,7 +759,7 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     /// - Parameter expandsToTrailingEdge: 为 true 时输入框从标题右侧铺满到容器右缘（URL / 模型名等长文本）；
-    ///   默认 false 保持短数字框（证据上限 / Token 预算 / 候选数等）。
+    ///   默认 false 保持短数字框（分片上限 / Token 预算 / 候选数等）。
     @ViewBuilder
     private func settingTextFieldRow(
         titleKey: LocalizedStringKey,

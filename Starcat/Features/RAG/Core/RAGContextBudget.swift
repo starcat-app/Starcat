@@ -99,7 +99,7 @@ struct RAGContextBudget: Sendable {
         max(inputLimitTokens - tokensBySegment.values.reduce(0, +), 0)
     }
 
-    /// 历史最多只能占可输入空间的一部分，必须为当前问题和 RAG 证据留下位置。
+    /// 历史最多只能占可输入空间的一部分，必须为当前问题和 RAG 分片留下位置。
     /// 这份规则同时供 Prompt Builder 与会话压缩策略使用，避免两处对“历史快满”的
     /// 判断漂移：前者悄悄裁掉原文，后者却还没有开始生成摘要。
     static func historyTokenLimit(

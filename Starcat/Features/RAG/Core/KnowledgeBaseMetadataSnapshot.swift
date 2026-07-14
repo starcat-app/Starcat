@@ -11,7 +11,7 @@
 import Foundation
 import GRDB
 
-/// 注入回答 Prompt 的知识库全局事实；数组已由仓储限制，防止统计维度挤占证据预算。
+/// 注入回答 Prompt 的知识库全局事实；数组已由仓储限制，防止统计维度挤占分片预算。
 struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
     struct NamedCount: Equatable, Sendable {
         let name: String

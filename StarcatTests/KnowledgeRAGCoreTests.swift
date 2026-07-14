@@ -568,7 +568,7 @@ struct KnowledgeRAGCoreTests {
         #expect(breakdown.vectorRank != nil)
     }
 
-    @Test("纯 keyword 首名超过证据阈值")
+    @Test("纯 keyword 首名超过综合检索分阈值")
     func keywordOnlyHitSurvivesEvidenceThreshold() throws {
         let chunk = fixtureChunk(id: 8, repoID: 1, source: .readme)
         let hits = RAGHybridFusionEngine().fuse(
@@ -612,7 +612,7 @@ struct KnowledgeRAGCoreTests {
         #expect(result.childHits.first?.kind == .keyword)
     }
 
-    @Test("检索设置仅过滤向量阈值，并尊重证据来源开关")
+    @Test("检索设置仅过滤向量阈值，并尊重分片来源开关")
     func retrievalSettingsFilterVectorAndSources() async throws {
         let database = try InMemoryDatabaseManager()
         let keywordChunk = fixtureChunk(id: 82, repoID: 1, source: .readme)
@@ -678,7 +678,7 @@ struct KnowledgeRAGCoreTests {
         ))
     }
 
-    @Test("检索设置会限制最终证据总数与单仓库证据数")
+    @Test("检索设置会限制最终分片总数与单仓库分片数")
     func retrievalSettingsCapFinalEvidence() async throws {
         let database = try InMemoryDatabaseManager()
         let firstRepoFirst = fixtureChunk(id: 86, repoID: 1, source: .readme)
@@ -728,7 +728,7 @@ struct KnowledgeRAGCoreTests {
         #expect(diagnostics.fusion.totalLimitFilteredCount == 0)
     }
 
-    @Test("Rerank 在最终证据裁剪前重排，失败时保留综合检索顺序")
+    @Test("Rerank 在最终分片裁剪前重排，失败时保留综合检索顺序")
     func rerankReordersBeforeEvidenceLimitsAndFallsBack() async throws {
         let database = try InMemoryDatabaseManager()
         let first = fixtureChunk(id: 301, repoID: 1, source: .readme)
@@ -752,7 +752,7 @@ struct KnowledgeRAGCoreTests {
                 vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
                 embeddingClient: SpyRAGAIClient(),
                 embeddingModel: "embed",
-                // 本测试只验证 Rerank 与证据上限的先后顺序，不能让最低证据分数再次裁掉候选。
+                // 本测试只验证 Rerank 与分片上限的先后顺序，不能让最低综合检索分再次裁掉候选。
                 minimumEvidenceScore: 0,
                 retrievalSettings: RAGRetrievalSettings(
                     minimumVectorSimilarity: 0.65,
@@ -856,7 +856,7 @@ struct KnowledgeRAGCoreTests {
         #expect(json["texts"] == nil)
     }
 
-    @Test("关闭全部证据来源时返回可解释的检索诊断")
+    @Test("关闭全部分片来源时返回可解释的检索诊断")
     func retrievalDiagnosticsExplainDisabledSources() async throws {
         let database = try InMemoryDatabaseManager()
         let retriever = KnowledgeRAGRetriever(
@@ -896,7 +896,7 @@ struct KnowledgeRAGCoreTests {
         ))
     }
 
-    @Test("检索 Debug 事件延迟本地化并保留最终证据")
+    @Test("检索 Debug 事件延迟本地化并保留最终分片")
     func retrievalDebugEventRendersStructuredPayloadOnDemand() {
         let diagnostics = RAGRetrievalDiagnostics(
             settings: RAGRetrievalSettings(

@@ -543,9 +543,9 @@ private struct KnowledgeRAGBrowserView: View {
         return font.ascender - font.descender + font.leading
     }
 
-    /// 与主工作台 Composer 保持同一 13pt 高密度基准，并随全局界面字号档位缩放。
+    /// 召回查询是实际可编辑输入，使用标准 input token，并随全局界面字号档位缩放。
     private var retrievalQueryFont: NSFont {
-        NSFont.systemFont(ofSize: interfaceScale.scaled(13))
+        NSFont.systemFont(ofSize: interfaceScale.scaled(16))
     }
 
     private var retrievalQueryMinHeight: CGFloat {
@@ -776,7 +776,7 @@ private struct KnowledgeRAGBrowserView: View {
     private var knowledgeOverviewContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(viewModel.embeddingModel)
-                .font(.caption2.monospaced())
+                .font(.caption.monospaced())
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -875,7 +875,7 @@ private struct KnowledgeRAGBrowserView: View {
                         // 18pt 圆钮贴合 2～4 行输入框角位；24pt 会压过输入区观感。
                         Button { viewModel.runRetrievalTest() } label: {
                             Image(systemName: "testtube.2")
-                                .font(interfaceScale.font(size: 9, weight: .semibold))
+                                .font(interfaceScale.font(size: 13, weight: .semibold))
                                 .frame(width: 18, height: 18)
                         }
                         .buttonStyle(.plain)
@@ -965,10 +965,10 @@ private struct KnowledgeRAGBrowserView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("rag.workspace.retrieval.minimumSimilarity")
-                            .font(.caption.weight(.medium))
+                            .font(.body.weight(.medium))
                         Spacer()
                         Text(String(format: "%.2f", locale: locale, viewModel.retrievalTestSettings.minimumVectorSimilarity))
-                            .font(.caption.monospacedDigit())
+                            .font(.body.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                     Slider(value: retrievalTestSimilarityBinding, in: 0...1, step: 0.01)
@@ -986,11 +986,11 @@ private struct KnowledgeRAGBrowserView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("rag.workspace.retrieval.sources.title")
-                            .font(.caption.weight(.medium))
+                            .font(.body.weight(.medium))
                         HStack(spacing: 10) {
                             ForEach(RAGChunkSource.allCases, id: \.self) { source in
                                 Toggle(source.titleKey, isOn: retrievalTestSourceBinding(source))
-                                    .font(.caption)
+                                    .font(.body)
                                     .toggleStyle(.checkbox)
                             }
                         }
@@ -1078,11 +1078,11 @@ private struct KnowledgeRAGBrowserView: View {
     private func retrievalTestNumberField(titleKey: LocalizedStringKey, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(titleKey)
-                .font(.caption.weight(.medium))
+                .font(.body.weight(.medium))
                 .lineLimit(1)
             TextField("", text: text)
                 .textFieldStyle(.roundedBorder)
-                .font(.caption.monospacedDigit())
+                .font(.callout.monospacedDigit())
                 .frame(maxWidth: .infinity)
         }
     }
@@ -1188,10 +1188,10 @@ private struct KnowledgeRAGBrowserView: View {
     private func retrievalScoreLabel(_ titleKey: LocalizedStringKey, value: Double) -> some View {
         HStack(spacing: 3) {
             Text(titleKey)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
             Text(String(format: "%.3f", value))
-                .font(.caption2.monospaced())
+                .font(.caption.monospaced())
                 .foregroundStyle(.primary)
         }
     }
@@ -1206,16 +1206,16 @@ private struct KnowledgeRAGBrowserView: View {
                     fullName: candidate.repo.fullName,
                     ownerAvatarURL: candidate.repo.ownerAvatar,
                     avatarSize: 18,
-                    font: .callout.weight(selected ? .semibold : .regular),
+                    font: .subheadline.weight(selected ? .semibold : .regular),
                     spacing: 6,
                     showAvatarBorder: false
                 )
-                Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription")).font(.body).foregroundStyle(.secondary).lineLimit(2)
                 HStack(spacing: 6) {
                     if let language = candidate.repo.language, !language.isEmpty { Text(language) }
                     if let index { Text("\(index.readyChunks)/\(index.totalChunks)") }
                 }
-                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                .font(.caption.monospaced()).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(10)
             .background(repositoryRowBackground(rowIndex: rowIndex, selected: selected, isHovered: isHovered))
@@ -1380,12 +1380,12 @@ private struct KnowledgeRAGBrowserView: View {
                             .accessibilityHidden(true)
                         Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
                         Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
-                            .font(.caption2.monospaced())
+                            .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                         Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
                     }
-                    Text(chunk.content).font(.caption).lineLimit(3)
+                    Text(chunk.content).font(.body).lineLimit(3)
                     if let error = chunk.embeddingError, !error.isEmpty { Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1395,11 +1395,11 @@ private struct KnowledgeRAGBrowserView: View {
             .focusEffectDisabled()
             .pointerStyle(.link)
 
-            // 编辑 / 状态 / 删除三图标统一 caption2，与「可用」绿勾同视觉字号；点击热区仍略放大。
+            // 状态使用可读的 caption-strong；编辑和删除是行内操作，跟随 row-title 图标尺寸。
             HStack(alignment: .center, spacing: 8) {
                 if managed.hasOverride {
                     Image(systemName: "pencil.circle.fill")
-                        .font(.caption2)
+                        .font(.subheadline)
                         .foregroundStyle(Color.accentColor)
                 }
                 Label {
@@ -1408,7 +1408,7 @@ private struct KnowledgeRAGBrowserView: View {
                     Image(systemName: managedStatusIcon(managed, embeddingStatus: status))
                 }
                 .labelStyle(.titleAndIcon)
-                .font(.caption2.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(managedStatusColor(managed, embeddingStatus: status))
                 .symbolRenderingMode(.hierarchical)
                 Button(role: .destructive) {
@@ -1419,7 +1419,7 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption2)
+                        .font(.subheadline)
                         .frame(width: 28, height: 16)
                         .contentShape(Rectangle())
                 }
@@ -1429,7 +1429,7 @@ private struct KnowledgeRAGBrowserView: View {
                 .foregroundStyle(.red)
                 .help(managed.isExcluded ? "rag.browser.chunk.permanentDelete" : "rag.browser.chunk.disable")
             }
-            .frame(height: 16)
+            .frame(minHeight: 18)
         }
         .padding(12)
         .background(chunkRowBackground(managed, isHovered: isHovered, rowIndex: rowIndex))

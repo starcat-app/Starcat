@@ -102,7 +102,7 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
         retrievalPayload?.renderedText() ?? rerankPayload?.renderedText() ?? payload
     }
 
-    /// 内存上限按真实保存的字节数计算；结构化检索事件的最终证据不在 `payload` 内，不能漏算。
+    /// 内存上限按真实保存的字节数计算；结构化检索事件的最终分片不在 `payload` 内，不能漏算。
     var storedPayloadUTF8ByteCount: Int {
         payload.utf8.count
             + (retrievalPayload?.evidenceDetails.utf8.count ?? 0)
@@ -110,7 +110,7 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
     }
 }
 
-/// 检索阶段的可本地化调试快照。最终证据保持技术明细原文，用户可据此复核真正被送入模型的分片。
+/// 检索阶段的可本地化调试快照。最终分片保持技术明细原文，用户可据此复核真正被送入模型的分片。
 struct RAGRetrievalDebugPayload: Codable, Sendable {
     let diagnostics: RAGRetrievalDiagnostics?
     let evidenceDetails: String

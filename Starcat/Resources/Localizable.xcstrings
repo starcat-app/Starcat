@@ -20782,13 +20782,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reviewed %1$lld candidates · matched %2$lld passages · used evidence from %3$lld repositories"
+            "value": "Reviewed %1$lld candidates · matched %2$lld passages · used chunks from %3$lld repositories"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查 %1$lld 个候选仓库 · 命中 %2$lld 个片段 · 采用 %3$lld 个仓库的证据"
+            "value": "检查 %1$lld 个候选仓库 · 命中 %2$lld 个片段 · 采用 %3$lld 个仓库的分片"
           }
         }
       }
@@ -21774,13 +21774,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No sufficiently relevant knowledge-base evidence was found"
+            "value": "No sufficiently relevant knowledge-base chunks were found"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有找到足够相关的知识库证据"
+            "value": "没有找到足够相关的知识库分片"
           }
         }
       }
@@ -21854,13 +21854,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Organizing an answer from %lld evidence groups"
+            "value": "Organizing an answer from %lld chunk groups"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在根据 %lld 组证据组织回答"
+            "value": "正在根据 %lld 组分片组织回答"
           }
         }
       }
@@ -21998,13 +21998,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Packed %1$lld hits into evidence for %2$lld repositories"
+            "value": "Packed %1$lld hits into context for %2$lld repositories"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已将 %1$lld 条命中整理为 %2$lld 个仓库的证据"
+            "value": "已将 %1$lld 条命中整理为 %2$lld 个仓库上下文"
           }
         }
       }
@@ -22078,13 +22078,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Found evidence in %1$lld repositories (%2$lld hits)"
+            "value": "Found matching chunks in %1$lld repositories (%2$lld hits)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已在 %1$lld 个仓库中找到证据（%2$lld 条命中）"
+            "value": "已在 %1$lld 个仓库中找到分片（%2$lld 条命中）"
           }
         }
       }
@@ -22334,13 +22334,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No relevant indexed evidence was found. Rebuild the index or refine the question."
+            "value": "No relevant indexed chunks were found. Rebuild the index or refine the question."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有找到相关的已索引证据，请重建索引或调整问题。"
+            "value": "没有找到相关的已索引分片，请重建索引或调整问题。"
           }
         }
       }
@@ -23326,13 +23326,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No local evidence: every semantic candidate from enabled sources is below the current similarity threshold."
+            "value": "No local chunks: every semantic candidate from enabled sources is below the current similarity threshold."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可用的本地证据：所有启用来源的语义候选都低于当前相似度阈值。"
+            "value": "没有可用的本地分片：所有启用来源的语义候选都低于当前相似度阈值。"
           }
         }
       }
@@ -23342,13 +23342,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ready to answer with %1$lld evidence chunks from %2$lld repositories."
+            "value": "Ready to answer with %1$lld chunks from %2$lld repositories."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已保留 %1$lld 条证据分片，来自 %2$lld 个仓库，可用于回答。"
+            "value": "已保留 %1$lld 条分片，来自 %2$lld 个仓库，可用于回答。"
           }
         }
       }
@@ -23358,13 +23358,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No local evidence: no repositories matched the current scope."
+            "value": "No local chunks: no repositories matched the current scope."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可用的本地证据：当前范围内没有候选仓库。"
+            "value": "没有可用的本地分片：当前范围内没有候选仓库。"
           }
         }
       }
@@ -23374,13 +23374,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No local evidence remained after source, similarity, or ranking filters."
+            "value": "No local chunks remained after source, similarity, or ranking filters."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可用的本地证据：候选在来源、相似度或排序过滤后未留下可用分片。"
+            "value": "没有可用的本地分片：候选在来源、相似度或排序过滤后未留下可用分片。"
           }
         }
       }
@@ -23390,13 +23390,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No local evidence: keyword and semantic search returned no candidate chunks."
+            "value": "No local chunks: keyword and semantic search returned no candidate chunks."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可用的本地证据：关键词和语义检索都没有返回候选分片。"
+            "value": "没有可用的本地分片：关键词和语义检索都没有返回候选分片。"
           }
         }
       }
@@ -23406,13 +23406,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No local evidence: the candidate repositories have no ready chunks for the current embedding model."
+            "value": "No local chunks: the candidate repositories have no ready chunks for the current embedding model."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可用的本地证据：候选仓库没有当前 embedding 模型的已就绪分片。"
+            "value": "没有可用的本地分片：候选仓库没有当前 embedding 模型的已就绪分片。"
           }
         }
       }
@@ -23438,13 +23438,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No local evidence: all evidence sources are currently disabled."
+            "value": "No local chunks: all chunk sources are currently disabled."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可用的本地证据：当前没有启用任何证据来源。"
+            "value": "没有可用的本地分片：当前没有启用任何分片来源。"
           }
         }
       }
@@ -23470,13 +23470,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Final Evidence"
+            "value": "Final Chunks"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最终证据"
+            "value": "最终分片"
           }
         }
       }
@@ -23534,13 +23534,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Evidence ranking: %1$lld unique chunks; %2$lld excluded by the per-repository limit, %3$lld by the total limit, and %4$lld by the evidence-score threshold."
+            "value": "Chunk ranking: %1$lld unique chunks; %2$lld excluded by the per-repository limit, %3$lld by the total limit, and %4$lld by the combined retrieval-score threshold."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "证据排序：去重后 %1$lld 条；因单仓库上限排除 %2$lld 条、因总数上限排除 %3$lld 条、因证据分阈值排除 %4$lld 条。"
+            "value": "分片排序：去重后 %1$lld 条；因单仓库上限排除 %2$lld 条、因总数上限排除 %3$lld 条、因综合检索分阈值排除 %4$lld 条。"
           }
         }
       }
@@ -23550,13 +23550,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Final evidence: %1$lld chunks from %2$lld repositories."
+            "value": "Final chunks: %1$lld chunks from %2$lld repositories."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最终证据：%1$lld 条分片，来自 %2$lld 个仓库。"
+            "value": "最终分片：%1$lld 条，来自 %2$lld 个仓库。"
           }
         }
       }
@@ -23740,13 +23740,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Evidence limits: up to %1$lld chunks total, with %2$lld per repository."
+            "value": "Chunk limits: up to %1$lld chunks total, with %2$lld per repository."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "证据数量限制：最多使用 %1$lld 条分片，每个仓库最多 %2$lld 条。"
+            "value": "分片数量限制：最多使用 %1$lld 条分片，每个仓库最多 %2$lld 条。"
           }
         }
       }
@@ -23804,13 +23804,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Evidence context budget: %lld tokens."
+            "value": "Chunk context budget: %lld tokens."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "证据上下文预算：%lld Token。"
+            "value": "分片上下文预算：%lld Token。"
           }
         }
       }
@@ -24828,13 +24828,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld-token evidence budget applies to answer context, not this retrieval test."
+            "value": "%lld-token chunk budget applies to answer context, not this retrieval test."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld Token 证据预算仅影响回答上下文，不影响本次召回测试。"
+            "value": "%lld Token 分片预算仅影响回答上下文，不影响本次召回测试。"
           }
         }
       }
@@ -54559,13 +54559,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Evidence Context Token Budget"
+            "value": "Chunk Context Token Budget"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "证据上下文 Token 预算"
+            "value": "分片上下文 Token 预算"
           }
         }
       }
@@ -54672,13 +54672,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When enabled, candidate chunks are sent to your configured rerank service before final evidence selection."
+            "value": "When enabled, candidate chunks are sent to your configured rerank service before final chunk selection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启用后，候选分片会先发送到配置的 Rerank 服务，再选择最终证据。"
+            "value": "启用后，候选分片会先发送到配置的 Rerank 服务，再选择最终分片。"
           }
         }
       }
@@ -55208,13 +55208,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local knowledge-base evidence. Empty string when there is no evidence."
+            "value": "Local knowledge-base chunks. Empty string when there are no chunks."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地知识库证据；无证据时注入空字符串。"
+            "value": "本地知识库分片；无分片时注入空字符串。"
           }
         }
       }
