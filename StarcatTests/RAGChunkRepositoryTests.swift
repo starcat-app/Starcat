@@ -5,6 +5,7 @@
 //  验证 source 级稳定 diff、embedding 状态转换、知识库召回边界与 FTS 同步。
 //
 
+import Foundation
 import GRDB
 import Testing
 @testable import Starcat

@@ -1080,9 +1080,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func selectCitation(_ citation: RAGCitation) {
-        // 右侧证据换到另一条时，关掉回答区挂在旧芯片上的分片 popover。
+        // 右侧证据换到另一条时，关掉正文 S1 的分片弹层。
         if let openID = citationChunkPopoverCitationID, openID != citation.id {
             citationChunkPopoverCitationID = nil
+            RAGCitationChunkNSPopoverPresenter.shared.dismiss()
         }
         selectedCitation = citation
         selectedCitationChunk = nil
@@ -1094,17 +1095,42 @@ final class KnowledgeRAGWorkspaceViewModel {
             let chunk = try? await dependencies.ragChunkRepository.fetchChunks(ids: [chunkID]).first
             guard selectedCitation?.id == citation.id else { return }
             selectedCitationChunk = chunk
+            // 正文 S1 弹层若仍指向本条，用全文替换 loading。
+            if citationChunkPopoverCitationID == citation.id {
+                RAGCitationChunkNSPopoverPresenter.shared.update(
+                    citation: citation,
+                    chunk: chunk,
+                    isMissing: chunk == nil,
+                    interfaceScale: dependencies.settings.interfaceScale
+                )
+            }
         }
     }
 
-    /// 回答正文 S1 / 底部芯片：聚焦证据并弹出命中分片，不再直接开 Starcat 详情窗。
+    /// 回答正文蓝色 `[S1]`：在点击位置弹出与 Inspector 同尺寸的命中分片，并同步右侧证据。
+    /// 底部芯片不走这里。
     func presentCitationChunk(_ citation: RAGCitation) {
+        let clickPoint = NSEvent.mouseLocation
         citationChunkPopoverCitationID = citation.id
         selectCitation(citation)
+        let scale = dependencies.settings.interfaceScale
+        let isMissing = citation.chunkID == nil
+        RAGCitationChunkNSPopoverPresenter.shared.present(
+            citation: citation,
+            chunk: nil,
+            isMissing: isMissing,
+            screenPoint: clickPoint,
+            interfaceScale: scale,
+            onDismiss: { [weak self] in
+                self?.citationChunkPopoverCitationID = nil
+            }
+        )
     }
 
     func dismissCitationChunkPopover() {
+        guard citationChunkPopoverCitationID != nil else { return }
         citationChunkPopoverCitationID = nil
+        RAGCitationChunkNSPopoverPresenter.shared.dismiss()
     }
 
     /// 证据列表手风琴：再点同一条则收起。
@@ -1113,6 +1139,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedCitation = nil
             selectedCitationChunk = nil
             citationChunkPopoverCitationID = nil
+            RAGCitationChunkNSPopoverPresenter.shared.dismiss()
             return
         }
         selectCitation(citation)
@@ -1127,6 +1154,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     /// 回答正文里的 `starcat-rag://citation/<uuid>`：弹出命中分片，并同步右侧证据选中。
+    /// 底部引用芯片不走此路径（芯片只 `selectCitation`）。
     /// - Returns: 是否已处理（调用方不应再走通用 `handleLink`）。
     @discardableResult
     func openCitationLink(_ url: URL) -> Bool {

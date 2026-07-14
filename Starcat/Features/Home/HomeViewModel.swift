@@ -677,6 +677,9 @@ final class HomeViewModel {
     ///
     /// 事件由 Repository 在写库成功后发出；这里负责更新本地 map、失效知识库相关缓存、
     /// 刷新 Sidebar 计数，并在当前列表受影响时重查当前页。
+    ///
+    /// **必须**在 `HomeView` 生命周期订阅，不能挂在中栏 `List` 上——空库时空态没有 List，
+    /// RAG / Search Center 入库后 Sidebar「知识库」数量就永远停在 0。
     func observeRepoLibraryStateChanges() async {
         let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
         for await note in stream {

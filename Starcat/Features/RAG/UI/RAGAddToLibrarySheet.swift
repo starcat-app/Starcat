@@ -15,6 +15,11 @@ import SwiftUI
 
 /// 未入库 Stars 的筛选 / 候选派生，方便单测覆盖，不依赖 SwiftUI。
 enum RAGAddToLibraryLogic {
+    /// 列表首屏条数；之后按页追加。
+    static let pageSize = 30
+    /// 距当前已加载列表底部还剩这么多条时触发下一页。
+    static let prefetchDistance = 8
+
     /// 已 star 且尚未入库（无 `repo_notes` 行按 outside 处理）。
     static func outsideLibraryStars(
         starred: [Repo],
@@ -38,6 +43,25 @@ enum RAGAddToLibraryLogic {
             return haystack.localizedCaseInsensitiveContains(trimmed)
         }
     }
+
+    /// 当前应渲染的窗口；`displayedLimit` 由滚动分页递增。
+    static func displayedRepos(_ filtered: [Repo], limit: Int) -> [Repo] {
+        Array(filtered.prefix(max(limit, 0)))
+    }
+
+    /// 滚动到「距已加载尾部 <= prefetchDistance」时加载下一页。
+    static func shouldPrefetchNextPage(
+        appearingIndex: Int,
+        displayedLimit: Int,
+        filteredCount: Int
+    ) -> Bool {
+        guard displayedLimit < filteredCount else { return false }
+        return appearingIndex >= max(displayedLimit - prefetchDistance, 0)
+    }
+
+    static func nextDisplayLimit(current: Int, filteredCount: Int) -> Int {
+        min(current + pageSize, filteredCount)
+    }
 }
 
 /// RAG 工作台空库时的批量入库 Sheet。
@@ -54,9 +78,15 @@ struct RAGAddToLibrarySheet: View {
     @State private var loadError: String?
     /// 区分「本地还没有任何 Star」与「Stars 都已入库」。
     @State private var starredTotalCount = 0
+    /// 当前已加载到列表的条数窗口；搜筛选变化时重置为首屏。
+    @State private var displayedLimit = RAGAddToLibraryLogic.pageSize
 
     private var filteredCandidates: [Repo] {
         RAGAddToLibraryLogic.filter(candidates, query: searchText)
+    }
+
+    private var displayedCandidates: [Repo] {
+        RAGAddToLibraryLogic.displayedRepos(filteredCandidates, limit: displayedLimit)
     }
 
     private var selectedRepos: [Repo] {
@@ -80,6 +110,10 @@ struct RAGAddToLibrarySheet: View {
         )
         .appLocaleEnvironment()
         .task { await loadCandidates() }
+        .onChange(of: searchText) { _, _ in
+            // 筛选条件变了：回到首屏窗口，避免 limit 卡在旧结果长度上。
+            displayedLimit = RAGAddToLibraryLogic.pageSize
+        }
     }
 
     private var header: some View {
@@ -89,7 +123,8 @@ struct RAGAddToLibrarySheet: View {
                     .fill(.tint.opacity(0.12))
                 Image(systemName: "heart.fill")
                     .font(interfaceScale.font(size: 17, weight: .semibold))
-                    .foregroundStyle(.tint)
+                    // 与 LibraryToggleButton 入库心同款红；外框仍走 tint 淡底。
+                    .foregroundStyle(Color.fromHex6(0xE11D48))
             }
             .frame(
                 width: interfaceScale.scaled(36),
@@ -155,7 +190,7 @@ struct RAGAddToLibrarySheet: View {
                 String(
                     format: String.l10n("rag.workspace.addToLibrary.stats"),
                     selectedIDs.count,
-                    filteredCandidates.count
+                    displayedCandidates.count
                 )
             )
             .font(interfaceScale.font(.caption, weight: .semibold))
@@ -173,7 +208,7 @@ struct RAGAddToLibrarySheet: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .foregroundStyle(Color.accentColor)
-            .disabled(filteredCandidates.isEmpty || isSubmitting)
+            .disabled(displayedCandidates.isEmpty || isSubmitting)
 
             Button {
                 selectedIDs.removeAll()
@@ -225,9 +260,12 @@ struct RAGAddToLibrarySheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(filteredCandidates) { repo in
-                        repoRow(repo)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(displayedCandidates.enumerated()), id: \.element.id) { index, repo in
+                        repoRow(repo, rowIndex: index)
+                            .onAppear {
+                                prefetchIfNeeded(appearingIndex: index)
+                            }
                     }
                 }
             }
@@ -235,51 +273,74 @@ struct RAGAddToLibrarySheet: View {
         }
     }
 
-    private func repoRow(_ repo: Repo) -> some View {
+    private func repoRow(_ repo: Repo, rowIndex: Int) -> some View {
         let isSelected = selectedIDs.contains(repo.id)
         return Button {
             toggle(repo)
         } label: {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "checkmark")
-                    .font(interfaceScale.font(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
                     .opacity(isSelected ? 1 : 0)
-                    .frame(width: 14)
+                    .frame(width: 12, alignment: .center)
 
                 RemoteAvatar(
                     urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
-                    size: interfaceScale.scaled(22)
+                    size: interfaceScale.scaled(18),
+                    showBorder: false
                 )
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(repo.fullName)
                         .font(interfaceScale.font(.bodyEmphasis))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text(RAGMentionPickerLogic.subtitle(for: repo))
-                        .font(interfaceScale.font(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    // 与 `@` mention 候选同构：语言色点 + 星标，不用纯文字副行。
+                    HStack(spacing: 8) {
+                        if let language = repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !language.isEmpty {
+                            LanguageBadge(language: language, style: .compact)
+                        }
+                        StarsBadge(count: repo.starsCount, style: .compact)
+                    }
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
                 isSelected
-                    ? Color.accentColor.opacity(0.10)
-                    : Color.clear,
-                in: RoundedRectangle(cornerRadius: 7)
+                    ? Color.accentColor.opacity(0.12)
+                    : zebraBackground(rowIndex: rowIndex)
             )
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(isSubmitting)
         .help(repo.fullName)
+    }
+
+    /// 与 `@` mention / 分片列表同一套斑马纹：奇数行极淡 primary。
+    private func zebraBackground(rowIndex: Int) -> Color {
+        rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
+    }
+
+    /// 滚近已加载窗口尾部时追加一页，避免一次渲完几百行。
+    private func prefetchIfNeeded(appearingIndex: Int) {
+        let filteredCount = filteredCandidates.count
+        guard RAGAddToLibraryLogic.shouldPrefetchNextPage(
+            appearingIndex: appearingIndex,
+            displayedLimit: displayedLimit,
+            filteredCount: filteredCount
+        ) else { return }
+        displayedLimit = RAGAddToLibraryLogic.nextDisplayLimit(
+            current: displayedLimit,
+            filteredCount: filteredCount
+        )
     }
 
     private var footer: some View {
@@ -289,6 +350,7 @@ struct RAGAddToLibrarySheet: View {
                 dismiss()
             }
             .font(interfaceScale.font(.body))
+            .controlSize(.small)
             .disabled(isSubmitting)
 
             Button {
@@ -308,6 +370,7 @@ struct RAGAddToLibrarySheet: View {
             }
             .font(interfaceScale.font(.body))
             .buttonStyle(.borderedProminent)
+            .controlSize(.small)
             .keyboardShortcut(.defaultAction)
             .disabled(selectedIDs.isEmpty || isSubmitting)
         }
@@ -322,7 +385,8 @@ struct RAGAddToLibrarySheet: View {
     }
 
     private func selectAllVisible() {
-        for repo in filteredCandidates {
+        // 「全选可见」= 当前已加载窗口，不是全量筛选结果。
+        for repo in displayedCandidates {
             selectedIDs.insert(repo.id)
         }
     }
@@ -340,6 +404,7 @@ struct RAGAddToLibrarySheet: View {
                 starred: starredRepos,
                 libraryStateMap: try await libraryMap
             )
+            displayedLimit = RAGAddToLibraryLogic.pageSize
         } catch {
             loadError = error.localizedDescription
             AppLog.ui.error("RAG add-to-library load failed: \(error.localizedDescription, privacy: .public)")

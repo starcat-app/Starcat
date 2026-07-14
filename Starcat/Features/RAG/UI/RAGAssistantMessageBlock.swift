@@ -26,10 +26,6 @@ struct RAGAssistantMessageBlock: View {
     let processingDuration: TimeInterval?
     let onSelectCitation: (RAGCitation) -> Void
     let onExport: () -> Void
-    /// 与 ViewModel 同步：正文 S1 / 芯片共用「命中的分片」popover。
-    var popoverCitationID: UUID? = nil
-    var popoverChunk: RAGChunk? = nil
-    var onDismissChunkPopover: () -> Void = {}
 
     @State private var isHovered = false
     /// 与 `CopyFeedbackButton` 的 1.5s 反馈窗口对齐：反馈未结束前不因失悬停而隐藏。
@@ -88,10 +84,7 @@ struct RAGAssistantMessageBlock: View {
             if !content.isEmpty, !citations.isEmpty {
                 RAGCitationChipsRow(
                     citations: citations,
-                    popoverCitationID: popoverCitationID,
-                    popoverChunk: popoverChunk,
-                    onSelectCitation: onSelectCitation,
-                    onDismissPopover: onDismissChunkPopover
+                    onSelectCitation: onSelectCitation
                 )
             }
 

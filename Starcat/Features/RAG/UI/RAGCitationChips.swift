@@ -10,17 +10,13 @@ import SwiftUI
 
 /// 回答底部引用芯片：默认 3 条，超出折叠；底色按 `owner/repo` 稳定 hash，明暗皆淡色。
 /// 文案只保留 `Sn · repo`；同 repo 不同分片靠彩色 source 图标区分，不堆 sectionTitle。
-/// 点击芯片弹出「命中的分片」；正文 S1 链接也会定位到对应芯片再弹同一 popover。
+/// 点击只定位右侧证据，不弹分片 popover（popover 仅改正文蓝色 S1 链接）。
 struct RAGCitationChipsRow: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     let citations: [RAGCitation]
-    /// 当前要展开 popover 的引用；与 ViewModel.citationChunkPopoverCitationID 对齐。
-    let popoverCitationID: UUID?
-    let popoverChunk: RAGChunk?
     let onSelectCitation: (RAGCitation) -> Void
-    let onDismissPopover: () -> Void
 
     /// 首屏只露 3 条，避免长回答底部被芯片墙占满。
     private static let previewLimit = 3
@@ -41,7 +37,36 @@ struct RAGCitationChipsRow: View {
     var body: some View {
         RAGFlowLayout(spacing: 7) {
             ForEach(visibleCitations) { citation in
-                citationChip(citation)
+                Button {
+                    onSelectCitation(citation)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: citation.source.systemImageName)
+                            .font(interfaceScale.font(size: 10, weight: .semibold))
+                            .foregroundStyle(citation.source.tintColor)
+                        Text("\(citation.marker) ·")
+                            // captionSmall(11) 比正文 body(13) 再小一档，避免底部引用抢视线。
+                            .font(interfaceScale.font(.captionSmall, weight: .medium))
+                            .foregroundStyle(.primary)
+                        // owner logo 走 Kingfisher 缓存；芯片内 12pt、无描边，避免挤爆短芯片。
+                        RepoIdentityLabel(
+                            fullName: citation.repoFullName,
+                            avatarSize: 12,
+                            font: interfaceScale.font(.captionSmall, weight: .medium),
+                            spacing: 4,
+                            showAvatarBorder: false
+                        )
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RAGCitationChipPalette.background(for: citation.repoFullName),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(chipHelp(for: citation))
             }
 
             if hiddenCount > 0 {
@@ -66,77 +91,9 @@ struct RAGCitationChipsRow: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .pointerStyle(.link)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 正文点了折叠区里的 S4 时先展开，否则 popover 没有锚点芯片。
-        .onChange(of: popoverCitationID) { _, id in
-            guard let id,
-                  citations.contains(where: { $0.id == id }),
-                  !visibleCitations.contains(where: { $0.id == id }) else { return }
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                isExpanded = true
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func citationChip(_ citation: RAGCitation) -> some View {
-        let isPopoverTarget = popoverCitationID == citation.id
-
-        Button {
-            onSelectCitation(citation)
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: citation.source.systemImageName)
-                    .font(interfaceScale.font(size: 10, weight: .semibold))
-                    .foregroundStyle(citation.source.tintColor)
-                Text("\(citation.marker) ·")
-                    // captionSmall(11) 比正文 body(13) 再小一档，避免底部引用抢视线。
-                    .font(interfaceScale.font(.captionSmall, weight: .medium))
-                    .foregroundStyle(.primary)
-                // owner logo 走 Kingfisher 缓存；芯片内 12pt、无描边，避免挤爆短芯片。
-                RepoIdentityLabel(
-                    fullName: citation.repoFullName,
-                    avatarSize: 12,
-                    font: interfaceScale.font(.captionSmall, weight: .medium),
-                    spacing: 4,
-                    showAvatarBorder: false
-                )
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RAGCitationChipPalette.background(for: citation.repoFullName),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pointerStyle(.link)
-        .help(chipHelp(for: citation))
-        .popover(
-            isPresented: Binding(
-                get: { isPopoverTarget },
-                set: { presented in
-                    if !presented { onDismissPopover() }
-                }
-            ),
-            arrowEdge: .top
-        ) {
-            if let popoverChunk, isPopoverTarget {
-                RAGCitationChunkPopoverContent(chunk: popoverChunk)
-            } else if citation.chunkID == nil {
-                RAGCitationChunkMissingPopoverContent()
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(24)
-                    .frame(width: 120)
-            }
-        }
     }
 
     /// tooltip 仍带 section，方便悬停看具体分片；芯片本体保持短。

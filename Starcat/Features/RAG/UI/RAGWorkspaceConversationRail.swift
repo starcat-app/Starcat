@@ -25,8 +25,8 @@ struct RAGWorkspaceConversationRail: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 9) {
-                    Image(systemName: "text.book.closed.fill")
-                        .font(iconFont(size: 18, weight: .semibold))
+                    Image(systemName: "square.3.layers.3d.bottom.filled")
+                        .font(iconFont(size: 24, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("rag.workspace.title")
@@ -43,14 +43,19 @@ struct RAGWorkspaceConversationRail: View {
                 Button {
                     Task { await viewModel.newConversation() }
                 } label: {
-                    Label("rag.workspace.newConversation", systemImage: "plus")
+                    Label {
+                        Text("rag.workspace.newConversation")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                    }
                         .font(ragFont(.callout, weight: .semibold))
-                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         // rail 本身是 controlBackground；这里用 textBackground + separator
-                        // 描边做出可见灰底，明暗主题都对比够用，且不是 accent 蓝。
+                        // 描边做出可见灰底，明暗主题都对比够用；只让 + 图标走 accent 蓝。
                         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                         .overlay(
                             RoundedRectangle(cornerRadius: 7)

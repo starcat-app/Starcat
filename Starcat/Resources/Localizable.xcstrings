@@ -20265,6 +20265,22 @@
         }
       }
     },
+    "rag.workspace.inspector.chunkCreatedAt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chunk created at"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分片创建时间"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.chunkPreview.expand": {
       "localizations": {
         "en": {
@@ -20277,6 +20293,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "点击查看完整命中分片"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.chunkPopover.charCountFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld chars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 字符"
           }
         }
       }
@@ -20910,13 +20942,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Evidence"
+            "value": "Citations"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "证据"
+            "value": "引用"
           }
         }
       }
@@ -24798,13 +24830,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Citations"
+            "value": "Context"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "引用"
+            "value": "上下文"
           }
         }
       }

@@ -154,12 +154,6 @@ struct RAGWorkspaceInspector: View {
                             viewModel.toggleCitation(citation)
                         } label: {
                             HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: citation.source.systemImageName)
-                                    .font(iconFont(size: 12, weight: .semibold))
-                                    .foregroundStyle(citation.source.tintColor)
-                                    .frame(width: 14, alignment: .center)
-                                    .padding(.top, 2)
-
                                 VStack(alignment: .leading, spacing: 3) {
                                     RepoIdentityLabel(
                                         fullName: citation.repoFullName,
@@ -168,12 +162,18 @@ struct RAGWorkspaceInspector: View {
                                         spacing: 6,
                                         showAvatarBorder: false
                                     )
-                                    // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
-                                    (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
-                                        .font(ragFont(.caption2))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
+                                    // source 图标跟面包屑同排：一眼对来源类型，又不挤第一行 logo。
+                                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                        Image(systemName: citation.source.systemImageName)
+                                            .font(iconFont(size: 11, weight: .semibold))
+                                            .foregroundStyle(citation.source.tintColor)
+                                        // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
+                                        (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
+                                            .font(ragFont(.caption2))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                    }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 Spacer(minLength: 4)
@@ -295,6 +295,9 @@ struct RAGWorkspaceInspector: View {
                 )
             }
             if let chunk = viewModel.selectedCitationChunk, viewModel.selectedCitation?.id == citation.id {
+                if let createdAtLabel = chunkCreatedAtLabel(chunk) {
+                    citationField("rag.workspace.inspector.chunkCreatedAt", value: createdAtLabel)
+                }
                 // 与综合检索分一致：info.circle 标明可点开 popover 看全文。
                 Button {
                     isCitationChunkPopoverPresented = true
@@ -312,7 +315,7 @@ struct RAGWorkspaceInspector: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help("rag.workspace.inspector.chunkPreview.expand")
-                citationChunkPreview(chunk)
+                citationChunkPreview(citation, chunk: chunk)
             }
             if citation.chunkID == nil {
                 Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
@@ -331,7 +334,7 @@ struct RAGWorkspaceInspector: View {
     }
 
     /// 最多 5 行预览；点击用 popover 看全文，避免点选文本时「字突然变多」。
-    private func citationChunkPreview(_ chunk: RAGChunk) -> some View {
+    private func citationChunkPreview(_ citation: RAGCitation, chunk: RAGChunk) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
                 isCitationChunkPopoverPresented = true
@@ -349,7 +352,7 @@ struct RAGWorkspaceInspector: View {
             .focusEffectDisabled()
             .help("rag.workspace.inspector.chunkPreview.expand")
             .popover(isPresented: $isCitationChunkPopoverPresented, arrowEdge: .leading) {
-                RAGCitationChunkPopoverContent(chunk: chunk)
+                RAGCitationChunkPopoverContent(citation: citation, chunk: chunk)
             }
 
             if chunk.isTruncated {
@@ -534,6 +537,7 @@ struct RAGWorkspaceInspector: View {
             embeddingCoverageProgress
             Divider()
             VStack(alignment: .trailing, spacing: 13) {
+                indexProgressLabel
                 Button {
                     viewModel.rebuildIndex()
                 } label: {
@@ -543,7 +547,6 @@ struct RAGWorkspaceInspector: View {
                     }
                 }
                 .disabled(viewModel.isIndexing)
-                indexProgressLabel
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -1222,9 +1225,10 @@ struct RAGWorkspaceInspector: View {
             .progressViewStyle(.linear)
             .controlSize(.mini)
             .tint(liveProgress == nil ? .green : Color.accentColor)
-            // 全库健康度不应占据整行；本轮任务的数值才是主信息，窄条只辅助确认推进。
-            .frame(maxWidth: 260)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            // 保持原有整行长度，只压缩视觉高度，避免用宽度改变索引区的既有布局。
+            .scaleEffect(x: 1, y: 0.5, anchor: .center)
+            .frame(maxWidth: .infinity)
+            .frame(height: 7)
             .animation(.easeInOut(duration: 0.18), value: progress.readyChunks)
         }
     }
@@ -1235,6 +1239,16 @@ struct RAGWorkspaceInspector: View {
     }
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
+    }
+
+    /// 引用详情里展示分片入库时间；ISO 解析失败则跳过，不堆原始字符串。
+    func chunkCreatedAtLabel(_ chunk: RAGChunk) -> String? {
+        let raw = chunk.createdAt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        guard let date = ISO8601DateFormatter.shared.date(from: raw)
+            ?? ISO8601DateFormatter().date(from: raw)
+        else { return nil }
+        return localizedTimestamp(date)
     }
 
     /// 右侧「证据」列表：按相关度降序，同分再按仓库名稳定排序。

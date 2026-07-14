@@ -1422,6 +1422,29 @@ struct KnowledgeRAGCoreTests {
         #expect(filtered.map(\.id) == [1])
     }
 
+    @Test
+    func addToLibraryPaginationWindowsAndPrefetches() {
+        let repos = (1...75).map { mentionFixtureRepo(id: Int64($0), fullName: "o/r\($0)", language: "Go", stars: $0) }
+        #expect(RAGAddToLibraryLogic.displayedRepos(repos, limit: 30).count == 30)
+        #expect(RAGAddToLibraryLogic.shouldPrefetchNextPage(
+            appearingIndex: 21,
+            displayedLimit: 30,
+            filteredCount: 75
+        ))
+        #expect(!RAGAddToLibraryLogic.shouldPrefetchNextPage(
+            appearingIndex: 10,
+            displayedLimit: 30,
+            filteredCount: 75
+        ))
+        #expect(RAGAddToLibraryLogic.nextDisplayLimit(current: 30, filteredCount: 75) == 60)
+        #expect(RAGAddToLibraryLogic.nextDisplayLimit(current: 60, filteredCount: 75) == 75)
+        #expect(!RAGAddToLibraryLogic.shouldPrefetchNextPage(
+            appearingIndex: 70,
+            displayedLimit: 75,
+            filteredCount: 75
+        ))
+    }
+
     private func mentionFixtureRepo(
         id: Int64,
         fullName: String,

@@ -11,13 +11,13 @@
 import SwiftUI
 
 extension RAGChunkSource {
-    /// 来源类型 → SF Symbol；芯片与右侧引用列表必须一致。
+    /// 来源类型 → SF Symbol；芯片与右侧引用列表 / 命中分片 popover 必须一致。
     var systemImageName: String {
         switch self {
-        case .readme: return "doc.text"
-        case .notes: return "note.text"
-        case .summary: return "sparkles"
-        case .metadata: return "info.circle"
+        case .readme: return "books.vertical.circle"
+        case .notes: return "square.and.pencil.circle"
+        case .summary: return "character.bubble"
+        case .metadata: return "tag.circle"
         }
     }
 

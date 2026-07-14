@@ -12,6 +12,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
 
@@ -153,6 +154,11 @@ struct RAGWorkspaceAnswerSurface: View {
                 .scrollPosition($messageTimelinePosition)
                 .onScrollPhaseChange { _, newPhase in
                     messageTail.updatePhase(newPhase)
+                    // 对话时间线一旦滚动（含惯性/程序贴底），正文 S1 的 NSPopover 锚点就失效；
+                    // popover 内部滚动不会改变本 ScrollView 的 phase，不会误关。
+                    if newPhase != .idle {
+                        viewModel.dismissCitationChunkPopover()
+                    }
                 }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     let remaining = geometry.contentSize.height
@@ -284,28 +290,62 @@ struct RAGWorkspaceAnswerSurface: View {
                         viewModel.presentAddToLibrary()
                     } label: {
                         Label("rag.workspace.addToLibrary.cta", systemImage: "heart.fill")
-                            .font(ragFont(.callout, weight: .semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            .font(ragFont(.caption, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                     .padding(.top, 4)
                     .help("rag.workspace.addToLibrary.openHelp")
                 }
             } else {
-                EmptyStateView(
-                    systemImage: "text.book.closed",
-                    title: "rag.workspace.empty.title",
-                    subtitle: "rag.workspace.empty.subtitle",
-                    iconSize: interfaceScale.scaled(52),
-                    spacing: 14,
-                    subtitleHorizontalPadding: 48,
-                    titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
-                    subtitleFont: ragFont(.callout)
-                )
+                if colorScheme == .light {
+                    decoratedEmptyConversation
+                } else {
+                    // 示意图是浅色视觉稿，深色模式继续用系统语义色空态，避免白底位图破坏窗口层级。
+                    EmptyStateView(
+                        systemImage: "text.book.closed",
+                        title: "rag.workspace.empty.title",
+                        subtitle: "rag.workspace.empty.subtitle",
+                        iconSize: interfaceScale.scaled(52),
+                        spacing: 14,
+                        subtitleHorizontalPadding: 48,
+                        titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
+                        subtitleFont: ragFont(.callout)
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 浅色新会话空态只表达中栏将发生的问答与引用，不重复现有窗口的三栏结构。
+    /// 资源图自带的中文标题会在这里被裁出，实际文案仍由 xcstrings 绘制，确保英文界面可本地化。
+    private var decoratedEmptyConversation: some View {
+        VStack(spacing: interfaceScale.scaled(14)) {
+            Image("RAGEmptyConversationArtwork")
+                .resizable()
+                .scaledToFill()
+                // 原图底部是中文视觉稿文案；只取上半部对话示意，避免和本地化文本重复。
+                .frame(
+                    width: interfaceScale.scaled(520),
+                    height: interfaceScale.scaled(282),
+                    alignment: .top
+                )
+                .clipped()
+                .accessibilityHidden(true)
+
+            Text("rag.workspace.empty.title")
+                .font(interfaceScale.font(.workspaceTitle, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            Text("rag.workspace.empty.subtitle")
+                .font(ragFont(.callout))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: interfaceScale.scaled(520))
+        }
     }
 
     /// 会话已有内容但知识库仍为空（例如提问后落到 noKnowledgeRepos）时，在 Composer 上方给补救入口。
@@ -407,17 +447,10 @@ struct RAGWorkspaceAnswerSurface: View {
             activityLabel: activityLabel,
             processingDuration: processingDuration,
             onSelectCitation: { citation in
-                // 底部芯片与正文 S1：弹出命中分片，并同步右侧证据。
-                viewModel.presentCitationChunk(citation)
+                // 底部芯片：只定位右侧证据，不弹分片（与改前一致）。
+                viewModel.selectCitation(citation)
             },
-            onExport: { viewModel.exportAnswer(content) },
-            popoverCitationID: citations.contains(where: { $0.id == viewModel.citationChunkPopoverCitationID })
-                ? viewModel.citationChunkPopoverCitationID
-                : nil,
-            popoverChunk: viewModel.citationChunkPopoverCitationID == viewModel.selectedCitation?.id
-                ? viewModel.selectedCitationChunk
-                : nil,
-            onDismissChunkPopover: { viewModel.dismissCitationChunkPopover() }
+            onExport: { viewModel.exportAnswer(content) }
         )
     }
 

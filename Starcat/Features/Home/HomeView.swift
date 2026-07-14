@@ -551,6 +551,11 @@ struct HomeView: View {
         .task {
             await bootstrapHome()
         }
+        // 知识库入库/移出事件必须挂在 HomeView：空库时空态没有 List，原先挂在
+        // RepoListView.List 上会导致 Sidebar「知识库」计数与列表都不能实时刷新。
+        .task {
+            await viewModel.observeRepoLibraryStateChanges()
+        }
         .task {
             await observeReleaseSubscriptionChanges()
         }
