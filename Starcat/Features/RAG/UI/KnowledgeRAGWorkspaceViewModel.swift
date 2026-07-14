@@ -942,23 +942,6 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    var debugTraceText: String {
-        debugTraces.sorted { $0.startedAt > $1.startedAt }.map { trace in
-            let stepDurations = Self.debugEventStepDurations(for: trace.events)
-            let events = trace.events.map { event in
-                let step = stepDurations[event.id] ?? event.elapsedSeconds
-                return """
-                [\(event.stage.rawValue)] \(String(format: "%.3f", step))s (elapsed +\(String(format: "%.3f", event.elapsedSeconds))s)
-                \(event.renderedPayload())
-                """
-            }.joined(separator: "\n\n")
-            return """
-            [\(trace.category.rawValue)] \(trace.startedAt.ISO8601Format())
-            \(events)
-            """
-        }.joined(separator: "\n\n==========\n\n")
-    }
-
     /// 导出单条调试 trace 为 Markdown，便于贴 issue / 对照 Prompt。
     func exportDebugTrace(_ trace: RAGDebugTrace) {
         let stamp = Self.debugExportFilenameFormatter.string(from: trace.startedAt)

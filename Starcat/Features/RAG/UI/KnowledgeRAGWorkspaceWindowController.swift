@@ -872,27 +872,20 @@ private struct KnowledgeRAGBrowserView: View {
                             .frame(width: 18, height: 18)
                             .accessibilityLabel(Text("rag.browser.retrieval.run"))
                     } else {
-                        // 20pt 圆形视觉配合 24pt 点击区，保证紧凑面板里既易点按也不喧宾夺主。
+                        // 与主 RAG composer 共用上箭头发送语义和圆形符号比例；不要在小圆钮
+                        // 中再塞试管图标，否则图形会显得拥挤且被误读为设置入口。
+                        let canRun = !viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         Button { viewModel.runRetrievalTest() } label: {
-                            Image(systemName: "testtube.2")
-                                .font(interfaceScale.font(size: 15, weight: .semibold))
-                                .frame(width: 20, height: 20)
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(interfaceScale.font(size: 22, weight: .semibold))
+                                .foregroundStyle(canRun ? Color.accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
-                        .foregroundStyle(.white)
-                        .background(
-                            Circle().fill(
-                                viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    ? Color.accentColor.opacity(0.4)
-                                    : Color.accentColor
-                            )
-                        )
-                        .disabled(viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!canRun)
                         .accessibilityLabel(Text("rag.browser.retrieval.run"))
                         .help(Text("rag.browser.retrieval.run"))
                         .pointerStyle(.link)
-                        .padding(2)
                     }
                 }
                 // 相对输入框描边：右/下同为 5，贴角对称。
@@ -966,10 +959,10 @@ private struct KnowledgeRAGBrowserView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("rag.workspace.retrieval.minimumSimilarity")
-                            .font(.body.weight(.medium))
+                            .font(.caption.weight(.medium))
                         Spacer()
                         Text(String(format: "%.2f", locale: locale, viewModel.retrievalTestSettings.minimumVectorSimilarity))
-                            .font(.body.monospacedDigit())
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                     Slider(value: retrievalTestSimilarityBinding, in: 0...1, step: 0.01)
@@ -987,7 +980,7 @@ private struct KnowledgeRAGBrowserView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("rag.workspace.retrieval.sources.title")
-                            .font(.body.weight(.medium))
+                            .font(.caption.weight(.medium))
                         // 四个来源在大字号下无法可靠地放进侧栏单行；两列确保 checkbox
                         // 与标签维持同一基线，也避免本地化文本被拆成难读的两行。
                         LazyVGrid(
@@ -1003,7 +996,7 @@ private struct KnowledgeRAGBrowserView: View {
                                     Text(source.titleKey)
                                         .lineLimit(1)
                                 }
-                                    .font(.body)
+                                    .font(.caption)
                                     .toggleStyle(.checkbox)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -1092,13 +1085,11 @@ private struct KnowledgeRAGBrowserView: View {
     private func retrievalTestNumberField(titleKey: LocalizedStringKey, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(titleKey)
-                .font(.body.weight(.medium))
-                // 较长的英文标题可占两行；预留相同标题区高度，保持并排输入框对齐。
-                .lineLimit(2)
-                .frame(minHeight: 34, alignment: .topLeading)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
             TextField("", text: text)
                 .textFieldStyle(.roundedBorder)
-                .font(.callout.monospacedDigit())
+                .font(.body.monospacedDigit())
                 .frame(maxWidth: .infinity)
         }
     }

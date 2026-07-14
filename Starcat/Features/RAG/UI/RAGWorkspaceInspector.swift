@@ -700,20 +700,7 @@ struct RAGWorkspaceInspector: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Spacer()
-                // 与「清空」同款 bordered 小按钮：复制全部 Debug Markdown。
-                CopyFeedbackButton(
-                    providesContent: { viewModel.debugTraceText },
-                    tooltip: "rag.workspace.debug.copyAll",
-                    style: .bordered
-                ) { didCopy in
-                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(iconFont(size: 11, weight: .medium))
-                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                        .frame(width: 14, height: 14)
-                }
-                .controlSize(.small)
-                .disabled(viewModel.debugTraces.isEmpty)
-
+                // 单条导出走行内按钮；顶部只保留清空整条会话 Debug。
                 Button {
                     viewModel.clearDebugTraces()
                     expandedDebugTraceIDs = []
