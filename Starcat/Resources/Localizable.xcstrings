@@ -54270,13 +54270,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Maximum local chunks used for one answer."
+            "value": "Maximum number of chunks used as LLM context for this answer. The per-repository chunk limit is applied first, then the top N chunks in final order are selected. If other repositories do not have enough chunks, the actual count can be lower than this limit."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一次回答最多使用的本地分片数。"
+            "value": "本轮最多使用多少条分片作为 LLM 上下文。先应用“单仓库分片上限”，再按最终排序取前 N 条；其他仓库分片不足时，实际数量可能少于此上限。"
           }
         }
       }
@@ -54338,13 +54338,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prevents one repository from occupying all chunks."
+            "value": "Maximum number of chunks retained from the same repository. The system selects chunks in final order; after a repository reaches this limit, its later chunks are skipped and chunks from other repositories continue to fill the result."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "避免单个仓库占满全部分片。"
+            "value": "同一仓库最多保留多少条分片。系统按重排后的顺序逐条选择；仓库达到上限后，会跳过该仓库后续分片，继续选择其他仓库的分片。"
           }
         }
       }

@@ -485,6 +485,12 @@ struct RAGWorkspaceSettingsSheet: View {
             }
             Divider()
             settingTextFieldRow(
+                titleKey: "rag.workspace.retrieval.perRepositoryLimit",
+                hintKey: "rag.workspace.retrieval.perRepositoryLimit.hint",
+                text: perRepositoryEvidenceLimitBinding
+            )
+            Divider()
+            settingTextFieldRow(
                 titleKey: "rag.workspace.retrieval.finalChunkLimit",
                 hintKey: "rag.workspace.retrieval.finalChunkLimit.hint",
                 text: finalEvidenceChunkLimitBinding
@@ -494,12 +500,6 @@ struct RAGWorkspaceSettingsSheet: View {
 
     private var retrievalAdvancedSection: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
-            settingTextFieldRow(
-                titleKey: "rag.workspace.retrieval.perRepositoryLimit",
-                hintKey: "rag.workspace.retrieval.perRepositoryLimit.hint",
-                text: perRepositoryEvidenceLimitBinding
-            )
-            Divider()
             settingTextFieldRow(
                 titleKey: "rag.workspace.retrieval.tokenBudget",
                 hintKey: "rag.workspace.retrieval.tokenBudget.hint",
