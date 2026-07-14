@@ -445,9 +445,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             debugTraces = ((try? await debugFileStore.load(conversationID: id)) ?? [])
                 .sorted { $0.startedAt < $1.startedAt }
             loadedMessageSequence &+= 1
-            let initialCitation = messages.reversed().lazy.flatMap(\.citations).first
             resetTurnState()
-            if let initialCitation { selectCitation(initialCitation) }
+            // 切换会话不自动聚焦引用：用户停留在当前 Inspector tab，手动点芯片/正文 marker 再切「证据」。
         } catch {
             guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
             errorMessage = error.localizedDescription
@@ -2351,7 +2350,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             messages = detail.messages
             conversationContextSummary = detail.contextSummary
             loadedMessageSequence &+= 1
-            if let citation = citations.first { selectCitation(citation) }
+            // 回答完成后不自动选中引用，避免强制拉开右侧「证据」tab。
         }
         conversations = try await conversationStore.listConversations()
         streamingAnswer = ""
