@@ -33,6 +33,8 @@ private struct SmartCollectionCardItem: Identifiable, Equatable {
 struct SmartCollectionDetailPanel: View {
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AppDependencies.self) private var dependencies
+    /// 把主 SwiftUI Scene 的官方设置动作交给独立 RAG 窗口，避免依赖 responder chain。
+    @Environment(\.openSettings) private var openSettings
 
     @State private var healthSnapshots: [Int64: RepoHealthSnapshot] = [:]
     /// 已尝试过加载（含 DB 无记录），防止滚动反复 onAppear 打 GRDB。
@@ -193,7 +195,8 @@ struct SmartCollectionDetailPanel: View {
                 Button {
                     KnowledgeRAGWorkspaceWindowController.show(
                         dependencies: dependencies,
-                        homeViewModel: viewModel
+                        homeViewModel: viewModel,
+                        openSettings: openSettings
                     )
                 } label: {
                     Label("smartCollections.library.openRAG", systemImage: "text.book.closed")

@@ -34,7 +34,11 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     /// `homeViewModel` 用于正文引用 / 本地 GitHub 链接打开独立详情窗，必须与主窗共享
     /// 同一实例，才能同步 star 状态。
     @MainActor
-    static func show(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+    static func show(
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel,
+        openSettings: OpenSettingsAction
+    ) {
         guard AIWorkspaceEntryGate.authorizeOpening(
             dependencies: dependencies,
             proFeature: .knowledgeRAG
@@ -51,7 +55,8 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         } else {
             controller = KnowledgeRAGWorkspaceWindowController(
                 dependencies: dependencies,
-                homeViewModel: homeViewModel
+                homeViewModel: homeViewModel,
+                openSettings: openSettings
             )
             shared = controller
             shouldCenter = true
@@ -74,7 +79,11 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         shared = nil
     }
 
-    private init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+    private init(
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel,
+        openSettings: OpenSettingsAction
+    ) {
         let chromeState = WorkspaceChromeState()
         let viewModel = KnowledgeRAGWorkspaceViewModel(
             dependencies: dependencies,
@@ -83,8 +92,16 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         self.chromeState = chromeState
         self.viewModel = viewModel
 
+        let settingsNavigation = RAGSettingsNavigationAction { target in
+            openSettings()
+            // Settings Scene 首次创建后才会安装 Tab / Section 监听；延后一轮再发送定位目标。
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: target)
+            }
+        }
         let content = KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
             .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            .environment(\.ragSettingsNavigation, settingsNavigation)
 
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)

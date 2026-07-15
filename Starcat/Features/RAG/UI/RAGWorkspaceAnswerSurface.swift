@@ -149,7 +149,8 @@ struct RAGWorkspaceAnswerSurface: View {
                             .background(
                                 RAGWorkspaceBottomScrollBridge(
                                     requestID: messageTailRequests.requestID,
-                                    shouldFollow: messageTail.isFollowing,
+                                    shouldFollow: messageTail.isFollowing
+                                        && messageTailRequests.allowsAutomaticScroll,
                                     animatesScroll: messageTailRequests.animatesScroll
                                 )
                             )
@@ -204,7 +205,9 @@ struct RAGWorkspaceAnswerSurface: View {
                 .onChange(of: viewModel.messages.count) { _, _ in
                     // 完整消息只会在发送问题或回答落库时增加，频率远低于 token 快照。
                     // 这里必须立即定位，补偿 5Hz 合并窗口内可能被丢弃的最后一次自动请求。
-                    guard messageTail.isFollowing else { return }
+                    // 但折叠动画仍优先保持视口稳定；用户点击与历史加载不走此自动门禁。
+                    guard messageTail.isFollowing,
+                          messageTailRequests.allowsAutomaticScroll else { return }
                     forceMessageTailScroll()
                 }
 
@@ -285,6 +288,16 @@ struct RAGWorkspaceAnswerSurface: View {
         // 自动跟随仅签发合并后的原生请求。`ScrollPosition` 的完整定位保留给历史加载
         // 和用户点击，避免每个 Markdown revision 同时驱动两套滚动系统。
         _ = messageTailRequests.issueAutomatic(now: Date.timeIntervalSinceReferenceDate)
+    }
+
+    /// 折叠动画期间同时阻止新自动请求，并让 bridge 取消尚未执行的旧请求。
+    /// 动画结束只恢复“可自动跟随”资格，不主动滚到底；下一次稳定流式更新再按原策略追尾。
+    func handleExecutionDisclosureAnimationActivityChanged(_ isActive: Bool) {
+        if isActive {
+            messageTailRequests.beginAutomaticSuppression()
+        } else {
+            messageTailRequests.endAutomaticSuppression()
+        }
     }
 
     /// 新会话空态：放大图标/文案，并在中栏剩余区域上下左右居中。
@@ -430,7 +443,8 @@ struct RAGWorkspaceAnswerSurface: View {
                 snapshot: snapshot,
                 executionTrace: viewModel.executionSteps,
                 activityLabel: liveAssistantActivityLabel(),
-                processingDuration: viewModel.answerElapsedDuration
+                processingDuration: viewModel.answerElapsedDuration,
+                onExecutionDisclosureAnimationActivityChanged: handleExecutionDisclosureAnimationActivityChanged
             )
         } else {
             assistantMessage(
@@ -470,7 +484,8 @@ struct RAGWorkspaceAnswerSurface: View {
                 viewModel.selectCitation(citation)
             },
             onSuggestedAction: { action in viewModel.sendSuggestedQuestion(action) },
-            onExport: { viewModel.exportAnswer(content) }
+            onExport: { viewModel.exportAnswer(content) },
+            onExecutionDisclosureAnimationActivityChanged: handleExecutionDisclosureAnimationActivityChanged
         )
     }
 

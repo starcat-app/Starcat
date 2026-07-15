@@ -54,6 +54,8 @@ struct HomeView: View {
     /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
     /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// RAG 独立 AppKit 窗口无法自行取得 Settings Scene action，创建窗口时显式向下传递。
+    @Environment(\.openSettings) private var openSettings
     /// HOM-47：拿到 ReleasePoller 启动后台调度。
     @Environment(AppDependencies.self) private var dependencies
 
@@ -1014,7 +1016,11 @@ struct HomeView: View {
     private func openKnowledgeRAGWorkspaceForGettingStarted() {
         searchCenterViewModel.dismiss()
         NotificationCenter.default.post(name: .gettingStartedDidOpenRAGWorkspace, object: nil)
-        KnowledgeRAGWorkspaceWindowController.show(dependencies: dependencies, homeViewModel: viewModel)
+        KnowledgeRAGWorkspaceWindowController.show(
+            dependencies: dependencies,
+            homeViewModel: viewModel,
+            openSettings: openSettings
+        )
     }
 
     private func openAgentWorkspaceForGettingStarted() {

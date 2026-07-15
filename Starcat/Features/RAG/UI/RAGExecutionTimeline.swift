@@ -11,8 +11,34 @@
 //  - skipped：`arrowshape.turn.up.right` + secondary
 //
 
-import AppKit
 import SwiftUI
+
+/// AppKit 自建的 RAG 窗口无法自行取得主 SwiftUI Scene 的 `OpenSettingsAction`，
+/// 因此由创建窗口的入口注入一个窄化后的设置导航动作。
+struct RAGSettingsNavigationAction {
+    private let handler: @MainActor (String) -> Void
+
+    init(handler: @escaping @MainActor (String) -> Void) {
+        self.handler = handler
+    }
+
+    @MainActor
+    func callAsFunction(_ target: String) {
+        handler(target)
+    }
+}
+
+private struct RAGSettingsNavigationActionKey: EnvironmentKey {
+    /// Preview / 单测没有主 Scene 时保持 no-op，避免重新引入不可靠的 AppKit selector 兜底。
+    static let defaultValue = RAGSettingsNavigationAction { _ in }
+}
+
+extension EnvironmentValues {
+    var ragSettingsNavigation: RAGSettingsNavigationAction {
+        get { self[RAGSettingsNavigationActionKey.self] }
+        set { self[RAGSettingsNavigationActionKey.self] = newValue }
+    }
+}
 
 /// 执行步骤的局部折叠状态。
 ///
@@ -57,9 +83,20 @@ struct RAGExecutionTimeline: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     let steps: [RAGExecutionStep]
+    /// 通知外层滚动容器折叠动画的生命周期，避免动画中间帧触发自动贴底。
+    let onDisclosureAnimationActivityChanged: (Bool) -> Void
     @State private var disclosureState = RAGExecutionDisclosureState()
+
+    init(
+        steps: [RAGExecutionStep],
+        onDisclosureAnimationActivityChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
+        self.steps = steps
+        self.onDisclosureAnimationActivityChanged = onDisclosureAnimationActivityChanged
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -74,8 +111,20 @@ struct RAGExecutionTimeline: View {
         let isExpanded = disclosureState.isExpanded(step)
         return VStack(alignment: .leading, spacing: 7) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                onDisclosureAnimationActivityChanged(true)
+                guard !reduceMotion else {
                     disclosureState.toggle(step)
+                    onDisclosureAnimationActivityChanged(false)
+                    return
+                }
+                // 使用 SwiftUI 的真实动画完成回调恢复追尾，不能用固定延时猜测布局何时稳定。
+                withAnimation(
+                    .easeInOut(duration: 0.16),
+                    completionCriteria: .logicallyComplete
+                ) {
+                    disclosureState.toggle(step)
+                } completion: {
+                    onDisclosureAnimationActivityChanged(false)
                 }
             } label: {
                 // 图标槽与消息头 Starcat logo 同宽，glyph 居中，保证竖向轴线对齐。
@@ -248,7 +297,7 @@ struct RAGExecutionTimeline: View {
             }
             if Self.shouldOfferExternalSearchSettings(for: item) {
                 Button {
-                    openExternalSearchSettings()
+                    settingsNavigation("integrations.externalSearch")
                 } label: {
                     Label(
                         "rag.workspace.execution.remote.configureExternalSearch",
@@ -281,18 +330,6 @@ struct RAGExecutionTimeline: View {
     /// 仅 External Search 执行失败时提供配置入口；无结果不代表配置错误，GitHub 失败也不归该设置项处理。
     static func shouldOfferExternalSearchSettings(for item: RAGRemoteExecutionAuditItem) -> Bool {
         item.resource == .externalWeb && item.status == .failed
-    }
-
-    /// RAG 工作台是独立 AppKit 窗口，不能依赖 SwiftUI `openSettings` 环境；复用全局 Settings 场景后再定位具体配置区。
-    private func openExternalSearchSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: .starcatJumpToSettingsTab,
-                object: "integrations.externalSearch"
-            )
-        }
     }
 
     @ViewBuilder

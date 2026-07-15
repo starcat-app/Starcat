@@ -561,6 +561,19 @@ struct KnowledgeRAGCoreTests {
         ))
     }
 
+    @Test("RAG 设置导航动作透传目标配置项")
+    @MainActor
+    func ragSettingsNavigationForwardsTarget() {
+        var receivedTarget: String?
+        let action = RAGSettingsNavigationAction { target in
+            receivedTarget = target
+        }
+
+        action("integrations.externalSearch")
+
+        #expect(receivedTarget == "integrations.externalSearch")
+    }
+
     @Test("Planner: 只接收显式仓库身份、上一条用户问题和上一轮引用仓库")
     func plannerReceivesMinimalConversationContext() async throws {
         let spy = SpyRAGAIClient(chatResponse: """

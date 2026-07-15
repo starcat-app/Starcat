@@ -57,6 +57,44 @@ struct ScrollTailControllerTests {
         #expect(requests.animatesScroll)
     }
 
+    @Test("折叠动画期间拒绝自动尾随请求，结束后恢复")
+    func disclosureAnimationSuppressesAutomaticTailRequests() {
+        var requests = ScrollTailRequestSequencer(minimumAutomaticInterval: 0)
+
+        requests.beginAutomaticSuppression()
+        let suppressed = requests.issueAutomatic(now: 1.00)
+
+        #expect(!requests.allowsAutomaticScroll)
+        #expect(!suppressed)
+        #expect(requests.requestID == 0)
+
+        requests.endAutomaticSuppression()
+        let resumed = requests.issueAutomatic(now: 1.01)
+
+        #expect(requests.allowsAutomaticScroll)
+        #expect(resumed)
+        #expect(requests.requestID == 1)
+    }
+
+    @Test("连续折叠动画全部结束前不会提前恢复自动尾随")
+    func nestedDisclosureAnimationsKeepAutomaticTailSuppressed() {
+        var requests = ScrollTailRequestSequencer(minimumAutomaticInterval: 0)
+
+        requests.beginAutomaticSuppression()
+        requests.beginAutomaticSuppression()
+        requests.endAutomaticSuppression()
+        let stillSuppressed = requests.issueAutomatic(now: 1.00)
+
+        #expect(!requests.allowsAutomaticScroll)
+        #expect(!stillSuppressed)
+
+        requests.endAutomaticSuppression()
+        let resumed = requests.issueAutomatic(now: 1.01)
+
+        #expect(requests.allowsAutomaticScroll)
+        #expect(resumed)
+    }
+
     @Test("用户开始滚动立即暂停跟随")
     func userScrollImmediatelyDisengages() {
         let controller = ScrollTailController()
