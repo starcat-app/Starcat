@@ -17,6 +17,48 @@ struct RAGChunkRepositoryTests {
         return (database, GRDBRAGChunkRepository(database: database))
     }
 
+    /// 测试也必须经过生产 claim 协议，避免继续保留可绕过内容一致性校验的旧写回入口。
+    private func markReady(
+        _ embeddings: [Int64: [Float]],
+        model: String,
+        repository: GRDBRAGChunkRepository
+    ) async throws {
+        let chunks = try await repository.fetchChunks(ids: Array(embeddings.keys))
+        let claimID = UUID().uuidString
+        let identities = chunks.compactMap { chunk -> RAGEmbeddingIdentity? in
+            guard let id = chunk.id else { return nil }
+            return .init(chunkID: id, contentHash: chunk.contentHash)
+        }
+        let claimed = try await repository.claimChunksForEmbedding(identities, claimID: claimID)
+        let updates = claimed.compactMap { chunk -> RAGEmbeddingWrite? in
+            guard let id = chunk.id, let vector = embeddings[id] else { return nil }
+            return .init(identity: .init(chunkID: id, contentHash: chunk.contentHash), vector: vector)
+        }
+        try await repository.markReady(updates, model: model, claimID: claimID)
+    }
+
+    private func markFailed(
+        chunkIDs: [Int64],
+        error: String,
+        repository: GRDBRAGChunkRepository
+    ) async throws {
+        let chunks = try await repository.fetchChunks(ids: chunkIDs)
+        let claimID = UUID().uuidString
+        let identities = chunks.compactMap { chunk -> RAGEmbeddingIdentity? in
+            guard let id = chunk.id else { return nil }
+            return .init(chunkID: id, contentHash: chunk.contentHash)
+        }
+        let claimed = try await repository.claimChunksForEmbedding(identities, claimID: claimID)
+        try await repository.markFailed(
+            claimed.compactMap { chunk in
+                guard let id = chunk.id else { return nil }
+                return RAGEmbeddingIdentity(chunkID: id, contentHash: chunk.contentHash)
+            },
+            claimID: claimID,
+            error: error
+        )
+    }
+
     @Test("全库索引刷新摘要会持久化")
     func lastIndexRefreshSummaryPersists() async throws {
         let (_, repository) = try makeRepository()
@@ -55,7 +97,7 @@ struct RAGChunkRepositoryTests {
             drafts: [draft(repoId: 1, key: "readme:install:0", content: "Install with Swift Package Manager")]
         )
         let id = try #require(first.pendingChunkIDs.first)
-        try await repository.markReady([id: [1, 0, 0]], model: "embed-v1")
+        try await markReady([id: [1, 0, 0]], model: "embed-v1", repository: repository)
 
         let unchanged = try await repository.replaceSource(
             repoId: 1,
@@ -78,6 +120,42 @@ struct RAGChunkRepositoryTests {
         let invalidated = try #require(try await repository.fetchChunks(ids: [id]).first)
         #expect(invalidated.embeddingStatus == .pending)
         #expect(invalidated.embedding == nil)
+    }
+
+    @Test("旧 embedding 请求不得把新正文标记为 ready")
+    func staleEmbeddingWriteDoesNotOverwriteNewContent() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 101)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 101, state: .inLibrary)
+
+        let first = try await repository.replaceSource(
+            repoId: 101,
+            source: .readme,
+            drafts: [draft(repoId: 101, key: "readme:claim:0", content: "Old content")]
+        )
+        let chunkID = try #require(first.pendingChunkIDs.first)
+        let oldChunk = try #require(try await repository.fetchChunks(ids: [chunkID]).first)
+        let oldIdentity = RAGEmbeddingIdentity(chunkID: chunkID, contentHash: oldChunk.contentHash)
+        let claimID = "old-request"
+        _ = try await repository.claimChunksForEmbedding([oldIdentity], claimID: claimID)
+
+        _ = try await repository.replaceSource(
+            repoId: 101,
+            source: .readme,
+            drafts: [draft(repoId: 101, key: "readme:claim:0", content: "New content")]
+        )
+
+        // 模拟旧网络请求在 source 更新后才返回；hash、pending 和 claim 任一不匹配都不得写回。
+        try await repository.markReady(
+            [.init(identity: oldIdentity, vector: [1, 0, 0])],
+            model: "embed-v1",
+            claimID: claimID
+        )
+
+        let current = try #require(try await repository.fetchChunks(ids: [chunkID]).first)
+        #expect(current.content == "New content")
+        #expect(current.embeddingStatus == .pending)
+        #expect(current.embedding == nil)
     }
 
     @Test("替换单一 source 只删除该 source 的过期 chunks")
@@ -129,7 +207,11 @@ struct RAGChunkRepositoryTests {
             drafts: [draft(repoId: 11, key: "readme:vector:0", content: "Vector database indexing")]
         )
         let allIDs = inLibrary.pendingChunkIDs + outside.pendingChunkIDs
-        try await repository.markReady(Dictionary(uniqueKeysWithValues: allIDs.map { ($0, [1, 0]) }), model: "embed-v1")
+        try await markReady(
+            Dictionary(uniqueKeysWithValues: allIDs.map { ($0, [1, 0]) }),
+            model: "embed-v1",
+            repository: repository
+        )
 
         let hits = try await repository.keywordSearch(
             query: "vector",
@@ -202,9 +284,10 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 15, key: "readme:outside:0", content: "Outside")]
         )
-        try await repository.markReady(
+        try await markReady(
             [inLibrary.pendingChunkIDs[0]: [1, 0], outside.pendingChunkIDs[0]: [1, 0]],
-            model: "embed-v1"
+            model: "embed-v1",
+            repository: repository
         )
 
         #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [14]))
@@ -225,9 +308,10 @@ struct RAGChunkRepositoryTests {
                 draft(repoId: 16, key: "readme:lower:0", content: "Lower evidence")
             ]
         )
-        try await repository.markReady(
+        try await markReady(
             [result.pendingChunkIDs[0]: [1, 0], result.pendingChunkIDs[1]: [0, 1]],
-            model: "embed-v1"
+            model: "embed-v1",
+            repository: repository
         )
 
         let hits = try await SQLiteRAGVectorSearchProvider(repository: repository).search(
@@ -258,9 +342,10 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 13, key: "readme:install:0", content: "Other install")]
         )
-        try await repository.markReady(
+        try await markReady(
             [first.pendingChunkIDs[0]: [1, 0], second.pendingChunkIDs[0]: [1, 0]],
-            model: "embed-v1"
+            model: "embed-v1",
+            repository: repository
         )
 
         let chunks = try await repository.fetchChunks(
@@ -287,8 +372,8 @@ struct RAGChunkRepositoryTests {
                 draft(repoId: 20, key: "readme:b:0", content: "Beta")
             ]
         )
-        try await repository.markReady([result.pendingChunkIDs[0]: [1, 0]], model: "embed-v1")
-        try await repository.markFailed(chunkIDs: [result.pendingChunkIDs[1]], error: "test")
+        try await markReady([result.pendingChunkIDs[0]: [1, 0]], model: "embed-v1", repository: repository)
+        try await markFailed(chunkIDs: [result.pendingChunkIDs[1]], error: "test", repository: repository)
 
         let coverage = try await repository.coverage(model: "embed-v1")
         #expect(coverage.knowledgeRepoCount == 1)
@@ -312,8 +397,8 @@ struct RAGChunkRepositoryTests {
                 draft(repoId: 21, key: "readme:pending:0", content: "Pending")
             ]
         )
-        try await repository.markReady([result.pendingChunkIDs[0]: [1, 0]], model: "embed-old")
-        try await repository.markFailed(chunkIDs: [result.pendingChunkIDs[1]], error: "quota")
+        try await markReady([result.pendingChunkIDs[0]: [1, 0]], model: "embed-old", repository: repository)
+        try await markFailed(chunkIDs: [result.pendingChunkIDs[1]], error: "quota", repository: repository)
 
         let pending = try await repository.fetchIndexIssueChunks(kind: .pending, model: "embed-new", limit: 5, offset: 0)
         let failed = try await repository.fetchIndexIssueChunks(kind: .failed, model: "embed-new", limit: 5, offset: 0)
@@ -344,7 +429,7 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 31, key: "readme:outside:0", content: "Outside")]
         )
-        try await repository.markReady([library.pendingChunkIDs[0]: [1, 0]], model: "embed-v1")
+        try await markReady([library.pendingChunkIDs[0]: [1, 0]], model: "embed-v1", repository: repository)
 
         let indexes = try await repository.knowledgeRepositoryIndexes(model: "embed-v1")
         #expect(indexes.count == 1)

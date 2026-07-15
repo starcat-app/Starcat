@@ -515,17 +515,40 @@ final class KnowledgeRAGIndexBuilder {
         while !pending.isEmpty {
             try Task.checkCancellation()
             let batch = Array(pending.prefix(embeddingBatchSize))
+            let claimID = UUID().uuidString
+            let claimed = try await chunkRepository.claimChunksForEmbedding(
+                batch.compactMap { chunk in
+                    guard let id = chunk.id else { return nil }
+                    return RAGEmbeddingIdentity(chunkID: id, contentHash: chunk.contentHash)
+                },
+                claimID: claimID
+            )
+            guard !claimed.isEmpty else {
+                pending.removeFirst(batch.count)
+                continue
+            }
             do {
-                let vectors = try await client.embeddings(inputs: batch.map(\.content), model: model)
-                let pairs: [(Int64, [Float])] = zip(batch, vectors).compactMap { chunk, vector in
-                    guard let id = chunk.id, !vector.isEmpty else { return nil }
-                    return (id, vector)
+                let vectors = try await client.embeddings(inputs: claimed.map(\.content), model: model)
+                // Provider 若少返回一条或给出空向量，不能让部分 chunk 永久停留在带 claim 的 pending。
+                // 整批按失败处理，下一轮可重新领取；同时避免把错位向量写到错误正文。
+                guard vectors.count == claimed.count, vectors.allSatisfy({ !$0.isEmpty }) else {
+                    throw AIClientError.emptyResponse
                 }
-                let updates = Dictionary(uniqueKeysWithValues: pairs)
-                try await chunkRepository.markReady(updates, model: model)
+                let updates = zip(claimed, vectors).compactMap { chunk, vector -> RAGEmbeddingWrite? in
+                    guard let id = chunk.id else { return nil }
+                    return RAGEmbeddingWrite(
+                        identity: .init(chunkID: id, contentHash: chunk.contentHash),
+                        vector: vector
+                    )
+                }
+                try await chunkRepository.markReady(updates, model: model, claimID: claimID)
             } catch {
                 try await chunkRepository.markFailed(
-                    chunkIDs: batch.compactMap(\.id),
+                    claimed.compactMap { chunk in
+                        guard let id = chunk.id else { return nil }
+                        return RAGEmbeddingIdentity(chunkID: id, contentHash: chunk.contentHash)
+                    },
+                    claimID: claimID,
                     error: error.localizedDescription
                 )
                 throw error

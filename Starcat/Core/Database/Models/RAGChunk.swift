@@ -61,6 +61,8 @@ struct RAGChunk: Codable, FetchableRecord, MutablePersistableRecord, Identifiabl
     var embedding: Data?
     var embeddingStatus: RAGEmbeddingStatus
     var embeddingError: String?
+    /// 当前 Embedding 网络请求的所有权。source 更新会清空它，旧请求因此无法写回新正文。
+    var embeddingClaimID: String? = nil
     var indexedAt: String?
     var createdAt: String
     var updatedAt: String
@@ -86,6 +88,7 @@ struct RAGChunk: Codable, FetchableRecord, MutablePersistableRecord, Identifiabl
         case embedding
         case embeddingStatus = "embedding_status"
         case embeddingError = "embedding_error"
+        case embeddingClaimID = "embedding_claim_id"
         case indexedAt = "indexed_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -106,6 +109,7 @@ struct RAGChunk: Codable, FetchableRecord, MutablePersistableRecord, Identifiabl
         embeddingModel = model
         embeddingStatus = .ready
         embeddingError = nil
+        embeddingClaimID = nil
         indexedAt = timestamp
         updatedAt = timestamp
     }

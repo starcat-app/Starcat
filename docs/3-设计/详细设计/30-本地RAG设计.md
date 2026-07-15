@@ -126,6 +126,7 @@ CREATE TABLE rag_chunks (
     embedding           BLOB,
     embedding_status    TEXT NOT NULL DEFAULT 'pending',
     embedding_error     TEXT,
+    embedding_claim_id  TEXT, -- v11 追加；不回写已发布的 v7 建表 SQL
     indexed_at          TEXT,
     created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -154,6 +155,9 @@ CREATE INDEX idx_rag_chunks_model ON rag_chunks(embedding_model);
 | `content_hash` | 用于 diff；Metadata 变化只更新 FTS，其它 source 未变化不重新 embedding |
 | `embedding` | Float32 BLOB,与 `RepoEmbedding` 一致 |
 | `embedding_status` | `pending` / `ready` / `failed` / `stale` / `keyword_only` |
+| `embedding_claim_id` | 当前异步 Embedding 批次所有权；写回必须同时匹配 id、`content_hash`、pending 状态与 claim id |
+
+Embedding 请求前由 Repository 在单个 SQLite writer 事务内领取 chunk。source diff、人工覆盖或恢复原文会清空旧 claim；Provider 返回数量异常或空向量时整批标记失败并释放 claim。这样即使旧网络请求晚于正文更新返回，也不能把旧向量标记为新正文的 ready 向量。
 
 不复用 `repo_embeddings`:
 

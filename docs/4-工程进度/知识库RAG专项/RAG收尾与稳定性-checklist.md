@@ -75,7 +75,7 @@
 
 ## 阶段 7：正确性与能力边界
 
-- [ ] **Embedding 写回一致性**：为索引任务增加串行化或分片 claim 机制；向量写回必须同时校验 chunk id、`content_hash` 和 pending 状态，旧请求不得把旧向量标记为新内容的 ready 向量。
+- [x] **Embedding 写回一致性**：追加 `v11-rag-embedding-claim`，请求前原子 claim；ready/failed 写回同时校验 chunk id、`content_hash`、pending 状态与 claim id，正文变化或人工覆盖会清空旧 claim — `RAGChunkRepository.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **Meilisearch 同步 SQL**：`fetchKeywordSearchableChunks` 已正确展开 placeholders，并由 Repository 回归测试覆盖批量 repo 查询 — 2026-07-15。
 - [ ] **外部后端回退语义**：为 Meilisearch/Qdrant 查询与同步补 `fallbackToSQLite` 开启/关闭回归测试；开启时允许回退本地，关闭时不得吞掉外部错误。
 - [x] **附件能力边界与文档一致性**：当前正式支持文本、Markdown、JSON 与源码附件；PDF/图片底层分支标记为未来能力，不进入当前 UI、测试门禁或 DoD，活文档已与真实入口同步 — 2026-07-16。

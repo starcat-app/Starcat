@@ -33,7 +33,8 @@
 //  **正式版后的追加迁移（不要与上方「原 vN」混淆）**：
 //  - `v2-undo-star` / `v3-agent-runs` / `v4-agent-tool-outputs` /
 //    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag` /
-//    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only`
+//    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
+//    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim`
 //
 
 import Foundation
@@ -60,6 +61,22 @@ enum DatabaseMigrations {
         registerV8(into: &migrator)
         registerV9(into: &migrator)
         registerV10(into: &migrator)
+        registerV11(into: &migrator)
+    }
+
+    // MARK: - v11-rag-embedding-claim：Embedding 写回所有权（2026-07-16）
+
+    /// Embedding 请求跨越网络 await，期间 source 可能刷新并复用同一个 chunk id。
+    /// claim id 让返回结果只能写回自己领取的 pending 正文；表不存在时 no-op，禁止回写已发布 v7。
+    private static func registerV11(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v11-rag-embedding-claim") { db in
+            guard try db.tableExists("rag_chunks") else { return }
+            let columns = try db.columns(in: "rag_chunks").map(\.name)
+            guard !columns.contains("embedding_claim_id") else { return }
+            try db.alter(table: "rag_chunks") { table in
+                table.add(column: "embedding_claim_id", .text)
+            }
+        }
     }
 
     // MARK: - v10-rag-conversation-pinned-at：置顶时间戳（2026-07-15）

@@ -18,6 +18,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
+    func claimChunksForEmbedding(_ chunks: [RAGEmbeddingIdentity], claimID: String) async throws -> [RAGChunk]
     /// 检查当前检索是否至少有一个可用 source；包含当前模型向量和 FTS-only Metadata。
     func hasReadyChunks(model: String, repoIDs: [Int64]) async throws -> Bool
     /// 只读取向量扫描所需的列；调用方必须按页消费，避免大知识库把正文和全部向量同时留在内存。
@@ -27,8 +28,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     /// 关键词后端可同步当前模型的向量分片与本地 FTS-only Metadata；向量后端只能使用 ready 分片。
     func fetchKeywordSearchableChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
-    func markReady(_ embeddings: [Int64: [Float]], model: String) async throws
-    func markFailed(chunkIDs: [Int64], error: String) async throws
+    func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws
+    func markFailed(_ chunks: [RAGEmbeddingIdentity], claimID: String, error: String) async throws
     func markStaleForOtherModels(currentModel: String) async throws
     func coverage(model: String) async throws -> RAGIndexCoverage
     /// 仅持久化整轮成功的全库刷新摘要；不能与单仓库自动补建共用。
@@ -51,6 +52,18 @@ protocol RAGChunkRepositoryProtocol: Sendable {
 struct RAGChunkEmbedding: Sendable {
     var chunkID: Int64
     var repoID: Int64
+    var vector: [Float]
+}
+
+/// Embedding 请求开始前记录的稳定身份。chunk id 会被 source diff 复用，所以写回必须同时校验 hash。
+struct RAGEmbeddingIdentity: Hashable, Sendable {
+    var chunkID: Int64
+    var contentHash: String
+}
+
+/// 已完成的向量与请求开始时的正文身份绑定，Repository 负责校验 claim 后再写入。
+struct RAGEmbeddingWrite: Sendable {
+    var identity: RAGEmbeddingIdentity
     var vector: [Float]
 }
 
@@ -184,6 +197,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         row.embedding = nil
                         row.embeddingStatus = .keywordOnly
                         row.embeddingError = nil
+                        row.embeddingClaimID = nil
                         row.indexedAt = nil
                         if contentChanged && overrideContent == nil {
                             changed += 1
@@ -196,6 +210,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         row.embedding = nil
                         row.embeddingStatus = .pending
                         row.embeddingError = nil
+                        row.embeddingClaimID = nil
                         row.indexedAt = nil
                         changed += 1
                     } else {
@@ -329,6 +344,28 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     c.updated_at ASC
                 LIMIT ?
                 """, arguments: [limit])
+        }
+    }
+
+    func claimChunksForEmbedding(_ chunks: [RAGEmbeddingIdentity], claimID: String) async throws -> [RAGChunk] {
+        guard !chunks.isEmpty, !claimID.isEmpty else { return [] }
+        return try await database.writer.write { db in
+            var claimed: [RAGChunk] = []
+            claimed.reserveCapacity(chunks.count)
+            for chunk in chunks {
+                // SQLite writer 事务保证领取与回读不可交错。后来的同 chunk claim 可以接管所有权，
+                // 先返回的旧请求会因 claim 不匹配而被安全丢弃。
+                try db.execute(sql: """
+                    UPDATE rag_chunks
+                    SET embedding_status = 'pending', embedding_error = NULL, embedding_claim_id = ?
+                    WHERE id = ? AND content_hash = ?
+                      AND embedding_status IN ('pending', 'failed', 'stale')
+                    """, arguments: [claimID, chunk.chunkID, chunk.contentHash])
+                guard db.changesCount == 1,
+                      let row = try RAGChunk.fetchOne(db, key: chunk.chunkID) else { continue }
+                claimed.append(row)
+            }
+            return claimed
         }
     }
 
@@ -495,33 +532,38 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
-    func markReady(_ embeddings: [Int64: [Float]], model: String) async throws {
+    func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws {
         guard !embeddings.isEmpty else { return }
         try await database.writer.write { db in
             let now = ISO8601DateFormatter.shared.string(from: Date())
-            for (id, vector) in embeddings where !vector.isEmpty {
+            for update in embeddings where !update.vector.isEmpty {
                 try db.execute(sql: """
                     UPDATE rag_chunks
                     SET embedding = ?, embedding_dim = ?, embedding_model = ?,
                         embedding_status = 'ready', embedding_error = NULL,
+                        embedding_claim_id = NULL,
                         indexed_at = ?, updated_at = ?
-                    WHERE id = ?
-                    """, arguments: [RepoEmbedding.encode(vector), vector.count, model, now, now, id])
+                    WHERE id = ? AND content_hash = ?
+                      AND embedding_status = 'pending' AND embedding_claim_id = ?
+                    """, arguments: [
+                        RepoEmbedding.encode(update.vector), update.vector.count, model, now, now,
+                        update.identity.chunkID, update.identity.contentHash, claimID
+                    ])
             }
         }
     }
 
-    func markFailed(chunkIDs: [Int64], error: String) async throws {
-        guard !chunkIDs.isEmpty else { return }
+    func markFailed(_ chunks: [RAGEmbeddingIdentity], claimID: String, error: String) async throws {
+        guard !chunks.isEmpty else { return }
         try await database.writer.write { db in
-            let placeholders = Array(repeating: "?", count: chunkIDs.count).joined(separator: ",")
-            var arguments: [any DatabaseValueConvertible] = [String(error.prefix(500))]
-            arguments.append(contentsOf: chunkIDs)
-            try db.execute(sql: """
-                UPDATE rag_chunks
-                SET embedding_status = 'failed', embedding_error = ?
-                WHERE id IN (\(placeholders))
-                """, arguments: StatementArguments(arguments))
+            for chunk in chunks {
+                try db.execute(sql: """
+                    UPDATE rag_chunks
+                    SET embedding_status = 'failed', embedding_error = ?, embedding_claim_id = NULL
+                    WHERE id = ? AND content_hash = ?
+                      AND embedding_status = 'pending' AND embedding_claim_id = ?
+                    """, arguments: [String(error.prefix(500)), chunk.chunkID, chunk.contentHash, claimID])
+            }
         }
     }
 
@@ -529,7 +571,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         try await database.writer.write { db in
             try db.execute(sql: """
                 UPDATE rag_chunks
-                SET embedding_status = 'stale'
+                SET embedding_status = 'stale', embedding_claim_id = NULL
                 WHERE embedding_status != 'keyword_only'
                   AND embedding_model IS NOT NULL AND embedding_model != ?
                 """, arguments: [currentModel])
@@ -759,7 +801,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 SET title = ?, section_path = ?, content = ?, content_hash = ?, token_count = ?,
                     embedding_model = NULL, embedding_dim = NULL, embedding = NULL,
                     embedding_status = CASE WHEN source = 'metadata' THEN 'keyword_only' ELSE 'pending' END,
-                    embedding_error = NULL, indexed_at = NULL, updated_at = ?
+                    embedding_error = NULL, embedding_claim_id = NULL, indexed_at = NULL, updated_at = ?
                 WHERE id = ?
                 """, arguments: [cleanTitle, sectionPath, cleanContent, RAGChunk.hash(cleanContent), tokenCount, now, id])
         }
@@ -801,8 +843,8 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     UPDATE rag_chunks
                     SET title = ?, section_path = ?, content = ?, content_hash = ?, token_count = ?,
                         embedding_model = NULL, embedding_dim = NULL, embedding = NULL,
-                    embedding_status = CASE WHEN source = 'metadata' THEN 'keyword_only' ELSE 'pending' END,
-                    embedding_error = NULL, indexed_at = NULL, updated_at = ?
+                        embedding_status = CASE WHEN source = 'metadata' THEN 'keyword_only' ELSE 'pending' END,
+                        embedding_error = NULL, embedding_claim_id = NULL, indexed_at = NULL, updated_at = ?
                     WHERE id = ?
                     """, arguments: [originalTitle, originalPath, originalContent, RAGChunk.hash(originalContent), max(1, originalContent.count / 4), now, id])
             }
