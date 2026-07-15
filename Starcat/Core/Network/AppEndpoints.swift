@@ -62,7 +62,7 @@ enum AppEndpoints {
 
     // MARK: - 自建后端 1/4：Weekly（阮一峰周刊推荐 GitHub 项目）
 
-    /// 阮一峰周刊后端 endpoint 集合。
+    /// Weekly 多来源后端 endpoint 集合。
     enum Weekly {
         /// 生产环境默认 URL（fly.io）。
         static let productionURL = URL(string: "https://starcat-weekly-api.fly.dev")!
@@ -83,7 +83,7 @@ enum AppEndpoints {
         /// （与 `/api/v1/zread` 风格对齐），`/api/v1/projects` → `/api/v1/weekly`。
         /// 这是 **breaking change** —— 客户端必须同步升级，旧路径已 404。
         enum Paths {
-            /// `GET /api/v1/repos?page=&page_size=&lang=&sort=&order=` —— 三源聚合 repo feed。
+            /// `GET /api/v1/repos?page=&page_size=&lang=&sort=&order=` —— 多来源聚合 repo feed。
             static let repos = "/api/v1/repos"
             /// `GET /api/v1/repos/bulk` —— 一次性返回全量 repos + languages（R-06.3 后端落地，
             /// R-06.4 客户端接入）。无 query 参数，envelope schema_version=1，支持
@@ -92,7 +92,7 @@ enum AppEndpoints {
             static let reposBulk = "/api/v1/repos/bulk"
             /// `GET /api/v1/repos/{gh_repo_id}` —— 单 repo 聚合详情与来源事件。
             static let repoDetail = "/api/v1/repos"
-            /// `GET /api/v1/repos/languages` —— 三源聚合语言统计。
+            /// `GET /api/v1/repos/languages` —— 多来源聚合语言统计。
             static let languages = "/api/v1/repos/languages"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-weekly-api/internal/handler/ping.go。
@@ -194,7 +194,7 @@ enum AppEndpoints {
         }
 
         enum Paths {
-            /// `GET /api/v1/wikis?owner=&repo=` —— 单仓库三源探测。
+            /// `GET /api/v1/wikis?owner=&repo=` —— 单仓库多服务探测。
             static let status = "/api/v1/wikis"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-wiki-api/internal/handler/ping.go。

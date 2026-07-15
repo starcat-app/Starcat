@@ -4,7 +4,7 @@
 //
 //  Explore 页 `weekly` 分类的中栏视图 + ViewModel。
 //
-//  数据源：三源聚合周刊（ruanyf/weekly + ZRead + Hacker News）通过独立 Go 后端服务
+//  数据源：Weekly 固定目录中的多来源项目通过独立 Go 后端服务聚合
 //  暴露的 REST API。
 //  契约见 `WeeklyAPI.swift` / 后端仓库 README。
 //

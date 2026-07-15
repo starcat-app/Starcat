@@ -2,7 +2,7 @@
 //  WeeklyModels.swift
 //  Starcat
 //
-//  Activity / Weekly 三源聚合 feed 的网络 DTO 与 UI 领域模型。
+//  Activity / Weekly 多来源聚合 feed 的网络 DTO 与 UI 领域模型。
 //
 //  数据源：starcat-weekly-api R-04 聚合接口。
 //  关键约束：

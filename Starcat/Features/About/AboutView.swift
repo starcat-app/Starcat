@@ -1042,7 +1042,7 @@ private struct AboutDependency: Identifiable {
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
         //
         // 外部来源品牌 logo 嵌入在 `Assets.xcassets/WikiSources/`（Wiki 菜单）与
-        // `Assets.xcassets/WeeklySources/`（Weekly 三源 feed）下,用于来源识别。
+        // `Assets.xcassets/WeeklySources/`（Weekly 多来源 feed）下，用于来源识别。
         // 它们是各品牌的商标 / 品牌资产,Starcat 仅作"识别用图"展示,不主张所有权,
         // license 字段标记为 "Brand Asset"。
         // 严格按 CLAUDE.md「开源致谢同步规则」第 2 条「嵌入式资源」登记。

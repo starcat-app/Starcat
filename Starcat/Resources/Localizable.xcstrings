@@ -43470,13 +43470,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Parses GitHub projects recommended in Ruanyf Weekly, powering the Activity → Weekly view."
+            "value": "Aggregates GitHub projects from Weekly, ZRead, Show HN, HelloGitHub, and approved intelligence sources."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "解析推荐周刊的 GitHub 项目，为 活动 → 周刊 视图提供数据。"
+            "value": "聚合周刊、ZRead、Show HN、HelloGitHub 与受控情报来源中的 GitHub 项目。"
           }
         }
       }

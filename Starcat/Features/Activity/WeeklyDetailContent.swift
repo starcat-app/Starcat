@@ -18,7 +18,7 @@
 //  R-01 v1.5 修订（2026-06-10 下午, dong4j bug 反馈）：
 //  - tags / notes / release 三段（`RepoLocalSections`）**从 ContentView 迁回 Scaffold
 //    metadataPanel 内**,跟随 hero 整段折叠让位 README 阅读区;
-//  - 本 ContentView 不再渲染 `RepoLocalSections`,body 仅剩 `ReadmeStateView`;
+//  - 本 ContentView 不再渲染 `RepoLocalSections`，body 保留通用来源时间线与 `ReadmeStateView`；
 //  - 三段可见性逻辑 + spring star 后展开转场都由 `RepoLocalSections` 内部自治
 //    （详见 `RepoDetailScaffold.swift` 文件头 v1.5 修订段）。
 //
@@ -46,7 +46,7 @@
 
 import SwiftUI
 
-/// Weekly 场景详情页的 body 内容（README）。
+/// Weekly 场景详情页的 body 内容（通用来源时间线 + README）。
 struct WeeklyDetailContent: View {
 
     let repo: Repo

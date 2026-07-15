@@ -2,7 +2,7 @@
 //  WeeklyAPI.swift
 //  Starcat
 //
-//  阮一峰周刊后端 API 客户端。
+//  Weekly 多来源聚合后端 API 客户端。
 //
 //  数据源：starcat-weekly-api（独立 Go 服务）
 //  契约：见 https://github.com/dong4j/starcat-weekly-api 的 README，与
@@ -37,7 +37,7 @@ enum WeeklyAPIError: Error, LocalizedError {
     }
 }
 
-/// 三源聚合 Weekly feed 后端 API 客户端。
+/// 多来源聚合 Weekly feed 后端 API 客户端。
 ///
 /// 用 `actor` 隔离 URLSession + JSONDecoder 的并发访问；公共方法是 async，
 /// 与 TrendingAPI 完全一致，方便 ViewModel 同一种 await 风格调用。
@@ -121,7 +121,7 @@ actor WeeklyAPI {
         self.apiKey = key
     }
 
-    /// 拉取三源聚合 repo feed。
+    /// 拉取多来源聚合 repo feed。
     ///
     /// 后端负责聚合、排序和去重；客户端可发送 `source` 过滤，但 identity 仍只消费
     /// `gh_repo_id`，不再用 owner/name 推导同一项目。
@@ -259,7 +259,7 @@ actor WeeklyAPI {
         }
     }
 
-    /// 获取三源聚合语言列表，用于 Weekly 语言筛选。
+    /// 获取多来源聚合语言列表，用于 Weekly 语言筛选。
     func fetchLanguages() async throws -> [TrendingLanguageAggregateDTO] {
         let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.languages, to: baseURL)
         let (data, response) = try await performRequestWithResponse(url: endpoint)
