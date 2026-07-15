@@ -50,6 +50,46 @@ struct RAGIndexRefreshSummary: Equatable, Sendable {
     }
 }
 
+/// RAG 批处理的有界并发执行器。只维持 `maxConcurrentTasks` 个在途任务，
+/// 每完成一项再补一项，避免为大知识库一次创建数千个 Task。
+enum RAGBoundedTaskExecutor {
+    static func forEach<Element: Sendable>(
+        _ elements: [Element],
+        maxConcurrentTasks: Int,
+        operation: @escaping @Sendable (Element) async throws -> Void,
+        didComplete: @escaping @Sendable (Int) async -> Void
+    ) async throws {
+        guard !elements.isEmpty else { return }
+        let concurrencyLimit = max(1, maxConcurrentTasks)
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var nextIndex = 0
+
+            func scheduleNext() {
+                guard nextIndex < elements.count else { return }
+                let element = elements[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    try Task.checkCancellation()
+                    try await operation(element)
+                }
+            }
+
+            for _ in 0..<min(concurrencyLimit, elements.count) {
+                scheduleNext()
+            }
+
+            var completed = 0
+            while try await group.next() != nil {
+                completed += 1
+                await didComplete(completed)
+                try Task.checkCancellation()
+                scheduleNext()
+            }
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGIndexBuilder {
@@ -72,6 +112,8 @@ final class KnowledgeRAGIndexBuilder {
 
     /// README HTML 与 Markdown 各自独立请求；限制单次请求，避免离线网络阻塞整轮索引。
     private static let readmeRequestTimeout: TimeInterval = 15
+    /// GitHub 请求保持小幅并发：相比串行减少大库等待，又不会突发占满限额与连接。
+    private static let readmeFetchConcurrency = 3
 
     private(set) var status: RAGIndexingStatus = .idle
     /// 仅由显式的全库刷新创建；自动 source 更新与单仓库刷新不能覆盖用户刚完成的全局结果。
@@ -440,43 +482,70 @@ final class KnowledgeRAGIndexBuilder {
     /// 仅补齐本地没有 Markdown 的 README。索引器不能假设详情页或后台预拉已经访问过仓库，
     /// 否则知识库会退化成只有 metadata 的分片；单仓库失败则保留 metadata 并继续下一项。
     private func fetchMissingReadmes(for repos: [Repo], recordsRefreshSummary: Bool) async throws {
-        for (index, repo) in repos.enumerated() {
-            try Task.checkCancellation()
-            status = .fetchingReadmes(processedRepos: index, totalRepos: repos.count)
+        status = .fetchingReadmes(processedRepos: 0, totalRepos: repos.count)
+        let readmeRepository = self.readmeRepository
+        let readmeAPI = self.readmeAPI
+        let totalRepos = repos.count
 
-            if let cachedMarkdown = try await readmeRepository.findContent(repoId: repo.id),
-               !cachedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if recordsRefreshSummary {
-                    updateRefreshSummary(readmesProcessed: index + 1)
-                }
-                continue
-            }
-
-            let htmlResult = await readmeAPI.refreshReadme(
-                for: repo,
-                requestTimeout: Self.readmeRequestTimeout
-            )
-            switch htmlResult {
-            case .updated, .notModified:
-                let markdownResult = await readmeAPI.refreshMarkdownIfNeeded(
+        try await RAGBoundedTaskExecutor.forEach(
+            repos,
+            maxConcurrentTasks: Self.readmeFetchConcurrency,
+            operation: { repo in
+                try await Self.fetchMissingReadme(
                     for: repo,
-                    requestTimeout: Self.readmeRequestTimeout
+                    readmeRepository: readmeRepository,
+                    readmeAPI: readmeAPI
                 )
-                if case .failed(let error) = markdownResult {
-                    AppLog.network.warning("RAG README Markdown fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            },
+            didComplete: { [weak self] completed in
+                await MainActor.run {
+                    guard let self else { return }
+                    self.status = .fetchingReadmes(processedRepos: completed, totalRepos: totalRepos)
+                    if recordsRefreshSummary {
+                        self.updateRefreshSummary(readmesProcessed: completed)
+                    }
                 }
-            case .notFound:
-                break
-            case .failed(let error):
-                AppLog.network.warning("RAG README HTML fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
-            if recordsRefreshSummary {
-                updateRefreshSummary(readmesProcessed: index + 1)
-            }
-        }
+        )
         status = .fetchingReadmes(processedRepos: repos.count, totalRepos: repos.count)
         if recordsRefreshSummary {
             updateRefreshSummary(readmesProcessed: repos.count)
+        }
+    }
+
+    /// 子任务只处理单仓 README，不发布 UI 状态。请求层的 15 秒超时、GitHub 限流和
+    /// in-flight 去重均由原 `ReadmeAPI` 路径保留；每次网络 await 后重新检查取消，
+    /// 防止 API 将 transport 取消包装成 `.failed` 后继续补发下一个请求。
+    private nonisolated static func fetchMissingReadme(
+        for repo: Repo,
+        readmeRepository: ReadmeRepository,
+        readmeAPI: ReadmeAPI
+    ) async throws {
+        try Task.checkCancellation()
+        if let cachedMarkdown = try await readmeRepository.findContent(repoId: repo.id),
+           !cachedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return
+        }
+
+        let htmlResult = await readmeAPI.refreshReadme(
+            for: repo,
+            requestTimeout: Self.readmeRequestTimeout
+        )
+        try Task.checkCancellation()
+        switch htmlResult {
+        case .updated, .notModified:
+            let markdownResult = await readmeAPI.refreshMarkdownIfNeeded(
+                for: repo,
+                requestTimeout: Self.readmeRequestTimeout
+            )
+            try Task.checkCancellation()
+            if case .failed(let error) = markdownResult {
+                AppLog.network.warning("RAG README Markdown fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        case .notFound:
+            break
+        case .failed(let error):
+            AppLog.network.warning("RAG README HTML fetch failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 

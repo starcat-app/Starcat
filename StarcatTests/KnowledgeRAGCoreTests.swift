@@ -12,6 +12,40 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @Test("README 重建使用有界并发且进度按完成数单调递增")
+    func readmeRebuildUsesBoundedConcurrencyWithStableProgress() async throws {
+        let probe = RAGBoundedConcurrencyProbe()
+
+        try await RAGBoundedTaskExecutor.forEach(
+            Array(0..<9),
+            maxConcurrentTasks: 3,
+            operation: { _ in try await probe.performWork() },
+            didComplete: { completed in await probe.recordCompletion(completed) }
+        )
+
+        let snapshot = await probe.snapshot()
+        #expect(snapshot.maximumConcurrentTasks == 3)
+        #expect(snapshot.completionCounts == Array(1...9))
+    }
+
+    @Test("README 有界并发继续传播取消")
+    func boundedReadmeRebuildPreservesCancellation() async throws {
+        let task = Task {
+            try await RAGBoundedTaskExecutor.forEach(
+                Array(0..<20),
+                maxConcurrentTasks: 3,
+                operation: { _ in try await Task.sleep(for: .seconds(1)) },
+                didComplete: { _ in }
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(20))
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+    }
+
     @Test("知识库结构化分析只执行白名单 DSL 并返回 Star 排行")
     func knowledgeBaseAnalyticsExecutesWhitelistedRanking() async throws {
         let database = try InMemoryDatabaseManager()
@@ -3798,6 +3832,27 @@ private func remoteWorkItems(
             candidate: candidate,
             request: request
         )
+    }
+}
+
+private actor RAGBoundedConcurrencyProbe {
+    private var activeTasks = 0
+    private var maximumConcurrentTasks = 0
+    private var completionCounts: [Int] = []
+
+    func performWork() async throws {
+        activeTasks += 1
+        maximumConcurrentTasks = max(maximumConcurrentTasks, activeTasks)
+        defer { activeTasks -= 1 }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    func recordCompletion(_ completed: Int) {
+        completionCounts.append(completed)
+    }
+
+    func snapshot() -> (maximumConcurrentTasks: Int, completionCounts: [Int]) {
+        (maximumConcurrentTasks, completionCounts)
     }
 }
 
