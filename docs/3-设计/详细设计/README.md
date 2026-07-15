@@ -40,6 +40,7 @@
 | 35 | [GitHub Stars List 分组设计](35-GitHub-Stars-List分组设计.md) | GitHub Stars List 分组侧边栏入口 + OAuth 组织限制处理 |
 | 36 | [CodebaseMemory 集成设计](36-CodebaseMemory集成设计.md) | codebase-memory-mcp 二进制打包进 bundle + 持久解压 + POSIX 端口探测 + Process spawn UI 子进程 + 6 步状态机 + 设置页/Storage Tab 集成 + App Store 沙盒与签名策略 |
 | 37 | [外部搜索服务设计](37-外部搜索服务设计.md) | External Search Provider 抽象、设置页、SearchCenter Provider View、External Context 单 Provider / Pro 聚合与缓存策略 |
+| 42 | [Weekly 多来源采集与置顶](42-Weekly多来源采集与置顶.md) | 固定来源目录、持久化 enrich 队列、HelloGitHub 回填、AI 情报 Skill、动态来源缓存与多项目置顶的落地契约 |
 
 ---
 
@@ -74,6 +75,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-16 | 新增 42 文档：Weekly 多来源采集、异步 Worker、HelloGitHub、AI 情报 Skill、动态来源缓存与置顶实现契约 |
 | 2026-07-03 | 新增 37 文档：External Search Provider 抽象、SearchCenter 单 Provider View、AI External Context 单 Provider / Pro 聚合、Provider 隔离缓存与本机凭据边界 |
 | 2026-07-03 | 重写 30 文档：本地 RAG 从“已 star 仓库问答”调整为“知识库问答”，补齐 chunk-level 索引、独立工作台、引用证据与实施切片 |
 | 2026-06-29 | 新增 36 文档：CodebaseMemory 集成设计（二进制打包进 bundle + POSIX 端口探测 + Process spawn + 6 步状态机 + App Store 沙盒签名策略）；补登 34/35 索引 |

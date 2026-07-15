@@ -1,7 +1,7 @@
 # Weekly 多来源扩展、AI 情报采集与置顶运营正式方案
 
 > 日期：2026-07-15  
-> 状态：最终方案，待按实施顺序开发  
+> 状态：最终方案，主体功能已实现，等待多轮专项审查收口  
 > 单一信任源：本文  
 > 范围：`supports/starcat-weekly-api`、Starcat「探索 → 周刊」、`pages/_local-admin`、repo-local `starcat-weekly-import` skill
 
