@@ -129,3 +129,10 @@
 - 复审基线为 `main` / `61090a7c`，详细结论见 `审查报告-第3轮.md`。
 - Meilisearch SQL 项已由 2026-07-15 的实现与回归测试关闭；PDF/图片改为未来能力，不再作为当前产品验收项。
 - 定向运行 RAG Core、Chunk Repository、会话窗口、滚动、流式 Markdown 与数据库迁移共 6 个 Suite，168 项测试全部通过；该结果不替代全量测试和真实数据验收。
+
+## 第 4 轮复审与自动化门禁记录（2026-07-16）
+
+- 审查基线、5 项发现与逐项整改证据见 `审查报告-第4轮.md`；远程证据 i18n、文档真源、压缩语义和唯一索引读模型均已关闭。
+- 关闭 Xcode 后运行完整 `xcodebuild test`：Swift Testing 1459 项 / 174 suites 通过（1 个已登记 known issue）；XCTest 46 项中 1 项按设计跳过、0 失败。
+- `Starcat`（App Store）与 `StarcatDirect` 两个 Debug target 独立 build 均成功；Direct 仅有无 AppIntents.framework 时跳过 metadata extraction 的工具链提示，不影响产物编译。
+- 自动化门禁不能替代真实 Provider、慢网络、真实长会话、超长文本附件和脱敏问答集验收；对应 `[~]` 在取得真实证据前保持未关闭。

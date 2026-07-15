@@ -167,7 +167,7 @@
 - [x] `rtk xcodegen generate`
 - [x] 运行 `RAGChunkRepositoryTests`、`RAGChunkBuilderTests`、`KnowledgeRAGCoreTests`、`ReadmeContentRepositoryTests`。
 - [x] 运行全量 `xcodebuild test`。
-- [x] 运行 Debug `xcodebuild build`。
+- [x] 运行 `Starcat` 与 `StarcatDirect` 两个 Debug target 的 `xcodebuild build`。
 - [x] 启动当前 Debug 构建，验证 RAG 入口、三栏工作台和匿名/空知识库状态（0/0，发送按钮禁用）。
 
 > 2026-07-10: 专项测试与全量测试均已通过。测试运行中暴露的语言全局状态污染已通过测试串行化与与语言无关的行为断言修复；不改变产品逻辑。
@@ -183,6 +183,8 @@
 > 2026-07-14: 主动联网实现通过 Debug build、xcstrings JSON 与 diff 检查；10 个定向用例覆盖 GitHub 意图兜底、External Search 零本地证据生成、实时证据拒绝旧答案、私有仓库隔离、旧审计解码、持久化边界和 Prompt 迁移，全部通过。组合 Suite 仍命中本专项既有 `addToLibraryPaginationWindowsAndPrefetches` 分页预取断言，与本轮联网链路无关。
 
 > 2026-07-15: 会话切换性能整改相关 8 个 Suite 为 166/166 通过；全新 DerivedData 全量测试共 1459 项，1451 通过、7 跳过、1 项预期失败、0 失败，完整编译与最终重跑零 warning/error。
+
+> 2026-07-16: 阶段 8/9 与第 4 轮整改后重新执行最终门禁：Swift Testing 1459 项 / 174 suites 通过（1 个 known issue），XCTest 46 项（1 跳过、0 失败）；`Starcat` / `StarcatDirect` Debug build 均成功。
 
 ## 10. 真实数据人工验收
 
