@@ -349,6 +349,15 @@ struct RAGRemoteContextPhaseOutput: Sendable {
     let resolvedWorkItems: [RAGResolvedRemoteWorkItem]
 }
 
+struct RAGRetrievalPhaseOutput: Sendable {
+    let attachmentContexts: [RAGAttachmentContext]
+    let analyticsResult: KnowledgeBaseAnalyticsResult?
+    let candidates: [RAGRepoCandidate]
+    let retrieval: RAGRetrievalResult
+    let hasScopedQuery: Bool
+    let localMissingReasonKey: String?
+}
+
 struct KnowledgeRAGService: Sendable {
     /// 召回测试用于人工核验而非构造回答；固定上限避免调试窗口被低分尾部结果淹没。
     private static let retrievalTestMaxHits = 10
@@ -545,173 +554,17 @@ struct KnowledgeRAGService: Sendable {
                         return
                     }
 
-                    // 附件属于本轮独立证据，必须在知识库早停判断之前处理；否则“知识库无命中
-                    // 但用户上传了 PDF/图片”的合法问答会被错误截断。
-                    var attachmentContexts = try await attachmentProcessor.process(request.composerContext.attachments)
-                    attachmentContexts.append(contentsOf: request.composerContext.pastedGitHubLinks.map { reference in
-                        RAGAttachmentContext(
-                            attachmentID: UUID(),
-                            filename: "GitHub: \(reference.owner)/\(reference.repo)",
-                            // 这是送入 Prompt 的证据协议，不是 UI 固定文案。维持稳定中文标签，
-                            // 避免历史 Debug / 回放随 App locale 改变而产生不同语义。
-                            content: "用户显式提供 GitHub 链接：\(reference.url.absoluteString)；Starcat 关系：\(reference.relation.rawValue)",
-                            supportsFactualAnswer: false
-                        )
-                    })
-
-                    continuation.yield(.state(.retrieving))
-                    continuation.yield(.execution(.started(.retrieval)))
-                    let analyticsResult: KnowledgeBaseAnalyticsResult?
-                    if let analyticsPlan = plan.analytics, let analyticsExecutor {
-                        analyticsResult = try await analyticsExecutor.execute(
-                            plan: analyticsPlan,
-                            filters: plan.filters
-                        )
-                        sink.debug(.structuredAnalytics, """
-                        validated_analytics:
-                        dimension: \(analyticsPlan.dimension?.rawValue ?? "<none>")
-                        measure: \(analyticsPlan.measure.rawValue)
-                        direction: \(analyticsPlan.direction.rawValue)
-                        limit: \(analyticsPlan.limit)
-
-                        enforced_scope: library_state = in_library
-                        filters: \(String(reflecting: plan.filters))
-                        raw_sql: not recorded; local executor maps the validated DSL to fixed SQL.
-
-                        result:
-                        \(analyticsResult?.promptContext() ?? "<none>")
-                        """)
-                    } else {
-                        analyticsResult = nil
-                    }
-                    // analytics 已由固定聚合 SQL 给出完整结果；再加载 1,000 个候选并塞入
-                    // structured rows 既浪费 I/O，也会让“排行”答案混入无关的项目清单。
-                    let candidates: [RAGRepoCandidate]
-                    if plan.analytics == nil {
-                        candidates = try await candidateRepository.fetchCandidates(
-                            plan: plan,
-                            explicitRepoIDs: request.composerContext.explicitRepoIDs,
-                            explicitMode: request.composerContext.explicitRepoMode
-                        )
-                    } else {
-                        candidates = []
-                    }
-                    sink.debug(.candidates, candidates.map { candidate in
-                        """
-                        repo: \(candidate.repo.fullName)
-                        status: \(candidate.status.rawValue)
-                        tags: \(candidate.tagNames.joined(separator: ", "))
-                        """
-                    }.joined(separator: "\n---\n"))
-                    continuation.yield(.execution(.retrieval(.candidateSelectionCompleted(candidates.count))))
-                    let hasScopedQuery = plan.filters.hasEffectiveConditions
-                        || !request.composerContext.explicitRepoIDs.isEmpty
-                    var localMissingReasonKey: String?
-                    var retrieval: RAGRetrievalResult
-                    if candidates.isEmpty {
-                        retrieval = RAGRetrievalResult(
-                            candidates: [],
-                            bundles: [],
-                            childHits: [],
-                            diagnostics: retriever.diagnostics(candidateRepoCount: 0, outcome: .noCandidates)
-                        )
-                        let missingReasonKey = hasScopedQuery
-                            ? "rag.workspace.execution.noCandidates"
-                            : "rag.workspace.execution.noKnowledgeRepos"
-                        localMissingReasonKey = missingReasonKey
-                        continuation.yield(.execution(.terminated(
-                            .retrieval,
-                            summary: String.l10n(missingReasonKey)
-                        )))
-                    } else if plan.mode == .structuredOnly {
-                        retrieval = RAGRetrievalResult(
-                            candidates: candidates,
-                            bundles: [],
-                            childHits: [],
-                            diagnostics: retriever.diagnostics(
-                                candidateRepoCount: candidates.count,
-                                outcome: .skippedStructured
-                            )
-                        )
-                        continuation.yield(.execution(.retrievalCompleted(retrieval)))
-                    } else if !retriever.hasEnabledSources {
-                        retrieval = RAGRetrievalResult(
-                            candidates: candidates,
-                            bundles: [],
-                            childHits: [],
-                            diagnostics: retriever.diagnostics(
-                                candidateRepoCount: candidates.count,
-                                outcome: .sourcesDisabled
-                            )
-                        )
-                        localMissingReasonKey = "rag.workspace.execution.noEvidence"
-                        continuation.yield(.execution(.terminated(
-                            .retrieval,
-                            summary: String.l10n("rag.workspace.execution.noEvidence")
-                        )))
-                    } else {
-                        if try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) {
-                            retrieval = try await retriever.retrieve(
-                                semanticQuery: plan.semanticQuery,
-                                candidates: candidates,
-                                explicitMode: request.composerContext.explicitRepoMode,
-                                explicitRepoIDs: request.composerContext.explicitRepoIDs,
-                                progress: { progress in
-                                    continuation.yield(.execution(.retrieval(progress)))
-                                }
-                            )
-                            if retrieval.bundles.isEmpty {
-                                localMissingReasonKey = "rag.workspace.execution.noEvidence"
-                                continuation.yield(.execution(.terminated(
-                                    .retrieval,
-                                    summary: String.l10n("rag.workspace.execution.noEvidence")
-                                )))
-                            } else {
-                                continuation.yield(.execution(.retrievalCompleted(retrieval)))
-                            }
-                        } else {
-                            retrieval = RAGRetrievalResult(
-                                candidates: candidates,
-                                bundles: [],
-                                childHits: [],
-                                diagnostics: retriever.diagnostics(
-                                    candidateRepoCount: candidates.count,
-                                    outcome: .noReadyChunks
-                                )
-                            )
-                            localMissingReasonKey = "rag.workspace.execution.noIndex"
-                            continuation.yield(.execution(.terminated(
-                                .retrieval,
-                                summary: String.l10n("rag.workspace.execution.noIndex")
-                            )))
-                        }
-                    }
-                    let evidenceDetails: String = retrieval.bundles.map { bundle in
-                        let hits = bundle.matchedChildren.map { hit in
-                            "\(hit.kind.rawValue) score=\(hit.score) source=\(hit.chunk.source.rawValue) section=\(hit.chunk.sectionPath)"
-                        }.joined(separator: "\n")
-                        return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
-                    }.joined(separator: "\n---\n")
-                    if request.isDebugEnabled {
-                        if let rerank = retrieval.diagnostics?.rerank {
-                            continuation.yield(.debug(RAGDebugEvent(
-                                stage: .rerank,
-                                elapsedSeconds: Date().timeIntervalSince(startedAt),
-                                payload: "",
-                                rerankPayload: RAGRerankDebugPayload(diagnostics: rerank)
-                            )))
-                        }
-                        continuation.yield(.debug(RAGDebugEvent(
-                            stage: .retrieval,
-                            elapsedSeconds: Date().timeIntervalSince(startedAt),
-                            payload: "",
-                            retrievalPayload: RAGRetrievalDebugPayload(
-                                diagnostics: retrieval.diagnostics,
-                                evidenceDetails: evidenceDetails
-                            )
-                        )))
-                    }
-                    continuation.yield(.retrieval(retrieval))
+                    let retrievalOutput = try await runRetrievalPhase(
+                        request: request,
+                        plan: plan,
+                        sink: sink
+                    )
+                    let attachmentContexts = retrievalOutput.attachmentContexts
+                    let analyticsResult = retrievalOutput.analyticsResult
+                    let candidates = retrievalOutput.candidates
+                    let retrieval = retrievalOutput.retrieval
+                    let hasScopedQuery = retrievalOutput.hasScopedQuery
+                    let localMissingReasonKey = retrievalOutput.localMissingReasonKey
 
                     let remoteOutput = try await runRemoteContextPhase(
                         request: request,
@@ -766,6 +619,180 @@ struct KnowledgeRAGService: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Retrieval 阶段负责附件预处理、本地结构化分析、候选查询与混合召回；输出保留早停
+    /// 原因，但把最终“是否足够回答”的决定交给 Prompt 证据门禁。
+    func runRetrievalPhase(
+        request: RAGServiceRequest,
+        plan: RAGQueryPlan,
+        sink: RAGServiceEventSink
+    ) async throws -> RAGRetrievalPhaseOutput {
+        // 附件属于本轮独立证据，必须在知识库早停判断之前处理；否则“知识库无命中
+        // 但用户上传了文本附件”的合法问答会被错误截断。
+        var attachmentContexts = try await attachmentProcessor.process(request.composerContext.attachments)
+        attachmentContexts.append(contentsOf: request.composerContext.pastedGitHubLinks.map { reference in
+            RAGAttachmentContext(
+                attachmentID: UUID(),
+                filename: "GitHub: \(reference.owner)/\(reference.repo)",
+                // 这是送入 Prompt 的证据协议，不是 UI 固定文案。维持稳定中文标签，
+                // 避免历史 Debug / 回放随 App locale 改变而产生不同语义。
+                content: "用户显式提供 GitHub 链接：\(reference.url.absoluteString)；Starcat 关系：\(reference.relation.rawValue)",
+                supportsFactualAnswer: false
+            )
+        })
+
+        sink.yield(.state(.retrieving))
+        sink.yield(.execution(.started(.retrieval)))
+        let analyticsResult: KnowledgeBaseAnalyticsResult?
+        if let analyticsPlan = plan.analytics, let analyticsExecutor {
+            analyticsResult = try await analyticsExecutor.execute(plan: analyticsPlan, filters: plan.filters)
+            sink.debug(.structuredAnalytics, """
+            validated_analytics:
+            dimension: \(analyticsPlan.dimension?.rawValue ?? "<none>")
+            measure: \(analyticsPlan.measure.rawValue)
+            direction: \(analyticsPlan.direction.rawValue)
+            limit: \(analyticsPlan.limit)
+
+            enforced_scope: library_state = in_library
+            filters: \(String(reflecting: plan.filters))
+            raw_sql: not recorded; local executor maps the validated DSL to fixed SQL.
+
+            result:
+            \(analyticsResult?.promptContext() ?? "<none>")
+            """)
+        } else {
+            analyticsResult = nil
+        }
+        // analytics 已由固定聚合 SQL 给出完整结果；再加载 1,000 个候选并塞入
+        // structured rows 既浪费 I/O，也会让“排行”答案混入无关的项目清单。
+        let candidates: [RAGRepoCandidate]
+        if plan.analytics == nil {
+            candidates = try await candidateRepository.fetchCandidates(
+                plan: plan,
+                explicitRepoIDs: request.composerContext.explicitRepoIDs,
+                explicitMode: request.composerContext.explicitRepoMode
+            )
+        } else {
+            candidates = []
+        }
+        sink.debug(.candidates, candidates.map { candidate in
+            """
+            repo: \(candidate.repo.fullName)
+            status: \(candidate.status.rawValue)
+            tags: \(candidate.tagNames.joined(separator: ", "))
+            """
+        }.joined(separator: "\n---\n"))
+        sink.yield(.execution(.retrieval(.candidateSelectionCompleted(candidates.count))))
+        let hasScopedQuery = plan.filters.hasEffectiveConditions
+            || !request.composerContext.explicitRepoIDs.isEmpty
+        var localMissingReasonKey: String?
+        let retrieval: RAGRetrievalResult
+        if candidates.isEmpty {
+            retrieval = RAGRetrievalResult(
+                candidates: [],
+                bundles: [],
+                childHits: [],
+                diagnostics: retriever.diagnostics(candidateRepoCount: 0, outcome: .noCandidates)
+            )
+            let missingReasonKey = hasScopedQuery
+                ? "rag.workspace.execution.noCandidates"
+                : "rag.workspace.execution.noKnowledgeRepos"
+            localMissingReasonKey = missingReasonKey
+            sink.yield(.execution(.terminated(.retrieval, summary: String.l10n(missingReasonKey))))
+        } else if plan.mode == .structuredOnly {
+            retrieval = RAGRetrievalResult(
+                candidates: candidates,
+                bundles: [],
+                childHits: [],
+                diagnostics: retriever.diagnostics(
+                    candidateRepoCount: candidates.count,
+                    outcome: .skippedStructured
+                )
+            )
+            sink.yield(.execution(.retrievalCompleted(retrieval)))
+        } else if !retriever.hasEnabledSources {
+            retrieval = RAGRetrievalResult(
+                candidates: candidates,
+                bundles: [],
+                childHits: [],
+                diagnostics: retriever.diagnostics(
+                    candidateRepoCount: candidates.count,
+                    outcome: .sourcesDisabled
+                )
+            )
+            localMissingReasonKey = "rag.workspace.execution.noEvidence"
+            sink.yield(.execution(.terminated(
+                .retrieval,
+                summary: String.l10n("rag.workspace.execution.noEvidence")
+            )))
+        } else if try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) {
+            retrieval = try await retriever.retrieve(
+                semanticQuery: plan.semanticQuery,
+                candidates: candidates,
+                explicitMode: request.composerContext.explicitRepoMode,
+                explicitRepoIDs: request.composerContext.explicitRepoIDs,
+                progress: { progress in sink.yield(.execution(.retrieval(progress))) }
+            )
+            if retrieval.bundles.isEmpty {
+                localMissingReasonKey = "rag.workspace.execution.noEvidence"
+                sink.yield(.execution(.terminated(
+                    .retrieval,
+                    summary: String.l10n("rag.workspace.execution.noEvidence")
+                )))
+            } else {
+                sink.yield(.execution(.retrievalCompleted(retrieval)))
+            }
+        } else {
+            retrieval = RAGRetrievalResult(
+                candidates: candidates,
+                bundles: [],
+                childHits: [],
+                diagnostics: retriever.diagnostics(
+                    candidateRepoCount: candidates.count,
+                    outcome: .noReadyChunks
+                )
+            )
+            localMissingReasonKey = "rag.workspace.execution.noIndex"
+            sink.yield(.execution(.terminated(
+                .retrieval,
+                summary: String.l10n("rag.workspace.execution.noIndex")
+            )))
+        }
+        let evidenceDetails: String = retrieval.bundles.map { bundle in
+            let hits = bundle.matchedChildren.map { hit in
+                "\(hit.kind.rawValue) score=\(hit.score) source=\(hit.chunk.source.rawValue) section=\(hit.chunk.sectionPath)"
+            }.joined(separator: "\n")
+            return "repo: \(bundle.candidate.repo.fullName)\nscore: \(bundle.score)\nhits:\n\(hits)"
+        }.joined(separator: "\n---\n")
+        if sink.isDebugEnabled {
+            if let rerank = retrieval.diagnostics?.rerank {
+                sink.yield(.debug(RAGDebugEvent(
+                    stage: .rerank,
+                    elapsedSeconds: Date().timeIntervalSince(sink.startedAt),
+                    payload: "",
+                    rerankPayload: RAGRerankDebugPayload(diagnostics: rerank)
+                )))
+            }
+            sink.yield(.debug(RAGDebugEvent(
+                stage: .retrieval,
+                elapsedSeconds: Date().timeIntervalSince(sink.startedAt),
+                payload: "",
+                retrievalPayload: RAGRetrievalDebugPayload(
+                    diagnostics: retrieval.diagnostics,
+                    evidenceDetails: evidenceDetails
+                )
+            )))
+        }
+        sink.yield(.retrieval(retrieval))
+        return RAGRetrievalPhaseOutput(
+            attachmentContexts: attachmentContexts,
+            analyticsResult: analyticsResult,
+            candidates: candidates,
+            retrieval: retrieval,
+            hasScopedQuery: hasScopedQuery,
+            localMissingReasonKey: localMissingReasonKey
+        )
     }
 
     /// Remote Context 阶段独占授权等待与两类网络 Provider；输出只保留经用户许可后的计划
