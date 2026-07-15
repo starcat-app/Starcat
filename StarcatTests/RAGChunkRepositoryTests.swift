@@ -267,6 +267,31 @@ struct RAGChunkRepositoryTests {
         #expect(vectorHits.isEmpty)
     }
 
+    @Test("Embedding 队列总数独立统计且正文只按 limit 读取")
+    func embeddingQueueCountsWithoutLoadingAllContent() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 44)
+        try await database.insertRepoFixture(id: 45)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 44, state: .inLibrary)
+
+        let drafts = (0..<5).map { index in
+            draft(repoId: 44, key: "readme:batch:\(index)", content: "Batch content \(index)")
+        }
+        _ = try await repository.replaceSource(repoId: 44, source: .readme, drafts: drafts)
+        _ = try await repository.replaceSource(
+            repoId: 45,
+            source: .readme,
+            drafts: [draft(repoId: 45, key: "readme:outside:0", content: "Outside library")]
+        )
+
+        // 总数查询不返回正文；Builder 再以固定 batch size 拉取，避免大库瞬时占用过多内存。
+        #expect(try await repository.countChunksNeedingEmbedding() == 5)
+        let firstBatch = try await repository.fetchChunksNeedingEmbedding(limit: 2)
+        #expect(firstBatch.count == 2)
+        let knowledgeChunkIDs = Set(try await repository.fetchKnowledgeChunks(repoId: 44).compactMap(\.id))
+        #expect(Set(firstBatch.compactMap(\.id)).isSubset(of: knowledgeChunkIDs))
+    }
+
     @Test("ready 检查只返回知识库中当前模型的可用分片")
     func readyChunkExistencePreservesRetrievalBoundary() async throws {
         let (database, repository) = try makeRepository()

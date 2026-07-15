@@ -17,6 +17,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunks(ids: [Int64]) async throws -> [RAGChunk]
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
+    /// 只统计知识库边界内待向量化分片，不读取正文或 embedding BLOB。
+    func countChunksNeedingEmbedding() async throws -> Int
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
     func claimChunksForEmbedding(_ chunks: [RAGEmbeddingIdentity], claimID: String) async throws -> [RAGChunk]
     /// 检查当前检索是否至少有一个可用 source；包含当前模型向量和 FTS-only Metadata。
@@ -322,6 +324,18 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.repo_id, c.parent_key, c.chunk_index
                 """, arguments: StatementArguments(arguments))
+        }
+    }
+
+    func countChunksNeedingEmbedding() async throws -> Int {
+        try await database.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*)
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                WHERE c.embedding_status IN ('pending', 'failed', 'stale')
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                """) ?? 0
         }
     }
 

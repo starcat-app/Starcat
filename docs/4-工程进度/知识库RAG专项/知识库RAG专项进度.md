@@ -58,6 +58,7 @@
   全量 README cache 清理触发一次知识库 source diff。
 - [x] AI summary 由 `AISummaryRepository` 写入事件统一触发，批量与单 repo 生成不维护重复 RAG 回调。
 - [x] notes 变化使用 1.5 秒 debounce；移出知识库后保留缓存但 SQL 不再召回。
+- [x] Embedding 队列用轻量 COUNT 固定本轮进度，正文只按 `embeddingBatchSize` 分批读取与 claim，不再全量常驻内存或循环搬移数组。
 
 ## 4. Planner 与检索
 
@@ -306,10 +307,12 @@
 > 2026-07-16: 外部后端回退先复现 Meilisearch/Qdrant 吞取消，再统一查询与同步错误策略；`KnowledgeRAGCoreTests` 105 项通过。
 >
 > 2026-07-16: 固定文案 i18n 先复现英文环境 8 处泄漏，再统一计划、错误与 Debug 兜底查表；定向 107 项及全量 1438 项测试通过，0 失败，1 项已登记 known issue。
+>
+> 2026-07-16: Embedding 队列先以缺少独立计数 API 的回归测试复现问题，再改为 COUNT 与固定分批读取；`RAGChunkRepositoryTests` 通过。
 
 ## 15. 收尾与稳定性执行清单
 
-> 状态: 阶段 1 至 7 已完成；阶段 8、9 与真实环境验收待执行。
+> 状态: 阶段 1 至 7 已完成；阶段 8 已完成 1 项，其余性能上界、阶段 9 与真实环境验收待执行。
 
 > 清单：`RAG收尾与稳定性-checklist.md` 是本专项后续实现、逐项测试、commit 与验收收口的唯一执行顺序。
 > 结果：自动化整改与测试证据见 `结果报告-收尾与稳定性.md`；真实环境验收记录完成后再关闭专项。

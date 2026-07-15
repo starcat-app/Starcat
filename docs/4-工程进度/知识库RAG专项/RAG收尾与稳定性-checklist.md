@@ -85,7 +85,7 @@
 
 ## 阶段 8：性能与资源上界
 
-- [ ] **Embedding 队列分批**：禁止 `limit: Int.max` 一次性加载全部待向量化正文；按 `embeddingBatchSize` 分批读取或 claim，独立统计总数，消除循环 `removeFirst` 数组搬移。
+- [x] **Embedding 队列分批**：待处理总数改用 `COUNT(*)` 独立统计，正文按 `embeddingBatchSize` 分批读取与 claim，移除 `Int.max` 全量加载和循环 `removeFirst`，并对非法 batch size 设置 1 的下限 — `RAGChunkRepository.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [ ] **README 重建上界**：缺失 README 拉取改为 2～4 个任务的有界并发，保留 GitHub 限流、超时、取消和稳定进度语义。
 - [ ] **分片计算移出主线程**：将 Markdown 解析和 chunk build 等纯计算移出 `@MainActor`，只在主线程发布状态和进度。
 - [ ] **外部索引增量同步**：合并短时间内的索引变更，按 chunk upsert / delete 同步 Meilisearch 与 Qdrant；Metadata-only 更新不得触发 Qdrant 全量 `replaceAll`。

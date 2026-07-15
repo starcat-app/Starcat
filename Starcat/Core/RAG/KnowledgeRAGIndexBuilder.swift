@@ -119,7 +119,8 @@ final class KnowledgeRAGIndexBuilder {
         self.entitlementGate = entitlementGate
         self.keychain = keychain
         self.builder = builder
-        self.embeddingBatchSize = embeddingBatchSize
+        // 配置异常时仍保证队列每轮能前进，避免 limit=0 导致空轮询。
+        self.embeddingBatchSize = max(1, embeddingBatchSize)
         restorePersistedRefreshSummary()
     }
 
@@ -484,8 +485,9 @@ final class KnowledgeRAGIndexBuilder {
         let resolvedModel = resolvedEmbeddingModel()
         try await chunkRepository.markStaleForOtherModels(currentModel: resolvedModel)
         var processed = 0
-        var pending = try await chunkRepository.fetchChunksNeedingEmbedding(limit: Int.max)
-        let total = pending.count
+        // 总数只用 COUNT 查询获取；正文与 embedding 列始终按 batch size 读取，
+        // 避免大库在一轮索引开始时就把全部 chunk 驻留内存。
+        let total = try await chunkRepository.countChunksNeedingEmbedding()
         // Metadata-only 更新不能要求用户配置 embedding API；它只需刷新本地 FTS / 可选关键词后端。
         guard total > 0 else {
             try await syncExternalBackends(model: resolvedModel)
@@ -509,12 +511,14 @@ final class KnowledgeRAGIndexBuilder {
                 totalChunksAtEmbedding: coverage.totalChunks
             )
         }
-        if total > 0 {
-            status = .embedding(processedChunks: 0, totalChunks: total)
-        }
-        while !pending.isEmpty {
+        status = .embedding(processedChunks: 0, totalChunks: total)
+        while processed < total {
             try Task.checkCancellation()
-            let batch = Array(pending.prefix(embeddingBatchSize))
+            // 启动时的 COUNT 是本轮稳定进度上界；并发 source 变更造成的差异由
+            // 本轮最终 coverage 和下一轮队列补齐，不为动态总数重复扫描整库。
+            let limit = min(embeddingBatchSize, total - processed)
+            let batch = try await chunkRepository.fetchChunksNeedingEmbedding(limit: limit)
+            guard !batch.isEmpty else { break }
             let claimID = UUID().uuidString
             let claimed = try await chunkRepository.claimChunksForEmbedding(
                 batch.compactMap { chunk in
@@ -523,10 +527,7 @@ final class KnowledgeRAGIndexBuilder {
                 },
                 claimID: claimID
             )
-            guard !claimed.isEmpty else {
-                pending.removeFirst(batch.count)
-                continue
-            }
+            guard !claimed.isEmpty else { continue }
             do {
                 let vectors = try await client.embeddings(inputs: claimed.map(\.content), model: model)
                 // Provider 若少返回一条或给出空向量，不能让部分 chunk 永久停留在带 claim 的 pending。
@@ -553,12 +554,11 @@ final class KnowledgeRAGIndexBuilder {
                 )
                 throw error
             }
-            processed += batch.count
+            processed += claimed.count
             status = .embedding(processedChunks: processed, totalChunks: total)
             if recordsRefreshSummary {
                 updateRefreshSummary(embeddingProcessed: processed)
             }
-            pending.removeFirst(batch.count)
         }
         try await syncExternalBackends(model: model)
         let coverage = try await chunkRepository.coverage(model: model)
