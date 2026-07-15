@@ -11,6 +11,7 @@
 //  - skipped：`arrowshape.turn.up.right` + secondary
 //
 
+import AppKit
 import SwiftUI
 
 /// 执行步骤的局部折叠状态。
@@ -245,6 +246,18 @@ struct RAGExecutionTimeline: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
+            if Self.shouldOfferExternalSearchSettings(for: item) {
+                Button {
+                    openExternalSearchSettings()
+                } label: {
+                    Label(
+                        "rag.workspace.execution.remote.configureExternalSearch",
+                        systemImage: "gearshape"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
             if let url = item.requestURL {
                 Link(String.l10n("rag.workspace.execution.remote.endpoint"), destination: url)
                     .font(interfaceScale.font(.captionSmall))
@@ -263,6 +276,23 @@ struct RAGExecutionTimeline: View {
         }
         .padding(7)
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// 仅 External Search 执行失败时提供配置入口；无结果不代表配置错误，GitHub 失败也不归该设置项处理。
+    static func shouldOfferExternalSearchSettings(for item: RAGRemoteExecutionAuditItem) -> Bool {
+        item.resource == .externalWeb && item.status == .failed
+    }
+
+    /// RAG 工作台是独立 AppKit 窗口，不能依赖 SwiftUI `openSettings` 环境；复用全局 Settings 场景后再定位具体配置区。
+    private func openExternalSearchSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .starcatJumpToSettingsTab,
+                object: "integrations.externalSearch"
+            )
+        }
     }
 
     @ViewBuilder

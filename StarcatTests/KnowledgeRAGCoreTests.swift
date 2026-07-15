@@ -528,6 +528,39 @@ struct KnowledgeRAGCoreTests {
         #expect(item.resultPreviews.isEmpty)
     }
 
+    @Test("仅 External Search 失败时显示配置入口")
+    func externalSearchFailureOffersSettingsShortcut() {
+        func auditItem(
+            resource: RAGRemoteContextResource,
+            status: RAGRemoteExecutionStatus
+        ) -> RAGRemoteExecutionAuditItem {
+            RAGRemoteExecutionAuditItem(
+                id: "audit-\(resource.rawValue)-\(status.rawValue)",
+                repoFullName: "",
+                resource: resource,
+                querySummary: "配置 LLM API",
+                requestURL: nil,
+                status: status,
+                transport: nil,
+                httpStatusCode: nil,
+                resultCount: 0,
+                errorMessage: "No available provider",
+                startedAt: nil,
+                completedAt: nil
+            )
+        }
+
+        #expect(RAGExecutionTimeline.shouldOfferExternalSearchSettings(
+            for: auditItem(resource: .externalWeb, status: .failed)
+        ))
+        #expect(!RAGExecutionTimeline.shouldOfferExternalSearchSettings(
+            for: auditItem(resource: .externalWeb, status: .empty)
+        ))
+        #expect(!RAGExecutionTimeline.shouldOfferExternalSearchSettings(
+            for: auditItem(resource: .githubIssues, status: .failed)
+        ))
+    }
+
     @Test("Planner: 只接收显式仓库身份、上一条用户问题和上一轮引用仓库")
     func plannerReceivesMinimalConversationContext() async throws {
         let spy = SpyRAGAIClient(chatResponse: """

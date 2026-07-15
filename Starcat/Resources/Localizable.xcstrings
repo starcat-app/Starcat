@@ -58222,6 +58222,22 @@
         }
       }
     },
+    "rag.workspace.execution.remote.configureExternalSearch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure External Search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置网络搜索"
+          }
+        }
+      }
+    },
     "rag.workspace.execution.remote.cache": {
       "localizations": {
         "en": {

@@ -128,9 +128,26 @@ struct RAGMarkdownText: View {
                     .markdownMargin(top: .em(0.45))
             }
             .codeBlock { configuration in
-                configuration.label
-                    .relativeLineSpacing(.em(0.15))
-                    .markdownMargin(top: .em(0.35), bottom: .em(0.95))
+                // RAG 回答常包含 YAML / shell 片段；空 Theme 的 codeBlock 只有裸文本，
+                // 会让 fenced code 看起来像普通段落。这里显式补齐容器和横向滚动。
+                ScrollView(.horizontal, showsIndicators: true) {
+                    configuration.label
+                        .fixedSize(horizontal: false, vertical: true)
+                        .relativeLineSpacing(.em(0.15))
+                        .markdownTextStyle {
+                            FontFamilyVariant(.monospaced)
+                            FontSize(.em(0.92))
+                            BackgroundColor(nil)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                }
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.22), lineWidth: 0.5)
+                )
+                .markdownMargin(top: .em(0.35), bottom: .em(0.95))
             }
             // 默认 Theme 表格几乎无内边距 + 全网格描边，宽表/多列时贴边难读。
             // 对齐 DocC 横线分隔 + GitHub 内边距：表头加重、斑马纹、宽表可横向滚。

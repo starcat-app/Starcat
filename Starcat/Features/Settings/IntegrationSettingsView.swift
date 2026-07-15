@@ -11,6 +11,7 @@ import SwiftUI
 
 struct IntegrationSettingsTab: View {
     private static let localAPIKeyAnchor = "settings.integrations.localAPIKey"
+    private static let externalSearchAnchor = "settings.integrations.externalSearch"
 
     @Environment(AppSettings.self) private var settings
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -47,6 +48,7 @@ struct IntegrationSettingsTab: View {
                     .id(Self.localAPIKeyAnchor)
                 browserPluginSection
                 anySearchSection
+                    .id(Self.externalSearchAnchor)
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("settings.integration.codeFlow.outputDir.subtitle")
@@ -200,8 +202,20 @@ struct IntegrationSettingsTab: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToSettingsTab)) { note in
-                guard (note.object as? String) == "integrations.localAPIKey" else { return }
-                proxy.scrollTo(Self.localAPIKeyAnchor, anchor: .top)
+                let anchor: String
+                switch note.object as? String {
+                case "integrations.localAPIKey":
+                    anchor = Self.localAPIKeyAnchor
+                case "integrations.externalSearch":
+                    anchor = Self.externalSearchAnchor
+                default:
+                    return
+                }
+
+                // SettingsView 会先切换 Tab；下一轮主队列再滚动，避免首次打开设置时目标 Section 尚未完成布局。
+                DispatchQueue.main.async {
+                    proxy.scrollTo(anchor, anchor: .top)
+                }
             }
         }
         .alert("settings.integration.codeFlow.actionFailedTitle", isPresented: Binding(

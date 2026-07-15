@@ -115,9 +115,26 @@ struct RAGCitationChunkPopoverContent: View {
                     .markdownMargin(top: .em(0.25))
             }
             .codeBlock { configuration in
-                configuration.label
-                    .relativeLineSpacing(.em(0.12))
-                    .markdownMargin(top: .em(0.2), bottom: .em(0.55))
+                // 分片内容可能来自 README 配置样例；代码块需要独立容器，否则窄 popover
+                // 里 fenced code 会和正文混在一起，截图里的 YAML 就属于这种情况。
+                ScrollView(.horizontal, showsIndicators: true) {
+                    configuration.label
+                        .fixedSize(horizontal: false, vertical: true)
+                        .relativeLineSpacing(.em(0.12))
+                        .markdownTextStyle {
+                            FontFamilyVariant(.monospaced)
+                            FontSize(.em(0.92))
+                            BackgroundColor(nil)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                }
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.22), lineWidth: 0.5)
+                )
+                .markdownMargin(top: .em(0.2), bottom: .em(0.55))
             }
             // 默认 Theme 表格几乎无内边距 + 全网格描边，在 400pt 窄窗里会挤成截图那样。
             // 与回答正文主题（RAGMarkdownText.ragAnswerTheme）对齐：横线分隔 + 斑马纹 +

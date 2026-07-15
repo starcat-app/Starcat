@@ -1795,6 +1795,28 @@ private struct KnowledgeRAGChunkEditor: View {
                     .relativeLineSpacing(.em(0.18))
                     .markdownMargin(top: .zero, bottom: .em(0.55))
             }
+            .codeBlock { configuration in
+                // 只读详情用于核对原始分片，配置片段必须保留代码块边界和长行滚动；
+                // 否则用户会误以为 Markdown fence 没被识别。
+                ScrollView(.horizontal, showsIndicators: true) {
+                    configuration.label
+                        .fixedSize(horizontal: false, vertical: true)
+                        .relativeLineSpacing(.em(0.14))
+                        .markdownTextStyle {
+                            FontFamilyVariant(.monospaced)
+                            FontSize(.em(0.92))
+                            BackgroundColor(nil)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                }
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.22), lineWidth: 0.5)
+                )
+                .markdownMargin(top: .em(0.25), bottom: .em(0.55))
+            }
             // 与证据 popover / 回答正文主题对齐：横线分隔 + 斑马纹 + 表头加重；
             // 680 详情窗比 400pt popover 宽，单元格内边距用正文档 12/8。
             .table { configuration in
