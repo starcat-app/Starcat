@@ -326,7 +326,7 @@ struct RAGWorkspaceConversationRail: View {
             Button {
                 Task { await viewModel.selectConversation(conversation.id) }
             } label: {
-                HStack(spacing: 9) {
+                HStack(alignment: .top, spacing: 9) {
                     Image(systemName: conversation.isPinned ? "pin.fill" : "bubble.left")
                         .font(iconFont(size: 13, weight: .medium))
                         .foregroundStyle(
