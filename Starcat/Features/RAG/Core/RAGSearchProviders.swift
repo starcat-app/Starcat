@@ -149,14 +149,76 @@ extension RAGReranking {
     var debugModel: String? { nil }
 }
 
+/// Rerank Provider 共用的候选快照。
+///
+/// 服务端返回的是请求数组下标而不是 chunk id，因此候选截断、文档拼装和下标映射必须来自
+/// 同一个不可变快照；否则两个 Provider 各自维护这段逻辑时，很容易出现请求顺序与回填顺序漂移。
+private struct RAGRerankCandidateSnapshot: Sendable {
+    let hits: [RAGChildHit]
+    let documents: [String]
+
+    init(candidates: [RAGChildHit], limit: Int) {
+        hits = Array(candidates.prefix(limit))
+        documents = hits.map { hit in
+            [hit.chunk.title, hit.chunk.sectionPath, String(hit.chunk.content.prefix(6_000))]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+        }
+    }
+
+    func applying(_ scores: [RAGRerankIndexedScore]) -> [(hit: RAGChildHit, score: Double)] {
+        scores.compactMap { result in
+            guard hits.indices.contains(result.index) else { return nil }
+            return (hits[result.index], result.score)
+        }.sorted { $0.score > $1.score }
+    }
+}
+
+private struct RAGRerankIndexedScore: Sendable {
+    let index: Int
+    let score: Double
+}
+
+/// Rerank Provider 共用的 HTTP 传输层。
+///
+/// 这里只统一认证、JSON POST 与 HTTP 错误语义；协议 DTO 仍由各 Provider 持有，避免把 TEI
+/// 和 Cohere 两套不可互换的 JSON 协议伪装成同一种模型。
+private struct RAGRerankTransport: Sendable {
+    private let apiKey: String?
+    private let httpClient: any RAGHTTPClientProtocol
+
+    init(apiKey: String?, httpClient: any RAGHTTPClientProtocol) {
+        let normalizedAPIKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.apiKey = normalizedAPIKey.isEmpty ? nil : normalizedAPIKey
+        self.httpClient = httpClient
+    }
+
+    func post<Body: Encodable>(_ body: Body, to url: URL, backend: String) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await httpClient.data(for: request)
+        guard (200...299).contains(response.statusCode) else {
+            throw RAGExternalBackendError.http(
+                backend: backend,
+                status: response.statusCode,
+                message: String(data: data, encoding: .utf8) ?? ""
+            )
+        }
+        return data
+    }
+}
+
 /// Hugging Face Text Embeddings Inference 的 `/rerank` 协议适配。
 ///
 /// TEI 在容器启动时确定模型，因此不能发送 Cohere 的 `model` / `top_n` 字段；协议边界独立
 /// 于召回流程，避免服务端字段差异渗透到 RAG 排序逻辑。
 struct HuggingFaceTEIRAGReranker: RAGReranking {
     private let configuration: RAGRerankConfiguration
-    private let apiKey: String?
-    private let httpClient: any RAGHTTPClientProtocol
+    private let transport: RAGRerankTransport
 
     let provider: RAGRerankProvider = .huggingFaceTEI
     var debugCandidateLimit: Int? { configuration.candidateLimit }
@@ -168,9 +230,7 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
         httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient()
     ) {
         self.configuration = configuration.normalized
-        let normalizedAPIKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        self.apiKey = normalizedAPIKey.isEmpty ? nil : normalizedAPIKey
-        self.httpClient = httpClient
+        transport = RAGRerankTransport(apiKey: apiKey, httpClient: httpClient)
     }
 
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
@@ -179,30 +239,13 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
                 configuration.validationMessage ?? String.l10n("rag.core.backend.error.rerankEndpoint")
             )
         }
-        let selected = Array(candidates.prefix(configuration.candidateLimit))
-        guard !selected.isEmpty else { return [] }
-        let documents = selected.map { hit in
-            [hit.chunk.title, hit.chunk.sectionPath, String(hit.chunk.content.prefix(6_000))]
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
-        }
-        let body = TEIRerankRequest(query: query, texts: documents)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 20
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
-        request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await httpClient.data(for: request)
-        guard (200...299).contains(response.statusCode) else {
-            throw RAGExternalBackendError.http(backend: "Hugging Face TEI Rerank", status: response.statusCode, message: String(data: data, encoding: .utf8) ?? "")
-        }
+        let snapshot = RAGRerankCandidateSnapshot(candidates: candidates, limit: configuration.candidateLimit)
+        guard !snapshot.hits.isEmpty else { return [] }
+        let body = TEIRerankRequest(query: query, texts: snapshot.documents)
+        let data = try await transport.post(body, to: url, backend: "Hugging Face TEI Rerank")
         let results = try JSONDecoder().decode([TEIRerankResult].self, from: data)
         guard !results.isEmpty else { throw RAGExternalBackendError.invalidResponse("Hugging Face TEI Rerank") }
-        return results.compactMap { result in
-            guard selected.indices.contains(result.index) else { return nil }
-            return (selected[result.index], result.score)
-        }.sorted { $0.score > $1.score }
+        return snapshot.applying(results.map { RAGRerankIndexedScore(index: $0.index, score: $0.score) })
     }
 
     private struct TEIRerankRequest: Encodable {
@@ -222,8 +265,7 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
 /// 避免“兼容”名称掩盖两个不可互换的 JSON 协议。
 struct CohereCompatibleRAGReranker: RAGReranking {
     private let configuration: RAGRerankConfiguration
-    private let apiKey: String?
-    private let httpClient: any RAGHTTPClientProtocol
+    private let transport: RAGRerankTransport
 
     let provider: RAGRerankProvider = .cohereCompatible
     var debugCandidateLimit: Int? { configuration.candidateLimit }
@@ -235,9 +277,7 @@ struct CohereCompatibleRAGReranker: RAGReranking {
         httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient()
     ) {
         self.configuration = configuration.normalized
-        let normalizedAPIKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        self.apiKey = normalizedAPIKey.isEmpty ? nil : normalizedAPIKey
-        self.httpClient = httpClient
+        transport = RAGRerankTransport(apiKey: apiKey, httpClient: httpClient)
     }
 
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
@@ -246,37 +286,20 @@ struct CohereCompatibleRAGReranker: RAGReranking {
                 configuration.validationMessage ?? String.l10n("rag.core.backend.error.rerankEndpoint")
             )
         }
-        let selected = Array(candidates.prefix(configuration.candidateLimit))
-        guard !selected.isEmpty else { return [] }
-        let documents = selected.map(Self.rerankDocument)
+        let snapshot = RAGRerankCandidateSnapshot(candidates: candidates, limit: configuration.candidateLimit)
+        guard !snapshot.hits.isEmpty else { return [] }
         let body = CohereRerankRequest(
             model: configuration.model,
             query: query,
-            documents: documents,
-            topN: selected.count
+            documents: snapshot.documents,
+            topN: snapshot.hits.count
         )
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 20
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
-        request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await httpClient.data(for: request)
-        guard (200...299).contains(response.statusCode) else {
-            throw RAGExternalBackendError.http(backend: "Cohere-compatible Rerank", status: response.statusCode, message: String(data: data, encoding: .utf8) ?? "")
-        }
+        let data = try await transport.post(body, to: url, backend: "Cohere-compatible Rerank")
         let decoded = try JSONDecoder().decode(CohereRerankResponse.self, from: data)
         guard !decoded.results.isEmpty else { throw RAGExternalBackendError.invalidResponse("Cohere-compatible Rerank") }
-        return decoded.results.compactMap { result in
-            guard selected.indices.contains(result.index) else { return nil }
-            return (selected[result.index], result.relevanceScore)
-        }.sorted { $0.score > $1.score }
-    }
-
-    private static func rerankDocument(_ hit: RAGChildHit) -> String {
-        [hit.chunk.title, hit.chunk.sectionPath, String(hit.chunk.content.prefix(6_000))]
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
+        return snapshot.applying(decoded.results.map {
+            RAGRerankIndexedScore(index: $0.index, score: $0.relevanceScore)
+        })
     }
 
     private struct CohereRerankRequest: Encodable {

@@ -1576,9 +1576,13 @@ UI 展示:
 
 ### 8.9 Reranker 边界
 
-本次整体交付不实现 reranker，也不提前引入空的 `RAGRerankProvider` 协议和 Settings 选项。
-当前链路通过 keyword/vector RRF、source weight、per-repo cap 和 parent packing 控制上下文。
-reranker 只有在真实召回评测证明 fusion 不足时，才作为独立专项设计其本地/云端实现和隐私边界。
+Reranker 是可选的远程排序阶段，默认关闭；当前支持 Hugging Face TEI `/rerank` 与 Cohere v2
+兼容协议。Retriever 先完成 keyword/vector RRF，再把配置上限内的候选发给 reranker；请求失败时
+保留 fusion 原顺序，不能让可选排序阻断本地问答。
+
+两套 Provider 共用不可变候选快照、正文上限、Bearer 认证、JSON HTTP 错误语义和按请求 index
+回填排序，确保返回下标始终指向实际发送的候选。TEI 的 `texts` / 顶层 `score` 与 Cohere 的
+`model/documents/top_n` / `relevance_score` DTO 保持独立，不用条件分支伪装成统一协议。
 
 ### 8.10 可选自托管后端
 
@@ -1593,9 +1597,9 @@ Meilisearch 和 Qdrant 已作为高级可选后端实现，但不作为默认依
 
 Starcat 不负责安装、启动、升级这些服务。用户自行部署后，在 Settings 中配置 endpoint、API key、
 index/collection/vectorName。外部 provider 报错或空命中时按配置回退 SQLite；回退关闭时不得吞掉
-配置、查询或同步错误，取消无论是否允许回退都向上传播。Qdrant 在清理旧点位前
-校验 named vector 和 embedding dimension。外部索引是本地 chunk 的可重建派生副本，当前用完整
-replace 优先保证 source 删除与更新一致；私有仓库默认不同步到 Meilisearch/Qdrant。Meilisearch
+配置、查询或同步错误，取消无论是否允许回退都向上传播。Qdrant 在写入前校验 named vector
+和 embedding dimension。外部索引是本地 chunk 的可重建派生副本，按变更 source 合并短时间内
+的 upsert/delete；metadata-only 更新不触发 Qdrant 全量替换，私有仓库默认不同步。Meilisearch
 写操作返回异步 task，Starcat 必须轮询到 `succeeded` 才继续 delete -> import -> settings 的下一步；
 `failed/canceled/timeout` 都按外部同步失败处理，不能把收到 HTTP 202 当成索引已经完成。
 

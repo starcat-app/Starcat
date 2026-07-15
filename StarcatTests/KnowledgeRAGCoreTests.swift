@@ -1554,6 +1554,50 @@ struct KnowledgeRAGCoreTests {
         #expect(json["texts"] == nil)
     }
 
+    @Test("Rerank 共用候选编号会截断输入并忽略越界结果")
+    func rerankCandidateMappingUsesRequestSnapshot() async throws {
+        // candidateLimit 的产品下限是 10，这里准备 12 项以覆盖真实归一化后的截断边界。
+        let candidates = (601...612).map { id in
+            RAGChildHit(chunk: fixtureChunk(id: Int64(id), repoID: Int64(id), source: .readme), score: 0.1, kind: .vector)
+        }
+        let teiClient = RecordingRAGHTTPClient(
+            data: Data(#"[{"index":11,"score":1.0},{"index":9,"score":0.8}]"#.utf8)
+        )
+        let cohereClient = RecordingRAGHTTPClient(
+            data: Data(#"{"results":[{"index":11,"relevance_score":1.0},{"index":0,"relevance_score":0.7}]}"#.utf8)
+        )
+        let base = RAGRerankConfiguration(
+            isEnabled: true,
+            provider: .huggingFaceTEI,
+            endpoint: "http://127.0.0.1:8080/rerank",
+            candidateLimit: 10
+        )
+
+        let teiResult = try await HuggingFaceTEIRAGReranker(
+            configuration: base,
+            httpClient: teiClient
+        ).rerank(query: "query", candidates: candidates)
+        var cohereConfiguration = base
+        cohereConfiguration.provider = .cohereCompatible
+        cohereConfiguration.model = "rerank-model"
+        let cohereResult = try await CohereCompatibleRAGReranker(
+            configuration: cohereConfiguration,
+            apiKey: "   ",
+            httpClient: cohereClient
+        ).rerank(query: "query", candidates: candidates)
+
+        #expect(teiResult.compactMap(\.hit.chunk.id) == [610])
+        #expect(cohereResult.compactMap(\.hit.chunk.id) == [601])
+        let teiBody = try #require(await teiClient.lastRequest()?.httpBody)
+        let teiJSON = try #require(JSONSerialization.jsonObject(with: teiBody) as? [String: Any])
+        #expect((teiJSON["texts"] as? [String])?.count == 10)
+        let cohereRequest = try #require(await cohereClient.lastRequest())
+        #expect(cohereRequest.value(forHTTPHeaderField: "Authorization") == nil)
+        let cohereBody = try #require(cohereRequest.httpBody)
+        let cohereJSON = try #require(JSONSerialization.jsonObject(with: cohereBody) as? [String: Any])
+        #expect(cohereJSON["top_n"] as? Int == 10)
+    }
+
     @Test("关闭全部分片来源时返回可解释的检索诊断")
     func retrievalDiagnosticsExplainDisabledSources() async throws {
         let database = try InMemoryDatabaseManager()
