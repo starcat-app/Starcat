@@ -902,8 +902,15 @@ struct RAGDebugFileRecord: Codable, Sendable {
 /// 只保存可丢弃的 Debug JSON。Actor 将 FileManager 访问串行化，避免同一会话的多轮请求
 /// 并发结束时互相影响目录创建与读取；每次写入使用 `.atomic`，半写文件不会进入历史列表。
 actor RAGDebugFileStore {
+    /// 磁盘历史采用文件数与总字节双上限：文件数与工作台内存 trace 上限一致；字节上限
+    /// 防止少量异常大 payload 绕过文件数约束。Debug 数据可丢弃，超限时始终优先保留最新记录。
+    static let defaultMaxFilesPerConversation = 24
+    static let defaultMaxBytesPerConversation = 8 * 1_024 * 1_024
+
     private let fileManager: FileManager
     private let rootOverride: URL?
+    private let maxFilesPerConversation: Int
+    private let maxBytesPerConversation: Int
     /// Debug 文件不可变且只会由本 actor 追加/删除；缓存完整解码结果，以空间换取反复切换时
     /// 的零磁盘解析。仅进程内存在并限制为最近 8 个会话，清空会话时同步移除。
     private var cachedTracesByConversation: [UUID: [RAGDebugTrace]] = [:]
@@ -923,9 +930,16 @@ actor RAGDebugFileStore {
         return decoder
     }()
 
-    init(fileManager: FileManager = .default, rootOverride: URL? = nil) {
+    init(
+        fileManager: FileManager = .default,
+        rootOverride: URL? = nil,
+        maxFilesPerConversation: Int = RAGDebugFileStore.defaultMaxFilesPerConversation,
+        maxBytesPerConversation: Int = RAGDebugFileStore.defaultMaxBytesPerConversation
+    ) {
         self.fileManager = fileManager
         self.rootOverride = rootOverride
+        self.maxFilesPerConversation = max(0, maxFilesPerConversation)
+        self.maxBytesPerConversation = max(0, maxBytesPerConversation)
     }
 
     /// 保存一轮已结束的问答 Debug。标题生成等辅助 Trace 不落盘，避免没有用户问题锚点的孤儿文件。
@@ -947,17 +961,15 @@ actor RAGDebugFileStore {
             to: directory.appendingPathComponent(fileName),
             options: .atomic
         )
-        if var cached = cachedTracesByConversation[conversationID] {
-            cached.removeAll { $0.id == trace.id }
-            cached.append(trace)
-            cached.sort { $0.startedAt > $1.startedAt }
-            cache(cached, for: conversationID)
-        }
+        _ = try pruneDiskFiles(in: directory)
+        // 裁剪可能删除缓存中仍存在的旧 trace。直接使当前会话缓存失效，避免内存与磁盘
+        // 保留集合分叉；工作台仍保有本轮 live trace，下一次切换时再一次性解码有限历史。
+        cachedTracesByConversation[conversationID] = nil
+        cacheRecency.removeAll { $0 == conversationID }
     }
 
-    /// 读取指定会话的可解析记录。首次解码后保留完整进程内缓存，后续切换只按显示上限
-    /// 返回切片，不再重复读盘。`limit == nil` 保留完整读取能力，且不会删除任何历史文件；
-    /// 损坏或旧 schema 文件直接跳过。
+    /// 读取指定会话的可解析记录。读取旧目录前先收敛磁盘上限，因此首次加载最多解码
+    /// 24 个文件，不会因历史 Debug 无限增长而阻塞会话切换。损坏或旧 schema 文件直接跳过。
     func load(conversationID: UUID, limit: Int? = nil) throws -> [RAGDebugTrace] {
         if let cached = cachedTracesByConversation[conversationID] {
             touchCache(conversationID)
@@ -968,13 +980,7 @@ actor RAGDebugFileStore {
             cache([], for: conversationID)
             return []
         }
-        let files = try fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ).filter { $0.pathExtension == "json" }
-
-        let orderedFiles = files.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        let orderedFiles = try pruneDiskFiles(in: directory)
         let traces: [RAGDebugTrace] = orderedFiles.compactMap { url -> RAGDebugTrace? in
             guard let data = try? Data(contentsOf: url),
                   let record = try? decoder.decode(RAGDebugFileRecord.self, from: data),
@@ -1013,6 +1019,33 @@ actor RAGDebugFileStore {
 
     private func conversationDirectory(_ conversationID: UUID) throws -> URL {
         try rootDirectory().appendingPathComponent(conversationID.uuidString, isDirectory: true)
+    }
+
+    /// 返回按新到旧排序的保留文件，并删除超过任一预算的旧文件。文件名以 ISO 时间开头，
+    /// 所以无需解码 JSON 就能稳定决定保留顺序；这也是旧版无限目录可以低成本迁移的关键。
+    private func pruneDiskFiles(in directory: URL) throws -> [URL] {
+        let files = try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+
+        var retained: [URL] = []
+        var retainedBytes = 0
+        for file in files {
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            let fileBytes = max(0, values.fileSize ?? 0)
+            let fitsFileCount = values.isRegularFile == true && retained.count < maxFilesPerConversation
+            let fitsByteBudget = fileBytes <= maxBytesPerConversation - retainedBytes
+            if fitsFileCount, fitsByteBudget {
+                retained.append(file)
+                retainedBytes += fileBytes
+            } else {
+                try fileManager.removeItem(at: file)
+            }
+        }
+        return retained
     }
 
     private func limited(_ traces: [RAGDebugTrace], to limit: Int?) -> [RAGDebugTrace] {

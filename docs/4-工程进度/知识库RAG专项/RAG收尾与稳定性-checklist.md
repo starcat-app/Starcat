@@ -1,6 +1,6 @@
 # RAG 收尾与稳定性 Checklist
 
-> 状态: 第 3 轮代码复审与阶段 7 正确性整改已完成；阶段 8 性能资源上界、阶段 9 架构技术债及真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
+> 状态: 第 3 轮代码复审与阶段 7 正确性整改已完成；阶段 8 已完成 10 项，剩余会话预取预算、阶段 9 架构技术债及真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
 
 ## 目标与执行规则
 
@@ -94,7 +94,7 @@
 - [x] **候选仓库轻量查询**：`@repo` picker 改用轻量投影并预计算归一化搜索文本；知识库不超过 500 个仓库时保留内存过滤，超过阈值后使用 120ms 合并的 SQL 首屏分页，选中时才批量还原完整 Repo；索引问题名称与 GitHub URL 精确匹配不依赖当前页 — `RAGRepoCandidateRepository.swift`、`RAGMentionPickerLogic.swift`、`KnowledgeRAGWorkspaceViewModel.swift` — 2026-07-16。
 - [x] **元数据快照版本缓存**：追加 `v12-rag-metadata-revision`，知识库边界、Repo、标签、摘要与索引相关写入在事务内推进单调版本；Planner、Generator 与 Inspector 按版本和 embedding model 共用 actor 缓存并合并并发读取，滚动时间口径最多复用 60 秒，切库强制清空，不使用可能过期的 UI 快照 — `KnowledgeBaseMetadataSnapshot.swift`、`DatabaseMigrationsV1.swift`、`AppDependencies.swift` — 2026-07-16。
 - [x] **会话持久化增量更新**：`appendTurn` 返回事务实际写入的 summary、用户/助手消息、稳定 ID、时间戳、引用与远程审计；回答完成后对当前投影和后台 LRU 快照只追加本轮并局部更新会话摘要，不再重载全部消息、引用或会话列表；切换会话、取消/失败恢复仍走全量读取 — `RAGConversationStore.swift`、`KnowledgeRAGWorkspaceViewModel.swift` — 2026-07-16。
-- [ ] **Debug 磁盘保留上界**：在已有内存 FIFO 上限之外，增加每会话文件数或总字节数上限，读取时不全量解码无限历史 JSON。
+- [x] **Debug 磁盘保留上界**：每会话 Debug JSON 同时限制为最新 24 个文件和 8 MiB；写入后立即裁剪，首次读取旧目录前也先按文件名与文件大小收敛，不解码被淘汰内容；进程内缓存随裁剪失效，避免内存展示已被磁盘删除的记录 — `RAGConversationStore.swift`、`KnowledgeRAGCoreTests.swift` — 2026-07-16。
 - [ ] **会话预取缓存预算**：最近会话不得只按 24 个完整快照限制；增加总字节/消息数预算或只预取轻量投影，并记录长会话启动 I/O、P50/P95 与峰值内存。
 
 完成条件：优化前先固化可重复基线，优化后不改变知识库边界、隐私语义、召回结果和取消行为；两个 App target 编译通过，相关 Suite 与全量测试通过，真实性能数据回填专项评测记录。

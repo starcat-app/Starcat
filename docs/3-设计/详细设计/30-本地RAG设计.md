@@ -1881,7 +1881,7 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 7. 最近持久化会话使用容量 24 的窗口级 LRU 快照缓存，并在消息、摘要和会话属性写入后失效；缓存不能替代 SQLite 真源。
 8. 中栏消息时间线使用非惰性 `VStack`，消息、大纲与永久 bottom sentinel 共用稳定 identity；历史会话首屏只投影最新 2 轮，用户每次手动向前扩展 10 轮，加载后将原首条可见消息恢复到顶部。该窗口只限制 SwiftUI 布局，Prompt、大纲、引用、复制、导出与持久化仍读取完整消息数组。跟随时使用 `.defaultScrollAnchor(.bottom, for: .sizeChanges)` 承接流式增长与折叠，用户上滚后传 nil。当前 `ScrollViewReader` 只处理历史恢复、滚底按钮与大纲等低频动作，必要时先 `Task.yield()` 等待 `contentSize` 提交；proxy 只允许被单次 MainActor 调度短暂捕获，禁止持久保存；禁止原生 bridge 直接读取 `documentView.bounds` 或修改 `NSClipView` offset。
 9. 会话大纲、引用聚合和固定 Markdown 正则只在持久化消息变化时更新，不能随正文 token 重算。
-10. Debug 文件关闭开关时不读取，开启后异步加载并缓存最近会话的解码结果，不阻塞正文选择，也不删除历史文件。
+10. Debug 文件关闭开关时不读取，开启后异步加载并缓存最近会话的解码结果，不阻塞正文选择；每会话只保留最新 24 个 JSON 且总量不超过 8 MiB，写入后和首次读取旧目录前均先裁剪，避免无限历史占满磁盘或被一次性解码。
 
 这些限制只降低 UI 发布与布局频率，不改变最终文本、执行轨迹落库、引用解析或完成态复制/导出能力。
 

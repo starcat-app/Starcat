@@ -1640,6 +1640,60 @@ struct KnowledgeRAGCoreTests {
         #expect(try await store.load(conversationID: otherConversationID).map(\.id) == [otherTrace.id])
     }
 
+    @Test("RAG Debug 写入和读取都会收敛每会话磁盘上限")
+    func debugFilesRespectPerConversationDiskLimits() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("starcat-rag-debug-retention-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let conversationID = UUID()
+        let generousStore = RAGDebugFileStore(
+            rootOverride: root,
+            maxFilesPerConversation: 10,
+            maxBytesPerConversation: 1_024 * 1_024
+        )
+        let oldest = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 1_000))
+        let middle = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 2_000))
+        let newest = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 3_000))
+        for trace in [oldest, middle, newest] {
+            try await generousStore.save(trace: trace, conversationID: conversationID, userMessageID: UUID())
+        }
+
+        // 模拟升级前已经积累的无限目录：新 Store 首次读取时必须先按新配置裁剪，
+        // 且只解码仍在预算内的最新文件。
+        let boundedStore = RAGDebugFileStore(
+            rootOverride: root,
+            maxFilesPerConversation: 2,
+            maxBytesPerConversation: 1_024 * 1_024
+        )
+        let loaded = try await boundedStore.load(conversationID: conversationID)
+        #expect(loaded.map(\.id) == [newest.id, middle.id])
+
+        let afterUpgrade = fixtureDebugTrace(startedAt: Date(timeIntervalSince1970: 4_000))
+        try await boundedStore.save(trace: afterUpgrade, conversationID: conversationID, userMessageID: UUID())
+        #expect(try await boundedStore.load(conversationID: conversationID).map(\.id) == [afterUpgrade.id, newest.id])
+
+        let directory = root.appendingPathComponent(conversationID.uuidString, isDirectory: true)
+        let retainedFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        ).filter { $0.pathExtension == "json" }
+        #expect(retainedFiles.count == 2)
+
+        // 总字节预算比任一记录还小时允许全部淘汰；Debug 是可丢弃数据，严格上界优先。
+        let byteBoundedStore = RAGDebugFileStore(
+            rootOverride: root,
+            maxFilesPerConversation: 10,
+            maxBytesPerConversation: 1
+        )
+        #expect(try await byteBoundedStore.load(conversationID: conversationID).isEmpty)
+        let remainingFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "json" }
+        #expect(remainingFiles.isEmpty)
+    }
+
     @Test("Parent context 围绕后段命中而不是只取章节开头")
     func parentContextIncludesAnchorChunk() throws {
         let chunks = (1...4).map { index -> RAGChunk in
