@@ -381,9 +381,7 @@ struct RAGWorkspaceSettingsSheet: View {
                     .frame(maxWidth: .infinity)
 
                     ResetIconButton(
-                        help: Text("rag.workspace.prompt.restoreHelp"),
-                        font: interfaceScale.font(size: 13, weight: .medium),
-                        frameSize: interfaceScale.scaled(20)
+                        help: Text("rag.workspace.prompt.restoreHelp")
                     ) {
                         restoreCurrentTab()
                     }
@@ -461,9 +459,7 @@ struct RAGWorkspaceSettingsSheet: View {
             .frame(maxWidth: .infinity)
 
             ResetIconButton(
-                help: Text("rag.workspace.retrieval.restoreDefaults"),
-                font: interfaceScale.font(size: 13, weight: .medium),
-                frameSize: interfaceScale.scaled(20)
+                help: Text("rag.workspace.retrieval.restoreDefaults")
             ) {
                 apply(.balanced)
             }

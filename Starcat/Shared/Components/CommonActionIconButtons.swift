@@ -57,8 +57,9 @@ struct DestructiveIconButton: View {
 struct ResetIconButton: View {
     let help: Text
     let action: () -> Void
-    var font: Font = SyncIconButton.defaultFont
-    var frameSize: CGFloat = SyncIconButton.defaultFrameSize
+    /// 设置页 icon-only 统一采用 15pt glyph + 28pt 命中区；不要再继承旧刷新按钮的 18pt 紧凑尺寸。
+    var font: Font = .system(size: 15, weight: .medium)
+    var frameSize: CGFloat = 28
 
     @State private var didReset = false
     @State private var feedbackResetTask: Task<Void, Never>?
@@ -66,8 +67,8 @@ struct ResetIconButton: View {
 
     init(
         help: Text,
-        font: Font = SyncIconButton.defaultFont,
-        frameSize: CGFloat = SyncIconButton.defaultFrameSize,
+        font: Font = .system(size: 15, weight: .medium),
+        frameSize: CGFloat = 28,
         action: @escaping () -> Void
     ) {
         self.help = help
@@ -87,6 +88,7 @@ struct ResetIconButton: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .pressableHover()
         .help(help)
         .accessibilityLabel(help)
         .onDisappear {

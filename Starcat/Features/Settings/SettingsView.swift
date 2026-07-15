@@ -345,9 +345,7 @@ struct SettingsView: View {
                         }
 
                         ResetIconButton(
-                            help: Text("settings.general.shortcuts.restoreDefault"),
-                            font: .subheadline,
-                            frameSize: 28
+                            help: Text("settings.general.shortcuts.restoreDefault")
                         ) {
                             settings.globalSearchShortcut = .globalSearchDefault
                             shortcutValidationError = nil
@@ -372,9 +370,7 @@ struct SettingsView: View {
                         }
 
                         ResetIconButton(
-                            help: Text("settings.general.shortcuts.restoreDefault"),
-                            font: .subheadline,
-                            frameSize: 28
+                            help: Text("settings.general.shortcuts.restoreDefault")
                         ) {
                             settings.regularSearchShortcut = .regularSearchDefault
                             shortcutValidationError = nil

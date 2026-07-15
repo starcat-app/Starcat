@@ -49,8 +49,6 @@ struct IntegrationSettingsTab: View {
                 anySearchSection
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
-                    Label("settings.integration.codeFlow.outputDir.title", systemImage: "point.3.connected.trianglepath.dotted")
-                        .font(.callout.weight(.medium))
                     Text("settings.integration.codeFlow.outputDir.subtitle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -58,8 +56,8 @@ struct IntegrationSettingsTab: View {
 
                 HStack(spacing: 8) {
                     Text(storage.outputDirectoryDisplayPath)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,8 +120,6 @@ struct IntegrationSettingsTab: View {
             }
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
-                    Label("3D Code Graph", systemImage: "point.3.filled.connected.trianglepath.dotted")
-                        .font(.callout.weight(.medium))
                     Text("Tree-sitter index + browser-based 3D visualization")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -131,8 +127,8 @@ struct IntegrationSettingsTab: View {
 
                 HStack(spacing: 8) {
                     Text(codebaseMemoryStorage.outputDirectoryDisplayPath)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -220,22 +216,19 @@ struct IntegrationSettingsTab: View {
 
     private var localAPIKeySection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 5) {
-                Label("settings.integration.localAPIKey.header", systemImage: "key.horizontal")
-                    .font(.callout.weight(.medium))
-                Text("settings.integration.localAPIKey.subtitle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("settings.integration.localAPIKey.subtitle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .center, spacing: 10) {
                 Text("settings.integration.localAPIKey.value")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(.primary)
                     .frame(width: 88, alignment: .leading)
                 Text(verbatim: displayedLocalAPIKey)
-                    .font(.caption.monospaced())
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -289,13 +282,9 @@ struct IntegrationSettingsTab: View {
 
     private var browserPluginSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 5) {
-                Label("settings.integration.browserPlugin.header", systemImage: "puzzlepiece.extension")
-                    .font(.callout.weight(.medium))
-                Text("settings.integration.browserPlugin.subtitle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("settings.integration.browserPlugin.subtitle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Toggle(
                 "settings.integration.browserPlugin.enabled",
@@ -315,7 +304,8 @@ struct IntegrationSettingsTab: View {
                 )
                 pluginInfoRow(
                     titleKey: "settings.integration.browserPlugin.endpoint",
-                    value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1"
+                    value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1",
+                    isMonospacedValue: true
                 )
                 localAPIKeyReferenceRow
             }
@@ -412,14 +402,19 @@ struct IntegrationSettingsTab: View {
         }
     }
 
-    private func pluginInfoRow(titleKey: LocalizedStringKey, value: String) -> some View {
+    private func pluginInfoRow(
+        titleKey: LocalizedStringKey,
+        value: String,
+        isMonospacedValue: Bool = false
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(titleKey)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(.primary)
                 .frame(width: 88, alignment: .leading)
             Text(verbatim: value)
-                .font(.caption.monospaced())
+                .font(isMonospacedValue ? .system(.body, design: .monospaced) : .body)
+                .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -430,11 +425,11 @@ struct IntegrationSettingsTab: View {
     private var localAPIKeyReferenceRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("settings.integration.browserPlugin.apiKey")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(.primary)
                 .frame(width: 88, alignment: .leading)
             Text("settings.integration.browserPlugin.apiKey.description")
-                .font(.caption)
+                .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
