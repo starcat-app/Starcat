@@ -311,6 +311,29 @@ enum RAGConversationCompressionResult: Sendable {
     case failed(debugEvents: [RAGDebugEvent])
 }
 
+/// 所有内部阶段共用的单向事件出口。阶段只能发布事件，不能持有 ViewModel 或反向读取 UI；
+/// Debug 的时间基准与开关也在这里统一，避免每个阶段复制隐私门禁。
+struct RAGServiceEventSink: Sendable {
+    typealias Continuation = AsyncThrowingStream<KnowledgeRAGServiceEvent, Error>.Continuation
+
+    let continuation: Continuation
+    let isDebugEnabled: Bool
+    let startedAt: Date
+
+    func yield(_ event: KnowledgeRAGServiceEvent) {
+        continuation.yield(event)
+    }
+
+    func debug(_ stage: RAGDebugEvent.Stage, _ payload: @autoclosure () -> String) {
+        guard isDebugEnabled else { return }
+        yield(.debug(RAGDebugEvent(
+            stage: stage,
+            elapsedSeconds: Date().timeIntervalSince(startedAt),
+            payload: payload()
+        )))
+    }
+}
+
 struct KnowledgeRAGService: Sendable {
     /// 召回测试用于人工核验而非构造回答；固定上限避免调试窗口被低分尾部结果淹没。
     private static let retrievalTestMaxHits = 10
@@ -376,17 +399,14 @@ struct KnowledgeRAGService: Sendable {
         AsyncThrowingStream { continuation in
             let task = Task {
                 let startedAt = request.debugTraceStartedAt ?? Date()
-                func emitDebug(_ stage: RAGDebugEvent.Stage, _ payload: @autoclosure () -> String) {
-                    guard request.isDebugEnabled else { return }
-                    continuation.yield(RAGDebugEvent(
-                        stage: stage,
-                        elapsedSeconds: Date().timeIntervalSince(startedAt),
-                        payload: payload()
-                    ).event)
-                }
+                let sink = RAGServiceEventSink(
+                    continuation: continuation,
+                    isDebugEnabled: request.isDebugEnabled,
+                    startedAt: startedAt
+                )
 
                 do {
-                    emitDebug(.request, """
+                    sink.debug(.request, """
                     question:
                     \(request.rawQuestion)
 
@@ -448,7 +468,7 @@ struct KnowledgeRAGService: Sendable {
                             metadataSnapshot: metadataSnapshot,
                             onReasoningDelta: onReasoningDelta,
                             onDebugEvent: { stage, payload in
-                                emitDebug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
+                                sink.debug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
                             }
                         )
                     } else if let debuggablePlanner = planner as? any KnowledgeRAGDebuggableQueryPlanning {
@@ -457,7 +477,7 @@ struct KnowledgeRAGService: Sendable {
                             composerContext: request.composerContext,
                             onReasoningDelta: onReasoningDelta,
                             onDebugEvent: { stage, payload in
-                                emitDebug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
+                                sink.debug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
                             }
                         )
                     } else {
@@ -480,7 +500,7 @@ struct KnowledgeRAGService: Sendable {
                     plan.remoteContextRequests.removeAll {
                         request.composerContext.disabledRemoteResources.contains($0.resource)
                     }
-                    emitDebug(.plan, """
+                    sink.debug(.plan, """
                     mode: \(plan.mode.rawValue)
                     semanticQuery: \(plan.semanticQuery)
                     filters: \(String(reflecting: plan.filters))
@@ -532,7 +552,7 @@ struct KnowledgeRAGService: Sendable {
                             plan: analyticsPlan,
                             filters: plan.filters
                         )
-                        emitDebug(.structuredAnalytics, """
+                        sink.debug(.structuredAnalytics, """
                         validated_analytics:
                         dimension: \(analyticsPlan.dimension?.rawValue ?? "<none>")
                         measure: \(analyticsPlan.measure.rawValue)
@@ -561,7 +581,7 @@ struct KnowledgeRAGService: Sendable {
                     } else {
                         candidates = []
                     }
-                    emitDebug(.candidates, candidates.map { candidate in
+                    sink.debug(.candidates, candidates.map { candidate in
                         """
                         repo: \(candidate.repo.fullName)
                         status: \(candidate.status.rawValue)
@@ -759,7 +779,7 @@ struct KnowledgeRAGService: Sendable {
                                 )
                                 remoteBlocks.append(contentsOf: webBlocks)
                             }
-                            emitDebug(.remoteContext, remoteBlocks.map { block in
+                            sink.debug(.remoteContext, remoteBlocks.map { block in
                                 """
                                 title: \(block.title)
                                 sourceURL: \(block.sourceURL?.absoluteString ?? "<none>")
@@ -850,101 +870,121 @@ struct KnowledgeRAGService: Sendable {
                     }
                     continuation.yield(.contextUsage(prompt.contextUsage))
 
-                    continuation.yield(.state(.generating))
-                    continuation.yield(.execution(.started(.generation)))
                     let evidenceCount = retrieval.bundles.count
                         + (hasStructuredEvidence ? retrieval.candidates.count : 0)
                         + remoteBlocks.filter { $0.outcome == .success && $0.resultCount > 0 }.count
                         + attachmentContexts.filter(\.supportsFactualAnswer).count
-                    continuation.yield(.execution(.generationStarted(evidenceCount: evidenceCount)))
-                    // Provider 不一定会主动把 max token 限制在 Context Window 内。这里用同一份
-                    // 预算快照收紧输出上限，确保“输入 + 预留输出”不会超过模型窗口。
-                    var generationParameters = generatorParameters
-                    generationParameters.maxCompletionTokens = min(
-                        generationParameters.maxCompletionTokens,
-                        prompt.contextUsage.reservedOutputTokens
+                    try await runGenerationPhase(
+                        prompt: prompt,
+                        attachmentContexts: attachmentContexts,
+                        plan: plan,
+                        evidenceCount: evidenceCount,
+                        debugEndpoint: request.debugEndpoint,
+                        sink: sink
                     )
-                    let chatRequest = AIChatRequest(
-                        systemPrompt: prompt.systemPrompt,
-                        userPrompt: prompt.userPrompt,
-                        history: prompt.history,
-                        images: attachmentContexts.compactMap { context in
-                            guard let data = context.imageData, let contentType = context.contentType else { return nil }
-                            return AIChatImageInput(data: data, contentType: contentType)
-                        },
-                        // selectedModelID 是 UI 的 provider::model 标识，依赖容器已经把它
-                        // 解析为真实模型名，不能把复合 id 直接发给 OpenAI-compatible API。
-                        model: generatorModel,
-                        parameters: generationParameters
-                    )
-                    emitDebug(.prompt, """
-                    endpoint: \(request.debugEndpoint ?? "<unknown>")
-                    model: \(chatRequest.model)
-                    parameters: \(String(reflecting: chatRequest.parameters))
-                    images: \(chatRequest.images.map { "\($0.contentType) \($0.data.count) bytes" })
-
-                    systemPrompt:
-                    \(chatRequest.systemPrompt)
-
-                    history:
-                    \(chatRequest.history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
-
-                    userPrompt:
-                    \(chatRequest.userPrompt)
-                    """)
-                    var answer = ""
-                    var responseModel = chatRequest.model
-                    var hasAnswerReasoning = false
-                    var answerReasoningCompleted = false
-                    for try await event in generatorClient.chatStream(request: chatRequest) {
-                        try Task.checkCancellation()
-                        switch event {
-                        case .reasoningDelta(let text):
-                            guard !text.isEmpty else { continue }
-                            if !hasAnswerReasoning {
-                                hasAnswerReasoning = true
-                                continuation.yield(.execution(.started(.answerReasoning)))
-                            }
-                            continuation.yield(.execution(.reasoningDelta(.answerReasoning, text)))
-                        case .reasoningCompleted:
-                            guard hasAnswerReasoning, !answerReasoningCompleted else { continue }
-                            answerReasoningCompleted = true
-                            continuation.yield(.execution(.reasoningCompleted(.answerReasoning)))
-                        case .delta(let text):
-                            answer += text
-                            continuation.yield(.delta(text))
-                        case .completed(let response):
-                            responseModel = response.model
-                            if answer.isEmpty { answer = response.content }
-                        }
-                    }
-                    if hasAnswerReasoning, !answerReasoningCompleted {
-                        continuation.yield(.execution(.reasoningCompleted(.answerReasoning)))
-                    }
-                    let citations = promptBuilder.citationsUsed(in: answer, prompt: prompt)
-                    emitDebug(.response, """
-                    model: \(responseModel)
-                    citations: \(citations.map(\.repoFullName))
-
-                    content:
-                    \(answer)
-                    """)
-                    continuation.yield(.state(.completed))
-                    continuation.yield(.execution(.generationCompleted(citationCount: citations.count)))
-                    continuation.yield(.completed(answer: answer, model: responseModel, citations: citations, plan: plan))
                     continuation.finish()
                 } catch is CancellationError {
-                    emitDebug(.failure, "cancelled")
+                    sink.debug(.failure, "cancelled")
                     continuation.yield(.state(.cancelled))
                     continuation.finish()
                 } catch {
-                    emitDebug(.failure, error.localizedDescription)
+                    sink.debug(.failure, error.localizedDescription)
                     continuation.yield(.state(.failed(error.localizedDescription)))
                     continuation.finish(throwing: error)
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Generation 阶段只消费已经完成预算裁剪的 Prompt，不再读取 Planner、Repository 或
+    /// 联网 Provider。这样可独立验证输出上限、reasoning/delta 顺序与 citation 映射。
+    func runGenerationPhase(
+        prompt: RAGPromptBuildResult,
+        attachmentContexts: [RAGAttachmentContext],
+        plan: RAGQueryPlan,
+        evidenceCount: Int,
+        debugEndpoint: String?,
+        sink: RAGServiceEventSink
+    ) async throws {
+        sink.yield(.state(.generating))
+        sink.yield(.execution(.started(.generation)))
+        sink.yield(.execution(.generationStarted(evidenceCount: evidenceCount)))
+        // Provider 不一定会主动把 max token 限制在 Context Window 内。这里用同一份
+        // 预算快照收紧输出上限，确保“输入 + 预留输出”不会超过模型窗口。
+        var generationParameters = generatorParameters
+        generationParameters.maxCompletionTokens = min(
+            generationParameters.maxCompletionTokens,
+            prompt.contextUsage.reservedOutputTokens
+        )
+        let chatRequest = AIChatRequest(
+            systemPrompt: prompt.systemPrompt,
+            userPrompt: prompt.userPrompt,
+            history: prompt.history,
+            images: attachmentContexts.compactMap { context in
+                guard let data = context.imageData, let contentType = context.contentType else { return nil }
+                return AIChatImageInput(data: data, contentType: contentType)
+            },
+            // selectedModelID 是 UI 的 provider::model 标识，依赖容器已经把它
+            // 解析为真实模型名，不能把复合 id 直接发给 OpenAI-compatible API。
+            model: generatorModel,
+            parameters: generationParameters
+        )
+        sink.debug(.prompt, """
+        endpoint: \(debugEndpoint ?? "<unknown>")
+        model: \(chatRequest.model)
+        parameters: \(String(reflecting: chatRequest.parameters))
+        images: \(chatRequest.images.map { "\($0.contentType) \($0.data.count) bytes" })
+
+        systemPrompt:
+        \(chatRequest.systemPrompt)
+
+        history:
+        \(chatRequest.history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
+
+        userPrompt:
+        \(chatRequest.userPrompt)
+        """)
+        var answer = ""
+        var responseModel = chatRequest.model
+        var hasAnswerReasoning = false
+        var answerReasoningCompleted = false
+        for try await event in generatorClient.chatStream(request: chatRequest) {
+            try Task.checkCancellation()
+            switch event {
+            case .reasoningDelta(let text):
+                guard !text.isEmpty else { continue }
+                if !hasAnswerReasoning {
+                    hasAnswerReasoning = true
+                    sink.yield(.execution(.started(.answerReasoning)))
+                }
+                sink.yield(.execution(.reasoningDelta(.answerReasoning, text)))
+            case .reasoningCompleted:
+                guard hasAnswerReasoning, !answerReasoningCompleted else { continue }
+                answerReasoningCompleted = true
+                sink.yield(.execution(.reasoningCompleted(.answerReasoning)))
+            case .delta(let text):
+                answer += text
+                sink.yield(.delta(text))
+            case .completed(let response):
+                responseModel = response.model
+                if answer.isEmpty { answer = response.content }
+            }
+        }
+        if hasAnswerReasoning, !answerReasoningCompleted {
+            sink.yield(.execution(.reasoningCompleted(.answerReasoning)))
+        }
+        let citations = promptBuilder.citationsUsed(in: answer, prompt: prompt)
+        sink.debug(.response, """
+        model: \(responseModel)
+        citations: \(citations.map(\.repoFullName))
+
+        content:
+        \(answer)
+        """)
+        sink.yield(.state(.completed))
+        sink.yield(.execution(.generationCompleted(citationCount: citations.count)))
+        sink.yield(.completed(answer: answer, model: responseModel, citations: citations, plan: plan))
     }
 
     /// 远程范围只接受用户显式仓库或本轮真实命中的 bundle。候选 SQL 列表可能很大，也可能
@@ -1220,8 +1260,4 @@ struct KnowledgeRAGService: Sendable {
         return String(trimmed.prefix(48))
     }
 
-}
-
-private extension RAGDebugEvent {
-    var event: KnowledgeRAGServiceEvent { .debug(self) }
 }
