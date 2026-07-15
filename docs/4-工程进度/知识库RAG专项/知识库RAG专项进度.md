@@ -91,7 +91,7 @@
 - [x] 保存完整问题、回答、模型、时间和 citation metadata，不保存 chunk 正文快照。
 - [x] 新增 `rag_message_remote_contexts`，历史只保存 resource/source URL/fetchedAt/降级原因，不保存远程正文。
 - [x] chunk 删除后 citation 的 `chunk_id` 置空，历史仍可恢复 repo/source/section。
-- [x] 多轮会话保留近期 3 轮原文；更早消息按覆盖水位压缩为持久化语义摘要，压缩失败时使用受限本地摘要且原文不丢失。
+- [x] 多轮会话按模型历史预算 85% 水位触发语义压缩；未达水位可保留更多原文，触发后至少保留近期 3 轮，压缩失败使用受限本地摘要且原文不丢失。
 - [x] 支持新建、继续和删除会话，支持复制与导出 Markdown。
 - [x] 用户数据库切换前取消当前问答并销毁工作台，同时暂停 source 监听并等待所有在途索引任务退出，防止旧账户历史或 chunk 误写新账户数据库。
 - [x] 统一证据门禁只接受 structured rows、本地命中 bundles、成功非空的网络 blocks 或真实附件；semantic candidates 和 URL 不冒充证据，实时问题还必须取得成功网络证据。
