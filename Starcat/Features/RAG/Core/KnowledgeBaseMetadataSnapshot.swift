@@ -26,7 +26,10 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
 
     struct IndexHealth: Equatable, Sendable {
         let totalChunks: Int
+        /// 使用当前 embedding model、可参与向量检索的分片。
         let readyChunks: Int
+        /// Metadata 等无需 embedding、仅通过 FTS 参与关键词检索的可用分片。
+        let keywordOnlyChunks: Int
         let pendingChunks: Int
         let failedChunks: Int
         let staleChunks: Int
@@ -108,7 +111,7 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         - Indexed source coverage: [\(sourceCoverage)].
         - Index availability: \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.
         - Star leaders (top \(topStarredRepositories.count)): [\(topRepositories)].
-        - RAG index for model \(indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; ready \(indexHealth.readyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
+        - RAG index for model \(indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
         Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
         """
     }
@@ -262,9 +265,12 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 SELECT
                     COUNT(c.id) AS total_chunks,
                     COALESCE(SUM(CASE WHEN c.embedding_status = 'ready' AND c.embedding_model = ? THEN 1 ELSE 0 END), 0) AS ready_chunks,
+                    COALESCE(SUM(CASE WHEN c.embedding_status = 'keyword_only' THEN 1 ELSE 0 END), 0) AS keyword_only_chunks,
                     COALESCE(SUM(CASE WHEN c.embedding_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_chunks,
                     COALESCE(SUM(CASE WHEN c.embedding_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_chunks,
-                    COALESCE(SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END), 0) AS stale_chunks
+                    COALESCE(SUM(CASE WHEN c.embedding_status = 'stale' OR (
+                        c.embedding_status = 'ready' AND c.embedding_model IS NOT NULL AND c.embedding_model != ?
+                    ) THEN 1 ELSE 0 END), 0) AS stale_chunks
                 FROM repo_notes n
                 LEFT JOIN rag_chunks c ON c.repo_id = n.repo_id
                     AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
@@ -380,6 +386,7 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 indexHealth: .init(
                     totalChunks: index["total_chunks"],
                     readyChunks: index["ready_chunks"],
+                    keywordOnlyChunks: index["keyword_only_chunks"],
                     pendingChunks: index["pending_chunks"],
                     failedChunks: index["failed_chunks"],
                     staleChunks: index["stale_chunks"],

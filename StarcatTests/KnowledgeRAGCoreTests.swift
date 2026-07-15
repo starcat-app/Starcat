@@ -84,7 +84,8 @@ struct KnowledgeRAGCoreTests {
                 ) VALUES
                     (1, 'readme', '', 'readme', 'readme', 'README', 'readme:0', 0, '', 'README', 'failed readme', 'readme-failed', 2, 0, 'embed-v1', 'failed', datetime('now'), datetime('now')),
                     (2, 'readme', '', 'readme', 'readme', 'README', 'readme:0', 0, '', 'README', 'stale readme', 'readme-stale', 2, 0, 'embed-v0', 'ready', datetime('now'), datetime('now')),
-                    (2, 'notes', '', 'notes', 'notes', 'Private note', 'notes:0', 0, '', 'Private note', 'excluded note', 'note-excluded', 2, 0, 'embed-v1', 'ready', datetime('now'), datetime('now'))
+                    (2, 'notes', '', 'notes', 'notes', 'Private note', 'notes:0', 0, '', 'Private note', 'excluded note', 'note-excluded', 2, 0, 'embed-v1', 'ready', datetime('now'), datetime('now')),
+                    (1, 'metadata', '', 'metadata', 'metadata', 'Metadata', 'metadata:0', 0, '', 'Metadata', 'keyword facts', 'metadata-keyword', 2, 0, NULL, 'keyword_only', datetime('now'), datetime('now'))
                 """)
             try db.execute(sql: """
                 INSERT INTO rag_chunk_overrides (
@@ -102,6 +103,7 @@ struct KnowledgeRAGCoreTests {
         let summaryCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.summary })
         let readmeCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.readme })
         let noteCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.notes })
+        let metadataCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.metadata })
 
         #expect(snapshot.projectCount == 3)
         #expect(snapshot.starredProjectCount == 2)
@@ -124,6 +126,19 @@ struct KnowledgeRAGCoreTests {
         #expect(readmeCoverage?.staleChunkCount == 1)
         #expect(noteCoverage?.repositoryCount == 1)
         #expect(noteCoverage?.chunkCount == 0)
+        #expect(metadataCoverage?.readyChunkCount == 1)
+        #expect(snapshot.indexHealth.totalChunks == 4)
+        #expect(snapshot.indexHealth.readyChunks == 1)
+        #expect(snapshot.indexHealth.keywordOnlyChunks == 1)
+        #expect(snapshot.indexHealth.failedChunks == 1)
+        #expect(snapshot.indexHealth.staleChunks == 1)
+        #expect(
+            snapshot.indexHealth.totalChunks == snapshot.indexHealth.readyChunks
+                + snapshot.indexHealth.keywordOnlyChunks
+                + snapshot.indexHealth.pendingChunks
+                + snapshot.indexHealth.failedChunks
+                + snapshot.indexHealth.staleChunks
+        )
         #expect(snapshot.excludedChunkCount == 1)
         #expect(snapshot.withoutReadmeSourceProjectCount == 1)
         #expect(snapshot.withoutIndexableSourceProjectCount == 1)
@@ -141,6 +156,7 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.userPrompt.contains("Authoritative local knowledge-base metadata snapshot"))
         #expect(prompt.userPrompt.contains("3 in-library repositories"))
         #expect(prompt.userPrompt.contains("1 repositories have an AI summary"))
+        #expect(prompt.userPrompt.contains("keyword-ready 1"))
     }
 
     @Test("知识库库存统计按入库仓库去重，并禁止按维度分组")

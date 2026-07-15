@@ -58857,13 +58857,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ready"
+            "value": "Vector ready"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "就绪"
+            "value": "向量就绪"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.metadata.index.keywordReady": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词就绪"
           }
         }
       }

@@ -766,28 +766,28 @@ struct RAGWorkspaceInspector: View {
             ) {
                 viewModel.openKnowledgeBaseEntry(presentingWindow: NSApp.keyWindow)
             }
-            RAGFlowLayout(spacing: 6) {
-                metadataTintCapsule(
-                    systemImage: "checkmark.circle.fill",
-                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.ready")) \(localizedInteger(health.readyChunks))",
-                    tint: .green
-                )
-                metadataTintCapsule(
-                    systemImage: "clock.fill",
-                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.pending")) \(localizedInteger(health.pendingChunks))",
-                    tint: .orange
-                )
-                metadataTintCapsule(
-                    systemImage: "xmark.octagon.fill",
-                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.failed")) \(localizedInteger(health.failedChunks))",
-                    tint: .red
-                )
-                metadataTintCapsule(
-                    systemImage: "exclamationmark.triangle.fill",
-                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.stale")) \(localizedInteger(health.staleChunks))",
-                    tint: Color(nsColor: .systemYellow)
-                )
-            }
+            // 与“索引可用性”统一为单行键值数据。状态颜色会让普通统计看起来像告警，
+            // 并且胶囊无法解释 total 与 keyword-only 的差额，因此这里保持无色、可对账。
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.index.ready",
+                value: localizedInteger(health.readyChunks)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.index.keywordReady",
+                value: localizedInteger(health.keywordOnlyChunks)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.index.pending",
+                value: localizedInteger(health.pendingChunks)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.index.failed",
+                value: localizedInteger(health.failedChunks)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.index.stale",
+                value: localizedInteger(health.staleChunks)
+            )
         }
     }
 
@@ -877,21 +877,6 @@ struct RAGWorkspaceInspector: View {
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
         }
-    }
-
-    @ViewBuilder
-    private func metadataTintCapsule(systemImage: String, text: String, tint: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(iconFont(size: 9, weight: .semibold))
-            Text(text)
-                .font(ragFont(.caption2, weight: .medium))
-                .lineLimit(1)
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(tint.opacity(0.12), in: Capsule(style: .continuous))
     }
 
     private func metadataLanguageStackedBar(_ languages: [KnowledgeBaseMetadataSnapshot.NamedCount]) -> some View {
