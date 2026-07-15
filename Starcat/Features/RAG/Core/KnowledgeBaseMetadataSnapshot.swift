@@ -137,6 +137,69 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
     }
 }
 
+/// 进程内按数据库修订号复用元数据快照，并合并同一版本的并发读取。
+///
+/// 缓存不自行猜测 TTL：30 天窗口、索引状态和用户数据都由 SQLite 触发器推进修订号；
+/// embedding model 仍是 key 的一部分，因为同一份 chunk 对不同模型的 ready/stale 口径不同。
+actor KnowledgeBaseMetadataSnapshotCache {
+    /// 快照包含“近 30 天”滚动窗口；即使数据库没有写入，时间边界也会自然变化。
+    /// 因此修订号命中仍只复用一分钟，避免把版本缓存误做成无限期缓存。
+    private static let maximumAge: TimeInterval = 60
+
+    private struct Entry {
+        let revision: Int64
+        let snapshot: KnowledgeBaseMetadataSnapshot
+    }
+
+    private struct InFlightLoad {
+        let revision: Int64
+        let task: Task<KnowledgeBaseMetadataSnapshot, Error>
+    }
+
+    private var entries: [String: Entry] = [:]
+    private var inFlightLoads: [String: InFlightLoad] = [:]
+
+    func value(
+        embeddingModel: String,
+        revision: Int64,
+        load: @escaping @Sendable () async throws -> KnowledgeBaseMetadataSnapshot
+    ) async throws -> KnowledgeBaseMetadataSnapshot {
+        if let entry = entries[embeddingModel],
+           entry.revision == revision,
+           Date().timeIntervalSince(entry.snapshot.generatedAt) < Self.maximumAge {
+            return entry.snapshot
+        }
+        if let inFlight = inFlightLoads[embeddingModel], inFlight.revision == revision {
+            return try await inFlight.task.value
+        }
+
+        let task = Task { try await load() }
+        inFlightLoads[embeddingModel] = InFlightLoad(revision: revision, task: task)
+        do {
+            let snapshot = try await task.value
+            if inFlightLoads[embeddingModel]?.revision == revision {
+                entries[embeddingModel] = Entry(revision: revision, snapshot: snapshot)
+                inFlightLoads[embeddingModel] = nil
+            }
+            return snapshot
+        } catch {
+            if inFlightLoads[embeddingModel]?.revision == revision {
+                inFlightLoads[embeddingModel] = nil
+            }
+            throw error
+        }
+    }
+
+    /// 多账号切库可能恰好拥有相同 revision；切换前必须清空，不能跨用户复用聚合事实。
+    func removeAll() {
+        for load in inFlightLoads.values {
+            load.task.cancel()
+        }
+        entries.removeAll(keepingCapacity: true)
+        inFlightLoads.removeAll(keepingCapacity: true)
+    }
+}
+
 /// 只读构建快照；所有 SQL 结构固定，模型和用户输入都不会进入 SQL。
 struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
     private static let distributionLimit = 8
@@ -144,13 +207,39 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
 
     private let database: any DatabaseManaging
     private let embeddingModel: String
+    private let cache: KnowledgeBaseMetadataSnapshotCache?
 
-    init(database: any DatabaseManaging, embeddingModel: String) {
+    init(
+        database: any DatabaseManaging,
+        embeddingModel: String,
+        cache: KnowledgeBaseMetadataSnapshotCache? = nil
+    ) {
         self.database = database
         self.embeddingModel = embeddingModel
+        self.cache = cache
     }
 
     func fetch() async throws -> KnowledgeBaseMetadataSnapshot {
+        guard let cache, let revision = try await fetchRevision() else {
+            return try await fetchUncached()
+        }
+        return try await cache.value(embeddingModel: embeddingModel, revision: revision) {
+            try await self.fetchUncached()
+        }
+    }
+
+    /// 老测试草稿库或尚未迁移到 v12 的数据库没有修订表时直接读取，不能为了缓存让 RAG 失效。
+    private func fetchRevision() async throws -> Int64? {
+        try await database.writer.read { db in
+            guard try db.tableExists("rag_metadata_revision") else { return nil }
+            return try Int64.fetchOne(
+                db,
+                sql: "SELECT revision FROM rag_metadata_revision WHERE id = 1"
+            )
+        }
+    }
+
+    private func fetchUncached() async throws -> KnowledgeBaseMetadataSnapshot {
         try await database.writer.read { db in
             let overview = try Row.fetchOne(db, sql: """
                 SELECT

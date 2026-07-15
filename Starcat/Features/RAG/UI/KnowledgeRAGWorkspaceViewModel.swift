@@ -3408,7 +3408,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         do {
             knowledgeBaseMetadataSnapshot = try await KnowledgeBaseMetadataSnapshotProvider(
                 database: dependencies.database,
-                embeddingModel: embeddingModel
+                embeddingModel: embeddingModel,
+                cache: dependencies.knowledgeBaseMetadataSnapshotCache
             ).fetch()
         } catch {
             AppLog.ai.warning("RAG metadata panel refresh degraded: \(error.localizedDescription, privacy: .public)")

@@ -243,6 +243,30 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.userPrompt.contains("keyword-ready 1"))
     }
 
+    @Test("知识库元数据快照按数据库修订号缓存并在写入后失效")
+    func knowledgeBaseMetadataSnapshotUsesRevisionCache() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 991)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 991, state: .inLibrary)
+        let cache = KnowledgeBaseMetadataSnapshotCache()
+        let provider = KnowledgeBaseMetadataSnapshotProvider(
+            database: database,
+            embeddingModel: "embed-v1",
+            cache: cache
+        )
+
+        let first = try await provider.fetch()
+        let cached = try await provider.fetch()
+        #expect(cached == first)
+
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET stars_count = 321 WHERE id = 991")
+        }
+        let refreshed = try await provider.fetch()
+        #expect(refreshed.generatedAt != first.generatedAt)
+        #expect(refreshed.topStarredRepositories.first?.stars == 321)
+    }
+
     @Test("关键词可搜索分片批量查询正确展开 repo ID 占位符")
     func keywordSearchableChunksExpandRepositoryPlaceholders() async throws {
         let database = try InMemoryDatabaseManager()

@@ -28,7 +28,7 @@ struct DatabaseMigrationsV1Tests {
             "sync_state", "tag_stats_cache", "open_ssf_scores",
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
-            "rag_message_remote_contexts"
+            "rag_message_remote_contexts", "rag_metadata_revision"
         ]
         try db.read { db in
             for table in expectedTables {
@@ -53,7 +53,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("RAG v7-v11 应在已应用迁移列表中，并带上最终会话与索引列")
+    @Test("RAG v7-v12 应在已应用迁移列表中，并带上最终会话、索引列与快照修订表")
     func knowledgeRAGMigrationSealed() throws {
         let db = try makeDB()
         try db.read { db in
@@ -65,6 +65,8 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v9-rag-metadata-keyword-only"))
             #expect(applied.contains("v10-rag-conversation-pinned-at"))
             #expect(applied.contains("v11-rag-embedding-claim"))
+            #expect(applied.contains("v12-rag-metadata-revision"))
+            #expect(try db.tableExists("rag_metadata_revision"))
 
             let chunkColumns = try db.columns(in: "rag_chunks").map(\.name)
             #expect(chunkColumns.contains("embedding_claim_id"))
@@ -81,6 +83,37 @@ struct DatabaseMigrationsV1Tests {
             #expect(messageColumns.contains("processing_duration"))
             #expect(messageColumns.contains("suggested_actions_json"))
         }
+    }
+
+    @Test("RAG 元数据修订号与相关写事务一起提交或回滚")
+    func ragMetadataRevisionTracksCommittedWrites() throws {
+        let writer = try makeDB()
+        let initial = try writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT revision FROM rag_metadata_revision WHERE id = 1")!
+        }
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (991, 'octo', 'revision', 'octo/revision', 'https://github.com/octo/revision')
+                """)
+        }
+        let committed = try writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT revision FROM rag_metadata_revision WHERE id = 1")!
+        }
+        #expect(committed > initial)
+
+        do {
+            try writer.write { db in
+                try db.execute(sql: "UPDATE repos SET stars_count = 99 WHERE id = 991")
+                throw CancellationError()
+            }
+        } catch is CancellationError {
+            // 预期回滚；修订号必须和业务数据保持同一事务语义。
+        }
+        let rolledBack = try writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT revision FROM rag_metadata_revision WHERE id = 1")!
+        }
+        #expect(rolledBack == committed)
     }
 
     @Test("ensureKnowledgeRAGSchema 对旧草稿会话表应幂等补齐最终列")

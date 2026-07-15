@@ -760,6 +760,8 @@ Service 在 Planner 前只读一次本地快照，并向 Planner 传递最小化
 
 Planner 只能为这三类覆盖率选择固定的单值 analytics measure，且必须输出 `structured_only`；本地校验拒绝分组，再以固定 SQL 执行。Generator 可复用同一轮的完整元数据快照回答其它统计问题，但仍不得把聚合事实伪造成分片引用。
 
+快照由 Planner、Generator 与 Inspector 共用版本化缓存：`v12-rag-metadata-revision` 为知识库边界、Repo、标签、摘要与 RAG 索引相关表建立事务内单调修订号。相同修订号与 embedding model 的并发读取只聚合一次；“近 30 天”是滚动窗口，因此即使版本不变也最多复用 60 秒。跨账号切库强制清空，UI 当前快照不直接作为模型输入真值。
+
 ### 7.3 Query Plan Schema
 
 ```swift

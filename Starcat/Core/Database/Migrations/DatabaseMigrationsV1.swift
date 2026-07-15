@@ -34,7 +34,8 @@
 //  - `v2-undo-star` / `v3-agent-runs` / `v4-agent-tool-outputs` /
 //    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag` /
 //    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
-//    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim`
+//    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
+//    `v12-rag-metadata-revision`
 //
 
 import Foundation
@@ -62,6 +63,40 @@ enum DatabaseMigrations {
         registerV9(into: &migrator)
         registerV10(into: &migrator)
         registerV11(into: &migrator)
+        registerV12(into: &migrator)
+    }
+
+    // MARK: - v12-rag-metadata-revision：元数据快照修订号（2026-07-16）
+
+    /// Planner / Generator 共用的全局元数据快照包含多张表的聚合事实。单调修订号让缓存只在
+    /// 数据确实变化时失效，不能把 UI 当前碰巧持有的快照当作数据库真值。触发器在同一写事务
+    /// 内推进版本，因此提交前不可见、回滚时也会一起回滚，不存在通知先于落库的竞态。
+    private static func registerV12(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v12-rag-metadata-revision") { db in
+            try db.create(table: "rag_metadata_revision", ifNotExists: true) { table in
+                table.column("id", .integer).primaryKey()
+                table.column("revision", .integer).notNull().defaults(to: 0)
+            }
+            try db.execute(sql: "INSERT OR IGNORE INTO rag_metadata_revision (id, revision) VALUES (1, 0)")
+
+            // 这些表覆盖快照的知识库边界、Repo 事实、标签/状态、摘要和索引健康度。
+            // 每行触发虽然会多次递增，但同一事务只提交 singleton 页的最终值；读取端只比较版本。
+            for table in [
+                "repos", "repo_notes", "tags", "repo_tags", "ai_summaries",
+                "rag_chunks", "rag_chunk_overrides"
+            ] where try db.tableExists(table) {
+                for operation in ["INSERT", "UPDATE", "DELETE"] {
+                    let suffix = operation.lowercased()
+                    try db.execute(sql: """
+                        CREATE TRIGGER IF NOT EXISTS rag_metadata_revision_\(table)_\(suffix)
+                        AFTER \(operation) ON \(table)
+                        BEGIN
+                            UPDATE rag_metadata_revision SET revision = revision + 1 WHERE id = 1;
+                        END
+                        """)
+                }
+            }
+        }
     }
 
     // MARK: - v11-rag-embedding-claim：Embedding 写回所有权（2026-07-16）

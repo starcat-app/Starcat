@@ -120,6 +120,8 @@ final class AppDependencies {
     let ragChunkRepository: any RAGChunkRepositoryProtocol
     /// Query Planner 结构化条件的知识库候选查询仓储。
     let ragCandidateRepository: any RAGRepoCandidateRepositoryProtocol
+    /// Planner、Generator 与 Inspector 共用的版本化聚合快照缓存；数据修订号来自当前用户 SQLite。
+    let knowledgeBaseMetadataSnapshotCache = KnowledgeBaseMetadataSnapshotCache()
     /// 知识库 RAG 本地会话历史。
     let ragConversationStore: any RAGConversationStoring
     /// RAG Composer 未发送草稿的 App 级内存缓存。
@@ -573,7 +575,8 @@ final class AppDependencies {
             ),
             metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider(
                 database: database,
-                embeddingModel: embeddingSelection.modelName
+                embeddingModel: embeddingSelection.modelName,
+                cache: knowledgeBaseMetadataSnapshotCache
             ),
             analyticsExecutor: KnowledgeBaseAnalyticsExecutor(database: database),
             compressorPromptConfiguration: ragPrompts.compressor,
@@ -1252,6 +1255,7 @@ final class AppDependencies {
             self.ragComposerDraftStore.removeAll()
             KnowledgeRAGWorkspaceWindowController.closeForUserDatabaseChange()
             await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()
+            await self.knowledgeBaseMetadataSnapshotCache.removeAll()
             do {
                 try await self.switchUserDatabase(to: userId)
             } catch {
