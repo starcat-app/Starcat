@@ -324,6 +324,21 @@ struct RAGComposerDraftStore {
     }
 }
 
+/// 一轮回答在所属会话上的完整展示运行态。它只承载可恢复到工作台的值，不持有 generation、
+/// 计时 Task 或授权 actor；后几者有独立取消生命周期，混入会让值快照承担资源所有权。
+struct RAGConversationRuntimeState {
+    var answerState: RAGAnswerState = .idle
+    var userMessage: RAGStoredMessage?
+    var streamingAnswer = ""
+    var streamingPresentation: StreamingMarkdownSnapshot?
+    var queryPlan: RAGQueryPlan?
+    var retrieval: RAGRetrievalResult?
+    var contextUsage: RAGContextUsage?
+    var remoteBlocks: [RAGRemoteContextBlock] = []
+    var executionSteps: [RAGExecutionStep] = []
+    var elapsedDuration: TimeInterval?
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGWorkspaceViewModel {
@@ -354,7 +369,6 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 计时与回答一样属于原会话。允许 A 在后台继续时，用户在 B 发起另一轮而不覆盖 A 的耗时。
     @ObservationIgnored private var answerTimingTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var answerStartedAtByConversation: [UUID: Date] = [:]
-    @ObservationIgnored private var answerElapsedDurationsByConversation: [UUID: TimeInterval] = [:]
     /// 标题与首轮回答并行，但不同会话的轻量标题请求不能因用户切换历史而互相取消。
     /// generationID 是取消后的第二道保护：部分 Provider 即使收到 cancel 也可能稍后返回。
     private struct ConversationTitleGeneration {
@@ -387,16 +401,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     @ObservationIgnored private var remoteContextConsents: [UUID: RAGRemoteContextConsent] = [:]
     @ObservationIgnored private var pendingRemoteWorkItemsByConversation: [UUID: [RAGResolvedRemoteWorkItem]] = [:]
     @ObservationIgnored private var approvedRemoteWorkItemIDsByConversation: [UUID: Set<String>] = [:]
-    @ObservationIgnored private var activeAnswerStatesByConversation: [UUID: RAGAnswerState] = [:]
-    @ObservationIgnored private var activeUserMessagesByConversation: [UUID: RAGStoredMessage] = [:]
-    @ObservationIgnored private var activeStreamingAnswersByConversation: [UUID: String] = [:]
-    @ObservationIgnored private var activeStreamingPresentationsByConversation: [UUID: StreamingMarkdownSnapshot] = [:]
-    @ObservationIgnored private var activeQueryPlansByConversation: [UUID: RAGQueryPlan] = [:]
-    @ObservationIgnored private var activeRetrievalsByConversation: [UUID: RAGRetrievalResult] = [:]
-    @ObservationIgnored private var activeContextUsageByConversation: [UUID: RAGContextUsage] = [:]
-    @ObservationIgnored private var activeRemoteBlocksByConversation: [UUID: [RAGRemoteContextBlock]] = [:]
-    /// 后台会话的可持久化时间线独立保存，避免切换后丢失执行审计或借用当前会话状态。
-    @ObservationIgnored private var activeExecutionStepsByConversation: [UUID: [RAGExecutionStep]] = [:]
+    /// 后台回答的展示值必须同进同退；单一字典避免新增字段时漏掉 restore/clear 其中一端。
+    @ObservationIgnored private var conversationRuntimeStates: [UUID: RAGConversationRuntimeState] = [:]
     /// 运行中的 Debug Trace 按会话隔离；切换后事件仍写原会话，并在切回时与磁盘历史合并。
     @ObservationIgnored private var liveDebugTracesByConversation: [UUID: [RAGDebugTrace]] = [:]
     @ObservationIgnored private var linkDetectionTask: Task<Void, Never>?
@@ -973,20 +979,32 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func restoreActiveAnswerPresentation(for conversationID: UUID) {
-        if let activeUserMessage = activeUserMessagesByConversation[conversationID],
+        let runtime = conversationRuntimeStates[conversationID] ?? RAGConversationRuntimeState()
+        if let activeUserMessage = runtime.userMessage,
            !messages.contains(where: { $0.id == activeUserMessage.id }) {
             messages.append(activeUserMessage)
         }
-        answerState = activeAnswerStatesByConversation[conversationID] ?? .idle
-        answerElapsedDuration = answerElapsedDurationsByConversation[conversationID]
-        streamingAnswer = activeStreamingAnswersByConversation[conversationID] ?? ""
-        streamingPresentation = activeStreamingPresentationsByConversation[conversationID]
-        queryPlan = activeQueryPlansByConversation[conversationID]
-        retrieval = activeRetrievalsByConversation[conversationID]
-        lastContextUsage = activeContextUsageByConversation[conversationID]
-        remoteBlocks = activeRemoteBlocksByConversation[conversationID] ?? []
-        executionSteps = activeExecutionStepsByConversation[conversationID] ?? []
+        answerState = runtime.answerState
+        answerElapsedDuration = runtime.elapsedDuration
+        streamingAnswer = runtime.streamingAnswer
+        streamingPresentation = runtime.streamingPresentation
+        queryPlan = runtime.queryPlan
+        retrieval = runtime.retrieval
+        lastContextUsage = runtime.contextUsage
+        remoteBlocks = runtime.remoteBlocks
+        executionSteps = runtime.executionSteps
         restoreRemoteContextState(for: conversationID)
+    }
+
+    /// Swift Dictionary 的 value 是值类型；集中 read-modify-write 才能保证同一会话的字段
+    /// 一起更新，并让调用点不再自行创建十余个平行字典。
+    private func updateRuntimeState(
+        for conversationID: UUID,
+        _ update: (inout RAGConversationRuntimeState) -> Void
+    ) {
+        var runtime = conversationRuntimeStates[conversationID] ?? RAGConversationRuntimeState()
+        update(&runtime)
+        conversationRuntimeStates[conversationID] = runtime
     }
 
     /// 大纲和引用只依赖已落库消息；流式状态变化不能重复执行正则、去重和排序。
@@ -1242,7 +1260,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             draft.draftQuestion = ""
         }
         startAnswerTiming(for: conversationID)
-        activeAnswerStatesByConversation[conversationID] = .planning
+        updateRuntimeState(for: conversationID) { $0.answerState = .planning }
         let priorMessages = messages
         let requestSnapshot = questionRequestSnapshot()
         let generationID = UUID()
@@ -1300,7 +1318,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         for task in answerTimingTasks.values { task.cancel() }
         answerTimingTasks.removeAll()
         answerStartedAtByConversation.removeAll()
-        answerElapsedDurationsByConversation.removeAll()
+        conversationRuntimeStates.removeAll()
         answerElapsedDuration = nil
         // 标题生成虽然与主回答并行，但同样持有会话 store；关窗或切库时不能留下旧库写入。
         for conversationID in Array(conversationTitleGenerations.keys) {
@@ -1373,7 +1391,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         guard let conversationID = selectedConversationID else { return }
         conversationPresentationCache.remove(conversationID)
         startAnswerTiming(for: conversationID)
-        activeAnswerStatesByConversation[conversationID] = .planning
+        updateRuntimeState(for: conversationID) { $0.answerState = .planning }
         let priorMessages = messages
         let requestSnapshot = questionRequestSnapshot()
         let generationID = UUID()
@@ -1399,7 +1417,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         answerTimingTasks.removeValue(forKey: conversationID)?.cancel()
         let startedAt = Date()
         answerStartedAtByConversation[conversationID] = startedAt
-        answerElapsedDurationsByConversation[conversationID] = 0
+        updateRuntimeState(for: conversationID) { $0.elapsedDuration = 0 }
         if selectedConversationID == conversationID {
             answerElapsedDuration = 0
             answerState = .planning
@@ -1414,7 +1432,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 guard let self,
                       self.answerStartedAtByConversation[conversationID] == startedAt else { return }
                 let duration = Date().timeIntervalSince(startedAt)
-                self.answerElapsedDurationsByConversation[conversationID] = duration
+                self.updateRuntimeState(for: conversationID) { $0.elapsedDuration = duration }
                 if self.selectedConversationID == conversationID {
                     self.answerElapsedDuration = duration
                 }
@@ -1427,10 +1445,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func finishAnswerTiming(for conversationID: UUID) -> TimeInterval {
         answerTimingTasks.removeValue(forKey: conversationID)?.cancel()
         guard let startedAt = answerStartedAtByConversation.removeValue(forKey: conversationID) else {
-            return answerElapsedDurationsByConversation[conversationID] ?? 0
+            return conversationRuntimeStates[conversationID]?.elapsedDuration ?? 0
         }
         let duration = max(0, Date().timeIntervalSince(startedAt))
-        answerElapsedDurationsByConversation[conversationID] = duration
+        updateRuntimeState(for: conversationID) { $0.elapsedDuration = duration }
         if selectedConversationID == conversationID {
             answerElapsedDuration = duration
         }
@@ -1450,15 +1468,15 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func syncExecutionSteps(_ steps: [RAGExecutionStep], for conversationID: UUID) {
-        activeExecutionStepsByConversation[conversationID] = steps
+        updateRuntimeState(for: conversationID) { $0.executionSteps = steps }
         if selectedConversationID == conversationID {
             executionSteps = steps
         }
     }
 
     private func updateAnswerState(_ state: RAGAnswerState, for conversationID: UUID) {
-        if activeAnswerStatesByConversation[conversationID] != state {
-            activeAnswerStatesByConversation[conversationID] = state
+        if conversationRuntimeStates[conversationID]?.answerState != state {
+            updateRuntimeState(for: conversationID) { $0.answerState = state }
         }
         if selectedConversationID == conversationID, answerState != state {
             answerState = state
@@ -1473,16 +1491,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func clearActiveAnswerPresentation(for conversationID: UUID) {
-        activeAnswerStatesByConversation[conversationID] = nil
-        activeUserMessagesByConversation[conversationID] = nil
-        activeStreamingAnswersByConversation[conversationID] = nil
-        activeStreamingPresentationsByConversation[conversationID] = nil
-        activeQueryPlansByConversation[conversationID] = nil
-        activeRetrievalsByConversation[conversationID] = nil
-        activeContextUsageByConversation[conversationID] = nil
-        activeRemoteBlocksByConversation[conversationID] = nil
-        activeExecutionStepsByConversation[conversationID] = nil
-        answerElapsedDurationsByConversation[conversationID] = nil
+        conversationRuntimeStates[conversationID] = nil
     }
 
     private func questionRequestSnapshot() -> QuestionRequestSnapshot {
@@ -2350,13 +2359,15 @@ final class KnowledgeRAGWorkspaceViewModel {
             remoteContextAudits: [],
             createdAt: ISO8601DateFormatter.shared.string(from: Date())
         )
-        activeUserMessagesByConversation[conversationID] = userMessage
-        activeStreamingAnswersByConversation[conversationID] = ""
-        activeStreamingPresentationsByConversation[conversationID] = nil
-        activeQueryPlansByConversation[conversationID] = nil
-        activeRetrievalsByConversation[conversationID] = nil
-        activeContextUsageByConversation[conversationID] = nil
-        activeRemoteBlocksByConversation[conversationID] = nil
+        updateRuntimeState(for: conversationID) { runtime in
+            runtime.userMessage = userMessage
+            runtime.streamingAnswer = ""
+            runtime.streamingPresentation = nil
+            runtime.queryPlan = nil
+            runtime.retrieval = nil
+            runtime.contextUsage = nil
+            runtime.remoteBlocks = []
+        }
         if selectedConversationID == conversationID {
             messages.append(userMessage)
             draftQuestion = ""
@@ -2414,7 +2425,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             liveTail: "",
             revision: 0
         )
-        activeStreamingPresentationsByConversation[conversationID] = initialStreamingPresentation
+        updateRuntimeState(for: conversationID) { $0.streamingPresentation = initialStreamingPresentation }
         if selectedConversationID == conversationID {
             streamingPresentation = initialStreamingPresentation
         }
@@ -2522,7 +2533,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                         syncExecutionSteps(turnExecutionSteps, for: conversationID)
                     }
                 case .plan(let plan):
-                    activeQueryPlansByConversation[conversationID] = plan
+                    updateRuntimeState(for: conversationID) { $0.queryPlan = plan }
                     if selectedConversationID == conversationID { queryPlan = plan }
                     // 纯闲聊已由本地引导响应处理，不值得再调用一次标题 LLM。其它首轮在
                     // Planner 完成后并行生成标题，不阻塞检索和回答。
@@ -2537,7 +2548,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                         )
                     }
                 case .retrieval(let result):
-                    activeRetrievalsByConversation[conversationID] = result
+                    updateRuntimeState(for: conversationID) { $0.retrieval = result }
                     updateExecutionStep(in: &turnExecutionSteps, kind: .retrieval) { step in
                         step.retrievalSnapshot = RAGRetrievalSnapshot(result: result)
                     }
@@ -2554,14 +2565,14 @@ final class KnowledgeRAGWorkspaceViewModel {
                     }
                 case .remoteContext(let blocks):
                     collectedRemoteBlocks = blocks
-                    activeRemoteBlocksByConversation[conversationID] = blocks
+                    updateRuntimeState(for: conversationID) { $0.remoteBlocks = blocks }
                     if selectedConversationID == conversationID { remoteBlocks = blocks }
                 case .terminal(let response):
                     terminalReply = response.answer
                     suggestedActions = response.suggestedActions
                 case .metadataSnapshot(let snapshot): knowledgeBaseMetadataSnapshot = snapshot
                 case .contextUsage(let usage):
-                    activeContextUsageByConversation[conversationID] = usage
+                    updateRuntimeState(for: conversationID) { $0.contextUsage = usage }
                     // 规划步骤贯穿整轮且一定会持久化；把数字快照挂在这里，避免生成步骤尚未
                     // started 时事件无处承载，同时不保存 usage.promptPreview。
                     updateExecutionStep(in: &turnExecutionSteps, kind: .planning) { step in
@@ -2588,7 +2599,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                         liveTail: markdownAssembler.liveTail,
                         revision: presentationRevision
                     )
-                    activeStreamingPresentationsByConversation[conversationID] = presentation
+                    updateRuntimeState(for: conversationID) { $0.streamingPresentation = presentation }
                     if selectedConversationID == conversationID { streamingPresentation = presentation }
                 case .completed(let answer, let model, let citations, _):
                     completedPayload = (answer, model, citations)
@@ -2672,7 +2683,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 streamingAnswer = accumulatedAnswer
             }
             if canPublishCancelledState {
-                activeStreamingAnswersByConversation[conversationID] = accumulatedAnswer
+                updateRuntimeState(for: conversationID) { $0.streamingAnswer = accumulatedAnswer }
             }
             let processingDuration = finishAnswerTimingIfCurrent(
                 for: conversationID,
@@ -2712,7 +2723,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     streamingAnswer = accumulatedAnswer
                 }
                 if canPublishCancelledState {
-                    activeStreamingAnswersByConversation[conversationID] = accumulatedAnswer
+                    updateRuntimeState(for: conversationID) { $0.streamingAnswer = accumulatedAnswer }
                 }
                 let processingDuration = finishAnswerTimingIfCurrent(
                     for: conversationID,

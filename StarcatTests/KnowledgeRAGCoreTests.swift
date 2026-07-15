@@ -516,6 +516,29 @@ struct KnowledgeRAGCoreTests {
         #expect(prefetchCache.value(for: secondID) == nil)
     }
 
+    @Test("RAG 会话运行态按会话聚合且默认值完整")
+    func conversationRuntimeStateIsConversationScoped() {
+        let firstID = UUID()
+        let secondID = UUID()
+        var states: [UUID: RAGConversationRuntimeState] = [:]
+        var first = RAGConversationRuntimeState()
+        first.answerState = .planning
+        first.streamingAnswer = "后台回答"
+        first.elapsedDuration = 3
+        states[firstID] = first
+        states[secondID] = RAGConversationRuntimeState()
+
+        #expect(states[firstID]?.answerState == .planning)
+        #expect(states[firstID]?.streamingAnswer == "后台回答")
+        #expect(states[firstID]?.elapsedDuration == 3)
+        #expect(states[secondID]?.answerState == .idle)
+        #expect(states[secondID]?.streamingAnswer == "")
+        #expect(states[secondID]?.queryPlan == nil)
+        #expect(states[secondID]?.retrieval == nil)
+        #expect(states[secondID]?.remoteBlocks.isEmpty == true)
+        #expect(states[secondID]?.executionSteps.isEmpty == true)
+    }
+
     @Test("持久化轮次增量追加消息与大纲且保持幂等")
     func conversationPresentationAppendsPersistedTurnIncrementally() {
         let conversationID = UUID()
