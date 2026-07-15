@@ -43,35 +43,6 @@ struct WeeklySource: Codable, Hashable, Sendable {
         try container.encode(rawValue)
     }
 
-    var displayName: String {
-        switch rawValue {
-        case Self.weekly.rawValue: return String.l10n("weekly.source.ruanyf")
-        case Self.zread.rawValue: return "ZRead"
-        case Self.discovery.rawValue: return "Hacker News"
-        case Self.helloGitHub.rawValue: return "HelloGitHub"
-        case Self.aiIntelligence.rawValue: return String.l10n("weekly.source.aiIntelligence")
-        default: return rawValue
-        }
-    }
-
-    /// 有许可来源使用本地 asset；HelloGitHub / AI 情报首版使用 SF Symbol，
-    /// 避免在未核实品牌素材许可前复制远程图片。
-    var assetName: String? {
-        switch rawValue {
-        case Self.weekly.rawValue: return "WeeklySources/ruanyf"
-        case Self.zread.rawValue: return "WeeklySources/weekly-zread"
-        case Self.discovery.rawValue: return "WeeklySources/hackernews"
-        default: return nil
-        }
-    }
-
-    var systemImage: String {
-        switch rawValue {
-        case Self.helloGitHub.rawValue: return "shippingbox.fill"
-        case Self.aiIntelligence.rawValue: return "sparkles"
-        default: return "questionmark.circle.fill"
-        }
-    }
 }
 
 /// bulk v2 返回的来源目录。客户端按该目录生成筛选项，新增后端来源无需再扩写 UI enum。
@@ -86,13 +57,6 @@ struct WeeklySourceDescriptor: Codable, Equatable, Identifiable, Sendable {
     let count: Int
 
     var source: WeeklySource { WeeklySource(rawValue: code) }
-
-    var localizedTitle: String {
-        if Locale.current.language.languageCode?.identifier == "zh" {
-            return displayNameZH
-        }
-        return displayNameEN
-    }
 
     enum CodingKeys: String, CodingKey {
         case code
@@ -149,7 +113,7 @@ struct WeeklySourceFilter: Identifiable, Hashable, Sendable {
         if source == nil {
             return String.l10n("weekly.filter.source.all")
         }
-        return title ?? source?.displayName ?? rawValue
+        return title ?? source?.presentation.displayName ?? rawValue
     }
 
     /// 后端 `/api/v1/repos` 的 `source` 参数值；`.all` 不发送参数。

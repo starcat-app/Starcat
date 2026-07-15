@@ -214,7 +214,32 @@ struct WeeklyDynamicSourceTests {
         #expect(filter.queryValue == "future_channel")
         #expect(filter.id == "future_channel")
         #expect(filter.count == 3)
-        #expect(WeeklySource(rawValue: "future_channel").systemImage == "questionmark.circle.fill")
+        #expect(WeeklySource(rawValue: "future_channel").presentation.systemImage == "questionmark.circle.fill")
+    }
+}
+
+@Suite("Weekly 来源展示语言", .serialized)
+struct WeeklySourcePresentationTests {
+    @Test("动态来源标题跟随应用语言而不是系统语言")
+    func descriptorUsesAppLocaleOverride() {
+        let key = "AppLocaleOverride"
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        let descriptor = WeeklySourceDescriptor(
+            code: "future", displayNameZH: "未来渠道", displayNameEN: "Future Channel",
+            iconKey: "future", sortOrder: 90, count: 1
+        )
+
+        UserDefaults.standard.set("en", forKey: key)
+        #expect(descriptor.localizedTitle == "Future Channel")
+        UserDefaults.standard.set("zh-Hans", forKey: key)
+        #expect(descriptor.localizedTitle == "未来渠道")
     }
 }
 
