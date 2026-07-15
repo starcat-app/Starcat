@@ -2889,6 +2889,86 @@ struct KnowledgeRAGCoreTests {
         #expect(await httpClient.requestCount == 4)
     }
 
+    @Test("Metadata-only 变更只生成 Meilisearch 增量操作")
+    func metadataOnlyExternalSyncSkipsQdrant() {
+        var metadata = fixtureChunk(id: 93, repoID: 9, source: .metadata)
+        metadata.embeddingStatus = .keywordOnly
+        metadata.embeddingModel = nil
+        metadata.embedding = nil
+
+        var changes = RAGExternalIndexChangeSet()
+        changes.recordUpserts([93])
+        let plan = RAGExternalIndexSyncPlan(
+            changes: changes,
+            currentChunks: [metadata],
+            publicKnowledgeRepoIDs: Set([9]),
+            model: "embed-v1"
+        )
+
+        #expect(plan.keywordUpserts.compactMap(\.id) == [93])
+        #expect(plan.keywordDeleteIDs.isEmpty)
+        #expect(plan.vectorUpserts.isEmpty)
+        #expect(plan.vectorDeleteIDs.isEmpty)
+    }
+
+    @Test("Meilisearch 增量同步不清空全量文档")
+    func meilisearchAppliesChunkChangesIncrementally() async throws {
+        let database = try InMemoryDatabaseManager()
+        let httpClient = SequencedRAGHTTPClient(responses: [
+            (Data(#"{"taskUid":1}"#.utf8), 202),
+            (Data(#"{"status":"succeeded"}"#.utf8), 200),
+            (Data(#"{"taskUid":2}"#.utf8), 202),
+            (Data(#"{"status":"succeeded"}"#.utf8), 200)
+        ])
+        let provider = MeilisearchRAGProvider(
+            configuration: RAGMeilisearchConfiguration(),
+            apiKey: nil,
+            repository: GRDBRAGChunkRepository(database: database),
+            httpClient: httpClient
+        )
+
+        try await provider.applyChanges(
+            upserts: [fixtureChunk(id: 94, repoID: 9, source: .readme)],
+            deleteIDs: [91]
+        )
+
+        let requests = await httpClient.recordedRequests
+        #expect(requests.count == 4)
+        #expect(requests[0].url?.path.hasSuffix("/documents/delete-batch") == true)
+        #expect(requests[0].httpMethod == "POST")
+        #expect(requests[2].url?.path.hasSuffix("/documents") == true)
+        #expect(!requests.contains { $0.httpMethod == "DELETE" })
+    }
+
+    @Test("Qdrant 增量同步只删除指定 point")
+    func qdrantAppliesChunkChangesIncrementally() async throws {
+        let database = try InMemoryDatabaseManager()
+        let collection = #"{"result":{"config":{"params":{"vectors":{"content":{"size":2,"distance":"Cosine"}}}}}}"#
+        let httpClient = SequencedRAGHTTPClient(responses: [
+            (Data(collection.utf8), 200),
+            (Data(#"{}"#.utf8), 200),
+            (Data(#"{}"#.utf8), 200)
+        ])
+        let provider = QdrantRAGProvider(
+            configuration: RAGQdrantConfiguration(),
+            apiKey: nil,
+            repository: GRDBRAGChunkRepository(database: database),
+            httpClient: httpClient
+        )
+
+        try await provider.applyChanges(
+            upserts: [fixtureChunk(id: 94, repoID: 9, source: .readme)],
+            deleteIDs: [91]
+        )
+
+        let requests = await httpClient.recordedRequests
+        #expect(requests.count == 3)
+        let deleteBody = try #require(requests[1].httpBody)
+        let deleteJSON = try #require(try JSONSerialization.jsonObject(with: deleteBody) as? [String: Any])
+        #expect(deleteJSON["points"] as? [Int] == [91])
+        #expect(deleteJSON["filter"] == nil)
+    }
+
     @Test("Qdrant 报错或空命中时回退本地向量 provider")
     func vectorBackendFallback() async throws {
         let expected = RAGChildHit(chunk: fixtureChunk(id: 91, repoID: 9, source: .notes), score: 0.9, kind: .vector)
@@ -3658,6 +3738,7 @@ private actor RecordingRAGHTTPClient: RAGHTTPClientProtocol {
 private actor SequencedRAGHTTPClient: RAGHTTPClientProtocol {
     private var responses: [(Data, Int)]
     private(set) var requestCount = 0
+    private(set) var recordedRequests: [URLRequest] = []
 
     init(responses: [(Data, Int)]) {
         self.responses = responses
@@ -3666,6 +3747,7 @@ private actor SequencedRAGHTTPClient: RAGHTTPClientProtocol {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         guard !responses.isEmpty else { throw URLError(.badServerResponse) }
         requestCount += 1
+        recordedRequests.append(request)
         let (data, statusCode) = responses.removeFirst()
         let response = HTTPURLResponse(
             url: request.url ?? URL(string: "http://127.0.0.1")!,

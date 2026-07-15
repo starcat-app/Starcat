@@ -394,7 +394,9 @@ private final class KnowledgeRAGBrowserViewModel {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    try await dependencies.knowledgeRAGIndexBuilder.embedEditedChunks()
+                    try await dependencies.knowledgeRAGIndexBuilder.embedEditedChunks([
+                        .init(id: id, source: managed.chunk.source)
+                    ])
                     await refresh()
                 } catch {
                     errorMessage = error.localizedDescription
@@ -413,6 +415,7 @@ private final class KnowledgeRAGBrowserViewModel {
                 chunks[index].isExcluded = true
             }
             try await refreshIndexStatistics()
+            synchronizeRemovedChunk(id: id, source: managed.chunk.source)
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -423,6 +426,7 @@ private final class KnowledgeRAGBrowserViewModel {
             try await dependencies.ragChunkRepository.permanentlyDeleteKnowledgeChunk(id: id)
             chunks.removeAll { $0.id == id }
             try await refreshIndexStatistics()
+            synchronizeRemovedChunk(id: id, source: managed.chunk.source)
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -431,7 +435,32 @@ private final class KnowledgeRAGBrowserViewModel {
         do {
             try await dependencies.ragChunkRepository.restoreKnowledgeChunk(id: id)
             await refresh()
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await dependencies.knowledgeRAGIndexBuilder.embedEditedChunks([
+                        .init(id: id, source: managed.chunk.source)
+                    ])
+                    await refresh()
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// 本地 SQL 边界会立即排除下架项；外部派生索引在后台精确删除，避免网络等待阻塞管理操作。
+    private func synchronizeRemovedChunk(id: Int64, source: RAGChunkSource) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await dependencies.knowledgeRAGIndexBuilder.removeManagedChunksFromExternalIndexes([
+                    .init(id: id, source: source)
+                ])
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
     /// 仅首次打开显示中央加载态；后续刷新保留当前内容，避免按钮操作造成视觉跳动。

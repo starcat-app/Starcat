@@ -90,6 +90,22 @@ enum RAGBoundedTaskExecutor {
     }
 }
 
+private struct RAGExternalIndexSyncFingerprint: Equatable {
+    var keywordBackend: RAGKeywordBackend
+    var vectorBackend: RAGVectorBackend
+    var meilisearch: RAGMeilisearchConfiguration?
+    var qdrant: RAGQdrantConfiguration?
+    var embeddingModel: String
+
+    init(configuration: RAGBackendConfiguration, embeddingModel: String) {
+        self.keywordBackend = configuration.keywordBackend
+        self.vectorBackend = configuration.vectorBackend
+        self.meilisearch = configuration.keywordBackend == .meilisearch ? configuration.meilisearch : nil
+        self.qdrant = configuration.vectorBackend == .qdrant ? configuration.qdrant : nil
+        self.embeddingModel = embeddingModel
+    }
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGIndexBuilder {
@@ -126,6 +142,10 @@ final class KnowledgeRAGIndexBuilder {
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
     /// 同一 repo 在 debounce 窗口内的多个事实变更要合并，不能让 notes 事件覆盖 metadata 事件。
     private var debouncedSources: [Int64: Set<RAGChunkSource>] = [:]
+    /// source debounce 和全库循环产生的多次 diff 先合并，embedding 结束后只同步一份变更集。
+    private var externalIndexChanges = RAGExternalIndexChangeSet()
+    /// 进程首次、切库或 endpoint/index/model 变化必须全量初始化；后续才可安全增量。
+    private var lastExternalSyncFingerprint: RAGExternalIndexSyncFingerprint?
     private var isSuspendedForDatabaseChange = false
     private var activeOperationCount = 0
     private var idleContinuations: [CheckedContinuation<Void, Never>] = []
@@ -205,6 +225,8 @@ final class KnowledgeRAGIndexBuilder {
         observationTasks.removeAll()
         debouncedSourceTasks.removeAll()
         debouncedSources.removeAll()
+        externalIndexChanges.reset()
+        lastExternalSyncFingerprint = nil
         await waitUntilIdle()
         status = .idle
         refreshSummary = nil
@@ -258,8 +280,12 @@ final class KnowledgeRAGIndexBuilder {
             for await notification in stream {
                 guard let repoID = notification.userInfo?["repoId"] as? Int64,
                       let raw = notification.userInfo?["libraryState"] as? String,
-                      LibraryState.parse(raw) == .inLibrary else { continue }
-                await self?.indexNewlyAddedKnowledgeRepository(repoID: repoID)
+                      let state = LibraryState(rawValue: raw) else { continue }
+                if state == .inLibrary {
+                    await self?.indexNewlyAddedKnowledgeRepository(repoID: repoID)
+                } else {
+                    await self?.removeRepositoryFromExternalIndexes(repoID: repoID)
+                }
             }
         })
         for notificationName in [
@@ -359,11 +385,23 @@ final class KnowledgeRAGIndexBuilder {
 
     /// 人工编辑会把分片置为 pending；仅补向量，不重拉 README 或重建其它 source，避免编辑后
     /// 还要用户手动点击刷新才能重新参与召回。
-    func embedEditedChunks() async throws {
+    func embedEditedChunks(_ chunks: [RAGDeletedChunkIdentity] = []) async throws {
         guard beginOperation() else { throw CancellationError() }
         defer { endOperation() }
         try entitlementGate.requirePro(.knowledgeRAG)
+        // 人工编辑与恢复不经过 source diff；先登记 ID，Metadata 才能直接 upsert，
+        // 普通正文则会在本轮 embedding ready 后用同一 ID 覆盖 pending 变更。
+        externalIndexChanges.recordUpserts(chunks.map(\.id))
         try await embedPendingChunks()
+    }
+
+    /// 下架和永久删除也不经过 source diff。这里保留 source，确保 Metadata 只删除
+    /// Meilisearch 文档，不向 Qdrant 发送无意义的点删除请求。
+    func removeManagedChunksFromExternalIndexes(_ chunks: [RAGDeletedChunkIdentity]) async throws {
+        guard beginOperation() else { throw CancellationError() }
+        defer { endOperation() }
+        externalIndexChanges.recordDeletes(chunks)
+        try await syncExternalBackends(model: resolvedEmbeddingModel())
     }
 
     /// GitHub stars 同步完成后批量刷新 metadata source。Metadata 是 FTS-only，不会产生 embedding。
@@ -422,6 +460,19 @@ final class KnowledgeRAGIndexBuilder {
         }
     }
 
+    /// 本地 chunk 作为可重建缓存继续保留，但移出知识库后要立即删除自托管后端副本。
+    private func removeRepositoryFromExternalIndexes(repoID: Int64) async {
+        guard beginOperation() else { return }
+        defer { endOperation() }
+        do {
+            let identities = try await chunkRepository.fetchChunkIdentities(repoId: repoID)
+            externalIndexChanges.recordDeletes(identities)
+            try await syncExternalBackends(model: resolvedEmbeddingModel())
+        } catch {
+            AppLog.ai.error("RAG external removal sync failed for repo \(repoID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func rebuildSources(
         for repo: Repo,
         summary: AISummaryRecord?,
@@ -443,16 +494,20 @@ final class KnowledgeRAGIndexBuilder {
         ), using: builder)
 
         if sources.contains(.readme) {
-            _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .readme, drafts: output.readme)
+            let result = try await chunkRepository.replaceSource(repoId: repo.id, source: .readme, drafts: output.readme)
+            externalIndexChanges.merge(result)
         }
         if sources.contains(.notes) {
-            _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .notes, drafts: output.notes)
+            let result = try await chunkRepository.replaceSource(repoId: repo.id, source: .notes, drafts: output.notes)
+            externalIndexChanges.merge(result)
         }
         if sources.contains(.summary) {
-            _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .summary, drafts: output.summary)
+            let result = try await chunkRepository.replaceSource(repoId: repo.id, source: .summary, drafts: output.summary)
+            externalIndexChanges.merge(result)
         }
         if sources.contains(.metadata) {
-            _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .metadata, drafts: output.metadata)
+            let result = try await chunkRepository.replaceSource(repoId: repo.id, source: .metadata, drafts: output.metadata)
+            externalIndexChanges.merge(result)
         }
     }
 
@@ -612,6 +667,7 @@ final class KnowledgeRAGIndexBuilder {
                     )
                 }
                 try await chunkRepository.markReady(updates, model: model, claimID: claimID)
+                externalIndexChanges.recordUpserts(updates.map(\.identity.chunkID))
             } catch {
                 try await chunkRepository.markFailed(
                     claimed.compactMap { chunk in
@@ -621,6 +677,14 @@ final class KnowledgeRAGIndexBuilder {
                     claimID: claimID,
                     error: error.localizedDescription
                 )
+                // 非取消失败时也要尝试删掉外部旧点，避免旧向量继续命中新正文。
+                if !(error is CancellationError) {
+                    do {
+                        try await syncExternalBackends(model: model)
+                    } catch {
+                        AppLog.ai.error("RAG failed-batch external cleanup failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
                 throw error
             }
             processed += claimed.count
@@ -684,39 +748,103 @@ final class KnowledgeRAGIndexBuilder {
         }
     }
 
-    /// 自托管后端是本地 chunk 的派生副本。每次本地 pending batch 完成后完整 replace，
-    /// 优先保证删除和 source 变化的一致性；后续规模超过本地知识库量级再改增量 upsert。
+    /// 自托管后端是本地 chunk 的派生副本。首次或配置变化做全量初始化，之后只提交
+    /// 当前修订中的 chunk 变更；网络 await 期间进入的新修订会保留到下一轮。
     private func syncExternalBackends(model: String) async throws {
         let configuration = settings.ragBackendConfiguration
-        guard configuration.keywordBackend == .meilisearch || configuration.vectorBackend == .qdrant else { return }
+        guard configuration.keywordBackend == .meilisearch || configuration.vectorBackend == .qdrant else {
+            externalIndexChanges.reset()
+            lastExternalSyncFingerprint = nil
+            return
+        }
+        let fingerprint = RAGExternalIndexSyncFingerprint(
+            configuration: configuration,
+            embeddingModel: model
+        )
+        let changes = externalIndexChanges
         // 外部后端虽由用户自托管，但仍属于离开 Starcat 本地数据库的数据边界。
         // 默认只同步公开仓库；私有仓库继续使用 SQLite FTS5 + 本地向量检索。
         let repos = try await repoRepository.fetchKnowledgeRepos()
-        let repoIDs = repos.filter { !$0.isPrivate }.map(\.id)
+        let repoIDs = Set(repos.filter { !$0.isPrivate }.map(\.id))
         do {
-            if configuration.keywordBackend == .meilisearch {
-                let chunks = try await chunkRepository.fetchKeywordSearchableChunks(model: model, repoIDs: repoIDs)
-                let provider = MeilisearchRAGProvider(
-                    configuration: configuration.meilisearch,
-                    apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
-                    repository: chunkRepository
+            if lastExternalSyncFingerprint != fingerprint {
+                try await replaceExternalIndexes(
+                    configuration: configuration,
+                    model: model,
+                    publicRepoIDs: Array(repoIDs)
                 )
-                try await provider.replaceAll(chunks: chunks)
-            }
-            if configuration.vectorBackend == .qdrant {
-                let chunks = try await chunkRepository.fetchReadyChunks(model: model, repoIDs: repoIDs)
-                let provider = QdrantRAGProvider(
-                    configuration: configuration.qdrant,
-                    apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
-                    repository: chunkRepository
+                lastExternalSyncFingerprint = fingerprint
+            } else if !changes.isEmpty {
+                let currentChunks = try await chunkRepository.fetchChunks(ids: Array(changes.upsertIDs))
+                let plan = RAGExternalIndexSyncPlan(
+                    changes: changes,
+                    currentChunks: currentChunks,
+                    publicKnowledgeRepoIDs: repoIDs,
+                    model: model
                 )
-                try await provider.replaceAll(chunks: chunks)
+                try await applyExternalIndexPlan(plan, configuration: configuration)
             }
+            externalIndexChanges.markSynced(revision: changes.revision)
         } catch {
             AppLog.ai.error("RAG external backend sync failed: \(error.localizedDescription, privacy: .public)")
             try RAGExternalBackendFallbackPolicy.handle(
                 error,
                 fallbackToSQLite: configuration.fallbackToSQLite
+            )
+        }
+    }
+
+    private func replaceExternalIndexes(
+        configuration: RAGBackendConfiguration,
+        model: String,
+        publicRepoIDs: [Int64]
+    ) async throws {
+        if configuration.keywordBackend == .meilisearch {
+            let chunks = try await chunkRepository.fetchKeywordSearchableChunks(model: model, repoIDs: publicRepoIDs)
+            let provider = MeilisearchRAGProvider(
+                configuration: configuration.meilisearch,
+                apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
+                repository: chunkRepository
+            )
+            try await provider.replaceAll(chunks: chunks)
+        }
+        if configuration.vectorBackend == .qdrant {
+            let chunks = try await chunkRepository.fetchReadyChunks(model: model, repoIDs: publicRepoIDs)
+            let provider = QdrantRAGProvider(
+                configuration: configuration.qdrant,
+                apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
+                repository: chunkRepository
+            )
+            try await provider.replaceAll(chunks: chunks)
+        }
+    }
+
+    private func applyExternalIndexPlan(
+        _ plan: RAGExternalIndexSyncPlan,
+        configuration: RAGBackendConfiguration
+    ) async throws {
+        if configuration.keywordBackend == .meilisearch,
+           !plan.keywordUpserts.isEmpty || !plan.keywordDeleteIDs.isEmpty {
+            let provider = MeilisearchRAGProvider(
+                configuration: configuration.meilisearch,
+                apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
+                repository: chunkRepository
+            )
+            try await provider.applyChanges(
+                upserts: plan.keywordUpserts,
+                deleteIDs: plan.keywordDeleteIDs
+            )
+        }
+        if configuration.vectorBackend == .qdrant,
+           !plan.vectorUpserts.isEmpty || !plan.vectorDeleteIDs.isEmpty {
+            let provider = QdrantRAGProvider(
+                configuration: configuration.qdrant,
+                apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
+                repository: chunkRepository
+            )
+            try await provider.applyChanges(
+                upserts: plan.vectorUpserts,
+                deleteIDs: plan.vectorDeleteIDs
             )
         }
     }

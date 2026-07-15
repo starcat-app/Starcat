@@ -15,6 +15,8 @@ import GRDB
 protocol RAGChunkRepositoryProtocol: Sendable {
     func replaceSource(repoId: Int64, source: RAGChunkSource, drafts: [RAGChunkDraft]) async throws -> RAGChunkSyncResult
     func fetchChunks(ids: [Int64]) async throws -> [RAGChunk]
+    /// 移出知识库后 SQL boundary 已不再返回正文，但外部索引仍需 ID/source 删除旧文档。
+    func fetchChunkIdentities(repoId: Int64) async throws -> [RAGDeletedChunkIdentity]
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
     /// 只统计知识库边界内待向量化分片，不读取正文或 embedding BLOB。
@@ -157,6 +159,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             var changed = 0
             var reused = 0
             var pendingIDs: [Int64] = []
+            var affectedIDs: [Int64] = []
 
             for draft in drafts {
                 let identity = Self.identity(sourceId: draft.sourceId, chunkKey: draft.chunkKey)
@@ -219,6 +222,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         reused += 1
                     }
                     try row.update(db)
+                    affectedIDs.append(rowID)
                     if row.embeddingStatus == .pending || row.embeddingStatus == .failed || row.embeddingStatus == .stale,
                        let id = row.id {
                         pendingIDs.append(id)
@@ -250,15 +254,20 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         updatedAt: now
                     )
                     try row.insert(db)
-                    if source != .metadata, let id = row.id { pendingIDs.append(id) }
+                    if let id = row.id {
+                        affectedIDs.append(id)
+                        if source != .metadata { pendingIDs.append(id) }
+                    }
                     inserted += 1
                 }
             }
 
-            let staleIDs = existing.compactMap { row -> Int64? in
+            let staleChunks = existing.compactMap { row -> RAGDeletedChunkIdentity? in
                 let identity = Self.identity(sourceId: row.sourceId, chunkKey: row.chunkKey)
-                return incomingIdentities.contains(identity) ? nil : row.id
+                guard !incomingIdentities.contains(identity), let id = row.id else { return nil }
+                return RAGDeletedChunkIdentity(id: id, source: row.source)
             }
+            let staleIDs = staleChunks.map(\.id)
             if !staleIDs.isEmpty {
                 let placeholders = Array(repeating: "?", count: staleIDs.count).joined(separator: ",")
                 let arguments = staleIDs.map { $0 as DatabaseValueConvertible }
@@ -272,7 +281,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 changed: changed,
                 reused: reused,
                 deleted: staleIDs.count,
-                pendingChunkIDs: pendingIDs
+                pendingChunkIDs: pendingIDs,
+                affectedChunkIDs: affectedIDs,
+                deletedChunks: staleChunks
             )
         }
     }
@@ -287,6 +298,22 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 sql: "SELECT * FROM rag_chunks WHERE id IN (\(placeholders)) ORDER BY chunk_index",
                 arguments: StatementArguments(arguments)
             )
+        }
+    }
+
+    func fetchChunkIdentities(repoId: Int64) async throws -> [RAGDeletedChunkIdentity] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT id, source FROM rag_chunks WHERE repo_id = ? ORDER BY id",
+                arguments: [repoId]
+            )
+            return rows.compactMap { row in
+                guard let id: Int64 = row["id"],
+                      let raw: String = row["source"],
+                      let source = RAGChunkSource(rawValue: raw) else { return nil }
+                return RAGDeletedChunkIdentity(id: id, source: source)
+            }
         }
     }
 

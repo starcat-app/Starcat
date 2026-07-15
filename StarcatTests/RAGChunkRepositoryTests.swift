@@ -117,6 +117,7 @@ struct RAGChunkRepositoryTests {
         )
         #expect(changed.changed == 1)
         #expect(changed.pendingChunkIDs == [id])
+        #expect(changed.affectedChunkIDs == [id])
         let invalidated = try #require(try await repository.fetchChunks(ids: [id]).first)
         #expect(invalidated.embeddingStatus == .pending)
         #expect(invalidated.embedding == nil)
@@ -183,7 +184,9 @@ struct RAGChunkRepositoryTests {
             isTruncated: false
         )
         let noteResult = try await repository.replaceSource(repoId: 2, source: .notes, drafts: [notes])
-        _ = try await repository.replaceSource(repoId: 2, source: .readme, drafts: [])
+        let removal = try await repository.replaceSource(repoId: 2, source: .readme, drafts: [])
+        #expect(removal.deletedChunks.map(\.id).count == 1)
+        #expect(removal.deletedChunks.allSatisfy { $0.source == .readme })
         let remaining = try await repository.fetchChunks(ids: noteResult.pendingChunkIDs)
         #expect(remaining.count == 1)
         #expect(remaining.first?.source == .notes)

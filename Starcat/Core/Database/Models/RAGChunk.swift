@@ -145,8 +145,25 @@ struct RAGChunkSyncResult: Equatable, Sendable {
     var reused: Int
     var deleted: Int
     var pendingChunkIDs: [Int64]
+    /// 本 source 同步后仍存在的 chunk；外部索引只需对这些 ID 重新评估 upsert。
+    var affectedChunkIDs: [Int64]
+    /// 删除后本地已无法再回读 source，因此在事务返回值中保留最小身份。
+    var deletedChunks: [RAGDeletedChunkIdentity]
 
-    static let empty = RAGChunkSyncResult(inserted: 0, changed: 0, reused: 0, deleted: 0, pendingChunkIDs: [])
+    static let empty = RAGChunkSyncResult(
+        inserted: 0,
+        changed: 0,
+        reused: 0,
+        deleted: 0,
+        pendingChunkIDs: [],
+        affectedChunkIDs: [],
+        deletedChunks: []
+    )
+}
+
+struct RAGDeletedChunkIdentity: Equatable, Hashable, Sendable {
+    var id: Int64
+    var source: RAGChunkSource
 }
 
 struct RAGIndexCoverage: Equatable, Sendable {

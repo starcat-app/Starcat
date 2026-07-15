@@ -88,7 +88,7 @@
 - [x] **Embedding 队列分批**：待处理总数改用 `COUNT(*)` 独立统计，正文按 `embeddingBatchSize` 分批读取与 claim，移除 `Int.max` 全量加载和循环 `removeFirst`，并对非法 batch size 设置 1 的下限 — `RAGChunkRepository.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **README 重建上界**：缺失 README 拉取改为“收一个补一个”的 3 任务有界并发，只在主线程按完成数发布单调进度；保留 GitHub 限流、in-flight 去重、15 秒超时、单仓降级和取消传播 — `KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **分片计算移出主线程**：Repository 快照读取、数据库写入和状态发布仍由 `@MainActor` 协调；Markdown 解析与 README/Notes/Summary/Metadata chunk build 改由 detached worker 执行，显式桥接父任务取消，回归测试锁定输出不变 — `RAGChunkBuilder.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
-- [ ] **外部索引增量同步**：合并短时间内的索引变更，按 chunk upsert / delete 同步 Meilisearch 与 Qdrant；Metadata-only 更新不得触发 Qdrant 全量 `replaceAll`。
+- [x] **外部索引增量同步**：source debounce、批量重建与 embedding 写回共用修订号变更集；进程首次或配置/模型变化才全量初始化，后续按 chunk upsert/delete Meilisearch 与 Qdrant，人工编辑、恢复、下架和永久删除同样接入；Metadata 仅同步 Meilisearch — `RAGExternalSearchProviders.swift`、`KnowledgeRAGIndexBuilder.swift`、`RAGChunkRepository.swift`、`KnowledgeRAGWorkspaceWindowController.swift` — 2026-07-16。
 - [ ] **本地向量扫描基线**：在 1 万+ chunk 真实数据上记录 P50/P95、峰值内存和取消延迟；依证据决定是否增加索引、调整本地上限或引导使用 Qdrant。Schema 调整必须追加新 migration。
 - [ ] **Source-aware 重建读取**：单 source 刷新只读取当前 source 所需的 Summary、Note、Tags、README 和 Metadata，避免为单仓库读取全库 Summary 或无关数据。
 - [ ] **候选仓库轻量查询**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询。

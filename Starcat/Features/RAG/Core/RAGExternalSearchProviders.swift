@@ -10,6 +10,100 @@
 
 import Foundation
 
+/// 多个 source diff 在一轮 embedding 前合并成最小变更集。同一 ID 后来又被写入时，
+/// upsert 覆盖 delete，避免 debounce 窗口内先删后建最终把新分片误删。
+struct RAGExternalIndexChangeSet: Equatable, Sendable {
+    private(set) var upsertIDs: Set<Int64> = []
+    private(set) var deletedSources: [Int64: RAGChunkSource] = [:]
+    private(set) var revision: UInt64 = 0
+
+    var isEmpty: Bool { upsertIDs.isEmpty && deletedSources.isEmpty }
+
+    mutating func merge(_ result: RAGChunkSyncResult) {
+        recordDeletes(result.deletedChunks)
+        recordUpserts(result.affectedChunkIDs)
+    }
+
+    mutating func recordUpserts(_ ids: some Sequence<Int64>) {
+        var didChange = false
+        for id in ids {
+            deletedSources[id] = nil
+            upsertIDs.insert(id)
+            didChange = true
+        }
+        if didChange { revision &+= 1 }
+    }
+
+    mutating func recordDeletes(_ chunks: some Sequence<RAGDeletedChunkIdentity>) {
+        var didChange = false
+        for chunk in chunks {
+            upsertIDs.remove(chunk.id)
+            deletedSources[chunk.id] = chunk.source
+            didChange = true
+        }
+        if didChange { revision &+= 1 }
+    }
+
+    /// 网络 await 期间若又有 source diff 进入，保留整份变更集重试，不误清新修订。
+    mutating func markSynced(revision syncedRevision: UInt64) {
+        guard revision == syncedRevision else { return }
+        upsertIDs.removeAll(keepingCapacity: true)
+        deletedSources.removeAll(keepingCapacity: true)
+    }
+
+    mutating func reset() {
+        upsertIDs.removeAll()
+        deletedSources.removeAll()
+        revision = 0
+    }
+}
+
+/// 把本地变更集投影为两个外部后端的独立操作。Qdrant 只接受当前模型的
+/// ready 向量；Metadata 是 FTS-only，无论更新还是删除都不得产生 Qdrant 请求。
+struct RAGExternalIndexSyncPlan: Sendable {
+    var keywordUpserts: [RAGChunk]
+    var keywordDeleteIDs: [Int64]
+    var vectorUpserts: [RAGChunk]
+    var vectorDeleteIDs: [Int64]
+
+    init(
+        changes: RAGExternalIndexChangeSet,
+        currentChunks: [RAGChunk],
+        publicKnowledgeRepoIDs: Set<Int64>,
+        model: String
+    ) {
+        let currentByID = Dictionary(uniqueKeysWithValues: currentChunks.compactMap { chunk in
+            chunk.id.map { ($0, chunk) }
+        })
+        let keywordUpserts = changes.upsertIDs.compactMap { currentByID[$0] }.filter { chunk in
+            guard publicKnowledgeRepoIDs.contains(chunk.repoId) else { return false }
+            return chunk.source == .metadata
+                || (chunk.embeddingStatus == .ready && chunk.embeddingModel == model)
+        }
+        let keywordUpsertIDs = Set(keywordUpserts.compactMap(\.id))
+        let keywordDeleteIDs = Set(changes.deletedSources.keys)
+            .union(changes.upsertIDs.subtracting(keywordUpsertIDs))
+
+        let vectorUpserts = keywordUpserts.filter { chunk in
+            chunk.source != .metadata && !chunk.vector.isEmpty
+        }
+        let vectorUpsertIDs = Set(vectorUpserts.compactMap(\.id))
+        let changedVectorIDs = changes.upsertIDs.filter { id in
+            currentByID[id]?.source != .metadata
+        }
+        let deletedVectorIDs = changes.deletedSources.compactMap { id, source in
+            source == .metadata ? nil : id
+        }
+
+        self.keywordUpserts = keywordUpserts.sorted { ($0.id ?? 0) < ($1.id ?? 0) }
+        self.keywordDeleteIDs = keywordDeleteIDs.sorted()
+        self.vectorUpserts = vectorUpserts.sorted { ($0.id ?? 0) < ($1.id ?? 0) }
+        self.vectorDeleteIDs = Set(deletedVectorIDs)
+            .union(changedVectorIDs.filter { !vectorUpsertIDs.contains($0) })
+            .sorted()
+    }
+}
+
 struct FallbackRAGKeywordSearchProvider: RAGKeywordSearchProvider {
     let backendName: String
     private let primary: any RAGKeywordSearchProvider
@@ -89,7 +183,7 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
 
     func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         try validate()
-        let filter = "repo_id IN [\(repoIDs.map(String.init).joined(separator: ","))] AND embedding_model = \"\(escape(model))\" AND embedding_status = \"ready\""
+        let filter = "repo_id IN [\(repoIDs.map(String.init).joined(separator: ","))] AND ((embedding_model = \"\(escape(model))\" AND embedding_status = \"ready\") OR embedding_status = \"keyword_only\")"
         let body: [String: Any] = ["q": query, "limit": limit, "filter": filter, "attributesToRetrieve": ["id"]]
         let data = try await request(path: "indexes/\(configuration.indexName)/search", method: "POST", json: body)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -120,6 +214,28 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
         } catch let RAGExternalBackendError.http(_, status, _) where status == 404 {
             // 首次同步时 index 尚不存在，后续 documents/settings 写入会创建它。
         }
+        try await upsertDocuments(chunks)
+        try await enqueueAndWait(
+            path: "indexes/\(configuration.indexName)/settings/filterable-attributes",
+            method: "PUT",
+            json: ["repo_id", "embedding_model", "embedding_status"]
+        )
+    }
+
+    /// 增量同步不清空 index；Meilisearch task 仍逐个等待完成，避免后续检索看到半轮状态。
+    func applyChanges(upserts: [RAGChunk], deleteIDs: [Int64]) async throws {
+        try validate()
+        for batch in deleteIDs.chunked(into: 500) where !batch.isEmpty {
+            try await enqueueAndWait(
+                path: "indexes/\(configuration.indexName)/documents/delete-batch",
+                method: "POST",
+                json: batch
+            )
+        }
+        try await upsertDocuments(upserts)
+    }
+
+    private func upsertDocuments(_ chunks: [RAGChunk]) async throws {
         for batch in chunks.chunked(into: 500) {
             let documents: [[String: Any]] = batch.compactMap { chunk in
                 guard let id = chunk.id else { return nil }
@@ -140,11 +256,6 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
                 json: documents
             )
         }
-        try await enqueueAndWait(
-            path: "indexes/\(configuration.indexName)/settings/filterable-attributes",
-            method: "PUT",
-            json: ["repo_id", "embedding_model", "embedding_status"]
-        )
     }
 
     func testConnection() async throws {
@@ -284,6 +395,35 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
     func replaceAll(chunks: [RAGChunk]) async throws {
         try validate()
         let dimension = chunks.first(where: { !$0.vector.isEmpty })?.vector.count
+        guard try await ensureCollection(expectedDimension: dimension) else { return }
+        _ = try await request(
+            path: collectionPath("points/delete?wait=true"),
+            method: "POST",
+            json: ["filter": [:]],
+            accepted: 200..<300
+        )
+        try await upsertPoints(chunks)
+    }
+
+    /// 增量路径只删除指定 point ID，不使用空 filter 清空 collection。
+    func applyChanges(upserts: [RAGChunk], deleteIDs: [Int64]) async throws {
+        try validate()
+        guard !upserts.isEmpty || !deleteIDs.isEmpty else { return }
+        let dimension = upserts.first(where: { !$0.vector.isEmpty })?.vector.count
+        guard try await ensureCollection(expectedDimension: dimension) else { return }
+        for batch in deleteIDs.chunked(into: 256) where !batch.isEmpty {
+            _ = try await request(
+                path: collectionPath("points/delete?wait=true"),
+                method: "POST",
+                json: ["points": batch],
+                accepted: 200..<300
+            )
+        }
+        try await upsertPoints(upserts)
+    }
+
+    /// 返回 false 表示 collection 不存在且本轮没有向量可用于建表。
+    private func ensureCollection(expectedDimension dimension: Int?) async throws -> Bool {
         let collectionResponse = try await request(
             path: "collections/\(configuration.collectionName)",
             method: "GET",
@@ -291,7 +431,7 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
             accepted: 200..<500
         )
         if collectionResponse.status == 404 {
-            guard let dimension else { return }
+            guard let dimension else { return false }
             _ = try await request(
                 path: "collections/\(configuration.collectionName)",
                 method: "PUT",
@@ -303,12 +443,10 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
         } else {
             try validateCollection(data: collectionResponse.data, expectedDimension: dimension)
         }
-        _ = try await request(
-            path: collectionPath("points/delete?wait=true"),
-            method: "POST",
-            json: ["filter": [:]],
-            accepted: 200..<300
-        )
+        return true
+    }
+
+    private func upsertPoints(_ chunks: [RAGChunk]) async throws {
         for batch in chunks.chunked(into: 128) {
             let points: [[String: Any]] = batch.compactMap { chunk in
                 guard let id = chunk.id, !chunk.vector.isEmpty else { return nil }
