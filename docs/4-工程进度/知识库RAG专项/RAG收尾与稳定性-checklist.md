@@ -1,6 +1,6 @@
 # RAG 收尾与稳定性 Checklist
 
-> 状态: 第 3 轮代码复审、阶段 7 正确性整改与阶段 8 性能资源上界已完成；阶段 9 已完成 1/4 项，真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
+> 状态: 第 3 轮代码复审、阶段 7 正确性整改与阶段 8 性能资源上界已完成；阶段 9 已完成 2/4 项，真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
 
 ## 目标与执行规则
 
@@ -102,7 +102,7 @@
 ## 阶段 9：架构与复用技术债
 
 - [x] **会话运行态收敛**：回答状态、用户消息、流式正文/快照、计划、检索、Context Usage、远程块、执行步骤与冻结耗时合并为 `[UUID: RAGConversationRuntimeState]`，统一 restore/update/clear；generation、计时 Task、标题任务与授权 actor 保留独立生命周期容器，`KnowledgeRAGWorkspaceViewModel` 仍是唯一可观察协调器 — `KnowledgeRAGWorkspaceViewModel.swift`、`KnowledgeRAGCoreTests.swift` — 2026-07-16。
-- [ ] **Service 内部分阶段**：把 `KnowledgeRAGService.ask` 收敛为 Planner、Retrieval、Remote Context、Prompt 和 Generation 等可单测的内部阶段；不将 `runQuestion` 抽成第二个 God Object。
+- [x] **Service 内部分阶段**：`ask` 只负责 `Planning → Retrieval → Remote Context → Prompt/证据门禁 → Generation` 编排、终止和错误收口；五个阶段使用独立输入/输出类型并共用单向 `RAGServiceEventSink`，分别拥有 Planner/元数据、附件/本地召回、授权/网络、证据充分性/预算和流式模型职责；不新增第二个协调器，也不改 `runQuestion` 的 UI 协调边界 — `KnowledgeRAGService.swift`、`KnowledgeRAGCoreTests.swift` — 2026-07-16。
 - [ ] **Rerank 传输层复用**：抽取 TEI / Cohere 共用的候选编号、HTTP 请求、认证和结果映射，保留各自 DTO。
 - [ ] **索引状态读模型复用**：工作台与知识库浏览器共用轻量索引状态投影，不共享各自 UI 状态机。
 

@@ -1883,6 +1883,7 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 9. 会话大纲、引用聚合和固定 Markdown 正则只在持久化消息变化时更新，不能随正文 token 重算。
 10. Debug 文件关闭开关时不读取，开启后异步加载并缓存最近会话的解码结果，不阻塞正文选择；每会话只保留最新 24 个 JSON 且总量不超过 8 MiB，写入后和首次读取旧目录前均先裁剪，避免无限历史占满磁盘或被一次性解码。
 11. 后台回答的展示值按会话收敛到单一 `RAGConversationRuntimeState`，恢复、更新与清理必须同进同退；generation、计时 Task、标题任务和授权 actor 继续拥有独立取消生命周期，不能让展示值快照承担资源所有权。`KnowledgeRAGWorkspaceViewModel` 仍是唯一 `@Observable` 协调器，不再创建第二套运行态状态机。
+12. `KnowledgeRAGService.ask` 只编排 Planning、Retrieval、Remote Context、Prompt/证据门禁和 Generation 五个内部阶段。阶段间以只读输出值交接并共用单向 Event Sink：Planning 可在访问 Repository 前早停；Retrieval 不决定是否生成；Remote Context 独占授权与网络；Prompt 独占证据充分性和 token packing；Generation 只消费合法 Prompt。工作台 `runQuestion` 继续负责 UI 投影、持久化和取消门闩，禁止再抽第二个 God Object。
 
 这些限制只降低 UI 发布与布局频率，不改变最终文本、执行轨迹落库、引用解析或完成态复制/导出能力。
 
