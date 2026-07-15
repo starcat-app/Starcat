@@ -342,6 +342,13 @@ struct RAGPromptPhaseOutput: Sendable {
     let evidenceCount: Int
 }
 
+struct RAGRemoteContextPhaseOutput: Sendable {
+    let plan: RAGQueryPlan
+    let blocks: [RAGRemoteContextBlock]
+    let plannedRequests: [RAGRemoteContextRequest]
+    let resolvedWorkItems: [RAGResolvedRemoteWorkItem]
+}
+
 struct KnowledgeRAGService: Sendable {
     /// 召回测试用于人工核验而非构造回答；固定上限避免调试窗口被低分尾部结果淹没。
     private static let retrievalTestMaxHits = 10
@@ -706,100 +713,18 @@ struct KnowledgeRAGService: Sendable {
                     }
                     continuation.yield(.retrieval(retrieval))
 
-                    var remoteBlocks: [RAGRemoteContextBlock] = []
-                    let plannedRemoteRequests = plan.remoteContextRequests
-                    let plannedWebSearchRequests = plan.webSearchRequests
-                    let resolvedRemoteWorkItems = Self.resolveRemoteWorkItems(
-                        requests: plannedRemoteRequests,
+                    let remoteOutput = try await runRemoteContextPhase(
+                        request: request,
+                        plan: plan,
                         candidates: candidates,
                         retrieval: retrieval,
-                        explicitRepoIDs: request.composerContext.explicitRepoIDs
+                        consent: remoteContextConsent,
+                        sink: sink
                     )
-                    if !resolvedRemoteWorkItems.isEmpty || !plannedWebSearchRequests.isEmpty {
-                        // 联网步骤必须在授权等待和真实请求之前出现，用户才能审计“为什么暂停”以及
-                        // 后续到底访问了什么。Composer 联网开关本身就是本轮显式授权，开启时不再
-                        // 为结构化 GitHub 请求重复弹确认；未开启仍保留 repo × resource 细粒度确认。
-                        continuation.yield(.execution(.started(.remoteContext)))
-                        let approvedWorkItems: [RAGResolvedRemoteWorkItem]
-                        if request.composerContext.webSearchEnabled {
-                            approvedWorkItems = resolvedRemoteWorkItems
-                        } else if !resolvedRemoteWorkItems.isEmpty {
-                            continuation.yield(.state(.awaitingRemoteContextConfirmation))
-                            continuation.yield(.remoteContextConfirmation(resolvedRemoteWorkItems))
-                            let approvedIDs = try await remoteContextConsent?.wait() ?? []
-                            approvedWorkItems = resolvedRemoteWorkItems.filter { approvedIDs.contains($0.id) }
-                        } else {
-                            approvedWorkItems = []
-                        }
-                        continuation.yield(.execution(.remoteContextPrepared(approvedWorkItems)))
-                        continuation.yield(.execution(.webSearchPrepared(plannedWebSearchRequests)))
-                        if approvedWorkItems.isEmpty && plannedWebSearchRequests.isEmpty {
-                            plan.remoteContextRequests = []
-                            continuation.yield(.execution(.terminated(
-                                .remoteContext,
-                                summary: String.l10n("rag.workspace.execution.remoteSkipped")
-                            )))
-                        } else {
-                            plan.remoteContextRequests = Self.uniqueRequests(in: approvedWorkItems)
-                            continuation.yield(.state(.fetchingRemoteContext))
-                            let totalNetworkRequests = approvedWorkItems.count + plannedWebSearchRequests.count
-                            if !approvedWorkItems.isEmpty {
-                                let onGitHubProgress: @Sendable (RAGRemoteContextFetchProgress) -> Void = { progress in
-                                    continuation.yield(.execution(.remoteContextProgress(
-                                        completed: progress.completed,
-                                        total: totalNetworkRequests
-                                    )))
-                                }
-                                let githubBlocks: [RAGRemoteContextBlock]
-                                if let debuggableProvider = remoteContextProvider as? any KnowledgeRAGDebuggableRemoteContextProviding {
-                                    githubBlocks = await debuggableProvider.fetch(
-                                        workItems: approvedWorkItems,
-                                        onProgress: onGitHubProgress,
-                                        onDebug: { event in
-                                            // 该回调来自 Provider 的 TaskGroup，不能捕获本地非 Sendable
-                                            // `emitDebug`。直接写入同一 continuation，时间仍相对问答 Trace。
-                                            guard request.isDebugEnabled else { return }
-                                            continuation.yield(.debug(RAGDebugEvent(
-                                                stage: event.stage,
-                                                elapsedSeconds: Date().timeIntervalSince(startedAt),
-                                                payload: event.payload
-                                            )))
-                                        }
-                                    )
-                                } else {
-                                    githubBlocks = await remoteContextProvider.fetch(
-                                        workItems: approvedWorkItems,
-                                        onProgress: onGitHubProgress
-                                    )
-                                }
-                                remoteBlocks.append(contentsOf: githubBlocks)
-                            }
-                            if !plannedWebSearchRequests.isEmpty {
-                                let githubRequestCount = approvedWorkItems.count
-                                let webBlocks = await webSearchProvider.fetch(
-                                    requests: plannedWebSearchRequests,
-                                    onProgress: { progress in
-                                        continuation.yield(.execution(.remoteContextProgress(
-                                            completed: githubRequestCount + progress.completed,
-                                            total: totalNetworkRequests
-                                        )))
-                                    }
-                                )
-                                remoteBlocks.append(contentsOf: webBlocks)
-                            }
-                            sink.debug(.remoteContext, remoteBlocks.map { block in
-                                """
-                                title: \(block.title)
-                                sourceURL: \(block.sourceURL?.absoluteString ?? "<none>")
-                                error: \(block.errorMessage ?? "<none>")
-                                content:
-                                \(block.content)
-                                """
-                            }.joined(separator: "\n---\n"))
-                            continuation.yield(.remoteContext(remoteBlocks))
-                            continuation.yield(.execution(.remoteContextCompleted(remoteBlocks)))
-                        }
-                    }
+                    plan = remoteOutput.plan
+                    let remoteBlocks = remoteOutput.blocks
+                    let plannedRemoteRequests = remoteOutput.plannedRequests
+                    let resolvedRemoteWorkItems = remoteOutput.resolvedWorkItems
 
                     guard let promptOutput = runPromptPhase(
                         request: request,
@@ -841,6 +766,110 @@ struct KnowledgeRAGService: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Remote Context 阶段独占授权等待与两类网络 Provider；输出只保留经用户许可后的计划
+    /// 和临时证据块，不负责判断这些证据是否足以回答。
+    func runRemoteContextPhase(
+        request: RAGServiceRequest,
+        plan initialPlan: RAGQueryPlan,
+        candidates: [RAGRepoCandidate],
+        retrieval: RAGRetrievalResult,
+        consent: RAGRemoteContextConsent?,
+        sink: RAGServiceEventSink
+    ) async throws -> RAGRemoteContextPhaseOutput {
+        var plan = initialPlan
+        var remoteBlocks: [RAGRemoteContextBlock] = []
+        let plannedRemoteRequests = plan.remoteContextRequests
+        let plannedWebSearchRequests = plan.webSearchRequests
+        let resolvedRemoteWorkItems = Self.resolveRemoteWorkItems(
+            requests: plannedRemoteRequests,
+            candidates: candidates,
+            retrieval: retrieval,
+            explicitRepoIDs: request.composerContext.explicitRepoIDs
+        )
+        if !resolvedRemoteWorkItems.isEmpty || !plannedWebSearchRequests.isEmpty {
+            // 联网步骤必须在授权等待和真实请求之前出现，用户才能审计“为什么暂停”以及
+            // 后续到底访问了什么。Composer 联网开关本身就是本轮显式授权，开启时不再
+            // 为结构化 GitHub 请求重复弹确认；未开启仍保留 repo × resource 细粒度确认。
+            sink.yield(.execution(.started(.remoteContext)))
+            let approvedWorkItems: [RAGResolvedRemoteWorkItem]
+            if request.composerContext.webSearchEnabled {
+                approvedWorkItems = resolvedRemoteWorkItems
+            } else if !resolvedRemoteWorkItems.isEmpty {
+                sink.yield(.state(.awaitingRemoteContextConfirmation))
+                sink.yield(.remoteContextConfirmation(resolvedRemoteWorkItems))
+                let approvedIDs = try await consent?.wait() ?? []
+                approvedWorkItems = resolvedRemoteWorkItems.filter { approvedIDs.contains($0.id) }
+            } else {
+                approvedWorkItems = []
+            }
+            sink.yield(.execution(.remoteContextPrepared(approvedWorkItems)))
+            sink.yield(.execution(.webSearchPrepared(plannedWebSearchRequests)))
+            if approvedWorkItems.isEmpty && plannedWebSearchRequests.isEmpty {
+                plan.remoteContextRequests = []
+                sink.yield(.execution(.terminated(
+                    .remoteContext,
+                    summary: String.l10n("rag.workspace.execution.remoteSkipped")
+                )))
+            } else {
+                plan.remoteContextRequests = Self.uniqueRequests(in: approvedWorkItems)
+                sink.yield(.state(.fetchingRemoteContext))
+                let totalNetworkRequests = approvedWorkItems.count + plannedWebSearchRequests.count
+                if !approvedWorkItems.isEmpty {
+                    let onGitHubProgress: @Sendable (RAGRemoteContextFetchProgress) -> Void = { progress in
+                        sink.yield(.execution(.remoteContextProgress(
+                            completed: progress.completed,
+                            total: totalNetworkRequests
+                        )))
+                    }
+                    let githubBlocks: [RAGRemoteContextBlock]
+                    if let provider = remoteContextProvider as? any KnowledgeRAGDebuggableRemoteContextProviding {
+                        githubBlocks = await provider.fetch(
+                            workItems: approvedWorkItems,
+                            onProgress: onGitHubProgress,
+                            onDebug: { event in sink.debug(event.stage, event.payload) }
+                        )
+                    } else {
+                        githubBlocks = await remoteContextProvider.fetch(
+                            workItems: approvedWorkItems,
+                            onProgress: onGitHubProgress
+                        )
+                    }
+                    remoteBlocks.append(contentsOf: githubBlocks)
+                }
+                if !plannedWebSearchRequests.isEmpty {
+                    let githubRequestCount = approvedWorkItems.count
+                    let webBlocks = await webSearchProvider.fetch(
+                        requests: plannedWebSearchRequests,
+                        onProgress: { progress in
+                            sink.yield(.execution(.remoteContextProgress(
+                                completed: githubRequestCount + progress.completed,
+                                total: totalNetworkRequests
+                            )))
+                        }
+                    )
+                    remoteBlocks.append(contentsOf: webBlocks)
+                }
+                sink.debug(.remoteContext, remoteBlocks.map { block in
+                    """
+                    title: \(block.title)
+                    sourceURL: \(block.sourceURL?.absoluteString ?? "<none>")
+                    error: \(block.errorMessage ?? "<none>")
+                    content:
+                    \(block.content)
+                    """
+                }.joined(separator: "\n---\n"))
+                sink.yield(.remoteContext(remoteBlocks))
+                sink.yield(.execution(.remoteContextCompleted(remoteBlocks)))
+            }
+        }
+        return RAGRemoteContextPhaseOutput(
+            plan: plan,
+            blocks: remoteBlocks,
+            plannedRequests: plannedRemoteRequests,
+            resolvedWorkItems: resolvedRemoteWorkItems
+        )
     }
 
     /// Prompt 阶段拥有最终证据门禁与 token packing。返回 nil 表示已经发布可解释的本地终止
