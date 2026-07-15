@@ -962,6 +962,14 @@
         { method: "POST", path: "/internal/sync/zread", description: "手动同步 zread 周 trending。", auth: "adminKey" },
         { method: "GET", path: "/internal/sources", description: "读取固定来源目录、队列与最近批次状态。", auth: "adminKey" },
         { method: "POST", path: "/internal/sources/hellogithub/sync", description: "触发 HelloGitHub featured / reconcile / backfill。", auth: "adminKey", bodyTemplate: { mode: "incremental" } },
+        { method: "POST", path: "/internal/imports", description: "批量持久化人工来源仓库；GitHub 补全由异步 Worker 执行。", auth: "adminKey", bodyTemplate: {
+          source_code: "ai_intelligence",
+          idempotency_key: "local-admin-example",
+          repositories: [{ owner: "owner", repo: "repo", title: "AI 情报项目", source_url: "https://example.com/news" }]
+        } },
+        { method: "GET", path: "/internal/imports/{batch_id}", description: "查询人工录入批次及单项处理状态。", auth: "adminKey", params: [
+          { name: "batch_id", in: "path", default: "" }
+        ] },
         { method: "GET", path: "/internal/ingest-batches/{batch_id}", description: "查询异步采集或回填批次状态。", auth: "adminKey", params: [
           { name: "batch_id", in: "path", default: "" }
         ] },
