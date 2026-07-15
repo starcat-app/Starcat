@@ -50,6 +50,30 @@ struct RAGChunkBuildOutput: Equatable, Sendable {
     var all: [RAGChunkDraft] { readme + notes + summary + metadata }
 }
 
+/// 将 Markdown 解析和 chunk 打包这类纯 CPU 工作与 UI actor 隔离。
+///
+/// `Task.detached` 不会自动继承父任务取消，因此必须用 cancellation handler 显式转发；
+/// Builder 在开始和结束各检查一次，不为取消而返回可能被误写入索引的半旧计算结果。
+enum RAGChunkBuildExecutor {
+    static func build(
+        _ input: RAGChunkBuildInput,
+        using builder: RAGChunkBuilder
+    ) async throws -> RAGChunkBuildOutput {
+        try Task.checkCancellation()
+        let task = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            let output = builder.build(input)
+            try Task.checkCancellation()
+            return output
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+}
+
 struct RAGChunkBuilder: Sendable {
     private let configuration: RAGChunkingConfiguration
 

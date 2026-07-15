@@ -10,6 +10,35 @@ import Testing
 
 @Suite("RAGChunkBuilder")
 struct RAGChunkBuilderTests {
+    @MainActor
+    @Test("分片纯计算移出主线程后保持输出一致")
+    func detachedChunkBuildPreservesOutput() async throws {
+        let builder = RAGChunkBuilder()
+        let input = RAGChunkBuildInput(
+            repo: fixtureRepo(stars: 88),
+            readme: """
+                # Install
+
+                Use Swift Package Manager.
+
+                # Usage
+
+                ```swift
+                let database = try DatabaseQueue()
+                ```
+                """,
+            note: nil,
+            summaryText: "A local-first database toolkit.",
+            summarySourceID: "summary-model",
+            tags: ["database", "swift"]
+        )
+
+        let expected = builder.build(input)
+        let actual = try await RAGChunkBuildExecutor.build(input, using: builder)
+
+        #expect(actual == expected)
+    }
+
     @Test("README 按 heading 生成稳定 section parent")
     func headingsProduceStableParents() throws {
         let builder = RAGChunkBuilder(configuration: .init(

@@ -432,7 +432,7 @@ final class KnowledgeRAGIndexBuilder {
         let readme = sources.contains(.readme) ? try await readmeRepository.findContent(repoId: repo.id) : nil
         let summaryText = summary.flatMap(Self.summaryText)
         let metadataSnapshot = sources.contains(.metadata) ? await loadMetadataSnapshot(repoID: repo.id) : nil
-        let output = builder.build(RAGChunkBuildInput(
+        let output = try await RAGChunkBuildExecutor.build(RAGChunkBuildInput(
             repo: repo,
             readme: readme,
             note: note,
@@ -440,7 +440,7 @@ final class KnowledgeRAGIndexBuilder {
             summarySourceID: summary?.model ?? "",
             tags: tags,
             metadataSnapshot: metadataSnapshot
-        ))
+        ), using: builder)
 
         if sources.contains(.readme) {
             _ = try await chunkRepository.replaceSource(repoId: repo.id, source: .readme, drafts: output.readme)
