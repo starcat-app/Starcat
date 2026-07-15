@@ -53,11 +53,18 @@ struct AIModelListView: View {
 
     private var header: some View {
         HStack {
-            Text("settings.ai.modelList.totalFormat \(profile.models.count)")
+            // HOM-203：避免 `Text("key \(count)")` 被编译成空壳 `%@` entry，运行时回退成 key 字面量。
+            Text(String(
+                format: String.l10n("settings.ai.modelList.totalFormat"),
+                profile.models.count
+            ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("settings.ai.modelList.matchedFormat \(filteredModels.count)")
+                Text(String(
+                    format: String.l10n("settings.ai.modelList.matchedFormat"),
+                    filteredModels.count
+                ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

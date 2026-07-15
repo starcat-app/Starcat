@@ -48,14 +48,22 @@ struct RAGWorkspaceInspector: View {
             // 与中栏 answerHeader 同构（headline + caption + 上下 11pt），保证分割线水平对齐。
             // tabs 放在分割线下方，避免把右栏 header 撑高。
             HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("rag.workspace.inspector.title")
-                        .font(ragFont(.headline, weight: .semibold))
-                        .lineLimit(1)
-                    Text("rag.workspace.inspector.subtitle")
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack(alignment: .center, spacing: 8) {
+                    // 叠放文档：表达「本轮组装进回答的多路来源」，与引用/计划/索引 tab 语义一致。
+                    Image(systemName: "doc.on.doc.fill")
+                        .font(iconFont(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 18)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("rag.workspace.inspector.title")
+                            .font(ragFont(.headline, weight: .semibold))
+                            .lineLimit(1)
+                        Text("rag.workspace.inspector.subtitle")
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 8)
                 #if DEBUG
@@ -297,9 +305,18 @@ struct RAGWorkspaceInspector: View {
                             .font(ragFont(.callout, weight: .semibold))
                             .foregroundStyle(.primary)
                         Spacer(minLength: 8)
-                        Text(snapshot.generatedAt, format: .dateTime.hour().minute().second())
-                            .font(ragFont(.caption2))
-                            .foregroundStyle(.secondary)
+                        // 展示知识库内容最后变化时间（在库仓库最新 library_updated_at），
+                        // 而非快照计算时刻；空库/历史缺失时回退占位符。
+                        Group {
+                            if let updatedAt = snapshot.contentUpdatedAt {
+                                Text(updatedAt, format: .dateTime.month().day().hour().minute())
+                            } else {
+                                Text("rag.workspace.inspector.metadata.updatedAt.unknown")
+                            }
+                        }
+                        .font(ragFont(.caption2))
+                        .foregroundStyle(.secondary)
+                        .help("rag.workspace.inspector.metadata.updatedAt.help")
                         Image(systemName: "chevron.right")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -320,9 +337,15 @@ struct RAGWorkspaceInspector: View {
 
                         // 三列等分 + 居中：窄侧栏下短标签才不会左侧挤成一团、右侧空白。
                         HStack(spacing: 8) {
-                            metadataStat("rag.workspace.inspector.metadata.projects", value: snapshot.projectCount)
-                            metadataStat("rag.workspace.inspector.metadata.starred", value: snapshot.starredProjectCount)
-                            metadataStat("rag.workspace.inspector.metadata.retained", value: snapshot.retainedAfterUnstarCount)
+                            metadataStat("rag.workspace.inspector.metadata.projects", value: snapshot.projectCount) {
+                                openMetadataList(.library)
+                            }
+                            metadataStat("rag.workspace.inspector.metadata.starred", value: snapshot.starredProjectCount) {
+                                openMetadataList(.allStars)
+                            }
+                            metadataStat("rag.workspace.inspector.metadata.retained", value: snapshot.retainedAfterUnstarCount) {
+                                openMetadataList(.library, starFilter: .unstarred)
+                            }
                         }
 
                         metadataOrganizationGroup(snapshot)
@@ -384,29 +407,33 @@ struct RAGWorkspaceInspector: View {
             if isStarLeadersExpanded {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(repositories.enumerated()), id: \.offset) { index, repository in
-                        HStack(spacing: 8) {
-                            Text("\(index + 1)")
-                                .font(ragFont(.caption2, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 14, alignment: .trailing)
-                            // 与引用列表同源：owner logo + fullName，避免裸文字排行。
-                            RepoIdentityLabel(
-                                fullName: repository.fullName,
-                                avatarSize: 16,
-                                font: ragFont(.caption, weight: .medium),
-                                spacing: 6,
-                                showAvatarBorder: false
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            HStack(spacing: 3) {
-                                Image(systemName: "star.fill")
-                                    .font(iconFont(size: 9, weight: .semibold))
-                                    .foregroundStyle(.yellow)
-                                // 用短格式（524k）而不是 `523,968`，侧栏窄时才不会挤掉 logo。
-                                Text(repository.stars.formattedShort)
-                                    .font(ragFont(.caption2, weight: .semibold, design: .rounded))
+                        MetadataDrillDownRowButton(
+                            help: repository.fullName,
+                            rowIndex: index,
+                            action: { viewModel.openMetadataRepository(repository) }
+                        ) {
+                            HStack(spacing: 8) {
+                                Text("\(index + 1)")
+                                    .font(ragFont(.caption2, design: .monospaced))
                                     .foregroundStyle(.secondary)
-                                    .monospacedDigit()
+                                    .frame(width: 14, alignment: .trailing)
+                                RepoIdentityLabel(
+                                    fullName: repository.fullName,
+                                    avatarSize: 16,
+                                    font: ragFont(.caption, weight: .medium),
+                                    spacing: 6,
+                                    showAvatarBorder: false
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                HStack(spacing: 3) {
+                                    Image(systemName: "star.fill")
+                                        .font(iconFont(size: 9, weight: .semibold))
+                                        .foregroundStyle(.yellow)
+                                    Text(repository.stars.formattedShort)
+                                        .font(ragFont(.caption2, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
                             }
                         }
                     }
@@ -420,9 +447,9 @@ struct RAGWorkspaceInspector: View {
     /// 整理状态：未读/已读一行，正在使用单独成行，避免旧版把三项挤进同一行。
     @ViewBuilder
     private func metadataOrganizationGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
-        let unread = metadataStatusCount(snapshot, .unread)
-        let read = metadataStatusCount(snapshot, .read)
-        let using = metadataStatusCount(snapshot, .using)
+        let unread = metadataStatusCount(snapshot.starredStatusCounts, .unread)
+        let read = metadataStatusCount(snapshot.starredStatusCounts, .read)
+        let using = metadataStatusCount(snapshot.starredStatusCounts, .using)
 
         metadataGroupCard {
             metadataGroupHeader(
@@ -430,20 +457,42 @@ struct RAGWorkspaceInspector: View {
                 systemImage: "tray.full",
                 tint: .accentColor
             )
-            metadataMetricRow(
-                "rag.workspace.inspector.metadata.unreadRead",
-                value: "\(localizedInteger(unread)) / \(localizedInteger(read))"
-            )
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("rag.workspace.inspector.metadata.unreadRead")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                metadataValueButton(
+                    localizedInteger(unread),
+                    helpKey: "repo.status.unread"
+                ) {
+                    openMetadataList(.allStars, status: .unread)
+                }
+                Text("/")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                metadataValueButton(
+                    localizedInteger(read),
+                    helpKey: "repo.status.read"
+                ) {
+                    openMetadataList(.allStars, status: .read)
+                }
+            }
             HStack(spacing: 6) {
                 Text("repo.status.using")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                metadataTintCapsule(
-                    systemImage: "checkmark.seal.fill",
-                    text: localizedInteger(using),
-                    tint: .accentColor
-                )
+                MetadataDrillDownCapsuleButton(
+                    help: "repo.status.using",
+                    action: { openMetadataList(.allStars, status: .using) }
+                ) {
+                    metadataTintCapsule(
+                        systemImage: "checkmark.seal.fill",
+                        text: localizedInteger(using),
+                        tint: .accentColor
+                    )
+                }
             }
         }
     }
@@ -456,14 +505,20 @@ struct RAGWorkspaceInspector: View {
                 systemImage: "tag.fill",
                 tint: Color.orange
             )
-            metadataMetricRow(
+            metadataMetricActionRow(
                 "rag.workspace.inspector.metadata.taggedRatio",
-                value: "\(localizedInteger(snapshot.taggedProjectCount)) / \(localizedInteger(snapshot.untaggedProjectCount))"
-            )
-            metadataMetricRow(
+                value: "\(localizedInteger(snapshot.starredTaggedProjectCount)) / \(localizedInteger(snapshot.starredUntaggedProjectCount))",
+                helpKey: "sidebar.untagged"
+            ) {
+                openMetadataList(.untagged)
+            }
+            metadataMetricActionRow(
                 "rag.workspace.inspector.metadata.tagTotal",
-                value: localizedInteger(snapshot.tagCount)
-            )
+                value: localizedInteger(snapshot.tagCount),
+                helpKey: "sidebar.tags"
+            ) {
+                viewModel.revealMainWindowTags()
+            }
         }
     }
 
@@ -514,10 +569,13 @@ struct RAGWorkspaceInspector: View {
                 systemImage: "square.stack.3d.up.fill",
                 tint: Color.cyan
             )
-            metadataMetricRow(
+            metadataMetricActionRow(
                 "rag.workspace.inspector.metadata.indexTotal",
-                value: localizedInteger(health.totalChunks)
-            )
+                value: localizedInteger(health.totalChunks),
+                helpKey: "rag.workspace.header.knowledge"
+            ) {
+                viewModel.openKnowledgeBaseEntry(presentingWindow: NSApp.keyWindow)
+            }
             RAGFlowLayout(spacing: 6) {
                 metadataTintCapsule(
                     systemImage: "checkmark.circle.fill",
@@ -586,6 +644,38 @@ struct RAGWorkspaceInspector: View {
             Spacer(minLength: 8)
             Text(value)
                 .font(ragFont(.caption, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+        }
+    }
+
+    /// 数字下钻只把值做成按钮，标题仍保持统计标签语义；Plain Button 必须关闭 Focus Ring。
+    @ViewBuilder
+    private func metadataMetricActionRow(
+        _ titleKey: LocalizedStringKey,
+        value: String,
+        helpKey: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(titleKey)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            metadataValueButton(value, helpKey: helpKey, action: action)
+        }
+    }
+
+    private func metadataValueButton(
+        _ value: String,
+        helpKey: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        MetadataDrillDownButton(help: helpKey, action: action) {
+            Text(value)
+                .font(ragFont(.caption, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.accentColor)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
@@ -669,25 +759,44 @@ struct RAGWorkspaceInspector: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    func metadataStat(_ titleKey: LocalizedStringKey, value: Int) -> some View {
-        VStack(alignment: .center, spacing: 2) {
-            Text(value, format: .number)
-                .font(ragFont(.headline, weight: .semibold, design: .rounded))
-            Text(titleKey)
-                .font(ragFont(.caption2))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+    func metadataStat(
+        _ titleKey: LocalizedStringKey,
+        value: Int,
+        action: @escaping () -> Void
+    ) -> some View {
+        MetadataDrillDownButton(help: titleKey, variant: .stat, action: action) {
+            VStack(alignment: .center, spacing: 2) {
+                Text(value, format: .number)
+                    .font(ragFont(.headline, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.accentColor)
+                Text(titleKey)
+                    .font(ragFont(.caption2))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .multilineTextAlignment(.center)
     }
 
     private func metadataStatusCount(
-        _ snapshot: KnowledgeBaseMetadataSnapshot,
+        _ counts: [KnowledgeBaseMetadataSnapshot.NamedCount],
         _ status: RepoStatus
     ) -> Int {
-        snapshot.statusCounts.first { $0.name == status.rawValue }?.count ?? 0
+        counts.first { $0.name == status.rawValue }?.count ?? 0
+    }
+
+    /// 所有数字钻取都从中性完整预设起步，避免叠加用户此前的语言、信号或隐藏条件。
+    private func openMetadataList(
+        _ selection: SidebarItem,
+        starFilter: RepoStarFilter = .all,
+        status: RepoStatus? = nil
+    ) {
+        var filters = GlobalRepoFilterState.neutral
+        filters.starFilter = starFilter
+        filters.statusFilter = status
+        viewModel.openMainWindowMetadataDestination(selection, filters: filters)
     }
 
     @ViewBuilder
@@ -818,7 +927,8 @@ struct RAGWorkspaceInspector: View {
                     planSection(
                         "rag.workspace.inspector.plan.questionUnderstanding",
                         systemImage: "text.magnifyingglass",
-                        tint: .accentColor
+                        tint: .accentColor,
+                        helpTopic: .questionUnderstanding
                     ) {
                         inspectorValue(
                             "rag.workspace.inspector.clarificationQuestion",
@@ -835,7 +945,8 @@ struct RAGWorkspaceInspector: View {
                     planSection(
                         "rag.workspace.inspector.plan.questionUnderstanding",
                         systemImage: "text.magnifyingglass",
-                        tint: .accentColor
+                        tint: .accentColor,
+                        helpTopic: .questionUnderstanding
                     ) {
                         if let question = viewModel.displayedPlanQuestion, !question.isEmpty {
                             planQuestionValue("rag.workspace.inspector.plan.originalQuestion", value: question)
@@ -860,7 +971,8 @@ struct RAGWorkspaceInspector: View {
                     planSection(
                         "rag.workspace.inspector.plan.executionStrategy",
                         systemImage: "slider.horizontal.3",
-                        tint: .purple
+                        tint: .purple,
+                        helpTopic: .executionStrategy
                     ) {
                         planMetricRow(
                             "rag.workspace.inspector.planMode",
@@ -905,7 +1017,8 @@ struct RAGWorkspaceInspector: View {
                     planSection(
                         "rag.workspace.inspector.plan.networkPlan",
                         systemImage: "network",
-                        tint: .cyan
+                        tint: .cyan,
+                        helpTopic: .networkPlan
                     ) {
                         planMetricRow(
                             "rag.workspace.inspector.plan.liveEvidence",
@@ -966,7 +1079,8 @@ struct RAGWorkspaceInspector: View {
                         planSection(
                             "rag.workspace.inspector.plan.retrievalFunnel",
                             systemImage: "line.3.horizontal.decrease.circle.fill",
-                            tint: .orange
+                            tint: .orange,
+                            helpTopic: .retrievalFunnel
                         ) {
                             planMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.candidates",
@@ -1032,7 +1146,8 @@ struct RAGWorkspaceInspector: View {
                         planSection(
                             "rag.workspace.inspector.plan.retrievalFunnel",
                             systemImage: "line.3.horizontal.decrease.circle.fill",
-                            tint: .orange
+                            tint: .orange,
+                            helpTopic: .retrievalFunnel
                         ) {
                             planMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.outcome",
@@ -1045,7 +1160,8 @@ struct RAGWorkspaceInspector: View {
                         planSection(
                             "rag.workspace.inspector.plan.contextBudget",
                             systemImage: "gauge.with.dots.needle.33percent",
-                            tint: .green
+                            tint: .green,
+                            helpTopic: .contextBudget
                         ) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(String(
@@ -1094,6 +1210,7 @@ struct RAGWorkspaceInspector: View {
         _ title: LocalizedStringKey,
         systemImage: String,
         tint: Color = .accentColor,
+        helpTopic: RAGPlanSectionHelpTopic? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1108,6 +1225,10 @@ struct RAGWorkspaceInspector: View {
                 Text(title)
                     .font(ragFont(.callout, weight: .semibold))
                     .foregroundStyle(.primary)
+                if let helpTopic {
+                    RAGPlanSectionInfoButton(topic: helpTopic)
+                }
+                Spacer(minLength: 0)
             }
             content()
         }

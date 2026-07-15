@@ -33,6 +33,7 @@
 //  - 当 SyncManager.state 变为 completed → 刷新 Sidebar + 列表
 //
 
+import AppKit
 import SwiftUI
 
 struct HomeView: View {
@@ -159,6 +160,9 @@ struct HomeView: View {
     /// Manage 页面记住上次选择的分类（language / tag / allStars / untagged）。
     /// 切换到 Trending 再回来时恢复，避免用户丢失浏览上下文。
     @State private var savedManageSelection: SidebarItem = .allStars
+
+    /// Tags 展开态提升到主窗口持有，跨窗口“查看标签”才能在导航后可靠展开该分组。
+    @State private var tagsExpanded = false
 
     /// 去重「会话恢复 / 登录」激活路径：`handleAuthenticatedEntry` 在 onChange 与
     /// `.task` 都可能被调到，用 user.id 记一次避免双份 refreshSidebar + reloadItems。
@@ -655,6 +659,10 @@ struct HomeView: View {
         .onAppear {
             syncGettingStartedProgressFromCurrentState()
             prepareDetailCoachMarkIfNeeded(for: gettingStartedActiveStepID)
+            handleMainWindowNavigationRequest(dependencies.mainWindowNavigationDispatcher.pendingRequest)
+        }
+        .onChange(of: dependencies.mainWindowNavigationDispatcher.pendingRequest) { _, request in
+            handleMainWindowNavigationRequest(request)
         }
         .onChange(of: gettingStartedActiveStepID) { _, newStepID in
             prepareDetailCoachMarkIfNeeded(for: newStepID)
@@ -1093,6 +1101,7 @@ struct HomeView: View {
 
     private var sidebarColumn: some View {
         SidebarView(
+            tagsExpanded: $tagsExpanded,
             selectedPage: $selectedSidebarPage,
             selectedExploreMode: $selectedExploreMode,
             selectedTrendingLanguage: $selectedTrendingLanguage,
@@ -1325,6 +1334,8 @@ struct HomeView: View {
 
     private func handleManageSelectionChange(_ newSelection: SidebarItem) {
         guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
+        // 用户在 Sidebar 里切到另一个分类后，跨窗口注入的筛选立即失效。
+        viewModel.clearTemporaryGlobalFiltersIfNeeded(for: newSelection)
         savedManageSelection = newSelection
         settings.lastManageSelectionRaw = newSelection.persistedRawValue
         resetSmartCollectionRepoSelectionIfNeeded(for: newSelection)
@@ -1333,6 +1344,10 @@ struct HomeView: View {
 
     private func handleSidebarPageChange(oldPage: SidebarRootPage, newPage: SidebarRootPage) {
         trackSidebarPageOpened(newPage)
+
+        if newPage != .manage {
+            viewModel.clearTemporaryGlobalFilters()
+        }
 
         // 保存旧页面的状态
         switch oldPage {
@@ -1416,6 +1431,42 @@ struct HomeView: View {
             viewModel.selection = savedManageSelection
         }
         selectedSidebarPage = page
+    }
+
+    /// 消费独立窗口发布的一次性主窗口路由。
+    ///
+    /// 先准备 root/selection，再安装临时筛选，避免请求直接修改持久字段；后续 Sidebar
+    /// 变化由上面的两个 handler 统一终止会话。请求消费后立即清空，防止窗口重挂载重放。
+    private func handleMainWindowNavigationRequest(_ request: MainWindowNavigationDispatcher.Request?) {
+        guard let request else { return }
+        NSApp.activate(ignoringOtherApps: true)
+
+        switch request.destination {
+        case .manage(let selection):
+            selectedSidebarPage = .manage
+            viewModel.selection = selection
+            savedManageSelection = selection
+            if let filters = request.temporaryFilters {
+                viewModel.applyTemporaryGlobalFilters(
+                    filters,
+                    requestID: request.id,
+                    anchorSelection: selection
+                )
+            } else {
+                viewModel.clearTemporaryGlobalFilters()
+            }
+
+        case .revealTags:
+            viewModel.clearTemporaryGlobalFilters()
+            if viewModel.selection.isTrending {
+                viewModel.selection = savedManageSelection
+            }
+            selectedSidebarPage = .manage
+            columnVisibility = .all
+            tagsExpanded = true
+        }
+
+        dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
     }
 
     // MARK: - 辅助

@@ -20540,6 +20540,18 @@
         }
       }
     },
+    "rag.workspace.inspector.metadata.updatedAt.help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Last time knowledge-base content changed (latest library update among in-library repositories)." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库内容最后一次变化的时间（在库仓库里最新的加入 / 更新时间）。" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.updatedAt.unknown": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not updated yet" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚无更新" } }
+      }
+    },
     "rag.workspace.inspector.chunkMissing": {
       "localizations": {
         "en": {
@@ -21066,6 +21078,282 @@
             "value": "执行策略"
           }
         }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Learn about question understanding" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解问题理解" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Question understanding" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题理解" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.definition.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What is question understanding?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题理解是什么？" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.definition.body": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The Planner model's interpretation of your question before retrieval runs. It shows what Starcat believes you are asking and how it will search semantically." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索执行前，Planner 模型对你问题的理解结果：展示 Starcat 认为你在问什么，以及将如何改写为语义检索。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.fields.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.field.originalQuestion": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Original question: the text you sent from Composer." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "原始问题：你在 Composer 发送的原文。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.field.semanticQuery": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Semantic query: Planner-rewritten keywords used for vector and keyword retrieval." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义查询：Planner 改写后的检索词，用于向量与关键词召回。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.questionUnderstanding.field.planningNotes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plan notes: short AI-generated explanations (up to 3) of what Starcat will do next." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "规划说明：Planner 生成的简短说明（最多 3 条），描述接下来打算做什么。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Learn about execution strategy" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解执行策略" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Execution strategy" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "执行策略" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.definition.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What is execution strategy?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "执行策略是什么？" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.definition.body": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "How Starcat will query your local knowledge base: execution mode, repository filters, sorting, and optional structured analytics. This is the Planner's local retrieval plan." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Starcat 如何在本地知识库中检索：执行模式、仓库筛选、排序，以及可选的结构化统计。这是 Planner 给出的本地检索方案。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.fields.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.field.mode": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plan mode: semantic-only, filtered semantic, structured-only, or guided discovery." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划模式：纯语义、带过滤语义、仅结构化，或引导发现。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.field.filters": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Filters: repository constraints inferred from your question (language, stars, tags, etc.)." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "筛选条件：Planner 从问题推断的仓库约束（语言、Star 数、标签等）。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.field.sort": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sort: how candidate repositories are ordered before retrieval." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "排序：检索前候选仓库的排列方式。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.field.candidateLimit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candidate limit: maximum repositories entering the retrieval funnel." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选上限：进入检索漏斗的仓库数量上限。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.executionStrategy.field.analytics": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Analytics: optional structured aggregation over metadata (count, top-N, averages)." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "结构化分析：对元数据做聚合统计（计数、Top-N、均值等）。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Learn about network plan" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解联网计划" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Network plan" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "联网计划" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.definition.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What is network plan?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "联网计划是什么？" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.definition.body": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Whether live external evidence is needed and what Starcat will fetch from GitHub or the public web. Shown only when the Planner requests network access." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "是否需要拉取实时外部证据，以及将从 GitHub 或公开互联网获取什么。仅在 Planner 请求联网时出现。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.fields.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.field.liveEvidence": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Live evidence: whether stale local chunks are insufficient and network fetch is required." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "实时证据：本地分片是否不足以安全回答，必须联网补充。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.field.remoteContext": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "GitHub remote context: Issues, PRs, or other GitHub API resources with query and per-repo limits." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub 远程上下文：Issues、PR 等 GitHub API 资源及其查询词与每仓库上限。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.networkPlan.field.webSearch": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Web search: public internet queries when enabled in Composer and approved by the Planner." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "互联网搜索：Composer 已开启联网且 Planner 认为需要时，发起的公开网页检索。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Learn about retrieval funnel" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解检索漏斗" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Retrieval funnel" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索漏斗" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.definition.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What is retrieval funnel?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索漏斗是什么？" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.definition.body": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Actual retrieval statistics for this turn: how many repositories and chunks passed each stage from candidates to final evidence. This replays execution, not the Planner's intent." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮检索的实际统计：从候选仓库到最终证据，各阶段通过了多少仓库与分片。这是执行回放，不是 Planner 的意图描述。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.fields.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.candidates": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candidates: repositories that entered the funnel after plan filters." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选仓库：经过计划筛选后进入漏斗的仓库数。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.keyword": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyword recall: raw hits vs. chunks accepted after keyword scoring." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词召回：原始命中数 vs. 评分后采纳的分片数。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.vector": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Vector recall: raw hits vs. chunks accepted after similarity threshold." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量召回：原始命中数 vs. 相似度阈值后采纳的分片数。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.fusion": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fusion: unique chunks after merging keyword and vector results." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "融合：关键词与向量结果合并去重后的唯一分片数。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.rerank": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rerank: optional second-pass scoring when a rerank provider is configured." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重排序：配置了 Rerank 服务时的二次打分结果。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.result": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Final evidence: chunks and repositories actually injected into the prompt." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终结果：实际注入 Prompt 的分片数与仓库数。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.retrievalFunnel.field.outcome": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Outcome: whether evidence was found, empty, or switched to guided discovery." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索判定：是否找到证据、无证据，或转为引导发现。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Learn about context budget" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解上下文预算" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Context budget" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "上下文预算" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.definition.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What is context budget?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "上下文预算是什么？" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.definition.body": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "After planning and retrieval, Starcat allocates the model context window across prompt segments and lists reserved output space separately." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划与检索完成后，系统按当前模型 Context Window 为本轮 Prompt 分配各分片，并单独列出预留的输出空间。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.fields.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.field.segments": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Input segments: system, history, question, evidence, remote content, and attachments." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "输入分片：系统提示、历史、问题、证据、远程内容与附件。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.field.reservedOutput": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reserved output: tokens set aside for the model reply; not counted in the usage percentage." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "预留输出：为模型回答保留的分片；不计入顶部占用百分比。" } }
+      }
+    },
+    "rag.workspace.inspector.plan.help.contextBudget.field.window": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Window total: the configured context window for the selected model." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "窗口总量：当前所选模型配置的 Context Window 上限。" } }
       }
     },
     "rag.workspace.inspector.plan.filter.archived": {
@@ -23825,13 +24113,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Knowledge RAG Backends"
+            "value": "RAG Backends"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "知识库 RAG 后端"
+            "value": "RAG 后端"
           }
         }
       }
@@ -24001,13 +24289,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clear RAG conversation history?"
+            "value": "Clear Knowledge RAG conversation history?"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "清除 RAG 会话历史？"
+            "value": "清除知识库 RAG 会话历史？"
           }
         }
       }
@@ -24065,13 +24353,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RAG conversation history"
+            "value": "Knowledge RAG conversation history"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "RAG 会话历史"
+            "value": "知识库 RAG 会话历史"
           }
         }
       }
@@ -24081,13 +24369,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local questions, answers, and citation metadata. Full chunk snapshots are not stored."
+            "value": "Questions, answers, and citation metadata from the Knowledge RAG workspace. Stored in the main database, separate from per-repo AI assistant chat history."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地问题、回答和引用元数据，不保存完整分片快照。"
+            "value": "知识库 RAG 工作台的问答与引用元数据，保存在主数据库中，与仓库 AI 助手对话历史分开。"
           }
         }
       }
@@ -24376,6 +24664,278 @@
           "stringUnit": {
             "state": "translated",
             "value": "上下文占用"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about context budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解上下文预算"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About context budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文预算说明"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.definition.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is context budget?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文预算是什么？"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.definition.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After you send a question, Starcat allocates the model context window across prompt segments: system rules, conversation history, your question, retrieved evidence, remote content, and attachments. Reserved output space is listed separately."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题发送后，系统会按当前模型的 Context Window，为本轮 Prompt 分配分片：系统提示、会话历史、问题、检索证据、远程内容与附件；为模型回答预留的输出空间会单独列出。"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context budget vs. context usage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与「上下文占用」的区别"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.budget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context budget (here)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文预算（此处）"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context usage (Composer)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文占用（Composer）"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.timing.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出现时机"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.timing.budget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replay after this turn finishes planning and retrieval"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮计划与检索完成后的实际快照"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.timing.usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live preview while typing; shows the last turn when the draft is empty"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入时实时预览；草稿为空时显示上一轮结果"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.segments.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What you see"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展示内容"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.segments.budget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lists reserved output tokens explicitly"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单独列出预留输出分片"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.segments.usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows input segments only; reserved output is hidden but still deducted internally"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只展示输入分段；预留输出不列出，但仍参与内部扣预算"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.purpose.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Best for"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适用场景"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.purpose.budget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify what was actually sent this turn"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对本轮实际发送了哪些内容"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.compare.purpose.usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estimate whether the window will be full before sending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送前估算窗口是否会挤满"
+          }
+        }
+      }
+    },
+    "rag.workspace.context.budget.help.footnote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token counts are local estimates for budget boundaries, not exact provider billing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有 token 均为本地估算，用于预算边界判断，不代表 Provider 精确计费。"
           }
         }
       }
@@ -36249,13 +36809,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable service"
+            "value": "Enable"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启服务"
+            "value": "开启"
           }
         }
       }
@@ -36316,13 +36876,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Auto-tidy & Categorize"
+            "value": "Tag Classification"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "自动整理分类"
+            "value": "标签分类"
           }
         }
       }
@@ -43201,6 +43761,40 @@
         }
       }
     },
+    "settings.storage.revealInFinder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Finder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Finder 中显示"
+          }
+        }
+      }
+    },
+    "settings.storage.reveal.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not open the cache location. Try again or restart Starcat."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开缓存目录，请重试或重启应用。"
+          }
+        }
+      }
+    },
     "settings.storage.archiveUsageFormat": {
       "extractionState": "stale",
       "localizations": {
@@ -43241,13 +43835,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chat History"
+            "value": "Repo AI chat history"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对话历史"
+            "value": "仓库 AI 对话历史"
           }
         }
       }
@@ -43275,13 +43869,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On-disk AI chat sessions per repo. LRU evicts oldest sessions when total exceeds 100 MB."
+            "value": "On-disk chat sessions from the per-repo AI assistant window. Not the Knowledge RAG workspace. LRU evicts oldest sessions when total exceeds 100 MB."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按仓库分组的 AI 对话历史。总占用超过 100 MB 时按最久未访问优先淘汰。"
+            "value": "按仓库保存的 AI 助手窗口对话，不含知识库 RAG 工作台。总占用超过 100 MB 时按最久未访问优先淘汰。"
           }
         }
       }
@@ -43292,13 +43886,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose where new AI chat history is stored."
+            "value": "Choose where new repo AI assistant chat history is stored. Does not affect the Knowledge RAG workspace. Restart Starcat to apply; existing history is not migrated automatically."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择新的 AI 对话历史写入位置。"
+            "value": "选择仓库 AI 助手新对话历史的写入位置，不影响知识库 RAG 工作台。需重启应用后生效；已有历史不会自动迁移。"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryBackend.restartRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Starcat to switch the active storage backend."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更改存储后端，重启应用后才会生效。"
           }
         }
       }
@@ -43326,13 +43937,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chat History Storage"
+            "value": "Repo AI Chat History Storage"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对话历史存储"
+            "value": "仓库 AI 对话历史存储"
           }
         }
       }
@@ -43819,13 +44430,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clear all AI chat history?"
+            "value": "Clear all repo AI assistant chat history?"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "确认清除所有 AI 对话历史？"
+            "value": "确认清除所有仓库 AI 对话历史？"
           }
         }
       }
@@ -43836,13 +44447,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "All chat sessions across all repos will be permanently removed. This action cannot be undone."
+            "value": "All repo AI assistant chat sessions will be permanently removed. Knowledge RAG conversations are not affected. This action cannot be undone."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "所有仓库下的对话历史都会被永久删除，不可恢复。"
+            "value": "所有仓库 AI 助手窗口下的对话都会被永久删除，不影响知识库 RAG 会话，不可恢复。"
           }
         }
       }

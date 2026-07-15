@@ -58,9 +58,17 @@ struct RAGContextUsagePopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("rag.workspace.context.title")
-                .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
-                .foregroundStyle(.primary)
+            // 与 Inspector「上下文预算」planSection 同款前缀图标，便于两处扫读时建立视觉关联。
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.with.dots.needle.33percent")
+                    .font(iconFont(size: 12, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(Color.green)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                Text("rag.workspace.context.title")
+                    .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
 
             HStack(alignment: .firstTextBaseline) {
                 Text(percentFullText)

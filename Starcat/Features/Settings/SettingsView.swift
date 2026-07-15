@@ -1160,6 +1160,12 @@ private struct StorageSettingsTab: View {
                 Text("settings.storage.chatHistoryBackend.help")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if settings.chatHistoryStorageKind != chatHistoryStore.storageKind {
+                    Text("settings.storage.chatHistoryBackend.restartRequired")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("settings.storage.cacheUsage") {
@@ -1167,81 +1173,99 @@ private struct StorageSettingsTab: View {
                     titleKey: "settings.storage.readme",
                     usageText: readmeUsageText,
                     isEmpty: stats.readmeCount == 0,
-                    action: .readme
+                    action: .readme,
+                    revealItem: .readmeDatabase
                 )
                 usageRow(
                     titleKey: "settings.storage.image",
                     usageText: Int64(stats.imageDiskBytes).formattedByteSize,
                     isEmpty: stats.imageDiskBytes == 0,
-                    action: .image
+                    action: .image,
+                    revealItem: .imageCache
                 )
-                archiveUsageRow(cleaner: cleaner)
+                usageRow(
+                    titleKey: "settings.storage.archive",
+                    usageText: archiveUsageText,
+                    isEmpty: stats.archiveCount == 0,
+                    action: .archive,
+                    revealItem: .archives
+                )
                 usageRow(
                     titleKey: "settings.storage.translation",
                     usageText: translationUsageText,
                     isEmpty: translationCache.itemCount == 0,
                     action: .translation,
-                    helpKey: "settings.storage.translation.help"
+                    helpKey: "settings.storage.translation.help",
+                    revealItem: .translation
                 )
                 usageRow(
                     titleKey: "settings.storage.anySearch",
                     usageText: externalSearchUsageText,
                     isEmpty: externalSearchCache.itemCount == 0,
                     action: .anySearch,
-                    helpKey: "settings.storage.anySearch.help"
+                    helpKey: "settings.storage.anySearch.help",
+                    revealItem: .externalSearch
                 )
                 usageRow(
                     titleKey: "settings.storage.wiki",
                     usageText: wikiUsageText,
                     isEmpty: wikiCache.itemCount == 0,
                     action: .wiki,
-                    helpKey: "settings.storage.wiki.help"
+                    helpKey: "settings.storage.wiki.help",
+                    revealItem: .wiki
                 )
                 usageRow(
                     titleKey: "settings.storage.recommendation",
                     usageText: recommendationUsageText,
                     isEmpty: recommendationCache.itemCount == 0,
                     action: .recommendation,
-                    helpKey: "settings.storage.recommendation.help"
+                    helpKey: "settings.storage.recommendation.help",
+                    revealItem: .recommendation
                 )
                 usageRow(
                     titleKey: "settings.storage.chatHistory",
                     usageText: chatHistoryUsageText,
                     isEmpty: chatHistoryStore.sessionCount == 0,
                     action: .chatHistory,
-                    helpKey: "settings.storage.chatHistory.help"
+                    helpKey: "settings.storage.chatHistory.help",
+                    revealItem: .repoAIChatHistory
                 )
                 usageRow(
                     titleKey: "settings.storage.ragIndex",
                     usageText: ragIndexBytes.formattedByteSize,
                     isEmpty: ragIndexBytes == 0,
                     action: .ragIndex,
-                    helpKey: "settings.storage.ragIndex.help"
+                    helpKey: "settings.storage.ragIndex.help",
+                    revealItem: .ragDatabase
                 )
                 usageRow(
                     titleKey: "settings.storage.ragHistory",
                     usageText: ragHistoryUsageText,
                     isEmpty: ragConversationStats.conversationCount == 0,
                     action: .ragHistory,
-                    helpKey: "settings.storage.ragHistory.help"
+                    helpKey: "settings.storage.ragHistory.help",
+                    revealItem: .ragDatabase
                 )
                 usageRow(
                     titleKey: "settings.storage.aiContext",
                     usageText: aiContextUsageText,
                     isEmpty: aiContextStorage.projectCount == 0,
-                    action: .aiContext
+                    action: .aiContext,
+                    revealItem: .aiContext
                 )
                 usageRow(
                     titleKey: "settings.storage.codeFlow",
                     usageText: codeFlowUsageText,
                     isEmpty: codeFlowStorage.projectCount == 0,
-                    action: .codeFlow
+                    action: .codeFlow,
+                    revealItem: .codeFlow
                 )
                 usageRow(
                     titleKey: "settings.storage.codebaseMemory",
                     usageText: codebaseMemoryUsageText,
                     isEmpty: codebaseMemoryStorage.projectCount == 0,
-                    action: .codebaseMemory
+                    action: .codebaseMemory,
+                    revealItem: .codebaseMemory
                 )
             }
 
@@ -1410,20 +1434,25 @@ private struct StorageSettingsTab: View {
         }
     }
 
-    /// 标准用量行：`<标题>     <用量>  [清理]`。
+    /// 标准用量行：`<标题>     <用量>  [文件夹]  [清理]`。
     /// `isEmpty == true` 时清理按钮 disabled（避免空缓存触发"删空目录"等无意义操作）。
+    /// 文件夹按钮始终可用（已登录且非清理中），便于用户定位磁盘路径。
     private func usageRow(
         titleKey: LocalizedStringKey,
         usageText: String,
         isEmpty: Bool,
         action: PendingAction,
-        helpKey: LocalizedStringKey? = nil
+        helpKey: LocalizedStringKey? = nil,
+        revealItem: CacheDirectoryLocator.Item? = nil
     ) -> some View {
         let row = LabeledContent {
             HStack(spacing: 8) {
                 Text(usageText)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                if let revealItem {
+                    revealInFinderButton(item: revealItem)
+                }
                 Button("settings.storage.action.clear") {
                     pendingAction = action
                 }
@@ -1443,35 +1472,29 @@ private struct StorageSettingsTab: View {
         }
     }
 
-    /// ZIP 行（额外多一个 Finder 显示按钮）。
-    /// 单独抽出来，避免 `usageRow` 通用 helper 变成多参数泥潭。
-    private func archiveUsageRow(cleaner: CacheCleaner) -> some View {
-        LabeledContent {
-            HStack(spacing: 8) {
-                Text(archiveUsageText)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                Button {
-                    do {
-                        try cleaner.revealArchiveDirectory()
-                    } catch {
-                        storageActionError = error.localizedDescription
-                    }
-                } label: {
-                    Image(systemName: "folder")
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(Text("settings.storage.archive.revealHelp"))
-                .disabled(shouldDisableStorageActions || isWorking)
-                Button("settings.storage.action.clear") {
-                    pendingAction = .archive
-                }
-                .controlSize(.regular)
-                .disabled(shouldDisableStorageActions || isWorking || stats.archiveCount == 0)
-            }
+    /// 缓存用量行统一的 Finder 打开按钮。
+    private func revealInFinderButton(item: CacheDirectoryLocator.Item) -> some View {
+        Button {
+            revealCacheLocation(item)
         } label: {
-            Text("settings.storage.archive")
+            Image(systemName: "folder")
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text("settings.storage.revealInFinder"))
+        .disabled(shouldDisableStorageActions || isWorking)
+    }
+
+    /// 按当前登录用户与**运行中**的仓库 AI 对话历史后端，在 Finder 中定位缓存目录。
+    private func revealCacheLocation(_ item: CacheDirectoryLocator.Item) {
+        let locator = CacheDirectoryLocator(
+            userID: authSession.state.user?.id,
+            chatHistoryStorageKind: chatHistoryStore.storageKind
+        )
+        do {
+            try locator.reveal(item)
+        } catch {
+            storageActionError = error.localizedDescription
         }
     }
 

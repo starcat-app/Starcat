@@ -184,6 +184,44 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.hasActiveFilter)
     }
 
+    @Test("临时全局筛选覆盖当前列表但不改持久值，切分类或用户接管后失效")
+    func temporaryGlobalFilterSessionLifecycle() async throws {
+        let (vm, _, _) = try makeSUT()
+        vm.hideArchived = true
+
+        var temporary = GlobalRepoFilterState.neutral
+        temporary.statusFilter = .unread
+        vm.applyTemporaryGlobalFilters(
+            temporary,
+            requestID: UUID(),
+            anchorSelection: .library
+        )
+
+        #expect(vm.persistentGlobalFilterState.hideArchived)
+        #expect(!vm.effectiveGlobalFilterState.hideArchived)
+        #expect(vm.effectiveGlobalFilterState.statusFilter == .unread)
+
+        vm.clearTemporaryGlobalFiltersIfNeeded(for: .library)
+        #expect(vm.temporaryGlobalFilterSession != nil)
+
+        vm.clearTemporaryGlobalFiltersIfNeeded(for: .allStars)
+        #expect(vm.temporaryGlobalFilterSession == nil)
+        #expect(vm.effectiveGlobalFilterState.hideArchived)
+
+        vm.applyTemporaryGlobalFilters(
+            temporary,
+            requestID: UUID(),
+            anchorSelection: .allStars
+        )
+        vm.setGlobalFilterFromUser(\.starFilter, to: .starred)
+
+        #expect(vm.temporaryGlobalFilterSession == nil)
+        #expect(vm.persistentGlobalFilterState.hideArchived)
+        #expect(vm.persistentGlobalFilterState.starFilter == .starred)
+        #expect(vm.effectiveGlobalFilterState.statusFilter == nil)
+        await vm.awaitPendingListReloadForTesting()
+    }
+
     @Test("PR-2: Manage 知识库筛选支持全部 / 已入库 / 未入库并可组合")
     func libraryFilterStacksWithManageFilters() async throws {
         let (vm, db, noteRepo) = try makeSUT()

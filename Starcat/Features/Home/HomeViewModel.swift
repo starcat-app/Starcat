@@ -462,7 +462,7 @@ final class HomeViewModel {
     var hideArchived: Bool = false {
         didSet {
             guard oldValue != hideArchived else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -471,7 +471,7 @@ final class HomeViewModel {
     var hideForks: Bool = false {
         didSet {
             guard oldValue != hideForks else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -483,7 +483,7 @@ final class HomeViewModel {
     var statusFilter: RepoStatus? = nil {
         didSet {
             guard oldValue != statusFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -492,7 +492,7 @@ final class HomeViewModel {
     var starFilter: RepoStarFilter = .all {
         didSet {
             guard oldValue != starFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -504,7 +504,7 @@ final class HomeViewModel {
     var libraryFilter: RepoLibraryFilter = .all {
         didSet {
             guard oldValue != libraryFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -513,7 +513,7 @@ final class HomeViewModel {
     var repoLanguageFilter: RepoLanguageFilter = .all {
         didSet {
             guard oldValue != repoLanguageFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -522,7 +522,7 @@ final class HomeViewModel {
     var globalFilterLanguages: [String] = [] {
         didSet {
             guard oldValue != globalFilterLanguages else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -531,7 +531,7 @@ final class HomeViewModel {
     var wikiAvailabilityFilter: RepoSignalAvailabilityFilter = .unknown {
         didSet {
             guard oldValue != wikiAvailabilityFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -540,7 +540,7 @@ final class HomeViewModel {
     var healthAvailabilityFilter: RepoSignalAvailabilityFilter = .unknown {
         didSet {
             guard oldValue != healthAvailabilityFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -549,7 +549,7 @@ final class HomeViewModel {
     var openSSFAvailabilityFilter: RepoSignalAvailabilityFilter = .unknown {
         didSet {
             guard oldValue != openSSFAvailabilityFilter else { return }
-            guard !isHydratingManageFilters else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -632,7 +632,7 @@ final class HomeViewModel {
     }
 
     private var selectionNeedsReloadAfterLibraryStateChange: Bool {
-        if libraryFilter != .all { return true }
+        if effectiveGlobalFilterState.libraryFilter != .all { return true }
         switch selection {
         case .library, .smartCollection(.library), .smartCollection(.outsideLibraryStars):
             return true
@@ -652,7 +652,7 @@ final class HomeViewModel {
         statusMap[repoId] = status
         // 未启用状态过滤时，只需要让 row 角标刷新；重查分页列表反而可能把尚未落库的
         // 通知状态覆盖回旧值。只有状态过滤生效时，才需要重新计算该 repo 是否仍可见。
-        guard statusFilter != nil else { return }
+        guard effectiveGlobalFilterState.statusFilter != nil else { return }
         // R-07：详情页改 status 不应抢用户滚动位置，传 resetPage: false。
         if isDatabasePagingActive {
             Task { [weak self] in
@@ -700,34 +700,121 @@ final class HomeViewModel {
         }
     }
 
+    /// 一次跨窗口跳转对应一份临时筛选；anchor 约束它只能活在发起跳转的 Sidebar 分类。
+    struct TemporaryGlobalFilterSession: Equatable {
+        let requestID: UUID
+        let anchorSelection: SidebarItem
+        let filters: GlobalRepoFilterState
+    }
+
+    private(set) var temporaryGlobalFilterSession: TemporaryGlobalFilterSession?
+
+    /// 用户持久筛选的内存镜像。临时会话永远不改这里，因此既有 `.onChange` 不会误写设置。
+    var persistentGlobalFilterState: GlobalRepoFilterState {
+        GlobalRepoFilterState(
+            hideArchived: hideArchived,
+            hideForks: hideForks,
+            statusFilter: statusFilter,
+            starFilter: starFilter,
+            libraryFilter: libraryFilter,
+            repoLanguageFilter: repoLanguageFilter,
+            globalFilterLanguages: globalFilterLanguages,
+            wikiAvailabilityFilter: wikiAvailabilityFilter,
+            healthAvailabilityFilter: healthAvailabilityFilter,
+            openSSFAvailabilityFilter: openSSFAvailabilityFilter
+        )
+    }
+
+    /// 列表查询和 Toolbar 统一读取本值，保证“临时筛选已生效”在数据与 UI 上没有双轨。
+    var effectiveGlobalFilterState: GlobalRepoFilterState {
+        temporaryGlobalFilterSession?.filters ?? persistentGlobalFilterState
+    }
+
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
     var hasActiveFilter: Bool {
-        hideArchived
-            || hideForks
-            || statusFilter != nil
-            || starFilter != .all
-            || libraryFilter != .all
-            || repoLanguageFilter != .all
-            || !globalFilterLanguages.isEmpty
-            || wikiAvailabilityFilter != .unknown
-            || healthAvailabilityFilter != .unknown
-            || openSSFAvailabilityFilter != .unknown
+        let filters = effectiveGlobalFilterState
+        return filters.hideArchived
+            || filters.hideForks
+            || filters.statusFilter != nil
+            || filters.starFilter != .all
+            || filters.libraryFilter != .all
+            || filters.repoLanguageFilter != .all
+            || !filters.globalFilterLanguages.isEmpty
+            || filters.wikiAvailabilityFilter != .unknown
+            || filters.healthAvailabilityFilter != .unknown
+            || filters.openSSFAvailabilityFilter != .unknown
+    }
+
+    /// 跨窗口钻取只替换“当前有效筛选”，不写持久字段；重复点击同一数字也用 requestID 更新会话身份。
+    func applyTemporaryGlobalFilters(
+        _ filters: GlobalRepoFilterState,
+        requestID: UUID,
+        anchorSelection: SidebarItem
+    ) {
+        let previous = effectiveGlobalFilterState
+        temporaryGlobalFilterSession = TemporaryGlobalFilterSession(
+            requestID: requestID,
+            anchorSelection: anchorSelection,
+            filters: filters
+        )
+        if effectiveGlobalFilterState != previous {
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// Sidebar 离开临时会话的锚点后恢复用户持久筛选。
+    func clearTemporaryGlobalFiltersIfNeeded(for selection: SidebarItem) {
+        guard let session = temporaryGlobalFilterSession,
+              session.anchorSelection != selection else { return }
+        clearTemporaryGlobalFilters()
+    }
+
+    func clearTemporaryGlobalFilters() {
+        guard temporaryGlobalFilterSession != nil else { return }
+        let previous = effectiveGlobalFilterState
+        temporaryGlobalFilterSession = nil
+        if effectiveGlobalFilterState != previous {
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// Toolbar 的任何主动选择都代表用户接管：先结束临时会话，再修改并持久化真实筛选。
+    func setGlobalFilterFromUser<Value>(
+        _ keyPath: WritableKeyPath<GlobalRepoFilterState, Value>,
+        to value: Value
+    ) {
+        var filters = persistentGlobalFilterState
+        filters[keyPath: keyPath] = value
+        applyPersistentGlobalFilterState(filters)
     }
 
     /// 重置所有全局筛选条件到默认值。
     ///
     /// 全局筛选工具栏「重置」按钮走这里。设置侧也同步清对应偏好。
     func resetAllFilters() {
-        hideArchived = false
-        hideForks = false
-        statusFilter = nil
-        starFilter = .all
-        libraryFilter = .all
-        repoLanguageFilter = .all
-        globalFilterLanguages = []
-        wikiAvailabilityFilter = .unknown
-        healthAvailabilityFilter = .unknown
-        openSSFAvailabilityFilter = .unknown
+        applyPersistentGlobalFilterState(.neutral)
+    }
+
+    /// 批量写入真实筛选时只触发一次重查，避免十个 didSet 依次启动十份分页任务。
+    private func applyPersistentGlobalFilterState(_ filters: GlobalRepoFilterState) {
+        let previous = effectiveGlobalFilterState
+        isApplyingGlobalFilterState = true
+        temporaryGlobalFilterSession = nil
+        hideArchived = filters.hideArchived
+        hideForks = filters.hideForks
+        statusFilter = filters.statusFilter
+        starFilter = filters.starFilter
+        libraryFilter = filters.libraryFilter
+        repoLanguageFilter = filters.repoLanguageFilter
+        globalFilterLanguages = filters.globalFilterLanguages
+        wikiAvailabilityFilter = filters.wikiAvailabilityFilter
+        healthAvailabilityFilter = filters.healthAvailabilityFilter
+        openSSFAvailabilityFilter = filters.openSSFAvailabilityFilter
+        isApplyingGlobalFilterState = false
+
+        if effectiveGlobalFilterState != previous {
+            reloadOrApplyCurrentManageView()
+        }
     }
 
     // MARK: - 依赖
@@ -756,6 +843,9 @@ final class HomeViewModel {
 
     /// hydrate 批量写入 toolbar 字段时抑制 filter didSet 触发的 applyView。
     private var isHydratingManageFilters = false
+
+    /// 用户接管临时筛选时需要一次性回写完整持久快照；批处理期间抑制各字段重复重查。
+    private var isApplyingGlobalFilterState = false
 
     /// 用户智能集合 filter 所需的 Health / 笔记上下文；进入集合时构建，离开时清空。
     private var smartCollectionFilterContext: SmartCollectionRuleFilterContext?
@@ -866,6 +956,7 @@ final class HomeViewModel {
         libraryStateMap = [:]
         repoTagsMap = [:]
         semanticHitMap = [:]
+        temporaryGlobalFilterSession = nil
         selectedTagIds = []
         repoLanguageFilter = .all
 
@@ -1173,14 +1264,15 @@ final class HomeViewModel {
         }
 
         let trimmedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filters = effectiveGlobalFilterState
         return SmartCollectionRule(
             scope: scope,
             query: trimmedQuery.isEmpty ? nil : trimmedQuery,
             searchModeRaw: smartSearchMode.rawValue,
-            statusRaw: statusFilter?.rawValue,
+            statusRaw: filters.statusFilter?.rawValue,
             selectedTagIDs: selectedTagIds.sorted(),
-            hideArchived: hideArchived,
-            hideForks: hideForks,
+            hideArchived: filters.hideArchived,
+            hideForks: filters.hideForks,
             sortRaw: sortOption.rawValue
         )
     }
@@ -1241,7 +1333,7 @@ final class HomeViewModel {
     private func currentRepoListScopeForDatabasePaging() -> RepoListScope? {
         // Wiki 状态目前来自磁盘 JSON 缓存，不在 SQLite repos 查询里。启用该筛选时先走
         // 内存路径，保证“有/无 Wiki”语义正确；后续若落库索引再恢复分页下推。
-        guard wikiAvailabilityFilter == .unknown else { return nil }
+        guard effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown else { return nil }
 
         switch selection {
         case .allStars, .allLanguages:
@@ -1266,17 +1358,18 @@ final class HomeViewModel {
     }
 
     private func currentRepoListFiltersForDatabasePaging() -> RepoListFilters {
-        RepoListFilters(
-            hideArchived: hideArchived,
-            hideForks: hideForks,
-            status: statusFilter,
-            star: starFilter,
-            library: libraryFilter,
-            language: repoLanguageFilter,
-            selectedLanguages: Set(globalFilterLanguages),
-            wikiAvailability: wikiAvailabilityFilter,
-            healthAvailability: healthAvailabilityFilter,
-            openSSFAvailability: openSSFAvailabilityFilter,
+        let filters = effectiveGlobalFilterState
+        return RepoListFilters(
+            hideArchived: filters.hideArchived,
+            hideForks: filters.hideForks,
+            status: filters.statusFilter,
+            star: filters.starFilter,
+            library: filters.libraryFilter,
+            language: filters.repoLanguageFilter,
+            selectedLanguages: Set(filters.globalFilterLanguages),
+            wikiAvailability: filters.wikiAvailabilityFilter,
+            healthAvailability: filters.healthAvailabilityFilter,
+            openSSFAvailability: filters.openSSFAvailabilityFilter,
             selectedTagIDs: selectedTagIds
         )
     }
@@ -2112,6 +2205,7 @@ final class HomeViewModel {
     /// 纯函数：只读 rawItems / statusMap / repoTagsMap / 各 filter 字段。
     private func computeFilteredSorted() -> [Repo] {
         var view = rawItems
+        let filters = effectiveGlobalFilterState
 
         if let effective = effectiveUserSmartCollectionRule() {
             view = SmartCollectionRuleFilter.apply(
@@ -2120,22 +2214,22 @@ final class HomeViewModel {
                 context: smartCollectionFilterContext ?? .empty
             )
         } else {
-            if hideArchived { view.removeAll { $0.isArchived } }
-            if hideForks    { view.removeAll { $0.isFork } }
-            if let status = statusFilter {
+            if filters.hideArchived { view.removeAll { $0.isArchived } }
+            if filters.hideForks    { view.removeAll { $0.isFork } }
+            if let status = filters.statusFilter {
                 view.removeAll { repo in
                     let actual = statusMap[repo.id] ?? .unread
                     return actual != status
                 }
             }
-            if let language = repoLanguageFilter.queryLanguage {
+            if let language = filters.repoLanguageFilter.queryLanguage {
                 if let language {
                     view.removeAll { $0.language != language }
                 } else {
                     view.removeAll { $0.language != nil }
                 }
             }
-            switch libraryFilter {
+            switch filters.libraryFilter {
             case .all:
                 break
             case .inLibrary:
@@ -2190,12 +2284,13 @@ final class HomeViewModel {
     }
 
     private func applyGlobalRepoFilters(to repos: inout [Repo]) {
-        if starFilter != .all {
+        let filters = effectiveGlobalFilterState
+        if filters.starFilter != .all {
             repos.removeAll { repo in
-                !starFilter.matches(isStarred: repo.isStarred)
+                !filters.starFilter.matches(isStarred: repo.isStarred)
             }
         }
-        let selectedLanguages = Set(globalFilterLanguages)
+        let selectedLanguages = Set(filters.globalFilterLanguages)
         if !selectedLanguages.isEmpty {
             repos.removeAll { repo in
                 guard let language = repo.language else { return true }
@@ -2206,28 +2301,35 @@ final class HomeViewModel {
     }
 
     private func applySignalAvailabilityFilters(to repos: inout [Repo]) {
-        if wikiAvailabilityFilter != .unknown {
+        let filters = effectiveGlobalFilterState
+        if filters.wikiAvailabilityFilter != .unknown {
             repos.removeAll { repo in
-                !matchesWikiAvailability(repo)
+                !matchesWikiAvailability(repo, filter: filters.wikiAvailabilityFilter)
             }
         }
-        if healthAvailabilityFilter != .unknown {
+        if filters.healthAvailabilityFilter != .unknown {
             repos.removeAll { repo in
-                !matchesAvailability(healthSortSnapshots[repo.id] != nil, filter: healthAvailabilityFilter)
+                !matchesAvailability(
+                    healthSortSnapshots[repo.id] != nil,
+                    filter: filters.healthAvailabilityFilter
+                )
             }
         }
-        if openSSFAvailabilityFilter != .unknown {
+        if filters.openSSFAvailabilityFilter != .unknown {
             repos.removeAll { repo in
-                !matchesAvailability(openSSFSortScores[repo.id] != nil, filter: openSSFAvailabilityFilter)
+                !matchesAvailability(
+                    openSSFSortScores[repo.id] != nil,
+                    filter: filters.openSSFAvailabilityFilter
+                )
             }
         }
     }
 
-    private func matchesWikiAvailability(_ repo: Repo) -> Bool {
+    private func matchesWikiAvailability(_ repo: Repo, filter: RepoSignalAvailabilityFilter) -> Bool {
         guard let snapshot = DiskWikiCache.shared.load(owner: repo.owner, repo: repo.name) else {
-            return wikiAvailabilityFilter == .unknown
+            return filter == .unknown
         }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: wikiAvailabilityFilter)
+        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: filter)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -2242,7 +2344,8 @@ final class HomeViewModel {
     }
 
     private func refreshHealthSortSnapshotsIfNeeded(for repos: [Repo]) async {
-        guard sortOption == .healthScoreDesc || healthAvailabilityFilter != .unknown else { return }
+        let filters = effectiveGlobalFilterState
+        guard sortOption == .healthScoreDesc || filters.healthAvailabilityFilter != .unknown else { return }
         guard let repoHealthRepository else {
             healthSortSnapshots = [:]
             return
@@ -2261,7 +2364,8 @@ final class HomeViewModel {
     }
 
     private func refreshOpenSSFSortScoresIfNeeded(for repos: [Repo]) async {
-        guard sortOption == .openSSFScoreDesc || openSSFAvailabilityFilter != .unknown else { return }
+        let filters = effectiveGlobalFilterState
+        guard sortOption == .openSSFScoreDesc || filters.openSSFAvailabilityFilter != .unknown else { return }
         guard let openSSFScoreRepository else {
             openSSFSortScores = [:]
             return

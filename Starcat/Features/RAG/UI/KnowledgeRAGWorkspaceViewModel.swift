@@ -982,6 +982,22 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 元数据数字下钻到主窗口。筛选通过 dispatcher 以完整临时快照发布，不触碰用户设置。
+    func openMainWindowMetadataDestination(
+        _ selection: SidebarItem,
+        filters: GlobalRepoFilterState
+    ) {
+        dependencies.mainWindowNavigationDispatcher.navigate(
+            to: .manage(selection),
+            temporaryFilters: filters
+        )
+    }
+
+    /// “标签总数”只负责露出主窗口 Tags 分类，不注入筛选。
+    func revealMainWindowTags() {
+        dependencies.mainWindowNavigationDispatcher.navigate(to: .revealTags)
+    }
+
     /// 导出单条调试 trace 为 Markdown，便于贴 issue / 对照 Prompt。
     func exportDebugTrace(_ trace: RAGDebugTrace) {
         let stamp = Self.debugExportFilenameFormatter.string(from: trace.startedAt)
@@ -1224,6 +1240,14 @@ final class KnowledgeRAGWorkspaceViewModel {
     func openCitation(_ citation: RAGCitation) {
         Task {
             await openLocalRepoDetail(for: citation)
+        }
+    }
+
+    /// Star Top10 行用稳定 repo id 查实时对象，再复用独立详情窗入口。
+    func openMetadataRepository(_ repository: KnowledgeBaseMetadataSnapshot.TopRepository) {
+        Task {
+            guard let repo = try? await dependencies.repoRepository.findById(repository.repoID) else { return }
+            openLocalRepoDetail(repo)
         }
     }
 

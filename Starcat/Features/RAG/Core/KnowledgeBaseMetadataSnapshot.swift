@@ -19,6 +19,7 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
     }
 
     struct TopRepository: Equatable, Sendable {
+        let repoID: Int64
         let fullName: String
         let stars: Int
     }
@@ -32,11 +33,19 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         let embeddingModel: String
     }
 
+    /// 快照的计算时刻（每次读取都刷新）。仅用于内部诊断，不直接展示为「更新时间」。
     let generatedAt: Date
+    /// 知识库内容最后一次变化时间：在库仓库里最新的 `library_updated_at`。
+    /// 代表数据本身的新鲜度；空库或历史数据缺失时为 nil。
+    let contentUpdatedAt: Date?
     let projectCount: Int
     let starredProjectCount: Int
     let retainedAfterUnstarCount: Int
+    /// 下钻到“全部仓库”时使用 Star 范围统计，不能复用知识库 Prompt 的整理口径。
+    let starredStatusCounts: [NamedCount]
     let statusCounts: [NamedCount]
+    let starredTaggedProjectCount: Int
+    let starredUntaggedProjectCount: Int
     let taggedProjectCount: Int
     let untaggedProjectCount: Int
     let tagCount: Int
@@ -106,6 +115,36 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
             let taggedProjectCount: Int = overview["tagged_count"]
             let knownLanguageProjectCount: Int = overview["known_language_count"]
 
+            let starredOverview = try Row.fetchOne(db, sql: """
+                SELECT
+                    COUNT(*) AS project_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id
+                    ) THEN 1 ELSE 0 END), 0) AS tagged_count
+                FROM repos r
+                WHERE r.is_starred = 1
+                """)!
+            let starredProjectScopeCount: Int = starredOverview["project_count"]
+            let starredTaggedProjectCount: Int = starredOverview["tagged_count"]
+
+            // 与主列表 `statusMap[id] ?? .unread` 及 RepoStatus.parse 保持一致：无笔记行是未读，
+            // 除 unread / using 外的旧值、空值和未知值都归到已读，避免下钻数量漂移。
+            let starredStatusCounts = try Self.namedCounts(db, sql: """
+                SELECT
+                    CASE
+                        WHEN n.repo_id IS NULL THEN 'unread'
+                        WHEN n.status = 'unread' THEN 'unread'
+                        WHEN n.status = 'using' THEN 'using'
+                        ELSE 'read'
+                    END AS name,
+                    COUNT(*) AS count
+                FROM repos r
+                LEFT JOIN repo_notes n ON n.repo_id = r.id
+                WHERE r.is_starred = 1
+                GROUP BY name
+                ORDER BY count DESC, name ASC
+                """)
+
             let statusCounts = try Self.namedCounts(db, sql: """
                 SELECT COALESCE(NULLIF(TRIM(n.status), ''), 'unclassified') AS name, COUNT(*) AS count
                 FROM repo_notes n
@@ -139,7 +178,7 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 WHERE n.library_state = 'in_library'
                 """) ?? 0
             let topStarredRepositories = try Row.fetchAll(db, sql: """
-                SELECT r.full_name, r.stars_count
+                SELECT r.id, r.full_name, r.stars_count
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 WHERE n.library_state = 'in_library'
@@ -147,10 +186,19 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 LIMIT \(Self.topStarredLimit)
                 """).map { row in
                     KnowledgeBaseMetadataSnapshot.TopRepository(
+                        repoID: row["id"],
                         fullName: row["full_name"],
                         stars: row["stars_count"]
                     )
                 }
+            // 知识库内容最后变化时间：在库仓库里最大的 library_updated_at。存储为一致的
+            // ISO8601 UTC 文本，字典序 MAX 即时间序 MAX；解析在 Swift 侧兼容有/无小数秒。
+            let latestContentUpdatedRaw = try String.fetchOne(db, sql: """
+                SELECT MAX(n.library_updated_at)
+                FROM repo_notes n
+                WHERE n.library_state = 'in_library' AND n.library_updated_at IS NOT NULL
+                """)
+
             let index = try Row.fetchOne(db, sql: """
                 SELECT
                     COUNT(c.id) AS total_chunks,
@@ -166,10 +214,14 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
 
             return KnowledgeBaseMetadataSnapshot(
                 generatedAt: Date(),
+                contentUpdatedAt: Self.parseISO8601(latestContentUpdatedRaw),
                 projectCount: projectCount,
                 starredProjectCount: overview["starred_count"],
                 retainedAfterUnstarCount: overview["retained_count"],
+                starredStatusCounts: starredStatusCounts,
                 statusCounts: statusCounts,
+                starredTaggedProjectCount: starredTaggedProjectCount,
+                starredUntaggedProjectCount: starredProjectScopeCount - starredTaggedProjectCount,
                 taggedProjectCount: taggedProjectCount,
                 untaggedProjectCount: projectCount - taggedProjectCount,
                 tagCount: tagCount,
@@ -196,5 +248,16 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
         try Row.fetchAll(db, sql: sql).map { row in
             .init(name: row["name"], count: row["count"])
         }
+    }
+
+    /// 解析 library_updated_at 文本：写入端统一带小数秒，但对历史/异常数据兼容无小数秒格式。
+    private static func parseISO8601(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: raw) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: raw)
     }
 }

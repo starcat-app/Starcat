@@ -682,19 +682,18 @@ struct RepoListView: View {
     /// 排序与 Stars 同步已迁到列表顶栏 `manageFilterBar`（对齐 Weekly / Activity）。
     @MainActor
     private func makeManageToolbarSpec() -> PageToolbarSpec {
-        // @Bindable 让 `$vm.statusFilter` 等可派生 Binding，传给下游 picker / toggle。
-        @Bindable var vm = viewModel
+        let effectiveFilters = viewModel.effectiveGlobalFilterState
         let filterItems: [FilterMenuItem] = [
             .content(id: "starStatus", view: AnyView(
-                starFilterSection(selection: $vm.starFilter)
+                starFilterSection(selection: globalFilterBinding(\.starFilter))
             )),
             .divider(id: "after-star-status"),
             .content(id: "status", view: AnyView(
-                statusFilterSection(selection: $vm.statusFilter)
+                statusFilterSection(selection: globalFilterBinding(\.statusFilter))
             )),
             .divider(id: "after-status"),
             .content(id: "library", view: AnyView(
-                libraryFilterSection(selection: $vm.libraryFilter)
+                libraryFilterSection(selection: globalFilterBinding(\.libraryFilter))
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
@@ -705,26 +704,36 @@ struct RepoListView: View {
                 availabilityPicker(
                     title: "list.filter.wikiAvailability",
                     icon: "doc.text.magnifyingglass",
-                    selection: $vm.wikiAvailabilityFilter
+                    selection: globalFilterBinding(\.wikiAvailabilityFilter)
                 )
             )),
             .content(id: "healthAvailability", view: AnyView(
                 availabilityPicker(
                     title: "list.filter.healthAvailability",
                     icon: "heart.text.square",
-                    selection: $vm.healthAvailabilityFilter
+                    selection: globalFilterBinding(\.healthAvailabilityFilter)
                 )
             )),
             .content(id: "openSSFAvailability", view: AnyView(
                 availabilityPicker(
                     title: "list.filter.openSSFAvailability",
                     icon: "checkmark.shield",
-                    selection: $vm.openSSFAvailabilityFilter
+                    selection: globalFilterBinding(\.openSSFAvailabilityFilter)
                 )
             )),
             .divider(id: "after-signal-availability"),
-            .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
-            .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
+            .toggle(
+                id: "hideArchived",
+                label: "settings.general.hideArchived",
+                icon: "archivebox",
+                isOn: globalFilterBinding(\.hideArchived)
+            ),
+            .toggle(
+                id: "hideForks",
+                label: "settings.general.hideForks",
+                icon: "tuningfork",
+                isOn: globalFilterBinding(\.hideForks)
+            )
         ]
 
         let leading = AnyView(
@@ -751,9 +760,9 @@ struct RepoListView: View {
                 UnifiedFilterMenu(
                     items: filterItems,
                     isAnyFilterActive: viewModel.hasActiveFilter,
-                    accessibilityLabel: viewModel.statusFilter == nil
+                    accessibilityLabel: effectiveFilters.statusFilter == nil
                         ? "list.filter.status"
-                        : LocalizedStringKey(viewModel.statusFilter?.localizedDisplayName ?? "list.filter.status"),
+                        : LocalizedStringKey(effectiveFilters.statusFilter?.localizedDisplayName ?? "list.filter.status"),
                     onReset: { viewModel.resetAllFilters() }
                 )
                 .onChange(of: viewModel.hideArchived) { _, newValue in
@@ -825,14 +834,13 @@ struct RepoListView: View {
 
     @MainActor
     private func globalFilterMenu() -> some View {
-        @Bindable var vm = viewModel
         let filterItems: [FilterMenuItem] = [
             .content(id: "starStatus", view: AnyView(
-                starFilterSection(selection: $vm.starFilter)
+                starFilterSection(selection: globalFilterBinding(\.starFilter))
             )),
             .divider(id: "after-star-status"),
             .content(id: "library", view: AnyView(
-                libraryFilterSection(selection: $vm.libraryFilter)
+                libraryFilterSection(selection: globalFilterBinding(\.libraryFilter))
             )),
             .divider(id: "after-library"),
             .content(id: "language", view: AnyView(
@@ -843,26 +851,36 @@ struct RepoListView: View {
                 availabilityPicker(
                     title: "list.filter.wikiAvailability",
                     icon: "doc.text.magnifyingglass",
-                    selection: $vm.wikiAvailabilityFilter
+                    selection: globalFilterBinding(\.wikiAvailabilityFilter)
                 )
             )),
             .content(id: "healthAvailability", view: AnyView(
                 availabilityPicker(
                     title: "list.filter.healthAvailability",
                     icon: "heart.text.square",
-                    selection: $vm.healthAvailabilityFilter
+                    selection: globalFilterBinding(\.healthAvailabilityFilter)
                 )
             )),
             .content(id: "openSSFAvailability", view: AnyView(
                 availabilityPicker(
                     title: "list.filter.openSSFAvailability",
                     icon: "checkmark.shield",
-                    selection: $vm.openSSFAvailabilityFilter
+                    selection: globalFilterBinding(\.openSSFAvailabilityFilter)
                 )
             )),
             .divider(id: "after-signal-availability"),
-            .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
-            .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
+            .toggle(
+                id: "hideArchived",
+                label: "settings.general.hideArchived",
+                icon: "archivebox",
+                isOn: globalFilterBinding(\.hideArchived)
+            ),
+            .toggle(
+                id: "hideForks",
+                label: "settings.general.hideForks",
+                icon: "tuningfork",
+                isOn: globalFilterBinding(\.hideForks)
+            )
         ]
 
         return UnifiedFilterMenu(
@@ -2015,23 +2033,36 @@ struct RepoListView: View {
         }
     }
 
+    /// Toolbar setter 统一经过 ViewModel，确保用户操作能退出临时钻取会话并恢复持久语义。
+    private func globalFilterBinding<Value>(
+        _ keyPath: WritableKeyPath<GlobalRepoFilterState, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { viewModel.effectiveGlobalFilterState[keyPath: keyPath] },
+            set: { viewModel.setGlobalFilterFromUser(keyPath, to: $0) }
+        )
+    }
+
     private func globalLanguageBinding(for language: String) -> Binding<Bool> {
         Binding(
             get: {
-                viewModel.globalFilterLanguages.contains {
+                viewModel.effectiveGlobalFilterState.globalFilterLanguages.contains {
                     $0.caseInsensitiveCompare(language) == .orderedSame
                 }
             },
             set: { isOn in
+                let current = viewModel.effectiveGlobalFilterState.globalFilterLanguages
+                let updated: [String]
                 if isOn {
-                    viewModel.globalFilterLanguages = AppSettings.normalizedLanguageList(
-                        viewModel.globalFilterLanguages + [language]
+                    updated = AppSettings.normalizedLanguageList(
+                        current + [language]
                     )
                 } else {
-                    viewModel.globalFilterLanguages = viewModel.globalFilterLanguages.filter {
+                    updated = current.filter {
                         $0.caseInsensitiveCompare(language) != .orderedSame
                     }
                 }
+                viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: updated)
             }
         )
     }
@@ -2095,9 +2126,9 @@ struct RepoListView: View {
         VStack(alignment: .leading, spacing: 4) {
             filterSectionHeader(title: "list.filter.language", icon: "globe")
 
-            if !viewModel.globalFilterLanguages.isEmpty {
+            if !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
                 Button {
-                    viewModel.globalFilterLanguages = []
+                    viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: [])
                 } label: {
                     Label("list.filter.language.clearSelection", systemImage: "xmark.circle")
                 }

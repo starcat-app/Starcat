@@ -66,7 +66,11 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.retainedAfterUnstarCount == 1)
         #expect(snapshot.knownLanguageProjectCount == 2)
         #expect(snapshot.unknownLanguageProjectCount == 1)
-        #expect(snapshot.topStarredRepositories.first == .init(fullName: "octo/demo-2", stars: 120))
+        #expect(snapshot.starredStatusCounts.contains(.init(name: "using", count: 1)))
+        #expect(snapshot.starredStatusCounts.contains(.init(name: "unread", count: 1)))
+        #expect(snapshot.starredTaggedProjectCount == 0)
+        #expect(snapshot.starredUntaggedProjectCount == 2)
+        #expect(snapshot.topStarredRepositories.first == .init(repoID: 2, fullName: "octo/demo-2", stars: 120))
         #expect(snapshot.promptContext().contains("octo/demo-2 (120 stars)"))
 
         let prompt = KnowledgeRAGPromptBuilder().build(
