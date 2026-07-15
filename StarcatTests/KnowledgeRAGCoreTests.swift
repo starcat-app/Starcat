@@ -12,6 +12,56 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @Test("单 source 重建只读取对应数据")
+    func sourceAwareReadPlan() {
+        let readme = RAGSourceReadPlan(sources: [.readme])
+        #expect(readme.readsReadme && !readme.readsNote && !readme.readsSummary)
+        #expect(!readme.readsTags && !readme.readsMetadataSnapshot)
+
+        let notes = RAGSourceReadPlan(sources: [.notes])
+        #expect(!notes.readsReadme && notes.readsNote && !notes.readsSummary)
+        #expect(!notes.readsTags && !notes.readsMetadataSnapshot)
+
+        let summary = RAGSourceReadPlan(sources: [.summary])
+        #expect(!summary.readsReadme && !summary.readsNote && summary.readsSummary)
+        #expect(!summary.readsTags && !summary.readsMetadataSnapshot)
+
+        let metadata = RAGSourceReadPlan(sources: [.metadata])
+        #expect(!metadata.readsReadme && metadata.readsNote && !metadata.readsSummary)
+        #expect(metadata.readsTags && metadata.readsMetadataSnapshot)
+    }
+
+    @Test("单仓摘要读取只返回该仓库最新记录")
+    func latestSummaryForRepository() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 7_001)
+        try await database.insertRepoFixture(id: 7_002)
+        let repository = GRDBAISummaryRepository(database: database)
+        try await repository.upsert(.init(
+            repoId: 7_001,
+            model: "older",
+            sourceHash: "older",
+            summaryJson: "{}",
+            generatedAt: "2026-07-15T00:00:00Z"
+        ))
+        try await repository.upsert(.init(
+            repoId: 7_001,
+            model: "newer",
+            sourceHash: "newer",
+            summaryJson: "{}",
+            generatedAt: "2026-07-16T00:00:00Z"
+        ))
+        try await repository.upsert(.init(
+            repoId: 7_002,
+            model: "other-repo",
+            sourceHash: "other",
+            summaryJson: "{}",
+            generatedAt: "2026-07-17T00:00:00Z"
+        ))
+
+        #expect(try await repository.fetchLatest(repoId: 7_001)?.model == "newer")
+        #expect(try await repository.fetchLatest(repoId: 9_999) == nil)
+    }
     @Test("README 重建使用有界并发且进度按完成数单调递增")
     func readmeRebuildUsesBoundedConcurrencyWithStableProgress() async throws {
         let probe = RAGBoundedConcurrencyProbe()

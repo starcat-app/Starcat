@@ -90,7 +90,7 @@
 - [x] **分片计算移出主线程**：Repository 快照读取、数据库写入和状态发布仍由 `@MainActor` 协调；Markdown 解析与 README/Notes/Summary/Metadata chunk build 改由 detached worker 执行，显式桥接父任务取消，回归测试锁定输出不变 — `RAGChunkBuilder.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **外部索引增量同步**：source debounce、批量重建与 embedding 写回共用修订号变更集；进程首次或配置/模型变化才全量初始化，后续按 chunk upsert/delete Meilisearch 与 Qdrant，人工编辑、恢复、下架和永久删除同样接入；Metadata 仅同步 Meilisearch — `RAGExternalSearchProviders.swift`、`KnowledgeRAGIndexBuilder.swift`、`RAGChunkRepository.swift`、`KnowledgeRAGWorkspaceWindowController.swift` — 2026-07-16。
 - [x] **本地向量扫描基线**：以 18,465 个真实 ready chunk、1024 维、20 次热扫描记录 P50/P95、峰值内存和取消延迟；共享余弦内核改用 Accelerate/vDSP 且复用 query 范数，P95 由 4,372.39 ms 降至 187.75 ms，内存增量由 24.31 MB 降至 14.05 MB；证据支持保留当前本地上限与可选 Qdrant，不追加 migration — `SemanticSearchService.swift`、`RAGSearchProviders.swift`、`RAGVectorScanBenchmarkTests.swift`、`RAG测试与评测方案.md` — 2026-07-16。
-- [ ] **Source-aware 重建读取**：单 source 刷新只读取当前 source 所需的 Summary、Note、Tags、README 和 Metadata，避免为单仓库读取全库 Summary 或无关数据。
+- [x] **Source-aware 重建读取**：用显式读取计划约束 source 依赖；README/Notes/Summary 只读自身数据，Metadata 才读 Note、Tags 与本地事实缓存；单仓摘要改为 `ORDER BY generated_at DESC LIMIT 1`，全库重建仍一次批量预取 — `KnowledgeRAGIndexBuilder.swift`、`AISummaryRepository.swift`、`KnowledgeRAGCoreTests.swift` — 2026-07-16。
 - [ ] **候选仓库轻量查询**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询。
 - [ ] **元数据快照版本缓存**：按数据修订版本缓存 Planner/Generator 元数据快照，不得盲用可能过期的 UI 快照。
 - [ ] **会话持久化增量更新**：回答完成后直接追加本轮持久化结果，不每轮重载全部消息与引用；保留全量重载作为切换会话和错误恢复路径。

@@ -19,6 +19,8 @@ import GRDB
 
 protocol AISummaryRepositoryProtocol: Sendable {
     func find(repoId: Int64, model: String) async throws -> AISummaryRecord?
+    /// 单 repo RAG 刷新不应为找一条摘要扫描并解码全库记录。
+    func fetchLatest(repoId: Int64) async throws -> AISummaryRecord?
     func upsert(_ record: AISummaryRecord) async throws
 
     /// 批量返回每个 repo 最新生成的一条 AI 摘要记录。
@@ -45,6 +47,17 @@ struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
                 SELECT * FROM ai_summaries
                 WHERE repo_id = ? AND model = ?
                 """, arguments: [repoId, model])
+        }
+    }
+
+    func fetchLatest(repoId: Int64) async throws -> AISummaryRecord? {
+        try await database.writer.read { db in
+            try AISummaryRecord.fetchOne(db, sql: """
+                SELECT * FROM ai_summaries
+                WHERE repo_id = ?
+                ORDER BY generated_at DESC
+                LIMIT 1
+                """, arguments: [repoId])
         }
     }
 

@@ -106,6 +106,24 @@ private struct RAGExternalIndexSyncFingerprint: Equatable {
     }
 }
 
+/// 单 source 刷新的最小读取集合。Metadata 需要 Note 中的状态/入库时间和用户标签，
+/// 其它 source 之间没有隐式依赖，不能因为共用 Builder 就读取无关表或大正文。
+struct RAGSourceReadPlan: Equatable, Sendable {
+    var readsReadme: Bool
+    var readsNote: Bool
+    var readsSummary: Bool
+    var readsTags: Bool
+    var readsMetadataSnapshot: Bool
+
+    init(sources: Set<RAGChunkSource>) {
+        readsReadme = sources.contains(.readme)
+        readsNote = sources.contains(.notes) || sources.contains(.metadata)
+        readsSummary = sources.contains(.summary)
+        readsTags = sources.contains(.metadata)
+        readsMetadataSnapshot = sources.contains(.metadata)
+    }
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGIndexBuilder {
@@ -351,10 +369,10 @@ final class KnowledgeRAGIndexBuilder {
         try entitlementGate.requirePro(.knowledgeRAG)
         guard try await noteRepository.fetchLibraryState(repoId: repo.id) == .inLibrary else { return }
 
-        let summaries = try await summaryRepository.fetchLatestPerRepo()
+        let summary = try await summaryRepository.fetchLatest(repoId: repo.id)
         try await fetchMissingReadmes(for: [repo], recordsRefreshSummary: false)
         status = .building(processedRepos: 0, totalRepos: 1)
-        try await rebuildSources(for: repo, summary: summaries[repo.id], sources: Set(RAGChunkSource.allCases))
+        try await rebuildSources(for: repo, summary: summary, sources: Set(RAGChunkSource.allCases))
         status = .building(processedRepos: 1, totalRepos: 1)
         try await embedPendingChunks()
         repositoryRefreshDates[repo.id] = Date()
@@ -368,7 +386,9 @@ final class KnowledgeRAGIndexBuilder {
         do {
             try entitlementGate.requirePro(.knowledgeRAG)
             guard try await noteRepository.fetchLibraryState(repoId: repo.id) == .inLibrary else { return }
-            let summary = try await summaryRepository.fetchLatestPerRepo()[repo.id]
+            let summary = sources.contains(.summary)
+                ? try await summaryRepository.fetchLatest(repoId: repo.id)
+                : nil
             try await rebuildSources(for: repo, summary: summary, sources: sources)
             try await embedPendingChunks()
         } catch EntitlementGateError.requiresPro {
@@ -478,11 +498,14 @@ final class KnowledgeRAGIndexBuilder {
         summary: AISummaryRecord?,
         sources: Set<RAGChunkSource>
     ) async throws {
-        let note = try await noteRepository.find(repoId: repo.id)
-        let tags = try await repoTagRepository.fetchTags(forRepo: repo.id).map(\.name)
-        let readme = sources.contains(.readme) ? try await readmeRepository.findContent(repoId: repo.id) : nil
-        let summaryText = summary.flatMap(Self.summaryText)
-        let metadataSnapshot = sources.contains(.metadata) ? await loadMetadataSnapshot(repoID: repo.id) : nil
+        let readPlan = RAGSourceReadPlan(sources: sources)
+        let note = readPlan.readsNote ? try await noteRepository.find(repoId: repo.id) : nil
+        let tags = readPlan.readsTags
+            ? try await repoTagRepository.fetchTags(forRepo: repo.id).map(\.name)
+            : []
+        let readme = readPlan.readsReadme ? try await readmeRepository.findContent(repoId: repo.id) : nil
+        let summaryText = readPlan.readsSummary ? summary.flatMap(Self.summaryText) : nil
+        let metadataSnapshot = readPlan.readsMetadataSnapshot ? await loadMetadataSnapshot(repoID: repo.id) : nil
         let output = try await RAGChunkBuildExecutor.build(RAGChunkBuildInput(
             repo: repo,
             readme: readme,
