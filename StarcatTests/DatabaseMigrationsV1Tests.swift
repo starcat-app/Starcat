@@ -63,9 +63,11 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v7-knowledge-rag"))
             #expect(applied.contains("v8-rag-suggested-actions"))
             #expect(applied.contains("v9-rag-metadata-keyword-only"))
+            #expect(applied.contains("v10-rag-conversation-pinned-at"))
 
             let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
             #expect(conversationColumns.contains("is_pinned"))
+            #expect(conversationColumns.contains("pinned_at"))
             #expect(conversationColumns.contains("group_id"))
             #expect(conversationColumns.contains("context_summary"))
             #expect(conversationColumns.contains("context_summary_message_count"))

@@ -2162,10 +2162,11 @@ private struct ProBenefitTile: View {
                 .frame(width: 20, height: 20, alignment: .leading)
 
             Text(titleKey)
-                .font(.caption.weight(.semibold))
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.primary)
 
             Text(detailKey)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

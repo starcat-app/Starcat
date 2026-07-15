@@ -28,6 +28,8 @@ struct RAGConversationSummary: Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
     var isPinned: Bool
+    /// 最后一次置顶时刻（ISO8601）；`nil` = 未置顶。置顶区按此降序，「最后置顶」永远在最上。
+    var pinnedAt: String?
     /// `nil` = 未分组（挂在「最近问答」根级）。
     var groupID: UUID?
     var createdAt: String
@@ -102,7 +104,7 @@ protocol RAGConversationStoring: Sendable {
     /// 删除单条消息（编辑后重发前清掉「仅用户、无回答」的孤儿消息）。
     func deleteMessage(id: UUID) async throws
     func renameConversation(id: UUID, title: String) async throws
-    /// 置顶 / 取消置顶；不更新 `updated_at`，避免置顶打乱「最近活跃」排序。
+    /// 置顶 / 取消置顶；写 `pinned_at`（最后置顶时刻），不更新 `updated_at`，避免打乱「最近活跃」排序。
     func setConversationPinned(id: UUID, isPinned: Bool) async throws
     /// 移动到分组；`groupID == nil` 表示移出到未分组。不更新 `updated_at`。
     func setConversationGroup(id: UUID, groupID: UUID?) async throws
@@ -129,14 +131,15 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         let title = normalizedTitle(title ?? String.l10n("rag.workspace.newConversation"))
         try await database.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO rag_conversations (id, title, scope, is_pinned, group_id, created_at, updated_at)
-                VALUES (?, ?, 'knowledge', 0, ?, ?, ?)
+                INSERT INTO rag_conversations (id, title, scope, is_pinned, pinned_at, group_id, created_at, updated_at)
+                VALUES (?, ?, 'knowledge', 0, NULL, ?, ?, ?)
                 """, arguments: [id.uuidString, title, groupID?.uuidString, now, now])
         }
         return RAGConversationSummary(
             id: id,
             title: title,
             isPinned: false,
+            pinnedAt: nil,
             groupID: groupID,
             createdAt: now,
             updatedAt: now
@@ -146,9 +149,9 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func listConversations() async throws -> [RAGConversationSummary] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT id, title, is_pinned, group_id, context_summary, context_summary_message_count, created_at, updated_at
+                SELECT id, title, is_pinned, pinned_at, group_id, context_summary, context_summary_message_count, created_at, updated_at
                 FROM rag_conversations
-                ORDER BY is_pinned DESC, updated_at DESC
+                ORDER BY is_pinned DESC, pinned_at DESC, updated_at DESC
                 """)
             return rows.compactMap(Self.summary(row:))
         }
@@ -157,7 +160,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func loadConversation(id: UUID) async throws -> RAGConversationDetail? {
         try await database.writer.read { db in
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT id, title, is_pinned, group_id, context_summary, context_summary_message_count, created_at, updated_at
+                SELECT id, title, is_pinned, pinned_at, group_id, context_summary, context_summary_message_count, created_at, updated_at
                 FROM rag_conversations WHERE id = ?
                 """, arguments: [id.uuidString]),
                   let summary = Self.summary(row: row) else { return nil }
@@ -406,10 +409,20 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
 
     func setConversationPinned(id: UUID, isPinned: Bool) async throws {
         try await database.writer.write { db in
-            try db.execute(
-                sql: "UPDATE rag_conversations SET is_pinned = ? WHERE id = ?",
-                arguments: [isPinned, id.uuidString]
-            )
+            // 置顶：写入 pinned_at=now，使「最后置顶」升到置顶区顶部；不改 updated_at。
+            // 取消：清空 pinned_at。is_pinned 用 0/1，避免 Bool 绑定在个别 SQLite 路径上歧义。
+            if isPinned {
+                let now = ISO8601DateFormatter.shared.string(from: Date())
+                try db.execute(
+                    sql: "UPDATE rag_conversations SET is_pinned = 1, pinned_at = ? WHERE id = ?",
+                    arguments: [now, id.uuidString]
+                )
+            } else {
+                try db.execute(
+                    sql: "UPDATE rag_conversations SET is_pinned = 0, pinned_at = NULL WHERE id = ?",
+                    arguments: [id.uuidString]
+                )
+            }
         }
     }
 
@@ -503,12 +516,16 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
 
     private static func summary(row: Row) -> RAGConversationSummary? {
         guard let id = UUID(uuidString: row["id"]) else { return nil }
-        let isPinned: Bool = row["is_pinned"]
+        // SQLite boolean 以整数落库；按 Int 判真，避免 Bool 绑定路径偶发读成未置顶。
+        let pinnedRaw: Int = row["is_pinned"]
+        let isPinned = pinnedRaw != 0
+        let pinnedAt: String? = row["pinned_at"]
         let groupIDString: String? = row["group_id"]
         return RAGConversationSummary(
             id: id,
             title: row["title"],
             isPinned: isPinned,
+            pinnedAt: isPinned ? pinnedAt : nil,
             groupID: groupIDString.flatMap(UUID.init(uuidString:)),
             createdAt: row["created_at"],
             updatedAt: row["updated_at"]

@@ -165,11 +165,11 @@ struct ActivityView: View {
                 activityItemList(viewModel)
             }
         }
-        .confirmationDialog(
+        .alert(
             "activity.following.clear.confirm",
-            isPresented: $showClearFollowingConfirmation,
-            titleVisibility: .visible
+            isPresented: $showClearFollowingConfirmation
         ) {
+            Button("general.cancel", role: .cancel) {}
             Button("activity.following.clear.action", role: .destructive) {
                 Task {
                     await viewModel.clearFollowingFeed()
@@ -180,11 +180,11 @@ struct ActivityView: View {
         } message: {
             Text("activity.following.clear.message")
         }
-        .confirmationDialog(
+        .alert(
             "activity.announcement.clear.confirm",
-            isPresented: $showClearAnnouncementConfirmation,
-            titleVisibility: .visible
+            isPresented: $showClearAnnouncementConfirmation
         ) {
+            Button("general.cancel", role: .cancel) {}
             Button("activity.announcement.clear.action", role: .destructive) {
                 Task {
                     await viewModel.clearAnnouncementFeed()

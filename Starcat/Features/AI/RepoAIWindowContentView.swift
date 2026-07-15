@@ -1284,10 +1284,9 @@ struct RepoAIWindowContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .confirmationDialog(
-            String.l10n("ai.assistant.chat.session.clearCurrentRepo.confirm"),
-            isPresented: $pendingClearCurrentRepoConfirm,
-            titleVisibility: .visible
+        .alert(
+            "ai.assistant.chat.session.clearCurrentRepo.confirm",
+            isPresented: $pendingClearCurrentRepoConfirm
         ) {
             Button("general.clear", role: .destructive) {
                 Task { await chat.deleteAllForCurrentRepo(repo: repo) }

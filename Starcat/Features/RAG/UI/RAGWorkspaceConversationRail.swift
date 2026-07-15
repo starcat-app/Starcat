@@ -103,9 +103,9 @@ struct RAGWorkspaceConversationRail: View {
                         handleConversationDrop(providers, toGroupID: nil)
                     }
 
-                    // 置顶区：跨分组的置顶会话集中上浮到最顶部；未置顶会话仍留在各自分组 / 未分组。
-                    if !viewModel.pinnedConversations.isEmpty {
-                        pinnedSection
+                    // 置顶会话直接顶到列表最前，不单独做「置顶」分组标题；靠 pin 图标区分即可。
+                    ForEach(Array(viewModel.pinnedConversations.enumerated()), id: \.element.id) { index, conversation in
+                        conversationRow(conversation, rowIndex: index)
                     }
 
                     ForEach(viewModel.conversationGroups) { group in
@@ -178,28 +178,6 @@ struct RAGWorkspaceConversationRail: View {
                     : "rag.browser.open"
             )
         )
-    }
-
-    /// 顶部置顶区：集中呈现所有置顶会话（跨分组 + 未分组），点「取消置顶」后会自动回落到原分组。
-    @ViewBuilder
-    var pinnedSection: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "pin.fill")
-                .font(iconFont(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text("rag.workspace.pinnedConversations")
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
-        .padding(.bottom, 2)
-
-        ForEach(Array(viewModel.pinnedConversations.enumerated()), id: \.element.id) { index, conversation in
-            conversationRow(conversation, rowIndex: index)
-        }
     }
 
     func groupSection(_ group: RAGConversationGroup) -> some View {

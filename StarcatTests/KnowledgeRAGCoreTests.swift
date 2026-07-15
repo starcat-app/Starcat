@@ -309,6 +309,7 @@ struct KnowledgeRAGCoreTests {
                         id: id,
                         title: title,
                         isPinned: false,
+                        pinnedAt: nil,
                         groupID: nil,
                         createdAt: "2026-07-15T00:00:00Z",
                         updatedAt: "2026-07-15T00:00:00Z"

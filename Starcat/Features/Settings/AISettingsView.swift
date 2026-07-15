@@ -170,15 +170,14 @@ struct AISettingsTab: View {
             aiRepoContextSection
             privacySection
         }
-        .confirmationDialog(
-            String.l10n("settings.aiIndex.rebuildAll.confirmTitle"),
-            isPresented: $pendingRebuildAllConfirm,
-            titleVisibility: .visible
+        .alert(
+            "settings.aiIndex.rebuildAll.confirmTitle",
+            isPresented: $pendingRebuildAllConfirm
         ) {
-            Button(String.l10n("settings.aiIndex.rebuildAll.confirm"), role: .destructive) {
+            Button("settings.aiIndex.rebuildAll.confirm", role: .destructive) {
                 dependencies.semanticIndexBuilder.rebuildAll()
             }
-            Button(String.l10n("general.cancel"), role: .cancel) {}
+            Button("general.cancel", role: .cancel) {}
         } message: {
             Text("settings.aiIndex.rebuildAll.confirmMessage")
         }
@@ -212,14 +211,13 @@ struct AISettingsTab: View {
             }
         })
         // HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
-        // 删除服务商二次确认。用 `presenting:` 把 profile 注入到 dialog 闭包，
+        // 删除服务商二次确认。用 `presenting:` 把 profile 注入到 alert 闭包，
         // 让按钮标题能显示具体服务商名（"删除「DeepSeek」"），减少误删风险。
         // 用 `pendingDeleteProfileID` 而非整个 profile 作为状态源，避免数组刷新
         // 期间引用悬空（见 `pendingDeleteProfileID` 注释）。
-        .confirmationDialog(
+        .alert(
             "settings.ai.provider.deleteConfirm.title",
             isPresented: deleteConfirmationBinding,
-            titleVisibility: .visible,
             presenting: pendingDeleteProfile
         ) { profile in
             Button(role: .destructive) {

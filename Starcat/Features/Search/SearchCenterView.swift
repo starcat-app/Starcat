@@ -178,10 +178,9 @@ struct SearchCenterView: View {
                 isFilterDrawerPresented = false
             }
         }
-        .confirmationDialog(
+        .alert(
             "library.removeUsing.confirmTitle",
-            isPresented: $isConfirmingUsingLibraryRemoval,
-            titleVisibility: .visible
+            isPresented: $isConfirmingUsingLibraryRemoval
         ) {
             Button("library.removeUsing.confirmAction", role: .destructive) {
                 if let candidate = pendingUsingRemovalCandidate {
@@ -695,10 +694,9 @@ struct SearchCenterView: View {
                 }
             }
         }
-        .confirmationDialog(
+        .alert(
             "search.history.clearConfirm.title",
-            isPresented: $showingClearHistoryAlert,
-            titleVisibility: .visible
+            isPresented: $showingClearHistoryAlert
         ) {
             Button("search.history.clearAll", role: .destructive) {
                 Task { await viewModel.clearHistory() }

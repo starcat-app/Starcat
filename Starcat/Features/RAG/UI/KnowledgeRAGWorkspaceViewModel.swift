@@ -833,14 +833,22 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 置顶 / 取消置顶后刷新列表（置顶项排在最前）。
+    /// 置顶 / 取消置顶：先本地乐观更新，再落库刷新，保证钉子图标与置顶区位置立刻响应。
     func setConversationPinned(id: UUID, isPinned: Bool) async {
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        if let index = conversations.firstIndex(where: { $0.id == id }) {
+            conversations[index].isPinned = isPinned
+            conversations[index].pinnedAt = isPinned ? now : nil
+            conversations.sort(by: Self.conversationListOrder)
+        }
         do {
             try await conversationStore.setConversationPinned(id: id, isPinned: isPinned)
             conversationPresentationCache.remove(id)
             conversations = try await conversationStore.listConversations()
         } catch {
             errorMessage = error.localizedDescription
+            // 写库失败时回读权威列表，撤销乐观态。
+            conversations = (try? await conversationStore.listConversations()) ?? conversations
         }
     }
 
@@ -905,15 +913,26 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversations.filter { $0.groupID == groupID }
     }
 
-    /// 所有置顶会话（跨分组 + 未分组）集中呈现在侧栏顶部「置顶区」。
-    /// `conversations` 已由 store 按 `is_pinned DESC, updated_at DESC` 排序，这里直接过滤即保持最新在前。
+    /// 所有置顶会话（跨分组 + 未分组）直接顶到侧栏列表最前，不单独成组。
+    /// 顺序由 store 的 `pinned_at DESC` 保证：「最后置顶」永远在最上。
     var pinnedConversations: [RAGConversationSummary] {
-        conversations.filter { $0.isPinned }
+        conversations.filter(\.isPinned)
     }
 
-    /// 分组 / 未分组内的「未置顶」会话；置顶项已上浮到顶部置顶区，避免重复呈现。
+    /// 分组 / 未分组内的「未置顶」会话；置顶项已上浮到列表顶部，避免重复呈现。
     func unpinnedConversations(inGroupID groupID: UUID?) -> [RAGConversationSummary] {
         conversations.filter { $0.groupID == groupID && !$0.isPinned }
+    }
+
+    /// 与 `listConversations` SQL 一致：置顶优先，同组内最后置顶在前，其余按最近活跃。
+    private static func conversationListOrder(_ lhs: RAGConversationSummary, _ rhs: RAGConversationSummary) -> Bool {
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned && !rhs.isPinned }
+        if lhs.isPinned, rhs.isPinned {
+            let leftPinned = lhs.pinnedAt ?? ""
+            let rightPinned = rhs.pinnedAt ?? ""
+            if leftPinned != rightPinned { return leftPinned > rightPinned }
+        }
+        return lhs.updatedAt > rhs.updatedAt
     }
 
     func send() {

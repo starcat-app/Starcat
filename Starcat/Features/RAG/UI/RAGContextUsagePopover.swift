@@ -21,13 +21,17 @@ struct RAGContextUsageButton: View {
             //（浅色黑 / 深色白），避免固定蓝色在某一主题下抢视觉或对比不足。
             ZStack {
                 Circle()
-                    .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
+                    .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
                 Circle()
                     .trim(from: 0, to: usage.usageRatio)
                     .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            .frame(width: 16, height: 16)
+            .frame(width: 11, height: 11)
+            // 描边 Circle 只有那圈细线可点，中间是空的（去掉数字后更明显）。
+            // 用一个透明矩形把整块区域变成可点热区，并对齐右侧图标按钮的 24×24 尺寸。
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

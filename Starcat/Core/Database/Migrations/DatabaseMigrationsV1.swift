@@ -59,6 +59,19 @@ enum DatabaseMigrations {
         registerV7(into: &migrator)
         registerV8(into: &migrator)
         registerV9(into: &migrator)
+        registerV10(into: &migrator)
+    }
+
+    // MARK: - v10-rag-conversation-pinned-at：置顶时间戳（2026-07-15）
+
+    /// 置顶顺序必须跟「最后一次置顶操作」走，不能复用 `updated_at`（发消息也会改它），
+    /// 否则旧会话被置顶后仍沉在置顶区底部，看起来像 Pin 没生效。
+    /// 对无表 / 已有列都幂等；已置顶行用 `updated_at` 回填，保留相对次序。
+    private static func registerV10(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v10-rag-conversation-pinned-at") { db in
+            guard try db.tableExists("rag_conversations") else { return }
+            try ensureRAGConversationPinnedAtSchema(db)
+        }
     }
 
     // MARK: - v9-rag-metadata-keyword-only：动态 Metadata 改为纯 FTS（2026-07-14）
@@ -1434,6 +1447,8 @@ enum DatabaseMigrations {
             t.column("scope", .text).notNull().defaults(to: "knowledge")
             // 置顶排在列表最前；不改 updated_at，避免置顶本身影响「最近活跃」语义。
             t.column("is_pinned", .boolean).notNull().defaults(to: false)
+            // 最后置顶时刻；置顶区按此 DESC，取消置顶后置 NULL。
+            t.column("pinned_at", .text)
             // 一级分组：NULL = 未分组；删除分组时会话回到未分组（ON DELETE SET NULL）。
             t.column("group_id", .text)
                 .references("rag_conversation_groups", column: "id", onDelete: .setNull)
@@ -1449,6 +1464,11 @@ enum DatabaseMigrations {
             index: "idx_rag_conversations_pinned_updated",
             on: "rag_conversations",
             columns: ["is_pinned", "updated_at"]
+        )
+        try db.create(
+            index: "idx_rag_conversations_pinned_at",
+            on: "rag_conversations",
+            columns: ["is_pinned", "pinned_at"]
         )
         try db.create(
             index: "idx_rag_conversations_group_updated",
@@ -1610,6 +1630,32 @@ enum DatabaseMigrations {
                 )
             }
             try ensureRAGConversationGroupsSchema(db)
+            try ensureRAGConversationPinnedAtSchema(db)
+        }
+    }
+
+    /// 幂等补齐 `pinned_at`：置顶区按「最后置顶时刻」降序，取消后清空。
+    private static func ensureRAGConversationPinnedAtSchema(_ db: Database) throws {
+        guard try db.tableExists("rag_conversations") else { return }
+        let columns = try db.columns(in: "rag_conversations").map(\.name)
+        if !columns.contains("pinned_at") {
+            try db.alter(table: "rag_conversations") { t in
+                t.add(column: "pinned_at", .text)
+            }
+            // 已置顶行用 updated_at 回填，避免升级后全部挤在同一 NULL 桶里顺序乱跳。
+            try db.execute(sql: """
+                UPDATE rag_conversations
+                SET pinned_at = updated_at
+                WHERE is_pinned = 1 AND pinned_at IS NULL
+                """)
+        }
+        let indexes = try db.indexes(on: "rag_conversations").map(\.name)
+        if !indexes.contains("idx_rag_conversations_pinned_at") {
+            try db.create(
+                index: "idx_rag_conversations_pinned_at",
+                on: "rag_conversations",
+                columns: ["is_pinned", "pinned_at"]
+            )
         }
     }
 

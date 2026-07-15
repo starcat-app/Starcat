@@ -1097,8 +1097,8 @@ private struct StorageSettingsTab: View {
     @State private var chatHistoryStore = DiskChatHistoryStore.shared
 
     /// 行内"清理"按钮的待执行动作。
-    /// 单项缓存继续共用 confirmationDialog；"删除全部缓存"已经升级为危险区 sheet，
-    /// 但保留 `.all` 作为执行分支，避免复制清理代码。
+    /// 单项缓存使用系统 alert 二次确认，保持 macOS 标准标题 / 正文层级；
+    /// "删除全部缓存"已经升级为危险区 sheet，但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
         case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory
         case ragIndex, ragHistory, aiContext, codeFlow, codebaseMemory, all
@@ -1458,13 +1458,12 @@ private struct StorageSettingsTab: View {
             chatHistoryStore.reload()
             await refreshRAGStorageStatistics()
         }
-        .confirmationDialog(
+        .alert(
             pendingAction?.confirmTitle ?? "",
             isPresented: Binding(
                 get: { pendingAction != nil },
                 set: { if !$0 { pendingAction = nil } }
             ),
-            titleVisibility: .visible,
             presenting: pendingAction
         ) { action in
             Button("general.clear", role: .destructive) {

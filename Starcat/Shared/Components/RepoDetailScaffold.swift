@@ -296,10 +296,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .sheet(item: $proPaywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
-        .confirmationDialog(
+        .alert(
             "library.removeUsing.confirmTitle",
-            isPresented: $isConfirmingUsingLibraryRemoval,
-            titleVisibility: .visible
+            isPresented: $isConfirmingUsingLibraryRemoval
         ) {
             Button("library.removeUsing.confirmAction", role: .destructive) {
                 Task {

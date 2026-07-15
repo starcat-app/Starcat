@@ -28094,22 +28094,6 @@
         }
       }
     },
-    "rag.workspace.pinnedConversations": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pinned"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "置顶"
-          }
-        }
-      }
-    },
     "rag.workspace.recentConversations": {
       "localizations": {
         "en": {
@@ -58610,8 +58594,8 @@
     "rag.workspace.inspector.metadata.coverageFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@" } }
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } }
       }
     },
     "rag.workspace.inspector.metadata.sourceCoverageFormat": {

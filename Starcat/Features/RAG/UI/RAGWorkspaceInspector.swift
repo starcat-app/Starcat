@@ -579,7 +579,7 @@ struct RAGWorkspaceInspector: View {
                 ) {
                     openMetadataList(.allStars, status: .unread)
                 }
-                Text("/")
+                Text("·")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
                 metadataValueButton(
@@ -610,7 +610,7 @@ struct RAGWorkspaceInspector: View {
             )
             metadataMetricActionRow(
                 "rag.workspace.inspector.metadata.taggedRatio",
-                value: "\(localizedInteger(snapshot.starredTaggedProjectCount)) / \(localizedInteger(snapshot.starredUntaggedProjectCount))",
+                value: "\(localizedInteger(snapshot.starredTaggedProjectCount)) · \(localizedInteger(snapshot.starredUntaggedProjectCount))",
                 helpKey: "sidebar.untagged"
             ) {
                 openMetadataList(.untagged)
@@ -2835,7 +2835,7 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.caption2))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(progress.readyChunks.formatted()) / \(progress.totalChunks.formatted())")
+                Text("\(progress.readyChunks.formatted()) · \(progress.totalChunks.formatted())")
                     .font(ragFont(.caption2))
                     .monospacedDigit()
                     .foregroundStyle(liveProgress == nil ? Color.green : Color.accentColor)

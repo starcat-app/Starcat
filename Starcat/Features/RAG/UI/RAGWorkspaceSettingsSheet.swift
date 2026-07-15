@@ -142,6 +142,7 @@ private struct RAGPromptPlaceholderItem: Identifiable {
 
 struct RAGWorkspaceSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     @Bindable var settings: AppSettings
     @State private var section: RAGSettingsSection = .prompts
@@ -167,6 +168,10 @@ struct RAGWorkspaceSettingsSheet: View {
     @State private var rerankCredentialError: String?
     /// `apply(_:)` 写字段期间抬起，挡住误判「自定义」；用户手动拖滑杆 / 改数字时则放行。
     @State private var isApplyingRetrievalPreset = false
+    /// 常用项始终可见；其余低频配置默认收起，避免检索页退化成连续参数面板。
+    @State private var isAdvancedRetrievalExpanded = false
+    @State private var isRetrievalSourcesExpanded = false
+    @State private var isRerankExpanded = false
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -214,19 +219,6 @@ struct RAGWorkspaceSettingsSheet: View {
     /// 左栏只负责稳定导航；后续增加联网、模型等配置时不必重做布局。
     private var settingsSidebar: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
-            // 侧栏顶栏是整页标题，不是和「提示词 / 检索」同级的导航项；字号跟右侧 detailHeader 对齐。
-            HStack(spacing: interfaceScale.scaled(8)) {
-                Image(systemName: "gearshape")
-                    .font(interfaceScale.font(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: interfaceScale.scaled(18))
-                    .accessibilityHidden(true)
-                Text("rag.workspace.settings.title")
-                    .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
-                    .foregroundStyle(.primary)
-            }
-            .padding(.bottom, interfaceScale.scaled(8))
-
             ForEach(RAGSettingsSection.allCases) { item in
                 Button {
                     section = item
@@ -368,74 +360,89 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     private var promptSettingsContent: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-            settingsGroup(
-                titleKey: "rag.workspace.prompt.type.title",
-                systemImage: "text.quote"
-            ) {
-                HStack(spacing: interfaceScale.scaled(12)) {
-                    Picker("rag.workspace.prompt.title", selection: $tab) {
-                        ForEach(RAGPromptEditorTab.allCases) { item in
-                            Text(item.titleKey).tag(item)
+        ScrollView {
+            VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
+                settingsGroup(
+                    titleKey: "rag.workspace.prompt.type.title",
+                    systemImage: "text.quote"
+                ) {
+                    HStack(spacing: interfaceScale.scaled(12)) {
+                        Picker("rag.workspace.prompt.title", selection: $tab) {
+                            ForEach(RAGPromptEditorTab.allCases) { item in
+                                Text(item.titleKey).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+
+                        ResetIconButton(
+                            help: Text("rag.workspace.prompt.restoreHelp")
+                        ) {
+                            restoreCurrentTab()
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-
-                    ResetIconButton(
-                        help: Text("rag.workspace.prompt.restoreHelp")
-                    ) {
-                        restoreCurrentTab()
-                    }
+                }
+                settingsGroup(
+                    titleKey: "rag.workspace.prompt.system",
+                    systemImage: "text.alignleft"
+                ) {
+                    promptEditor(
+                        text: systemBinding,
+                        minHeight: interfaceScale.scaled(190)
+                    )
+                }
+                settingsGroup(
+                    titleKey: "rag.workspace.prompt.user",
+                    systemImage: "text.bubble"
+                ) {
+                    promptEditor(
+                        text: userBinding,
+                        minHeight: interfaceScale.scaled(108)
+                    )
                 }
             }
-
-            promptEditor(
-                titleKey: "rag.workspace.prompt.system",
-                text: systemBinding,
-                minHeight: interfaceScale.scaled(190)
-            )
-            .layoutPriority(1)
-
-            promptEditor(
-                titleKey: "rag.workspace.prompt.user",
-                text: userBinding,
-                minHeight: interfaceScale.scaled(108)
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, interfaceScale.scaled(RAGSettingsSheetMetrics.scrollTrailerGutter))
+            .padding(.bottom, interfaceScale.scaled(8))
         }
+        .scrollIndicators(.automatic)
+        .frame(maxHeight: .infinity)
     }
 
     private var retrievalSettingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-                settingsGroup(
+                retrievalSettingsGroup(
                     titleKey: "rag.workspace.retrieval.preset.title",
                     systemImage: "slider.horizontal.3"
                 ) {
                     presetPicker
                 }
-                settingsGroup(
+                retrievalSettingsGroup(
                     titleKey: "rag.workspace.retrieval.common.title",
                     systemImage: "line.3.horizontal.decrease.circle"
                 ) {
                     retrievalCommonSection
                 }
-                settingsGroup(
+                collapsibleRetrievalSettingsGroup(
                     titleKey: "rag.workspace.retrieval.advanced.title",
-                    systemImage: "gearshape.2"
+                    systemImage: "gearshape.2",
+                    isExpanded: $isAdvancedRetrievalExpanded
                 ) {
                     retrievalAdvancedSection
                 }
-                settingsGroup(
+                collapsibleRetrievalSettingsGroup(
                     titleKey: "rag.workspace.retrieval.sources.title",
-                    systemImage: "cylinder.split.1x2"
+                    systemImage: "cylinder.split.1x2",
+                    isExpanded: $isRetrievalSourcesExpanded
                 ) {
                     retrievalSourcesSection
                 }
-                settingsGroup(
+                collapsibleRetrievalSettingsGroup(
                     titleKey: "rag.workspace.rerank.title",
-                    systemImage: "arrow.up.arrow.down.circle"
+                    systemImage: "arrow.up.arrow.down.circle",
+                    isExpanded: $isRerankExpanded
                 ) {
                     rerankSection
                 }
@@ -479,7 +486,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 Slider(value: similarityBinding, in: 0.00...1.00, step: 0.01)
                     .controlSize(.small)
                 Text("rag.workspace.retrieval.minimumSimilarity.hint")
-                    .font(ragFont(.caption, scale: interfaceScale))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Divider()
@@ -513,7 +520,7 @@ struct RAGWorkspaceSettingsSheet: View {
             Toggle("rag.workspace.rerank.enabled", isOn: $rerankEnabled)
                 .font(ragFont(.body, scale: interfaceScale))
             Text("rag.workspace.rerank.enabled.hint")
-                .font(ragFont(.caption, scale: interfaceScale))
+                .font(.caption)
                 .foregroundStyle(.secondary)
             if rerankEnabled {
                 Divider()
@@ -562,7 +569,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 )
                 if let rerankCredentialError {
                     Text(rerankCredentialError)
-                        .font(ragFont(.caption, scale: interfaceScale))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -573,7 +580,7 @@ struct RAGWorkspaceSettingsSheet: View {
     private var retrievalSourcesSection: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
             Text("rag.workspace.retrieval.sources.hint")
-                .font(ragFont(.caption, scale: interfaceScale))
+                .font(.caption)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
                 sourceToggle(
@@ -636,6 +643,76 @@ struct RAGWorkspaceSettingsSheet: View {
                     Color(nsColor: .controlBackgroundColor).opacity(0.52),
                     in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                 )
+        }
+    }
+
+    /// 检索设置采用更清晰的容器边界；提示词编辑器仍保留其更适合长文本的原有密度。
+    private func retrievalSettingsGroup<Content: View>(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+            sectionTitle(titleKey, systemImage: systemImage)
+            retrievalSettingsCard(content: content)
+        }
+    }
+
+    /// 低频配置默认折叠，使用户先看到预设和常用阈值；标题整行均可点，符合设置页折叠交互规范。
+    private func collapsibleRetrievalSettingsGroup<Content: View>(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+            Button {
+                toggleRetrievalDisclosure(isExpanded)
+            } label: {
+                HStack(spacing: interfaceScale.scaled(6)) {
+                    sectionTitle(titleKey, systemImage: systemImage)
+                    Spacer(minLength: 0)
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: interfaceScale.scaled(20), height: interfaceScale.scaled(20))
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isExpanded.wrappedValue {
+                retrievalSettingsCard(content: content)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func retrievalSettingsCard<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .padding(interfaceScale.scaled(14))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.72),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.16), lineWidth: 0.5)
+            }
+    }
+
+    private func toggleRetrievalDisclosure(_ isExpanded: Binding<Bool>) {
+        if accessibilityReduceMotion {
+            isExpanded.wrappedValue.toggle()
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isExpanded.wrappedValue.toggle()
+            }
         }
     }
 
@@ -801,7 +878,9 @@ struct RAGWorkspaceSettingsSheet: View {
                     }
                 }
                 Text(hintKey)
-                    .font(ragFont(.caption, scale: interfaceScale))
+                    // 设置备注遵循规范的系统 `.caption`，通过动态字体档位自适应一次，
+                    // 不再叠加 RAG 工作台的手工字号倍率。
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -812,8 +891,9 @@ struct RAGWorkspaceSettingsSheet: View {
                         .font(ragFont(.body, scale: interfaceScale))
                         .foregroundStyle(.primary)
                     Text(hintKey)
-                        .font(ragFont(.caption, scale: interfaceScale))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: interfaceScale.scaled(12))
@@ -989,29 +1069,22 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     private func promptEditor(
-        titleKey: LocalizedStringKey,
         text: Binding<String>,
         minHeight: CGFloat
     ) -> some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
-            Text(titleKey)
-                .font(ragFont(.body, scale: interfaceScale))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            TextEditor(text: text)
-                .font(interfaceScale.font(.code))
-                .scrollContentBackground(.hidden)
-                .padding(interfaceScale.scaled(8))
-                .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
-                )
-        }
+        TextEditor(text: text)
+            .font(interfaceScale.font(.code))
+            .scrollContentBackground(.hidden)
+            .padding(interfaceScale.scaled(8))
+            .frame(maxWidth: .infinity, minHeight: minHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(nsColor: .textBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
+            )
     }
 }
 
