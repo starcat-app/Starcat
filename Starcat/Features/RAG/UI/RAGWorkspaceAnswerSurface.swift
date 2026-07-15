@@ -27,6 +27,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var composerContentHeight: CGFloat = 0
     @State private var mentionCaretAnchor: CGPoint = .zero
     @State private var messageTail = ScrollTailController()
+    @State private var historyWindow = RAGConversationHistoryWindow()
     @State private var isMessageNearBottom = true
 
     private static let messageNearBottomThreshold: CGFloat = 64
@@ -125,7 +126,16 @@ struct RAGWorkspaceAnswerSurface: View {
     }
 
     var messageTimeline: some View {
+        let conversationID = viewModel.selectedConversationID
         let outlineTurns = viewModel.conversationOutlineTurns
+        let visibleMessages = historyWindow.visibleMessages(
+            conversationID: conversationID,
+            messages: viewModel.messages
+        )
+        let hasEarlierMessages = historyWindow.hasEarlierMessages(
+            conversationID: conversationID,
+            messages: viewModel.messages
+        )
         let hasTimelineContent = !viewModel.messages.isEmpty
             || viewModel.isAnswering
             || !viewModel.streamingAnswer.isEmpty
@@ -135,12 +145,16 @@ struct RAGWorkspaceAnswerSurface: View {
         return ScrollViewReader { proxy in
             ZStack(alignment: .leading) {
                 ScrollView {
-                    // 对话消息和流式 Markdown 都会频繁改变高度。LazyVStack 会先用估算
-                    // 高度定位，再在 cell 进入可视区后修正 content offset，表现为滚到底部
-                    // 仍是空白、轻微回滚后内容才出现。单会话规模受上下文约束，使用
-                    // VStack 换取一次性准确布局，与仓库内稳定的 Repo AI Chat 保持一致。
+                    // 继续使用准确高度的 VStack，避免 LazyVStack 的估算高度校正；但历史
+                    // 会话只把当前窗口内的轮次交给 SwiftUI，长会话不再一次布局全部 Markdown。
                     VStack(alignment: .leading, spacing: 18) {
-                        ForEach(viewModel.messages) { message in
+                        if hasEarlierMessages {
+                            RAGLoadEarlierHistoryButton {
+                                loadEarlierHistory(using: proxy)
+                            }
+                        }
+
+                        ForEach(visibleMessages) { message in
                             messageView(message)
                                 .id(RAGMessageScrollTarget.message(message.id))
                         }
@@ -185,6 +199,27 @@ struct RAGWorkspaceAnswerSurface: View {
                     guard isMessageNearBottom != isNearBottom else { return }
                     isMessageNearBottom = isNearBottom
                 }
+                .onChange(of: viewModel.selectedConversationID) { _, selectedConversationID in
+                    // 先立即清掉上一会话的窗口身份；缓存未命中时，历史安装序列会在
+                    // SQLite 返回后用真实消息再次 reset。
+                    historyWindow.reset(
+                        conversationID: selectedConversationID,
+                        messages: viewModel.messages
+                    )
+                }
+                .onChange(of: viewModel.messages.count) { _, _ in
+                    historyWindow.reconcileCurrentConversation(
+                        conversationID: viewModel.selectedConversationID,
+                        messages: viewModel.messages
+                    )
+                }
+                .onChange(of: viewModel.conversationHistoryInstallSequence) { _, _ in
+                    // 点开历史会话固定回到最新 2 轮；回答落库不会触发这个序列。
+                    historyWindow.reset(
+                        conversationID: viewModel.selectedConversationID,
+                        messages: viewModel.messages
+                    )
+                }
                 .onChange(of: viewModel.loadedMessageSequence) { _, _ in
                     // ViewModel 已经安装完历史 messages；下一次主线程调度时布局才完整。
                     messageTail.resumeFollowing()
@@ -198,7 +233,7 @@ struct RAGWorkspaceAnswerSurface: View {
                         onSelect: { turn in
                             messageTail.pauseFollowing()
                             isMessageNearBottom = false
-                            scrollMessageIntoView(turn.userMessageID, using: proxy)
+                            revealAndScrollMessageIntoView(turn.userMessageID, using: proxy)
                         },
                         timeLabel: messageTimeLabel
                     )
@@ -216,6 +251,29 @@ struct RAGWorkspaceAnswerSurface: View {
                     }
                     .padding(.bottom, 16)
                 }
+            }
+        }
+    }
+
+    /// 手动向前扩 10 轮。扩窗前先暂停尾随，随后把原首条消息放回顶部，新增内容只出现在
+    /// 它上方，不会因为 `VStack` 高度突然增加而把用户当前阅读位置向下推走。
+    func loadEarlierHistory(using proxy: ScrollViewProxy) {
+        messageTail.pauseFollowing()
+        isMessageNearBottom = false
+        guard let previousFirstMessageID = historyWindow.loadEarlier(
+            conversationID: viewModel.selectedConversationID,
+            messages: viewModel.messages
+        ) else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(
+                    RAGMessageScrollTarget.message(previousFirstMessageID),
+                    anchor: .top
+                )
             }
         }
     }
@@ -268,15 +326,32 @@ struct RAGWorkspaceAnswerSurface: View {
         }
     }
 
-    /// 大纲跳转与尾随共用当前 reader，保证只有一套程序化滚动控制器。
-    func scrollMessageIntoView(_ messageID: UUID, using proxy: ScrollViewProxy) {
-        let target = RAGMessageScrollTarget.message(messageID)
-        if reduceMotion {
-            proxy.scrollTo(target, anchor: .top)
-        } else {
-            withAnimation(.easeInOut(duration: 0.2)) {
+    /// 大纲可指向窗口外的旧轮次。先扩窗再等待布局提交，避免 reader 对尚不存在的 ID
+    /// 静默无效；已在窗口内的目标仍可同步定位。
+    func revealAndScrollMessageIntoView(_ messageID: UUID, using proxy: ScrollViewProxy) {
+        let didExpand = historyWindow.revealMessage(
+            messageID,
+            conversationID: viewModel.selectedConversationID,
+            messages: viewModel.messages
+        )
+        let scroll = {
+            let target = RAGMessageScrollTarget.message(messageID)
+            if reduceMotion {
                 proxy.scrollTo(target, anchor: .top)
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(target, anchor: .top)
+                }
             }
+        }
+
+        guard didExpand else {
+            scroll()
+            return
+        }
+        Task { @MainActor in
+            await Task.yield()
+            scroll()
         }
     }
 

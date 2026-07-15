@@ -1,8 +1,8 @@
 # RAG 流式渲染性能优化 Checklist
 
-> 状态：已完成（13 / 13 项完成）
+> 状态：四个阶段已完成（20 / 20 项完成）
 >
-> 范围：只实施流式发布、SwiftUI 观察边界与尾部滚动三阶段优化；历史消息分页属于下一阶段，不在本次范围内。
+> 范围：实施流式发布、SwiftUI 观察边界、尾部滚动和历史会话渲染窗口；数据库仍一次读取完整会话，窗口只限制 SwiftUI 实际布局的消息。
 
 ## 成功标准
 
@@ -11,7 +11,7 @@
 - `RAGWorkspaceAnswerSurface` 不再直接读取高频 `streamingPresentation` 与 `executionSteps`。
 - 流式尺寸变化不再通过 `onGeometryChange → @State → scrollTo` 形成反馈环。
 - 用户停留底部时继续自动贴底；主动上滚后不抢位置；滚到底部按钮仍能抵达永久 sentinel。
-- 相关单测与 Knowledge RAG 核心回归通过，`git diff --check` 通过。
+- 相关单测与 Knowledge RAG 核心回归通过，本次相关文件的 `git diff --check` 通过。
 
 ## 第一阶段：限制流式发布与文本布局
 
@@ -35,14 +35,24 @@
 - [x] `ScrollViewReader` 仅用于历史恢复、滚到底部按钮与大纲导航等低频动作。
 - [x] 补充滚动调度状态机测试，并完成针对性与核心回归。
 
+## 第四阶段：历史会话按轮窗口化
+
+- [x] 打开历史会话时只渲染最新 2 轮，轮次以 user 消息作为稳定起点。
+- [x] 顶部手动入口每次加载更早 10 轮，继续使用准确高度的非惰性 `VStack`。
+- [x] 当前会话新增问答时保留已展示轮次，不让旧内容在回答落库后突然消失。
+- [x] 加载更早轮次后恢复原首条可见消息位置，避免内容向下跳动。
+- [x] 大纲点击未渲染轮次时先扩展窗口，再定位对应 user message。
+- [x] Prompt 历史、引用聚合、复制全部、导出和持久化继续读取完整消息数组。
+- [x] 补充轮次边界、分批加载、大纲扩窗与滚动回归测试。
+
 ## 验证结果
 
 - 2026-07-15：`StreamingMarkdownSnapshotTests` + `ScrollTailControllerTests` 共 26 项通过。
 - 2026-07-15：`KnowledgeRAGCoreTests` 共 101 项通过。
-- 2026-07-15：`xcodegen generate`、编译与 `git diff --check` 通过；真实长流 UI 仍需人工体验验收。
+- 2026-07-15：`RAGConversationHistoryWindowTests` + `ScrollTailControllerTests` 共 18 项通过；并行测试启动器异常后以 `-parallel-testing-enabled NO` 稳定重跑。
+- 2026-07-15：`xcodegen generate`、编译与本次相关文件的 `git diff --check` 通过；真实长流 UI 仍需人工体验验收。
 
 ## 明确不在本次范围
 
-- 历史消息分页或“加载更早”窗口化渲染。
 - 改用 `NSTableView` / `NSCollectionView` 等 AppKit 容器。
 - 改变 RAG 回答、推理、引用或持久化语义。

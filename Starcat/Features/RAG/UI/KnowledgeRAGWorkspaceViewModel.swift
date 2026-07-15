@@ -222,8 +222,11 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// Inspector 与 Answer Surface 共用同一份去重、排序后的引用投影。
     private(set) var conversationCitations: [RAGCitation] = []
     /// 在 messages 已经写入后递增。Answer Surface 监听它而非 selectedConversationID，
-    /// 才能在历史 `LazyVStack` 真正拥有新内容后定位尾部。
+    /// 才能在历史消息真正拥有新内容后定位尾部。
     private(set) var loadedMessageSequence = 0
+    /// 只在“点开并安装历史会话”时递增。回答落库刷新不会改它，Answer Surface 因而
+    /// 能把历史首屏重置为 2 轮，同时保留当前会话已经展开的轮次。
+    private(set) var conversationHistoryInstallSequence = 0
     var draftQuestion = ""
     var streamingAnswer = ""
     /// 流式阶段只提交稳定 Markdown chunk 与未闭合尾部，避免每个 delta 重解析完整回答。
@@ -731,6 +734,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversationOutlineTurns = snapshot.outlineTurns
         conversationCitations = snapshot.citations
         loadedMessageSequence &+= 1
+        conversationHistoryInstallSequence &+= 1
         resetTurnState()
         restoreComposerDraft(for: detail.summary.id)
         restoreActiveAnswerPresentation(for: detail.summary.id)

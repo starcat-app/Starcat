@@ -278,21 +278,11 @@
 - [ ] 保存复杂搜索条件 [P1]
 - [x] 搜索增强：全局搜索中心（Local + GitHub + AnySearch Web）
 
-### §4.6 AI Discovery（Show HN 抓取 + LLM 单标签分类）（W7+，新增）
+### §4.6 Weekly Hacker News 来源
 
-#### 后端（starcat-weekly-api 内）
-- [x] HN 官方 API collector + GitHub URL 提取测试
-- [x] GitHub enrich + OpenAI-compatible classifier + 三阶段 service
-- [x] Discovery 双表 + Store API + 状态机单测
-- [x] handler/discovery.go 3 端点 + 单测
-- [x] scheduler/main/env/文档集成
-
-#### 客户端（Starcat）
-- [ ] ActivityCategory.discovery + i18n + AppSettings.lastDiscoverySubcategoryRaw + Sidebar 列表自动追加 [P1]
-- [ ] DiscoveryView 中栏（segmented + UnifiedRepoRow + ✓ 标记） [P1]
-- [ ] WeeklyAPI.fetchDiscovery / fetchDiscoveryDetail + AppEndpoints.Weekly.Paths.discovery + endpoint 专用 DiscoveryItemDTO + BackendAggregateRepoSource 链路追加 [P1]
-- [ ] RepoDetailAction.hnDiscussion(URL) + Scaffold 渲染 + i18n key + 详情页未 star 走 ephemeral repo 复用 RepoDetailScaffold [P1]
-- [ ] 客户端数据来源说明评估 [P1]
+- [x] HN 官方 API Collector + GitHub URL 提取与 enrich
+- [x] Show HN 作为 Weekly `discovery` 来源完成筛选、图标、详情链接与 bulk 本地缓存
+  > 原 Activity 独立 AI Discovery 客户端计划取消；后续通用来源改造见 §9.3 最终方案。
 
 ---
 
@@ -455,10 +445,13 @@
 - [ ] JSON 导入
 - [ ] JSON 导出
 
-### §9.3(详见 `docs/6-发版与上架/v1-上架信息准备.md`) HelloGitHub 数据源接入（Trending 扩展）
-- [ ] 爬取 HelloGitHub API
-- [ ] Trending 列表混合展示
-- [ ] 详情页适配
+### §9.3 Weekly 多来源、HelloGitHub、AI 情报与置顶运营
+- [ ] weekly-api 通用来源事件与异步 enrich Worker
+- [ ] HelloGitHub 增量采集与历史月刊回填
+- [ ] AI 情报批量录入 API 与 `starcat-weekly-import` skill
+- [ ] Starcat Weekly 动态来源、图标、本地缓存与置顶排序
+- [ ] `_local-admin` 来源状态、回填与置顶管理
+  > 最终方案：`docs/2-产品/需求讨论/正式方案/Weekly多来源扩展与AI情报采集正式方案.md`
 
 ### §9.4(详见 `docs/6-发版与上架/v1-上架信息准备.md`) 导出 Starred 到 GitHub Awesome 仓库（基于 mawesome 思路）
 - [ ] Awesome 导出配置
@@ -479,7 +472,7 @@
 - [ ] CloudKit 多端同步
 
 ### §9.8(详见 `docs/6-发版与上架/v1-上架信息准备.md`) 其它 v2 候选
-- [ ] Discovery（Show HN）客户端
+- [x] Show HN 已作为 Weekly Hacker News 来源落地；Activity 独立客户端计划取消
 
 ---
 

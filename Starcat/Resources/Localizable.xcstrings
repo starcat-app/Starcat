@@ -27358,6 +27358,40 @@
         }
       }
     },
+    "rag.workspace.history.loadEarlier": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load 10 earlier turns"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载更早 10 轮对话"
+          }
+        }
+      }
+    },
+    "rag.workspace.history.loadEarlier.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show 10 more earlier turns from this conversation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再显示当前会话更早的 10 轮对话"
+          }
+        }
+      }
+    },
     "rag.workspace.header.ready": {
       "localizations": {
         "en": {
