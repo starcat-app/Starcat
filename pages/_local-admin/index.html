@@ -1039,6 +1039,7 @@
       status: "等待刷新"
     };
     let weeklyBatchPollTimer = null;
+    let weeklyBatchPollID = "";
 
     function config() {
       return window.STARCAT_ADMIN_CONFIG || { services: {} };
@@ -1317,7 +1318,9 @@
           ? `${latest.success || 0}/${latest.total || "?"} · volume ${cursor.next_volume || "-"}`
           : (latest.status || "-");
         return `<div class="weekly-source-row">
-          <strong>${escapeHTML(source.display_name_zh || source.code)}</strong>
+          <span><strong>${escapeHTML(source.display_name_zh || source.code)}</strong><br>
+            <span class="weekly-ops-note">成功 ${escapeHTML(source.last_success_at || "-")} · 失败 ${escapeHTML(source.last_failure_at || "-")}</span>
+          </span>
           <span>${escapeHTML(String(source.count || 0))} repos</span>
           <span>${escapeHTML(String(source.pending || 0))} pending</span>
           <span>${escapeHTML(String(source.retrying || 0))} retry</span>
@@ -1730,6 +1733,15 @@
         weeklyOps.sources = Array.isArray(sources.data) ? sources.data : [];
         weeklyOps.pins = Array.isArray(pins.data) ? pins.data : [];
         weeklyOps.status = `已刷新 ${new Date().toLocaleTimeString()}`;
+        // 页面刷新或服务重启后，从持久化来源状态恢复活动批次，而不是依赖旧页面内存。
+        const helloGitHub = weeklyOps.sources.find((source) => source.code === "hellogithub");
+        const activeBatch = helloGitHub && helloGitHub.latest_batch;
+        if (activeBatch && ["pending", "processing"].includes(activeBatch.status)) {
+          weeklyOps.batch = { schema_version: 1, data: activeBatch };
+          if (activeBatch.batch_id && weeklyBatchPollID !== activeBatch.batch_id) {
+            pollWeeklyBatch(activeBatch.batch_id);
+          }
+        }
       } catch (error) {
         weeklyOps.status = `刷新失败: ${error.message}`;
         log(`Weekly 运营状态刷新失败: ${error.message}`, "error");
@@ -1769,6 +1781,7 @@
 
     function pollWeeklyBatch(batchID) {
       if (weeklyBatchPollTimer) window.clearTimeout(weeklyBatchPollTimer);
+      weeklyBatchPollID = batchID;
       const poll = async () => {
         try {
           const result = await requestJSON("weekly", `/internal/ingest-batches/${encodeURIComponent(batchID)}`, "adminKey");
@@ -1776,6 +1789,7 @@
           render();
           const status = readPath(result, "data.status");
           if (["success", "partial_success", "failed"].includes(status)) {
+            weeklyBatchPollID = "";
             log(`Weekly batch ${batchID} 进入终态: ${status}`);
             await refreshWeeklyOperations();
             return;
