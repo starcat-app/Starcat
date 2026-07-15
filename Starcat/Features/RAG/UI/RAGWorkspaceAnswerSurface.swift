@@ -8,7 +8,7 @@
 import AppKit
 import SwiftUI
 
-/// RAG 中栏所有程序化滚动共用同一类 identity，避免 edge、proxy 与 AppKit offset 多套真源互相覆盖。
+/// RAG 中栏所有程序化滚动共用同一类 identity，避免消息、大纲与底部入口使用不兼容的 ID。
 private enum RAGMessageScrollTarget: Hashable, Sendable {
     case message(UUID)
     case liveAssistant
@@ -27,9 +27,9 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var composerContentHeight: CGFloat = 0
     @State private var mentionCaretAnchor: CGPoint = .zero
     @State private var messageTail = ScrollTailController()
-    /// identity-based position 会让 SwiftUI 在 LazyVStack 高度变化时保持目标可见，滚动条与内容共享同一布局真源。
-    @State private var messageTimelinePosition = ScrollPosition(idType: RAGMessageScrollTarget.self)
     @State private var isMessageNearBottom = true
+    @State private var isMessageTailScrollScheduled = false
+    @State private var animatesNextMessageTailScroll = false
 
     private static let messageNearBottomThreshold: CGFloat = 64
 
@@ -134,93 +134,104 @@ struct RAGWorkspaceAnswerSurface: View {
         // 显隐只看几何「是否离底」：不要读 messageTail.isFollowing，否则滚动 phase
         // 每次变化都会整页刷新，鼠标划过按钮时更容易闪没并卡顿。
         let showsScrollToBottom = hasTimelineContent && !isMessageNearBottom
-        return ZStack(alignment: .leading) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(viewModel.messages) { message in
-                        messageView(message)
-                            .id(RAGMessageScrollTarget.message(message.id))
-                    }
-                    if !viewModel.executionSteps.isEmpty
-                        || viewModel.hasStreamingContent
-                        || viewModel.isAnswering {
-                        liveAssistantMessage
-                            .id(RAGMessageScrollTarget.liveAssistant)
-                    }
-
-                    Color.clear
-                        .frame(height: 1)
-                        .id(RAGMessageScrollTarget.bottom)
-                        .onScrollVisibilityChange(threshold: 0.5) { isVisible in
-                            messageTail.updateBottomVisibility(isVisible)
+        return ScrollViewReader { proxy in
+            ZStack(alignment: .leading) {
+                ScrollView {
+                    // 对话消息和流式 Markdown 都会频繁改变高度。LazyVStack 会先用估算
+                    // 高度定位，再在 cell 进入可视区后修正 content offset，表现为滚到底部
+                    // 仍是空白、轻微回滚后内容才出现。单会话规模受上下文约束，使用
+                    // VStack 换取一次性准确布局，与仓库内稳定的 Repo AI Chat 保持一致。
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(viewModel.messages) { message in
+                            messageView(message)
+                                .id(RAGMessageScrollTarget.message(message.id))
                         }
-                }
-                // 明确告诉 ScrollPosition 哪一层提供 identity，禁止再从 AppKit document bounds 猜位置。
-                .scrollTargetLayout()
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .scrollPosition($messageTimelinePosition, anchor: .bottom)
-            .onScrollPhaseChange { _, newPhase in
-                messageTail.updatePhase(newPhase)
-                // 对话时间线一旦滚动（含惯性/程序贴底），正文 S1 的 NSPopover 锚点就失效；
-                // popover 内部滚动不会改变本 ScrollView 的 phase，不会误关。
-                if newPhase != .idle {
-                    viewModel.dismissCitationChunkPopover()
-                }
-            }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                let remaining = geometry.contentSize.height
-                    - geometry.contentOffset.y
-                    - geometry.containerSize.height
-                return remaining <= Self.messageNearBottomThreshold
-            } action: { _, isNearBottom in
-                guard isMessageNearBottom != isNearBottom else { return }
-                isMessageNearBottom = isNearBottom
-            }
-            .onChange(of: viewModel.loadedMessageSequence) { _, _ in
-                // 只在 ViewModel 已写入历史 messages 后响应；此时 bottom identity 已进入 target layout。
-                isMessageNearBottom = true
-                messageTail.resumeFollowing()
-                forceMessageTailScroll()
-            }
-            .onChange(of: viewModel.isAnswering) { _, isAnswering in
-                // 开始回答时建立 bottom identity 锚定；后续流式高度增长由 ScrollPosition 自己保持可见。
-                guard isAnswering else { return }
-                forceMessageTailScrollIfFollowing()
-            }
-            .onChange(of: viewModel.executionSteps.count) { _, _ in
-                forceMessageTailScrollIfFollowing()
-            }
-            .onChange(of: viewModel.messages.count) { _, _ in
-                // 新问题或完整回答落库时重新确认 bottom identity；用户已上滚则不抢位置。
-                forceMessageTailScrollIfFollowing()
-            }
+                        if !viewModel.executionSteps.isEmpty
+                            || viewModel.hasStreamingContent
+                            || viewModel.isAnswering {
+                            liveAssistantMessage
+                                .id(RAGMessageScrollTarget.liveAssistant)
+                        }
 
-            // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
-            if !outlineTurns.isEmpty {
-                RAGConversationOutlineRail(
-                    turns: outlineTurns,
-                    onSelect: { turn in
-                        messageTail.pauseFollowing()
-                        isMessageNearBottom = false
-                        scrollMessageIntoView(turn.userMessageID)
-                    },
-                    timeLabel: messageTimeLabel
-                )
-                .padding(.leading, 6)
-                .padding(.vertical, 12)
-                .frame(maxHeight: .infinity, alignment: .leading)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if showsScrollToBottom {
-                scrollToBottomButton {
-                    messageTail.resumeFollowing()
-                    forceMessageTailScroll(animated: true)
+                        // 永久 sentinel 是所有“到底”动作的唯一目标。它不会随流式块完成、
+                        // 折叠或落库而更换 identity，ScrollViewReader 因此不会命中旧节点。
+                        Color.clear
+                            .frame(height: 1)
+                            .id(RAGMessageScrollTarget.bottom)
+                            .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                messageTail.updateBottomVisibility(isVisible)
+                            }
+                    }
+                    // AI Chat 的可靠触发源是“真实渲染高度已经变化”，不是 token/revision。
+                    // 此回调发生在 Markdown 重排和折叠布局完成后；增长按 5Hz 合并，
+                    // 缩短（折叠）立即校正，避免使用旧 contentSize 滚出空白区域。
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.height.rounded(.toNearestOrAwayFromZero)
+                    } action: { oldHeight, newHeight in
+                        guard messageTail.shouldFollowContentHeightChange(
+                            from: oldHeight,
+                            to: newHeight,
+                            now: Date.timeIntervalSinceReferenceDate
+                        ) else { return }
+                        scheduleMessageTailScroll(using: proxy)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.bottom, 16)
+                .onScrollPhaseChange { _, newPhase in
+                    messageTail.updatePhase(newPhase)
+                    // 对话时间线一旦滚动（含惯性/程序贴底），正文 S1 的 NSPopover 锚点就失效；
+                    // popover 内部滚动不会改变本 ScrollView 的 phase，不会误关。
+                    if newPhase != .idle {
+                        viewModel.dismissCitationChunkPopover()
+                    }
+                }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    let remaining = geometry.contentSize.height
+                        - geometry.contentOffset.y
+                        - geometry.containerSize.height
+                    return remaining <= Self.messageNearBottomThreshold
+                } action: { _, isNearBottom in
+                    guard isMessageNearBottom != isNearBottom else { return }
+                    isMessageNearBottom = isNearBottom
+                }
+                .onChange(of: viewModel.loadedMessageSequence) { _, _ in
+                    // ViewModel 已经安装完历史 messages；下一次主线程调度时布局才完整。
+                    messageTail.resumeFollowing()
+                    scheduleMessageTailScroll(using: proxy)
+                }
+                .onChange(of: viewModel.isAnswering) { _, isAnswering in
+                    // 回答结束时强制补齐限频窗口内可能被合并的最后一次增长。
+                    guard !isAnswering, messageTail.isFollowing else { return }
+                    scheduleMessageTailScroll(using: proxy)
+                }
+
+                // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
+                if !outlineTurns.isEmpty {
+                    RAGConversationOutlineRail(
+                        turns: outlineTurns,
+                        onSelect: { turn in
+                            messageTail.pauseFollowing()
+                            isMessageNearBottom = false
+                            scrollMessageIntoView(turn.userMessageID, using: proxy)
+                        },
+                        timeLabel: messageTimeLabel
+                    )
+                    .padding(.leading, 6)
+                    .padding(.vertical, 12)
+                    .frame(maxHeight: .infinity, alignment: .leading)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if showsScrollToBottom {
+                    scrollToBottomButton {
+                        messageTail.resumeFollowing()
+                        // 手动入口不受高度增长限频影响，但仍要等待本轮布局提交后再定位。
+                        scheduleMessageTailScroll(using: proxy, animated: true)
+                    }
+                    .padding(.bottom, 16)
+                }
             }
         }
     }
@@ -246,36 +257,50 @@ struct RAGWorkspaceAnswerSurface: View {
         .pointerStyle(.link)
     }
 
-    /// 定位稳定的 bottom identity；SwiftUI 同时负责内容布局、滚动位置和滚动条比例。
-    func forceMessageTailScroll(animated: Bool = false) {
-        let animatesScroll = animated && !reduceMotion
-        if animatesScroll {
-            withAnimation(.easeOut(duration: 0.22)) {
-                messageTimelinePosition.scrollTo(id: RAGMessageScrollTarget.bottom, anchor: .bottom)
-            }
-            return
-        }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            messageTimelinePosition.scrollTo(id: RAGMessageScrollTarget.bottom, anchor: .bottom)
-        }
-    }
-
-    /// 仅在用户仍跟随尾部时确认 bottom identity；手动上滚后不抢走阅读位置。
-    func forceMessageTailScrollIfFollowing() {
+    /// 下一次主线程调度时，通过当前 ScrollViewReader 定位永久 bottom sentinel。
+    ///
+    /// `onGeometryChange` 发生时 VStack 已完成测量，但 ScrollView 的 contentSize 尚可能
+    /// 没有提交。同步 scrollTo 会读取旧范围并被系统忽略，因此与 Repo AI Chat 一样先
+    /// `Task.yield()`。同一轮只保留一个请求，流式输出不会堆积滚动任务；用户点击产生的
+    /// 动画意图可以升级已经排队的自动请求。
+    func scheduleMessageTailScroll(using proxy: ScrollViewProxy, animated: Bool = false) {
         guard messageTail.isFollowing else { return }
-        forceMessageTailScroll()
+        if animated {
+            animatesNextMessageTailScroll = true
+        }
+        guard !isMessageTailScrollScheduled else { return }
+        isMessageTailScrollScheduled = true
+
+        Task { @MainActor in
+            await Task.yield()
+            defer {
+                isMessageTailScrollScheduled = false
+                animatesNextMessageTailScroll = false
+            }
+            guard messageTail.isFollowing else { return }
+
+            if animatesNextMessageTailScroll, !reduceMotion {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    proxy.scrollTo(RAGMessageScrollTarget.bottom, anchor: .bottom)
+                }
+            } else {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(RAGMessageScrollTarget.bottom, anchor: .bottom)
+                }
+            }
+        }
     }
 
-    /// 大纲跳转也写同一 ScrollPosition，不再让 ScrollViewProxy 成为第二套位置控制器。
-    func scrollMessageIntoView(_ messageID: UUID) {
+    /// 大纲跳转与尾随共用当前 reader，保证只有一套程序化滚动控制器。
+    func scrollMessageIntoView(_ messageID: UUID, using proxy: ScrollViewProxy) {
         let target = RAGMessageScrollTarget.message(messageID)
         if reduceMotion {
-            messageTimelinePosition.scrollTo(id: target, anchor: .top)
+            proxy.scrollTo(target, anchor: .top)
         } else {
             withAnimation(.easeInOut(duration: 0.2)) {
-                messageTimelinePosition.scrollTo(id: target, anchor: .top)
+                proxy.scrollTo(target, anchor: .top)
             }
         }
     }
@@ -991,7 +1016,11 @@ struct RAGWorkspaceAnswerSurface: View {
                 if let provider = viewModel.selectedModelProvider {
                     AIProviderIconView(provider: provider, size: 14)
                 } else {
+                    // fallback 也固定 14×14，避免与有 logo 时（14pt）宽窄跳动。
                     Image(systemName: "sparkles")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 14, height: 14)
                         .foregroundStyle(.secondary)
                 }
                 Text(viewModel.selectedModelDisplayName)
@@ -1016,7 +1045,12 @@ struct RAGWorkspaceAnswerSurface: View {
             .pickerStyle(.inline)
         } label: {
             HStack(spacing: 6) {
+                // 与模型胶囊的 14pt 品牌 logo 对齐：SF Symbol 默认跟随字号会比 logo
+                // 更粗更沉，这里固定成 14×14 让两个底栏菜单图标视觉等大。
                 Image(systemName: "scope")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
                 Text(repoModeKey(viewModel.explicitRepoMode))
                     .lineLimit(1)
             }
@@ -1042,7 +1076,9 @@ struct RAGWorkspaceAnswerSurface: View {
         }
     }
     var composerNSFont: NSFont {
-        NSFont.systemFont(ofSize: 13 * interfaceScale.multiplier)
+        NSFont.systemFont(
+            ofSize: interfaceScale.scaled(RAGConversationTypography.text.pointSize)
+        )
     }
 
     var composerMinimumHeight: CGFloat {

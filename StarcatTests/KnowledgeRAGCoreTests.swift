@@ -342,6 +342,70 @@ struct KnowledgeRAGCoreTests {
         #expect(retainedThird != nil)
     }
 
+    @Test("RAG Composer 草稿按会话隔离保存与恢复")
+    func composerDraftStoreIsolatesPerConversation() {
+        let firstID = UUID()
+        let secondID = UUID()
+        var store = RAGComposerDraftStore()
+
+        let firstAttachment = RAGComposerAttachment(
+            id: UUID(),
+            filename: "notes.md",
+            contentType: "text/markdown",
+            sizeInBytes: 12,
+            localURL: URL(fileURLWithPath: "/tmp/notes.md"),
+            handling: .textContext
+        )
+        store.save(
+            RAGComposerDraftSnapshot(
+                draftQuestion: "compare these repos",
+                selectedRepoContexts: [],
+                attachments: [firstAttachment],
+                githubLinkContexts: [],
+                explicitRepoMode: .prefer,
+                webSearchEnabled: true
+            ),
+            for: firstID
+        )
+        store.save(
+            RAGComposerDraftSnapshot(
+                draftQuestion: "other question",
+                selectedRepoContexts: [],
+                attachments: [],
+                githubLinkContexts: [],
+                explicitRepoMode: .only,
+                webSearchEnabled: false
+            ),
+            for: secondID
+        )
+
+        let restoredFirst = store.draft(for: firstID)
+        let restoredSecond = store.draft(for: secondID)
+        #expect(restoredFirst?.draftQuestion == "compare these repos")
+        #expect(restoredFirst?.attachments.map(\.filename) == ["notes.md"])
+        #expect(restoredFirst?.explicitRepoMode == .prefer)
+        #expect(restoredFirst?.webSearchEnabled == true)
+        #expect(restoredSecond?.draftQuestion == "other question")
+        #expect(restoredSecond?.attachments.isEmpty == true)
+        #expect(restoredSecond?.webSearchEnabled == false)
+
+        store.update(firstID) { draft in
+            draft.draftQuestion = ""
+            draft.attachments = []
+        }
+        #expect(store.draft(for: firstID)?.draftQuestion == "")
+        #expect(store.draft(for: firstID)?.attachments.isEmpty == true)
+        #expect(store.draft(for: secondID)?.draftQuestion == "other question")
+
+        store.remove(secondID)
+        #expect(store.draft(for: secondID) == nil)
+        #expect(store.count == 1)
+
+        store.removeAll()
+        #expect(store.count == 0)
+        #expect(store.draft(for: firstID) == nil)
+    }
+
     @MainActor
     @Test("RAG Markdown 固定正则缓存不改变引用链接与段落格式")
     func ragMarkdownRegexCachePreservesDisplayFormatting() {

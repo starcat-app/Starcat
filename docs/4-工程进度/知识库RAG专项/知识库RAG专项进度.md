@@ -228,6 +228,8 @@
 > 实现：运行态采样定位 SelectionOverlay 与 AttributeGraph 热点；Think 使用 150ms/256 字快照，动态文本移除选择层，滚动状态只发布真实变化。
 - [x] 后台回答期间的会话切换改为即时选择、展示快照预热与有界 UI 发布 — `KnowledgeRAGWorkspaceViewModel.swift`、`RAGWorkspaceAnswerSurface.swift` — 2026-07-15
 > 实现：LRU 缓存消息、大纲与引用，后台 runtime registry 不参与 Observation；流式 Markdown、原生滚动、Debug 与标题更新降频，旧会话仍继续生成并按原会话落库。
+- [x] 切换会话或关闭重开工作台后，未发送的 `@repo` / 附件 / 输入文案按会话恢复 — `KnowledgeRAGWorkspaceViewModel.swift`、`AppDependencies.swift` — 2026-07-15
+> 实现：App 进程级 Composer 草稿字典；离开时暂存、进入时恢复（含联网开关）；关窗前落盘；`resetTurnState` 不再误清；发送后清问题、完成后清附件，切用户库时清空。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
 - [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。
@@ -247,10 +249,10 @@
 
 ### 13.2 会话尾部滚动可靠性
 
-- [x] 将“切换会话”与“历史消息已加载并完成首轮布局”拆成两个状态；只在后者发生后定位底部，避免仅监听 `selectedConversationID` 早于 `LazyVStack` 内容出现。
-- [x] 历史会话、滚到底部按钮、流式回答和大纲统一通过 identity-based `ScrollPosition` 定位 `.scrollTargetLayout()` 中的稳定目标。
+- [x] 将“切换会话”与“历史消息已加载并完成首轮布局”拆成两个状态；消息时间线使用非惰性 `VStack` 获取准确高度，并在下一次 MainActor 调度中定位底部，避免读取尚未提交的 `contentSize`。
+- [x] 历史会话、滚到底部按钮、流式回答和大纲统一通过当前 `ScrollViewReader` 定位永久 bottom sentinel 与稳定消息目标。
 - [x] 用户手动上滚后才显示滚到底部按钮；点击按钮必须强制抵达最后一条；用户停留底部时流式回答才自动跟随。
-- [x] 删除直接读取 `documentView.bounds` 并修改 `NSClipView` offset 的原生 bridge，折叠、Markdown 重排与滚动条统一服从 SwiftUI 布局结果。
+- [x] 删除直接读取 `documentView.bounds` 并修改 `NSClipView` offset 的原生 bridge；改由实际渲染高度触发尾随，增长限频、折叠缩短立即校正，并用 `Task.yield()` 合并同一布局周期的请求。
 
 验收：在长会话之间反复切换均直接展示最后一条；上滚、点击快捷按钮、继续流式输出、折叠执行步骤和点击左侧大纲导航不会互相抢夺滚动位置。
 

@@ -80,7 +80,7 @@ struct RAGAssistantMessageBlock: View {
             if !content.isEmpty {
                 RAGStableStoredMarkdown(content: content, citations: citations)
                     .equatable()
-                    .font(interfaceScale.font(.body))
+                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
                     .frame(maxWidth: 900, alignment: .leading)
             }
 
@@ -231,6 +231,7 @@ struct RAGStreamingAssistantMessageBlock: View {
             ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
                 RAGStableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
                     .equatable()
+                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
             }
 
             if !snapshot.liveTail.isEmpty {
@@ -238,7 +239,7 @@ struct RAGStreamingAssistantMessageBlock: View {
                 // 这里不能启用 textSelection：macOS 会为每次变化重建 SelectionOverlay，
                 // 长回答可能把 SwiftUI 主线程拖入 AttributeGraph livelock。完成态仍可整条复制。
                 Text(snapshot.liveTail)
-                    .font(interfaceScale.font(.body))
+                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
                     .frame(maxWidth: 900, alignment: .leading)
             }
 

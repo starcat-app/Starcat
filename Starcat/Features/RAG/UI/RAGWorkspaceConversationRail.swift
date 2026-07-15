@@ -337,7 +337,10 @@ struct RAGWorkspaceConversationRail: View {
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(conversation.title)
-                            .font(ragFont(.callout, weight: selected ? .semibold : .regular))
+                            .font(interfaceScale.font(
+                                RAGConversationTypography.text,
+                                weight: selected ? .semibold : .regular
+                            ))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Text(String(conversation.updatedAt.prefix(10)))

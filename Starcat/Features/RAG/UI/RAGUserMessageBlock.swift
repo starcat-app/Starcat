@@ -46,7 +46,7 @@ struct RAGUserMessageBlock: View {
                     // 头像只与问题气泡垂直居中，footer 单独铺在气泡下方。
                     HStack(alignment: .center, spacing: 8) {
                         Text(message.content)
-                            .font(interfaceScale.font(.body))
+                            .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
                             .textSelection(.enabled)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
@@ -83,7 +83,7 @@ struct RAGUserMessageBlock: View {
     private var userMessageEditor: some View {
         VStack(alignment: .trailing, spacing: 10) {
             TextEditor(text: $editingDraft)
-                .font(interfaceScale.font(.body))
+                .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 72, maxHeight: 220)
                 .padding(.horizontal, 10)

@@ -122,6 +122,11 @@ final class AppDependencies {
     let ragCandidateRepository: any RAGRepoCandidateRepositoryProtocol
     /// 知识库 RAG 本地会话历史。
     let ragConversationStore: any RAGConversationStoring
+    /// RAG Composer 未发送草稿的 App 级内存缓存。
+    ///
+    /// 关闭再打开 RAG 工作台时仍保留当前进程内的 `@repo` / 附件 / 输入文案；切用户库时必须清空，
+    /// 避免把一个账号的本地附件路径或仓库上下文带到另一个账号。
+    @ObservationIgnored var ragComposerDraftStore = RAGComposerDraftStore()
     /// README / notes / summary / metadata 的增量 RAG 索引构建器。
     let knowledgeRAGIndexBuilder: KnowledgeRAGIndexBuilder
     /// 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务（Settings 触发）。
@@ -1239,6 +1244,7 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            self.ragComposerDraftStore.removeAll()
             KnowledgeRAGWorkspaceWindowController.closeForUserDatabaseChange()
             await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()
             do {

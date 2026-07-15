@@ -7,6 +7,14 @@
 
 import SwiftUI
 
+/// RAG 对话正文与左侧会话标题共用的字号 token。
+///
+/// 用户问题、AI 正文和 Composer 必须保持同一字号；字重仍由各自场景决定，
+/// 避免选中会话标题的 semibold 意外传到正文。
+enum RAGConversationTypography {
+    static let text = StarcatTypography.bodyEmphasis
+}
+
 enum RAGFontRole {
     case headline, subheadline, body, callout, caption, caption2
 
@@ -39,8 +47,12 @@ func iconFont(
     scale.font(size: size, weight: weight)
 }
 
-/// 输入框底栏模型 / 范围菜单：与附件 chip 同款 thinMaterial 胶囊。
-/// 关键约束：必须用 `Capsule()`；`RoundedRectangle(cornerRadius: 7)` 看起来仍是圆角矩形，胶囊样式不会生效。
+/// 输入框底栏模型 / 范围菜单胶囊。
+/// 关键约束：
+/// - 必须用 `Capsule()`；`RoundedRectangle(cornerRadius: 7)` 看起来仍是圆角矩形，胶囊样式不会生效。
+/// - 底色不用 `.thinMaterial`：材质在深色输入区上与背景糊成一片，胶囊轮廓几乎不可见
+///   （dong4j 2026-07-15 截图反馈）。改用与上方上下文 chip 同款的 `Color.primary` 低透明度
+///   实底 + 细描边，透明度在黑白主题下都能自适应，轮廓清晰。
 extension View {
     func ragComposerCapsuleChip(font: Font) -> some View {
         self
@@ -48,7 +60,11 @@ extension View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.thinMaterial, in: Capsule())
+            .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+            )
     }
 
     /// 输入区上方的「上下文 chip」（@仓库 / 附件 / 链接）胶囊底。

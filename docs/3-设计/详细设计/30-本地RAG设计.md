@@ -1869,7 +1869,7 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 5. 自动滚动控制器只在跟随状态真实变化时发布 Observation；phase、底部可见性和手势生命周期属于内部状态，不参与 View 依赖追踪。
 6. 会话选择在首次 `await` 前提交 ID；旧会话后台任务继续执行，但所有可见投影必须重新校验 `selectedConversationID`。
 7. 最近持久化会话使用容量 24 的窗口级 LRU 快照缓存，并在消息、摘要和会话属性写入后失效；缓存不能替代 SQLite 真源。
-8. 中栏滚动只使用 identity-based `ScrollPosition`；消息、流式回答和底部锚点都进入 `.scrollTargetLayout()`，历史恢复、尾部跟随、大纲和按钮写同一位置真源；禁止原生 bridge 直接读取 `documentView.bounds` 或修改 `NSClipView` offset。
+8. 中栏消息时间线使用非惰性 `VStack`，程序化滚动只使用当前 `ScrollViewReader`，消息、大纲与永久 bottom sentinel 共用稳定 identity；自动尾随由完成布局后的内容高度触发，先 `Task.yield()` 等待 `ScrollView.contentSize` 提交，再定位 sentinel；增长最多 5Hz、折叠缩短立即校正，按钮与历史恢复不受限频。proxy 只允许被单次 MainActor 调度短暂捕获，禁止持久保存；禁止原生 bridge 直接读取 `documentView.bounds` 或修改 `NSClipView` offset。
 9. 会话大纲、引用聚合和固定 Markdown 正则只在持久化消息变化时更新，不能随正文 token 重算。
 10. Debug 文件关闭开关时不读取，开启后异步加载并缓存最近会话的解码结果，不阻塞正文选择，也不删除历史文件。
 

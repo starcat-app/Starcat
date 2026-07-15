@@ -85,6 +85,55 @@ struct RAGConversationPresentationCache {
     }
 }
 
+/// 切换会话或关闭 RAG 工作台时暂存的 Composer 草稿。
+///
+/// 只活在 App 进程内存里：未发送的 `@repo` / 附件 / 输入文案 / 联网开关在工作台关闭重开后仍可恢复，
+/// 但不能写成第二套持久化真源；App 退出或切换用户库后丢弃。
+struct RAGComposerDraftSnapshot: Equatable {
+    var draftQuestion: String = ""
+    var selectedRepoContexts: [Repo] = []
+    var attachments: [RAGComposerAttachment] = []
+    var githubLinkContexts: [RAGGitHubLinkReference] = []
+    var explicitRepoMode: RAGExplicitRepoMode = .only
+    var webSearchEnabled = false
+}
+
+/// 按会话隔离 Composer 草稿的 App 级内存字典。
+struct RAGComposerDraftStore {
+    private var draftsByID: [UUID: RAGComposerDraftSnapshot] = [:]
+
+    var count: Int { draftsByID.count }
+
+    mutating func save(_ snapshot: RAGComposerDraftSnapshot, for conversationID: UUID) {
+        draftsByID[conversationID] = snapshot
+    }
+
+    func draft(for conversationID: UUID) -> RAGComposerDraftSnapshot? {
+        draftsByID[conversationID]
+    }
+
+    mutating func update(_ conversationID: UUID, _ mutate: (inout RAGComposerDraftSnapshot) -> Void) {
+        var snapshot = draftsByID[conversationID] ?? RAGComposerDraftSnapshot()
+        mutate(&snapshot)
+        draftsByID[conversationID] = snapshot
+    }
+
+    mutating func remove(_ conversationID: UUID) {
+        draftsByID[conversationID] = nil
+    }
+
+    mutating func removeAll() {
+        draftsByID.removeAll(keepingCapacity: true)
+    }
+
+    /// 知识库边界变化后，草稿里已离开知识库的仓库不能继续作为显式上下文。
+    mutating func pruneRepos(keepingIDs: Set<Int64>) {
+        for conversationID in Array(draftsByID.keys) {
+            draftsByID[conversationID]?.selectedRepoContexts.removeAll { !keepingIDs.contains($0.id) }
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class KnowledgeRAGWorkspaceViewModel {
@@ -202,7 +251,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var attachments: [RAGComposerAttachment] = []
     var githubLinkContexts: [RAGGitHubLinkReference] = []
-    /// 用户在 Composer 主动授权本轮联网。保持窗口级状态，连续追问无需重复开启；关闭后
+    /// 用户在 Composer 主动授权本轮联网。按会话暂存，连续追问无需重复开启；关闭后
     /// Planner 产生的普通 Web 请求会在执行层被清除，GitHub 实时请求仍需逐项确认。
     var webSearchEnabled = false
     /// 切换模型时立刻写入 AppSettings，关闭窗口后再开可恢复。
@@ -555,6 +604,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 knowledgeRepos = candidates.map(\.repo)
                 let currentRepoIDs = Set(knowledgeRepos.map(\.id))
                 selectedRepoContexts.removeAll { !currentRepoIDs.contains($0.id) }
+                dependencies.ragComposerDraftStore.pruneRepos(keepingIDs: currentRepoIDs)
                 try await refreshIndexCoverage()
                 await refreshKnowledgeBaseMetadataSnapshot()
             } catch {
@@ -577,6 +627,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     func newConversation() async {
         let requestGeneration = conversationSelectionGate.begin()
         do {
+            // 离开当前会话前先暂存未发送草稿，避免「新建」把 @repo / 附件带走。
+            saveComposerDraft(for: selectedConversationID)
             // 当前选中目录时，新会话直接归入该一级分组。
             let conversation = try await conversationStore.createConversation(
                 title: nil,
@@ -601,6 +653,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
             )
             resetTurnState()
+            restoreComposerDraft(for: conversation.id)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -610,6 +663,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         guard selectedConversationID != id || messages.isEmpty || isConversationLoading else { return }
         let previousConversationID = selectedConversationID
         let requestGeneration = conversationSelectionGate.begin()
+        // 离开前写入 App 级内存草稿。回答态已有 *ByConversation；Composer 也必须按会话隔离，
+        // 否则 resetTurnState 会把另一会话刚选的项目/附件清掉且无法恢复。
+        if previousConversationID != id {
+            saveComposerDraft(for: previousConversationID)
+        }
         // 选择意图必须在第一次 await 之前提交：左栏立即响应，旧会话之后的流式事件也会
         // 因 selectedConversationID 已变化而停止投影到当前中栏。
         selectedConversationID = id
@@ -628,6 +686,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversationOutlineTurns = []
         conversationCitations = []
         resetTurnState()
+        restoreComposerDraft(for: id)
         restoreActiveAnswerPresentation(for: id)
         do {
             guard let detail = try await conversationStore.loadConversation(id: id) else {
@@ -673,6 +732,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversationCitations = snapshot.citations
         loadedMessageSequence &+= 1
         resetTurnState()
+        restoreComposerDraft(for: detail.summary.id)
         restoreActiveAnswerPresentation(for: detail.summary.id)
         isConversationLoading = false
     }
@@ -803,6 +863,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             try? await debugFileStore.delete(conversationID: id)
             conversations.removeAll { $0.id == id }
             conversationPresentationCache.remove(id)
+            dependencies.ragComposerDraftStore.remove(id)
             if selectedConversationID == id {
                 if let next = conversations.first {
                     selectedConversationID = nil
@@ -949,6 +1010,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         editingUserMessageID = nil
         editingUserDraft = ""
+        // 发送当下立刻清输入框并同步草稿，避免 Task 调度前切走仍把同一段问题存回草稿。
+        draftQuestion = ""
+        dependencies.ragComposerDraftStore.update(conversationID) { draft in
+            draft.draftQuestion = ""
+        }
         startAnswerTiming(for: conversationID)
         activeAnswerStatesByConversation[conversationID] = .planning
         let priorMessages = messages
@@ -985,7 +1051,13 @@ final class KnowledgeRAGWorkspaceViewModel {
         clearRemoteContextState(for: conversationID)
     }
 
+    /// 关闭 RAG 工作台前把当前会话 Composer 落盘；用户未切会话就关窗时也要保留草稿。
+    func persistCurrentComposerDraft() {
+        saveComposerDraft(for: selectedConversationID)
+    }
+
     /// 关闭窗口或切换用户数据库时，所有进行中的请求都必须停止，避免旧账户结果落入新库。
+    /// Composer 草稿由 `AppDependencies` 持有：普通关窗保留，切用户库前单独清空。
     func cancelAllAnswers() {
         conversationPrefetchTask?.cancel()
         conversationPrefetchTask = nil
@@ -1989,6 +2061,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedCitationChunk = nil
             citationChunkPopoverCitationID = nil
             errorMessage = nil
+        }
+        // 只清问题草稿。此时内存里的 @repo/附件可能已属于另一会话，绝不能反写回本会话。
+        dependencies.ragComposerDraftStore.update(conversationID) { draft in
+            draft.draftQuestion = ""
         }
         var completedPayload: (String, String, [RAGCitation])?
         var terminalReply: String?
@@ -3185,6 +3261,11 @@ final class KnowledgeRAGWorkspaceViewModel {
             attachments = []
             githubLinkContexts = []
         }
+        // 附件是本轮一次性输入；后台完成后无论是否仍在看该会话，草稿都不能把已消耗附件带回来。
+        dependencies.ragComposerDraftStore.update(conversationID) { draft in
+            draft.attachments = []
+            draft.githubLinkContexts = []
+        }
     }
 
     private func refreshIndexCoverage() async throws {
@@ -3208,7 +3289,6 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func resetTurnState() {
         answerElapsedDuration = nil
-        draftQuestion = ""
         streamingAnswer = ""
         streamingPresentation = nil
         answerState = .idle
@@ -3220,13 +3300,39 @@ final class KnowledgeRAGWorkspaceViewModel {
         remoteBlocks = []
         pendingRemoteWorkItems = []
         approvedRemoteWorkItemIDs = []
-        selectedRepoContexts = []
-        attachments = []
-        githubLinkContexts = []
+        // Composer 草稿（输入文案 / @repo / 附件 / 联网开关）由 save/restoreComposerDraft 按会话处理，
+        // 这里绝不能无条件清空，否则切回原会话会丢失未发送上下文。
         errorMessage = nil
         selectedCitation = nil
         selectedCitationChunk = nil
         citationChunkPopoverCitationID = nil
+    }
+
+    /// 离开会话前把当前 Composer 写入 App 级内存草稿。空状态也要保存，避免清掉 chip 后又被旧草稿填回。
+    private func saveComposerDraft(for conversationID: UUID?) {
+        guard let conversationID else { return }
+        dependencies.ragComposerDraftStore.save(
+            RAGComposerDraftSnapshot(
+                draftQuestion: draftQuestion,
+                selectedRepoContexts: selectedRepoContexts,
+                attachments: attachments,
+                githubLinkContexts: githubLinkContexts,
+                explicitRepoMode: explicitRepoMode,
+                webSearchEnabled: webSearchEnabled
+            ),
+            for: conversationID
+        )
+    }
+
+    /// 安装目标会话的 Composer；无草稿时回到空白，避免沿用上一会话的 chip。
+    private func restoreComposerDraft(for conversationID: UUID) {
+        let draft = dependencies.ragComposerDraftStore.draft(for: conversationID) ?? RAGComposerDraftSnapshot()
+        draftQuestion = draft.draftQuestion
+        selectedRepoContexts = draft.selectedRepoContexts
+        attachments = draft.attachments
+        githubLinkContexts = draft.githubLinkContexts
+        explicitRepoMode = draft.explicitRepoMode
+        webSearchEnabled = draft.webSearchEnabled
     }
 
     private func reply(for state: RAGAnswerState) -> String? {

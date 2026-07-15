@@ -144,6 +144,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     }
 
     func windowWillClose(_ notification: Notification) {
+        viewModel.persistCurrentComposerDraft()
         viewModel.cancelAllAnswers()
         window?.resignKey()
         Self.shared = nil

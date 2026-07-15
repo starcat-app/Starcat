@@ -18,8 +18,8 @@
 //  │   - 流式中且用户在底部 → 自动 scrollTo(.bottom)                     │
 //  │   - 用户开始主动滚动 → 立即停止跟随                                 │
 //  │   - 用户结束滚动且停在底部 → 恢复跟随                               │
-//  │ 状态机只接收两类单向信号：用户滚动 phase + 底部锚点可见性。         │
-//  │ 不再让 content geometry、按钮布局与跟随状态互相驱动。              │
+//  │ 状态机接收三类单向信号：用户滚动 phase、底部锚点可见性、           │
+//  │ 已完成布局的内容高度。高度只触发滚动，不参与判断用户是否到底。     │
 //  └──────────────────────────────────────────────────────────────────┘
 //
 //  关键约束 / 已踩过的坑（写之前的考量，避免后续 reviewer 重新踩一遍）：
@@ -60,7 +60,8 @@ struct ScrollFollowTailMetrics: Equatable {
 ///      内部读 `tail.isFollowing` 决定要不要 scrollTo；
 ///   2. 用 `.onScrollPhaseChange` 传用户 phase，用底部 sentinel 的
 ///      `.onScrollVisibilityChange` 传是否真正到底；
-///   3. 当流式 trigger 变化时 `if tail.isFollowing { proxy.scrollTo(...) }`。
+///   3. 内容实际高度变化后询问 `shouldFollowContentHeightChange`，返回 true
+///      时在下一次 MainActor 调度中执行 `proxy.scrollTo(...)`，等待 contentSize 提交。
 @MainActor
 @Observable
 final class ScrollTailController {
@@ -82,6 +83,16 @@ final class ScrollTailController {
 
     /// 当前滚动生命周期是否由用户手势发起。
     @ObservationIgnored private var isUserScrollInProgress: Bool = false
+
+    /// 最近一次由内容增长触发的滚动时间。它只做限频，不是 UI 状态，变化时不能发布 Observation。
+    @ObservationIgnored private var lastAutomaticScrollAt: TimeInterval?
+
+    /// 流式 Markdown 快照约 10Hz；尾随滚动控制在 5Hz，避免每次布局都重算可视区域。
+    private let minimumAutomaticScrollInterval: TimeInterval
+
+    init(minimumAutomaticScrollInterval: TimeInterval = 0.20) {
+        self.minimumAutomaticScrollInterval = max(0, minimumAutomaticScrollInterval)
+    }
 
     /// SwiftUI 把滚动 phase 递给控制器。
     func updatePhase(_ phase: ScrollPhase) {
@@ -119,6 +130,32 @@ final class ScrollTailController {
         }
     }
 
+    /// 根据“已完成布局”的内容高度变化决定是否重新贴底。
+    ///
+    /// 增长来自 token / Markdown 重排，按时间窗口合并；缩短通常来自执行阶段折叠，
+    /// 必须立即校正，否则旧 contentSize 会让视口停在已经不存在的空白区域。
+    /// 高度变化只决定“何时滚”，底部 sentinel 仍是“滚到哪里”的唯一真源。
+    func shouldFollowContentHeightChange(
+        from oldHeight: CGFloat,
+        to newHeight: CGFloat,
+        now: TimeInterval
+    ) -> Bool {
+        guard isFollowing else { return false }
+        guard abs(newHeight - oldHeight) > 0.5 else { return false }
+
+        if newHeight < oldHeight {
+            lastAutomaticScrollAt = now
+            return true
+        }
+
+        if let lastAutomaticScrollAt,
+           now - lastAutomaticScrollAt < minimumAutomaticScrollInterval {
+            return false
+        }
+        lastAutomaticScrollAt = now
+        return true
+    }
+
     /// 用户主动离开尾部（如大纲跳转）：立即停止跟随，避免流式输出把视口拽回底部。
     func pauseFollowing() {
         setFollowing(false)
@@ -127,7 +164,8 @@ final class ScrollTailController {
     /// 用户点击「滚到底部」：恢复跟随；真正对齐由调用方 `scrollTo` 完成。
     func resumeFollowing() {
         setFollowing(true)
-        isBottomVisible = true
+        // 手动“滚到底部”和新会话安装都应立即生效，不能继承上一段流式输出的限频窗口。
+        lastAutomaticScrollAt = nil
     }
 
     /// Observation 不会替我们过滤“新旧值相同”的写入。统一走这里，避免滚动可见性
