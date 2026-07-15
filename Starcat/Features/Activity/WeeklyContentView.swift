@@ -610,6 +610,9 @@ struct WeeklyContentView: View {
         isArchived: Bool,
         isFork: Bool
     ) -> Bool {
+        guard settings.starFilter.matches(
+            isStarred: dependencies.starredRegistry.contains(ghRepoId: repoId)
+        ) else { return false }
         if settings.hideArchived, isArchived { return false }
         if settings.hideForks, isFork { return false }
         if !settings.globalFilterLanguages.isEmpty {

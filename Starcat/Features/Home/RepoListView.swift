@@ -685,6 +685,10 @@ struct RepoListView: View {
         // @Bindable 让 `$vm.statusFilter` 等可派生 Binding，传给下游 picker / toggle。
         @Bindable var vm = viewModel
         let filterItems: [FilterMenuItem] = [
+            .content(id: "starStatus", view: AnyView(
+                starFilterSection(selection: $vm.starFilter)
+            )),
+            .divider(id: "after-star-status"),
             .content(id: "status", view: AnyView(
                 statusFilterSection(selection: $vm.statusFilter)
             )),
@@ -761,6 +765,9 @@ struct RepoListView: View {
                 .onChange(of: viewModel.statusFilter) { _, newValue in
                     settings.statusFilter = newValue
                 }
+                .onChange(of: viewModel.starFilter) { _, newValue in
+                    settings.starFilter = newValue
+                }
                 .onChange(of: viewModel.libraryFilter) { _, newValue in
                     settings.libraryFilter = newValue
                 }
@@ -820,6 +827,10 @@ struct RepoListView: View {
     private func globalFilterMenu() -> some View {
         @Bindable var vm = viewModel
         let filterItems: [FilterMenuItem] = [
+            .content(id: "starStatus", view: AnyView(
+                starFilterSection(selection: $vm.starFilter)
+            )),
+            .divider(id: "after-star-status"),
             .content(id: "library", view: AnyView(
                 libraryFilterSection(selection: $vm.libraryFilter)
             )),
@@ -864,6 +875,9 @@ struct RepoListView: View {
         }
         .onChange(of: viewModel.hideForks) { _, newValue in
             settings.hideForks = newValue
+        }
+        .onChange(of: viewModel.starFilter) { _, newValue in
+            settings.starFilter = newValue
         }
         .onChange(of: viewModel.libraryFilter) { _, newValue in
             settings.libraryFilter = newValue
@@ -1993,6 +2007,14 @@ struct RepoListView: View {
         }
     }
 
+    private func starFilterIcon(for filter: RepoStarFilter) -> String {
+        switch filter {
+        case .all: return "tray.full"
+        case .starred: return "star.fill"
+        case .unstarred: return "star"
+        }
+    }
+
     private func globalLanguageBinding(for language: String) -> Binding<Bool> {
         Binding(
             get: {
@@ -2026,6 +2048,23 @@ struct RepoListView: View {
                 ForEach(RepoStatus.allCases, id: \.self) { st in
                     Label(st.displayName, systemImage: statusIcon(for: st))
                         .tag(RepoStatus?.some(st))
+                }
+            } label: {
+                EmptyView()
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        }
+    }
+
+    private func starFilterSection(selection: Binding<RepoStarFilter>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            filterSectionHeader(title: "list.filter.starStatus", icon: "star.circle")
+
+            Picker(selection: selection) {
+                ForEach(RepoStarFilter.allCases, id: \.self) { filter in
+                    Label(filter.displayName, systemImage: starFilterIcon(for: filter))
+                        .tag(filter)
                 }
             } label: {
                 EmptyView()

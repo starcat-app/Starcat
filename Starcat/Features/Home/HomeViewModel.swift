@@ -488,6 +488,15 @@ final class HomeViewModel {
         }
     }
 
+    /// toolbar 全局 Star 状态筛选。`.all` 表示不收窄范围。
+    var starFilter: RepoStarFilter = .all {
+        didSet {
+            guard oldValue != starFilter else { return }
+            guard !isHydratingManageFilters else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
     /// 按 Starcat 私有知识库状态过滤。`.all` 表示不收窄范围。
     ///
     /// 这是 Manage/list 级别过滤器，不改变当前 Sidebar 选择；例如 All Stars + 已入库
@@ -696,6 +705,7 @@ final class HomeViewModel {
         hideArchived
             || hideForks
             || statusFilter != nil
+            || starFilter != .all
             || libraryFilter != .all
             || repoLanguageFilter != .all
             || !globalFilterLanguages.isEmpty
@@ -711,6 +721,7 @@ final class HomeViewModel {
         hideArchived = false
         hideForks = false
         statusFilter = nil
+        starFilter = .all
         libraryFilter = .all
         repoLanguageFilter = .all
         globalFilterLanguages = []
@@ -1259,6 +1270,7 @@ final class HomeViewModel {
             hideArchived: hideArchived,
             hideForks: hideForks,
             status: statusFilter,
+            star: starFilter,
             library: libraryFilter,
             language: repoLanguageFilter,
             selectedLanguages: Set(globalFilterLanguages),
@@ -2178,6 +2190,11 @@ final class HomeViewModel {
     }
 
     private func applyGlobalRepoFilters(to repos: inout [Repo]) {
+        if starFilter != .all {
+            repos.removeAll { repo in
+                !starFilter.matches(isStarred: repo.isStarred)
+            }
+        }
         let selectedLanguages = Set(globalFilterLanguages)
         if !selectedLanguages.isEmpty {
             repos.removeAll { repo in

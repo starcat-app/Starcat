@@ -251,6 +251,7 @@ struct ActivityView: View {
     private var hasActiveGlobalRepoFilter: Bool {
         settings.hideArchived
             || settings.hideForks
+            || settings.starFilter != .all
             || settings.libraryFilter != .all
             || !settings.globalFilterLanguages.isEmpty
             || settings.wikiAvailabilityFilter != .unknown
@@ -259,6 +260,9 @@ struct ActivityView: View {
     }
 
     private func matchesGlobalFilters(repo: Repo) -> Bool {
+        guard settings.starFilter.matches(
+            isStarred: dependencies.starredRegistry.contains(ghRepoId: repo.id)
+        ) else { return false }
         if settings.hideArchived, repo.isArchived { return false }
         if settings.hideForks, repo.isFork { return false }
         if !settings.globalFilterLanguages.isEmpty {

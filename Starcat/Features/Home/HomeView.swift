@@ -1579,6 +1579,9 @@ struct HomeView: View {
         if viewModel.statusFilter != settings.statusFilter {
             viewModel.statusFilter = settings.statusFilter
         }
+        if viewModel.starFilter != settings.starFilter {
+            viewModel.starFilter = settings.starFilter
+        }
         if viewModel.libraryFilter != settings.libraryFilter {
             viewModel.libraryFilter = settings.libraryFilter
         }
@@ -1880,6 +1883,7 @@ struct HomeView: View {
         settings.hideArchived = false
         settings.hideForks = false
         settings.statusFilter = nil
+        settings.starFilter = .all
         settings.libraryFilter = .all
         settings.repoLanguageFilter = .all
         settings.globalFilterLanguages = []

@@ -76,6 +76,7 @@ struct AppSettingsTests {
         settings.readmeFontSizeAdjustment = 3
         settings.repoSortOption = .starsDesc
         settings.hideArchived = true
+        settings.starFilter = .unstarred
         settings.interestedLanguages = ["Swift", "Go"]
         settings.globalFilterLanguages = ["Swift"]
         settings.wikiAvailabilityFilter = .available
@@ -106,6 +107,7 @@ struct AppSettingsTests {
         #expect(settings.readmeFontSizeAdjustment == 0)
         #expect(settings.repoSortOption == .starredAtDesc)
         #expect(settings.hideArchived == false)
+        #expect(settings.starFilter == .all)
         #expect(settings.interestedLanguages.isEmpty)
         #expect(settings.globalFilterLanguages.isEmpty)
         #expect(settings.wikiAvailabilityFilter == .unknown)
@@ -211,17 +213,19 @@ struct AppSettingsTests {
         #expect(restored.interestedLanguages == ["Go", "swift", "TypeScript"])
     }
 
-    @Test("全局筛选: 语言与信号状态可持久化")
+    @Test("全局筛选: Star、语言与信号状态可持久化")
     func globalFilterStatePersists() {
         let defaults = makeIsolatedDefaults()
         let settings = AppSettings(defaults: defaults)
 
+        settings.starFilter = .unstarred
         settings.globalFilterLanguages = AppSettings.normalizedLanguageList(["TypeScript", "Swift"])
         settings.wikiAvailabilityFilter = .available
         settings.healthAvailabilityFilter = .missing
         settings.openSSFAvailabilityFilter = .available
 
         let restored = AppSettings(defaults: defaults)
+        #expect(restored.starFilter == .unstarred)
         #expect(restored.globalFilterLanguages == ["Swift", "TypeScript"])
         #expect(restored.wikiAvailabilityFilter == .available)
         #expect(restored.healthAvailabilityFilter == .missing)

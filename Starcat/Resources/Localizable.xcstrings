@@ -16654,6 +16654,57 @@
         }
       }
     },
+    "list.filter.starStatus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Star Status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Star 状态"
+          }
+        }
+      }
+    },
+    "list.filter.starStatus.starred": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starred"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已 Star"
+          }
+        }
+      }
+    },
+    "list.filter.starStatus.unstarred": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not Starred"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未 Star"
+          }
+        }
+      }
+    },
     "list.filter.status": {
       "localizations": {
         "en": {

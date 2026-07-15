@@ -240,6 +240,19 @@ struct HomeViewModelFilterSortTests {
 
         #expect(Set(vm.items.map(\.id)) == [1, 2])
         #expect(vm.visibleRepoTotalCount == 2)
+
+        vm.starFilter = .unstarred
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [2])
+        #expect(vm.visibleRepoTotalCount == 1)
+
+        vm.starFilter = .starred
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [1])
+
+        vm.starFilter = .all
+        await vm.awaitPendingListReloadForTesting()
+        #expect(Set(vm.items.map(\.id)) == [1, 2])
     }
 
     @Test("D2: 过滤掉当前选中行 → selectedRepoID 自动清空")

@@ -58,6 +58,39 @@ enum RepoLibraryFilter: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// toolbar 全局 Star 状态筛选。
+///
+/// `StarredRegistry` 与 `repos.is_starred` 分别是远端列表和本地 Manage 列表的状态来源，
+/// 两条路径统一调用 `matches(isStarred:)`，避免不同页面对“未 Star”产生不同解释。
+enum RepoStarFilter: String, CaseIterable, Codable, Sendable {
+    case all
+    case starred
+    case unstarred
+
+    static func parse(_ raw: String?) -> RepoStarFilter {
+        guard let raw, let value = RepoStarFilter(rawValue: raw) else {
+            return .all
+        }
+        return value
+    }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .all: return "general.all"
+        case .starred: return "list.filter.starStatus.starred"
+        case .unstarred: return "list.filter.starStatus.unstarred"
+        }
+    }
+
+    func matches(isStarred: Bool) -> Bool {
+        switch self {
+        case .all: return true
+        case .starred: return isStarred
+        case .unstarred: return !isStarred
+        }
+    }
+}
+
 /// Manage 列表的语言筛选条件。
 ///
 /// 不能直接复用 `RepoListScope.language`：scope 代表左侧导航的基础集合，
@@ -111,6 +144,7 @@ struct RepoListFilters: Equatable, Sendable {
     var hideArchived: Bool
     var hideForks: Bool
     var status: RepoStatus?
+    var star: RepoStarFilter
     var library: RepoLibraryFilter
     var language: RepoLanguageFilter
     var selectedLanguages: Set<String>
@@ -123,6 +157,7 @@ struct RepoListFilters: Equatable, Sendable {
         hideArchived: Bool,
         hideForks: Bool,
         status: RepoStatus?,
+        star: RepoStarFilter = .all,
         library: RepoLibraryFilter = .all,
         language: RepoLanguageFilter = .all,
         selectedLanguages: Set<String> = [],
@@ -134,6 +169,7 @@ struct RepoListFilters: Equatable, Sendable {
         self.hideArchived = hideArchived
         self.hideForks = hideForks
         self.status = status
+        self.star = star
         self.library = library
         self.language = language
         self.selectedLanguages = selectedLanguages
@@ -147,6 +183,7 @@ struct RepoListFilters: Equatable, Sendable {
         hideArchived: false,
         hideForks: false,
         status: nil,
+        star: .all,
         library: .all,
         language: .all,
         selectedLanguages: [],

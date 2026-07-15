@@ -635,6 +635,15 @@ struct GRDBRepoRepository {
                 """)
         }
 
+        switch filters.star {
+        case .all:
+            break
+        case .starred:
+            whereClauses.append("r.is_starred = 1")
+        case .unstarred:
+            whereClauses.append("r.is_starred = 0")
+        }
+
         if filters.hideArchived {
             whereClauses.append("r.is_archived = 0")
         }

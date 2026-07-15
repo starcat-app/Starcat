@@ -683,6 +683,11 @@ final class AppSettings {
         }
     }
 
+    /// toolbar 全局 Star 状态筛选。`.all` 表示不过滤。
+    var starFilter: RepoStarFilter {
+        didSet { persist(key: Keys.starFilter, value: starFilter.rawValue) }
+    }
+
     /// Manage 列表知识库筛选。`.all` 表示不过滤。
     var libraryFilter: RepoLibraryFilter {
         didSet { persist(key: Keys.libraryFilter, value: libraryFilter.rawValue) }
@@ -1403,6 +1408,9 @@ final class AppSettings {
         let statusRaw = defaults.string(forKey: Keys.statusFilter) ?? ""
         self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus.parse(statusRaw)
 
+        let starRaw = defaults.string(forKey: Keys.starFilter)
+        self.starFilter = RepoStarFilter.parse(starRaw)
+
         let libraryRaw = defaults.string(forKey: Keys.libraryFilter)
         self.libraryFilter = RepoLibraryFilter.parse(libraryRaw)
 
@@ -1689,6 +1697,7 @@ final class AppSettings {
         hideArchived = false
         hideForks = false
         statusFilter = nil
+        starFilter = .all
         libraryFilter = .all
         repoLanguageFilter = .all
         interestedLanguages = []
@@ -2015,6 +2024,7 @@ final class AppSettings {
         static let hideArchived = "settings.hideArchived"
         static let hideForks = "settings.hideForks"
         static let statusFilter = "settings.statusFilter"
+        static let starFilter = "settings.filters.global.starStatus.v1"
         static let libraryFilter = "settings.libraryFilter"
         static let repoLanguageFilter = "settings.repoLanguageFilter"
         static let interestedLanguages = "settings.filters.interestedLanguages.v1"
@@ -2100,6 +2110,7 @@ final class AppSettings {
             hideArchived,
             hideForks,
             statusFilter,
+            starFilter,
             libraryFilter,
             repoLanguageFilter,
             interestedLanguages,

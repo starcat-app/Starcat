@@ -329,6 +329,22 @@ struct RepoRepositoryTests {
         )
         #expect(Set(libraryPage.map(\.id)) == [1, 9003])
 
+        var starredFilter = RepoListFilters.empty
+        starredFilter.star = .starred
+        #expect(try await repo.fetchListCount(scope: .library, filters: starredFilter) == 1)
+
+        var unstarredFilter = RepoListFilters.empty
+        unstarredFilter.star = .unstarred
+        #expect(try await repo.fetchListCount(scope: .library, filters: unstarredFilter) == 1)
+        let unstarredLibraryPage = try await repo.fetchListPage(
+            scope: .library,
+            filters: unstarredFilter,
+            sort: .starredAtDesc,
+            limit: 10,
+            offset: 0
+        )
+        #expect(unstarredLibraryPage.map(\.id) == [9003])
+
         let languageStats = try await repo.knowledgeLanguageStats()
         #expect(languageStats.first { $0.language == "Swift" }?.count == 2)
     }
