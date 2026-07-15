@@ -59,6 +59,22 @@ struct RAGLocalizationTests {
                 RAGRemoteContextCopy.commitActivity(total: 42, activeWeeks: 8, weekCount: 12)
                     == "Commits in the last 12 weeks: 42; active weeks: 8/12."
             )
+            #expect(
+                GitHubRemoteContextError.http(status: 503, message: "Service unavailable").errorDescription
+                    == "GitHub HTTP 503: Service unavailable"
+            )
+            #expect(String.l10n("rag.storage.error.conversationMissing") == "The persisted RAG conversation is missing")
+        }
+    }
+
+    @Test("中文环境本地化 GitHub 与会话存储错误格式")
+    func chineseRemoteAndStorageErrorsAreLocalized() throws {
+        try withLocaleOverride("zh-Hans") {
+            #expect(
+                GitHubRemoteContextError.http(status: 503, message: "Service unavailable").errorDescription
+                    == "GitHub HTTP 503：Service unavailable"
+            )
+            #expect(String.l10n("rag.storage.error.conversationMissing") == "持久化的 RAG 会话不存在")
         }
     }
 

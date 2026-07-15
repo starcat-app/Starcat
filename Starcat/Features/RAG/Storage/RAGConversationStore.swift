@@ -353,7 +353,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 throw DatabaseError.openFailed(underlying: NSError(
                     domain: "RAGConversationStore",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Persisted RAG conversation is missing"]
+                    userInfo: [NSLocalizedDescriptionKey: String.l10n("rag.storage.error.conversationMissing")]
                 ))
             }
             let remoteAudits = remoteContexts.compactMap { block -> RAGRemoteContextAudit? in

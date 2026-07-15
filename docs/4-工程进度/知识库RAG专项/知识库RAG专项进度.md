@@ -349,6 +349,8 @@
 > 2026-07-16: 第 4 轮审查补齐 Inspector 可见的 GitHub 远程证据固定文案 i18n；API 返回正文保持原文，英文环境与 Core 共 123 项测试通过。
 >
 > 2026-07-16: 第 4 轮审查删除与读模型重复的 `RAGIndexCoverage`；Repository 到两个窗口全链只传 `RAGIndexStatusProjection`，Core + Chunk Repository 共 138 项通过。
+>
+> 2026-07-16: 第 5 轮复审补齐 GitHub HTTP 与会话存储不变量的 en/zh-Hans 错误格式，API message 保持原文；Localization + Core 共 124 项通过。
 
 ## 15. 收尾与稳定性执行清单
 

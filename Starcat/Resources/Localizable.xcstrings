@@ -19368,6 +19368,12 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub Provider 不支持普通 Web 搜索" } }
       }
     },
+    "rag.core.remote.error.githubHTTPFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "GitHub HTTP %1$lld: %2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub HTTP %1$lld：%2$@" } }
+      }
+    },
     "rag.core.remote.commitActivityFormat": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Commits in the last 12 weeks: %1$lld; active weeks: %2$lld/%3$lld." } },
@@ -19420,6 +19426,12 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Conversation title generation failed: %@" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话标题生成失败：%@" } }
+      }
+    },
+    "rag.storage.error.conversationMissing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The persisted RAG conversation is missing" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "持久化的 RAG 会话不存在" } }
       }
     },
     "rag.demo.citation.grdbRecords.sectionPath": {

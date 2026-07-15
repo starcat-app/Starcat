@@ -534,7 +534,12 @@ enum GitHubRemoteContextError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .http(let status, let message): return "GitHub HTTP \(status)：\(message)"
+        case .http(let status, let message):
+            return String(
+                format: String.l10n("rag.core.remote.error.githubHTTPFormat"),
+                Int64(status),
+                message
+            )
         case .unsupportedResource:
             return String.l10n("rag.core.remote.error.webSearchUnsupported")
         }
