@@ -85,11 +85,9 @@ struct ReadmeContentRepositoryTests {
         _ = baseRepository
         let center = NotificationCenter()
         let repository = ReadmeRepository(database: db, notificationCenter: center)
-        var eventCount = 0
-        var eventRepoID: Int64?
+        let recorder = ReadmeChangeNotificationRecorder()
         let token = center.addObserver(forName: .readmeContentDidChange, object: nil, queue: nil) { notification in
-            eventCount += 1
-            eventRepoID = notification.userInfo?["repoId"] as? Int64
+            recorder.record(repoID: notification.userInfo?["repoId"] as? Int64)
         }
         defer { center.removeObserver(token) }
 
@@ -97,8 +95,9 @@ struct ReadmeContentRepositoryTests {
         try await repository.upsertContent(repoId: repoId, content: "v1", at: Date().addingTimeInterval(1))
         try await repository.upsertContent(repoId: repoId, content: "v2", at: Date().addingTimeInterval(2))
 
-        #expect(eventCount == 2)
-        #expect(eventRepoID == repoId)
+        let recorded = recorder.snapshot
+        #expect(recorded.count == 2)
+        #expect(recorded.repoID == repoId)
     }
 
     @Test("readme_contents 列存压缩 BLOB(磁盘不是明文)")
@@ -174,5 +173,24 @@ struct ReadmeContentRepositoryTests {
         let markdown = try await repo.findContent(repoId: repoId)
         #expect(markdown == "raw md",
                 "readme_contents 直接绑 repos FK,不应被 readmes 删除连带清掉")
+    }
+}
+
+/// Notification 回调没有 actor 隔离，测试状态必须显式加锁；直接捕获并修改局部变量在
+/// Swift 6 下既有数据竞争风险，也会产生并发诊断警告。
+private final class ReadmeChangeNotificationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var repoID: Int64?
+
+    var snapshot: (count: Int, repoID: Int64?) {
+        lock.withLock { (count, repoID) }
+    }
+
+    func record(repoID: Int64?) {
+        lock.withLock {
+            count += 1
+            self.repoID = repoID
+        }
     }
 }

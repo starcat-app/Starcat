@@ -39,6 +39,24 @@ struct ScrollTailControllerTests {
         #expect(!requests.animatesScroll)
     }
 
+    @Test("自动尾随请求按时间窗口合并，手动请求不受限制")
+    func automaticTailRequestsAreCoalesced() {
+        var requests = ScrollTailRequestSequencer(minimumAutomaticInterval: 0.20)
+
+        let first = requests.issueAutomatic(now: 1.00)
+        let coalesced = requests.issueAutomatic(now: 1.10)
+        let nextWindow = requests.issueAutomatic(now: 1.21)
+
+        #expect(first)
+        #expect(!coalesced)
+        #expect(nextWindow)
+        #expect(requests.requestID == 2)
+
+        requests.issue(animatesScroll: true)
+        #expect(requests.requestID == 3)
+        #expect(requests.animatesScroll)
+    }
+
     @Test("用户开始滚动立即暂停跟随")
     func userScrollImmediatelyDisengages() {
         let controller = ScrollTailController()

@@ -456,7 +456,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         (c.embedding_status = 'ready' AND c.embedding_model = ?)
                         OR c.embedding_status = 'keyword_only'
                       )
-                      AND c.repo_id IN ((placeholders))
+                      AND c.repo_id IN (\(placeholders))
                       AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                     ORDER BY c.repo_id, c.source, c.chunk_index
                     """, arguments: StatementArguments(arguments))

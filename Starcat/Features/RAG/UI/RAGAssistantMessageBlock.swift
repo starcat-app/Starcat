@@ -78,7 +78,8 @@ struct RAGAssistantMessageBlock: View {
             }
 
             if !content.isEmpty {
-                RAGMarkdownText(content: content, citations: citations)
+                RAGStableStoredMarkdown(content: content, citations: citations)
+                    .equatable()
                     .font(interfaceScale.font(.body))
                     .frame(maxWidth: 900, alignment: .leading)
             }
@@ -166,6 +167,17 @@ struct RAGAssistantMessageBlock: View {
             guard !Task.isCancelled else { return }
             isCopyFeedbackPinned = false
         }
+    }
+}
+
+/// 已落库正文不会随另一条回答的 token 改变。用 Equatable 边界阻止父时间线的流式状态
+/// 让历史 MarkdownUI AST 反复重建；字号环境变化仍会使 SwiftUI 正常刷新该子树。
+private struct RAGStableStoredMarkdown: View, Equatable {
+    let content: String
+    let citations: [RAGCitation]
+
+    var body: some View {
+        RAGMarkdownText(content: content, citations: citations)
     }
 }
 

@@ -13,6 +13,21 @@ struct RAGMarkdownText: View {
     let content: String
     var citations: [RAGCitation] = []
 
+    /// 展示规则固定且 `NSRegularExpression` 可安全复用。过去每次 SwiftUI 重绘都会重新编译
+    /// 4 个正则；历史回答越多，流式父视图刷新带来的无效 CPU 越明显。
+    private static let citationClusterRepoRegex = try! NSRegularExpression(
+        pattern: #"((?:\[S\d+\])+)\s*([A-Za-z0-9][\w.-]*/[\w.-]+)"#
+    )
+    private static let numberedItemRegex = try! NSRegularExpression(
+        pattern: #"([^\n])([：:。；;）\)])\s*(\d+\.\s+)"#
+    )
+    private static let tightNumberedListRegex = try! NSRegularExpression(
+        pattern: #"([^\n])\n(\d+\.\s+)"#
+    )
+    private static let citationMarkerRegex = try! NSRegularExpression(
+        pattern: #"\[(S\d+)\](?!\()"#
+    )
+
     var body: some View {
         // 与详情页 AI 摘要同一条 MarkdownUI 路线，段落/列表间距由主题控制。
         //
@@ -35,19 +50,19 @@ struct RAGMarkdownText: View {
         // 引用簇后紧贴 `owner/repo`：`][S3]dong4j/foo` → 换段
         text = replace(
             in: text,
-            pattern: #"((?:\[S\d+\])+)\s*([A-Za-z0-9][\w.-]*/[\w.-]+)"#,
+            regex: citationClusterRepoRegex,
             template: "$1\n\n$2"
         )
         // 非行首的编号项：`：1.` / `。2.` → 另起一段，便于 Markdown 识别为列表
         text = replace(
             in: text,
-            pattern: #"([^\n])([：:。；;）\)])\s*(\d+\.\s+)"#,
+            regex: numberedItemRegex,
             template: "$1$2\n\n$3"
         )
         // 紧列表升松列表：单换行后的 `1.` → 双换行
         text = replace(
             in: text,
-            pattern: #"([^\n])\n(\d+\.\s+)"#,
+            regex: tightNumberedListRegex,
             template: "$1\n\n$2"
         )
         // 相邻 `[S1][S3]` 加空格，避免链接挤成一团
@@ -55,8 +70,7 @@ struct RAGMarkdownText: View {
         return text
     }
 
-    private static func replace(in text: String, pattern: String, template: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+    private static func replace(in text: String, regex: NSRegularExpression, template: String) -> String {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: template)
     }
@@ -66,11 +80,10 @@ struct RAGMarkdownText: View {
     static func linkifyCitations(in content: String, citations: [RAGCitation]) -> String {
         guard !citations.isEmpty else { return content }
         let byMarker = Dictionary(uniqueKeysWithValues: citations.map { ($0.marker, $0) })
-        guard let regex = try? NSRegularExpression(pattern: #"\[(S\d+)\](?!\()"#) else { return content }
         let nsRange = NSRange(content.startIndex..<content.endIndex, in: content)
         var result = ""
         var lastEnd = content.startIndex
-        for match in regex.matches(in: content, range: nsRange) {
+        for match in citationMarkerRegex.matches(in: content, range: nsRange) {
             guard let fullRange = Range(match.range, in: content),
                   match.numberOfRanges >= 2,
                   let markerRange = Range(match.range(at: 1), in: content) else { continue }

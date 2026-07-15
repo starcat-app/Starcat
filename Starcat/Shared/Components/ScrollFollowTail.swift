@@ -48,12 +48,20 @@ import SwiftUI
 /// 为每次需要“重新贴住尾部”的内容更新生成不同请求。
 ///
 /// `ScrollPosition` 已在 `.bottom` 时，重复设置相同 edge 不保证产生新的滚动命令。
-/// 调用方将此编号传给原生 bridge，保证每个已提交的流式快照都能重新定位；本类型
-/// 不判断用户意图，仍由 `ScrollTailController` 作为唯一真源。
+/// 调用方将此编号传给原生 bridge，保证合并窗口内至少有一次重新定位；完整消息落库
+/// 另走立即请求补齐末次位置。本类型不判断用户意图，仍由 `ScrollTailController`
+/// 作为唯一真源。
 struct ScrollTailRequestSequencer {
     private(set) var requestID: UInt = 0
     /// 当前请求是否需要动画；仅供同一轮 View 更新传给原生 bridge。
     private(set) var animatesScroll = false
+    /// 自动跟随只需追上用户可感知的内容增长，不应与 10Hz Markdown 快照一一对应。
+    private var lastAutomaticRequestAt: TimeInterval?
+    private let minimumAutomaticInterval: TimeInterval
+
+    init(minimumAutomaticInterval: TimeInterval = 0.20) {
+        self.minimumAutomaticInterval = max(0, minimumAutomaticInterval)
+    }
 
     /// 生成下一次尾部定位请求。溢出后仍可通过“不等于”语义区分新旧请求。
     ///
@@ -61,6 +69,21 @@ struct ScrollTailRequestSequencer {
     mutating func issue(animatesScroll: Bool = false) {
         requestID &+= 1
         self.animatesScroll = animatesScroll
+    }
+
+    /// 合并流式阶段的自动贴底请求，最多约 5Hz 触发原生滚动。
+    ///
+    /// 返回值用于调用方判断本轮是否真的签发请求。历史会话安装和用户点击不走此限频，
+    /// 仍通过 `issue(animatesScroll:)` 立即到达底部。
+    @discardableResult
+    mutating func issueAutomatic(now: TimeInterval) -> Bool {
+        if let lastAutomaticRequestAt,
+           now - lastAutomaticRequestAt < minimumAutomaticInterval {
+            return false
+        }
+        lastAutomaticRequestAt = now
+        issue()
+        return true
     }
 }
 

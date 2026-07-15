@@ -2286,6 +2286,7 @@ struct RAGWorkspaceInspector: View {
             } else {
                 expandedDebugTraceIDs.insert(trace.id)
             }
+            ()
         }
     }
 
@@ -2295,6 +2296,7 @@ struct RAGWorkspaceInspector: View {
         if isExpanded {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                 expandedDebugEventIDs.remove(event.id)
+                ()
             }
             pendingExpandDebugEventIDs.remove(event.id)
             return
@@ -2304,6 +2306,7 @@ struct RAGWorkspaceInspector: View {
         pendingExpandDebugEventIDs.insert(event.id)
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
             expandedDebugEventIDs.insert(event.id)
+            ()
         }
 
         // 极端超大 payload 若 `onAppear` 迟迟不来，2s 后仍解锁，避免行永久禁用。
@@ -2873,14 +2876,7 @@ struct RAGWorkspaceInspector: View {
 
     /// 右侧「证据」列表：按相关度降序，同分再按仓库名稳定排序。
     var allCitations: [RAGCitation] {
-        var seen = Set<UUID>()
-        return viewModel.messages
-            .flatMap(\.citations)
-            .filter { seen.insert($0.id).inserted }
-            .sorted {
-                if $0.score != $1.score { return $0.score > $1.score }
-                return $0.repoFullName.localizedStandardCompare($1.repoFullName) == .orderedAscending
-            }
+        viewModel.conversationCitations
     }
     func remoteResourceName(_ resource: RAGRemoteContextResource) -> String {
         switch resource {

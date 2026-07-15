@@ -43,8 +43,9 @@ struct RAGWorkspaceBottomScrollBridge: NSViewRepresentable {
 /// 放在时间线末尾的零尺寸原生视图。
 ///
 /// 请求使用下一轮主运行循环执行：此时 SwiftUI 已把最新 Markdown 高度提交给
-/// `NSScrollView.documentView`。延迟的是稳定的原生 anchor，而非会过期的 SwiftUI proxy；
-/// 用户手势开始后 `shouldFollow` 会更新为 false，尚未执行的请求会被丢弃。
+/// `NSScrollView.documentView`。这里不能再主动调用 `layoutSubtreeIfNeeded()`：流式阶段会
+/// 反复强制整条时间线同步布局，直接占满主线程并拖慢会话点击。延迟的是稳定的原生 anchor，
+/// 而非会过期的 SwiftUI proxy；用户手势开始后尚未执行的请求会被丢弃。
 @MainActor
 final class RAGWorkspaceBottomScrollAnchorView: NSView {
     private var pendingRequestID: UInt = 0
@@ -101,9 +102,6 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
             return
         }
 
-        scrollView.layoutSubtreeIfNeeded()
-        documentView.layoutSubtreeIfNeeded()
-
         let clipView = scrollView.contentView
         let targetY: CGFloat
         if documentView.isFlipped {
@@ -122,8 +120,11 @@ final class RAGWorkspaceBottomScrollAnchorView: NSView {
                 context.duration = 0.22
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 clipView.animator().setBoundsOrigin(targetOrigin)
-            } completionHandler: {
-                scrollView.reflectScrolledClipView(clipView)
+            } completionHandler: { [weak scrollView, weak clipView] in
+                Task { @MainActor in
+                    guard let scrollView, let clipView else { return }
+                    scrollView.reflectScrolledClipView(clipView)
+                }
             }
         } else {
             clipView.scroll(to: targetOrigin)

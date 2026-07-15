@@ -104,13 +104,13 @@ struct StarcatMCPWriteFacadeTests {
         let (facade, noteRepo, _, _, db, _) = try makeSUT()
         try await db.insertRepoFixture(id: 1)
 
-        var receivedStatus: String?
+        let notificationRecorder = StatusNotificationRecorder()
         let token = NotificationCenter.default.addObserver(
             forName: .repoStatusDidChange,
             object: nil,
             queue: nil
         ) { note in
-            receivedStatus = note.userInfo?["status"] as? String
+            notificationRecorder.record(status: note.userInfo?["status"] as? String)
         }
         defer { NotificationCenter.default.removeObserver(token) }
 
@@ -123,7 +123,7 @@ struct StarcatMCPWriteFacadeTests {
         )
 
         #expect(try await noteRepo.find(repoId: 1)?.status == "using")
-        #expect(receivedStatus == "using")
+        #expect(notificationRecorder.status == "using")
     }
 
     @Test("add_repo_tags 自动创建缺失标签并绑定 repo")
@@ -168,3 +168,16 @@ private final class RefreshCounter {
     var count = 0
 }
 
+/// Notification 回调可能脱离 MainActor 执行；锁保护测试观察值，避免并发读写竞态。
+private final class StatusNotificationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedStatus: String?
+
+    var status: String? {
+        lock.withLock { recordedStatus }
+    }
+
+    func record(status: String?) {
+        lock.withLock { recordedStatus = status }
+    }
+}

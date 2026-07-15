@@ -418,7 +418,7 @@ struct AppSettingsTests {
             minimumVectorSimilarity: 1.8,
             finalEvidenceChunkLimit: 99,
             perRepositoryEvidenceLimit: 0,
-            evidenceTokenBudget: 99_999,
+            evidenceTokenBudget: 9_999_999,
             enabledSources: [.notes]
         )
 

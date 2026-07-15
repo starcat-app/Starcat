@@ -159,6 +159,32 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.userPrompt.contains("keyword-ready 1"))
     }
 
+    @Test("关键词可搜索分片批量查询正确展开 repo ID 占位符")
+    func keywordSearchableChunksExpandRepositoryPlaceholders() async throws {
+        let database = try InMemoryDatabaseManager()
+        for id in 1...2 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await GRDBRepoNoteRepository(database: database)
+                .updateLibraryState(repoId: Int64(id), state: .inLibrary)
+        }
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES
+                    (1, 'readme', '', 'readme_section', 'readme', 'README', 'readme:0', 0, '', 'README', 'ready', 'ready-hash', 1, 0, 'embed-v1', 'ready', datetime('now'), datetime('now')),
+                    (2, 'metadata', '', 'metadata', 'metadata', 'Metadata', 'metadata:0', 0, '', 'Metadata', 'keyword', 'keyword-hash', 1, 0, NULL, 'keyword_only', datetime('now'), datetime('now'))
+                """)
+        }
+
+        let chunks = try await GRDBRAGChunkRepository(database: database)
+            .fetchKeywordSearchableChunks(model: "embed-v1", repoIDs: [1, 2])
+
+        #expect(Set(chunks.map(\.contentHash)) == ["ready-hash", "keyword-hash"])
+    }
+
     @Test("知识库库存统计按入库仓库去重，并禁止按维度分组")
     func knowledgeBaseInventoryAnalyticsUsesWhitelistedCoverageMetrics() async throws {
         let database = try InMemoryDatabaseManager()
@@ -272,6 +298,58 @@ struct KnowledgeRAGCoreTests {
 
         #expect(!gate.isCurrent(first))
         #expect(gate.isCurrent(second))
+    }
+
+    @Test("RAG 会话展示缓存按最近使用顺序有界淘汰")
+    func conversationPresentationCacheUsesLRUEviction() {
+        func snapshot(id: UUID, title: String) -> RAGConversationPresentationSnapshot {
+            RAGConversationPresentationSnapshot(
+                detail: RAGConversationDetail(
+                    summary: RAGConversationSummary(
+                        id: id,
+                        title: title,
+                        isPinned: false,
+                        groupID: nil,
+                        createdAt: "2026-07-15T00:00:00Z",
+                        updatedAt: "2026-07-15T00:00:00Z"
+                    ),
+                    messages: [],
+                    contextSummary: nil
+                ),
+                outlineTurns: [],
+                citations: []
+            )
+        }
+
+        let firstID = UUID()
+        let secondID = UUID()
+        let thirdID = UUID()
+        var cache = RAGConversationPresentationCache(capacity: 2)
+        cache.insert(snapshot(id: firstID, title: "first"))
+        cache.insert(snapshot(id: secondID, title: "second"))
+
+        let recentlyUsedFirst = cache.value(for: firstID)
+        #expect(recentlyUsedFirst?.detail.summary.title == "first")
+        cache.insert(snapshot(id: thirdID, title: "third"))
+
+        let evictedSecond = cache.value(for: secondID)
+        let retainedFirst = cache.value(for: firstID)
+        let retainedThird = cache.value(for: thirdID)
+        #expect(cache.count == 2)
+        #expect(evictedSecond == nil)
+        #expect(retainedFirst != nil)
+        #expect(retainedThird != nil)
+    }
+
+    @MainActor
+    @Test("RAG Markdown 固定正则缓存不改变引用链接与段落格式")
+    func ragMarkdownRegexCachePreservesDisplayFormatting() {
+        let citation = fixtureCitation(marker: "S1")
+
+        let display = RAGMarkdownText.prepareForDisplay("[S1]octo/demo", citations: [citation])
+
+        #expect(display.contains("[S1](starcat-rag://citation/\(citation.id.uuidString))"))
+        #expect(display.contains("\n\nocto/demo"))
     }
 
     @Test("Planner: 无筛选问题保持 semantic_only")
@@ -860,7 +938,8 @@ struct KnowledgeRAGCoreTests {
         #expect(trace.semanticHits.contains { $0.chunkID == 84 && $0.disposition == .sourceDisabled })
         #expect(trace.semanticHits.contains { $0.chunkID == 83 && $0.disposition == .belowVectorSimilarity })
         #expect(trace.semanticHits.contains { $0.chunkID == 85 && $0.disposition == .retained })
-        #expect(trace.finalEvidence.map(\.chunkID) == [82, 85])
+        // 当前融合配置同时计入原始分数，0.80 的向量首名应高于纯关键词首名。
+        #expect(trace.finalEvidence.map(\.chunkID) == [85, 82])
         #expect(diagnostics.debugPayload().contains(
             String(
                 format: String.l10n("rag.workspace.debug.retrieval.funnel.semanticFormat"),
@@ -1223,6 +1302,8 @@ struct KnowledgeRAGCoreTests {
 
         let loaded = try await store.load(conversationID: conversationID)
         #expect(loaded.map(\.id) == [newer.id, older.id])
+        let latestOnly = try await store.load(conversationID: conversationID, limit: 1)
+        #expect(latestOnly.map(\.id) == [newer.id])
 
         try await store.delete(conversationID: conversationID)
         let afterDeletion = try await store.load(conversationID: conversationID)
@@ -1840,12 +1921,26 @@ struct KnowledgeRAGCoreTests {
                 hitKind: .hybrid,
                 vectorSimilarity: 0.8,
                 scoreBreakdown: nil,
+                disposition: .retained
+            ),
+            RAGRetrievalHitTrace(
+                chunkID: 3,
+                repoID: 1,
+                repositoryName: "octo/demo",
+                source: .readme,
+                sectionTitle: "Third",
+                rank: 3,
+                score: 0.7,
+                hitKind: .hybrid,
+                vectorSimilarity: 0.7,
+                scoreBreakdown: nil,
                 disposition: .parentContextTokenLimit
             )
         ])
         trace.markEvidenceTokenLimited(chunkIDs: prompt.evidenceTokenLimitedChunkIDs)
-        #expect(trace.finalEvidence[0].disposition == .evidenceTokenLimit)
-        #expect(trace.finalEvidence[1].disposition == .parentContextTokenLimit)
+        #expect(trace.finalEvidence[0].disposition == .retained)
+        #expect(trace.finalEvidence[1].disposition == .evidenceTokenLimit)
+        #expect(trace.finalEvidence[2].disposition == .parentContextTokenLimit)
     }
 
     @Test("可配置 Generator 模板会渲染占位符并尊重自定义文案")

@@ -696,29 +696,40 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     private var includesReadmeBinding: Binding<Bool> {
-        sourceToggleBinding(get: { includesReadme }, set: { includesReadme = $0 })
+        Binding(
+            get: { includesReadme },
+            set: {
+                includesReadme = $0
+                markRetrievalCustomIfNeeded()
+            }
+        )
     }
 
     private var includesNotesBinding: Binding<Bool> {
-        sourceToggleBinding(get: { includesNotes }, set: { includesNotes = $0 })
+        Binding(
+            get: { includesNotes },
+            set: {
+                includesNotes = $0
+                markRetrievalCustomIfNeeded()
+            }
+        )
     }
 
     private var includesSummaryBinding: Binding<Bool> {
-        sourceToggleBinding(get: { includesSummary }, set: { includesSummary = $0 })
+        Binding(
+            get: { includesSummary },
+            set: {
+                includesSummary = $0
+                markRetrievalCustomIfNeeded()
+            }
+        )
     }
 
     private var includesMetadataBinding: Binding<Bool> {
-        sourceToggleBinding(get: { includesMetadata }, set: { includesMetadata = $0 })
-    }
-
-    private func sourceToggleBinding(
-        get: @escaping () -> Bool,
-        set: @escaping (Bool) -> Void
-    ) -> Binding<Bool> {
         Binding(
-            get: get,
-            set: { newValue in
-                set(newValue)
+            get: { includesMetadata },
+            set: {
+                includesMetadata = $0
                 markRetrievalCustomIfNeeded()
             }
         )

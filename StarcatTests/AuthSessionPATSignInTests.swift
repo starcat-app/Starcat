@@ -33,7 +33,6 @@ struct AuthSessionPATSignInTests {
     @Test("PAT 验证成功 → state 切到 authenticated + token 落 Keychain + onUserSessionChanged(user.id)")
     @MainActor
     func signInWithPAT_success() async throws {
-        let session = Self.makeAuthSession()
         let keychain = InMemoryKeychain()
         let api = MockGitHubAPIClient()
 

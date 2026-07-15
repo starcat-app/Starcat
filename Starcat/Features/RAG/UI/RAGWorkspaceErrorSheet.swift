@@ -97,8 +97,8 @@ struct RAGWorkspaceError: Identifiable {
     }
 
     private static func classify(error: Error?, detail: String) -> RAGWorkspaceErrorKind {
-        if let error = error as? RAGAttachmentError { return .attachment }
-        if let error = error as? RAGQueryPlannerError { return .planner }
+        if error is RAGAttachmentError { return .attachment }
+        if error is RAGQueryPlannerError { return .planner }
         if let error = error as? AIClientError {
             switch error {
             case .missingAPIKey, .invalidBaseURL: return .configuration

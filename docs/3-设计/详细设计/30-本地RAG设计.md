@@ -1867,6 +1867,11 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 3. 正文继续使用稳定 Markdown 前缀 + 未稳定普通 `Text` 尾部；正在变化的 Think/尾部不得启用 `.textSelection(.enabled)`，避免 AppKit 为每帧重建 `SelectionOverlay`。
 4. Think 详情使用稳定的数组下标身份，不把持续变化的正文用作 `ForEach` identity。
 5. 自动滚动控制器只在跟随状态真实变化时发布 Observation；phase、底部可见性和手势生命周期属于内部状态，不参与 View 依赖追踪。
+6. 会话选择在首次 `await` 前提交 ID；旧会话后台任务继续执行，但所有可见投影必须重新校验 `selectedConversationID`。
+7. 最近持久化会话使用容量 24 的窗口级 LRU 快照缓存，并在消息、摘要和会话属性写入后失效；缓存不能替代 SQLite 真源。
+8. 自动尾随最多约 5Hz，只签发原生 bridge 请求；历史安装和用户点击才使用 `ScrollPosition` 立即定位，bridge 禁止强制布局整条时间线。
+9. 会话大纲、引用聚合和固定 Markdown 正则只在持久化消息变化时更新，不能随正文 token 重算。
+10. Debug 文件关闭开关时不读取，开启后异步加载并缓存最近会话的解码结果，不阻塞正文选择，也不删除历史文件。
 
 这些限制只降低 UI 发布与布局频率，不改变最终文本、执行轨迹落库、引用解析或完成态复制/导出能力。
 

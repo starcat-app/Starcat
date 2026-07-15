@@ -433,7 +433,8 @@ struct DiskChatHistoryStoreTests {
         let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: session.id)
         #expect(loaded?.carriedOverSummary == carry)
         // 多行 markdown 应原样保留（不应被 JSON encode/decode 折断换行符）
-        #expect((loaded?.carriedOverSummary ?? "").contains("\n"))
+        let loadedSummary = try #require(loaded?.carriedOverSummary)
+        #expect(loadedSummary.contains("\n"))
     }
 
     /// HOM-70 v2：默认 session（无承接）carriedOverSummary 必须是 nil，

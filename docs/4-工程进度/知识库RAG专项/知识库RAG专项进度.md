@@ -179,6 +179,8 @@
 
 > 2026-07-14: 主动联网实现通过 Debug build、xcstrings JSON 与 diff 检查；10 个定向用例覆盖 GitHub 意图兜底、External Search 零本地证据生成、实时证据拒绝旧答案、私有仓库隔离、旧审计解码、持久化边界和 Prompt 迁移，全部通过。组合 Suite 仍命中本专项既有 `addToLibraryPaginationWindowsAndPrefetches` 分页预取断言，与本轮联网链路无关。
 
+> 2026-07-15: 会话切换性能整改相关 8 个 Suite 为 166/166 通过；全新 DerivedData 全量测试共 1459 项，1451 通过、7 跳过、1 项预期失败、0 失败，完整编译与最终重跑零 warning/error。
+
 ## 10. 真实数据人工验收
 
 - [ ] 验证已 star 已入库、已 star 未入库、未 star 已入库三类 repo 的索引边界。
@@ -224,6 +226,8 @@
 > 实现：拆分检索、回答、引用、拒答和性能指标，以脱敏真实样本和同条件基线驱动调参。
 - [x] 修复长 Think / 长回答的 SwiftUI 布局活锁，并建立 10,000 delta 无损降频回归测试 — `StreamingMarkdownSnapshot.swift`、`RAGAssistantMessageBlock.swift`、`ScrollFollowTail.swift` — 2026-07-14
 > 实现：运行态采样定位 SelectionOverlay 与 AttributeGraph 热点；Think 使用 150ms/256 字快照，动态文本移除选择层，滚动状态只发布真实变化。
+- [x] 后台回答期间的会话切换改为即时选择、展示快照预热与有界 UI 发布 — `KnowledgeRAGWorkspaceViewModel.swift`、`RAGWorkspaceAnswerSurface.swift` — 2026-07-15
+> 实现：LRU 缓存消息、大纲与引用，后台 runtime registry 不参与 Observation；流式 Markdown、原生滚动、Debug 与标题更新降频，旧会话仍继续生成并按原会话落库。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
 - [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。

@@ -9,6 +9,7 @@ import SwiftUI
 import XCTest
 @testable import Starcat
 
+@MainActor
 final class RepoDetailScaffoldTests: XCTestCase {
 
     // MARK: - metadataCollapseProgress

@@ -163,6 +163,42 @@ final class DiskChatHistoryStore {
 
 // MARK: - JSON chunk 后端
 
+/// JSON 历史日期编码的单一入口。
+///
+/// `JSONEncoder.DateEncodingStrategy.iso8601` 会丢弃亚秒，导致 reasoning/response 耗时
+/// 在 JSON 后端与 SQLite 后端不一致。新数据改存精确的 Unix 秒数；读端同时接受旧版
+/// ISO8601 字符串，正式版用户无需迁移或重建历史文件。
+private enum ChatHistoryJSONCoding {
+    static func makeEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes, .prettyPrinted]
+        encoder.dateEncodingStrategy = .secondsSince1970
+        return encoder
+    }
+
+    static func makeDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            if let seconds = try? container.decode(Double.self) {
+                return Date(timeIntervalSince1970: seconds)
+            }
+            let raw = try container.decode(String.self)
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            if let date = plain.date(from: raw) { return date }
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: raw) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid chat-history date: \(raw)"
+            )
+        }
+        return decoder
+    }
+}
+
 @MainActor
 private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
@@ -178,18 +214,8 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
     private var saveCountSinceLastSweep: Int = 0
     private let saveCountSweepThreshold: Int = 5
 
-    private let encoder: JSONEncoder = {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes, .prettyPrinted]
-        enc.dateEncodingStrategy = .iso8601
-        return enc
-    }()
-
-    private let decoder: JSONDecoder = {
-        let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
-        return dec
-    }()
+    private let encoder = ChatHistoryJSONCoding.makeEncoder()
+    private let decoder = ChatHistoryJSONCoding.makeDecoder()
 
     init(fileManager: FileManager = .default, rootOverride: URL? = nil) {
         self.fileManager = fileManager
@@ -217,8 +243,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
                   let data = try? Data(contentsOf: indexURL) else {
                 return Optional<[ChatSessionSummary]>.none
             }
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
+            let decoder = ChatHistoryJSONCoding.makeDecoder()
             return try? decoder.decode(ChatSessionIndex.self, from: data).sessions
         }.value
 
@@ -249,8 +274,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
         do {
             return try await Task.detached(priority: .userInitiated) {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
+                let decoder = ChatHistoryJSONCoding.makeDecoder()
                 let metadataURL = sessionDir.appendingPathComponent("metadata.json")
                 let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: metadataURL))
                 let messages = try Self.loadMessagesDetached(
@@ -277,8 +301,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
         do {
             return try await Task.detached(priority: .userInitiated) {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
+                let decoder = ChatHistoryJSONCoding.makeDecoder()
                 let metadataURL = sessionDir.appendingPathComponent("metadata.json")
                 let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: metadataURL))
                 let start = max(0, metadata.messageCount - max(0, tailCount))
@@ -309,8 +332,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
         guard fileManager.fileExists(atPath: sessionDir.path), start < end else { return [] }
 
         return try await Task.detached(priority: .userInitiated) {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
+            let decoder = ChatHistoryJSONCoding.makeDecoder()
             let metadataURL = sessionDir.appendingPathComponent("metadata.json")
             let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: metadataURL))
             let clampedStart = max(0, min(start, metadata.messageCount))

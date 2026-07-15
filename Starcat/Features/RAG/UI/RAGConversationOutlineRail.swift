@@ -13,7 +13,7 @@
 import SwiftUI
 
 /// 一轮完整问答在大纲轨上的投影。
-struct RAGConversationOutlineTurn: Identifiable, Equatable {
+struct RAGConversationOutlineTurn: Identifiable, Equatable, Sendable {
     /// 用用户消息 id 作为跳转锚点与列表身份。
     var id: UUID { userMessageID }
     let userMessageID: UUID

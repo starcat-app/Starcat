@@ -825,6 +825,11 @@ struct RAGDebugFileRecord: Codable, Sendable {
 actor RAGDebugFileStore {
     private let fileManager: FileManager
     private let rootOverride: URL?
+    /// Debug 文件不可变且只会由本 actor 追加/删除；缓存完整解码结果，以空间换取反复切换时
+    /// 的零磁盘解析。仅进程内存在并限制为最近 8 个会话，清空会话时同步移除。
+    private var cachedTracesByConversation: [UUID: [RAGDebugTrace]] = [:]
+    private var cacheRecency: [UUID] = []
+    private let maxCachedConversationCount = 8
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -863,19 +868,35 @@ actor RAGDebugFileStore {
             to: directory.appendingPathComponent(fileName),
             options: .atomic
         )
+        if var cached = cachedTracesByConversation[conversationID] {
+            cached.removeAll { $0.id == trace.id }
+            cached.append(trace)
+            cached.sort { $0.startedAt > $1.startedAt }
+            cache(cached, for: conversationID)
+        }
     }
 
-    /// 读取指定会话的所有可解析记录。损坏或旧 schema 文件直接跳过，Debug 历史不能阻塞会话加载。
-    func load(conversationID: UUID) throws -> [RAGDebugTrace] {
+    /// 读取指定会话的可解析记录。首次解码后保留完整进程内缓存，后续切换只按显示上限
+    /// 返回切片，不再重复读盘。`limit == nil` 保留完整读取能力，且不会删除任何历史文件；
+    /// 损坏或旧 schema 文件直接跳过。
+    func load(conversationID: UUID, limit: Int? = nil) throws -> [RAGDebugTrace] {
+        if let cached = cachedTracesByConversation[conversationID] {
+            touchCache(conversationID)
+            return limited(cached, to: limit)
+        }
         let directory = try conversationDirectory(conversationID)
-        guard fileManager.fileExists(atPath: directory.path) else { return [] }
+        guard fileManager.fileExists(atPath: directory.path) else {
+            cache([], for: conversationID)
+            return []
+        }
         let files = try fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         ).filter { $0.pathExtension == "json" }
 
-        return files.compactMap { url in
+        let orderedFiles = files.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        let traces: [RAGDebugTrace] = orderedFiles.compactMap { url -> RAGDebugTrace? in
             guard let data = try? Data(contentsOf: url),
                   let record = try? decoder.decode(RAGDebugFileRecord.self, from: data),
                   record.schemaVersion == RAGDebugFileRecord.schemaVersion,
@@ -884,11 +905,15 @@ actor RAGDebugFileStore {
             }
             return record.trace
         }.sorted { $0.startedAt > $1.startedAt }
+        cache(traces, for: conversationID)
+        return limited(traces, to: limit)
     }
 
     /// 只删除指定会话的可丢弃 Debug 目录；不会触及其它会话的调试历史。
     /// 该操作同时用于删除会话和 Debug 面板的“清空”，不存在时视为成功。
     func delete(conversationID: UUID) throws {
+        cachedTracesByConversation[conversationID] = nil
+        cacheRecency.removeAll { $0 == conversationID }
         let directory = try conversationDirectory(conversationID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
@@ -909,5 +934,23 @@ actor RAGDebugFileStore {
 
     private func conversationDirectory(_ conversationID: UUID) throws -> URL {
         try rootDirectory().appendingPathComponent(conversationID.uuidString, isDirectory: true)
+    }
+
+    private func limited(_ traces: [RAGDebugTrace], to limit: Int?) -> [RAGDebugTrace] {
+        guard let limit else { return traces }
+        return Array(traces.prefix(max(0, limit)))
+    }
+
+    private func cache(_ traces: [RAGDebugTrace], for conversationID: UUID) {
+        cachedTracesByConversation[conversationID] = traces
+        touchCache(conversationID)
+        while cacheRecency.count > maxCachedConversationCount {
+            cachedTracesByConversation[cacheRecency.removeFirst()] = nil
+        }
+    }
+
+    private func touchCache(_ conversationID: UUID) {
+        cacheRecency.removeAll { $0 == conversationID }
+        cacheRecency.append(conversationID)
     }
 }

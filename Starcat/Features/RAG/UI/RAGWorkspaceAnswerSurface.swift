@@ -41,7 +41,9 @@ struct RAGWorkspaceAnswerSurface: View {
             answerHeader
             Divider()
             // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
-            if showsEmptyConversation {
+            if viewModel.isConversationLoading {
+                conversationLoading
+            } else if showsEmptyConversation {
                 emptyConversation
             } else {
                 messageTimeline
@@ -64,8 +66,16 @@ struct RAGWorkspaceAnswerSurface: View {
     /// 新会话且尚未开始回答时显示空态提示。
     var showsEmptyConversation: Bool {
         viewModel.messages.isEmpty
-            && viewModel.streamingAnswer.isEmpty
+            && !viewModel.hasStreamingContent
             && !viewModel.isAnswering
+    }
+
+    /// 缓存未命中时立即清掉上一会话正文，只显示轻量加载态；数据库读取完成后一次性安装。
+    /// 这比保留 A 的内容并把左栏高亮切到 B 更诚实，也不会让加载态参与复杂布局。
+    var conversationLoading: some View {
+        ProgressView()
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     var answerHeader: some View {
@@ -112,9 +122,9 @@ struct RAGWorkspaceAnswerSurface: View {
     }
 
     var messageTimeline: some View {
-        let outlineTurns = RAGConversationOutlineBuilder.completeTurns(from: viewModel.messages)
+        let outlineTurns = viewModel.conversationOutlineTurns
         let hasTimelineContent = !viewModel.messages.isEmpty
-            || !viewModel.streamingAnswer.isEmpty
+            || viewModel.hasStreamingContent
             || viewModel.isAnswering
         // 显隐只看几何「是否离底」：不要读 messageTail.isFollowing，否则滚动 phase
         // 每次变化都会整页刷新，鼠标划过按钮时更容易闪没并卡顿。
@@ -128,7 +138,7 @@ struct RAGWorkspaceAnswerSurface: View {
                                 .id(message.id)
                         }
                         if !viewModel.executionSteps.isEmpty
-                            || !viewModel.streamingAnswer.isEmpty
+                            || viewModel.hasStreamingContent
                             || viewModel.isAnswering {
                             liveAssistantMessage
                                 .id("live-assistant-message")
@@ -192,7 +202,10 @@ struct RAGWorkspaceAnswerSurface: View {
                     forceMessageTailScrollIfFollowing()
                 }
                 .onChange(of: viewModel.messages.count) { _, _ in
-                    forceMessageTailScrollIfFollowing()
+                    // 完整消息只会在发送问题或回答落库时增加，频率远低于 token 快照。
+                    // 这里必须立即定位，补偿 5Hz 合并窗口内可能被丢弃的最后一次自动请求。
+                    guard messageTail.isFollowing else { return }
+                    forceMessageTailScroll()
                 }
 
                 // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
@@ -251,8 +264,9 @@ struct RAGWorkspaceAnswerSurface: View {
     ///
     /// 历史实现依赖 `LazyVStack` 内的 item id，并曾跨 `Task.yield()` 保存 proxy；两者
     /// 都可能在 SwiftUI 更新期间失效。`ScrollPosition` 直接驱动当前 ScrollView 的 edge，
-    /// 不依赖惰性子项是否已布局；递增请求再交给底部原生 bridge，确保每次流式快照
-    /// 都会在最新布局完成后重新贴住底部。
+    /// 不依赖惰性子项是否已布局；递增请求再交给底部原生 bridge，在合并后的流式更新
+    /// 提交布局后重新贴住底部。流式快照只更新原生请求编号，完整定位保留给
+    /// 历史安装、完整消息落库和用户点击。
     func forceMessageTailScroll(animated: Bool = false) {
         // 流式快照约 10Hz 提交；尾部跟随若每次都带动画，会形成彼此追逐的动画事务。
         // 只有用户点击快捷入口时才允许动画；打开历史会话和自动跟随始终即时完成。
@@ -268,7 +282,9 @@ struct RAGWorkspaceAnswerSurface: View {
     /// 流式更新只在用户仍在尾部时请求；手动上滚后不抢走阅读位置。
     func forceMessageTailScrollIfFollowing() {
         guard messageTail.isFollowing else { return }
-        forceMessageTailScroll()
+        // 自动跟随仅签发合并后的原生请求。`ScrollPosition` 的完整定位保留给历史加载
+        // 和用户点击，避免每个 Markdown revision 同时驱动两套滚动系统。
+        _ = messageTailRequests.issueAutomatic(now: Date.timeIntervalSinceReferenceDate)
     }
 
     /// 新会话空态：放大图标/文案，并在中栏剩余区域上下左右居中。
@@ -1088,18 +1104,6 @@ struct RAGWorkspaceAnswerSurface: View {
 
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
-    }
-
-    /// 右侧「证据」列表：按相关度降序，同分再按仓库名稳定排序。
-    var allCitations: [RAGCitation] {
-        var seen = Set<UUID>()
-        return viewModel.messages
-            .flatMap(\.citations)
-            .filter { seen.insert($0.id).inserted }
-            .sorted {
-                if $0.score != $1.score { return $0.score > $1.score }
-                return $0.repoFullName.localizedStandardCompare($1.repoFullName) == .orderedAscending
-            }
     }
 
     // MARK: - Display helpers
