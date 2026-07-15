@@ -334,6 +334,14 @@ struct RAGServiceEventSink: Sendable {
     }
 }
 
+/// Prompt 阶段完成后的只读交接物。`retrieval` 可能只多了 evidence-token 裁剪标记；
+/// 其它召回内容保持不变，Generation 不再自行判断证据合法性。
+struct RAGPromptPhaseOutput: Sendable {
+    let prompt: RAGPromptBuildResult
+    let retrieval: RAGRetrievalResult
+    let evidenceCount: Int
+}
+
 struct KnowledgeRAGService: Sendable {
     /// 召回测试用于人工核验而非构造回答；固定上限避免调试窗口被低分尾部结果淹没。
     private static let retrievalTestMaxHits = 10
@@ -793,62 +801,8 @@ struct KnowledgeRAGService: Sendable {
                         }
                     }
 
-                    let hasStructuredEvidence = plan.mode == .structuredOnly && !retrieval.candidates.isEmpty
-                    let hasAnalyticsEvidence = analyticsResult != nil
-                    let hasLocalEvidence = !retrieval.bundles.isEmpty
-                    let hasRemoteEvidence = remoteBlocks.contains {
-                        $0.outcome == .success && $0.resultCount > 0 && !$0.content.isEmpty
-                    }
-                    let hasAttachmentEvidence = attachmentContexts.contains {
-                        $0.supportsFactualAnswer && (!$0.content.isEmpty || $0.imageData != nil)
-                    }
-                    if plan.requiresLiveEvidence, !hasRemoteEvidence {
-                        let answerKey = remoteBlocks.contains(where: { $0.outcome == .failed })
-                            ? "rag.workspace.guidance.remoteFailedReply"
-                            : "rag.workspace.guidance.remoteEmptyReply"
-                        continuation.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
-                            plan: plan,
-                            composerContext: request.composerContext,
-                            answerKey: answerKey
-                        )))
-                        continuation.yield(.state(.noRelevantChunks))
-                        continuation.finish()
-                        return
-                    }
-                    guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence || hasRemoteEvidence || hasAttachmentEvidence else {
-                        let answerKey: String
-                        let terminalState: RAGAnswerState
-                        if localMissingReasonKey == "rag.workspace.execution.noIndex" {
-                            answerKey = "rag.workspace.guidance.noIndexReply"
-                            terminalState = .noIndex
-                        } else if candidates.isEmpty {
-                            answerKey = hasScopedQuery
-                                ? "rag.workspace.guidance.noCandidatesReply"
-                                : "rag.workspace.guidance.noKnowledgeReposReply"
-                            terminalState = hasScopedQuery ? .noCandidates : .noKnowledgeRepos
-                        } else if !plannedRemoteRequests.isEmpty && resolvedRemoteWorkItems.isEmpty {
-                            answerKey = "rag.workspace.guidance.remoteScopeRequiredReply"
-                            terminalState = .noRelevantChunks
-                        } else if !remoteBlocks.isEmpty {
-                            answerKey = remoteBlocks.contains(where: { $0.outcome == .failed })
-                                ? "rag.workspace.guidance.remoteFailedReply"
-                                : "rag.workspace.guidance.remoteEmptyReply"
-                            terminalState = .noRelevantChunks
-                        } else {
-                            answerKey = "rag.workspace.guidance.noEvidenceReply"
-                            terminalState = .noRelevantChunks
-                        }
-                        continuation.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
-                            plan: plan,
-                            composerContext: request.composerContext,
-                            answerKey: answerKey
-                        )))
-                        continuation.yield(.state(terminalState))
-                        continuation.finish()
-                        return
-                    }
-                    let prompt = promptBuilder.build(
-                        question: request.rawQuestion,
+                    guard let promptOutput = runPromptPhase(
+                        request: request,
                         plan: plan,
                         retrieval: retrieval,
                         metadataSnapshot: metadataSnapshot,
@@ -856,29 +810,21 @@ struct KnowledgeRAGService: Sendable {
                         remoteBlocks: remoteBlocks,
                         attachmentContexts: attachmentContexts,
                         history: history,
-                        contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
-                        maximumOutputTokens: generatorParameters.maxCompletionTokens
-                    )
-                    // 最终 evidence token 预算发生在 Retriever 之后。把裁剪结论回写到同一份
-                    // 脱敏轨迹并再次通知 UI，当前会话与持久化执行轨迹才会看到一致的筛除原因。
-                    if !prompt.evidenceTokenLimitedChunkIDs.isEmpty {
-                        retrieval.trace?.markEvidenceTokenLimited(chunkIDs: prompt.evidenceTokenLimitedChunkIDs)
-                        continuation.yield(.retrieval(retrieval))
+                        candidates: candidates,
+                        hasScopedQuery: hasScopedQuery,
+                        localMissingReasonKey: localMissingReasonKey,
+                        plannedRemoteRequests: plannedRemoteRequests,
+                        resolvedRemoteWorkItems: resolvedRemoteWorkItems,
+                        sink: sink
+                    ) else {
+                        continuation.finish()
+                        return
                     }
-                    if let metadataSnapshot {
-                        continuation.yield(.metadataSnapshot(metadataSnapshot))
-                    }
-                    continuation.yield(.contextUsage(prompt.contextUsage))
-
-                    let evidenceCount = retrieval.bundles.count
-                        + (hasStructuredEvidence ? retrieval.candidates.count : 0)
-                        + remoteBlocks.filter { $0.outcome == .success && $0.resultCount > 0 }.count
-                        + attachmentContexts.filter(\.supportsFactualAnswer).count
                     try await runGenerationPhase(
-                        prompt: prompt,
+                        prompt: promptOutput.prompt,
                         attachmentContexts: attachmentContexts,
                         plan: plan,
-                        evidenceCount: evidenceCount,
+                        evidenceCount: promptOutput.evidenceCount,
                         debugEndpoint: request.debugEndpoint,
                         sink: sink
                     )
@@ -895,6 +841,109 @@ struct KnowledgeRAGService: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Prompt 阶段拥有最终证据门禁与 token packing。返回 nil 表示已经发布可解释的本地终止
+    /// 状态；Generation 因而永远只接收至少一种合法证据且已完成预算裁剪的 Prompt。
+    func runPromptPhase(
+        request: RAGServiceRequest,
+        plan: RAGQueryPlan,
+        retrieval initialRetrieval: RAGRetrievalResult,
+        metadataSnapshot: KnowledgeBaseMetadataSnapshot?,
+        analyticsResult: KnowledgeBaseAnalyticsResult?,
+        remoteBlocks: [RAGRemoteContextBlock],
+        attachmentContexts: [RAGAttachmentContext],
+        history: [AIChatMessage],
+        candidates: [RAGRepoCandidate],
+        hasScopedQuery: Bool,
+        localMissingReasonKey: String?,
+        plannedRemoteRequests: [RAGRemoteContextRequest],
+        resolvedRemoteWorkItems: [RAGResolvedRemoteWorkItem],
+        sink: RAGServiceEventSink
+    ) -> RAGPromptPhaseOutput? {
+        var retrieval = initialRetrieval
+        let hasStructuredEvidence = plan.mode == .structuredOnly && !retrieval.candidates.isEmpty
+        let hasAnalyticsEvidence = analyticsResult != nil
+        let hasLocalEvidence = !retrieval.bundles.isEmpty
+        let hasRemoteEvidence = remoteBlocks.contains {
+            $0.outcome == .success && $0.resultCount > 0 && !$0.content.isEmpty
+        }
+        let hasAttachmentEvidence = attachmentContexts.contains {
+            $0.supportsFactualAnswer && (!$0.content.isEmpty || $0.imageData != nil)
+        }
+        if plan.requiresLiveEvidence, !hasRemoteEvidence {
+            let answerKey = remoteBlocks.contains(where: { $0.outcome == .failed })
+                ? "rag.workspace.guidance.remoteFailedReply"
+                : "rag.workspace.guidance.remoteEmptyReply"
+            sink.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
+                plan: plan,
+                composerContext: request.composerContext,
+                answerKey: answerKey
+            )))
+            sink.yield(.state(.noRelevantChunks))
+            return nil
+        }
+        guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence || hasRemoteEvidence || hasAttachmentEvidence
+        else {
+            let answerKey: String
+            let terminalState: RAGAnswerState
+            if localMissingReasonKey == "rag.workspace.execution.noIndex" {
+                answerKey = "rag.workspace.guidance.noIndexReply"
+                terminalState = .noIndex
+            } else if candidates.isEmpty {
+                answerKey = hasScopedQuery
+                    ? "rag.workspace.guidance.noCandidatesReply"
+                    : "rag.workspace.guidance.noKnowledgeReposReply"
+                terminalState = hasScopedQuery ? .noCandidates : .noKnowledgeRepos
+            } else if !plannedRemoteRequests.isEmpty && resolvedRemoteWorkItems.isEmpty {
+                answerKey = "rag.workspace.guidance.remoteScopeRequiredReply"
+                terminalState = .noRelevantChunks
+            } else if !remoteBlocks.isEmpty {
+                answerKey = remoteBlocks.contains(where: { $0.outcome == .failed })
+                    ? "rag.workspace.guidance.remoteFailedReply"
+                    : "rag.workspace.guidance.remoteEmptyReply"
+                terminalState = .noRelevantChunks
+            } else {
+                answerKey = "rag.workspace.guidance.noEvidenceReply"
+                terminalState = .noRelevantChunks
+            }
+            sink.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
+                plan: plan,
+                composerContext: request.composerContext,
+                answerKey: answerKey
+            )))
+            sink.yield(.state(terminalState))
+            return nil
+        }
+        let prompt = promptBuilder.build(
+            question: request.rawQuestion,
+            plan: plan,
+            retrieval: retrieval,
+            metadataSnapshot: metadataSnapshot,
+            analyticsResult: analyticsResult,
+            remoteBlocks: remoteBlocks,
+            attachmentContexts: attachmentContexts,
+            history: history,
+            contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
+            maximumOutputTokens: generatorParameters.maxCompletionTokens
+        )
+        // 最终 evidence token 预算发生在 Retriever 之后。把裁剪结论回写到同一份
+        // 脱敏轨迹并再次通知 UI，当前会话与持久化执行轨迹才会看到一致的筛除原因。
+        if !prompt.evidenceTokenLimitedChunkIDs.isEmpty {
+            retrieval.trace?.markEvidenceTokenLimited(chunkIDs: prompt.evidenceTokenLimitedChunkIDs)
+            sink.yield(.retrieval(retrieval))
+        }
+        if let metadataSnapshot { sink.yield(.metadataSnapshot(metadataSnapshot)) }
+        sink.yield(.contextUsage(prompt.contextUsage))
+        let evidenceCount = retrieval.bundles.count
+            + (hasStructuredEvidence ? retrieval.candidates.count : 0)
+            + remoteBlocks.filter { $0.outcome == .success && $0.resultCount > 0 }.count
+            + attachmentContexts.filter(\.supportsFactualAnswer).count
+        return RAGPromptPhaseOutput(
+            prompt: prompt,
+            retrieval: retrieval,
+            evidenceCount: evidenceCount
+        )
     }
 
     /// Generation 阶段只消费已经完成预算裁剪的 Prompt，不再读取 Planner、Repository 或
