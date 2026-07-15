@@ -1992,7 +1992,7 @@ chips。用户可以取消单个资源、确认保留项或全部跳过；未确
 按钮本身就是本轮明确授权，GitHub 请求自动批准，普通 Web 请求允许执行。
 
 对话步骤统一显示可折叠的“联网搜索”执行项，而且必须在真正发起网络请求前出现。父步骤按既有
-timeline 规则运行时展开、结束后折叠；GitHub 子项按 `repo × resource` 展示状态、network/cache、
+timeline 规则运行时默认展开，但允许用户在输出期间折叠或重新展开，结束后仍自动折叠；GitHub 子项按 `repo × resource` 展示状态、network/cache、
 HTTP、结果数、耗时与脱敏 endpoint，External Search 子项展示 Provider、query、结果数、耗时与最多
 5 条可点击标题/URL。审计随回答持久化，但不保存 token、Authorization header 或远程正文。
 
@@ -2051,7 +2051,7 @@ Settings。
 2. Planner 输出 `remoteContextRequests` / `webSearchRequests`，执行层补齐高置信 GitHub 实时意图。
 3. 对话 timeline 先创建“联网搜索”步骤，再发起实际请求。
 4. 关闭联网时，UI 对 GitHub 请求显示确认 chips；开启联网时直接执行已校验请求。
-5. 完成后步骤自动折叠，用户可随时展开查看 Provider、query、命中数与结果链接。
+5. 运行中默认展开但可手动折叠或重新展开；完成后步骤自动折叠，用户仍可随时展开查看 Provider、query、命中数与结果链接。
 
 这样用户既能主动用网络丰富上下文，也能确认真正送给 Generator 的联网来源。
 

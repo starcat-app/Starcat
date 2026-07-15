@@ -21276,8 +21276,8 @@
     },
     "rag.workspace.inspector.plan.help.networkPlan.field.liveEvidence": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Live evidence: whether stale local chunks are insufficient and network fetch is required." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "实时证据：本地分片是否不足以安全回答，必须联网补充。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Live context: whether stale local chunks are insufficient and network fetch is required." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "实时上下文：本地分片是否不足以安全回答，必须联网补充。" } }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.field.remoteContext": {
@@ -21657,13 +21657,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Live evidence"
+            "value": "Live context"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "实时证据"
+            "value": "实时上下文"
           }
         }
       }

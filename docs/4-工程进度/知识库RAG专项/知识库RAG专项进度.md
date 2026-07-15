@@ -111,7 +111,7 @@
 - [x] Issues / PR 统一调用 `/search/issues`，固定目标 repo 与类型，清洗范围 qualifier 并二次过滤跨 repo / 类型错误结果。
 - [x] 执行层为最新 Issues / PR / Release 等高置信实时问题兜底，Planner 漏报时仍生成受限 GitHub 请求。
 - [x] Composer 主动联网复用 AnySearch、Tavily、Exa 或 Brave Search；GitHub 已可精确回答时不重复普通 Web Search。
-- [x] 对话步骤统一为可折叠“联网搜索”，请求前出现，完成后自动折叠；展示 Provider/query、network/cache、HTTP、结果数、耗时、脱敏 endpoint 与最多 5 条结果链接。
+- [x] 对话步骤统一为可折叠“联网搜索”，请求前出现，运行中默认展开且可手动折叠/重新展开，完成后自动折叠；展示 Provider/query、network/cache、HTTP、结果数、耗时、脱敏 endpoint 与最多 5 条结果链接。
 - [x] 未授权的私有仓库身份不进入 External Search query；Web 正文不持久化，旧联网审计可兼容解码。
 
 ## 7. 工作台 UI/UX

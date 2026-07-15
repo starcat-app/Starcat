@@ -84,8 +84,14 @@ enum RAGNetworkIntentResolver {
                 composerContext: composerContext
             )
             if plan.webSearchRequests.isEmpty {
+                // Planner 已经把口语化问题改写成可检索的 semanticQuery。fallback 必须复用
+                // 这份语义结果，避免把“这个项目”等依赖对话上下文的原始指代直接发给搜索引擎。
+                let fallbackQuery = plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                 plan.webSearchRequests = [RAGWebSearchRequest(
-                    query: webQuery(question: question, composerContext: composerContext),
+                    query: webQuery(
+                        question: fallbackQuery.isEmpty ? question : fallbackQuery,
+                        composerContext: composerContext
+                    ),
                     reason: String.l10n("rag.workspace.network.reason.userEnabled"),
                     maxResults: 8
                 )]

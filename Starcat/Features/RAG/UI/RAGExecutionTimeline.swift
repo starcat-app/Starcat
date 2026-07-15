@@ -13,9 +13,43 @@
 
 import SwiftUI
 
+/// 执行步骤的局部折叠状态。
+///
+/// 运行中默认展开、完成后默认折叠是时间线的自动行为；两个集合只记录用户对当前默认值的反向操作。
+/// 必须把运行中主动折叠单独保存，否则后续流式 delta 触发 View 刷新时会再次被 `running` 强制展开。
+struct RAGExecutionDisclosureState {
+    private var manuallyExpanded: Set<RAGExecutionStepKind> = []
+    private var collapsedWhileRunning: Set<RAGExecutionStepKind> = []
+
+    func isExpanded(_ step: RAGExecutionStep) -> Bool {
+        if step.state == .running {
+            return !collapsedWhileRunning.contains(step.kind)
+        }
+        return manuallyExpanded.contains(step.kind)
+    }
+
+    mutating func toggle(_ step: RAGExecutionStep) {
+        if step.state == .running {
+            if collapsedWhileRunning.contains(step.kind) {
+                collapsedWhileRunning.remove(step.kind)
+            } else {
+                collapsedWhileRunning.insert(step.kind)
+            }
+            return
+        }
+
+        if manuallyExpanded.contains(step.kind) {
+            manuallyExpanded.remove(step.kind)
+        } else {
+            manuallyExpanded.insert(step.kind)
+        }
+    }
+}
+
 /// RAG 回答前后的紧凑步骤轨迹。
 ///
-/// 当前运行步骤自动展开；前序步骤完成后自动折叠为摘要。用户可重新展开已完成步骤，
+/// 当前运行步骤默认展开，但用户可在输出期间随时折叠或重新展开；前序步骤完成后自动折叠为摘要。
+/// 用户也可重新展开已完成步骤，
 /// 但生成回答是最终阅读上下文，始终展开而不会被折叠逻辑收起。该组件只渲染脱敏的
 /// `RAGExecutionStep`，不能读取 Debug trace。
 struct RAGExecutionTimeline: View {
@@ -24,7 +58,7 @@ struct RAGExecutionTimeline: View {
     @Environment(\.locale) private var locale
 
     let steps: [RAGExecutionStep]
-    @State private var manuallyExpanded: Set<RAGExecutionStepKind> = []
+    @State private var disclosureState = RAGExecutionDisclosureState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -36,16 +70,11 @@ struct RAGExecutionTimeline: View {
     }
 
     private func executionStep(_ step: RAGExecutionStep) -> some View {
-        let isExpanded = step.state == .running
-            || manuallyExpanded.contains(step.kind)
+        let isExpanded = disclosureState.isExpanded(step)
         return VStack(alignment: .leading, spacing: 7) {
             Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    if isExpanded {
-                        manuallyExpanded.remove(step.kind)
-                    } else {
-                        manuallyExpanded.insert(step.kind)
-                    }
+                    disclosureState.toggle(step)
                 }
             } label: {
                 // 图标槽与消息头 Starcat logo 同宽，glyph 居中，保证竖向轴线对齐。

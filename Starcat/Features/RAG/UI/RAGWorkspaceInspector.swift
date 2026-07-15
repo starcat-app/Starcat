@@ -1215,9 +1215,11 @@ struct RAGWorkspaceInspector: View {
                             )
                         }
                         ForEach(Array(plan.remoteContextRequests.enumerated()), id: \.offset) { _, request in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label(remoteResourceName(request.resource), systemImage: "network")
-                                    .font(ragFont(.callout, weight: .semibold))
+                            // 操作块，不是分组标题：caption 层级压在「联网计划」section 之下。
+                            networkPlanOperationRow(
+                                title: remoteResourceName(request.resource),
+                                systemImage: "network"
+                            ) {
                                 if !request.query.isEmpty {
                                     Text(request.query)
                                         .font(ragFont(.caption))
@@ -1237,9 +1239,10 @@ struct RAGWorkspaceInspector: View {
                             }
                         }
                         ForEach(plan.webSearchRequests) { request in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label("rag.workspace.inspector.plan.webSearch", systemImage: "globe")
-                                    .font(ragFont(.callout, weight: .semibold))
+                            // 互联网搜索是联网计划下的一次操作，禁止用 callout/semibold 冒充新 section。
+                            networkPlanOperationRow(
+                                title: String.l10n("rag.workspace.inspector.plan.webSearch")
+                            ) {
                                 Text(request.query)
                                     .font(ragFont(.caption))
                                     .foregroundStyle(.primary)
@@ -1458,6 +1461,27 @@ struct RAGWorkspaceInspector: View {
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
+        }
+    }
+
+    /// 联网计划下的单次操作（GitHub 远程 / 互联网搜索）。
+    /// 故意用 caption + secondary，避免与上方 `planSection` 的 callout 标题同级。
+    func networkPlanOperationRow<Content: View>(
+        title: String,
+        systemImage: String? = nil,
+        @ViewBuilder details: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let systemImage {
+                Label(title, systemImage: systemImage)
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(title)
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            details()
         }
     }
 

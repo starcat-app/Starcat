@@ -454,6 +454,23 @@ struct KnowledgeRAGCoreTests {
         #expect(resolved.remoteContextRequests.isEmpty)
     }
 
+    @Test("Composer 联网 fallback 使用 Planner 语义查询而非原始指代")
+    func networkIntentResolverUsesSemanticQueryForWebFallback() {
+        let resolved = RAGNetworkIntentResolver.resolve(
+            question: "我问的是这个项目，应该如何配置 LLM API",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "如何配置 LLM API"),
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "openclaw/openclaw")],
+                webSearchRepoReferences: [.init(id: 21, fullName: "openclaw/openclaw")],
+                webSearchEnabled: true
+            )
+        )
+
+        #expect(resolved.webSearchRequests.first?.query == "openclaw/openclaw 如何配置 LLM API")
+        #expect(resolved.webSearchRequests.first?.query.contains("这个项目") == false)
+    }
+
     @Test("关闭 Composer 联网后丢弃 Planner 普通 Web 请求")
     func networkIntentResolverRequiresExplicitWebConsent() {
         let resolved = RAGNetworkIntentResolver.resolve(
@@ -653,6 +670,30 @@ struct KnowledgeRAGCoreTests {
         )
 
         #expect(step.elapsedDuration(at: startedAt.addingTimeInterval(99)) == 1.25)
+    }
+
+    @Test("RAG 执行步骤运行中可手动折叠且完成后仍自动折叠")
+    func executionDisclosureSupportsRunningManualToggle() {
+        var disclosure = RAGExecutionDisclosureState()
+        let running = RAGExecutionStep(kind: .retrieval, state: .running)
+
+        #expect(disclosure.isExpanded(running))
+        disclosure.toggle(running)
+        #expect(!disclosure.isExpanded(running))
+
+        var updatedRunning = running
+        updatedRunning.details = ["流式更新不应覆盖用户折叠选择"]
+        #expect(!disclosure.isExpanded(updatedRunning))
+        disclosure.toggle(updatedRunning)
+        #expect(disclosure.isExpanded(updatedRunning))
+
+        // 阶段切换到完成态时回到默认折叠，之后仍允许用户自由展开和收起。
+        let completed = RAGExecutionStep(kind: .retrieval, state: .completed)
+        #expect(!disclosure.isExpanded(completed))
+        disclosure.toggle(completed)
+        #expect(disclosure.isExpanded(completed))
+        disclosure.toggle(completed)
+        #expect(!disclosure.isExpanded(completed))
     }
 
     @Test("RAG 处理耗时按分秒显示")
