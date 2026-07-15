@@ -3621,9 +3621,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func refreshIndexCoverage() async throws {
-        indexStatus = RAGIndexStatusProjection(
-            coverage: try await dependencies.knowledgeRAGIndexBuilder.coverage()
-        )
+        indexStatus = try await dependencies.knowledgeRAGIndexBuilder.coverage()
         indexIssueChunks = [:]
         indexIssueHasMore = []
     }

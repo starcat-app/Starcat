@@ -18,7 +18,7 @@ struct KnowledgeRAGCoreTests {
         #expect(RAGIndexStatusProjection.empty.isKnowledgeBaseEmpty)
         #expect(RAGIndexStatusProjection.empty.fraction == 0)
 
-        let projection = RAGIndexStatusProjection(coverage: RAGIndexCoverage(
+        let projection = RAGIndexStatusProjection(
             knowledgeRepoCount: 4,
             indexedRepoCount: 3,
             totalChunks: 20,
@@ -26,7 +26,7 @@ struct KnowledgeRAGCoreTests {
             pendingChunks: 2,
             failedChunks: 1,
             staleChunks: 2
-        ))
+        )
 
         #expect(!projection.isKnowledgeBaseEmpty)
         #expect(projection.indexedRepoCount == 3)

@@ -481,7 +481,7 @@ private final class KnowledgeRAGBrowserViewModel {
     private func refreshIndexStatistics() async throws {
         async let loadedCoverage = dependencies.ragChunkRepository.coverage(model: embeddingModel)
         async let loadedIndexes = dependencies.ragChunkRepository.knowledgeRepositoryIndexes(model: embeddingModel)
-        indexStatus = RAGIndexStatusProjection(coverage: try await loadedCoverage)
+        indexStatus = try await loadedCoverage
         indexes = Dictionary(uniqueKeysWithValues: try await loadedIndexes.map { ($0.repoID, $0) })
     }
 

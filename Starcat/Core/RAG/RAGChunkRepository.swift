@@ -35,7 +35,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws
     func markFailed(_ chunks: [RAGEmbeddingIdentity], claimID: String, error: String) async throws
     func markStaleForOtherModels(currentModel: String) async throws
-    func coverage(model: String) async throws -> RAGIndexCoverage
+    func coverage(model: String) async throws -> RAGIndexStatusProjection
     /// 仅持久化整轮成功的全库刷新摘要；不能与单仓库自动补建共用。
     func fetchLastIndexRefreshSummary() async throws -> RAGIndexRefreshSummary?
     func saveLastIndexRefreshSummary(_ summary: RAGIndexRefreshSummary) async throws
@@ -619,7 +619,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
-    func coverage(model: String) async throws -> RAGIndexCoverage {
+    func coverage(model: String) async throws -> RAGIndexStatusProjection {
         try await database.writer.read { db in
             let row = try Row.fetchOne(db, sql: """
                 SELECT
@@ -638,7 +638,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     )
                 WHERE n.library_state = 'in_library'
                 """, arguments: [model, model, model])
-            return RAGIndexCoverage(
+            return RAGIndexStatusProjection(
                 knowledgeRepoCount: row?["knowledge_repos"] ?? 0,
                 indexedRepoCount: row?["indexed_repos"] ?? 0,
                 totalChunks: row?["total_chunks"] ?? 0,

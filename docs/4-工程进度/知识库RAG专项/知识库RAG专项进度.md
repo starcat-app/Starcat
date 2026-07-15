@@ -343,6 +343,8 @@
 > 2026-07-16: 工作台与知识库浏览器改为共用 `RAGIndexStatusProjection` 纯值读模型，空态、覆盖率和问题计数口径统一，各自 UI 状态机保持隔离；`KnowledgeRAGCoreTests` 120 项通过。
 >
 > 2026-07-16: 第 4 轮审查补齐 Inspector 可见的 GitHub 远程证据固定文案 i18n；API 返回正文保持原文，英文环境与 Core 共 123 项测试通过。
+>
+> 2026-07-16: 第 4 轮审查删除与读模型重复的 `RAGIndexCoverage`；Repository 到两个窗口全链只传 `RAGIndexStatusProjection`，Core + Chunk Repository 共 138 项通过。
 
 ## 15. 收尾与稳定性执行清单
 

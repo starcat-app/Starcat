@@ -166,25 +166,10 @@ struct RAGDeletedChunkIdentity: Equatable, Hashable, Sendable {
     var source: RAGChunkSource
 }
 
-struct RAGIndexCoverage: Equatable, Sendable {
-    var knowledgeRepoCount: Int
-    var indexedRepoCount: Int
-    var totalChunks: Int
-    var readyChunks: Int
-    var pendingChunks: Int
-    var failedChunks: Int
-    var staleChunks: Int
-
-    var fraction: Double {
-        guard totalChunks > 0 else { return 0 }
-        return Double(readyChunks) / Double(totalChunks)
-    }
-}
-
-/// 工作台与知识库浏览器共用的轻量索引状态读模型。
+/// Repository、索引构建器、工作台与知识库浏览器共用的轻量索引状态读模型。
 ///
-/// Repository 的 `RAGIndexCoverage` 是一次 SQL 聚合结果；UI 长期持有这个纯值投影，统一空态、
-/// 覆盖率和问题计数语义。两个窗口仍各自管理刷新与交互任务，不能通过此类型共享可观察状态。
+/// 它是一次 SQL 聚合的纯值快照，只统一空态、覆盖率和问题计数；两个窗口仍各自管理刷新、
+/// 选择与任务生命周期，不能通过此类型共享可观察 UI 状态。
 struct RAGIndexStatusProjection: Equatable, Sendable {
     var knowledgeRepoCount: Int
     var indexedRepoCount: Int
@@ -203,36 +188,6 @@ struct RAGIndexStatusProjection: Equatable, Sendable {
         failedChunks: 0,
         staleChunks: 0
     )
-
-    init(coverage: RAGIndexCoverage) {
-        self.init(
-            knowledgeRepoCount: coverage.knowledgeRepoCount,
-            indexedRepoCount: coverage.indexedRepoCount,
-            totalChunks: coverage.totalChunks,
-            readyChunks: coverage.readyChunks,
-            pendingChunks: coverage.pendingChunks,
-            failedChunks: coverage.failedChunks,
-            staleChunks: coverage.staleChunks
-        )
-    }
-
-    private init(
-        knowledgeRepoCount: Int,
-        indexedRepoCount: Int,
-        totalChunks: Int,
-        readyChunks: Int,
-        pendingChunks: Int,
-        failedChunks: Int,
-        staleChunks: Int
-    ) {
-        self.knowledgeRepoCount = knowledgeRepoCount
-        self.indexedRepoCount = indexedRepoCount
-        self.totalChunks = totalChunks
-        self.readyChunks = readyChunks
-        self.pendingChunks = pendingChunks
-        self.failedChunks = failedChunks
-        self.staleChunks = staleChunks
-    }
 
     var isKnowledgeBaseEmpty: Bool { knowledgeRepoCount == 0 }
     var fraction: Double {

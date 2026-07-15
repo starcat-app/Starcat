@@ -17,7 +17,7 @@ enum RAGIndexingStatus: Equatable, Sendable {
     case fetchingReadmes(processedRepos: Int, totalRepos: Int)
     case building(processedRepos: Int, totalRepos: Int)
     case embedding(processedChunks: Int, totalChunks: Int)
-    case completed(RAGIndexCoverage)
+    case completed(RAGIndexStatusProjection)
     case failed(String)
 
     /// 只有实际调用 embedding API 时才暴露本轮进度；全库覆盖率不能代替一轮小批量任务的进度。
@@ -399,7 +399,7 @@ final class KnowledgeRAGIndexBuilder {
         }
     }
 
-    func coverage() async throws -> RAGIndexCoverage {
+    func coverage() async throws -> RAGIndexStatusProjection {
         try await chunkRepository.coverage(model: resolvedEmbeddingModel())
     }
 
