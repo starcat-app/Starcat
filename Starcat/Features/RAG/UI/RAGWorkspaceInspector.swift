@@ -417,10 +417,6 @@ struct RAGWorkspaceInspector: View {
                 if isKnowledgeMetadataExpanded {
                     // 组间距压到接近贴合：分组靠标题图标区分，不再靠大空隙撑开。
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("rag.workspace.inspector.metadata.subtitle")
-                            .font(ragFont(.caption))
-                            .foregroundStyle(.secondary)
-
                         // 三列等分 + 居中：窄侧栏下短标签才不会左侧挤成一团、右侧空白。
                         HStack(spacing: 8) {
                             metadataStat("rag.workspace.inspector.metadata.projects", value: snapshot.projectCount) {
