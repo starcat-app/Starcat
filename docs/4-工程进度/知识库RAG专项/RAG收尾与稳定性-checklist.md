@@ -1,18 +1,18 @@
 # RAG 收尾与稳定性 Checklist
 
-> 状态: 第 2 轮代码审查已完成，正确性整改、性能与架构技术债、真实环境与大数据人工验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
+> 状态: 第 3 轮代码复审已完成；阶段 7 正确性与能力边界、阶段 8 性能资源上界、阶段 9 架构技术债及真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
 
 ## 目标与执行规则
 
 - 先消除会话错位、输入丢失、长回答卡顿等 P1 主链风险，再增加 Context Usage 与语义压缩能力。
 - 每个小项均先补回归测试，再实施最小改动；完成一项才勾选一项、更新主进度索引并提交一次中文 commit，不 push。
-- RAG 已随正式版收口：schema 变更走 `v7-knowledge-rag`（`ensureKnowledgeRAGSchema`）；不得再回写 v1 草稿或启动期旁路。
-- 每个阶段至少运行相关 Suite；阶段 2、4、6 完成后运行全量 `xcodebuild test`。真实 Provider、慢网络和大数据场景另列人工验收，不以单测替代。
+- RAG 已随正式版收口：任何后续 schema 变更必须追加新 migration；不得回写 `v7-knowledge-rag`、v1 草稿或启动期旁路。
+- 每个阶段至少运行相关 Suite；阶段 7、8、9 完成后运行全量 `xcodebuild test`。真实 Provider、慢网络和大数据场景另列人工验收，不以单测替代。
 
 ## 阶段 0：基线与测试支架
 
 - [x] 为会话选择、浏览器选择、失败恢复、流式快照、滚动请求、上下文预算和历史压缩建立可注入的延迟/错误 mock。
-- [~] 固化基线：100/200 条历史会话读取固定为 4 次关联查询，回归用例通过（整组 0.095s）；1万+ chunk / 大 PDF 的 P50/P95、峰值内存和取消响应时间待真实数据采集。
+- [~] 固化基线：100/200 条历史会话读取固定为 4 次关联查询，回归用例通过（整组 0.095s）；1 万+ chunk、超长文本附件和真实长会话的 P50/P95、峰值内存与取消响应时间待真实数据采集。
 - [x] 建立脱敏真实问答集的固定模型、Provider、Top K 和评测记录模板。
 
 完成条件：测试能稳定复现竞态和失败路径；性能指标可在同一设备重复采集。
@@ -35,14 +35,14 @@
 
 完成条件：长回答保持可取消、尾部跟随和最终 Markdown 一致；100/200 条历史的关联读取查询数为常数级；长调试会话内存受上限保护。
 
-## 阶段 3：检索、附件与远程调用上界
+## 阶段 3：检索、文本附件与远程调用上界
 
 - [x] **大知识库检索**：ready 检查改为存在性查询；向量扫描只读取必要字段、使用有界 Top-K 后再 hydrate；大量 repo ID 分批传入 SQL。
-- [x] **大附件处理**：PDF/文本边提取边累计到上限并检查取消，不先拼接所有页再裁剪。
+- [x] **大附件处理底层上界**：文本按上限累计并检查取消；底层 PDF 提取分支同样有界，但 PDF 未接入当前产品入口，不作为已支持能力。
 - [x] **远程请求规划**：确认前对 remote requests 规范化、去重并限制总工作量；fetch 采用有界并发且保持输出顺序。
 - [x] **远程进度与取消**：展示真实完成数，超时和取消立即停止剩余工作，不把失败写入缓存。
 
-完成条件：1万+ chunk 和超长 PDF 不出现无界加载；重复远程 request 不重复请求；慢网络下进度、超时和取消可理解且可验证。
+完成条件：1 万+ chunk 和超长文本附件不出现无界加载；重复远程 request 不重复请求；慢网络下进度、超时和取消可理解且可验证。
 
 ## 阶段 4：类型化错误与用户恢复
 
@@ -69,20 +69,21 @@
 - [x] 超过历史预算时生成摘要并替代旧轮次；压缩失败不删除历史、不伪造摘要。
 - [x] 持续压缩、重开会话、模型窗口切换和预算接近阈值均补单测。
 - [x] 完成 P2 共享组件收敛，避免 RAG 与 AI 流式展示、选择防竞态和 Markdown 安全逻辑再次分叉。
-- [~] 关闭 Xcode 后运行相关 Suite 与全量 `xcodebuild test`；自动化通过，真实 GitHub/AI/自托管、长会话、慢网络、快速切换、大知识库和大 PDF 人工验收待执行。
+- [~] 关闭 Xcode 后运行相关 Suite 与全量 `xcodebuild test`；自动化通过，真实 GitHub/AI/自托管、长会话、慢网络、快速切换、大知识库和超长文本附件人工验收待执行。
 
 完成条件：长会话可持续问答而不超上下文，原文不丢；全量测试通过；专项进度、主进度索引与结果报告同步完成。
 
-## 阶段 7：第 2 轮审查正确性整改
+## 阶段 7：正确性与能力边界
 
 - [ ] **Embedding 写回一致性**：为索引任务增加串行化或分片 claim 机制；向量写回必须同时校验 chunk id、`content_hash` 和 pending 状态，旧请求不得把旧向量标记为新内容的 ready 向量。
-- [ ] **Meilisearch 同步 SQL**：修复 `fetchKeywordSearchableChunks` 中未插值的 `placeholders`，增加 Repository 回归测试，并验证 `fallbackToSQLite` 开启与关闭时的错误语义。
-- [ ] **PDF / 图片附件入口**：让文件选择器的 UTType、`RAGAttachmentHandling` 和 `RAGAttachmentProcessor` 能力一致；真实 UI 必须可选 PDF / 图片，不得只在处理器和单测中可达。
+- [x] **Meilisearch 同步 SQL**：`fetchKeywordSearchableChunks` 已正确展开 placeholders，并由 Repository 回归测试覆盖批量 repo 查询 — 2026-07-15。
+- [ ] **外部后端回退语义**：为 Meilisearch/Qdrant 查询与同步补 `fallbackToSQLite` 开启/关闭回归测试；开启时允许回退本地，关闭时不得吞掉外部错误。
+- [x] **附件能力边界与文档一致性**：当前正式支持文本、Markdown、JSON 与源码附件；PDF/图片底层分支标记为未来能力，不进入当前 UI、测试门禁或 DoD，活文档已与真实入口同步 — 2026-07-16。
 - [ ] **RAG 固定文案 i18n**：移除 `RAGUserVisiblePlan`、Planner 和 Service 兜底路径中的硬编码中文，固定文案统一走 `Localizable.xcstrings`，不翻译模型生成内容。
 
-完成条件：每项先有可稳定复现的失败测试，再实施最小修复；并发索引不产生过期 ready 向量，Meilisearch 同步可执行，PDF / 图片可从真实工作台发送，英文环境不泄漏固定中文。
+完成条件：每项先有可稳定复现的失败测试，再实施最小修复；并发索引不产生过期 ready 向量，外部后端失败与回退符合开关语义，附件入口与文档一致，英文环境不泄漏固定中文。
 
-## 阶段 8：性能与架构技术债收敛
+## 阶段 8：性能与资源上界
 
 - [ ] **Embedding 队列分批**：禁止 `limit: Int.max` 一次性加载全部待向量化正文；按 `embeddingBatchSize` 分批读取或 claim，独立统计总数，消除循环 `removeFirst` 数组搬移。
 - [ ] **README 重建上界**：缺失 README 拉取改为 2～4 个任务的有界并发，保留 GitHub 限流、超时、取消和稳定进度语义。
@@ -90,21 +91,35 @@
 - [ ] **外部索引增量同步**：合并短时间内的索引变更，按 chunk upsert / delete 同步 Meilisearch 与 Qdrant；Metadata-only 更新不得触发 Qdrant 全量 `replaceAll`。
 - [ ] **本地向量扫描基线**：在 1 万+ chunk 真实数据上记录 P50/P95、峰值内存和取消延迟；依证据决定是否增加索引、调整本地上限或引导使用 Qdrant。Schema 调整必须追加新 migration。
 - [ ] **Source-aware 重建读取**：单 source 刷新只读取当前 source 所需的 Summary、Note、Tags、README 和 Metadata，避免为单仓库读取全库 Summary 或无关数据。
-- [ ] **候选仓库与元数据快照**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询；元数据快照按数据修订版本缓存，不得盲用可能过期的 UI 快照。
+- [ ] **候选仓库轻量查询**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询。
+- [ ] **元数据快照版本缓存**：按数据修订版本缓存 Planner/Generator 元数据快照，不得盲用可能过期的 UI 快照。
 - [ ] **会话持久化增量更新**：回答完成后直接追加本轮持久化结果，不每轮重载全部消息与引用；保留全量重载作为切换会话和错误恢复路径。
 - [ ] **Debug 磁盘保留上界**：在已有内存 FIFO 上限之外，增加每会话文件数或总字节数上限，读取时不全量解码无限历史 JSON。
-- [ ] **会话运行态收敛**：将 `activeAnswerStates`、`activeRetrievals`、`activeQueryPlans`、`activeRemoteBlocks` 等并行字典合并为 `[UUID: RAGConversationRuntimeState]`，先保持 `KnowledgeRAGWorkspaceViewModel` 是唯一可观察协调器。
-- [ ] **Service 内部分阶段**：把 `KnowledgeRAGService.ask` 收敛为 Planner、Retrieval、Remote Context、Prompt 和 Generation 等可单测的内部阶段；不将 `runQuestion` 抽成第二个 God Object。
-- [ ] **Rerank 与索引读模型复用**：抽取 TEI / Cohere 共用的候选编号、HTTP 请求、认证和结果映射，保留各自 DTO；工作台与知识库浏览器共用轻量索引状态读模型。
+- [ ] **会话预取缓存预算**：最近会话不得只按 24 个完整快照限制；增加总字节/消息数预算或只预取轻量投影，并记录长会话启动 I/O、P50/P95 与峰值内存。
 
 完成条件：优化前先固化可重复基线，优化后不改变知识库边界、隐私语义、召回结果和取消行为；两个 App target 编译通过，相关 Suite 与全量测试通过，真实性能数据回填专项评测记录。
 
+## 阶段 9：架构与复用技术债
+
+- [ ] **会话运行态收敛**：将 `activeAnswerStates`、`activeRetrievals`、`activeQueryPlans`、`activeRemoteBlocks` 等并行字典合并为 `[UUID: RAGConversationRuntimeState]`，先保持 `KnowledgeRAGWorkspaceViewModel` 是唯一可观察协调器。
+- [ ] **Service 内部分阶段**：把 `KnowledgeRAGService.ask` 收敛为 Planner、Retrieval、Remote Context、Prompt 和 Generation 等可单测的内部阶段；不将 `runQuestion` 抽成第二个 God Object。
+- [ ] **Rerank 传输层复用**：抽取 TEI / Cohere 共用的候选编号、HTTP 请求、认证和结果映射，保留各自 DTO。
+- [ ] **索引状态读模型复用**：工作台与知识库浏览器共用轻量索引状态投影，不共享各自 UI 状态机。
+
+完成条件：每次只抽取一个稳定边界；重构前后行为与数据归属不变，定向 Suite 和全量测试通过，ViewModel 与 Service 的职责可独立验证。
+
 ## 执行顺序
 
-阶段 0 → 阶段 1 → 阶段 2 → 阶段 3 → 阶段 4 → 阶段 5 → 阶段 6 为已完成的第 1 轮整改主线。第 2 轮按阶段 7 → 阶段 8 → 真实数据与真实 Provider 验收执行；阶段 7 的正确性风险必须先于阶段 8 的性能与架构收敛。
+阶段 0 → 阶段 1 → 阶段 2 → 阶段 3 → 阶段 4 → 阶段 5 → 阶段 6 为已完成的第 1 轮整改主线。当前按阶段 7 → 阶段 8 → 阶段 9 → 真实数据与真实 Provider 验收执行；阶段 7 的正确性风险必须先于性能和架构收敛，阶段 8 的基线应先于阶段 9 的大范围重构。
 
 ## 实施记录（2026-07-13）
 
 - 阶段 1 至 6 的代码整改与回归测试已完成；每个切片均以中文 commit 独立提交，未 push。
 - 最终全量测试：`rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test`，结果为 1377 通过、0 失败、7 跳过、1 项预期失败（总计 1385）。
-- 阶段 0 的 100/200 条历史会话基线已固化为自动化用例；真实 Provider、1万+ chunk、大 PDF、慢网络和真实长会话仍需要在有凭据与真实数据的环境中按本清单人工验收。
+- 阶段 0 的 100/200 条历史会话基线已固化为自动化用例；真实 Provider、1 万+ chunk、超长文本附件、慢网络和真实长会话仍需要在有凭据与真实数据的环境中按本清单人工验收。
+
+## 第 3 轮复审记录（2026-07-16）
+
+- 复审基线为 `main` / `61090a7c`，详细结论见 `审查报告-第3轮.md`。
+- Meilisearch SQL 项已由 2026-07-15 的实现与回归测试关闭；PDF/图片改为未来能力，不再作为当前产品验收项。
+- 定向运行 RAG Core、Chunk Repository、会话窗口、滚动、流式 Markdown 与数据库迁移共 6 个 Suite，168 项测试全部通过；该结果不替代全量测试和真实数据验收。

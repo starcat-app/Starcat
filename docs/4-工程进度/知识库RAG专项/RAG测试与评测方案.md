@@ -5,6 +5,7 @@
 > 日期: 2026-07-14
 >
 > 范围: 仅覆盖以 `repo_notes.library_state = 'in_library'` 为数据边界的知识库 RAG；不把所有 GitHub Stars、Code RAG 或 Agent 的通用回答质量混入本方案。
+> 附件边界: 当前正式支持文本、Markdown、JSON 与源码；PDF/图片不进入当前评测门禁。
 >
 > 关联文档: [本地 RAG 设计](../../3-设计/详细设计/30-本地RAG设计.md)、[脱敏评测集模板](脱敏评测集模板.md)、[知识库 RAG 专项进度](知识库RAG专项进度.md)
 
@@ -105,7 +106,7 @@ Starcat 的一次问答可按如下链路观测：
 | E2E latency P50/P95/P99 | 问题类型、知识库规模、Provider、是否 remote context | 衡量典型体验与长尾卡顿 |
 | streaming 吞吐与 UI 更新间隔 | 回答长度、窗口前后台状态 | 发现 markdown 重解析、主线程掉帧或滚动竞态 |
 | 吞吐、错误率、取消响应时间 | 单请求与有限并发；超时/断网 | 验证可靠性和资源上界 |
-| CPU、峰值内存、磁盘与索引耗时 | chunk 数、README/PDF 长度、重建/增量更新 | 评估 macOS 本机资源占用 |
+| CPU、峰值内存、磁盘与索引耗时 | chunk 数、README/文本附件长度、长会话、重建/增量更新 | 评估 macOS 本机资源占用 |
 | input/output token 与 Provider 费用估算 | 模型、上下文预算、远程/附件有无 | 防止调参以不可接受成本换取小幅质量提升 |
 
 Provider 是用户自行配置的可变外部条件。因此 Starcat 的首个性能门禁应以“同环境不回归”和“本地阶段有明确上界”为主；跨 Provider 的端到端绝对秒数只作分环境参考，不能混成一个全局 SLA。

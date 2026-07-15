@@ -1,6 +1,6 @@
 # 知识库 RAG 专项进度
 
-> 状态: 验收中（代码整体交付已完成，专项测试与真实数据人工验收完成前不关闭）
+> 状态: 第 3 轮复审完成；正确性、性能资源上界、架构技术债与真实数据人工验收完成前不关闭
 > 创建: 2026-07-03
 > 启动: 2026-07-10
 > 实施分支: `codex/knowledge-rag-full-delivery`
@@ -17,7 +17,7 @@
 - [x] Batch A：RAG schema、稳定分片、知识库范围增量索引和本地混合检索。
 - [x] Batch B：AI Query Planner、结构化候选过滤、repo 聚合与执行状态机。
 - [x] Batch C：Generator、streaming、citation、无证据拒答与取消机制。
-- [x] Batch D：真实工作台、`@repo`、模型切换、历史、附件和 GitHub 临时上下文。
+- [x] Batch D：真实工作台、`@repo`、模型切换、历史、文本类附件和 GitHub 临时上下文。
 - [x] Batch E：Meilisearch / Qdrant 可选 Provider、设置、连接测试和本地回退。
 - [~] Batch F：自动化验证已通过；真实数据人工验收待执行。
 
@@ -28,7 +28,7 @@
 - [x] 第一版只读，不修改 tags、notes、status、star 或 libraryState。
 - [x] issues / PR / releases 等 GitHub 数据是本轮临时上下文，不写 `rag_chunks`。
 - [x] 用户主动开启的 External Search 结果只作为本轮临时上下文，不写索引或远程正文历史。
-- [x] 附件和图片是本轮临时上下文，不写索引、notes 或 CloudKit。
+- [x] 文本、Markdown、JSON 与源码附件是本轮临时上下文，不写索引、notes 或 CloudKit；PDF/图片当前不支持。
 - [x] 本次交付包含可选 Meilisearch / Qdrant 客户端能力，但不要求用户部署服务。
 - [x] 本次不做 Code RAG、Agent/MCP 联动、CloudKit 会话同步和 reranker。
 - [x] 不为未实施的 reranker 提前增加空协议或 Settings 选项。
@@ -126,15 +126,14 @@
 - [x] 模型下拉只切换本轮 Planner/Generator，不修改全局设置或 embedding model。
 - [x] 附件 chip 显示文件名、MIME、大小和处理方式；可删除并同步执行上下文。
 - [x] 附件右侧新增联网开关；开启即授权本轮 External Search 与 GitHub 请求，关闭时 GitHub 继续逐项确认。
-- [x] 支持文本、源码、JSON、PDF 和图片；单轮 5 个、单文件 10 MB、总计 20 MB。
+- [x] 支持文本、Markdown、源码和 JSON；单轮 5 个、单文件 10 MB、总计 20 MB。
 - [x] 不支持或超预算附件在发送前阻断。
-- [x] OpenAI-compatible 无统一 vision capability 字段，不按模型名猜测；图片按 multimodal content
-  parts 发送，服务端拒绝时展示原始错误。
+- [x] PDF/图片不在当前文件选择器允许类型内；底层 PDF/vision 分支仅作为未来能力，不进入本轮验收或发布承诺。
 - [x] 粘贴已入库 GitHub repo 链接转 repo chip；已知未入库链接显示明确状态并打开本地详情，外部链接打开 GitHub。
 - [x] 回答 GitHub 链接优先打开 Starcat 本地详情，不存在时打开浏览器。
 - [x] citation chip 定位 Inspector；展示 chunk、section、score、hitKind 和 truncated 状态。
 - [x] no knowledge/no candidates/no index/no evidence/clarification/error/cancel 均有独立 UI 状态。
-- [x] 固定文案完成 en/zh-Hans i18n。
+- [~] 主要固定文案已完成 en/zh-Hans i18n；`RAGUserVisiblePlan`、Planner 与 Service 的少量中文兜底待阶段 7 收口。
 - [x] 索引构建与发送问答均在 UI 和 service 装配边界校验 Pro，已有索引不会绕过门禁。
 - [x] 明确问候/致谢/告别走本地引导，其他非知识库闲聊由 Planner 返回 `guided_discovery`；两者都不检索、不生成。
 - [x] Planner 仅接收当前问题、显式 repo、附件/链接描述、上一条用户问题与上一条回答实际引用 repo，不接收证据正文或完整历史。
@@ -187,7 +186,7 @@
 - [ ] 修改 README/notes/summary/metadata，确认只更新对应 source。
 - [ ] 验证关键词、语义、结构化筛选、模糊日期追问和 no-result 状态。
 - [ ] 用两个 `@repo` 做对比，并验证 only/prefer/exclude。
-- [ ] 切换模型、上传文本/PDF/图片和不支持附件，验证本轮上下文与阻断状态。
+- [ ] 切换模型、上传文本/Markdown/JSON/源码和不支持附件，验证本轮上下文与阻断状态。
 - [ ] 验证 Issues/Releases/PR 确认、跳过、断网/限流降级和 Inspector 信息。
 - [ ] 使用 `@waydabber/BetterDisplay 这个项目最新的 open issues 是什么`，确认无需 Planner 正确声明也会显示“联网搜索”，并按 `updated desc` 返回 open Issues。
 - [ ] 开启 Composer 联网后询问知识库外的当前事实，确认显示所选 External Search Provider、query、命中数与可点击结果；关闭后不发起普通 Web Search。
@@ -284,20 +283,24 @@
 
 ## 14. 代码审查与整改
 
-> 状态: 第 1 轮 P1/P2 自动化整改完成；性能压测与真实环境验收待执行。
+> 状态: 第 1 轮 P1/P2 自动化整改完成；第 3 轮正确性、资源上界与架构技术债待执行。
 
 - [x] 优化流式 Markdown 的增量渲染，避免长回答逐 token 全文重解析。
 - [x] 消除历史会话加载中的 citation/remote audit N+1 查询，并为长会话建立回归基线。
 - [x] 为会话与知识库浏览器选择增加请求取消和最新结果保护，避免快速切换后旧数据覆盖。
 - [x] 限制、去重并有界并行远程上下文抓取；将 Planner 的认证/网络/配置错误转为可操作提示。
 - [x] 失败时保留用户问题，完善重试/设置/附件等错误恢复动作。
-- [x] 为大知识库与大 PDF 建立有界检索/提取路径；收敛调试轨迹与 Markdown/citation 的共享组件。
+- [x] 为大知识库与超长文本附件建立有界检索/提取路径；收敛调试轨迹与 Markdown/citation 的共享组件。
 
 > 审查：详见 `审查报告-第1轮.md`；P1 共 7 项、P2 共 4 项均已整改，完整测试于 2026-07-13 通过；长会话和大数据压测仍待执行。
 
+- [x] 第 3 轮复审确认 Meilisearch SQL 已修复、PDF/图片不属于当前能力，并重新识别 Embedding 写回一致性、索引资源上界、会话预取缓存和运行态架构债。
+
+> 复审：详见 `审查报告-第3轮.md`；2026-07-16 定向 6 个 Suite、168 项测试通过。该结果不替代全量测试与真实数据验收。
+
 ## 15. 收尾与稳定性执行清单
 
-> 状态: 阶段 1 至 6 自动化实施完成；阶段 0 的大数据指标与真实环境人工验收待执行。
+> 状态: 阶段 1 至 6 已完成；阶段 7 正确性、阶段 8 性能资源上界、阶段 9 架构技术债与真实环境验收待执行。
 
 > 清单：`RAG收尾与稳定性-checklist.md` 是本专项后续实现、逐项测试、commit 与验收收口的唯一执行顺序。
 > 结果：自动化整改与测试证据见 `结果报告-收尾与稳定性.md`；真实环境验收记录完成后再关闭专项。

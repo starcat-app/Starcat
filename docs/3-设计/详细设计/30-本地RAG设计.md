@@ -743,7 +743,8 @@ enum RAGGitHubLinkRelation: String, Sendable {
 - 默认 `explicitRepoMode = .only`。用户直接指定 repo 时,表示“只在这些 repo 中分析/对比”。
 - 如果用户说“以 @repo 为参考,再找类似项目”,才使用 `.prefer`。
 - `selectedModelID` 只影响本轮或当前会话,不自动修改 Settings 全局模型。
-- 附件是本轮临时上下文,不进入 RAG 索引。
+- 当前正式支持文本、Markdown、JSON 与源码附件；附件是本轮临时上下文,不进入 RAG 索引。
+- `RAGAttachmentHandling.vision` 与 PDF 提取属于底层保留的未来分支；当前文件选择器不暴露 PDF/图片，不能据此宣称产品已支持。
 - `webSearchEnabled` 由 Composer 的联网按钮显式控制；`webSearchRepoReferences` 只包含允许发送给外部搜索服务的仓库身份。
 - Planner 只接收当前问题、显式 repo 的 id/fullName、附件描述、粘贴链接描述、上一条用户问题与上一条回答实际引用的 repo；不接收分片正文、远程正文、完整历史或上一条回答正文。
 - `previousReferencedRepos` 来自已持久化 citation metadata，不允许从自然语言回答中反推仓库范围。
@@ -2036,8 +2037,7 @@ Composer 内提供模型下拉:
 - 默认使用 Settings -> AI 的 RAG chat model。
 - 本轮切换只写入 `selectedModelID`,不修改全局设置。
 - 下拉只列已启用且已完成 provider 配置验证的 chat 模型；真正调用时再次校验 API key。
-- OpenAI-compatible `/models` 没有统一 vision capability 字段，Starcat 不用模型名猜能力。图片按
-  multimodal content parts 发送；服务端明确拒绝时原样展示错误，用户可切换模型或移除图片。
+- 当前附件链路只发送文本上下文，不依赖 OpenAI-compatible `/models` 的 vision capability。未来若启用图片，必须另行定义 Provider 能力、失败语义和真实 UI 验收，不能按模型名猜能力。
 
 #### 11.7.3 联网开关与远程上下文确认
 
@@ -2055,21 +2055,21 @@ Settings。
 
 这样用户既能主动用网络丰富上下文，也能确认真正送给 Generator 的联网来源。
 
-#### 11.7.4 附件与图片
+#### 11.7.4 附件
 
 附件是本轮临时上下文,不进入 `rag_chunks`。
 
-已落地交互:
+当前已落地交互:
 
 - 支持点击选择多个附件。
-- 图片附件进入 `handling = .vision`。
-- Markdown / txt / small PDF 可进入 `handling = .textContext`。
+- 文本、Markdown、JSON 与源码进入 `handling = .textContext`。
+- PDF 与图片当前不在文件选择器允许类型内，按未支持格式处理。
 - 不支持的格式展示为 disabled chip,不能发送。
 - 每个附件 chip 展示文件名、类型、大小、是否会发送给模型。
 - 附件总大小和 token 预算必须有本地上限,超出时要求用户删除或压缩。
 
-本地上限为单轮 5 个附件、单文件 10 MB、总计 20 MB；文本/PDF 单文件最多提取 40,000 字符。
-确定不支持或超预算时在发送前阻断，图片/附件都不写 `rag_chunks`、notes 或 CloudKit。
+本地上限为单轮 5 个附件、单文件 10 MB、总计 20 MB；文本单文件最多提取 40,000 字符。
+确定不支持或超预算时在发送前阻断，附件不写 `rag_chunks`、notes 或 CloudKit。底层保留的 PDF/vision 分支不属于当前产品能力；后续启用时必须同步文件入口、Provider 能力、隐私提示、测试和 DoD。
 
 #### 11.7.5 GitHub 链接识别
 
@@ -2182,7 +2182,7 @@ Settings -> Storage 建议增加:
 - 送到 chat provider 的内容包括用户问题、retrieved chunks、本轮远程临时上下文和用户主动添加的附件上下文。
 - UI 需要明确这是用户主动使用 AI 问答时发生的外部模型调用。
 - 本轮模型切换只影响当前 request 或当前会话,不修改全局 AI 设置。
-- 用户上传的图片/附件只作为本轮临时上下文,不进入 RAG 索引、repo notes、AI summary 或 CloudKit。
+- 用户上传的文本类附件只作为本轮临时上下文,不进入 RAG 索引、repo notes、AI summary 或 CloudKit；PDF/图片当前不支持。
 - issues / PR / releases 等远程上下文只在用户提问触发后拉取,不做后台常驻抓取。
 - 远程上下文只对候选 repo 拉取,不绕过知识库边界做全网搜索。
 - 远程上下文短 TTL 缓存仅用于减少重复网络请求,不进入 RAG 索引或 CloudKit。
@@ -2312,7 +2312,7 @@ Settings -> Storage 建议增加:
 - Planner 提议 issues / releases 远程上下文时,UI 能展示可删除确认 chip。
 - 删除远程上下文 chip 后,执行层跳过对应 remote request。
 - 模型切换只影响本轮 request,不修改全局 Settings。
-- 图片使用 OpenAI-compatible multimodal content parts；服务端拒绝时展示原始错误。
+- 文本、Markdown、JSON 与源码附件可进入本轮上下文；PDF/图片及其它未支持格式在发送前阻断。
 - GitHub 链接已入库时转成 repo chip,未入库时不自动进入 RAG。
 - 已知未入库链接显示明确状态并打开本地详情；外部链接打开 GitHub；两者均不进入 RAG。
 - 回答区 GitHub 链接命中 Starcat 本地已有 repo 时新开本地详情页窗口,否则打开外部 GitHub。

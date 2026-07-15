@@ -198,7 +198,7 @@ Agent Workspace 已经承担多步骤任务:
 |---|---|---|
 | `@repo` | 输入 `@` 弹出知识库 repo list | 指定一个或多个 repo 作为本轮候选上下文 |
 | 模型切换 | 输入框内模型下拉 | 本轮或当前会话切换模型,不改全局设置 |
-| 图片/附件 | 拖拽或点击上传 | 作为本轮临时上下文,不进入知识库索引 |
+| 文本附件 | 拖拽或点击上传 | 文本、Markdown、JSON、源码作为本轮临时上下文,不进入知识库索引 |
 | GitHub 链接 | 自动识别 repo 链接 | 已入库转 repo chip；已知未入库打开本地详情但不检索；外部链接打开 GitHub |
 
 `@repo` 是最高优先级的易用性能力。用户输入:
@@ -215,7 +215,7 @@ Composer 顶部展示上下文 chips:
 - `Mode: only / prefer / exclude`
 - `GitHub Issues`
 - `Model: GPT-4.1`
-- `Attachment: screenshot.png`
+- `Attachment: context.md`
 
 用户删除 chip 后,本轮执行上下文必须同步变化。
 
@@ -223,7 +223,7 @@ Composer 顶部展示上下文 chips:
 
 issues / releases 等远程临时上下文不通过输入框命令触发。系统应由 Query Planner 根据用户问题判断是否需要,再通过 Query Plan chips 或确认步骤展示给用户;用户可以删除对应 chip 来跳过该远程上下文。
 
-附件和图片第一版可以分阶段落地: 先做 UI 与数据结构,再逐步接入 vision 和文本/PDF 提取。无论哪一阶段,附件都只属于本轮会话,不进入 RAG chunk 索引。
+当前第一版只接入文本、Markdown、JSON 与源码附件。PDF/图片保留为未来阶段能力，未进入当前文件选择器、发送链路和 DoD；后续启用时必须重新确认 Provider 能力、隐私提示、预算和真实 UI 验收。无论哪一阶段,附件都只属于本轮会话,不进入 RAG chunk 索引。
 
 ## 6. 回答体验
 
@@ -311,7 +311,7 @@ MVP 需要保存完整问答历史,但 citation 不保存完整 chunk 内容快�
 
 远程临时上下文不作为会话长期资料保存。真实远程上下文启用后,最多保存本轮回答中可审计的 source URL、resource、fetchedAt 和降级状态;不保存完整 issues body 作为历史知识资产。
 
-用户在 Command Composer 上传的图片和附件也只属于本轮临时上下文。除非后续另做“导入知识库”功能,否则附件不进入 RAG 索引、repo notes、AI summary 或 CloudKit。
+用户在 Command Composer 上传的文本类附件只属于本轮临时上下文。除非后续另做“导入知识库”功能,否则附件不进入 RAG 索引、repo notes、AI summary 或 CloudKit；PDF/图片当前不支持。
 
 清理入口放在 Settings -> Storage,与 AI 对话历史同级。
 
@@ -372,8 +372,7 @@ RAG 属于 Pro 能力,因为它需要:
 - 每次提问会调用 chat 模型。
 - 默认检索在本地执行;启用 Meilisearch / Qdrant 后,检索请求和必要 payload 会发送到用户配置的自托管服务。
 - 问题需要 issues / releases / PR 等现场信息时,用户确认后才调用 GitHub API 拉取本轮候选 repo 的临时上下文。
-- 如果用户上传图片或附件,会随本轮请求发送给所选模型。OpenAI-compatible 服务没有统一的
-  vision capability 字段,Starcat 不按模型名猜测;服务端拒绝时原样展示错误并允许用户切换模型或移除图片。
+- 如果用户上传当前支持的文本类附件,正文会随本轮请求发送给所选模型；PDF/图片当前不进入选择器或发送链路。
 - 如果知识库很大,首次索引耗时较长。
 
 UI 不应夸大费用估算,只给用户可理解的提示:
