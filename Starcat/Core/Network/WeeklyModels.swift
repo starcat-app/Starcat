@@ -120,14 +120,17 @@ struct WeeklySourceFilter: Identifiable, Hashable, Sendable {
 
     let source: WeeklySource?
     private let title: String?
+    /// 后端按来源去重后的仓库数量；内置回退筛选没有目录数据，因此为 nil。
+    let count: Int?
 
-    init(source: WeeklySource?, title: String? = nil) {
+    init(source: WeeklySource?, title: String? = nil, count: Int? = nil) {
         self.source = source
         self.title = title
+        self.count = count
     }
 
     init(descriptor: WeeklySourceDescriptor) {
-        self.init(source: descriptor.source, title: descriptor.localizedTitle)
+        self.init(source: descriptor.source, title: descriptor.localizedTitle, count: descriptor.count)
     }
 
     var id: String { rawValue }

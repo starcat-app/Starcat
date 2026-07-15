@@ -567,6 +567,7 @@ struct WeeklyBulkRepositoryTests {
 
         await viewModel.loadInitialIfNeeded()
         #expect(viewModel.availableSourceFilters.map(\.id) == ["all", "weekly", "hellogithub", "ai_intelligence"])
+        #expect(viewModel.availableSourceFilters.map(\.count) == [nil, 2, 0, 0])
         viewModel.changeSource(to: .helloGitHub)
         await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.items.map(\.fullName) == ["owner/hello"])

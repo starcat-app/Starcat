@@ -192,6 +192,7 @@ struct WeeklyDynamicSourceTests {
         let filter = WeeklySourceFilter(descriptor: descriptor)
         #expect(filter.queryValue == "future_channel")
         #expect(filter.id == "future_channel")
+        #expect(filter.count == 3)
         #expect(WeeklySource(rawValue: "future_channel").systemImage == "questionmark.circle.fill")
     }
 }

@@ -227,6 +227,7 @@ struct WeeklyContentView: View {
                     ForEach(viewModel.availableSourceFilters) { source in
                         weeklyFilterRow(
                             title: source.localizedTitle,
+                            trailingCount: source.count,
                             isSelected: source == viewModel.selectedSource
                         ) {
                             clearWeeklyDetailSelectionIfChanging(source != viewModel.selectedSource)
@@ -343,7 +344,12 @@ struct WeeklyContentView: View {
             .padding(.vertical, 8)
     }
 
-    private func weeklyFilterRow(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func weeklyFilterRow(
+        title: String,
+        trailingCount: Int? = nil,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark")
@@ -354,6 +360,11 @@ struct WeeklyContentView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
+                if let trailingCount {
+                    Text(trailingCount, format: .number)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
