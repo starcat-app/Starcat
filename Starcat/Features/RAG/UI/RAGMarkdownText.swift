@@ -10,6 +10,8 @@ import MarkdownUI
 import SwiftUI
 
 struct RAGMarkdownText: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
     let content: String
     var citations: [RAGCitation] = []
 
@@ -36,7 +38,7 @@ struct RAGMarkdownText: View {
         // 自带的 pointing-hand；回答里的外链 / `[S1]` 引用点不开「可点」反馈。
         // 整段复制走消息底栏 CopyFeedbackButton，不依赖拖选。
         Markdown(Self.prepareForDisplay(content, citations: citations))
-            .markdownTheme(Self.ragAnswerTheme)
+            .markdownTheme(ragAnswerTheme)
     }
 
     /// 仅影响展示：松散段落 → 链接化引用；不改会话持久化原文。
@@ -100,10 +102,13 @@ struct RAGMarkdownText: View {
         return result
     }
     /// RAG 回答专用主题：段落/列表更疏；每次构建避免 Theme 非 Sendable 静态存储告警。
-    private static var ragAnswerTheme: Theme {
+    private var ragAnswerTheme: Theme {
         Theme()
             .text {
                 ForegroundColor(.primary)
+                // MarkdownUI 使用自己的 FontProperties，不读取外层 SwiftUI font。
+                // 必须在 theme 内显式绑定会话字号 token，完成态与流式冻结块才会真正跟随左栏标题。
+                FontSize(interfaceScale.scaled(RAGConversationTypography.text.pointSize))
             }
             .code {
                 FontFamilyVariant(.monospaced)

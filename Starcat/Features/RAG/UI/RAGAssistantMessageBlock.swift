@@ -80,7 +80,6 @@ struct RAGAssistantMessageBlock: View {
             if !content.isEmpty {
                 RAGStableStoredMarkdown(content: content, citations: citations)
                     .equatable()
-                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
                     .frame(maxWidth: 900, alignment: .leading)
             }
 
@@ -231,7 +230,6 @@ struct RAGStreamingAssistantMessageBlock: View {
             ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
                 RAGStableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
                     .equatable()
-                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
             }
 
             if !snapshot.liveTail.isEmpty {

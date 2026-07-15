@@ -14,19 +14,28 @@ import Foundation
 
 /// 把 Provider 的高频文本 delta 合并成低频 UI 快照。
 ///
-/// 完整文本始终保留在 `text`；节流只控制 SwiftUI 可观察状态的发布频率，结束时调用
-/// `flush()` 即可补上最后一小段。因此性能保护不会截断 Think，也不会改变最终落库内容。
+/// 完整文本始终保留在 `text`；节流只控制 SwiftUI 可观察状态的发布频率。配置有界展示
+/// 时，`flush()` 仍只返回展示窗口，完成与落库路径必须读取 `text`，因此不会丢失内容。
 struct StreamingTextPresentationBuffer: Sendable {
     private let throttleInterval: TimeInterval
-    private let immediateCharacterCount: Int
+    private let immediateCharacterCount: Int?
+    private let maximumPresentedCharacterCount: Int?
     private var pendingCharacterCount = 0
     private var lastCommitAt: TimeInterval?
+    private var presentedText = ""
+    private var presentedCharacterCount = 0
+    private var didTruncatePresentedText = false
 
     private(set) var text = ""
 
-    init(throttleInterval: TimeInterval = 0.15, immediateCharacterCount: Int = 256) {
+    init(
+        throttleInterval: TimeInterval = 0.15,
+        immediateCharacterCount: Int? = 256,
+        maximumPresentedCharacterCount: Int? = nil
+    ) {
         self.throttleInterval = max(0, throttleInterval)
-        self.immediateCharacterCount = max(1, immediateCharacterCount)
+        self.immediateCharacterCount = immediateCharacterCount.map { max(1, $0) }
+        self.maximumPresentedCharacterCount = maximumPresentedCharacterCount.map { max(1, $0) }
     }
 
     /// 返回非 nil 表示本次应该把完整快照发布给 UI。首个 delta 立即发布，避免用户
@@ -35,10 +44,11 @@ struct StreamingTextPresentationBuffer: Sendable {
         guard !delta.isEmpty else { return nil }
         text.append(contentsOf: delta)
         pendingCharacterCount += delta.count
+        appendToPresentedText(delta)
 
         guard lastCommitAt == nil
                 || now - (lastCommitAt ?? now) >= throttleInterval
-                || pendingCharacterCount >= immediateCharacterCount else {
+                || shouldCommitForPendingCharacterCount else {
             return nil
         }
         return commit(now: now)
@@ -53,7 +63,51 @@ struct StreamingTextPresentationBuffer: Sendable {
     private mutating func commit(now: TimeInterval) -> String {
         lastCommitAt = now
         pendingCharacterCount = 0
-        return text
+        guard maximumPresentedCharacterCount != nil else { return text }
+        return didTruncatePresentedText ? "…\n" + presentedText : presentedText
+    }
+
+    private var shouldCommitForPendingCharacterCount: Bool {
+        guard let immediateCharacterCount else { return false }
+        return pendingCharacterCount >= immediateCharacterCount
+    }
+
+    /// RAG 的运行中 Think 只需要最近一小段作为视觉反馈。窗口在 append 时增量维护，
+    /// 发布快照时不会再从持续增长的完整字符串尾部反复切片；`text` 仍保留完整内容，
+    /// 供完成、取消、失败和落库路径使用。
+    private mutating func appendToPresentedText(_ delta: String) {
+        guard let maximumPresentedCharacterCount else { return }
+
+        presentedText.append(contentsOf: delta)
+        presentedCharacterCount += delta.count
+        let overflow = presentedCharacterCount - maximumPresentedCharacterCount
+        guard overflow > 0 else { return }
+
+        let removalEnd = presentedText.index(presentedText.startIndex, offsetBy: overflow)
+        presentedText.removeSubrange(..<removalEnd)
+        presentedCharacterCount -= overflow
+        didTruncatePresentedText = true
+    }
+}
+
+/// 只按时间控制可观察状态的发布频率，不允许较大的网络批次绕过上限。
+///
+/// 首次更新立即提交；后续更新只有跨过最小间隔才提交。完整流内容由调用方独立累计，
+/// 因此节流器只决定“何时刷新 UI”，不会决定“保留哪些数据”。
+struct StreamingPresentationThrottle: Sendable {
+    private let minimumInterval: TimeInterval
+    private var lastCommitAt: TimeInterval?
+
+    init(minimumInterval: TimeInterval) {
+        self.minimumInterval = max(0, minimumInterval)
+    }
+
+    mutating func shouldCommit(now: TimeInterval) -> Bool {
+        if let lastCommitAt, now - lastCommitAt < minimumInterval {
+            return false
+        }
+        lastCommitAt = now
+        return true
     }
 }
 

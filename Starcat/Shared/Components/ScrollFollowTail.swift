@@ -18,8 +18,8 @@
 //  │   - 流式中且用户在底部 → 自动 scrollTo(.bottom)                     │
 //  │   - 用户开始主动滚动 → 立即停止跟随                                 │
 //  │   - 用户结束滚动且停在底部 → 恢复跟随                               │
-//  │ 状态机接收三类单向信号：用户滚动 phase、底部锚点可见性、           │
-//  │ 已完成布局的内容高度。高度只触发滚动，不参与判断用户是否到底。     │
+//  │ 状态机接收用户滚动 phase 与底部锚点可见性；内容尺寸变化交给        │
+//  │ SwiftUI 的 sizeChanges anchor，避免 geometry/state 反馈环。         │
 //  └──────────────────────────────────────────────────────────────────┘
 //
 //  关键约束 / 已踩过的坑（写之前的考量，避免后续 reviewer 重新踩一遍）：
@@ -57,18 +57,17 @@ struct ScrollFollowTailMetrics: Equatable {
 ///
 /// 调用方需要做 3 件事：
 ///   1. `@State private var tail = ScrollTailController()`，在 ScrollViewReader
-///      内部读 `tail.isFollowing` 决定要不要 scrollTo；
+///      上把 `tail.isFollowing` 映射为 `.sizeChanges` 的 bottom anchor；
 ///   2. 用 `.onScrollPhaseChange` 传用户 phase，用底部 sentinel 的
 ///      `.onScrollVisibilityChange` 传是否真正到底；
-///   3. 内容实际高度变化后询问 `shouldFollowContentHeightChange`，返回 true
-///      时在下一次 MainActor 调度中执行 `proxy.scrollTo(...)`，等待 contentSize 提交。
+///   3. 只有按钮、历史安装等低频动作通过 `beginScrollRequest` 合并后再 `scrollTo`。
 @MainActor
 @Observable
 final class ScrollTailController {
 
     /// 当前是否处于"自动跟随尾部"状态。
     ///
-    /// view 只读它决定流式 trigger 变化时是否调 `proxy.scrollTo(.bottom)`。
+    /// view 只读它决定内容尺寸变化时是否启用 bottom anchor。
     private(set) var isFollowing: Bool = true
 
     /// 最近一次的滚动相位。
@@ -84,15 +83,14 @@ final class ScrollTailController {
     /// 当前滚动生命周期是否由用户手势发起。
     @ObservationIgnored private var isUserScrollInProgress: Bool = false
 
-    /// 最近一次由内容增长触发的滚动时间。它只做限频，不是 UI 状态，变化时不能发布 Observation。
-    @ObservationIgnored private var lastAutomaticScrollAt: TimeInterval?
+    /// 低频 `scrollTo` 请求的调度状态不属于 UI 展示数据。忽略 Observation 后，按钮点击
+    /// 和会话安装不会为了一个内部任务标记让整个回答面重新计算。
+    @ObservationIgnored private var isScrollRequestScheduled = false
 
-    /// 流式 Markdown 快照约 10Hz；尾随滚动控制在 5Hz，避免每次布局都重算可视区域。
-    private let minimumAutomaticScrollInterval: TimeInterval
+    /// 用户按钮可以把同一轮已排队的无动画请求升级为动画请求。
+    @ObservationIgnored private var animatesScheduledScrollRequest = false
 
-    init(minimumAutomaticScrollInterval: TimeInterval = 0.20) {
-        self.minimumAutomaticScrollInterval = max(0, minimumAutomaticScrollInterval)
-    }
+    init() {}
 
     /// SwiftUI 把滚动 phase 递给控制器。
     func updatePhase(_ phase: ScrollPhase) {
@@ -130,32 +128,6 @@ final class ScrollTailController {
         }
     }
 
-    /// 根据“已完成布局”的内容高度变化决定是否重新贴底。
-    ///
-    /// 增长来自 token / Markdown 重排，按时间窗口合并；缩短通常来自执行阶段折叠，
-    /// 必须立即校正，否则旧 contentSize 会让视口停在已经不存在的空白区域。
-    /// 高度变化只决定“何时滚”，底部 sentinel 仍是“滚到哪里”的唯一真源。
-    func shouldFollowContentHeightChange(
-        from oldHeight: CGFloat,
-        to newHeight: CGFloat,
-        now: TimeInterval
-    ) -> Bool {
-        guard isFollowing else { return false }
-        guard abs(newHeight - oldHeight) > 0.5 else { return false }
-
-        if newHeight < oldHeight {
-            lastAutomaticScrollAt = now
-            return true
-        }
-
-        if let lastAutomaticScrollAt,
-           now - lastAutomaticScrollAt < minimumAutomaticScrollInterval {
-            return false
-        }
-        lastAutomaticScrollAt = now
-        return true
-    }
-
     /// 用户主动离开尾部（如大纲跳转）：立即停止跟随，避免流式输出把视口拽回底部。
     func pauseFollowing() {
         setFollowing(false)
@@ -164,8 +136,29 @@ final class ScrollTailController {
     /// 用户点击「滚到底部」：恢复跟随；真正对齐由调用方 `scrollTo` 完成。
     func resumeFollowing() {
         setFollowing(true)
-        // 手动“滚到底部”和新会话安装都应立即生效，不能继承上一段流式输出的限频窗口。
-        lastAutomaticScrollAt = nil
+    }
+
+    /// 合并同一轮 MainActor 中的低频程序化滚动。返回 true 的调用方负责建立 Task；
+    /// 返回 false 表示已有任务会消费请求。流式内容增长不走这里，由 sizeChanges 处理。
+    func beginScrollRequest(animated: Bool) -> Bool {
+        guard isFollowing else { return false }
+        if animated {
+            animatesScheduledScrollRequest = true
+        }
+        guard !isScrollRequestScheduled else { return false }
+        isScrollRequestScheduled = true
+        return true
+    }
+
+    /// Task 在真正执行 scrollTo 前读取一次动画意图；读取不结束请求，确保 defer 能复位。
+    func scheduledScrollRequestShouldAnimate() -> Bool {
+        animatesScheduledScrollRequest
+    }
+
+    /// 无论请求成功、被暂停还是 Task 提前返回，都必须在 defer 中结束调度状态。
+    func finishScrollRequest() {
+        isScrollRequestScheduled = false
+        animatesScheduledScrollRequest = false
     }
 
     /// Observation 不会替我们过滤“新旧值相同”的写入。统一走这里，避免滚动可见性

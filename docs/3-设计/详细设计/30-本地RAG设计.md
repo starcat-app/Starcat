@@ -1863,13 +1863,13 @@ UI 在 planning 阶段显示“正在理解问题”,retrieval 阶段显示“�
 流式展示还必须遵守以下性能契约：
 
 1. Provider 的原始 token/delta 只追加到非可观察 buffer，不能逐条改写 `@Observable` UI 状态。
-2. Think 以 150ms 或累计 256 字为发布阈值；完整文本始终保留在 buffer，完成、失败、取消和提前结束都必须 flush。
+2. RAG 正文严格按 8Hz、Think 严格按 5Hz 发布，较大网络批次不得绕过时间上限；运行中 Think 只展示最近 8,000 字符，完整文本始终保留在 buffer，完成、失败、取消和提前结束都必须无损收口。
 3. 正文继续使用稳定 Markdown 前缀 + 未稳定普通 `Text` 尾部；正在变化的 Think/尾部不得启用 `.textSelection(.enabled)`，避免 AppKit 为每帧重建 `SelectionOverlay`。
-4. Think 详情使用稳定的数组下标身份，不把持续变化的正文用作 `ForEach` identity。
-5. 自动滚动控制器只在跟随状态真实变化时发布 Observation；phase、底部可见性和手势生命周期属于内部状态，不参与 View 依赖追踪。
+4. Think 详情使用稳定的数组下标身份与 Equatable 文本边界，不把持续变化的正文用作 `ForEach` identity；高频快照只由独立流式 Assistant 子视图订阅。
+5. 自动滚动控制器只在跟随状态真实变化时发布 Observation；phase、底部可见性、手势生命周期、任务合并与动画意图属于内部状态，不参与 View 依赖追踪。
 6. 会话选择在首次 `await` 前提交 ID；旧会话后台任务继续执行，但所有可见投影必须重新校验 `selectedConversationID`。
 7. 最近持久化会话使用容量 24 的窗口级 LRU 快照缓存，并在消息、摘要和会话属性写入后失效；缓存不能替代 SQLite 真源。
-8. 中栏消息时间线使用非惰性 `VStack`，程序化滚动只使用当前 `ScrollViewReader`，消息、大纲与永久 bottom sentinel 共用稳定 identity；自动尾随由完成布局后的内容高度触发，先 `Task.yield()` 等待 `ScrollView.contentSize` 提交，再定位 sentinel；增长最多 5Hz、折叠缩短立即校正，按钮与历史恢复不受限频。proxy 只允许被单次 MainActor 调度短暂捕获，禁止持久保存；禁止原生 bridge 直接读取 `documentView.bounds` 或修改 `NSClipView` offset。
+8. 中栏消息时间线使用非惰性 `VStack`，消息、大纲与永久 bottom sentinel 共用稳定 identity；跟随时使用 `.defaultScrollAnchor(.bottom, for: .sizeChanges)` 承接流式增长与折叠，用户上滚后传 nil。当前 `ScrollViewReader` 只处理历史恢复、滚底按钮与大纲等低频动作，必要时先 `Task.yield()` 等待 `contentSize` 提交；proxy 只允许被单次 MainActor 调度短暂捕获，禁止持久保存；禁止原生 bridge 直接读取 `documentView.bounds` 或修改 `NSClipView` offset。
 9. 会话大纲、引用聚合和固定 Markdown 正则只在持久化消息变化时更新，不能随正文 token 重算。
 10. Debug 文件关闭开关时不读取，开启后异步加载并缓存最近会话的解码结果，不阻塞正文选择，也不删除历史文件。
 

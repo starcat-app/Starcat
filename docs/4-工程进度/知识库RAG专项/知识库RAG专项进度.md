@@ -249,10 +249,10 @@
 
 ### 13.2 会话尾部滚动可靠性
 
-- [x] 将“切换会话”与“历史消息已加载并完成首轮布局”拆成两个状态；消息时间线使用非惰性 `VStack` 获取准确高度，并在下一次 MainActor 调度中定位底部，避免读取尚未提交的 `contentSize`。
-- [x] 历史会话、滚到底部按钮、流式回答和大纲统一通过当前 `ScrollViewReader` 定位永久 bottom sentinel 与稳定消息目标。
+- [x] 将“切换会话”与“历史消息已加载并完成首轮布局”拆成两个状态；消息时间线使用非惰性 `VStack` 获取准确高度，历史安装在下一次 MainActor 调度中定位底部。
+- [x] 历史会话、滚到底部按钮和大纲通过当前 `ScrollViewReader` 定位永久 bottom sentinel 与稳定消息目标；流式尺寸变化使用 `.sizeChanges` bottom anchor。
 - [x] 用户手动上滚后才显示滚到底部按钮；点击按钮必须强制抵达最后一条；用户停留底部时流式回答才自动跟随。
-- [x] 删除直接读取 `documentView.bounds` 并修改 `NSClipView` offset 的原生 bridge；改由实际渲染高度触发尾随，增长限频、折叠缩短立即校正，并用 `Task.yield()` 合并同一布局周期的请求。
+- [x] 删除直接读取 `documentView.bounds` 并修改 `NSClipView` offset 的原生 bridge；移除整体高度回调与主动流式 `scrollTo`，滚动任务状态使用 `@ObservationIgnored`，尺寸锚定统一处理增长与折叠。
 
 验收：在长会话之间反复切换均直接展示最后一条；上滚、点击快捷按钮、继续流式输出、折叠执行步骤和点击左侧大纲导航不会互相抢夺滚动位置。
 

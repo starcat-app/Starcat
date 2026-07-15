@@ -141,9 +141,11 @@ struct RAGExecutionTimeline: View {
                     ForEach(step.details.indices, id: \.self) { index in
                         let detail = step.details[index]
                         if step.kind == .planningReasoning || step.kind == .answerReasoning {
-                            Text(detail)
+                            // 运行中只会改变当前 Think 的详情。Equatable 边界让其余已完成
+                            // 步骤继续复用现有 Text 布局，不跟着数组快照重复测量。
+                            RAGReasoningDetailText(text: detail)
+                                .equatable()
                                 .font(interfaceScale.font(.caption))
-                                .foregroundStyle(.secondary)
                         } else {
                             Label(detail, systemImage: "minus")
                                 .font(interfaceScale.font(.caption))
@@ -356,5 +358,15 @@ struct RAGExecutionTimeline: View {
         case .answerReasoning: return "rag.workspace.execution.reasoning.answer.title"
         case .generation: return "rag.workspace.execution.generation.title"
         }
+    }
+}
+
+/// 将 Think 长文本的布局缓存边界收窄到单条详情；只有文字或字号环境改变才会重算。
+private struct RAGReasoningDetailText: View, Equatable {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .foregroundStyle(.secondary)
     }
 }

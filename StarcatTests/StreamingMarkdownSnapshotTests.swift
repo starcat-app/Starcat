@@ -12,6 +12,39 @@ import Testing
 
 @Suite("StreamingMarkdownChunker")
 struct StreamingMarkdownSnapshotTests {
+    @Test("严格节流不会被高频调用或大批次绕过")
+    func strictPresentationThrottleCapsCommitFrequency() {
+        var throttle = StreamingPresentationThrottle(minimumInterval: 0.125)
+
+        let first = throttle.shouldCommit(now: 0)
+        let tooEarly = throttle.shouldCommit(now: 0.05)
+        let stillTooEarly = throttle.shouldCommit(now: 0.124)
+        let second = throttle.shouldCommit(now: 0.125)
+        let secondWindowTooEarly = throttle.shouldCommit(now: 0.20)
+        let third = throttle.shouldCommit(now: 0.25)
+
+        #expect(first)
+        #expect(!tooEarly)
+        #expect(!stillTooEarly)
+        #expect(second)
+        #expect(!secondWindowTooEarly)
+        #expect(third)
+    }
+
+    @Test("运行中 Think 只展示尾部窗口但完整内容仍保留")
+    func textPresentationBufferBoundsOnlyPresentedText() {
+        var buffer = StreamingTextPresentationBuffer(
+            throttleInterval: 0.20,
+            immediateCharacterCount: nil,
+            maximumPresentedCharacterCount: 8
+        )
+
+        #expect(buffer.append("12345678", now: 0) == "12345678")
+        #expect(buffer.append("90", now: 0.1) == nil)
+        #expect(buffer.flush(now: 0.2) == "…\n34567890")
+        #expect(buffer.text == "1234567890")
+    }
+
     @Test("高频文本 delta 只低频发布且最终内容完整")
     func textPresentationBufferThrottlesWithoutDroppingContent() {
         var buffer = StreamingTextPresentationBuffer(

@@ -2077,16 +2077,24 @@ final class KnowledgeRAGWorkspaceViewModel {
         let streamingMessageID = UUID()
         let streamingTimestamp = Date()
         var accumulatedAnswer = ""
-        var pendingCharacterCount = 0
-        var lastPresentationCommitAt: TimeInterval = 0
+        // 正文发布严格限制为 8Hz。完整回答独立累计，较大的网络批次也不能绕过
+        // UI 上限，否则单次回调中的 token 数越多，反而越容易触发连续重排。
+        var answerPresentationThrottle = StreamingPresentationThrottle(minimumInterval: 0.125)
         var presentationRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
         // Think 可能按 token 回调。完整文本留在 buffer，只有节流后的快照进入
-        // `executionSteps`，避免每个 token 都让 @MainActor 重建整条时间线。
-        var planningReasoningBuffer = StreamingTextPresentationBuffer()
-        var answerReasoningBuffer = StreamingTextPresentationBuffer()
-        let presentationThrottleInterval: TimeInterval = 0.10
-        let immediatePresentationCharacterCount = 96
+        // `executionSteps`。运行态严格 5Hz 且只展示最近 8,000 字符，避免长 Think
+        // 反复测量完整增长文本；终态仍从 buffer.text 发布完整内容并持久化。
+        var planningReasoningBuffer = StreamingTextPresentationBuffer(
+            throttleInterval: 0.20,
+            immediateCharacterCount: nil,
+            maximumPresentedCharacterCount: 8_000
+        )
+        var answerReasoningBuffer = StreamingTextPresentationBuffer(
+            throttleInterval: 0.20,
+            immediateCharacterCount: nil,
+            maximumPresentedCharacterCount: 8_000
+        )
         let initialStreamingPresentation = StreamingMarkdownSnapshot(
             messageID: streamingMessageID,
             timestamp: streamingTimestamp,
@@ -2180,13 +2188,15 @@ final class KnowledgeRAGWorkspaceViewModel {
                         let finalPresentation: String?
                         switch kind {
                         case .planningReasoning:
-                            finalPresentation = planningReasoningBuffer.flush(now: now)
+                            _ = planningReasoningBuffer.flush(now: now)
+                            finalPresentation = planningReasoningBuffer.text
                         case .answerReasoning:
-                            finalPresentation = answerReasoningBuffer.flush(now: now)
+                            _ = answerReasoningBuffer.flush(now: now)
+                            finalPresentation = answerReasoningBuffer.text
                         default:
                             finalPresentation = nil
                         }
-                        if let finalPresentation {
+                        if let finalPresentation, !finalPresentation.isEmpty {
                             applyReasoningPresentation(
                                 kind: kind,
                                 text: finalPresentation,
@@ -2254,14 +2264,10 @@ final class KnowledgeRAGWorkspaceViewModel {
                 case .delta(let text):
                     accumulatedAnswer += text
                     markdownAssembler.append(text)
-                    pendingCharacterCount += text.count
                     let now = Date.timeIntervalSinceReferenceDate
-                    // Provider 可能逐 token 回调；最多约 10Hz 触发 SwiftUI 更新，较大网络批次
-                    // 则立即可见。冻结前缀不会在后续 token 到达时重复进入 MarkdownUI。
-                    guard now - lastPresentationCommitAt >= presentationThrottleInterval
-                            || pendingCharacterCount >= immediatePresentationCharacterCount else { continue }
-                    lastPresentationCommitAt = now
-                    pendingCharacterCount = 0
+                    // Provider 可能逐 token 或按大批次回调。两者都严格按 8Hz 发布；冻结
+                    // 前缀不会在后续 token 到达时重复进入 MarkdownUI。
+                    guard answerPresentationThrottle.shouldCommit(now: now) else { continue }
                     presentationRevision &+= 1
                     let presentation = StreamingMarkdownSnapshot(
                         messageID: streamingMessageID,
@@ -3173,17 +3179,19 @@ final class KnowledgeRAGWorkspaceViewModel {
         executionSteps: inout [RAGExecutionStep]
     ) {
         let now = Date.timeIntervalSinceReferenceDate
-        if let finalPlanning = planning.flush(now: now) {
+        _ = planning.flush(now: now)
+        if !planning.text.isEmpty {
             applyReasoningPresentation(
                 kind: .planningReasoning,
-                text: finalPlanning,
+                text: planning.text,
                 in: &executionSteps
             )
         }
-        if let finalAnswer = answer.flush(now: now) {
+        _ = answer.flush(now: now)
+        if !answer.text.isEmpty {
             applyReasoningPresentation(
                 kind: .answerReasoning,
-                text: finalAnswer,
+                text: answer.text,
                 in: &executionSteps
             )
         }

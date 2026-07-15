@@ -100,57 +100,33 @@ struct ScrollTailControllerTests {
         #expect(!controller.isFollowing)
     }
 
-    @Test("内容增长按时间窗口合并自动尾随")
-    func contentGrowthScrollsAtMostOncePerWindow() {
-        let controller = ScrollTailController(minimumAutomaticScrollInterval: 0.20)
+    @Test("同一轮低频滚动请求只建立一个调度任务")
+    func scrollRequestsAreCoalesced() {
+        let controller = ScrollTailController()
 
-        let first = controller.shouldFollowContentHeightChange(from: 100, to: 120, now: 1.00)
-        let coalesced = controller.shouldFollowContentHeightChange(from: 120, to: 140, now: 1.10)
-        let nextWindow = controller.shouldFollowContentHeightChange(from: 140, to: 160, now: 1.21)
-
-        #expect(first)
-        #expect(!coalesced)
-        #expect(nextWindow)
+        #expect(controller.beginScrollRequest(animated: false))
+        #expect(!controller.beginScrollRequest(animated: false))
+        controller.finishScrollRequest()
+        #expect(controller.beginScrollRequest(animated: false))
     }
 
-    @Test("内容折叠缩短时立即重新贴底")
-    func contentShrinkBypassesGrowthThrottle() {
-        let controller = ScrollTailController(minimumAutomaticScrollInterval: 0.20)
-        #expect(controller.shouldFollowContentHeightChange(from: 100, to: 120, now: 1.00))
+    @Test("手动滚到底部可升级已排队请求的动画意图")
+    func manualRequestUpgradesScheduledAnimation() {
+        let controller = ScrollTailController()
 
-        let shrink = controller.shouldFollowContentHeightChange(from: 120, to: 80, now: 1.05)
-
-        #expect(shrink)
+        #expect(controller.beginScrollRequest(animated: false))
+        #expect(!controller.beginScrollRequest(animated: true))
+        #expect(controller.scheduledScrollRequestShouldAnimate())
+        controller.finishScrollRequest()
+        #expect(!controller.scheduledScrollRequestShouldAnimate())
     }
 
-    @Test("用户已暂停跟随时内容高度变化不抢滚动")
-    func pausedFollowingIgnoresContentHeightChanges() {
-        let controller = ScrollTailController(minimumAutomaticScrollInterval: 0)
+    @Test("暂停跟随时拒绝程序化滚动请求")
+    func pausedFollowingRejectsScrollRequest() {
+        let controller = ScrollTailController()
         controller.pauseFollowing()
 
-        let shouldScroll = controller.shouldFollowContentHeightChange(from: 100, to: 150, now: 1.00)
-
-        #expect(!shouldScroll)
-    }
-
-    @Test("亚像素高度抖动不会触发自动尾随")
-    func subpixelHeightJitterDoesNotScroll() {
-        let controller = ScrollTailController(minimumAutomaticScrollInterval: 0)
-
-        let shouldScroll = controller.shouldFollowContentHeightChange(from: 100, to: 100.4, now: 1.00)
-
-        #expect(!shouldScroll)
-    }
-
-    @Test("手动恢复跟随后清空旧限频窗口")
-    func resumeFollowingResetsGrowthThrottle() {
-        let controller = ScrollTailController(minimumAutomaticScrollInterval: 0.20)
-        #expect(controller.shouldFollowContentHeightChange(from: 100, to: 120, now: 1.00))
-        controller.resumeFollowing()
-
-        let shouldScroll = controller.shouldFollowContentHeightChange(from: 120, to: 140, now: 1.05)
-
-        #expect(shouldScroll)
+        #expect(!controller.beginScrollRequest(animated: true))
     }
 
     @Test("手动恢复跟随不会伪造底部可见状态")

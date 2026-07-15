@@ -28,8 +28,6 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var mentionCaretAnchor: CGPoint = .zero
     @State private var messageTail = ScrollTailController()
     @State private var isMessageNearBottom = true
-    @State private var isMessageTailScrollScheduled = false
-    @State private var animatesNextMessageTailScroll = false
 
     private static let messageNearBottomThreshold: CGFloat = 64
 
@@ -71,8 +69,8 @@ struct RAGWorkspaceAnswerSurface: View {
     /// 新会话且尚未开始回答时显示空态提示。
     var showsEmptyConversation: Bool {
         viewModel.messages.isEmpty
-            && !viewModel.hasStreamingContent
             && !viewModel.isAnswering
+            && viewModel.streamingAnswer.isEmpty
     }
 
     /// 缓存未命中时立即清掉上一会话正文，只显示轻量加载态；数据库读取完成后一次性安装。
@@ -129,8 +127,8 @@ struct RAGWorkspaceAnswerSurface: View {
     var messageTimeline: some View {
         let outlineTurns = viewModel.conversationOutlineTurns
         let hasTimelineContent = !viewModel.messages.isEmpty
-            || viewModel.hasStreamingContent
             || viewModel.isAnswering
+            || !viewModel.streamingAnswer.isEmpty
         // 显隐只看几何「是否离底」：不要读 messageTail.isFollowing，否则滚动 phase
         // 每次变化都会整页刷新，鼠标划过按钮时更容易闪没并卡顿。
         let showsScrollToBottom = hasTimelineContent && !isMessageNearBottom
@@ -146,12 +144,10 @@ struct RAGWorkspaceAnswerSurface: View {
                             messageView(message)
                                 .id(RAGMessageScrollTarget.message(message.id))
                         }
-                        if !viewModel.executionSteps.isEmpty
-                            || viewModel.hasStreamingContent
-                            || viewModel.isAnswering {
-                            liveAssistantMessage
-                                .id(RAGMessageScrollTarget.liveAssistant)
-                        }
+                        // 高频 snapshot/Think 读取必须停在独立子 View；父时间线不订阅
+                        // revision，正文每次发布时不会重算全部历史消息和输入区。
+                        RAGLiveAssistantPresentationView(viewModel: viewModel)
+                            .id(RAGMessageScrollTarget.liveAssistant)
 
                         // 永久 sentinel 是所有“到底”动作的唯一目标。它不会随流式块完成、
                         // 折叠或落库而更换 identity，ScrollViewReader 因此不会命中旧节点。
@@ -162,23 +158,16 @@ struct RAGWorkspaceAnswerSurface: View {
                                 messageTail.updateBottomVisibility(isVisible)
                             }
                     }
-                    // AI Chat 的可靠触发源是“真实渲染高度已经变化”，不是 token/revision。
-                    // 此回调发生在 Markdown 重排和折叠布局完成后；增长按 5Hz 合并，
-                    // 缩短（折叠）立即校正，避免使用旧 contentSize 滚出空白区域。
-                    .onGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.size.height.rounded(.toNearestOrAwayFromZero)
-                    } action: { oldHeight, newHeight in
-                        guard messageTail.shouldFollowContentHeightChange(
-                            from: oldHeight,
-                            to: newHeight,
-                            now: Date.timeIntervalSinceReferenceDate
-                        ) else { return }
-                        scheduleMessageTailScroll(using: proxy)
-                    }
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                // 内容增长与 Think 折叠都交给 ScrollView 的尺寸变化锚点校正 offset。
+                // 用户离开底部时传 nil，后续流式布局不会抢回滚动控制权。
+                .defaultScrollAnchor(
+                    messageTail.isFollowing ? .bottom : nil,
+                    for: .sizeChanges
+                )
                 .onScrollPhaseChange { _, newPhase in
                     messageTail.updatePhase(newPhase)
                     // 对话时间线一旦滚动（含惯性/程序贴底），正文 S1 的 NSPopover 锚点就失效；
@@ -199,11 +188,6 @@ struct RAGWorkspaceAnswerSurface: View {
                 .onChange(of: viewModel.loadedMessageSequence) { _, _ in
                     // ViewModel 已经安装完历史 messages；下一次主线程调度时布局才完整。
                     messageTail.resumeFollowing()
-                    scheduleMessageTailScroll(using: proxy)
-                }
-                .onChange(of: viewModel.isAnswering) { _, isAnswering in
-                    // 回答结束时强制补齐限频窗口内可能被合并的最后一次增长。
-                    guard !isAnswering, messageTail.isFollowing else { return }
                     scheduleMessageTailScroll(using: proxy)
                 }
 
@@ -227,7 +211,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 if showsScrollToBottom {
                     scrollToBottomButton {
                         messageTail.resumeFollowing()
-                        // 手动入口不受高度增长限频影响，但仍要等待本轮布局提交后再定位。
+                        // 手动入口仍要等待本轮布局提交后再定位永久 sentinel。
                         scheduleMessageTailScroll(using: proxy, animated: true)
                     }
                     .padding(.bottom, 16)
@@ -259,27 +243,18 @@ struct RAGWorkspaceAnswerSurface: View {
 
     /// 下一次主线程调度时，通过当前 ScrollViewReader 定位永久 bottom sentinel。
     ///
-    /// `onGeometryChange` 发生时 VStack 已完成测量，但 ScrollView 的 contentSize 尚可能
-    /// 没有提交。同步 scrollTo 会读取旧范围并被系统忽略，因此与 Repo AI Chat 一样先
-    /// `Task.yield()`。同一轮只保留一个请求，流式输出不会堆积滚动任务；用户点击产生的
-    /// 动画意图可以升级已经排队的自动请求。
+    /// 这里只处理按钮和历史安装等低频动作；流式尺寸变化由 `sizeChanges` anchor 负责。
+    /// 同步 scrollTo 仍可能读取旧 contentSize，因此先 `Task.yield()`；调度标记放在
+    /// `ScrollTailController` 的 ObservationIgnored 字段中，不再触发回答面重算。
     func scheduleMessageTailScroll(using proxy: ScrollViewProxy, animated: Bool = false) {
-        guard messageTail.isFollowing else { return }
-        if animated {
-            animatesNextMessageTailScroll = true
-        }
-        guard !isMessageTailScrollScheduled else { return }
-        isMessageTailScrollScheduled = true
+        guard messageTail.beginScrollRequest(animated: animated) else { return }
 
         Task { @MainActor in
             await Task.yield()
-            defer {
-                isMessageTailScrollScheduled = false
-                animatesNextMessageTailScroll = false
-            }
+            defer { messageTail.finishScrollRequest() }
             guard messageTail.isFollowing else { return }
 
-            if animatesNextMessageTailScroll, !reduceMotion {
+            if messageTail.scheduledScrollRequestShouldAnimate(), !reduceMotion {
                 withAnimation(.easeOut(duration: 0.22)) {
                     proxy.scrollTo(RAGMessageScrollTarget.bottom, anchor: .bottom)
                 }
@@ -441,29 +416,6 @@ struct RAGWorkspaceAnswerSurface: View {
     }
 
     /// 单条助手回答。复制 / 导出放在正文下方，仅悬停显示；流式中关闭动作条。
-    @ViewBuilder
-    var liveAssistantMessage: some View {
-        if let snapshot = viewModel.streamingPresentation {
-            RAGStreamingAssistantMessageBlock(
-                snapshot: snapshot,
-                executionTrace: viewModel.executionSteps,
-                activityLabel: liveAssistantActivityLabel(),
-                processingDuration: viewModel.answerElapsedDuration
-            )
-        } else {
-            assistantMessage(
-                content: viewModel.streamingAnswer,
-                citations: [],
-                createdAt: nil,
-                showsActions: false,
-                executionTrace: viewModel.executionSteps,
-                activityLabel: liveAssistantActivityLabel(),
-                processingDuration: viewModel.answerElapsedDuration
-            )
-        }
-    }
-
-    /// 单条助手回答。复制 / 导出放在正文下方，仅悬停显示；流式中关闭动作条。
     func assistantMessage(
         content: String,
         citations: [RAGCitation],
@@ -498,16 +450,6 @@ struct RAGWorkspaceAnswerSurface: View {
             ?? ISO8601DateFormatter().date(from: iso8601)
         guard let date else { return "" }
         return date.formatted(Date.FormatStyle(time: .shortened).locale(locale))
-    }
-
-    /// 只有尚未创建步骤，或最后一步正在生成正文时才显示独立的加载文案。
-    /// 思考、检索等操作本身已经由 assistant 消息内部的轨迹行表达，不能再额外生成第二条消息。
-    func liveAssistantActivityLabel() -> String? {
-        guard viewModel.isAnswering else { return nil }
-        guard let runningStep = viewModel.executionSteps.last(where: { $0.state == .running }) else {
-            return stateText(viewModel.answerState)
-        }
-        return runningStep.kind == .generation ? stateText(viewModel.answerState) : nil
     }
 
     var remoteConfirmation: some View {
