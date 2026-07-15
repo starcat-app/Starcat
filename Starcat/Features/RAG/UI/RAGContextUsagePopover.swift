@@ -11,26 +11,23 @@
 import SwiftUI
 
 struct RAGContextUsageButton: View {
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
-
     let usage: RAGContextUsage
     @State private var isPresented = false
 
     var body: some View {
         Button { isPresented.toggle() } label: {
             // 输入条附属指示器，保持比模型选择器更克制；过大易抢视觉权重。
+            // 纯进度环不带数字：底轨用弱化灰，进度弧用 .primary 做黑白主题自适应
+            //（浅色黑 / 深色白），避免固定蓝色在某一主题下抢视觉或对比不足。
             ZStack {
                 Circle()
                     .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
                 Circle()
                     .trim(from: 0, to: usage.usageRatio)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                Text("\(Int((usage.usageRatio * 100).rounded()))")
-                    .font(.system(size: 8 * interfaceScale.multiplier, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.primary)
             }
-            .frame(width: 18, height: 18)
+            .frame(width: 16, height: 16)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

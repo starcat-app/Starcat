@@ -1,6 +1,6 @@
 # RAG 收尾与稳定性 Checklist
 
-> 状态: 自动化整改完成，真实环境与大数据人工验收待执行。本清单合并工作台收尾需求与第 1 轮代码审查，按用户可感知风险、前置依赖和数据路径相关性排序。
+> 状态: 第 2 轮代码审查已完成，正确性整改、性能与架构技术债、真实环境与大数据人工验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
 
 ## 目标与执行规则
 
@@ -73,9 +73,35 @@
 
 完成条件：长会话可持续问答而不超上下文，原文不丢；全量测试通过；专项进度、主进度索引与结果报告同步完成。
 
+## 阶段 7：第 2 轮审查正确性整改
+
+- [ ] **Embedding 写回一致性**：为索引任务增加串行化或分片 claim 机制；向量写回必须同时校验 chunk id、`content_hash` 和 pending 状态，旧请求不得把旧向量标记为新内容的 ready 向量。
+- [ ] **Meilisearch 同步 SQL**：修复 `fetchKeywordSearchableChunks` 中未插值的 `placeholders`，增加 Repository 回归测试，并验证 `fallbackToSQLite` 开启与关闭时的错误语义。
+- [ ] **PDF / 图片附件入口**：让文件选择器的 UTType、`RAGAttachmentHandling` 和 `RAGAttachmentProcessor` 能力一致；真实 UI 必须可选 PDF / 图片，不得只在处理器和单测中可达。
+- [ ] **RAG 固定文案 i18n**：移除 `RAGUserVisiblePlan`、Planner 和 Service 兜底路径中的硬编码中文，固定文案统一走 `Localizable.xcstrings`，不翻译模型生成内容。
+
+完成条件：每项先有可稳定复现的失败测试，再实施最小修复；并发索引不产生过期 ready 向量，Meilisearch 同步可执行，PDF / 图片可从真实工作台发送，英文环境不泄漏固定中文。
+
+## 阶段 8：性能与架构技术债收敛
+
+- [ ] **Embedding 队列分批**：禁止 `limit: Int.max` 一次性加载全部待向量化正文；按 `embeddingBatchSize` 分批读取或 claim，独立统计总数，消除循环 `removeFirst` 数组搬移。
+- [ ] **README 重建上界**：缺失 README 拉取改为 2～4 个任务的有界并发，保留 GitHub 限流、超时、取消和稳定进度语义。
+- [ ] **分片计算移出主线程**：将 Markdown 解析和 chunk build 等纯计算移出 `@MainActor`，只在主线程发布状态和进度。
+- [ ] **外部索引增量同步**：合并短时间内的索引变更，按 chunk upsert / delete 同步 Meilisearch 与 Qdrant；Metadata-only 更新不得触发 Qdrant 全量 `replaceAll`。
+- [ ] **本地向量扫描基线**：在 1 万+ chunk 真实数据上记录 P50/P95、峰值内存和取消延迟；依证据决定是否增加索引、调整本地上限或引导使用 Qdrant。Schema 调整必须追加新 migration。
+- [ ] **Source-aware 重建读取**：单 source 刷新只读取当前 source 所需的 Summary、Note、Tags、README 和 Metadata，避免为单仓库读取全库 Summary 或无关数据。
+- [ ] **候选仓库与元数据快照**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询；元数据快照按数据修订版本缓存，不得盲用可能过期的 UI 快照。
+- [ ] **会话持久化增量更新**：回答完成后直接追加本轮持久化结果，不每轮重载全部消息与引用；保留全量重载作为切换会话和错误恢复路径。
+- [ ] **Debug 磁盘保留上界**：在已有内存 FIFO 上限之外，增加每会话文件数或总字节数上限，读取时不全量解码无限历史 JSON。
+- [ ] **会话运行态收敛**：将 `activeAnswerStates`、`activeRetrievals`、`activeQueryPlans`、`activeRemoteBlocks` 等并行字典合并为 `[UUID: RAGConversationRuntimeState]`，先保持 `KnowledgeRAGWorkspaceViewModel` 是唯一可观察协调器。
+- [ ] **Service 内部分阶段**：把 `KnowledgeRAGService.ask` 收敛为 Planner、Retrieval、Remote Context、Prompt 和 Generation 等可单测的内部阶段；不将 `runQuestion` 抽成第二个 God Object。
+- [ ] **Rerank 与索引读模型复用**：抽取 TEI / Cohere 共用的候选编号、HTTP 请求、认证和结果映射，保留各自 DTO；工作台与知识库浏览器共用轻量索引状态读模型。
+
+完成条件：优化前先固化可重复基线，优化后不改变知识库边界、隐私语义、召回结果和取消行为；两个 App target 编译通过，相关 Suite 与全量测试通过，真实性能数据回填专项评测记录。
+
 ## 执行顺序
 
-阶段 0 → 阶段 1 → 阶段 2 → 阶段 3 → 阶段 4 → 阶段 5 → 阶段 6。阶段 1 至 4 是 Context Usage 与压缩的前置稳定性工作，不能并行跳过。
+阶段 0 → 阶段 1 → 阶段 2 → 阶段 3 → 阶段 4 → 阶段 5 → 阶段 6 为已完成的第 1 轮整改主线。第 2 轮按阶段 7 → 阶段 8 → 真实数据与真实 Provider 验收执行；阶段 7 的正确性风险必须先于阶段 8 的性能与架构收敛。
 
 ## 实施记录（2026-07-13）
 

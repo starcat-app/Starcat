@@ -905,6 +905,17 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversations.filter { $0.groupID == groupID }
     }
 
+    /// 所有置顶会话（跨分组 + 未分组）集中呈现在侧栏顶部「置顶区」。
+    /// `conversations` 已由 store 按 `is_pinned DESC, updated_at DESC` 排序，这里直接过滤即保持最新在前。
+    var pinnedConversations: [RAGConversationSummary] {
+        conversations.filter { $0.isPinned }
+    }
+
+    /// 分组 / 未分组内的「未置顶」会话；置顶项已上浮到顶部置顶区，避免重复呈现。
+    func unpinnedConversations(inGroupID groupID: UUID?) -> [RAGConversationSummary] {
+        conversations.filter { $0.groupID == groupID && !$0.isPinned }
+    }
+
     func send() {
         let question = draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let conversationID = selectedConversationID,

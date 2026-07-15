@@ -103,11 +103,16 @@ struct RAGWorkspaceConversationRail: View {
                         handleConversationDrop(providers, toGroupID: nil)
                     }
 
+                    // 置顶区：跨分组的置顶会话集中上浮到最顶部；未置顶会话仍留在各自分组 / 未分组。
+                    if !viewModel.pinnedConversations.isEmpty {
+                        pinnedSection
+                    }
+
                     ForEach(viewModel.conversationGroups) { group in
                         groupSection(group)
                     }
 
-                    ForEach(Array(viewModel.conversations(inGroupID: nil).enumerated()), id: \.element.id) { index, conversation in
+                    ForEach(Array(viewModel.unpinnedConversations(inGroupID: nil).enumerated()), id: \.element.id) { index, conversation in
                         conversationRow(conversation, rowIndex: index)
                     }
                 }
@@ -175,6 +180,28 @@ struct RAGWorkspaceConversationRail: View {
         )
     }
 
+    /// 顶部置顶区：集中呈现所有置顶会话（跨分组 + 未分组），点「取消置顶」后会自动回落到原分组。
+    @ViewBuilder
+    var pinnedSection: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pin.fill")
+                .font(iconFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("rag.workspace.pinnedConversations")
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+
+        ForEach(Array(viewModel.pinnedConversations.enumerated()), id: \.element.id) { index, conversation in
+            conversationRow(conversation, rowIndex: index)
+        }
+    }
+
     func groupSection(_ group: RAGConversationGroup) -> some View {
         let isSelected = viewModel.selectedGroupID == group.id
         let isExpanded = expandedGroupIDs.contains(group.id)
@@ -209,7 +236,8 @@ struct RAGWorkspaceConversationRail: View {
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        Text("\(viewModel.conversations(inGroupID: group.id).count)")
+                        // 计数只统计组内未置顶会话；置顶已上浮到顶部置顶区，避免展开后数字与实际条数对不上。
+                        Text("\(viewModel.unpinnedConversations(inGroupID: group.id).count)")
                             .font(ragFont(.caption2, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
@@ -257,7 +285,7 @@ struct RAGWorkspaceConversationRail: View {
             }
 
             if isExpanded {
-                ForEach(Array(viewModel.conversations(inGroupID: group.id).enumerated()), id: \.element.id) { index, conversation in
+                ForEach(Array(viewModel.unpinnedConversations(inGroupID: group.id).enumerated()), id: \.element.id) { index, conversation in
                     conversationRow(conversation, rowIndex: index)
                         .padding(.leading, 14)
                         // 子会话随分组高度一起淡入淡出，避免硬切。

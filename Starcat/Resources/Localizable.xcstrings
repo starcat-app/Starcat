@@ -28094,6 +28094,22 @@
         }
       }
     },
+    "rag.workspace.pinnedConversations": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "置顶"
+          }
+        }
+      }
+    },
     "rag.workspace.recentConversations": {
       "localizations": {
         "en": {

@@ -617,6 +617,10 @@ struct RAGWorkspaceAnswerSurface: View {
                 }
 
                 HStack(alignment: .center, spacing: 8) {
+                    // Prompt 预算快照：放在底栏最左侧的纯进度环，作为最克制的附属指示器，
+                    // 不与右侧的动作按钮（附件 / 联网 / 发送）争视觉权重。
+                    RAGContextUsageButton(usage: viewModel.composerContextUsage)
+
                     modelMenu
 
                     if !viewModel.selectedRepoContexts.isEmpty {
@@ -655,9 +659,6 @@ struct RAGWorkspaceAnswerSurface: View {
                     .help(viewModel.webSearchEnabled
                           ? "rag.workspace.composer.webSearch.on"
                           : "rag.workspace.composer.webSearch.off")
-
-                    // Prompt 预算快照：放在联网开关右侧，靠近发送区，避免挤在模型菜单旁。
-                    RAGContextUsageButton(usage: viewModel.composerContextUsage)
 
                     if viewModel.isAnswering {
                         Button { viewModel.cancelAnswer() } label: {
