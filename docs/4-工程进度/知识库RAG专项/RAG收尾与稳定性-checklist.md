@@ -89,7 +89,7 @@
 - [x] **README 重建上界**：缺失 README 拉取改为“收一个补一个”的 3 任务有界并发，只在主线程按完成数发布单调进度；保留 GitHub 限流、in-flight 去重、15 秒超时、单仓降级和取消传播 — `KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **分片计算移出主线程**：Repository 快照读取、数据库写入和状态发布仍由 `@MainActor` 协调；Markdown 解析与 README/Notes/Summary/Metadata chunk build 改由 detached worker 执行，显式桥接父任务取消，回归测试锁定输出不变 — `RAGChunkBuilder.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **外部索引增量同步**：source debounce、批量重建与 embedding 写回共用修订号变更集；进程首次或配置/模型变化才全量初始化，后续按 chunk upsert/delete Meilisearch 与 Qdrant，人工编辑、恢复、下架和永久删除同样接入；Metadata 仅同步 Meilisearch — `RAGExternalSearchProviders.swift`、`KnowledgeRAGIndexBuilder.swift`、`RAGChunkRepository.swift`、`KnowledgeRAGWorkspaceWindowController.swift` — 2026-07-16。
-- [ ] **本地向量扫描基线**：在 1 万+ chunk 真实数据上记录 P50/P95、峰值内存和取消延迟；依证据决定是否增加索引、调整本地上限或引导使用 Qdrant。Schema 调整必须追加新 migration。
+- [x] **本地向量扫描基线**：以 18,465 个真实 ready chunk、1024 维、20 次热扫描记录 P50/P95、峰值内存和取消延迟；共享余弦内核改用 Accelerate/vDSP 且复用 query 范数，P95 由 4,372.39 ms 降至 187.75 ms，内存增量由 24.31 MB 降至 14.05 MB；证据支持保留当前本地上限与可选 Qdrant，不追加 migration — `SemanticSearchService.swift`、`RAGSearchProviders.swift`、`RAGVectorScanBenchmarkTests.swift`、`RAG测试与评测方案.md` — 2026-07-16。
 - [ ] **Source-aware 重建读取**：单 source 刷新只读取当前 source 所需的 Summary、Note、Tags、README 和 Metadata，避免为单仓库读取全库 Summary 或无关数据。
 - [ ] **候选仓库轻量查询**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询。
 - [ ] **元数据快照版本缓存**：按数据修订版本缓存 Planner/Generator 元数据快照，不得盲用可能过期的 UI 快照。

@@ -50,6 +50,7 @@ struct SQLiteRAGVectorSearchProvider: RAGVectorSearchProvider {
     func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         guard !queryVector.isEmpty, limit > 0 else { return [] }
         var topMatches: [RAGVectorMatch] = []
+        let cosineQuery = CosineSimilarityQuery(queryVector)
         // SQLite 没有向量索引时仍需要扫过 embedding BLOB，但只分页读取 id/repo/vector，
         // 并把内存保留在 Top-K；正文在排名完成后才回填，避免大知识库随检索线性膨胀。
         for repoIDBatch in Self.idBatches(repoIDs) {
@@ -63,7 +64,7 @@ struct SQLiteRAGVectorSearchProvider: RAGVectorSearchProvider {
                 )
                 guard !embeddings.isEmpty else { break }
                 for embedding in embeddings {
-                    let score = SemanticSearchService.cosineSimilarity(queryVector, embedding.vector)
+                    let score = cosineQuery.similarity(to: embedding.vector)
                     guard score.isFinite else { continue }
                     insertTopMatch(
                         RAGVectorMatch(chunkID: embedding.chunkID, score: score),

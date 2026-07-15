@@ -36,6 +36,21 @@ struct SemanticSearchTests {
         #expect(abs(opposite + 1.0) < 0.0001)
     }
 
+    @Test("Accelerate 余弦内核与 Double 标量基准保持一致")
+    func acceleratedCosineMatchesScalarReference() {
+        let lhs = (0..<1_024).map { Float(sin(Double($0) * 0.13)) }
+        let rhs = (0..<1_024).map { Float(cos(Double($0) * 0.07)) }
+        let accelerated = CosineSimilarityQuery(lhs).similarity(to: rhs)
+        let dot = zip(lhs, rhs).reduce(0.0) { $0 + Double($1.0) * Double($1.1) }
+        let lhsNorm = sqrt(lhs.reduce(0.0) { $0 + Double($1) * Double($1) })
+        let rhsNorm = sqrt(rhs.reduce(0.0) { $0 + Double($1) * Double($1) })
+
+        #expect(abs(accelerated - dot / (lhsNorm * rhsNorm)) < 0.000_001)
+        #expect(CosineSimilarityQuery([]).similarity(to: []).isNaN)
+        #expect(CosineSimilarityQuery([1, 0]).similarity(to: [1]).isNaN)
+        #expect(CosineSimilarityQuery([0, 0]).similarity(to: [1, 0]).isNaN)
+    }
+
     // MARK: - 2026-06-14 A+B 改造：纯函数级单测
 
     @Test("normalizeDisplayScore: 经验区间 [0.30, 0.95] 线性映射到 [0, 1]")

@@ -20,7 +20,36 @@
 //    用户笔记保存等触发。debounce / 节流由调用方负责。
 //
 
+import Accelerate
 import Foundation
+
+/// 同一 query 会与成千上万个候选比较，因此 query 范数只计算一次；点积和候选范数
+/// 交给系统 vDSP 向量化实现，避免 Swift 标量循环成为 RAG 本地扫描瓶颈。
+struct CosineSimilarityQuery: Sendable {
+    private let vector: [Float]
+    private let squaredMagnitude: Float
+
+    init(_ vector: [Float]) {
+        self.vector = vector
+        var squaredMagnitude: Float = 0
+        if !vector.isEmpty {
+            vDSP_svesq(vector, 1, &squaredMagnitude, vDSP_Length(vector.count))
+        }
+        self.squaredMagnitude = squaredMagnitude
+    }
+
+    func similarity(to candidate: [Float]) -> Double {
+        guard candidate.count == vector.count,
+              !vector.isEmpty,
+              squaredMagnitude > 0 else { return .nan }
+        var dotProduct: Float = 0
+        var candidateSquaredMagnitude: Float = 0
+        vDSP_dotpr(vector, 1, candidate, 1, &dotProduct, vDSP_Length(vector.count))
+        vDSP_svesq(candidate, 1, &candidateSquaredMagnitude, vDSP_Length(candidate.count))
+        guard candidateSquaredMagnitude > 0 else { return .nan }
+        return Double(dotProduct) / sqrt(Double(squaredMagnitude) * Double(candidateSquaredMagnitude))
+    }
+}
 
 struct SemanticSearchHit: Equatable, Sendable {
     let repo: Repo
@@ -130,13 +159,14 @@ final class SemanticSearchService {
         guard !stored.isEmpty else { throw SemanticSearchError.noVectors }
 
         let queryVector = try await client.embedding(input: trimmed, model: model)
+        let cosineQuery = CosineSimilarityQuery(queryVector)
 
         // 用 (hit, sortScore) 元组临时承载排序分；最终输出只暴露 hit。
         let scored: [(hit: SemanticSearchHit, sortScore: Double)] = candidates.compactMap { repo in
             guard let row = stored[repo.id] else { return nil }
             let vector = row.vector
             guard !vector.isEmpty, vector.count == queryVector.count else { return nil }
-            let cosine = Self.cosineSimilarity(queryVector, vector)
+            let cosine = cosineQuery.similarity(to: vector)
             guard cosine.isFinite else { return nil }
 
             // B：字面命中 boost。effectiveScore 用于 displayScore 计算 + 排序基础。
@@ -416,19 +446,7 @@ final class SemanticSearchService {
 
     /// Cosine similarity 纯函数，单测可直接覆盖。
     nonisolated static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Double {
-        guard a.count == b.count, !a.isEmpty else { return .nan }
-        var dot: Double = 0
-        var normA: Double = 0
-        var normB: Double = 0
-        for (lhs, rhs) in zip(a, b) {
-            let x = Double(lhs)
-            let y = Double(rhs)
-            dot += x * y
-            normA += x * x
-            normB += y * y
-        }
-        guard normA > 0, normB > 0 else { return .nan }
-        return dot / (sqrt(normA) * sqrt(normB))
+        CosineSimilarityQuery(a).similarity(to: b)
     }
 
     // MARK: - A+B+C 排序信号常量与纯函数
