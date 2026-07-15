@@ -671,6 +671,12 @@ struct KnowledgeRAGCoreTests {
         #expect(diagnostics.vectorSourceFilteredCount == 1)
         #expect(diagnostics.vectorSimilarityFilteredCount == 1)
         #expect(diagnostics.finalChildHitCount == 2)
+        let trace = try #require(result.trace)
+        #expect(trace.candidates.map(\.fullName) == ["octo/demo-1"])
+        #expect(trace.semanticHits.contains { $0.chunkID == 84 && $0.disposition == .sourceDisabled })
+        #expect(trace.semanticHits.contains { $0.chunkID == 83 && $0.disposition == .belowVectorSimilarity })
+        #expect(trace.semanticHits.contains { $0.chunkID == 85 && $0.disposition == .retained })
+        #expect(trace.finalEvidence.map(\.chunkID) == [82, 85])
         #expect(diagnostics.debugPayload().contains(
             String(
                 format: String.l10n("rag.workspace.debug.retrieval.funnel.semanticFormat"),
@@ -780,6 +786,7 @@ struct KnowledgeRAGCoreTests {
         #expect(rerankTrace.inputCandidates.map(\.repositoryName) == ["octo/demo-1", "octo/demo-2", "octo/demo-3"])
         #expect(rerankTrace.responseResults.map(\.inputIndex) == [2, 1, 0])
         #expect(rerankTrace.appliedOrder.compactMap(\.inputIndex) == [2, 1, 0])
+        #expect(reordered.trace?.rerank == rerankTrace)
 
         let fallback = try await makeRetriever(
             reranker: StubRAGReranker(order: [], shouldThrow: true)
@@ -1895,11 +1902,28 @@ struct KnowledgeRAGCoreTests {
         )
         diagnostics.finalChildHitCount = 6
         diagnostics.bundleCount = 2
+        let retrievalTrace = RAGRetrievalTrace(
+            candidates: [.init(repoID: 21, fullName: "octo/demo-21")],
+            semanticHits: [.init(
+                chunkID: 101,
+                repoID: 21,
+                repositoryName: "octo/demo-21",
+                source: .readme,
+                sectionTitle: "README > Storage",
+                rank: 1,
+                score: 0.84,
+                hitKind: .vector,
+                vectorSimilarity: 0.91,
+                scoreBreakdown: nil,
+                disposition: .retained
+            )]
+        )
         let retrievalSnapshot = RAGRetrievalSnapshot(result: RAGRetrievalResult(
             candidates: [],
             bundles: [],
             childHits: [],
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            trace: retrievalTrace
         ))
         let contextSnapshot = RAGContextUsageSnapshot(usage: RAGContextUsage(
             windowTokens: 32_768,
@@ -1974,6 +1998,7 @@ struct KnowledgeRAGCoreTests {
         #expect(restoredRetrieval.keywordAcceptedCount == 16)
         #expect(restoredRetrieval.vectorAcceptedCount == 15)
         #expect(restoredRetrieval.rerankedCount == 6)
+        #expect(restoredRetrieval.trace == retrievalTrace)
     }
 
     @Test("旧执行轨迹缺少计划快照字段时仍可解码")

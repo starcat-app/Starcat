@@ -215,7 +215,11 @@ struct SettingsView: View {
                 // RepoListDensity 枚举本身也已删除（之前为保签名稳定保留单 case
                 // 是「自留技术债」，现在所有 row / skeleton 视图直接用 card 密度）。
             } header: {
-                SettingsSectionHeader("settings.general.appearance", systemImage: "paintbrush.fill")
+                SettingsSectionHeader(
+                    "settings.general.appearance",
+                    systemImage: "paintbrush.fill",
+                    style: .prominent
+                )
             }
 
             // 2026-06-15 dong4j 需求：用户面向的语言切换。
@@ -251,7 +255,11 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                SettingsSectionHeader("settings.general.language", systemImage: "globe")
+                SettingsSectionHeader(
+                    "settings.general.language",
+                    systemImage: "globe",
+                    style: .prominent
+                )
             }
 
             // HOM-SNAKE-MODES 2026-06-05：贡献草坪贪吃蛇玩法。
@@ -275,8 +283,13 @@ struct SettingsView: View {
                 Text("settings.snakeStyle.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } header: {
-                SettingsSectionHeader("settings.snakeStyle.section", systemImage: "arcade.stick.console.fill")
+                SettingsSectionHeader(
+                    "settings.snakeStyle.section",
+                    systemImage: "arcade.stick.console.fill",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -290,7 +303,11 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                SettingsSectionHeader("settings.general.detailBehavior", systemImage: "sidebar.left")
+                SettingsSectionHeader(
+                    "settings.general.detailBehavior",
+                    systemImage: "sidebar.left",
+                    style: .prominent
+                )
             }
 
             InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
@@ -311,7 +328,7 @@ struct SettingsView: View {
                     }
                 }
 
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     Text("settings.general.shortcuts.search.title")
                         .lineLimit(1)
 
@@ -329,7 +346,8 @@ struct SettingsView: View {
 
                         ResetIconButton(
                             help: Text("settings.general.shortcuts.restoreDefault"),
-                            frameSize: 24
+                            font: .subheadline,
+                            frameSize: 28
                         ) {
                             settings.globalSearchShortcut = .globalSearchDefault
                             shortcutValidationError = nil
@@ -337,7 +355,7 @@ struct SettingsView: View {
                     }
                 }
 
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     Text("settings.general.shortcuts.regularSearch.title")
                         .lineLimit(1)
 
@@ -355,7 +373,8 @@ struct SettingsView: View {
 
                         ResetIconButton(
                             help: Text("settings.general.shortcuts.restoreDefault"),
-                            frameSize: 24
+                            font: .subheadline,
+                            frameSize: 28
                         ) {
                             settings.regularSearchShortcut = .regularSearchDefault
                             shortcutValidationError = nil
@@ -376,7 +395,11 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } header: {
-                SettingsSectionHeader("settings.general.shortcuts", systemImage: "keyboard")
+                SettingsSectionHeader(
+                    "settings.general.shortcuts",
+                    systemImage: "keyboard",
+                    style: .prominent
+                )
             }
 
             // 2026-06-20：系统通知策略入口。
@@ -402,7 +425,11 @@ struct SettingsView: View {
                 Toggle("settings.notifications.mcpIssues.title", isOn: $settings.mcpIssueNotificationsEnabled)
                     .disabled(!settings.notificationsEnabled)
             } header: {
-                SettingsSectionHeader("settings.notifications.title", systemImage: "bell")
+                SettingsSectionHeader(
+                    "settings.notifications.title",
+                    systemImage: "bell",
+                    style: .prominent
+                )
             }
 
             // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
@@ -427,7 +454,11 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                SettingsSectionHeader("settings.general.accessibility", systemImage: "figure.roll")
+                SettingsSectionHeader(
+                    "settings.general.accessibility",
+                    systemImage: "figure.roll",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -441,7 +472,11 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                SettingsSectionHeader("settings.general.macOSIntegration", systemImage: "macwindow.on.rectangle")
+                SettingsSectionHeader(
+                    "settings.general.macOSIntegration",
+                    systemImage: "macwindow.on.rectangle",
+                    style: .prominent
+                )
             }
 
             // Sparkle 自动更新只存在于 Direct 分发；App Store 构建必须整段隐藏，
@@ -463,6 +498,8 @@ struct SettingsView: View {
                     } label: {
                         Label("settings.listPreferences.reset.title", systemImage: "arrow.counterclockwise")
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .disabled(!dependencies.authSession.state.isAuthenticated)
                     .help(Text("settings.listPreferences.reset.disabled"))
 
@@ -473,10 +510,16 @@ struct SettingsView: View {
                     } label: {
                         Label("settings.general.resetOnboarding", systemImage: "arrow.counterclockwise")
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .disabled(!FirstRunOnboardingPreferences.canReplayManually)
                 }
             } header: {
-                SettingsSectionHeader("settings.general.other", systemImage: "ellipsis.circle")
+                SettingsSectionHeader(
+                    "settings.general.other",
+                    systemImage: "ellipsis.circle",
+                    style: .prominent
+                )
             }
         }
         .formStyle(.grouped)
@@ -495,6 +538,8 @@ struct SettingsView: View {
                 } label: {
                     Label("settings.pro.direct.updates.check", systemImage: "arrow.triangle.2.circlepath")
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .disabled(!dependencies.directUpdateController.canCheckForUpdates)
             }
 
@@ -510,7 +555,11 @@ struct SettingsView: View {
             ))
             .disabled(!dependencies.directUpdateController.isConfigured || !updateController.automaticallyChecksForUpdates)
         } header: {
-            SettingsSectionHeader("settings.pro.direct.updates.section", systemImage: "arrow.triangle.2.circlepath")
+            SettingsSectionHeader(
+                "settings.pro.direct.updates.section",
+                systemImage: "arrow.triangle.2.circlepath",
+                style: .prominent
+            )
         } footer: {
             Text(LocalizedStringKey(dependencies.directUpdateController.isConfigured
                                     ? "settings.pro.direct.updates.footer"
@@ -597,7 +646,11 @@ private struct InterestedLanguagesSettingsSection: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("settings.filters.interestedLanguages.section", systemImage: "chevron.left.forwardslash.chevron.right")
+            SettingsSectionHeader(
+                "settings.filters.interestedLanguages.section",
+                systemImage: "chevron.left.forwardslash.chevron.right",
+                style: .prominent
+            )
         }
     }
 

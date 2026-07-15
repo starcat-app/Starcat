@@ -542,6 +542,70 @@ struct RAGChildHit: Equatable, Sendable {
     var scoreBreakdown: RAGScoreBreakdown? = nil
 }
 
+/// 检索漏斗中单个候选的最终去向。只记录用户能理解的门禁结果，避免把 provider 内部细节写进会话历史。
+enum RAGRetrievalTraceDisposition: String, Codable, Equatable, Sendable {
+    case retained
+    case sourceDisabled
+    case belowVectorSimilarity
+    case perRepositoryLimit
+    case totalLimit
+    case belowEvidenceScore
+}
+
+/// 候选仓库的最小回放身份；不复制仓库描述、README 或标签等可由本地库重新取得的信息。
+struct RAGRetrievalCandidateTrace: Identifiable, Codable, Equatable, Sendable {
+    var repoID: Int64
+    var fullName: String
+
+    var id: Int64 { repoID }
+}
+
+/// 漏斗中可回放的分片元数据。正文始终留在 `rag_chunks`，历史轨迹只保存足以核验检索决策的身份与分数。
+struct RAGRetrievalHitTrace: Identifiable, Codable, Equatable, Sendable {
+    var chunkID: Int64?
+    var repoID: Int64
+    var repositoryName: String
+    var source: RAGChunkSource
+    var sectionTitle: String
+    var rank: Int
+    var score: Double
+    var hitKind: RAGHitKind
+    var vectorSimilarity: Double?
+    var scoreBreakdown: RAGScoreBreakdown?
+    var disposition: RAGRetrievalTraceDisposition
+
+    var id: String {
+        "\(chunkID.map(String.init) ?? "missing")-\(repoID)-\(rank)-\(disposition.rawValue)"
+    }
+}
+
+/// 同一轮检索的逐阶段脱敏明细。它与 `RAGRetrievalSnapshot` 一起写入既有会话轨迹，
+/// 让用户重开历史会话时仍能查看“哪些仓库/分片为何进入或离开漏斗”。
+struct RAGRetrievalTrace: Codable, Equatable, Sendable {
+    var candidates: [RAGRetrievalCandidateTrace]
+    var keywordHits: [RAGRetrievalHitTrace]
+    var semanticHits: [RAGRetrievalHitTrace]
+    var fusionHits: [RAGRetrievalHitTrace]
+    var finalEvidence: [RAGRetrievalHitTrace]
+    var rerank: RAGRerankTrace?
+
+    init(
+        candidates: [RAGRetrievalCandidateTrace] = [],
+        keywordHits: [RAGRetrievalHitTrace] = [],
+        semanticHits: [RAGRetrievalHitTrace] = [],
+        fusionHits: [RAGRetrievalHitTrace] = [],
+        finalEvidence: [RAGRetrievalHitTrace] = [],
+        rerank: RAGRerankTrace? = nil
+    ) {
+        self.candidates = candidates
+        self.keywordHits = keywordHits
+        self.semanticHits = semanticHits
+        self.fusionHits = fusionHits
+        self.finalEvidence = finalEvidence
+        self.rerank = rerank
+    }
+}
+
 struct RAGSectionParent: Equatable, Sendable {
     var repoId: Int64
     var parentKey: String
@@ -563,6 +627,8 @@ struct RAGRetrievalResult: Equatable, Sendable {
     var childHits: [RAGChildHit]
     /// 仅随当前问答内存流转，用于 Debug 解释候选为何在检索漏斗中被丢弃；不写入会话历史。
     var diagnostics: RAGRetrievalDiagnostics? = nil
+    /// 不含分片正文的逐阶段轨迹；历史会话通过 `RAGRetrievalSnapshot` 保存同一份数据。
+    var trace: RAGRetrievalTrace? = nil
 }
 
 /// Rerank 独立 Trace 的结构化明细。仅保留用于核对请求/响应映射的元数据与分数，
@@ -727,8 +793,8 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
 
 /// “计划”面板可回放的检索结果摘要。
 ///
-/// `RAGRetrievalDiagnostics` 仍是当前轮 Debug 事实，可能包含 provider 错误和 Rerank Trace；
-/// 历史会话只持久化下面这些数量与安全设置，避免把外部错误或候选元数据长期复制一份。
+/// `RAGRetrievalDiagnostics` 仍是当前轮 Debug 事实，可能包含 provider 错误；
+/// 历史会话保留数量、安全设置与不含正文的检索轨迹，避免把外部错误或知识库正文长期复制一份。
 struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
     var settings: RAGRetrievalSettings?
     var candidateRepoCount: Int
@@ -744,6 +810,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
     var finalChildHitCount: Int
     var bundleCount: Int
     var outcome: RAGRetrievalDiagnostics.Outcome?
+    var trace: RAGRetrievalTrace?
 
     init(result: RAGRetrievalResult) {
         guard let diagnostics = result.diagnostics else {
@@ -761,6 +828,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
             finalChildHitCount = result.childHits.count
             bundleCount = result.bundles.count
             outcome = nil
+            trace = result.trace
             return
         }
 
@@ -786,6 +854,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
         finalChildHitCount = diagnostics.finalChildHitCount
         bundleCount = diagnostics.bundleCount
         outcome = diagnostics.outcome
+        trace = result.trace
     }
 }
 

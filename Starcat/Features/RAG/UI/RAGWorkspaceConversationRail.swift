@@ -106,8 +106,8 @@ struct RAGWorkspaceConversationRail: View {
                         groupSection(group)
                     }
 
-                    ForEach(viewModel.conversations(inGroupID: nil)) { conversation in
-                        conversationRow(conversation)
+                    ForEach(Array(viewModel.conversations(inGroupID: nil).enumerated()), id: \.element.id) { index, conversation in
+                        conversationRow(conversation, rowIndex: index)
                     }
                 }
                 .padding(.bottom, 12)
@@ -251,15 +251,15 @@ struct RAGWorkspaceConversationRail: View {
             }
 
             if isExpanded {
-                ForEach(viewModel.conversations(inGroupID: group.id)) { conversation in
-                    conversationRow(conversation)
+                ForEach(Array(viewModel.conversations(inGroupID: group.id).enumerated()), id: \.element.id) { index, conversation in
+                    conversationRow(conversation, rowIndex: index)
                         .padding(.leading, 14)
                 }
             }
         }
     }
 
-    func conversationRow(_ conversation: RAGConversationSummary) -> some View {
+    func conversationRow(_ conversation: RAGConversationSummary, rowIndex: Int) -> some View {
         let selected = conversation.id == viewModel.selectedConversationID
         return HStack(spacing: 0) {
             Button {
@@ -335,7 +335,12 @@ struct RAGWorkspaceConversationRail: View {
             .help("rag.workspace.conversation.actions")
             .padding(.trailing, 6)
         }
-        .background(selected ? Color.accentColor.opacity(0.11) : Color.clear)
+        // 选中态优先 accent 高亮；未选中时按行号交替斑马纹（与调试/元数据同 0.045 约定），明暗主题都可扫描。
+        .background(
+            selected
+                ? Color.accentColor.opacity(0.11)
+                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
+        )
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .padding(.horizontal, 8)
         .draggable(conversation.id.uuidString)

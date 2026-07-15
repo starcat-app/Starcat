@@ -21724,6 +21724,114 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.retrieval.detail.candidates": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candidate repositories" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.belowEvidenceScore": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Below evidence-score threshold" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "低于证据分阈值" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.belowVectorSimilarity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Below similarity threshold" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "低于相似度阈值" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.perRepositoryLimit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Per-repository limit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过单仓库上限" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.retained": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Retained" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保留" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.sourceDisabled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Source disabled" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "来源未启用" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.totalLimit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Total evidence limit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过总证据上限" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.finalEvidence": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Final evidence" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终证据" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.fusion": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hybrid fusion" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "混合融合" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "View this retrieval stage" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查看该检索阶段详情" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.hitKind.hybrid": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hybrid" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "混合命中" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.hitKind.keyword": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyword" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词命中" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.hitKind.vector": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Semantic" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义命中" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.keyword": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyword recall" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词召回" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.rerank": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rerank" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重排" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.rerankScore": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rerank score" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重排分" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.semantic": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Semantic recall" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义召回" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.unavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Detailed retrieval data is unavailable for this conversation." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此会话没有保存逐项检索详情。" } }
+      }
+    },
     "rag.workspace.inspector.plan.retrieval.funnelFormat": {
       "localizations": {
         "en": {

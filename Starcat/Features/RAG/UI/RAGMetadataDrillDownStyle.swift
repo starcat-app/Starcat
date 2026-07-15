@@ -173,27 +173,3 @@ struct MetadataDrillDownRowButton<Label: View>: View {
         .help(help ?? "")
     }
 }
-
-/// 已有 tint 胶囊的下钻按钮：不叠第二层浅底，仅 accent 描边 + hover 加深。
-struct MetadataDrillDownCapsuleButton<Label: View>: View {
-    let help: LocalizedStringKey?
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            label()
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(isHovered ? 0.45 : 0.20), lineWidth: 0.75)
-                )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pointerStyle(.link)
-        .onHover { isHovered = $0 }
-        .help(help ?? "")
-    }
-}

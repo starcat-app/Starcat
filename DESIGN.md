@@ -218,7 +218,7 @@ Starcat 标准档字号规则：
 | 正文 / 问答内容 / 普通说明 | `.body` 或缩放后 13pt | `body` | 13pt |
 | 输入框 / composer | `.callout` | `input` | 16pt |
 | 辅助说明 / subtitle / metadata | `.caption` | `caption` | 12pt |
-| section label / chip 文本 | `.caption.weight(.semibold)` | `caption-strong` | 12pt |
+| 轻量 section label / chip 文本 | `.caption.weight(.semibold)` | `caption-strong` | 12pt |
 | 时间 / 小 badge / 极弱辅助 | `.caption2` | `caption-small` | 11pt |
 | 代码 / 路径 / chunk / model id | `.caption.monospaced()` 或 `.system(..., design: .monospaced)` | `code` | 12pt |
 | 小图标 / 元信息图标 | 跟随相邻 caption | `icon-small` | 13pt |
@@ -275,6 +275,7 @@ Starcat 通过系统背景、`Divider`、轻量材质和选中态表达层级。
 - icon-only 刷新：使用 `SyncIconButton` 或 `StarsSyncButton`，`arrow.triangle.2.circlepath`，静止 `.secondary`，刷新中 `.accentColor` 并旋转。
 - `.buttonStyle(.plain)`：必须紧跟 `.focusEffectDisabled()`。
 - 设置页独立操作按钮：必须右对齐。
+- 设置页完整层级、图标与按钮规范：见 [`docs/5-规范/UI-设置页规范.md`](docs/5-规范/UI-设置页规范.md)。
 - 数值输入：使用 `TextField` + 数字过滤 + 范围钳制；范围大时用 `Slider`；禁止 `Stepper`。
 
 列表行应该承担主要扫描任务：左侧对象/图标，中间标题与摘要，右侧轻量状态或时间。标签数量要收敛，通常显示前 2-3 个，其余用更多态或二级视图承载。
@@ -355,7 +356,7 @@ Starcat 的 UI 必须承受中文、英文、repo full name、模型名、URL、
 
 ## Settings, Sheets, and Popovers
 
-Settings 是配置表单，不是功能展示页。section 标题简短，说明文字放在控件下方或 footer；独立操作按钮右对齐；危险操作进入危险区并使用二次确认。
+Settings 是配置表单，不是功能展示页。section 标题简短，说明文字放在控件下方或 footer；独立操作按钮右对齐；危险操作进入危险区并使用二次确认。设置页具体的字体层级、图标尺寸、按钮分类与验收清单以 [`docs/5-规范/UI-设置页规范.md`](docs/5-规范/UI-设置页规范.md) 为准。
 
 Sheet / popover 应只承载一个明确任务。Sheet header 右上角关闭使用 `SheetCloseButton`；轻量上下文使用 popover；阻塞式任务或复杂表单使用 sheet。不要在 sheet 内再放一组浮动大卡片。
 

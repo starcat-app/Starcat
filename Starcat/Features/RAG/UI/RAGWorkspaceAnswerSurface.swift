@@ -524,9 +524,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 HStack(alignment: .top, spacing: 8) {
                     RAGFlowLayout(spacing: 7) {
                         ForEach(viewModel.selectedRepoContexts) { repo in
-                            contextChip(title: "@\(repo.fullName)", icon: "shippingbox") {
-                                viewModel.removeMention(repoID: repo.id)
-                            }
+                            repoContextChip(repo)
                         }
                         ForEach(viewModel.attachments) { attachment in
                             contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
@@ -677,12 +675,18 @@ struct RAGWorkspaceAnswerSurface: View {
         .padding(.vertical, 12)
     }
 
+    /// 附件等非仓库 chip：左侧 SF Symbol + 文案 + 移除。
     func contextChip(title: String, icon: String, onRemove: @escaping () -> Void) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
-            Text(title).lineLimit(1)
+                .font(iconFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .lineLimit(1)
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
+                    .font(iconFont(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -692,8 +696,36 @@ struct RAGWorkspaceAnswerSurface: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        // thinMaterial + Capsule：真实胶囊两端半圆；cornerRadius:7 的圆角矩形不算胶囊。
-        .background(.thinMaterial, in: Capsule())
+        .ragContextChipCapsule()
+    }
+
+    /// @仓库 chip：左侧项目 logo（RemoteAvatar，14pt 对齐 caption），不用通用 shippingbox。
+    /// 关键约束：logo 直径锁死 14，禁止跟随文字字号放大，胶囊高度仍由 caption + 上下 6pt padding 决定。
+    func repoContextChip(_ repo: Repo) -> some View {
+        HStack(spacing: 6) {
+            RemoteAvatar(
+                urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
+                size: 14,
+                showBorder: false
+            )
+            Text("@\(repo.fullName)")
+                .lineLimit(1)
+            Button {
+                viewModel.removeMention(repoID: repo.id)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(iconFont(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("common.remove")
+        }
+        .font(ragFont(.caption, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .ragContextChipCapsule()
     }
 
     func githubLinkChip(_ reference: RAGGitHubLinkReference) -> some View {
@@ -707,6 +739,8 @@ struct RAGWorkspaceAnswerSurface: View {
             .help(githubLinkOpenHint(reference))
             Button { viewModel.removeGitHubLink(reference.url) } label: {
                 Image(systemName: "xmark.circle.fill")
+                    .font(iconFont(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -716,7 +750,7 @@ struct RAGWorkspaceAnswerSurface: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(.thinMaterial, in: Capsule())
+        .ragContextChipCapsule()
     }
 
     /// `@` 多选弹层：顶部统计 + 当前筛选词 + 已选置顶列表；筛选源仍是输入框 `@token`。

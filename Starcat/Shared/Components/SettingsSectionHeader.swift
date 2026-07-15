@@ -2,10 +2,11 @@
 //  SettingsSectionHeader.swift
 //  Starcat
 //
-//  macOS 设置页 Form 分组标题：在分组名左侧补 SF Symbol，尺寸对齐系统 section header。
+//  macOS 设置页 Form 分组标题：在分组名左侧补 SF Symbol。
 //
 //  设计约束：
-//  - 图标 11pt + `.secondary`，不抢正文层级；文案走 Form 默认 header 样式。
+//  - `.prominent` 对齐设置页规范：15pt 分组名称、13pt 图标与 20pt 图标布局框。
+//  - `.compact` 保留尚未逐页收口的既有设置页观感；迁移时必须显式切到 `.prominent`。
 //  - 只用于 `Section { } header: { }` 外挂标题，不替代行内 Label 或 DisclosureGroup 正文图标。
 //
 
@@ -14,27 +15,58 @@ import SwiftUI
 /// 设置页分组标题（图标 + 文案）。
 struct SettingsSectionHeader: View {
 
-    private let title: Text
-    private let systemImage: String
-
-    init(_ titleKey: LocalizedStringKey, systemImage: String) {
-        self.title = Text(titleKey)
-        self.systemImage = systemImage
+    /// 分组标题在逐页收口期间的视觉层级。
+    ///
+    /// 不能直接改默认样式：Settings 的其他 Tab 仍处于审查前状态，避免一个共享组件
+    /// 的改动越过当前页面的 UI 改造边界。
+    enum Style {
+        case compact
+        case prominent
     }
 
-    init(verbatim title: String, systemImage: String) {
+    private let title: Text
+    private let systemImage: String
+    private let style: Style
+
+    init(
+        _ titleKey: LocalizedStringKey,
+        systemImage: String,
+        style: Style = .compact
+    ) {
+        self.title = Text(titleKey)
+        self.systemImage = systemImage
+        self.style = style
+    }
+
+    init(
+        verbatim title: String,
+        systemImage: String,
+        style: Style = .compact
+    ) {
         self.title = Text(verbatim: title)
         self.systemImage = systemImage
+        self.style = style
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: style == .prominent ? 6 : 5) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .medium))
+                .font(style == .prominent
+                      ? .system(size: 13, weight: .medium)
+                      : .system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 14, height: 14)
+                .frame(
+                    width: style == .prominent ? 20 : 14,
+                    height: style == .prominent ? 20 : 14
+                )
 
-            title
+            if style == .prominent {
+                title
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            } else {
+                title
+            }
         }
     }
 }

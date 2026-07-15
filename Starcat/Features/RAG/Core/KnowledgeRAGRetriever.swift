@@ -101,7 +101,8 @@ struct KnowledgeRAGRetriever: Sendable {
                 candidates: candidates,
                 bundles: [],
                 childHits: [],
-                diagnostics: diagnostics(candidateRepoCount: candidates.count, outcome: .noCandidates)
+                diagnostics: diagnostics(candidateRepoCount: candidates.count, outcome: .noCandidates),
+                trace: RAGRetrievalTrace(candidates: candidateTrace(candidates))
             )
         }
         guard !enabledSources.isEmpty else {
@@ -109,7 +110,8 @@ struct KnowledgeRAGRetriever: Sendable {
                 candidates: candidates,
                 bundles: [],
                 childHits: [],
-                diagnostics: diagnostics(candidateRepoCount: candidates.count, outcome: .sourcesDisabled)
+                diagnostics: diagnostics(candidateRepoCount: candidates.count, outcome: .sourcesDisabled),
+                trace: RAGRetrievalTrace(candidates: candidateTrace(candidates))
             )
         }
 
@@ -164,6 +166,34 @@ struct KnowledgeRAGRetriever: Sendable {
         let fusionResult = fusion.applyLimits(to: rerankResult.hits)
         let hits = fusionResult.hits.filter { $0.score >= minimumEvidenceScore }
         let bundles = try await buildBundles(hits: hits, candidates: candidates)
+        let trace = RAGRetrievalTrace(
+            candidates: candidateTrace(candidates),
+            keywordHits: hitTrace(
+                keyword.hits,
+                repositoryNames: repositoryNames,
+                disposition: { enabledSources.contains($0.chunk.source) ? .retained : .sourceDisabled }
+            ),
+            semanticHits: hitTrace(
+                vector.hits,
+                repositoryNames: repositoryNames,
+                disposition: { hit in
+                    guard enabledSources.contains(hit.chunk.source) else { return .sourceDisabled }
+                    return (hit.vectorSimilarity ?? hit.score) >= minimumVectorSimilarity
+                        ? .retained
+                        : .belowVectorSimilarity
+                }
+            ),
+            fusionHits: fusionTrace(
+                rerankResult.hits,
+                repositoryNames: repositoryNames
+            ),
+            finalEvidence: hitTrace(
+                hits,
+                repositoryNames: repositoryNames,
+                disposition: { _ in .retained }
+            ),
+            rerank: rerankResult.diagnostics.trace
+        )
         let diagnostics = RAGRetrievalDiagnostics(
             settings: retrievalSettings,
             candidateRepoCount: candidates.count,
@@ -182,7 +212,61 @@ struct KnowledgeRAGRetriever: Sendable {
             outcome: bundles.isEmpty ? .noEvidence : .completed
         )
         progress(.evidencePacked(hitCount: hits.count, bundleCount: bundles.count))
-        return RAGRetrievalResult(candidates: candidates, bundles: bundles, childHits: hits, diagnostics: diagnostics)
+        return RAGRetrievalResult(
+            candidates: candidates,
+            bundles: bundles,
+            childHits: hits,
+            diagnostics: diagnostics,
+            trace: trace
+        )
+    }
+
+    /// 把当前轮内存命中收成可持久化的最小审计数据；分片正文不可进入会话轨迹，避免历史库成为知识库副本。
+    private func hitTrace(
+        _ hits: [RAGChildHit],
+        repositoryNames: [Int64: String],
+        disposition: (RAGChildHit) -> RAGRetrievalTraceDisposition
+    ) -> [RAGRetrievalHitTrace] {
+        hits.enumerated().map { index, hit in
+            RAGRetrievalHitTrace(
+                chunkID: hit.chunk.id,
+                repoID: hit.chunk.repoId,
+                repositoryName: repositoryNames[hit.chunk.repoId] ?? "#\(hit.chunk.repoId)",
+                source: hit.chunk.source,
+                sectionTitle: hit.chunk.sectionPath.isEmpty ? hit.chunk.title : hit.chunk.sectionPath,
+                rank: index + 1,
+                score: hit.score,
+                hitKind: hit.kind,
+                vectorSimilarity: hit.vectorSimilarity,
+                scoreBreakdown: hit.scoreBreakdown,
+                disposition: disposition(hit)
+            )
+        }
+    }
+
+    /// 裁剪顺序必须与 `RAGHybridFusionEngine.applyLimits` 完全一致；否则 UI 会把“为何过滤”解释错。
+    private func fusionTrace(
+        _ hits: [RAGChildHit],
+        repositoryNames: [Int64: String]
+    ) -> [RAGRetrievalHitTrace] {
+        var acceptedByRepository: [Int64: Int] = [:]
+        var acceptedAfterRepositoryLimit = 0
+        return hitTrace(hits, repositoryNames: repositoryNames) { hit in
+            let repositoryCount = acceptedByRepository[hit.chunk.repoId, default: 0]
+            guard repositoryCount < retrievalSettings.perRepositoryEvidenceLimit else {
+                return .perRepositoryLimit
+            }
+            acceptedByRepository[hit.chunk.repoId] = repositoryCount + 1
+            guard acceptedAfterRepositoryLimit < retrievalSettings.finalEvidenceChunkLimit else {
+                return .totalLimit
+            }
+            acceptedAfterRepositoryLimit += 1
+            return hit.score >= minimumEvidenceScore ? .retained : .belowEvidenceScore
+        }
+    }
+
+    private func candidateTrace(_ candidates: [RAGRepoCandidate]) -> [RAGRetrievalCandidateTrace] {
+        candidates.map { RAGRetrievalCandidateTrace(repoID: $0.repo.id, fullName: $0.repo.fullName) }
     }
 
     private func rerankCandidates(

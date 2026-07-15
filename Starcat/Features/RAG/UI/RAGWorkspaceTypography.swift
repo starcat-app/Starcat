@@ -50,6 +50,18 @@ extension View {
             .padding(.vertical, 6)
             .background(.thinMaterial, in: Capsule())
     }
+
+    /// 输入区上方的「上下文 chip」（@仓库 / 附件 / 链接）胶囊底。
+    /// 关键约束：用 `Color.primary` 低透明度实底 + 细描边，取代 `.thinMaterial`——
+    /// 后者在浅色输入区上对比过低、且明暗主题观感不一致；primary 透明度在黑白主题下都能自适应。
+    func ragContextChipCapsule() -> some View {
+        self
+            .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+            )
+    }
 }
 
 /// 用户 / AI 消息头像统一边长，保证两侧视觉对称。

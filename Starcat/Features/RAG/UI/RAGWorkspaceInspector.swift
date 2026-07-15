@@ -8,6 +8,18 @@
 import AppKit
 import SwiftUI
 
+/// 检索漏斗的 popover 入口。一个阶段只打开对应的事实列表，不把 Debug JSON 直接暴露给用户。
+private enum RAGRetrievalDetailTarget: String, Identifiable {
+    case candidates
+    case keyword
+    case semantic
+    case fusion
+    case rerank
+    case finalEvidence
+
+    var id: String { rawValue }
+}
+
 struct RAGWorkspaceInspector: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -24,8 +36,11 @@ struct RAGWorkspaceInspector: View {
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
     @State private var isKnowledgeRepositoryRowHovered = false
+    /// 光标悬停的引用行；用于给列表加 hover 高亮，展开态优先级更高。
+    @State private var hoveredCitationID: UUID?
     @State private var isRetrievalScoreExplanationPresented = false
     @State private var isCitationChunkPopoverPresented = false
+    @State private var retrievalDetailTarget: RAGRetrievalDetailTarget?
     /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
     @State private var isKnowledgeMetadataExpanded = false
     /// Star Top10 是次级排行，默认折叠在元数据展开内容内部。
@@ -50,22 +65,24 @@ struct RAGWorkspaceInspector: View {
             // 与中栏 answerHeader 同构（headline + caption + 上下 11pt），保证分割线水平对齐。
             // tabs 放在分割线下方，避免把右栏 header 撑高。
             HStack(alignment: .center, spacing: 10) {
-                HStack(alignment: .center, spacing: 8) {
-                    // 叠放文档：表达「本轮组装进回答的多路来源」，与引用/计划/索引 tab 语义一致。
-                    Image(systemName: "doc.on.doc.fill")
-                        .font(iconFont(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 18)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
+                // 图标只与 headline 同行对齐；若跟 title+caption 整块 center，视觉上会漂到 Context 上方。
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .center, spacing: 8) {
+                        // 叠放文档：表达「本轮组装进回答的多路来源」，与引用/计划/索引 tab 语义一致。
+                        Image(systemName: "doc.on.doc.fill")
+                            .font(iconFont(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 18)
+                            .accessibilityHidden(true)
                         Text("rag.workspace.inspector.title")
                             .font(ragFont(.headline, weight: .semibold))
                             .lineLimit(1)
-                        Text("rag.workspace.inspector.subtitle")
-                            .font(ragFont(.caption))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
+                    Text("rag.workspace.inspector.subtitle")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.leading, 26)
                 }
                 Spacer(minLength: 8)
                 #if DEBUG
@@ -173,10 +190,17 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.body))
                     .foregroundStyle(.secondary)
             } else {
-                Text("rag.workspace.inspector.citations")
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+                // 引文分组标题：前缀引用气泡图标，与元数据分组的「彩色前缀图标 + 标题」保持同一视觉语言。
+                HStack(spacing: 5) {
+                    Image(systemName: "quote.bubble.fill")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("rag.workspace.inspector.citations")
+                        .font(ragFont(.caption, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
 
                 // 手风琴：引用列表在上，点一条在该行下方展开细节。
                 ForEach(allCitations) { citation in
@@ -229,11 +253,33 @@ struct RAGWorkspaceInspector: View {
                         }
                     }
                     .background(
+                        // 展开态优先用 accent 底；未展开时光标悬停给一层浅 accent 反馈，其余保持默认底。
                         isExpanded
                             ? Color.accentColor.opacity(0.08)
-                            : Color(nsColor: .textBackgroundColor).opacity(0.55),
+                            : (hoveredCitationID == citation.id
+                                ? Color.accentColor.opacity(0.045)
+                                : Color(nsColor: .textBackgroundColor).opacity(0.55)),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
+                    .overlay(
+                        // 悬停时描一圈淡 accent 边，强化「可点击 + 当前聚焦」的视觉线索。
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(
+                                hoveredCitationID == citation.id && !isExpanded
+                                    ? Color.accentColor.opacity(0.35)
+                                    : Color.clear,
+                                lineWidth: 1
+                            )
+                    )
+                    .onHover { isHovering in
+                        if reduceMotion {
+                            hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -304,6 +350,7 @@ struct RAGWorkspaceInspector: View {
     var knowledgeBaseMetadataPanel: some View {
         if let snapshot = viewModel.knowledgeBaseMetadataSnapshot {
             VStack(alignment: .leading, spacing: 0) {
+                // 标题与下方「引用」同级左对齐：不放进卡片内缩进，避免图标比引用标题更靠右。
                 // 整行可点：chevron 只表达状态，不单独做触发区（见 UI-折叠展开-规范）。
                 Button {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
@@ -338,7 +385,7 @@ struct RAGWorkspaceInspector: View {
                             .rotationEffect(.degrees(isKnowledgeMetadataExpanded ? 90 : 0))
                     }
                     .contentShape(Rectangle())
-                    .padding(10)
+                    .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -373,11 +420,11 @@ struct RAGWorkspaceInspector: View {
                             starLeadersSection(snapshot.topStarredRepositories)
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 10)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
         } else {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -493,21 +540,13 @@ struct RAGWorkspaceInspector: View {
                     openMetadataList(.allStars, status: .read)
                 }
             }
-            HStack(spacing: 6) {
-                Text("repo.status.using")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                MetadataDrillDownCapsuleButton(
-                    help: "repo.status.using",
-                    action: { openMetadataList(.allStars, status: .using) }
-                ) {
-                    metadataTintCapsule(
-                        systemImage: "checkmark.seal.fill",
-                        text: localizedInteger(using),
-                        tint: .accentColor
-                    )
-                }
+            // 与「未读/已读」「标签」「索引」等可点击数值统一：accent 数字 + 圆角描边盒，无图标、无实心胶囊。
+            metadataMetricActionRow(
+                "repo.status.using",
+                value: localizedInteger(using),
+                helpKey: "repo.status.using"
+            ) {
+                openMetadataList(.allStars, status: .using)
             }
         }
     }
@@ -657,8 +696,9 @@ struct RAGWorkspaceInspector: View {
                 .font(ragFont(.caption))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
+            // 与可点击数值同字号（.caption），去掉 .rounded 保持不放大。
             Text(value)
-                .font(ragFont(.caption, weight: .semibold, design: .rounded))
+                .font(ragFont(.caption, weight: .semibold))
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
@@ -688,8 +728,9 @@ struct RAGWorkspaceInspector: View {
         action: @escaping () -> Void
     ) -> some View {
         MetadataDrillDownButton(help: helpKey, action: action) {
+            // 字号与前置 label（.caption）保持一致；不用 .rounded，圆体数字 x-height 偏大会显得「被放大」。
             Text(value)
-                .font(ragFont(.caption, weight: .semibold, design: .rounded))
+                .font(ragFont(.caption, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
@@ -1091,49 +1132,62 @@ struct RAGWorkspaceInspector: View {
                     }
 
                     if let retrieval = viewModel.displayedRetrievalSnapshot {
+                        let trace = viewModel.displayedRetrievalTrace
                         planSection(
                             "rag.workspace.inspector.plan.retrievalFunnel",
                             systemImage: "line.3.horizontal.decrease.circle.fill",
                             tint: .orange,
                             helpTopic: .retrievalFunnel
                         ) {
-                            planMetricRow(
+                            retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.candidates",
-                                value: localizedInteger(retrieval.candidateRepoCount)
+                                value: localizedInteger(retrieval.candidateRepoCount),
+                                target: .candidates,
+                                trace: trace
                             )
-                            planMetricRow(
+                            retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.keyword",
                                 value: localizedFunnelCount(
                                     raw: retrieval.keywordRawCount,
                                     accepted: retrieval.keywordAcceptedCount
-                                )
+                                ),
+                                target: .keyword,
+                                trace: trace
                             )
-                            planMetricRow(
+                            retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.vector",
                                 value: localizedFunnelCount(
                                     raw: retrieval.vectorRawCount,
                                     accepted: retrieval.vectorAcceptedCount
-                                )
+                                ),
+                                target: .semantic,
+                                trace: trace
                             )
-                            planMetricRow(
+                            retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.fusion",
                                 value: String(
                                     format: String.l10n("rag.workspace.inspector.plan.retrieval.fusionFormat"),
                                     retrieval.fusionUniqueCount,
                                     retrieval.rankingFilteredCount
-                                )
+                                ),
+                                target: .fusion,
+                                trace: trace
                             )
-                            planMetricRow(
+                            retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.rerank",
-                                value: localizedRerank(retrieval)
+                                value: localizedRerank(retrieval),
+                                target: .rerank,
+                                trace: trace
                             )
-                            planMetricRow(
+                            retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.result",
                                 value: String(
                                     format: String.l10n("rag.workspace.inspector.plan.retrieval.resultFormat"),
                                     retrieval.finalChildHitCount,
                                     retrieval.bundleCount
-                                )
+                                ),
+                                target: .finalEvidence,
+                                trace: trace
                             )
                             if let outcome = retrieval.outcome {
                                 planMetricRow(
@@ -1278,6 +1332,263 @@ struct RAGWorkspaceInspector: View {
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
+        }
+    }
+
+    /// 漏斗数字复用元数据下钻的 caption / accent / plain button 样式；没有逐项轨迹的旧会话保持普通文本。
+    @ViewBuilder
+    private func retrievalMetricRow(
+        _ label: LocalizedStringKey,
+        value: String,
+        target: RAGRetrievalDetailTarget,
+        trace: RAGRetrievalTrace?
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            if let trace, retrievalDetailCount(target, trace: trace) > 0 {
+                MetadataDrillDownButton(
+                    help: "rag.workspace.inspector.plan.retrieval.detail.help",
+                    action: { retrievalDetailTarget = target }
+                ) {
+                    Text(value)
+                        .font(ragFont(.caption, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(1)
+                }
+                .popover(item: retrievalDetailBinding(for: target)) { selectedTarget in
+                    retrievalDetailPopover(selectedTarget, trace: trace)
+                        .appLocaleEnvironment()
+                }
+            } else {
+                Text(value)
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func retrievalDetailPopover(_ target: RAGRetrievalDetailTarget, trace: RAGRetrievalTrace) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(retrievalDetailTitle(target))
+                .font(ragFont(.callout, weight: .semibold))
+                .foregroundStyle(.primary)
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    switch target {
+                    case .candidates:
+                        ForEach(Array(trace.candidates.enumerated()), id: \.element.id) { rowIndex, candidate in
+                            retrievalCandidateRow(candidate, rowIndex: rowIndex)
+                        }
+                    case .rerank:
+                        if let rerank = trace.rerank {
+                            ForEach(Array(rerank.inputCandidates.enumerated()), id: \.element.inputIndex) { rowIndex, candidate in
+                                rerankTraceRow(candidate, rerank: rerank, rowIndex: rowIndex)
+                            }
+                        } else {
+                            retrievalDetailUnavailable
+                        }
+                    case .keyword, .semantic, .fusion, .finalEvidence:
+                        ForEach(Array(retrievalDetailHits(target, trace: trace).enumerated()), id: \.element.id) { rowIndex, hit in
+                            retrievalTraceRow(hit, rowIndex: rowIndex)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollIndicators(.visible)
+        }
+        .padding(12)
+        .frame(width: 430, height: 360, alignment: .topLeading)
+    }
+
+    var retrievalDetailUnavailable: some View {
+        Text("rag.workspace.inspector.plan.retrieval.detail.unavailable")
+            .font(ragFont(.caption))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+    }
+
+    /// 与知识库的其他可扫描列表使用同一斑马纹，避免详情数据堆叠时难以逐行对应。
+    private func retrievalZebraBackground(rowIndex: Int) -> Color {
+        rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
+    }
+
+    private func retrievalCandidateRow(_ candidate: RAGRetrievalCandidateTrace, rowIndex: Int) -> some View {
+        RepoIdentityLabel(
+            fullName: candidate.fullName,
+            avatarSize: 16,
+            font: ragFont(.caption, weight: .semibold),
+            spacing: 6,
+            showAvatarBorder: false
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(retrievalZebraBackground(rowIndex: rowIndex))
+    }
+
+    private func retrievalTraceRow(_ hit: RAGRetrievalHitTrace, rowIndex: Int) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                RepoIdentityLabel(
+                    fullName: hit.repositoryName,
+                    avatarSize: 16,
+                    font: ragFont(.caption, weight: .semibold),
+                    spacing: 6,
+                    showAvatarBorder: false
+                )
+                Spacer(minLength: 6)
+                retrievalTraceScore("rag.browser.retrieval.rankScore", value: hit.score)
+            }
+            Text(hit.sectionTitle)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            HStack(spacing: 5) {
+                Image(systemName: hit.source.systemImageName)
+                    .font(iconFont(size: 10, weight: .semibold))
+                    .foregroundStyle(hit.source.tintColor)
+                    .accessibilityHidden(true)
+                Text(hit.source.titleKey)
+                Text("·")
+                Text(localizedHitKind(hit.hitKind))
+                if let vectorSimilarity = hit.vectorSimilarity {
+                    Text("·")
+                    retrievalTraceScore("rag.browser.retrieval.vectorSimilarity", value: vectorSimilarity)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(ragFont(.caption2))
+            .foregroundStyle(.secondary)
+            Text(localizedRetrievalDisposition(hit.disposition))
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(retrievalZebraBackground(rowIndex: rowIndex))
+    }
+
+    private func rerankTraceRow(
+        _ candidate: RAGRerankTrace.InputCandidate,
+        rerank: RAGRerankTrace,
+        rowIndex: Int
+    ) -> some View {
+        let responseScore = rerank.responseResults.first { $0.inputIndex == candidate.inputIndex }?.rerankScore
+        let appliedRank = rerank.appliedOrder.first { $0.inputIndex == candidate.inputIndex }?.rank
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                RepoIdentityLabel(
+                    fullName: candidate.repositoryName,
+                    avatarSize: 16,
+                    font: ragFont(.caption, weight: .semibold),
+                    spacing: 6,
+                    showAvatarBorder: false
+                )
+                Spacer(minLength: 6)
+                retrievalTraceScore("rag.browser.retrieval.rankScore", value: candidate.preRerankScore)
+            }
+            Text(candidate.section)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            HStack(spacing: 5) {
+                Image(systemName: candidate.source.systemImageName)
+                    .font(iconFont(size: 10, weight: .semibold))
+                    .foregroundStyle(candidate.source.tintColor)
+                    .accessibilityHidden(true)
+                Text(candidate.source.titleKey)
+                if let responseScore {
+                    Text("·")
+                    retrievalTraceScore("rag.workspace.inspector.plan.retrieval.detail.rerankScore", value: responseScore)
+                }
+                if let appliedRank {
+                    Text("· #\(appliedRank)")
+                }
+            }
+            .font(ragFont(.caption2))
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(retrievalZebraBackground(rowIndex: rowIndex))
+    }
+
+    func retrievalTraceScore(_ title: LocalizedStringKey, value: Double) -> some View {
+        HStack(spacing: 3) {
+            Text(title)
+            Text(String(format: "%.3f", value))
+                .monospacedDigit()
+        }
+    }
+
+    private func retrievalDetailCount(_ target: RAGRetrievalDetailTarget, trace: RAGRetrievalTrace) -> Int {
+        switch target {
+        case .candidates: return trace.candidates.count
+        case .keyword: return trace.keywordHits.count
+        case .semantic: return trace.semanticHits.count
+        case .fusion: return trace.fusionHits.count
+        case .rerank: return trace.rerank?.inputCandidates.count ?? 0
+        case .finalEvidence: return trace.finalEvidence.count
+        }
+    }
+
+    /// 每个数字只观察自己的 target，避免多个漏斗行同时对同一份 optional state 挂 popover 时抢锚点。
+    private func retrievalDetailBinding(for target: RAGRetrievalDetailTarget) -> Binding<RAGRetrievalDetailTarget?> {
+        Binding(
+            get: { retrievalDetailTarget == target ? target : nil },
+            set: { retrievalDetailTarget = $0 }
+        )
+    }
+
+    private func retrievalDetailHits(_ target: RAGRetrievalDetailTarget, trace: RAGRetrievalTrace) -> [RAGRetrievalHitTrace] {
+        switch target {
+        case .keyword: return trace.keywordHits
+        case .semantic: return trace.semanticHits
+        case .fusion: return trace.fusionHits
+        case .finalEvidence: return trace.finalEvidence
+        case .candidates, .rerank: return []
+        }
+    }
+
+    private func retrievalDetailTitle(_ target: RAGRetrievalDetailTarget) -> LocalizedStringKey {
+        switch target {
+        case .candidates: return "rag.workspace.inspector.plan.retrieval.detail.candidates"
+        case .keyword: return "rag.workspace.inspector.plan.retrieval.detail.keyword"
+        case .semantic: return "rag.workspace.inspector.plan.retrieval.detail.semantic"
+        case .fusion: return "rag.workspace.inspector.plan.retrieval.detail.fusion"
+        case .rerank: return "rag.workspace.inspector.plan.retrieval.detail.rerank"
+        case .finalEvidence: return "rag.workspace.inspector.plan.retrieval.detail.finalEvidence"
+        }
+    }
+
+    func localizedHitKind(_ hitKind: RAGHitKind) -> LocalizedStringKey {
+        switch hitKind {
+        case .keyword: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.keyword"
+        case .vector: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.vector"
+        case .hybrid: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.hybrid"
+        }
+    }
+
+    func localizedRetrievalDisposition(_ disposition: RAGRetrievalTraceDisposition) -> LocalizedStringKey {
+        switch disposition {
+        case .retained: return "rag.workspace.inspector.plan.retrieval.detail.disposition.retained"
+        case .sourceDisabled: return "rag.workspace.inspector.plan.retrieval.detail.disposition.sourceDisabled"
+        case .belowVectorSimilarity: return "rag.workspace.inspector.plan.retrieval.detail.disposition.belowVectorSimilarity"
+        case .perRepositoryLimit: return "rag.workspace.inspector.plan.retrieval.detail.disposition.perRepositoryLimit"
+        case .totalLimit: return "rag.workspace.inspector.plan.retrieval.detail.disposition.totalLimit"
+        case .belowEvidenceScore: return "rag.workspace.inspector.plan.retrieval.detail.disposition.belowEvidenceScore"
         }
     }
 
@@ -1547,7 +1858,7 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.body))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(viewModel.debugTraces.sorted { $0.startedAt > $1.startedAt }) { trace in
+                ForEach(Array(viewModel.debugTraces.sorted { $0.startedAt > $1.startedAt }.enumerated()), id: \.element.id) { traceIndex, trace in
                     let isExpanded = expandedDebugTraceIDs.contains(trace.id)
                     VStack(alignment: .leading, spacing: 8) {
                         // 整行可折叠；导出叠在 chevron 左侧独立点击，避免误触展开。
@@ -1615,9 +1926,10 @@ struct RAGWorkspaceInspector: View {
                             // 子 stage 相对父行轻缩进即可，过大空白会浪费窄侧栏。
                             let stepDurations = debugEventStepDurations(for: trace.events)
                             VStack(alignment: .leading, spacing: 6) {
-                                ForEach(trace.events) { event in
+                                ForEach(Array(trace.events.enumerated()), id: \.element.id) { eventIndex, event in
                                     debugEventRow(
                                         event,
+                                        rowIndex: eventIndex,
                                         stepDurationSeconds: stepDurations[event.id] ?? event.elapsedSeconds
                                     )
                                 }
@@ -1627,6 +1939,12 @@ struct RAGWorkspaceInspector: View {
                             .padding(.bottom, 8)
                         }
                     }
+                    // 斑马纹：奇数条叠一层极淡 primary（与元数据 metadataZebraBackground 同 0.045 约定），
+                    // 明暗主题下相邻问答都能一眼分组；放在基底 background 之前 = 叠在白底之上。
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(traceIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
+                    )
                     // 浅底 + separator 细边框：同一 trace 折叠/展开时边界都清晰，不强于侧栏其它卡片。
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                     .overlay(
@@ -1642,6 +1960,7 @@ struct RAGWorkspaceInspector: View {
     /// 单个 stage 行：默认只显示标题/本步耗时/复制；展开后才挂载 payload，避免大段文本拖垮侧栏。
     func debugEventRow(
         _ event: RAGDebugEvent,
+        rowIndex: Int,
         stepDurationSeconds: TimeInterval
     ) -> some View {
         let isExpanded = expandedDebugEventIDs.contains(event.id)
@@ -1717,6 +2036,12 @@ struct RAGWorkspaceInspector: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
+        // 斑马纹：奇数 stage 叠一层极淡 primary（与外层 trace / 元数据同 0.045 约定），
+        // 叠在 controlBackground 浅底之上，长列表相邻步骤更好扫描。
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
+        )
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
     }
 

@@ -256,6 +256,16 @@ final class KnowledgeRAGWorkspaceViewModel {
             .first(where: { $0.retrievalSnapshot != nil })?.retrievalSnapshot
     }
 
+    /// 当前轮优先使用内存结果；回答写入后回退到会话轨迹中的脱敏明细，保证漏斗 popover 与数字快照属于同一轮。
+    var displayedRetrievalTrace: RAGRetrievalTrace? {
+        if queryPlan != nil || messages.last?.role == .user {
+            return retrieval?.trace
+                ?? executionSteps.reversed().first(where: { $0.retrievalSnapshot?.trace != nil })?.retrievalSnapshot?.trace
+        }
+        return latestHistoricalExecutionTrace?.reversed()
+            .first(where: { $0.retrievalSnapshot?.trace != nil })?.retrievalSnapshot?.trace
+    }
+
     var displayedContextUsage: RAGContextUsage? {
         if queryPlan != nil || messages.last?.role == .user {
             return lastContextUsage
