@@ -1040,6 +1040,7 @@
     };
     let weeklyBatchPollTimer = null;
     let weeklyBatchPollID = "";
+    let weeklySourceTaskPollTimer = null;
 
     function config() {
       return window.STARCAT_ADMIN_CONFIG || { services: {} };
@@ -1313,17 +1314,19 @@
     function renderWeeklyOperations() {
       const sources = weeklyOps.sources.map((source) => {
         const latest = source.latest_batch || {};
-        const cursor = latest.cursor || {};
+        const activeBackfill = source.active_backfill || {};
+        const progressBatch = activeBackfill.batch_id ? activeBackfill : latest;
+        const cursor = progressBatch.cursor || {};
         const progress = cursor.controller
-          ? `${latest.success || 0}/${latest.total || "?"} · volume ${cursor.next_volume || "-"}`
+          ? `${progressBatch.success || 0}/${progressBatch.total || "?"} · volume ${cursor.next_volume || "-"}`
           : (latest.status || "-");
         return `<div class="weekly-source-row">
           <span><strong>${escapeHTML(source.display_name_zh || source.code)}</strong><br>
             <span class="weekly-ops-note">成功 ${escapeHTML(source.last_success_at || "-")} · 失败 ${escapeHTML(source.last_failure_at || "-")}</span>
           </span>
           <span>${escapeHTML(String(source.count || 0))} repos</span>
-          <span>${escapeHTML(String(source.pending || 0))} pending</span>
-          <span>${escapeHTML(String(source.retrying || 0))} retry</span>
+          <span>${escapeHTML(String(source.pending || 0))} pending · ${escapeHTML(String(source.processing || 0))} processing</span>
+          <span>${escapeHTML(String(source.retrying || 0))} retry · ${escapeHTML(String(source.discarded || 0))} discarded</span>
           <span title="${escapeHTML(cursor.last_error || "")}">${escapeHTML(progress)}</span>
         </div>`;
       }).join("");
@@ -1735,8 +1738,8 @@
         weeklyOps.status = `已刷新 ${new Date().toLocaleTimeString()}`;
         // 页面刷新或服务重启后，从持久化来源状态恢复活动批次，而不是依赖旧页面内存。
         const helloGitHub = weeklyOps.sources.find((source) => source.code === "hellogithub");
-        const activeBatch = helloGitHub && helloGitHub.latest_batch;
-        if (activeBatch && ["pending", "processing"].includes(activeBatch.status)) {
+        const activeBatch = helloGitHub && (helloGitHub.active_backfill || helloGitHub.latest_batch);
+        if (!weeklyOps.batch && activeBatch && ["pending", "processing"].includes(activeBatch.status)) {
           weeklyOps.batch = { schema_version: 1, data: activeBatch };
           if (activeBatch.batch_id && weeklyBatchPollID !== activeBatch.batch_id) {
             pollWeeklyBatch(activeBatch.batch_id);
@@ -1751,6 +1754,8 @@
 
     async function startHelloGitHubSync(mode) {
       if (mode === "backfill" && !window.confirm("确认启动 HelloGitHub 历史回填？任务会持久化并在后台逐期处理。")) return;
+      const previousBatchID = weeklyOps.sources.find((source) => source.code === "hellogithub")?.latest_batch?.batch_id || "";
+      if (weeklySourceTaskPollTimer) window.clearTimeout(weeklySourceTaskPollTimer);
       const body = { mode };
       if (mode === "backfill") {
         const from = Number.parseInt(weeklyOps.fromVolume, 10);
@@ -1774,9 +1779,40 @@
         render();
         if (batchID) pollWeeklyBatch(batchID);
         await refreshWeeklyOperations();
+        if (!batchID) pollHelloGitHubLatestBatch(previousBatchID);
       } catch (error) {
         log(`HelloGitHub ${mode} 启动失败: ${error.message}`, "error");
       }
+    }
+
+    // featured/reconcile 的 POST 只启动异步 Collector，实际 ingest batch 要等来源抓取
+    // 完成后才会持久化。短期轮询来源目录，发现新的 latest_batch 后再切到批次轮询。
+    function pollHelloGitHubLatestBatch(previousBatchID) {
+      let attempts = 0;
+      const poll = async () => {
+        attempts += 1;
+        try {
+          const result = await requestJSON("weekly", "/internal/sources", "adminKey");
+          weeklyOps.sources = Array.isArray(result.data) ? result.data : [];
+          const helloGitHub = weeklyOps.sources.find((source) => source.code === "hellogithub");
+          const latest = helloGitHub && helloGitHub.latest_batch;
+          render();
+          if (latest?.batch_id && latest.batch_id !== previousBatchID) {
+            weeklyOps.batch = { schema_version: 1, data: latest };
+            log(`HelloGitHub Collector 已创建 batch=${latest.batch_id}`);
+            pollWeeklyBatch(latest.batch_id);
+            return;
+          }
+        } catch (error) {
+          log(`HelloGitHub Collector 状态查询失败: ${error.message}`, "warn");
+        }
+        if (attempts >= 30) {
+          log("HelloGitHub Collector 60 秒内未产生新批次；可稍后刷新来源状态。", "warn");
+          return;
+        }
+        weeklySourceTaskPollTimer = window.setTimeout(poll, 2000);
+      };
+      poll();
     }
 
     function pollWeeklyBatch(batchID) {
