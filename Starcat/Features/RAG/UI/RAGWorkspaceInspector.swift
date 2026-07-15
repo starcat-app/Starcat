@@ -287,11 +287,8 @@ struct RAGWorkspaceInspector: View {
                         isKnowledgeMetadataExpanded.toggle()
                     }
                 } label: {
+                    // chevron 放右侧，与下方「引用」手风琴同构（chevron.right + 旋转），避免左右两套折叠习惯。
                     HStack(spacing: 6) {
-                        Image(systemName: isKnowledgeMetadataExpanded ? "chevron.down" : "chevron.right")
-                            .font(ragFont(.caption2, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 12)
                         Image(systemName: "cylinder.split.1x2")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -303,6 +300,10 @@ struct RAGWorkspaceInspector: View {
                         Text(snapshot.generatedAt, format: .dateTime.hour().minute().second())
                             .font(ragFont(.caption2))
                             .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isKnowledgeMetadataExpanded ? 90 : 0))
                     }
                     .contentShape(Rectangle())
                     .padding(10)
@@ -311,7 +312,8 @@ struct RAGWorkspaceInspector: View {
                 .focusEffectDisabled()
 
                 if isKnowledgeMetadataExpanded {
-                    VStack(alignment: .leading, spacing: 10) {
+                    // 组间距压到接近贴合：分组靠标题图标区分，不再靠大空隙撑开。
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("rag.workspace.inspector.metadata.subtitle")
                             .font(ragFont(.caption))
                             .foregroundStyle(.secondary)
@@ -323,28 +325,13 @@ struct RAGWorkspaceInspector: View {
                             metadataStat("rag.workspace.inspector.metadata.retained", value: snapshot.retainedAfterUnstarCount)
                         }
 
-                        Divider()
-
-                        metadataRow("rag.workspace.inspector.metadata.status", value: metadataDistribution(snapshot.statusCounts))
-                        metadataRow(
-                            "rag.workspace.inspector.metadata.tags",
-                            value: "\(snapshot.taggedProjectCount) / \(snapshot.untaggedProjectCount) · \(snapshot.tagCount)"
-                        )
-                        metadataRow(
-                            "rag.workspace.inspector.metadata.languages",
-                            value: metadataDistribution(snapshot.topLanguages)
-                        )
-                        metadataRow(
-                            "rag.workspace.inspector.metadata.activity",
-                            value: "\(snapshot.addedInLast30DaysCount) / \(snapshot.pushedInLast30DaysCount)"
-                        )
-                        metadataRow(
-                            "rag.workspace.inspector.metadata.index",
-                            value: "\(snapshot.indexHealth.readyChunks) / \(snapshot.indexHealth.pendingChunks) / \(snapshot.indexHealth.failedChunks) / \(snapshot.indexHealth.staleChunks)"
-                        )
+                        metadataOrganizationGroup(snapshot)
+                        metadataTagsGroup(snapshot)
+                        metadataLanguagesGroup(Array(snapshot.topLanguages.prefix(6)))
+                        metadataActivityGroup(snapshot)
+                        metadataIndexGroup(snapshot.indexHealth)
 
                         if !snapshot.topStarredRepositories.isEmpty {
-                            Divider()
                             starLeadersSection(snapshot.topStarredRepositories)
                         }
                     }
@@ -367,21 +354,27 @@ struct RAGWorkspaceInspector: View {
     /// Star Top10：嵌在元数据展开区内，自身默认折叠。
     @ViewBuilder
     private func starLeadersSection(_ repositories: [KnowledgeBaseMetadataSnapshot.TopRepository]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        metadataGroupCard {
             Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     isStarLeadersExpanded.toggle()
                 }
             } label: {
+                // 与「元数据」/「引用」同款：标题在左，chevron 在右。
                 HStack(spacing: 6) {
-                    Image(systemName: isStarLeadersExpanded ? "chevron.down" : "chevron.right")
-                        .font(ragFont(.caption2, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 12)
+                    Image(systemName: "star.fill")
+                        .font(iconFont(size: 12, weight: .semibold))
+                        .foregroundStyle(.yellow)
+                        .frame(width: 16)
+                        .accessibilityHidden(true)
                     Text("rag.workspace.inspector.metadata.starLeaders")
-                        .font(ragFont(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(ragFont(.callout, weight: .semibold))
+                        .foregroundStyle(.primary)
                     Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isStarLeadersExpanded ? 90 : 0))
                 }
                 .contentShape(Rectangle())
             }
@@ -389,24 +382,291 @@ struct RAGWorkspaceInspector: View {
             .focusEffectDisabled()
 
             if isStarLeadersExpanded {
-                ForEach(Array(repositories.enumerated()), id: \.offset) { index, repository in
-                    HStack(spacing: 6) {
-                        Text("\(index + 1)")
-                            .font(ragFont(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16, alignment: .trailing)
-                        Text(repository.fullName)
-                            .font(ragFont(.caption, weight: .medium, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer(minLength: 6)
-                        Text(repository.stars, format: .number)
-                            .font(ragFont(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(repositories.enumerated()), id: \.offset) { index, repository in
+                        HStack(spacing: 8) {
+                            Text("\(index + 1)")
+                                .font(ragFont(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 14, alignment: .trailing)
+                            // 与引用列表同源：owner logo + fullName，避免裸文字排行。
+                            RepoIdentityLabel(
+                                fullName: repository.fullName,
+                                avatarSize: 16,
+                                font: ragFont(.caption, weight: .medium),
+                                spacing: 6,
+                                showAvatarBorder: false
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: 3) {
+                                Image(systemName: "star.fill")
+                                    .font(iconFont(size: 9, weight: .semibold))
+                                    .foregroundStyle(.yellow)
+                                // 用短格式（524k）而不是 `523,968`，侧栏窄时才不会挤掉 logo。
+                                Text(repository.stars.formattedShort)
+                                    .font(ragFont(.caption2, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    // MARK: - Metadata groups
+
+    /// 整理状态：未读/已读一行，正在使用单独成行，避免旧版把三项挤进同一行。
+    @ViewBuilder
+    private func metadataOrganizationGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        let unread = metadataStatusCount(snapshot, .unread)
+        let read = metadataStatusCount(snapshot, .read)
+        let using = metadataStatusCount(snapshot, .using)
+
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.status",
+                systemImage: "tray.full",
+                tint: .accentColor
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.unreadRead",
+                value: "\(localizedInteger(unread)) / \(localizedInteger(read))"
+            )
+            HStack(spacing: 6) {
+                Text("repo.status.using")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                metadataTintCapsule(
+                    systemImage: "checkmark.seal.fill",
+                    text: localizedInteger(using),
+                    tint: .accentColor
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metadataTagsGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.tags",
+                systemImage: "tag.fill",
+                tint: Color.orange
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.taggedRatio",
+                value: "\(localizedInteger(snapshot.taggedProjectCount)) / \(localizedInteger(snapshot.untaggedProjectCount))"
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.tagTotal",
+                value: localizedInteger(snapshot.tagCount)
+            )
+        }
+    }
+
+    /// 主要语言：分享卡同款堆叠色条 + 两列图例（色点 / 名 / 计数）。
+    @ViewBuilder
+    private func metadataLanguagesGroup(_ languages: [KnowledgeBaseMetadataSnapshot.NamedCount]) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.languages",
+                systemImage: "chevron.left.forwardslash.chevron.right",
+                tint: Color.green
+            )
+            if languages.isEmpty {
+                Text("rag.workspace.inspector.metadata.languagesEmpty")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+            } else {
+                metadataLanguageStackedBar(languages)
+                metadataLanguageLegend(languages)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metadataActivityGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.activity",
+                systemImage: "calendar",
+                tint: Color.purple
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.added30d",
+                value: localizedInteger(snapshot.addedInLast30DaysCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.pushed30d",
+                value: localizedInteger(snapshot.pushedInLast30DaysCount)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func metadataIndexGroup(_ health: KnowledgeBaseMetadataSnapshot.IndexHealth) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.index",
+                systemImage: "square.stack.3d.up.fill",
+                tint: Color.cyan
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.indexTotal",
+                value: localizedInteger(health.totalChunks)
+            )
+            RAGFlowLayout(spacing: 6) {
+                metadataTintCapsule(
+                    systemImage: "checkmark.circle.fill",
+                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.ready")) \(localizedInteger(health.readyChunks))",
+                    tint: .green
+                )
+                metadataTintCapsule(
+                    systemImage: "clock.fill",
+                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.pending")) \(localizedInteger(health.pendingChunks))",
+                    tint: .orange
+                )
+                metadataTintCapsule(
+                    systemImage: "xmark.octagon.fill",
+                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.failed")) \(localizedInteger(health.failedChunks))",
+                    tint: .red
+                )
+                metadataTintCapsule(
+                    systemImage: "exclamationmark.triangle.fill",
+                    text: "\(String.l10n("rag.workspace.inspector.metadata.index.stale")) \(localizedInteger(health.staleChunks))",
+                    tint: Color(nsColor: .systemYellow)
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metadataGroupCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        // 内边距收紧：分组之间主要靠标题色块区分，避免卡片垫出大空隙。
+        VStack(alignment: .leading, spacing: 6) {
+            content()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    @ViewBuilder
+    private func metadataGroupHeader(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        tint: Color
+    ) -> some View {
+        // 与「计划」tab 的 planSection 同级：callout + 彩色前缀图标。
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(iconFont(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            Text(titleKey)
+                .font(ragFont(.callout, weight: .semibold))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    func metadataMetricRow(_ titleKey: LocalizedStringKey, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(titleKey)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(ragFont(.caption, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private func metadataTintCapsule(systemImage: String, text: String, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(iconFont(size: 9, weight: .semibold))
+            Text(text)
+                .font(ragFont(.caption2, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(tint.opacity(0.12), in: Capsule(style: .continuous))
+    }
+
+    private func metadataLanguageStackedBar(_ languages: [KnowledgeBaseMetadataSnapshot.NamedCount]) -> some View {
+        let total = max(languages.reduce(0) { $0 + $1.count }, 1)
+        let spacing: CGFloat = 2
+        return GeometryReader { proxy in
+            let available = max(0, proxy.size.width - CGFloat(max(0, languages.count - 1)) * spacing)
+            HStack(spacing: spacing) {
+                ForEach(Array(languages.enumerated()), id: \.offset) { _, language in
+                    let ratio = CGFloat(language.count) / CGFloat(total)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(LanguageColor.color(for: language.name))
+                        .frame(width: max(4, available * ratio), height: 8)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(height: 8)
+        .background(
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("rag.workspace.inspector.metadata.languages"))
+    }
+
+    @ViewBuilder
+    private func metadataLanguageLegend(_ languages: [KnowledgeBaseMetadataSnapshot.NamedCount]) -> some View {
+        let total = max(languages.reduce(0) { $0 + $1.count }, 1)
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(stride(from: 0, to: languages.count, by: 2)), id: \.self) { start in
+                HStack(spacing: 8) {
+                    metadataLanguageLegendItem(languages[start], total: total)
+                    if start + 1 < languages.count {
+                        metadataLanguageLegendItem(languages[start + 1], total: total)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metadataLanguageLegendItem(
+        _ language: KnowledgeBaseMetadataSnapshot.NamedCount,
+        total: Int
+    ) -> some View {
+        let percent = Double(language.count) * 100.0 / Double(total)
+        HStack(spacing: 4) {
+            Circle()
+                .fill(LanguageColor.color(for: language.name))
+                .frame(width: 7, height: 7)
+            Text(language.name)
+                .font(ragFont(.caption2, weight: .medium))
+                .lineLimit(1)
+            Text(String(format: "%.0f%%", percent))
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     func metadataStat(_ titleKey: LocalizedStringKey, value: Int) -> some View {
@@ -423,21 +683,11 @@ struct RAGWorkspaceInspector: View {
         .multilineTextAlignment(.center)
     }
 
-    func metadataRow(_ titleKey: LocalizedStringKey, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(titleKey)
-                .font(ragFont(.caption))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(ragFont(.caption, weight: .medium))
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
-        }
-    }
-
-    func metadataDistribution(_ counts: [KnowledgeBaseMetadataSnapshot.NamedCount]) -> String {
-        counts.map { "\($0.name) \($0.count)" }.joined(separator: " · ")
+    private func metadataStatusCount(
+        _ snapshot: KnowledgeBaseMetadataSnapshot,
+        _ status: RepoStatus
+    ) -> Int {
+        snapshot.statusCounts.first { $0.name == status.rawValue }?.count ?? 0
     }
 
     @ViewBuilder
@@ -565,7 +815,11 @@ struct RAGWorkspaceInspector: View {
             if let plan = viewModel.displayedQueryPlan {
                 if plan.mode == .needsClarification {
                     // 澄清态没有可执行的检索词；展示 Planner 已校验过的追问，避免把空查询误称为优化结果。
-                    planSection("rag.workspace.inspector.plan.questionUnderstanding") {
+                    planSection(
+                        "rag.workspace.inspector.plan.questionUnderstanding",
+                        systemImage: "text.magnifyingglass",
+                        tint: .accentColor
+                    ) {
                         inspectorValue(
                             "rag.workspace.inspector.clarificationQuestion",
                             value: plan.clarificationQuestion ?? String.l10n("rag.workspace.inspector.clarificationFallback")
@@ -578,13 +832,17 @@ struct RAGWorkspaceInspector: View {
                 } else {
                     planSummary(plan)
 
-                    planSection("rag.workspace.inspector.plan.questionUnderstanding") {
+                    planSection(
+                        "rag.workspace.inspector.plan.questionUnderstanding",
+                        systemImage: "text.magnifyingglass",
+                        tint: .accentColor
+                    ) {
                         if let question = viewModel.displayedPlanQuestion, !question.isEmpty {
-                            inspectorValue("rag.workspace.inspector.plan.originalQuestion", value: question)
+                            planQuestionValue("rag.workspace.inspector.plan.originalQuestion", value: question)
                         }
                         let semanticQuery = resolvedSemanticQuery(plan)
                         if !semanticQuery.isEmpty {
-                            inspectorValue("rag.workspace.inspector.semanticQuery", value: semanticQuery)
+                            planQuestionValue("rag.workspace.inspector.semanticQuery", value: semanticQuery)
                         }
                         if !plan.userVisiblePlan.planningNotes.isEmpty {
                             Text("rag.workspace.inspector.planNotes")
@@ -599,7 +857,11 @@ struct RAGWorkspaceInspector: View {
                         }
                     }
 
-                    planSection("rag.workspace.inspector.plan.executionStrategy") {
+                    planSection(
+                        "rag.workspace.inspector.plan.executionStrategy",
+                        systemImage: "slider.horizontal.3",
+                        tint: .purple
+                    ) {
                         planMetricRow(
                             "rag.workspace.inspector.planMode",
                             value: localizedPlanMode(plan.mode)
@@ -640,7 +902,11 @@ struct RAGWorkspaceInspector: View {
                         }
                     }
 
-                    planSection("rag.workspace.inspector.plan.networkPlan") {
+                    planSection(
+                        "rag.workspace.inspector.plan.networkPlan",
+                        systemImage: "network",
+                        tint: .cyan
+                    ) {
                         planMetricRow(
                             "rag.workspace.inspector.plan.liveEvidence",
                             value: plan.requiresLiveEvidence
@@ -697,7 +963,11 @@ struct RAGWorkspaceInspector: View {
                     }
 
                     if let retrieval = viewModel.displayedRetrievalSnapshot {
-                        planSection("rag.workspace.inspector.plan.retrievalFunnel") {
+                        planSection(
+                            "rag.workspace.inspector.plan.retrievalFunnel",
+                            systemImage: "line.3.horizontal.decrease.circle.fill",
+                            tint: .orange
+                        ) {
                             planMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.candidates",
                                 value: localizedInteger(retrieval.candidateRepoCount)
@@ -759,7 +1029,11 @@ struct RAGWorkspaceInspector: View {
                             }
                         }
                     } else if plan.mode == .guidedDiscovery {
-                        planSection("rag.workspace.inspector.plan.retrievalFunnel") {
+                        planSection(
+                            "rag.workspace.inspector.plan.retrievalFunnel",
+                            systemImage: "line.3.horizontal.decrease.circle.fill",
+                            tint: .orange
+                        ) {
                             planMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.outcome",
                                 value: String.l10n("rag.workspace.inspector.plan.retrieval.guided")
@@ -768,7 +1042,11 @@ struct RAGWorkspaceInspector: View {
                     }
 
                     if let usage = viewModel.displayedContextUsage {
-                        planSection("rag.workspace.inspector.plan.contextBudget") {
+                        planSection(
+                            "rag.workspace.inspector.plan.contextBudget",
+                            systemImage: "gauge.with.dots.needle.33percent",
+                            tint: .green
+                        ) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(String(
                                     format: String.l10n("rag.workspace.context.percentFull"),
@@ -812,12 +1090,25 @@ struct RAGWorkspaceInspector: View {
     }
 
     @ViewBuilder
-    func planSection<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
+    func planSection<Content: View>(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        tint: Color = .accentColor,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+            // 分组标题：升一档到 callout（与元数据面板标题同层级）+ 前缀彩色图标，
+            // 让「计划」tab 的分组比行内文案更醒目、可快速扫读。
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(iconFont(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(ragFont(.callout, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
             content()
         }
     }
@@ -1511,6 +1802,22 @@ struct RAGWorkspaceInspector: View {
                 .foregroundStyle(.secondary)
             Text(value.isEmpty ? "-" : value)
                 .font(ragFont(.callout, weight: .semibold))
+                .textSelection(.enabled)
+        }
+    }
+
+    /// 原始问题 / 优化后的问题：值字号收到 caption（与「规划说明」正文一致），
+    /// 保留原有主色与加粗；不设 lineLimit 并用 fixedSize 强制纵向撑开，
+    /// 长问题直接换行完整展示，绝不尾部省略。
+    func planQuestionValue(_ label: LocalizedStringKey, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Text(value.isEmpty ? "-" : value)
+                .font(ragFont(.caption, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         }
     }
