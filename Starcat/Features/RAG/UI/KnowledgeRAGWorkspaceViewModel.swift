@@ -36,6 +36,109 @@ struct RAGConversationPresentationSnapshot: Sendable {
     let detail: RAGConversationDetail
     let outlineTurns: [RAGConversationOutlineTurn]
     let citations: [RAGCitation]
+    let estimatedTextUTF8Bytes: Int
+
+    init(
+        detail: RAGConversationDetail,
+        outlineTurns: [RAGConversationOutlineTurn],
+        citations: [RAGCitation]
+    ) {
+        self.detail = detail
+        self.outlineTurns = outlineTurns
+        self.citations = citations
+        estimatedTextUTF8Bytes = Self.estimatedTextBytes(
+            detail: detail,
+            outlineTurns: outlineTurns,
+            citations: citations
+        )
+    }
+
+    private init(
+        detail: RAGConversationDetail,
+        outlineTurns: [RAGConversationOutlineTurn],
+        citations: [RAGCitation],
+        estimatedTextUTF8Bytes: Int
+    ) {
+        self.detail = detail
+        self.outlineTurns = outlineTurns
+        self.citations = citations
+        self.estimatedTextUTF8Bytes = estimatedTextUTF8Bytes
+    }
+
+    /// 完整快照不是精确的堆内存镜像，但消息正文、摘要和展示投影占据主要可变空间。
+    /// 缓存用这个稳定、无额外编码分配的估算值实施总字节预算，避免为测量缓存本身再
+    /// JSON encode 一遍长会话。固定大小的 UUID、数值和 enum 由消息数预算兜底。
+    private static func estimatedTextBytes(
+        detail: RAGConversationDetail,
+        outlineTurns: [RAGConversationOutlineTurn],
+        citations: [RAGCitation]
+    ) -> Int {
+        summaryTextBytes(detail.summary)
+            + (detail.contextSummary?.content.utf8.count ?? 0)
+            + messagesTextBytes(detail.messages)
+            + outlineTextBytes(outlineTurns)
+            + citationsTextBytes(citations)
+    }
+
+    private static func summaryTextBytes(_ summary: RAGConversationSummary) -> Int {
+        summary.title.utf8.count
+            + summary.createdAt.utf8.count
+            + summary.updatedAt.utf8.count
+            + (summary.pinnedAt?.utf8.count ?? 0)
+    }
+
+    private static func messagesTextBytes(_ messages: [RAGStoredMessage]) -> Int {
+        messages.reduce(0) { partial, message in
+            var total = partial
+            total += message.content.utf8.count
+                + (message.model?.utf8.count ?? 0)
+                + message.createdAt.utf8.count
+            for citation in message.citations {
+                total += citation.marker.utf8.count
+                    + citation.repoFullName.utf8.count
+                    + citation.sectionTitle.utf8.count
+                    + (citation.sourceURL?.absoluteString.utf8.count ?? 0)
+            }
+            for audit in message.remoteContextAudits {
+                total += audit.id.utf8.count
+                    + audit.title.utf8.count
+                    + audit.fetchedAt.utf8.count
+                    + (audit.sourceURL?.absoluteString.utf8.count ?? 0)
+                    + (audit.errorMessage?.utf8.count ?? 0)
+            }
+            for step in message.executionTrace {
+                total += step.details.reduce(0) { $0 + $1.utf8.count }
+                    + (step.summary?.utf8.count ?? 0)
+                for audit in step.remoteAuditItems ?? [] {
+                    total += audit.id.utf8.count
+                        + audit.repoFullName.utf8.count
+                        + audit.querySummary.utf8.count
+                        + (audit.requestURL?.absoluteString.utf8.count ?? 0)
+                        + (audit.errorMessage?.utf8.count ?? 0)
+                        + (audit.providerName?.utf8.count ?? 0)
+                    total += audit.resultPreviews.reduce(0) {
+                        $0 + $1.title.utf8.count + $1.url.absoluteString.utf8.count
+                            + ($1.providerName?.utf8.count ?? 0)
+                    }
+                }
+            }
+            total += message.suggestedActions.reduce(0) { $0 + $1.question.utf8.count }
+            return total
+        }
+    }
+
+    private static func outlineTextBytes(_ turns: [RAGConversationOutlineTurn]) -> Int {
+        turns.reduce(0) {
+            $0 + $1.title.utf8.count + $1.preview.utf8.count + $1.timestampISO8601.utf8.count
+        }
+    }
+
+    private static func citationsTextBytes(_ citations: [RAGCitation]) -> Int {
+        citations.reduce(0) {
+            $0 + $1.marker.utf8.count + $1.repoFullName.utf8.count + $1.sectionTitle.utf8.count
+                + ($1.sourceURL?.absoluteString.utf8.count ?? 0)
+        }
+    }
 
     /// 将刚提交的完整轮次追加到现有投影。只处理两条新增消息，不重新扫描长会话。
     func appending(_ turn: RAGPersistedConversationTurn, summary: RAGConversationSummary) -> Self {
@@ -44,19 +147,28 @@ struct RAGConversationPresentationSnapshot: Sendable {
         else { return self }
         let newOutline = RAGConversationOutlineBuilder.completeTurns(from: newMessages)
         var seen = Set(citations.map(\.id))
-        let mergedCitations = (citations + turn.assistantMessage.citations.filter { seen.insert($0.id).inserted })
+        let addedCitations = turn.assistantMessage.citations.filter { seen.insert($0.id).inserted }
+        let mergedCitations = (citations + addedCitations)
             .sorted {
                 if $0.score != $1.score { return $0.score > $1.score }
                 return $0.repoFullName.localizedStandardCompare($1.repoFullName) == .orderedAscending
             }
+        let updatedDetail = RAGConversationDetail(
+            summary: summary,
+            messages: detail.messages + newMessages,
+            contextSummary: detail.contextSummary
+        )
+        let updatedBytes = estimatedTextUTF8Bytes
+            - Self.summaryTextBytes(detail.summary)
+            + Self.summaryTextBytes(summary)
+            + Self.messagesTextBytes(newMessages)
+            + Self.outlineTextBytes(newOutline)
+            + Self.citationsTextBytes(addedCitations)
         return Self(
-            detail: RAGConversationDetail(
-                summary: summary,
-                messages: detail.messages + newMessages,
-                contextSummary: detail.contextSummary
-            ),
+            detail: updatedDetail,
             outlineTurns: outlineTurns + newOutline,
-            citations: mergedCitations
+            citations: mergedCitations,
+            estimatedTextUTF8Bytes: updatedBytes
         )
     }
 }
@@ -67,12 +179,22 @@ struct RAGConversationPresentationSnapshot: Sendable {
 /// 数据源。线性维护访问顺序的成本受几十项容量约束，比引入链表节点更简单可靠。
 struct RAGConversationPresentationCache {
     private let capacity: Int
+    private let maxMessageCount: Int
+    private let maxEstimatedTextBytes: Int
     private var snapshotsByID: [UUID: RAGConversationPresentationSnapshot] = [:]
     /// 最旧在前、最近使用在后。
     private var recency: [UUID] = []
+    private(set) var messageCount = 0
+    private(set) var estimatedTextBytes = 0
 
-    init(capacity: Int = 24) {
+    init(
+        capacity: Int = 24,
+        maxMessageCount: Int = 600,
+        maxEstimatedTextBytes: Int = 4 * 1_024 * 1_024
+    ) {
         self.capacity = max(1, capacity)
+        self.maxMessageCount = max(0, maxMessageCount)
+        self.maxEstimatedTextBytes = max(0, maxEstimatedTextBytes)
     }
 
     var count: Int { snapshotsByID.count }
@@ -83,28 +205,73 @@ struct RAGConversationPresentationCache {
         return snapshot
     }
 
-    mutating func insert(_ snapshot: RAGConversationPresentationSnapshot) {
+    /// 用户主动访问的快照按 LRU 腾出空间。单个超预算长会话仍会正常安装到工作台，
+    /// 但不进入预取缓存，避免一个异常会话突破整个缓存上界。
+    @discardableResult
+    mutating func insert(_ snapshot: RAGConversationPresentationSnapshot) -> Bool {
         let conversationID = snapshot.detail.summary.id
+        removeSnapshot(conversationID)
+        let snapshotMessages = snapshot.detail.messages.count
+        let snapshotBytes = snapshot.estimatedTextUTF8Bytes
+        guard snapshotMessages <= maxMessageCount,
+              snapshotBytes <= maxEstimatedTextBytes else { return false }
         snapshotsByID[conversationID] = snapshot
+        messageCount += snapshotMessages
+        estimatedTextBytes += snapshotBytes
         touch(conversationID)
-        while recency.count > capacity {
-            snapshotsByID[recency.removeFirst()] = nil
+        trimToBudget()
+        return snapshotsByID[conversationID] != nil
+    }
+
+    /// 后台预取不得驱逐用户已经访问过的快照，也不能为了探测后续会话而持续制造 I/O。
+    /// 返回 false 时调用方应停止本轮预取。
+    @discardableResult
+    mutating func insertPrefetched(_ snapshot: RAGConversationPresentationSnapshot) -> Bool {
+        let conversationID = snapshot.detail.summary.id
+        if snapshotsByID[conversationID] != nil { return true }
+        let snapshotMessages = snapshot.detail.messages.count
+        let snapshotBytes = snapshot.estimatedTextUTF8Bytes
+        guard snapshotsByID.count < capacity,
+              messageCount + snapshotMessages <= maxMessageCount,
+              estimatedTextBytes + snapshotBytes <= maxEstimatedTextBytes else { return false }
+        snapshotsByID[conversationID] = snapshot
+        messageCount += snapshotMessages
+        estimatedTextBytes += snapshotBytes
+        touch(conversationID)
+        return true
+    }
+
+    private mutating func trimToBudget() {
+        while snapshotsByID.count > capacity
+            || messageCount > maxMessageCount
+            || estimatedTextBytes > maxEstimatedTextBytes {
+            guard let oldest = recency.first else { break }
+            removeSnapshot(oldest)
         }
     }
 
     mutating func remove(_ conversationID: UUID) {
-        snapshotsByID[conversationID] = nil
-        recency.removeAll { $0 == conversationID }
+        removeSnapshot(conversationID)
     }
 
     mutating func removeAll() {
         snapshotsByID.removeAll(keepingCapacity: true)
         recency.removeAll(keepingCapacity: true)
+        messageCount = 0
+        estimatedTextBytes = 0
     }
 
     private mutating func touch(_ conversationID: UUID) {
         recency.removeAll { $0 == conversationID }
         recency.append(conversationID)
+    }
+
+    private mutating func removeSnapshot(_ conversationID: UUID) {
+        if let removed = snapshotsByID.removeValue(forKey: conversationID) {
+            messageCount -= removed.detail.messages.count
+            estimatedTextBytes -= removed.estimatedTextUTF8Bytes
+        }
+        recency.removeAll { $0 == conversationID }
     }
 }
 
@@ -901,8 +1068,10 @@ final class KnowledgeRAGWorkspaceViewModel {
                    answerGenerations[id] == nil {
                     let snapshot = await Self.makePresentationSnapshot(from: detail, priority: .utility)
                     guard !Task.isCancelled else { return }
-                    if answerGenerations[id] == nil {
-                        conversationPresentationCache.insert(snapshot)
+                    if answerGenerations[id] == nil,
+                       !conversationPresentationCache.insertPrefetched(snapshot) {
+                        // 已达到消息数或文本字节预算；继续读取只会制造启动 I/O，且无法缓存。
+                        return
                     }
                 }
             }

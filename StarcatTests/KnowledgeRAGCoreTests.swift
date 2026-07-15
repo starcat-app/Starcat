@@ -5,6 +5,7 @@
 //  覆盖 Query Planner 校验、结构化候选、混合融合、无命中早停和会话 citation 生命周期。
 //
 
+import Darwin
 import Foundation
 import GRDB
 import Testing
@@ -450,6 +451,71 @@ struct KnowledgeRAGCoreTests {
         #expect(retainedThird != nil)
     }
 
+    @Test("RAG 会话展示缓存同时受消息数与文本字节预算约束")
+    func conversationPresentationCacheUsesMessageAndByteBudgets() {
+        func snapshot(id: UUID, messages: [String]) -> RAGConversationPresentationSnapshot {
+            let summary = RAGConversationSummary(
+                id: id,
+                title: "预算测试",
+                isPinned: false,
+                pinnedAt: nil,
+                groupID: nil,
+                createdAt: "2026-07-16T00:00:00Z",
+                updatedAt: "2026-07-16T00:00:00Z"
+            )
+            return RAGConversationPresentationSnapshot(
+                detail: RAGConversationDetail(
+                    summary: summary,
+                    messages: messages.map {
+                        RAGStoredMessage(
+                            id: UUID(), conversationID: id, role: .assistant, content: $0,
+                            model: nil, citations: [], remoteContextAudits: [], createdAt: summary.createdAt
+                        )
+                    },
+                    contextSummary: nil
+                ),
+                outlineTurns: [],
+                citations: []
+            )
+        }
+
+        let firstID = UUID()
+        let secondID = UUID()
+        let oversizedID = UUID()
+        let first = snapshot(id: firstID, messages: ["一", "二"])
+        let second = snapshot(id: secondID, messages: ["三", "四"])
+        let oversized = snapshot(id: oversizedID, messages: [String(repeating: "x", count: 400)])
+        var cache = RAGConversationPresentationCache(
+            capacity: 24,
+            maxMessageCount: 3,
+            maxEstimatedTextBytes: 256
+        )
+
+        let insertedFirst = cache.insert(first)
+        let insertedSecond = cache.insert(second)
+        #expect(insertedFirst)
+        #expect(insertedSecond)
+        #expect(cache.value(for: firstID) == nil)
+        #expect(cache.value(for: secondID) != nil)
+        #expect(cache.messageCount == 2)
+        #expect(cache.estimatedTextBytes <= 256)
+        let insertedOversized = cache.insert(oversized)
+        #expect(!insertedOversized)
+        #expect(cache.value(for: oversizedID) == nil)
+
+        var prefetchCache = RAGConversationPresentationCache(
+            capacity: 24,
+            maxMessageCount: 3,
+            maxEstimatedTextBytes: 1_024
+        )
+        let retainedFirst = prefetchCache.insert(first)
+        let insertedPrefetch = prefetchCache.insertPrefetched(second)
+        #expect(retainedFirst)
+        #expect(!insertedPrefetch)
+        #expect(prefetchCache.value(for: firstID) != nil)
+        #expect(prefetchCache.value(for: secondID) == nil)
+    }
+
     @Test("持久化轮次增量追加消息与大纲且保持幂等")
     func conversationPresentationAppendsPersistedTurnIncrementally() {
         let conversationID = UUID()
@@ -479,8 +545,14 @@ struct KnowledgeRAGCoreTests {
 
         let appended = empty.appending(turn, summary: summary)
         let duplicate = appended.appending(turn, summary: summary)
+        let rebuilt = RAGConversationPresentationSnapshot(
+            detail: appended.detail,
+            outlineTurns: appended.outlineTurns,
+            citations: appended.citations
+        )
         #expect(appended.detail.messages == [user, assistant])
         #expect(appended.outlineTurns.map(\.userMessageID) == [user.id])
+        #expect(appended.estimatedTextUTF8Bytes == rebuilt.estimatedTextUTF8Bytes)
         #expect(duplicate.detail.messages == appended.detail.messages)
         #expect(duplicate.outlineTurns == appended.outlineTurns)
     }
@@ -2644,7 +2716,7 @@ struct KnowledgeRAGCoreTests {
         #expect(history.first?.content.contains("上下文预算") == true)
     }
 
-    @Test("100/200 条会话读取保持固定关联查询路径")
+    @Test("100/200 条长会话启动读取记录 P50/P95 与峰值内存")
     func conversationLoadBaseline() async throws {
         for messageCount in [100, 200] {
             let database = try InMemoryDatabaseManager()
@@ -2660,11 +2732,14 @@ struct KnowledgeRAGCoreTests {
                 )
             }
 
+            let memoryBaseline = ragCurrentPhysicalFootprintBytes()
+            var peakMemoryBytes = memoryBaseline
             var samples: [TimeInterval] = []
             for _ in 0..<5 {
                 let start = Date.timeIntervalSinceReferenceDate
                 let detail = try #require(try await store.loadConversation(id: conversation.id))
                 samples.append(Date.timeIntervalSinceReferenceDate - start)
+                peakMemoryBytes = max(peakMemoryBytes, ragCurrentPhysicalFootprintBytes())
                 #expect(detail.messages.count == messageCount)
             }
             let sorted = samples.sorted()
@@ -2674,7 +2749,12 @@ struct KnowledgeRAGCoreTests {
             // 此处把 100/200 条样本的实测耗时输出到测试日志，供专项文档记录基线。
             let p50Text = String(format: "%.3f", p50)
             let p95Text = String(format: "%.3f", p95)
-            print("RAG_BASELINE history=\(messageCount) queries=4 p50_ms=\(p50Text) p95_ms=\(p95Text)")
+            let peakDeltaMB = Double(max(0, peakMemoryBytes - memoryBaseline)) / 1_048_576
+            let peakDeltaText = String(format: "%.3f", peakDeltaMB)
+            print(
+                "RAG_CONVERSATION_STARTUP_BASELINE history=\(messageCount) queries=4 "
+                    + "p50_ms=\(p50Text) p95_ms=\(p95Text) peak_memory_delta_mb=\(peakDeltaText)"
+            )
         }
     }
 
@@ -3803,6 +3883,18 @@ struct KnowledgeRAGCoreTests {
             ]
         )
     }
+}
+
+/// 会话启动基线只读取测试宿主自身物理内存；不访问用户数据库，也不把机器差异设为门禁。
+private func ragCurrentPhysicalFootprintBytes() -> Int64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) { pointer in
+        pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+        }
+    }
+    return result == KERN_SUCCESS ? Int64(info.phys_footprint) : 0
 }
 
 private actor RAGRepoIDRecorder {
