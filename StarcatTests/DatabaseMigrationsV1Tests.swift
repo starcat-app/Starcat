@@ -53,7 +53,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("RAG v7-v10 应在已应用迁移列表中，并带上最终会话与推荐问题列")
+    @Test("RAG v7-v10 与 Weekly v11 应在迁移列表中并具备最终列")
     func knowledgeRAGMigrationSealed() throws {
         let db = try makeDB()
         try db.read { db in
@@ -64,6 +64,13 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v8-rag-suggested-actions"))
             #expect(applied.contains("v9-rag-metadata-keyword-only"))
             #expect(applied.contains("v10-rag-conversation-pinned-at"))
+            #expect(applied.contains("v11-weekly-multi-source"))
+
+            let weeklyColumns = try db.columns(in: "weekly_bulk_repos").map(\.name)
+            #expect(weeklyColumns.contains("source_entries_json"))
+            #expect(weeklyColumns.contains("is_pinned"))
+            #expect(weeklyColumns.contains("pin_position"))
+            #expect(try db.tableExists("weekly_bulk_sources"))
 
             let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
             #expect(conversationColumns.contains("is_pinned"))

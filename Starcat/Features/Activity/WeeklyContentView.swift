@@ -955,6 +955,7 @@ final class WeeklyContentViewModel {
             let result = try await bulkRepository.fetchBulk()
             guard myGen == generation else { return }
             let snapshot = WeeklyBulkCachedSnapshot(
+                sources: result.sources,
                 items: result.items,
                 languages: result.languages,
                 etag: result.etag,
@@ -1138,6 +1139,7 @@ final class WeeklyContentViewModel {
             let result = try await bulkRepository.fetchBulk()
             guard myGen == generation else { return }
             let snapshot = WeeklyBulkCachedSnapshot(
+                sources: result.sources,
                 items: result.items,
                 languages: result.languages,
                 etag: result.etag,

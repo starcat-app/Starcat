@@ -60,6 +60,39 @@ enum DatabaseMigrations {
         registerV8(into: &migrator)
         registerV9(into: &migrator)
         registerV10(into: &migrator)
+        registerV11(into: &migrator)
+    }
+
+    // MARK: - v11-weekly-multi-source：Weekly 通用来源与置顶缓存（2026-07-16）
+
+    /// Weekly bulk v2 新增来源目录、通用来源事件和置顶顺序。已发布数据库只能向前
+    /// 追加 migration；表不存在时 no-op，避免旧安装尚未具备 Weekly cache 时启动失败。
+    private static func registerV11(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v11-weekly-multi-source") { db in
+            guard try db.tableExists("weekly_bulk_repos") else { return }
+            let columns = try db.columns(in: "weekly_bulk_repos").map(\.name)
+            try db.alter(table: "weekly_bulk_repos") { table in
+                if !columns.contains("source_entries_json") {
+                    table.add(column: "source_entries_json", .text)
+                }
+                if !columns.contains("is_pinned") {
+                    table.add(column: "is_pinned", .boolean).notNull().defaults(to: false)
+                }
+                if !columns.contains("pin_position") {
+                    table.add(column: "pin_position", .integer)
+                }
+            }
+            if try db.tableExists("weekly_bulk_sources") == false {
+                try db.create(table: "weekly_bulk_sources") { table in
+                    table.column("code", .text).primaryKey()
+                    table.column("display_name_zh", .text).notNull()
+                    table.column("display_name_en", .text).notNull()
+                    table.column("icon_key", .text).notNull()
+                    table.column("sort_order", .integer).notNull()
+                    table.column("count", .integer).notNull().defaults(to: 0)
+                }
+            }
+        }
     }
 
     // MARK: - v10-rag-conversation-pinned-at：置顶时间戳（2026-07-15）

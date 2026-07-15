@@ -73,6 +73,9 @@ struct WeeklyBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equata
     var weeklySnapshotJSON: String?
     var zreadSnapshotJSON: String?
     var discoverySnapshotJSON: String?
+    var sourceEntriesJSON: String?
+    var isPinned: Bool
+    var pinPosition: Int?
 
     // MARK: - 缓存维度
 
@@ -112,6 +115,9 @@ struct WeeklyBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equata
         case weeklySnapshotJSON = "weekly_snapshot_json"
         case zreadSnapshotJSON = "zread_snapshot_json"
         case discoverySnapshotJSON = "discovery_snapshot_json"
+        case sourceEntriesJSON = "source_entries_json"
+        case isPinned = "is_pinned"
+        case pinPosition = "pin_position"
         case cachedAt = "cached_at"
     }
 
@@ -171,7 +177,10 @@ struct WeeklyBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equata
             latestEventAt: latestEventAt,
             weekly: decodeSnapshot(WeeklySnapshot.self, from: weeklySnapshotJSON, decoder: decoder),
             zread: decodeSnapshot(ZreadSnapshot.self, from: zreadSnapshotJSON, decoder: decoder),
-            discovery: decodeSnapshot(DiscoverySnapshot.self, from: discoverySnapshotJSON, decoder: decoder)
+            discovery: decodeSnapshot(DiscoverySnapshot.self, from: discoverySnapshotJSON, decoder: decoder),
+            sourceEntries: decodeSnapshot([WeeklySourceEntry].self, from: sourceEntriesJSON, decoder: decoder) ?? [],
+            isPinned: isPinned,
+            pinPosition: pinPosition
         )
         return WeeklyFeedItem(dto: dto)
     }
@@ -196,6 +205,7 @@ struct WeeklyBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equata
         let weeklyJSON = encodeJSON(item.weekly, encoder: encoder)
         let zreadJSON = encodeJSON(item.zread, encoder: encoder)
         let discoveryJSON = encodeJSON(item.discovery, encoder: encoder)
+        let sourceEntriesJSON = encodeJSON(item.sourceEntries, encoder: encoder)
 
         return WeeklyBulkRepoRecord(
             ghRepoId: item.ghRepoId,
@@ -229,6 +239,9 @@ struct WeeklyBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equata
             weeklySnapshotJSON: weeklyJSON,
             zreadSnapshotJSON: zreadJSON,
             discoverySnapshotJSON: discoveryJSON,
+            sourceEntriesJSON: sourceEntriesJSON,
+            isPinned: item.isPinned,
+            pinPosition: item.pinPosition,
             cachedAt: ISO8601DateFormatter.shared.string(from: cachedAt)
         )
     }
@@ -238,6 +251,49 @@ struct WeeklyBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equata
         guard let data = try? encoder.encode(value),
               let str = String(data: data, encoding: .utf8) else { return nil }
         return str
+    }
+}
+
+// MARK: - weekly_bulk_sources 行映射
+
+/// bulk v2 来源目录缓存。筛选项来自该表而不是客户端硬编码，新增来源只需后端发布目录。
+struct WeeklyBulkSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+    static let databaseTableName = "weekly_bulk_sources"
+
+    var code: String
+    var displayNameZH: String
+    var displayNameEN: String
+    var iconKey: String
+    var sortOrder: Int
+    var count: Int
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case displayNameZH = "display_name_zh"
+        case displayNameEN = "display_name_en"
+        case iconKey = "icon_key"
+        case sortOrder = "sort_order"
+        case count
+    }
+
+    init(_ descriptor: WeeklySourceDescriptor) {
+        code = descriptor.code
+        displayNameZH = descriptor.displayNameZH
+        displayNameEN = descriptor.displayNameEN
+        iconKey = descriptor.iconKey
+        sortOrder = descriptor.sortOrder
+        count = descriptor.count
+    }
+
+    var descriptor: WeeklySourceDescriptor {
+        WeeklySourceDescriptor(
+            code: code,
+            displayNameZH: displayNameZH,
+            displayNameEN: displayNameEN,
+            iconKey: iconKey,
+            sortOrder: sortOrder,
+            count: count
+        )
     }
 }
 

@@ -49,7 +49,8 @@ private func bulkFixtureBody(
     sourcesByFullName: [String: [String]] = [:],
     archivedFullNames: Set<String> = [],
     forkFullNames: Set<String> = [],
-    pushedAtByFullName: [String: String] = [:]
+    pushedAtByFullName: [String: String] = [:],
+    pinPositionsByFullName: [String: Int] = [:]
 ) -> Data {
     // Wire payload 是**扁平**对象：card 字段（gh_repo_id / full_name / owner / ...）
     // 与 feed 字段（is_available / source_types / weekly / ...）同级，由
@@ -77,6 +78,12 @@ private func bulkFixtureBody(
             "source_types": sourcesByFullName[tuple.0] ?? ["weekly"],
             "first_event_at": tuple.3,
             "latest_event_at": tuple.3,
+            "source_entries": [[
+                "source_code": (sourcesByFullName[tuple.0] ?? ["weekly"])[0],
+                "occurred_at": tuple.3,
+                "source_url": "https://example.com/source/\(idx)",
+                "title": "Source \(idx)"
+            ]],
             "weekly": [
                 "issue_number": 100 + idx,
                 "issue_url": "https://example.com/issue/\(100 + idx)"
@@ -87,6 +94,10 @@ private func bulkFixtureBody(
         }
         if let pushedAt = pushedAtByFullName[tuple.0] {
             dict["pushed_at"] = pushedAt
+        }
+        if let position = pinPositionsByFullName[tuple.0] {
+            dict["is_pinned"] = true
+            dict["pin_position"] = position
         }
         return dict
     }
@@ -104,8 +115,13 @@ private func bulkFixtureBody(
         meta["generated_at"] = generatedAt
     }
     let envelope: [String: Any] = [
-        "schema_version": 1,
+        "schema_version": 2,
         "data": [
+            "sources": [
+                ["code": "weekly", "display_name_zh": "阮一峰周刊", "display_name_en": "Weekly", "icon_key": "ruanyf", "sort_order": 10, "count": repos.count],
+                ["code": "hellogithub", "display_name_zh": "HelloGitHub", "display_name_en": "HelloGitHub", "icon_key": "hellogithub", "sort_order": 40, "count": 0],
+                ["code": "ai_intelligence", "display_name_zh": "AI 情报", "display_name_en": "AI Intelligence", "icon_key": "ai-intelligence", "sort_order": 50, "count": 0]
+            ],
             "repos": repoDicts,
             "languages": langDicts
         ],
@@ -201,12 +217,14 @@ struct WeeklyBulkRepositoryTests {
 
         let fetched = try await repo.fetchBulk()
         #expect(fetched.items.count == 2)
+        #expect(fetched.sources.map(\.code) == ["weekly", "hellogithub", "ai_intelligence"])
         #expect(fetched.languages.count == 2)
         #expect(fetched.etag == "W/\"abc12345\"")
         #expect(fetched.generatedAt == "2026-06-15T12:00:00Z")
 
         let cached = try #require(await repo.cachedBulk())
         #expect(cached.items.count == 2)
+        #expect(cached.sources.map(\.code) == ["weekly", "hellogithub", "ai_intelligence"])
         #expect(cached.languages.count == 2)
         #expect(cached.etag == "W/\"abc12345\"")
         #expect(cached.generatedAt == "2026-06-15T12:00:00Z")
@@ -215,6 +233,38 @@ struct WeeklyBulkRepositoryTests {
         #expect(cached.items.last?.fullName == "owner/a")
         // Sidebar 预取周刊数量只需要 meta.total，不应该依赖 cachedBulk 读全量明细。
         #expect(await repo.cachedTotal() == 2)
+    }
+
+    @Test("置顶与通用来源事件写入缓存后按 pin_position 优先排序")
+    func pinnedAndSourceEntriesPersist() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/newer", "Swift", 100, "2026-06-15T12:00:00Z"),
+                    ("owner/pinned", "Go", 50, "2026-06-15T10:00:00Z")
+                ],
+                pinPositionsByFullName: ["owner/pinned": 1]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+        let page = try #require(await repo.cachedPage(query: WeeklyBulkCacheQuery(
+            source: .all,
+            coverage: .all,
+            hideArchived: false,
+            hideForks: false,
+            starsFilter: .all,
+            pushedRecency: .all,
+            language: "",
+            sort: .defaultOrder,
+            page: 1,
+            pageSize: 20,
+            now: Date()
+        )))
+        #expect(page.items.first?.fullName == "owner/pinned")
+        #expect(page.items.first?.isPinned == true)
+        #expect(page.items.first?.pinPosition == 1)
+        #expect(page.items.first?.sourceEntries.first?.title == "Source 1")
     }
 
     @Test("cachedPage: SQLite 分页筛选排序只返回当前页")
@@ -364,8 +414,8 @@ struct WeeklyBulkRepositoryTests {
 
     // MARK: - clearCache
 
-    @Test("clearCache: 清空三张表后 cachedBulk 返回 nil")
-    func clearCacheWipesThreeTables() async throws {
+    @Test("clearCache: 清空四张表后 cachedBulk 返回 nil")
+    func clearCacheWipesFourTables() async throws {
         let (repo, db) = try makeRepository { request in
             let body = bulkFixtureBody(
                 repos: [("owner/a", "Swift", 100, "2026-06-15T10:00:00Z")],
@@ -380,9 +430,11 @@ struct WeeklyBulkRepositoryTests {
             let repoCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_repos") ?? 0
             let langCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_languages") ?? 0
             let metaCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_meta") ?? 0
+            let sourceCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_sources") ?? 0
             #expect(repoCount == 1)
             #expect(langCount == 1)
             #expect(metaCount == 1)
+            #expect(sourceCount == 3)
         }
 
         await repo.clearCache()
@@ -391,9 +443,11 @@ struct WeeklyBulkRepositoryTests {
             let repoCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_repos") ?? -1
             let langCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_languages") ?? -1
             let metaCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_meta") ?? -1
+            let sourceCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM weekly_bulk_sources") ?? -1
             #expect(repoCount == 0)
             #expect(langCount == 0)
             #expect(metaCount == 0)
+            #expect(sourceCount == 0)
         }
 
         let cached = await repo.cachedBulk()

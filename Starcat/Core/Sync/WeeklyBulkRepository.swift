@@ -72,6 +72,7 @@ protocol WeeklyBulkRepositoryProtocol: Sendable {
 
 /// 缓存读出的快照——repos + languages + 元信息 1:1 反映服务端 bulk 响应。
 struct WeeklyBulkCachedSnapshot: Sendable {
+    let sources: [WeeklySourceDescriptor]
     let items: [WeeklyFeedItem]
     let languages: [TrendingLanguageAggregateDTO]
     let etag: String?
@@ -81,6 +82,7 @@ struct WeeklyBulkCachedSnapshot: Sendable {
 }
 
 struct WeeklyBulkPageSnapshot: Sendable {
+    let sources: [WeeklySourceDescriptor]
     let items: [WeeklyFeedItem]
     let etag: String?
     let lastFetchedAt: Date
@@ -158,6 +160,9 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                 let languageRecords = try WeeklyBulkLanguageRecord
                     .order(Column("sort_order").asc)
                     .fetchAll(db)
+                let sourceRecords = try WeeklyBulkSourceRecord
+                    .order(Column("sort_order").asc)
+                    .fetchAll(db)
 
                 let items = repoRecords.compactMap { $0.toDomain() }
                 let languages = languageRecords.map { record in
@@ -168,6 +173,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                     )
                 }
                 return WeeklyBulkCachedSnapshot(
+                    sources: sourceRecords.map(\.descriptor),
                     items: items,
                     languages: languages,
                     etag: meta.etag,
@@ -221,8 +227,12 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                     """,
                     arguments: filter.arguments + [pageSize, (page - 1) * pageSize]
                 )
+                let sourceRecords = try WeeklyBulkSourceRecord
+                    .order(Column("sort_order").asc)
+                    .fetchAll(db)
                 let items = records.compactMap { $0.toDomain() }
                 return WeeklyBulkPageSnapshot(
+                    sources: sourceRecords.map(\.descriptor),
                     items: items,
                     etag: meta.etag,
                     lastFetchedAt: lastFetchedAt,
@@ -248,7 +258,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             if let cached = await cachedBulk(), !cached.items.isEmpty {
                 AppLog.network.warning("WeeklyBulk network failed, falling back to cache (\(cached.items.count) repos): \(error.localizedDescription, privacy: .public)")
                 return WeeklyBulkResult(
-                    sources: [],
+                    sources: cached.sources,
                     items: cached.items,
                     languages: cached.languages,
                     etag: cached.etag,
@@ -265,6 +275,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             try await database.writer.write { db in
                 try db.execute(sql: "DELETE FROM weekly_bulk_repos")
                 try db.execute(sql: "DELETE FROM weekly_bulk_languages")
+                try db.execute(sql: "DELETE FROM weekly_bulk_sources")
 
                 for item in result.items {
                     let record = WeeklyBulkRepoRecord.from(item, cachedAt: now)
@@ -278,6 +289,9 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                         sortOrder: index
                     )
                     try record.insert(db)
+                }
+                for source in result.sources {
+                    try WeeklyBulkSourceRecord(source).insert(db)
                 }
 
                 let meta = WeeklyBulkMetaRecord(
@@ -318,6 +332,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             try await database.writer.write { db in
                 try db.execute(sql: "DELETE FROM weekly_bulk_repos")
                 try db.execute(sql: "DELETE FROM weekly_bulk_languages")
+                try db.execute(sql: "DELETE FROM weekly_bulk_sources")
                 try db.execute(sql: "DELETE FROM weekly_bulk_meta")
             }
             AppLog.network.info("WeeklyBulk cache cleared")
@@ -373,25 +388,26 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
     }
 
     private static func orderSQL(for sort: WeeklyFeedSort) -> String {
+        let pinPrefix = "is_pinned DESC, COALESCE(pin_position, 2147483647) ASC, "
         switch sort {
         case .defaultOrder:
-            return "latest_event_at DESC, gh_repo_id DESC"
+            return pinPrefix + "latest_event_at DESC, gh_repo_id DESC"
         case .starsDesc:
-            return "stars DESC, gh_repo_id DESC"
+            return pinPrefix + "stars DESC, gh_repo_id DESC"
         case .starsAsc:
-            return "stars ASC, gh_repo_id DESC"
+            return pinPrefix + "stars ASC, gh_repo_id DESC"
         case .updatedDesc:
-            return "COALESCE(updated_at, '') DESC, gh_repo_id DESC"
+            return pinPrefix + "COALESCE(updated_at, '') DESC, gh_repo_id DESC"
         case .updatedAsc:
-            return "COALESCE(updated_at, '\u{FFFD}') ASC, gh_repo_id DESC"
+            return pinPrefix + "COALESCE(updated_at, '\u{FFFD}') ASC, gh_repo_id DESC"
         case .createdDesc:
-            return "COALESCE(created_at, '') DESC, gh_repo_id DESC"
+            return pinPrefix + "COALESCE(created_at, '') DESC, gh_repo_id DESC"
         case .createdAsc:
-            return "COALESCE(created_at, '\u{FFFD}') ASC, gh_repo_id DESC"
+            return pinPrefix + "COALESCE(created_at, '\u{FFFD}') ASC, gh_repo_id DESC"
         case .nameAsc:
-            return "lower(full_name) ASC, gh_repo_id DESC"
+            return pinPrefix + "lower(full_name) ASC, gh_repo_id DESC"
         case .nameDesc:
-            return "lower(full_name) DESC, gh_repo_id DESC"
+            return pinPrefix + "lower(full_name) DESC, gh_repo_id DESC"
         }
     }
 }

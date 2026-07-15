@@ -351,6 +351,19 @@ struct WeeklyBulkDataDTO: Decodable, Equatable, Sendable {
     let sources: [WeeklySourceDescriptor]
     let repos: [WeeklyFeedRepoDTO]
     let languages: [TrendingLanguageAggregateDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case sources
+        case repos
+        case languages
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sources = try container.decodeIfPresent([WeeklySourceDescriptor].self, forKey: .sources) ?? []
+        repos = try container.decode([WeeklyFeedRepoDTO].self, forKey: .repos)
+        languages = try container.decode([TrendingLanguageAggregateDTO].self, forKey: .languages)
+    }
 }
 
 /// bulk endpoint 领域返回：DTO 已转 `WeeklyFeedItem`，languages 透传，meta 字段保留供
