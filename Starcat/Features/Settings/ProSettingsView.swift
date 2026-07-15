@@ -104,7 +104,6 @@ struct ProSettingsTab: View {
                 isLoadingDevices: directLicenseManager.isRefreshingDevices,
                 isOpeningPortal: directLicenseManager.isOpeningPortal,
                 isDeactivating: directLicenseManager.isDeactivating,
-                portalErrorMessage: directLicenseManager.lastErrorMessage,
                 canOpenPortal: canOpenDirectCustomerPortal,
                 canDeactivateCurrentMac: directLicenseManager.storedCredential != nil,
                 onClose: { isDirectLicensePresented = false },
@@ -237,13 +236,8 @@ struct ProSettingsTab: View {
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                if let error = directLicenseManager.lastErrorMessage, isDirectBuild {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                // Direct 授权 API 的原始失败信息不进入设置主页；这里仅展示最终授权状态，
+                // 避免网络或服务端技术错误打断用户浏览和配置 Pro 的流程。
             }
             .padding(.vertical, 2)
         } footer: {
@@ -378,12 +372,6 @@ struct ProSettingsTab: View {
                 onOpenPass: { isDirectPassPresented = true },
                 onOpenLicense: { isDirectLicensePresented = true }
             )
-
-            if let errorMessage = directLicenseManager.lastErrorMessage, !errorMessage.isEmpty {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.orange)
-            }
 
             if showDirectPassSavedMessage {
                 Label("settings.pro.direct.pass.saved", systemImage: "square.and.arrow.down.fill")
@@ -976,7 +964,6 @@ private struct DirectLicenseSheet: View {
     let isLoadingDevices: Bool
     let isOpeningPortal: Bool
     let isDeactivating: Bool
-    let portalErrorMessage: String?
     let canOpenPortal: Bool
     let canDeactivateCurrentMac: Bool
     let onClose: () -> Void
@@ -1060,12 +1047,6 @@ private struct DirectLicenseSheet: View {
                     onDeactivateDevice: onDeactivateDevice
                 )
 
-                if let portalErrorMessage, !portalErrorMessage.isEmpty {
-                    Label(portalErrorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.orange)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
             .padding(.horizontal, 18)
             .padding(.top, 14)

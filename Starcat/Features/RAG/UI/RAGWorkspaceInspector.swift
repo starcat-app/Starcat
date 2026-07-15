@@ -439,7 +439,7 @@ struct RAGWorkspaceInspector: View {
                         metadataLanguagesGroup(Array(snapshot.topLanguages.prefix(6)))
                         metadataActivityGroup(snapshot)
                         metadataKnowledgeArtifactsGroup(snapshot)
-                        metadataSourceCoverageGroup(snapshot.sourceIndexCoverage)
+                        metadataSourceCoverageGroup(snapshot)
                         metadataIndexGroup(snapshot.indexHealth)
 
                         if !snapshot.topStarredRepositories.isEmpty {
@@ -648,7 +648,9 @@ struct RAGWorkspaceInspector: View {
             metadataGroupHeader(
                 titleKey: "rag.workspace.inspector.metadata.group.artifacts",
                 systemImage: "sparkles",
-                tint: .purple
+                tint: .purple,
+                helpTopic: .artifacts,
+                snapshot: snapshot
             )
             metadataMetricRow(
                 "rag.workspace.inspector.metadata.aiSummaryCoverage",
@@ -669,21 +671,22 @@ struct RAGWorkspaceInspector: View {
 
     /// 按来源列出实际存在的索引分片，帮助用户区分“有笔记/摘要”与“该来源已进入 RAG 索引”。
     @ViewBuilder
-    private func metadataSourceCoverageGroup(_ coverage: [KnowledgeBaseMetadataSnapshot.SourceIndexCoverage]) -> some View {
+    private func metadataSourceCoverageGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
         metadataGroupCard {
             metadataGroupHeader(
                 titleKey: "rag.workspace.inspector.metadata.group.sourceCoverage",
                 systemImage: "square.stack.3d.up",
-                tint: .teal
+                tint: .teal,
+                helpTopic: .sourceCoverage,
+                snapshot: snapshot
             )
-            ForEach(coverage, id: \.source.rawValue) { item in
+            ForEach(snapshot.sourceIndexCoverage, id: \.source.rawValue) { item in
                 metadataMetricRow(
                     item.source.titleKey,
                     value: String(
                         format: String.l10n("rag.workspace.inspector.metadata.sourceCoverageFormat"),
                         localizedInteger(item.repositoryCount),
-                        localizedInteger(item.searchableChunkCount),
-                        localizedInteger(item.chunkCount)
+                        localizedInteger(item.searchableChunkCount)
                     )
                 )
             }
@@ -757,7 +760,9 @@ struct RAGWorkspaceInspector: View {
     private func metadataGroupHeader(
         titleKey: LocalizedStringKey,
         systemImage: String,
-        tint: Color
+        tint: Color,
+        helpTopic: RAGMetadataSectionHelpTopic? = nil,
+        snapshot: KnowledgeBaseMetadataSnapshot? = nil
     ) -> some View {
         // 与「计划」tab 的 planSection 同级：callout + 彩色前缀图标。
         HStack(spacing: 6) {
@@ -769,6 +774,9 @@ struct RAGWorkspaceInspector: View {
             Text(titleKey)
                 .font(ragFont(.callout, weight: .semibold))
                 .foregroundStyle(.primary)
+            if let helpTopic, let snapshot {
+                RAGMetadataSectionInfoButton(topic: helpTopic, snapshot: snapshot)
+            }
             Spacer(minLength: 0)
         }
     }
@@ -1843,6 +1851,9 @@ struct RAGWorkspaceInspector: View {
         case .averageStars: return String.l10n("rag.workspace.inspector.plan.analytics.measure.averageStars")
         case .maxForks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.maxForks")
         case .averageForks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.averageForks")
+        case .repositoriesWithAISummary: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithAISummary")
+        case .repositoriesWithPrivateNotes: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithPrivateNotes")
+        case .repositoriesWithAIGeneratedNotes: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithAIGeneratedNotes")
         }
     }
 

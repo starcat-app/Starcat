@@ -21000,6 +21000,27 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithAIGeneratedNotes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories with AI-generated notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "含 AI 生成笔记的项目数" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithAISummary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories with AI summaries" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "含 AI 摘要的项目数" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithPrivateNotes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories with private notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "含私有笔记的项目数" } }
+      }
+    },
     "rag.workspace.inspector.plan.analyticsFormat": {
       "localizations": {
         "en": {
@@ -58505,15 +58526,15 @@
     "rag.workspace.inspector.metadata.aiSummaryCoverage": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI summary coverage" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要覆盖" } }
+        "en": { "stringUnit": { "state": "translated", "value": "AI summaries" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要" } }
       }
     },
     "rag.workspace.inspector.metadata.privateNoteCoverage": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Private note coverage" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "私有笔记覆盖" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Private notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "私有笔记" } }
       }
     },
     "rag.workspace.inspector.metadata.aiGeneratedNotes": {
@@ -58526,15 +58547,120 @@
     "rag.workspace.inspector.metadata.coverageFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@ repositories" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@ 项目" } }
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@" } }
       }
     },
     "rag.workspace.inspector.metadata.sourceCoverageFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ repositories · %2$@ chunks" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ 项目 · %2$@ 分片" } }
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Explain AI artifacts" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明 AI 内容" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI artifacts" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 内容" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.definition.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What do these numbers mean?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这些数字代表什么？" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.definition.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Coverage is calculated from repositories currently in the knowledge base. Only aggregate counts are shown; note and summary content is never exposed here." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "覆盖率以当前已入库项目为范围。这里只展示聚合数量，不展示笔记或摘要正文。" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.fields.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.field.scope": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In-library repositories" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已入库项目" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.field.aiSummaries": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI summaries" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.field.privateNotes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Private notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "私有笔记" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.artifacts.field.aiGeneratedNotes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI-generated notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 生成笔记" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.sourceCoverage.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Explain RAG source coverage" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明 RAG 来源覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.sourceCoverage.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RAG source coverage" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RAG 来源覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.sourceCoverage.definition.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "How to read the compact values" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "如何阅读紧凑数值" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.sourceCoverage.definition.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The main panel shows indexed repositories first, then searchable chunks. This popover adds the total chunk count; excluded chunks are not included." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主面板依次显示已索引项目数与可用分片数；这里补充总分片数。已排除的分片不计入统计。" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.sourceCoverage.fields.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.sourceCoverage.valueFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ repositories · %2$@ searchable / %3$@ total chunks" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ 个项目 · %2$@ 可用 / %3$@ 总分片" } }
       }
     },
     "rag.workspace.inspector.metadata.index.ready": {

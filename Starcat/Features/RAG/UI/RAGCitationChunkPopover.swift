@@ -119,6 +119,50 @@ struct RAGCitationChunkPopoverContent: View {
                     .relativeLineSpacing(.em(0.12))
                     .markdownMargin(top: .em(0.2), bottom: .em(0.55))
             }
+            // 默认 Theme 表格几乎无内边距 + 全网格描边，在 400pt 窄窗里会挤成截图那样。
+            // 与回答正文主题（RAGMarkdownText.ragAnswerTheme）对齐：横线分隔 + 斑马纹 +
+            // 表头加重，宽表由外层横向滚动而不是把列压扁；单元格内边距按窄窗收紧。
+            .table { configuration in
+                ScrollView(.horizontal, showsIndicators: true) {
+                    configuration.label
+                        // 让表格按内容固有宽度布局；过宽时由外层横向滚动，不把列压扁。
+                        .fixedSize(horizontal: true, vertical: true)
+                        .markdownTableBorderStyle(
+                            TableBorderStyle(
+                                .horizontalBorders,
+                                color: Color.secondary.opacity(0.35),
+                                width: 0.5
+                            )
+                        )
+                        .markdownTableBackgroundStyle(
+                            .alternatingRows(
+                                Color.clear,
+                                Color.primary.opacity(0.04),
+                                header: Color.primary.opacity(0.08)
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.22), lineWidth: 0.5)
+                        )
+                }
+                .markdownMargin(top: .em(0.2), bottom: .em(0.55))
+            }
+            .tableCell { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        if configuration.row == 0 {
+                            FontWeight(.semibold)
+                        }
+                        // 背景交给 tableBackgroundStyle，避免 Text 再铺一层抢斑马纹。
+                        BackgroundColor(nil)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .relativeLineSpacing(.em(0.16))
+            }
     }
 }
 

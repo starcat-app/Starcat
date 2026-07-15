@@ -69,7 +69,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     /// 未完成回答写进新账户数据库。
     @MainActor
     static func closeForUserDatabaseChange() {
-        shared?.viewModel.cancelAnswer()
+        shared?.viewModel.cancelAllAnswers()
         shared?.close()
         shared = nil
     }
@@ -127,7 +127,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     }
 
     func windowWillClose(_ notification: Notification) {
-        viewModel.cancelAnswer()
+        viewModel.cancelAllAnswers()
         window?.resignKey()
         Self.shared = nil
     }
@@ -746,15 +746,15 @@ private struct KnowledgeRAGBrowserView: View {
                 }
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: isKnowledgeOverviewExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
                     Image(systemName: "chart.bar.doc.horizontal")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                     Text("rag.browser.overview").font(.headline)
                     Spacer(minLength: 0)
+                    Image(systemName: isKnowledgeOverviewExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
                 .padding(12)
@@ -820,15 +820,15 @@ private struct KnowledgeRAGBrowserView: View {
                 }
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: isRetrievalTestExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
                     Image(systemName: "magnifyingglass")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                     Text("rag.browser.retrieval.title").font(.headline)
                     Spacer(minLength: 0)
+                    Image(systemName: isRetrievalTestExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
                 .padding(12)
@@ -1774,6 +1774,47 @@ private struct KnowledgeRAGChunkEditor: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .relativeLineSpacing(.em(0.18))
                     .markdownMargin(top: .zero, bottom: .em(0.55))
+            }
+            // 与证据 popover / 回答正文主题对齐：横线分隔 + 斑马纹 + 表头加重；
+            // 680 详情窗比 400pt popover 宽，单元格内边距用正文档 12/8。
+            .table { configuration in
+                ScrollView(.horizontal, showsIndicators: true) {
+                    configuration.label
+                        .fixedSize(horizontal: true, vertical: true)
+                        .markdownTableBorderStyle(
+                            TableBorderStyle(
+                                .horizontalBorders,
+                                color: Color.secondary.opacity(0.35),
+                                width: 0.5
+                            )
+                        )
+                        .markdownTableBackgroundStyle(
+                            .alternatingRows(
+                                Color.clear,
+                                Color.primary.opacity(0.04),
+                                header: Color.primary.opacity(0.08)
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.22), lineWidth: 0.5)
+                        )
+                }
+                .markdownMargin(top: .em(0.25), bottom: .em(0.55))
+            }
+            .tableCell { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        if configuration.row == 0 {
+                            FontWeight(.semibold)
+                        }
+                        BackgroundColor(nil)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .relativeLineSpacing(.em(0.18))
             }
     }
 }

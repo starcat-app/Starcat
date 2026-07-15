@@ -153,14 +153,21 @@ struct ServicesSettingsTab: View {
                             ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: "network")
+                                .font(.system(size: 15, weight: .medium))
                         }
                         Text("settings.services.testConnection")
                     }
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .disabled(isProbing || !validation.canPersist)
             }
         } header: {
-            SettingsSectionHeader(service.titleKey, systemImage: service.systemImage)
+            SettingsSectionHeader(
+                service.titleKey,
+                systemImage: service.systemImage,
+                style: .prominent
+            )
         }
     }
 
@@ -231,7 +238,7 @@ struct ServicesSettingsTab: View {
         static let labelWidth: CGFloat = 72
         static let fieldWidth: CGFloat = 340
         static let fieldHeight: CGFloat = 22
-        static let iconSlotSize: CGFloat = 24
+        static let iconSlotSize: CGFloat = 28
         static let rowSpacing: CGFloat = 8
     }
 
@@ -243,6 +250,7 @@ struct ServicesSettingsTab: View {
     ) -> some View {
         HStack(alignment: .center, spacing: ServiceFieldLayout.rowSpacing) {
             Text(labelKey)
+                .font(.body)
                 .frame(width: ServiceFieldLayout.labelWidth, alignment: .leading)
             Spacer(minLength: ServiceFieldLayout.rowSpacing)
             field()
@@ -260,6 +268,7 @@ struct ServicesSettingsTab: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
+                .font(.system(size: 15, weight: .medium))
                 .frame(
                     width: ServiceFieldLayout.iconSlotSize,
                     height: ServiceFieldLayout.iconSlotSize
@@ -271,6 +280,7 @@ struct ServicesSettingsTab: View {
         .foregroundStyle(.secondary)
         .disabled(disabled)
         .help(Text(helpKey))
+        .accessibilityLabel(Text(helpKey))
     }
 
     // MARK: - Actions

@@ -261,18 +261,20 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 GROUP BY c.source
                 """)
-            let sourceCoverageByRawValue = Dictionary(uniqueKeysWithValues: sourceCoverageRows.compactMap { row in
-                let sourceRawValue: String = row["source"]
-                guard let source = RAGChunkSource(rawValue: sourceRawValue) else { return nil }
-                return (sourceRawValue, SourceIndexCoverage(
-                    source: source,
-                    repositoryCount: row["repository_count"],
-                    chunkCount: row["chunk_count"],
-                    searchableChunkCount: row["searchable_chunk_count"]
-                ))
-            })
+            let sourceCoverageByRawValue: [String: KnowledgeBaseMetadataSnapshot.SourceIndexCoverage] = Dictionary(
+                uniqueKeysWithValues: sourceCoverageRows.compactMap { row -> (String, KnowledgeBaseMetadataSnapshot.SourceIndexCoverage)? in
+                    let sourceRawValue: String = row["source"]
+                    guard let source = RAGChunkSource(rawValue: sourceRawValue) else { return nil }
+                    return (sourceRawValue, KnowledgeBaseMetadataSnapshot.SourceIndexCoverage(
+                        source: source,
+                        repositoryCount: row["repository_count"],
+                        chunkCount: row["chunk_count"],
+                        searchableChunkCount: row["searchable_chunk_count"]
+                    ))
+                }
+            )
             let sourceIndexCoverage = RAGChunkSource.allCases.map {
-                sourceCoverageByRawValue[$0.rawValue] ?? SourceIndexCoverage(
+                sourceCoverageByRawValue[$0.rawValue] ?? KnowledgeBaseMetadataSnapshot.SourceIndexCoverage(
                     source: $0,
                     repositoryCount: 0,
                     chunkCount: 0,

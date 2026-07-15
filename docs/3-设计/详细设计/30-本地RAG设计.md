@@ -749,6 +749,12 @@ enum RAGGitHubLinkRelation: String, Sendable {
 - `previousReferencedRepos` 来自已持久化 citation metadata，不允许从自然语言回答中反推仓库范围。
 - 配置解码时只会把已发布的上一版官方默认 Planner 模板升级为新模板；任何用户自定义 Planner 提示词都必须原样保留。
 
+#### 7.2.1 知识库存量元数据
+
+Service 在 Planner 前只读一次本地快照，并向 Planner 传递最小化的聚合库存：在库项目总数、AI 摘要/私有笔记/AI 生成笔记覆盖项目数，以及 README、笔记、摘要、Metadata 各来源的项目数和可用分片数。不得传递仓库名、README、笔记或摘要正文。
+
+Planner 只能为这三类覆盖率选择固定的单值 analytics measure，且必须输出 `structured_only`；本地校验拒绝分组，再以固定 SQL 执行。Generator 可复用同一轮的完整元数据快照回答其它统计问题，但仍不得把聚合事实伪造成分片引用。
+
 ### 7.3 Query Plan Schema
 
 ```swift
