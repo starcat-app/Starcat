@@ -1,0 +1,17 @@
+{
+  "source_code": "ai_intelligence",
+  "idempotency_key": "ai-intelligence:example:2026-07-16",
+  "repositories": [
+    {
+      "owner": "Zackriya-Solutions",
+      "repo": "meetily",
+      "title": "Meetily - 本地优先的 AI 会议助手",
+      "source_url": "https://example.com/ai-news"
+    },
+    {
+      "owner": "JuliusBrussee",
+      "repo": "caveman",
+      "title": "caveman - 让 AI Agent 少说废话的 skill/plugin"
+    }
+  ]
+}
