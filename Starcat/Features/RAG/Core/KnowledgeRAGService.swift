@@ -358,6 +358,11 @@ struct RAGRetrievalPhaseOutput: Sendable {
     let localMissingReasonKey: String?
 }
 
+struct RAGPlanningPhaseOutput: Sendable {
+    let plan: RAGQueryPlan
+    let metadataSnapshot: KnowledgeBaseMetadataSnapshot?
+}
+
 struct KnowledgeRAGService: Sendable {
     /// 召回测试用于人工核验而非构造回答；固定上限避免调试窗口被低分尾部结果淹没。
     private static let retrievalTestMaxHits = 10
@@ -442,117 +447,12 @@ struct KnowledgeRAGService: Sendable {
                     history:
                     \(history.enumerated().map { "[\($0.offset)] \($0.element.role.rawValue):\n\($0.element.content)" }.joined(separator: "\n\n"))
                     """)
-                    continuation.yield(.state(.planning))
-                    continuation.yield(.execution(.started(.planning)))
-                    if let terminal = RAGQueryGuidance.pureSocialResponse(
-                        question: request.rawQuestion,
-                        composerContext: request.composerContext
-                    ) {
-                        let plan = RAGQueryPlan(
-                            mode: .guidedDiscovery,
-                            semanticQuery: "",
-                            fallbackQuestions: terminal.suggestedActions.map(\.question),
-                            userVisiblePlan: .init(
-                                scope: String.l10n("rag.workspace.guidance.scope"),
-                                chips: [],
-                                semantic: "",
-                                planningNotes: [String.l10n("rag.workspace.guidance.socialPlan")]
-                            )
-                        )
-                        continuation.yield(.plan(plan))
-                        continuation.yield(.execution(.planningCompleted(plan)))
-                        continuation.yield(.terminal(terminal))
-                        continuation.yield(.state(.completed))
+                    guard let planningOutput = try await runPlanningPhase(request: request, sink: sink) else {
                         continuation.finish()
                         return
                     }
-                    // 同一轮只读一次快照：Planner 只消费精简库存摘要，Generator 仍使用完整快照。
-                    // 读取失败必须降级为空，不能因为可选聚合统计阻断正常检索与问答。
-                    let metadataSnapshot: KnowledgeBaseMetadataSnapshot?
-                    do {
-                        metadataSnapshot = try await metadataSnapshotProvider?.fetch()
-                    } catch {
-                        metadataSnapshot = nil
-                        AppLog.ai.warning("RAG metadata snapshot degraded: \(error.localizedDescription, privacy: .public)")
-                    }
-                    var hasPlanningReasoning = false
-                    let onReasoningDelta: (String) -> Void = { text in
-                        guard !text.isEmpty else { return }
-                        if !hasPlanningReasoning {
-                            hasPlanningReasoning = true
-                            continuation.yield(.execution(.started(.planningReasoning)))
-                        }
-                        continuation.yield(.execution(.reasoningDelta(.planningReasoning, text)))
-                    }
-                    var plan: RAGQueryPlan
-                    if let metadataAwarePlanner = planner as? any KnowledgeRAGMetadataAwareQueryPlanning {
-                        plan = try await metadataAwarePlanner.plan(
-                            question: request.rawQuestion,
-                            composerContext: request.composerContext,
-                            metadataSnapshot: metadataSnapshot,
-                            onReasoningDelta: onReasoningDelta,
-                            onDebugEvent: { stage, payload in
-                                sink.debug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
-                            }
-                        )
-                    } else if let debuggablePlanner = planner as? any KnowledgeRAGDebuggableQueryPlanning {
-                        plan = try await debuggablePlanner.plan(
-                            question: request.rawQuestion,
-                            composerContext: request.composerContext,
-                            onReasoningDelta: onReasoningDelta,
-                            onDebugEvent: { stage, payload in
-                                sink.debug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
-                            }
-                        )
-                    } else {
-                        plan = try await planner.plan(
-                            question: request.rawQuestion,
-                            composerContext: request.composerContext,
-                            onReasoningDelta: onReasoningDelta
-                        )
-                    }
-                    if hasPlanningReasoning {
-                        continuation.yield(.execution(.reasoningCompleted(.planningReasoning)))
-                    }
-                    // Planner 是概率模型，可能漏报“最新 Issues”这类稳定的实时 GitHub 意图。
-                    // 执行层在这里补齐高置信请求，并只在 Composer 明确授权后保留普通 Web 查询。
-                    plan = RAGNetworkIntentResolver.resolve(
-                        question: request.rawQuestion,
-                        plan: plan,
-                        composerContext: request.composerContext
-                    )
-                    plan.remoteContextRequests.removeAll {
-                        request.composerContext.disabledRemoteResources.contains($0.resource)
-                    }
-                    sink.debug(.plan, """
-                    mode: \(plan.mode.rawValue)
-                    semanticQuery: \(plan.semanticQuery)
-                    filters: \(String(reflecting: plan.filters))
-                    candidateLimit: \(plan.candidateLimit.map(String.init) ?? "<default>")
-                    clarificationQuestion: \(plan.clarificationQuestion ?? "<none>")
-                    remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
-                    webSearchRequests: \(plan.webSearchRequests.map { "\($0.query): \($0.reason)" }.joined(separator: "\n"))
-                    requiresLiveEvidence: \(plan.requiresLiveEvidence)
-                    analytics: \(String(reflecting: plan.analytics))
-                    """)
-                    continuation.yield(.plan(plan))
-                    continuation.yield(.execution(.planningCompleted(plan)))
-                    if plan.mode == .guidedDiscovery {
-                        continuation.yield(.terminal(RAGQueryGuidance.guidedResponse(
-                            plan: plan,
-                            composerContext: request.composerContext
-                        )))
-                        continuation.yield(.state(.completed))
-                        continuation.finish()
-                        return
-                    }
-                    if plan.mode == .needsClarification {
-                        continuation.yield(.state(.needsClarification(
-                            plan.clarificationQuestion ?? String.l10n("rag.core.service.clarificationFallback")
-                        )))
-                        continuation.finish()
-                        return
-                    }
+                    var plan = planningOutput.plan
+                    let metadataSnapshot = planningOutput.metadataSnapshot
 
                     let retrievalOutput = try await runRetrievalPhase(
                         request: request,
@@ -619,6 +519,123 @@ struct KnowledgeRAGService: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Planner 阶段拥有纯社交早停、元数据快照、模型规划、联网意图补全与澄清门禁。
+    /// 返回 nil 表示已经发布终止事件，后续阶段不得访问 Repository 或 Provider。
+    func runPlanningPhase(
+        request: RAGServiceRequest,
+        sink: RAGServiceEventSink
+    ) async throws -> RAGPlanningPhaseOutput? {
+        sink.yield(.state(.planning))
+        sink.yield(.execution(.started(.planning)))
+        if let terminal = RAGQueryGuidance.pureSocialResponse(
+            question: request.rawQuestion,
+            composerContext: request.composerContext
+        ) {
+            let plan = RAGQueryPlan(
+                mode: .guidedDiscovery,
+                semanticQuery: "",
+                fallbackQuestions: terminal.suggestedActions.map(\.question),
+                userVisiblePlan: .init(
+                    scope: String.l10n("rag.workspace.guidance.scope"),
+                    chips: [],
+                    semantic: "",
+                    planningNotes: [String.l10n("rag.workspace.guidance.socialPlan")]
+                )
+            )
+            sink.yield(.plan(plan))
+            sink.yield(.execution(.planningCompleted(plan)))
+            sink.yield(.terminal(terminal))
+            sink.yield(.state(.completed))
+            return nil
+        }
+        // 同一轮只读一次快照：Planner 只消费精简库存摘要，Generator 仍使用完整快照。
+        // 读取失败必须降级为空，不能因为可选聚合统计阻断正常检索与问答。
+        let metadataSnapshot: KnowledgeBaseMetadataSnapshot?
+        do {
+            metadataSnapshot = try await metadataSnapshotProvider?.fetch()
+        } catch {
+            metadataSnapshot = nil
+            AppLog.ai.warning("RAG metadata snapshot degraded: \(error.localizedDescription, privacy: .public)")
+        }
+        var hasPlanningReasoning = false
+        let onReasoningDelta: (String) -> Void = { text in
+            guard !text.isEmpty else { return }
+            if !hasPlanningReasoning {
+                hasPlanningReasoning = true
+                sink.yield(.execution(.started(.planningReasoning)))
+            }
+            sink.yield(.execution(.reasoningDelta(.planningReasoning, text)))
+        }
+        var plan: RAGQueryPlan
+        if let metadataAwarePlanner = planner as? any KnowledgeRAGMetadataAwareQueryPlanning {
+            plan = try await metadataAwarePlanner.plan(
+                question: request.rawQuestion,
+                composerContext: request.composerContext,
+                metadataSnapshot: metadataSnapshot,
+                onReasoningDelta: onReasoningDelta,
+                onDebugEvent: { stage, payload in
+                    sink.debug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
+                }
+            )
+        } else if let debuggablePlanner = planner as? any KnowledgeRAGDebuggableQueryPlanning {
+            plan = try await debuggablePlanner.plan(
+                question: request.rawQuestion,
+                composerContext: request.composerContext,
+                onReasoningDelta: onReasoningDelta,
+                onDebugEvent: { stage, payload in
+                    sink.debug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
+                }
+            )
+        } else {
+            plan = try await planner.plan(
+                question: request.rawQuestion,
+                composerContext: request.composerContext,
+                onReasoningDelta: onReasoningDelta
+            )
+        }
+        if hasPlanningReasoning {
+            sink.yield(.execution(.reasoningCompleted(.planningReasoning)))
+        }
+        // Planner 是概率模型，可能漏报“最新 Issues”这类稳定的实时 GitHub 意图。
+        // 执行层在这里补齐高置信请求，并只在 Composer 明确授权后保留普通 Web 查询。
+        plan = RAGNetworkIntentResolver.resolve(
+            question: request.rawQuestion,
+            plan: plan,
+            composerContext: request.composerContext
+        )
+        plan.remoteContextRequests.removeAll {
+            request.composerContext.disabledRemoteResources.contains($0.resource)
+        }
+        sink.debug(.plan, """
+        mode: \(plan.mode.rawValue)
+        semanticQuery: \(plan.semanticQuery)
+        filters: \(String(reflecting: plan.filters))
+        candidateLimit: \(plan.candidateLimit.map(String.init) ?? "<default>")
+        clarificationQuestion: \(plan.clarificationQuestion ?? "<none>")
+        remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
+        webSearchRequests: \(plan.webSearchRequests.map { "\($0.query): \($0.reason)" }.joined(separator: "\n"))
+        requiresLiveEvidence: \(plan.requiresLiveEvidence)
+        analytics: \(String(reflecting: plan.analytics))
+        """)
+        sink.yield(.plan(plan))
+        sink.yield(.execution(.planningCompleted(plan)))
+        if plan.mode == .guidedDiscovery {
+            sink.yield(.terminal(RAGQueryGuidance.guidedResponse(
+                plan: plan,
+                composerContext: request.composerContext
+            )))
+            sink.yield(.state(.completed))
+            return nil
+        }
+        if plan.mode == .needsClarification {
+            sink.yield(.state(.needsClarification(
+                plan.clarificationQuestion ?? String.l10n("rag.core.service.clarificationFallback")
+            )))
+            return nil
+        }
+        return RAGPlanningPhaseOutput(plan: plan, metadataSnapshot: metadataSnapshot)
     }
 
     /// Retrieval 阶段负责附件预处理、本地结构化分析、候选查询与混合召回；输出保留早停
