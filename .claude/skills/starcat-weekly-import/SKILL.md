@@ -69,7 +69,7 @@ Authorization: Bearer $STARCAT_WEEKLY_ADMIN_KEY
 
 ### 6. 批量提交并轮询
 
-生成唯一且可复用的 `idempotency_key`，一次 POST 完整列表。可用脚本先做本地校验，再经 `--confirm` 真正提交：
+生成唯一且可复用的 `idempotency_key`，一次 POST 完整列表。输入未提供 key 时，脚本按规范化 payload 生成稳定内容指纹，因此 dry-run、正式提交和超时重放保持一致。可用脚本先做本地校验，再经 `--confirm` 真正提交：
 
 ```bash
 python3 .claude/skills/starcat-weekly-import/scripts/submit_import.py \

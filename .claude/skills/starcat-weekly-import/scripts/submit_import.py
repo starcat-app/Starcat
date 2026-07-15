@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -16,7 +17,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -63,18 +63,39 @@ def load_and_validate(path: str) -> dict[str, Any]:
         for optional in ("title", "source_url"):
             value = str(item.get(optional, "")).strip()
             if value:
+                if optional == "source_url" and not is_safe_source_url(value):
+                    raise ValueError(f"repositories[{index}].source_url 必须是绝对 http/https URL")
                 record[optional] = value
         normalized.append(record)
     if not normalized:
         raise ValueError("去重后没有可提交仓库")
     idempotency_key = str(payload.get("idempotency_key", "")).strip()
     if not idempotency_key:
-        idempotency_key = f"{source_code}:{uuid.uuid4()}"
+        # 同一规范化 payload 必须在 dry-run、正式提交和超时重放时得到相同 key。
+        # 显式 key 仍优先，方便调用方把同一仓库列表作为不同情报事件再次录入。
+        canonical = json.dumps(
+            {"source_code": source_code, "repositories": normalized},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
+        idempotency_key = f"{source_code}:auto:{digest}"
     return {
         "source_code": source_code,
         "idempotency_key": idempotency_key,
         "repositories": normalized,
     }
+
+
+def is_safe_source_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return (
+        parsed.scheme.lower() in {"http", "https"}
+        and bool(parsed.netloc)
+        and parsed.username is None
+        and parsed.password is None
+    )
 
 
 def api_request(base_url: str, key: str, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
