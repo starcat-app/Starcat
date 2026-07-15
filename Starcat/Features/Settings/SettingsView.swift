@@ -527,6 +527,18 @@ struct SettingsView: View {
         let updateController = dependencies.directUpdateController
 
         return Section {
+            Toggle("settings.pro.direct.updates.autoCheck", isOn: Binding(
+                get: { updateController.automaticallyChecksForUpdates },
+                set: { updateController.automaticallyChecksForUpdates = $0 }
+            ))
+            .disabled(!dependencies.directUpdateController.isConfigured)
+
+            Toggle("settings.pro.direct.updates.autoDownload", isOn: Binding(
+                get: { updateController.automaticallyDownloadsUpdates },
+                set: { updateController.automaticallyDownloadsUpdates = $0 }
+            ))
+            .disabled(!dependencies.directUpdateController.isConfigured || !updateController.automaticallyChecksForUpdates)
+
             // 「检查更新」是一次性动作，按设置页按钮右对齐规范推到右侧。
             HStack {
                 Spacer()
@@ -539,18 +551,6 @@ struct SettingsView: View {
                 .controlSize(.regular)
                 .disabled(!dependencies.directUpdateController.canCheckForUpdates)
             }
-
-            Toggle("settings.pro.direct.updates.autoCheck", isOn: Binding(
-                get: { updateController.automaticallyChecksForUpdates },
-                set: { updateController.automaticallyChecksForUpdates = $0 }
-            ))
-            .disabled(!dependencies.directUpdateController.isConfigured)
-
-            Toggle("settings.pro.direct.updates.autoDownload", isOn: Binding(
-                get: { updateController.automaticallyDownloadsUpdates },
-                set: { updateController.automaticallyDownloadsUpdates = $0 }
-            ))
-            .disabled(!dependencies.directUpdateController.isConfigured || !updateController.automaticallyChecksForUpdates)
         } header: {
             SettingsSectionHeader(
                 "settings.pro.direct.updates.section",
