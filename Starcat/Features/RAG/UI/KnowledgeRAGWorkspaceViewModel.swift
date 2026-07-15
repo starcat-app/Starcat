@@ -476,15 +476,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private var loadedMentionMatchCount = 0
     private var loadedMentionHasMore = false
     private var mentionQueryTask: Task<Void, Never>?
-    var indexCoverage = RAGIndexCoverage(
-        knowledgeRepoCount: 0,
-        indexedRepoCount: 0,
-        totalChunks: 0,
-        readyChunks: 0,
-        pendingChunks: 0,
-        failedChunks: 0,
-        staleChunks: 0
-    )
+    /// 只共享纯值读模型；工作台自己的问题抽屉、重建任务和进度状态仍留在本 ViewModel。
+    var indexStatus = RAGIndexStatusProjection.empty
     /// Inspector 常显的本地知识库事实。回答流会用实际注入 Prompt 的快照覆盖它，避免面板与
     /// 当前轮模型看到的数据不一致；工作台初次打开时则主动读取一次，使用户无需先提问也能核验。
     var knowledgeBaseMetadataSnapshot: KnowledgeBaseMetadataSnapshot?
@@ -493,7 +486,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     /// 知识库尚无任何仓库时，问答没有可检索边界。
     var isKnowledgeBaseEmpty: Bool {
-        indexCoverage.knowledgeRepoCount == 0
+        indexStatus.isKnowledgeBaseEmpty
     }
     var indexIssueChunks: [RAGIndexIssueKind: [RAGChunk]] = [:]
     var indexIssueHasMore: Set<RAGIndexIssueKind> = []
@@ -3628,7 +3621,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func refreshIndexCoverage() async throws {
-        indexCoverage = try await dependencies.knowledgeRAGIndexBuilder.coverage()
+        indexStatus = RAGIndexStatusProjection(
+            coverage: try await dependencies.knowledgeRAGIndexBuilder.coverage()
+        )
         indexIssueChunks = [:]
         indexIssueHasMore = []
     }

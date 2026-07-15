@@ -2024,10 +2024,10 @@ struct RAGWorkspaceInspector: View {
     var indexInspector: some View {
         VStack(alignment: .leading, spacing: 13) {
             knowledgeRepositoryRow
-            coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexCoverage.readyChunks)", color: .green)
-            indexIssueRow(.pending, value: "\(viewModel.indexCoverage.pendingChunks)", color: .orange)
-            indexIssueRow(.failed, value: "\(viewModel.indexCoverage.failedChunks)", color: .red)
-            indexIssueRow(.stale, value: "\(viewModel.indexCoverage.staleChunks)", color: .purple)
+            coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexStatus.readyChunks)", color: .green)
+            indexIssueRow(.pending, value: "\(viewModel.indexStatus.pendingChunks)", color: .orange)
+            indexIssueRow(.failed, value: "\(viewModel.indexStatus.failedChunks)", color: .red)
+            indexIssueRow(.stale, value: "\(viewModel.indexStatus.staleChunks)", color: .purple)
             embeddingCoverageProgress
             Divider()
             VStack(alignment: .trailing, spacing: 13) {
@@ -2644,7 +2644,7 @@ struct RAGWorkspaceInspector: View {
                 // 索引统计行用 caption，与证据 tab 的 inspector 密度对齐，避免 callout 抢主阅读层级。
                 Text("rag.workspace.status.repos").font(ragFont(.caption))
                 Spacer()
-                indexRowValue("\(viewModel.indexCoverage.indexedRepoCount)/\(viewModel.indexCoverage.knowledgeRepoCount)")
+                indexRowValue("\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)")
                 indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
             }
             .contentShape(Rectangle())
@@ -2839,7 +2839,7 @@ struct RAGWorkspaceInspector: View {
     /// 对用户展示全库向量覆盖，而不是本轮待处理队列；这样无新增分片的刷新仍会显示 20,281/20,281。
     func embeddingProgressValue(for summary: RAGIndexRefreshSummary) -> String {
         guard summary.totalChunksAtEmbedding > 0 else {
-            return "\(viewModel.indexCoverage.readyChunks)/\(viewModel.indexCoverage.totalChunks)"
+            return "\(viewModel.indexStatus.readyChunks)/\(viewModel.indexStatus.totalChunks)"
         }
         return "\(summary.embeddingReadyChunks)/\(summary.totalChunksAtEmbedding)"
     }
@@ -2882,7 +2882,7 @@ struct RAGWorkspaceInspector: View {
 
     /// 非 embedding 阶段只表达全库健康度；进入 embedding 后由上方本轮进度覆盖，避免混淆两种口径。
     var displayedEmbeddingCoverage: (readyChunks: Int, totalChunks: Int) {
-        (viewModel.indexCoverage.readyChunks, viewModel.indexCoverage.totalChunks)
+        (viewModel.indexStatus.readyChunks, viewModel.indexStatus.totalChunks)
     }
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))

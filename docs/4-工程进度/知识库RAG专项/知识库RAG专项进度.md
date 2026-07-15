@@ -339,10 +339,12 @@
 > 2026-07-16: `KnowledgeRAGService.ask` 收敛为五阶段编排器，Event Sink 统一事件与 Debug 门禁，阶段输入/输出可独立验证且未新增 God Object；`KnowledgeRAGCoreTests` 118 项通过。
 >
 > 2026-07-16: TEI / Cohere Rerank 共用候选快照、认证、JSON HTTP 与 index 回填排序，两套协议 DTO 保持独立；越界结果与候选上限回归覆盖，`KnowledgeRAGCoreTests` 119 项通过。
+>
+> 2026-07-16: 工作台与知识库浏览器改为共用 `RAGIndexStatusProjection` 纯值读模型，空态、覆盖率和问题计数口径统一，各自 UI 状态机保持隔离；`KnowledgeRAGCoreTests` 120 项通过。
 
 ## 15. 收尾与稳定性执行清单
 
-> 状态: 阶段 1 至 8 已完成；阶段 9 已完成 3/4 项，真实环境验收待执行。
+> 状态: 阶段 1 至 9 已完成；多轮收尾审查与真实环境验收待执行。
 
 > 清单：`RAG收尾与稳定性-checklist.md` 是本专项后续实现、逐项测试、commit 与验收收口的唯一执行顺序。
 > 结果：自动化整改与测试证据见 `结果报告-收尾与稳定性.md`；真实环境验收记录完成后再关闭专项。

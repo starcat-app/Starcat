@@ -181,6 +181,67 @@ struct RAGIndexCoverage: Equatable, Sendable {
     }
 }
 
+/// 工作台与知识库浏览器共用的轻量索引状态读模型。
+///
+/// Repository 的 `RAGIndexCoverage` 是一次 SQL 聚合结果；UI 长期持有这个纯值投影，统一空态、
+/// 覆盖率和问题计数语义。两个窗口仍各自管理刷新与交互任务，不能通过此类型共享可观察状态。
+struct RAGIndexStatusProjection: Equatable, Sendable {
+    var knowledgeRepoCount: Int
+    var indexedRepoCount: Int
+    var totalChunks: Int
+    var readyChunks: Int
+    var pendingChunks: Int
+    var failedChunks: Int
+    var staleChunks: Int
+
+    static let empty = RAGIndexStatusProjection(
+        knowledgeRepoCount: 0,
+        indexedRepoCount: 0,
+        totalChunks: 0,
+        readyChunks: 0,
+        pendingChunks: 0,
+        failedChunks: 0,
+        staleChunks: 0
+    )
+
+    init(coverage: RAGIndexCoverage) {
+        self.init(
+            knowledgeRepoCount: coverage.knowledgeRepoCount,
+            indexedRepoCount: coverage.indexedRepoCount,
+            totalChunks: coverage.totalChunks,
+            readyChunks: coverage.readyChunks,
+            pendingChunks: coverage.pendingChunks,
+            failedChunks: coverage.failedChunks,
+            staleChunks: coverage.staleChunks
+        )
+    }
+
+    private init(
+        knowledgeRepoCount: Int,
+        indexedRepoCount: Int,
+        totalChunks: Int,
+        readyChunks: Int,
+        pendingChunks: Int,
+        failedChunks: Int,
+        staleChunks: Int
+    ) {
+        self.knowledgeRepoCount = knowledgeRepoCount
+        self.indexedRepoCount = indexedRepoCount
+        self.totalChunks = totalChunks
+        self.readyChunks = readyChunks
+        self.pendingChunks = pendingChunks
+        self.failedChunks = failedChunks
+        self.staleChunks = staleChunks
+    }
+
+    var isKnowledgeBaseEmpty: Bool { knowledgeRepoCount == 0 }
+    var fraction: Double {
+        guard totalChunks > 0 else { return 0 }
+        return Double(readyChunks) / Double(totalChunks)
+    }
+    var issueChunkCount: Int { pendingChunks + failedChunks + staleChunks }
+}
+
 struct RAGKeywordHit: Equatable, Sendable {
     var chunk: RAGChunk
     /// SQLite bm25 越小越相关；Provider 会统一转换成越大越好的分数。

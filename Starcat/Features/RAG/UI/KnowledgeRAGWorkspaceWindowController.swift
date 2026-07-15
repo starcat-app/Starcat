@@ -231,7 +231,8 @@ private final class KnowledgeRAGBrowserViewModel {
     /// 浏览器的分片读取与工作台会话读取一样需要防止旧请求覆盖新选择。
     private let repositorySelectionGate = RAGLatestRequestGate()
 
-    var coverage = RAGIndexCoverage(knowledgeRepoCount: 0, indexedRepoCount: 0, totalChunks: 0, readyChunks: 0, pendingChunks: 0, failedChunks: 0, staleChunks: 0)
+    /// 浏览器只复用索引状态纯值投影，仓库选择、分页和召回测试仍保持独立状态机。
+    var indexStatus = RAGIndexStatusProjection.empty
     var candidates: [RAGRepoCandidate] = []
     var indexes: [Int64: RAGKnowledgeRepositoryIndex] = [:]
     var selectedRepoID: Int64?
@@ -480,7 +481,7 @@ private final class KnowledgeRAGBrowserViewModel {
     private func refreshIndexStatistics() async throws {
         async let loadedCoverage = dependencies.ragChunkRepository.coverage(model: embeddingModel)
         async let loadedIndexes = dependencies.ragChunkRepository.knowledgeRepositoryIndexes(model: embeddingModel)
-        coverage = try await loadedCoverage
+        indexStatus = RAGIndexStatusProjection(coverage: try await loadedCoverage)
         indexes = Dictionary(uniqueKeysWithValues: try await loadedIndexes.map { ($0.repoID, $0) })
     }
 
@@ -762,12 +763,12 @@ private struct KnowledgeRAGBrowserView: View {
             Text("rag.browser.title")
                 .font(.headline)
             Spacer(minLength: 8)
-            Text("\(viewModel.coverage.indexedRepoCount)/\(viewModel.coverage.knowledgeRepoCount)")
+            Text("\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
             HStack(spacing: 4) {
                 Circle().fill(.green).frame(width: 7, height: 7)
-                Text("\(viewModel.coverage.readyChunks)")
+                Text("\(viewModel.indexStatus.readyChunks)")
                     .font(.caption.weight(.semibold).monospacedDigit())
             }
         }
@@ -845,11 +846,11 @@ private struct KnowledgeRAGBrowserView: View {
                 alignment: .leading,
                 spacing: 8
             ) {
-                overviewStat("rag.workspace.status.repos", value: "\(viewModel.coverage.indexedRepoCount)/\(viewModel.coverage.knowledgeRepoCount)", color: .blue)
-                overviewStat("rag.workspace.status.readyChunks", value: "\(viewModel.coverage.readyChunks)", color: .green)
-                overviewStat("rag.workspace.status.pendingChunks", value: "\(viewModel.coverage.pendingChunks)", color: .orange)
-                overviewStat("rag.workspace.status.failedChunks", value: "\(viewModel.coverage.failedChunks)", color: .red)
-                overviewStat("rag.workspace.status.staleChunks", value: "\(viewModel.coverage.staleChunks)", color: .purple)
+                overviewStat("rag.workspace.status.repos", value: "\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)", color: .blue)
+                overviewStat("rag.workspace.status.readyChunks", value: "\(viewModel.indexStatus.readyChunks)", color: .green)
+                overviewStat("rag.workspace.status.pendingChunks", value: "\(viewModel.indexStatus.pendingChunks)", color: .orange)
+                overviewStat("rag.workspace.status.failedChunks", value: "\(viewModel.indexStatus.failedChunks)", color: .red)
+                overviewStat("rag.workspace.status.staleChunks", value: "\(viewModel.indexStatus.staleChunks)", color: .purple)
             }
         }
     }

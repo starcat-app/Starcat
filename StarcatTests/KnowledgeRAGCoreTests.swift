@@ -13,6 +13,30 @@ import Testing
 
 @Suite("Knowledge RAG Core")
 struct KnowledgeRAGCoreTests {
+    @Test("索引状态读模型统一空态、覆盖率与问题计数")
+    func indexStatusProjectionMapsCoverage() {
+        #expect(RAGIndexStatusProjection.empty.isKnowledgeBaseEmpty)
+        #expect(RAGIndexStatusProjection.empty.fraction == 0)
+
+        let projection = RAGIndexStatusProjection(coverage: RAGIndexCoverage(
+            knowledgeRepoCount: 4,
+            indexedRepoCount: 3,
+            totalChunks: 20,
+            readyChunks: 15,
+            pendingChunks: 2,
+            failedChunks: 1,
+            staleChunks: 2
+        ))
+
+        #expect(!projection.isKnowledgeBaseEmpty)
+        #expect(projection.indexedRepoCount == 3)
+        #expect(projection.fraction == 0.75)
+        #expect(projection.issueChunkCount == 5)
+        #expect(projection.pendingChunks == 2)
+        #expect(projection.failedChunks == 1)
+        #expect(projection.staleChunks == 2)
+    }
+
     @Test("单 source 重建只读取对应数据")
     func sourceAwareReadPlan() {
         let readme = RAGSourceReadPlan(sources: [.readme])
