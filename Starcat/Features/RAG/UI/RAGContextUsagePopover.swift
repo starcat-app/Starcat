@@ -21,10 +21,10 @@ struct RAGContextUsageButton: View {
             //（浅色黑 / 深色白），避免固定蓝色在某一主题下抢视觉或对比不足。
             ZStack {
                 Circle()
-                    .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+                    .stroke(Color.secondary.opacity(0.3), lineWidth: 3)
                 Circle()
                     .trim(from: 0, to: usage.usageRatio)
-                    .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .stroke(Color.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
             .frame(width: 11, height: 11)

@@ -817,7 +817,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 用户手动重命名：立刻写库并刷新列表；若自动标题仍在生成则取消，避免覆盖。
+    /// 用户手动重命名：立刻写库但保持当前顺序；若自动标题仍在生成则取消，避免覆盖。
     func renameConversation(id: UUID, title: String) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -826,7 +826,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             try await conversationStore.renameConversation(id: id, title: trimmed)
             conversationPresentationCache.remove(id)
             updateConversationTitle(title: trimmed, for: id)
-            // 列表按 updated_at 排序；重命名后刷新顺序，避免停留在旧位置。
+            // 重命名不改变 updated_at / pinned_at；回读只同步规范化标题与权威状态，顺序必须保持不变。
             conversations = try await conversationStore.listConversations()
         } catch {
             errorMessage = error.localizedDescription

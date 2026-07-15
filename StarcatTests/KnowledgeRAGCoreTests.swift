@@ -2063,6 +2063,123 @@ struct KnowledgeRAGCoreTests {
         #expect(cancelledDetail.summary.title == generatedTitle)
     }
 
+    @Test("Pin/Unpin 持久化置顶时间、保持原分组，并按最后置顶时间排序")
+    func conversationPinRoundTripKeepsPlacementAndOrdering() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let group = try await store.createGroup(title: "重要会话")
+        let first = try await store.createConversation(title: "first", groupID: group.id)
+        let second = try await store.createConversation(title: "second")
+        _ = try await store.createConversation(title: "third")
+
+        try await store.setConversationPinned(id: first.id, isPinned: true)
+        try await store.setConversationPinned(id: second.id, isPinned: true)
+
+        let pinnedFirst = try #require(try await store.loadConversation(id: first.id))
+        let pinnedSecond = try #require(try await store.loadConversation(id: second.id))
+        #expect(pinnedFirst.summary.isPinned)
+        #expect(pinnedFirst.summary.pinnedAt != nil)
+        #expect(pinnedSecond.summary.isPinned)
+        #expect(pinnedSecond.summary.pinnedAt != nil)
+
+        // 使用固定时间验证 SQL 顺序，避免测试依赖两次 Date() 调用的实际时间间隔。
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET pinned_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T10:00:00.000Z", first.id.uuidString]
+            )
+            try db.execute(
+                sql: "UPDATE rag_conversations SET pinned_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T11:00:00.000Z", second.id.uuidString]
+            )
+        }
+
+        let ordered = try await store.listConversations()
+        #expect(Array(ordered.prefix(2).map(\.id)) == [second.id, first.id])
+
+        try await store.setConversationPinned(id: first.id, isPinned: false)
+        let unpinnedFirst = try #require(try await store.loadConversation(id: first.id))
+        #expect(!unpinnedFirst.summary.isPinned)
+        #expect(unpinnedFirst.summary.pinnedAt == nil)
+        #expect(unpinnedFirst.summary.groupID == group.id)
+    }
+
+    @Test("重命名只改标题，不改变普通区或置顶区顺序")
+    func conversationRenameKeepsActivityAndPinOrdering() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let first = try await store.createConversation(title: "first")
+        let second = try await store.createConversation(title: "second")
+
+        // 固定最近活跃时间，直接验证重命名不会篡改排序键。
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T10:00:00.000Z", first.id.uuidString]
+            )
+            try db.execute(
+                sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T11:00:00.000Z", second.id.uuidString]
+            )
+        }
+
+        let unpinnedOrderBeforeRename = try await store.listConversations().map(\.id)
+        let firstBeforeRename = try #require(try await store.loadConversation(id: first.id))
+        try await store.renameConversation(id: first.id, title: "renamed")
+        let unpinnedOrderAfterRename = try await store.listConversations().map(\.id)
+        let firstAfterRename = try #require(try await store.loadConversation(id: first.id))
+
+        #expect(unpinnedOrderBeforeRename == [second.id, first.id])
+        #expect(unpinnedOrderAfterRename == unpinnedOrderBeforeRename)
+        #expect(firstAfterRename.summary.title == "renamed")
+        #expect(firstAfterRename.summary.updatedAt == firstBeforeRename.summary.updatedAt)
+
+        try await store.setConversationPinned(id: first.id, isPinned: true)
+        try await store.setConversationPinned(id: second.id, isPinned: true)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET pinned_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T10:00:00.000Z", first.id.uuidString]
+            )
+            try db.execute(
+                sql: "UPDATE rag_conversations SET pinned_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T11:00:00.000Z", second.id.uuidString]
+            )
+        }
+
+        let pinnedOrderBeforeRename = try await store.listConversations().map(\.id)
+        let pinnedFirstBeforeRename = try #require(try await store.loadConversation(id: first.id))
+        try await store.renameConversation(id: first.id, title: "renamed again")
+        let pinnedOrderAfterRename = try await store.listConversations().map(\.id)
+        let pinnedFirstAfterRename = try #require(try await store.loadConversation(id: first.id))
+
+        #expect(pinnedOrderBeforeRename == [second.id, first.id])
+        #expect(pinnedOrderAfterRename == pinnedOrderBeforeRename)
+        #expect(pinnedFirstAfterRename.summary.updatedAt == pinnedFirstBeforeRename.summary.updatedAt)
+        #expect(pinnedFirstAfterRename.summary.pinnedAt == pinnedFirstBeforeRename.summary.pinnedAt)
+    }
+
+    @Test("会话跨置顶区与原位置迁移时必须更换 SwiftUI 行身份")
+    func conversationRailIdentityIncludesPlacement() {
+        let conversation = RAGConversationSummary(
+            id: UUID(),
+            title: "identity",
+            isPinned: false,
+            pinnedAt: nil,
+            groupID: nil,
+            createdAt: "2026-07-15T10:00:00.000Z",
+            updatedAt: "2026-07-15T10:00:00.000Z"
+        )
+        let groupID = UUID()
+        let pinned = RAGConversationRailRowEntry.rows(from: [conversation], placement: .pinned)
+        let ungrouped = RAGConversationRailRowEntry.rows(from: [conversation], placement: .ungrouped)
+        let grouped = RAGConversationRailRowEntry.rows(from: [conversation], placement: .group(groupID))
+
+        #expect(pinned[0].id != ungrouped[0].id)
+        #expect(pinned[0].id != grouped[0].id)
+        #expect(ungrouped[0].id != grouped[0].id)
+    }
+
     @Test("会话语义摘要持久化，并只替代 recent window 外的历史")
     func conversationContextSummaryPersistsAndBuildsHistory() async throws {
         let database = try InMemoryDatabaseManager()

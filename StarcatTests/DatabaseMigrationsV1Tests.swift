@@ -53,7 +53,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("RAG v7/v8/v9 应在已应用迁移列表中，并带上最终会话与推荐问题列")
+    @Test("RAG v7-v10 应在已应用迁移列表中，并带上最终会话与推荐问题列")
     func knowledgeRAGMigrationSealed() throws {
         let db = try makeDB()
         try db.read { db in
@@ -139,6 +139,8 @@ struct DatabaseMigrationsV1Tests {
 
             let conversationColumns = try db.columns(in: "rag_conversations").map(\.name)
             #expect(conversationColumns.contains("is_pinned"))
+            // `pinned_at` 属于 v10，v7 的封存 schema helper 不得旁路补入未来版本字段。
+            #expect(!conversationColumns.contains("pinned_at"))
             #expect(conversationColumns.contains("group_id"))
             #expect(conversationColumns.contains("context_summary"))
             #expect(conversationColumns.contains("context_summary_message_count"))

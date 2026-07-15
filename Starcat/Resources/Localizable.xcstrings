@@ -20433,13 +20433,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kept"
+            "value": "UnStar"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "保留"
+            "value": "未 Star"
           }
         }
       }
@@ -20471,7 +20471,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "星标"
+            "value": "已 Star"
           }
         }
       }
@@ -58419,7 +58419,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activity (30d)"
+            "value": "Last 30 days"
           }
         },
         "zh-Hans": {
@@ -58527,7 +58527,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Added (30d)"
+            "value": "Added · 30d"
           }
         },
         "zh-Hans": {
@@ -58543,7 +58543,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pushed (30d)"
+            "value": "Pushed · 30d"
           }
         },
         "zh-Hans": {
@@ -58608,14 +58608,14 @@
     "rag.workspace.inspector.metadata.notesEdited30d": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Notes edited (30d)" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Notes · 30d" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天笔记" } }
       }
     },
     "rag.workspace.inspector.metadata.summariesGenerated30d": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Summaries generated (30d)" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Summaries · 30d" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天摘要" } }
       }
     },

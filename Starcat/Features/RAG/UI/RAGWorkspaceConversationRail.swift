@@ -8,6 +8,44 @@
 import AppKit
 import SwiftUI
 
+/// 侧栏会话行的展示条目。
+///
+/// 同一会话会在「置顶区 / 原分组 / 未分组」之间迁移。若 `ForEach` 只使用会话 UUID，
+/// `LazyVStack` 可能复用迁移前的缓存行，继续显示旧图标和旧位置；因此身份必须包含 placement。
+struct RAGConversationRailRowEntry: Identifiable {
+    enum Placement: Hashable {
+        case pinned
+        case ungrouped
+        case group(UUID)
+    }
+
+    struct ID: Hashable {
+        let conversationID: UUID
+        let placement: Placement
+    }
+
+    let conversation: RAGConversationSummary
+    let rowIndex: Int
+    let placement: Placement
+
+    var id: ID {
+        ID(conversationID: conversation.id, placement: placement)
+    }
+
+    static func rows(
+        from conversations: [RAGConversationSummary],
+        placement: Placement
+    ) -> [RAGConversationRailRowEntry] {
+        conversations.enumerated().map { index, conversation in
+            RAGConversationRailRowEntry(
+                conversation: conversation,
+                rowIndex: index,
+                placement: placement
+            )
+        }
+    }
+}
+
 struct RAGWorkspaceConversationRail: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -104,16 +142,22 @@ struct RAGWorkspaceConversationRail: View {
                     }
 
                     // 置顶会话直接顶到列表最前，不单独做「置顶」分组标题；靠 pin 图标区分即可。
-                    ForEach(Array(viewModel.pinnedConversations.enumerated()), id: \.element.id) { index, conversation in
-                        conversationRow(conversation, rowIndex: index)
+                    ForEach(RAGConversationRailRowEntry.rows(
+                        from: viewModel.pinnedConversations,
+                        placement: .pinned
+                    )) { entry in
+                        conversationRow(entry.conversation, rowIndex: entry.rowIndex)
                     }
 
                     ForEach(viewModel.conversationGroups) { group in
                         groupSection(group)
                     }
 
-                    ForEach(Array(viewModel.unpinnedConversations(inGroupID: nil).enumerated()), id: \.element.id) { index, conversation in
-                        conversationRow(conversation, rowIndex: index)
+                    ForEach(RAGConversationRailRowEntry.rows(
+                        from: viewModel.unpinnedConversations(inGroupID: nil),
+                        placement: .ungrouped
+                    )) { entry in
+                        conversationRow(entry.conversation, rowIndex: entry.rowIndex)
                     }
                 }
                 .padding(.bottom, 12)
@@ -263,8 +307,11 @@ struct RAGWorkspaceConversationRail: View {
             }
 
             if isExpanded {
-                ForEach(Array(viewModel.unpinnedConversations(inGroupID: group.id).enumerated()), id: \.element.id) { index, conversation in
-                    conversationRow(conversation, rowIndex: index)
+                ForEach(RAGConversationRailRowEntry.rows(
+                    from: viewModel.unpinnedConversations(inGroupID: group.id),
+                    placement: .group(group.id)
+                )) { entry in
+                    conversationRow(entry.conversation, rowIndex: entry.rowIndex)
                         .padding(.leading, 14)
                         // 子会话随分组高度一起淡入淡出，避免硬切。
                         .transition(.opacity.combined(with: .move(edge: .top)))

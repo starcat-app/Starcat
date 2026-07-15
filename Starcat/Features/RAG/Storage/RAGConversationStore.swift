@@ -103,6 +103,7 @@ protocol RAGConversationStoring: Sendable {
     ) async throws
     /// 删除单条消息（编辑后重发前清掉「仅用户、无回答」的孤儿消息）。
     func deleteMessage(id: UUID) async throws
+    /// 重命名只更新标题，不改变 `updated_at`，避免把元数据编辑误判为会话活跃。
     func renameConversation(id: UUID, title: String) async throws
     /// 置顶 / 取消置顶；写 `pinned_at`（最后置顶时刻），不更新 `updated_at`，避免打乱「最近活跃」排序。
     func setConversationPinned(id: UUID, isPinned: Bool) async throws
@@ -401,8 +402,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
     func renameConversation(id: UUID, title: String) async throws {
         try await database.writer.write { db in
             try db.execute(
-                sql: "UPDATE rag_conversations SET title = ?, updated_at = ? WHERE id = ?",
-                arguments: [normalizedTitle(title), ISO8601DateFormatter.shared.string(from: Date()), id.uuidString]
+                sql: "UPDATE rag_conversations SET title = ? WHERE id = ?",
+                arguments: [normalizedTitle(title), id.uuidString]
             )
         }
     }

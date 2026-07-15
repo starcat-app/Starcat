@@ -1447,8 +1447,6 @@ enum DatabaseMigrations {
             t.column("scope", .text).notNull().defaults(to: "knowledge")
             // 置顶排在列表最前；不改 updated_at，避免置顶本身影响「最近活跃」语义。
             t.column("is_pinned", .boolean).notNull().defaults(to: false)
-            // 最后置顶时刻；置顶区按此 DESC，取消置顶后置 NULL。
-            t.column("pinned_at", .text)
             // 一级分组：NULL = 未分组；删除分组时会话回到未分组（ON DELETE SET NULL）。
             t.column("group_id", .text)
                 .references("rag_conversation_groups", column: "id", onDelete: .setNull)
@@ -1464,11 +1462,6 @@ enum DatabaseMigrations {
             index: "idx_rag_conversations_pinned_updated",
             on: "rag_conversations",
             columns: ["is_pinned", "updated_at"]
-        )
-        try db.create(
-            index: "idx_rag_conversations_pinned_at",
-            on: "rag_conversations",
-            columns: ["is_pinned", "pinned_at"]
         )
         try db.create(
             index: "idx_rag_conversations_group_updated",
@@ -1630,7 +1623,6 @@ enum DatabaseMigrations {
                 )
             }
             try ensureRAGConversationGroupsSchema(db)
-            try ensureRAGConversationPinnedAtSchema(db)
         }
     }
 
