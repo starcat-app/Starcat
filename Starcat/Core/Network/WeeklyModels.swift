@@ -576,6 +576,12 @@ struct WeeklyFeedItem: Identifiable, Equatable, Sendable {
         if let date = discovery?.publishedAt.shortMonthDayString {
             return date
         }
+        if let entry = sourceEntries.max(by: { $0.occurredAt < $1.occurredAt }) {
+            if let rank = entry.rank {
+                return "#\(rank)"
+            }
+            return entry.occurredAt.shortMonthDayString
+        }
         return nil
     }
 

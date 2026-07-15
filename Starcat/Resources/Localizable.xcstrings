@@ -56182,6 +56182,23 @@
         }
       }
     },
+    "weekly.sourceEvents.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source history"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源记录"
+          }
+        }
+      }
+    },
     "weekly.source.aiIntelligence": {
       "extractionState": "manual",
       "localizations": {

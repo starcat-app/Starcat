@@ -195,6 +195,8 @@ struct WeeklyDTOTests {
         #expect(event.sourceURL?.absoluteString == "https://hellogithub.com/periodical/volume/123")
         #expect(event.summary == "HelloGitHub 月刊推荐")
         #expect(event.rank == 4)
+        #expect(event.presentationTitle == "一个开源项目")
+        #expect(event.presentationDate == "2026-07-16")
     }
 }
 

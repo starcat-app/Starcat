@@ -65,3 +65,14 @@ extension WeeklySourceDescriptor {
         WeeklySourcePresentation.localizedServerTitle(chinese: displayNameZH, english: displayNameEN)
     }
 }
+
+extension WeeklySourceEvent {
+    var presentationTitle: String {
+        let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? source.presentation.displayName : normalized
+    }
+
+    var presentationDate: String {
+        String(occurredAt.prefix(10))
+    }
+}
