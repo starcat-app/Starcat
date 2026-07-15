@@ -35347,6 +35347,23 @@
         }
       }
     },
+    "settings.ai.privacy.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私"
+          }
+        }
+      }
+    },
     "settings.ai.privacy.notice": {
       "extractionState": "manual",
       "localizations": {

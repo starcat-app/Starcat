@@ -14,6 +14,8 @@ struct IntegrationSettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    /// Foundation date formatter 默认跟系统 locale；必须注入 App 语言，否则英文 UI 下仍可能显示「2026年7月10日」。
+    @Environment(\.locale) private var locale
     /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
     @State private var storage = CodeFlowStorage.shared
     @State private var codebaseMemoryStorage = CodebaseMemoryStorage.shared
@@ -87,7 +89,10 @@ struct IntegrationSettingsTab: View {
                         value: String(format: String.l10n("settings.integration.codeFlow.stat.totalGeneratedFormat"), storage.totalGenerationCount)
                     )
                     if let date = storage.latestGeneratedAt {
-                        stat(titleKey: "settings.integration.codeFlow.stat.lastGenerated", value: date.formatted(date: .abbreviated, time: .shortened))
+                        stat(
+                            titleKey: "settings.integration.codeFlow.stat.lastGenerated",
+                            value: date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
+                        )
                     }
                     Spacer()
                 }
@@ -144,7 +149,10 @@ struct IntegrationSettingsTab: View {
                         value: String(format: String.l10n("settings.integration.codeFlow.stat.totalGeneratedFormat"), codebaseMemoryStorage.totalGenerationCount)
                     )
                     if let date = codebaseMemoryStorage.latestGeneratedAt {
-                        stat(titleKey: "settings.integration.codeFlow.stat.lastGenerated", value: date.formatted(date: .abbreviated, time: .shortened))
+                        stat(
+                            titleKey: "settings.integration.codeFlow.stat.lastGenerated",
+                            value: date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
+                        )
                     }
                     Spacer()
                 }

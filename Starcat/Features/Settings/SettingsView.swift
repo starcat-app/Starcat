@@ -656,15 +656,17 @@ private struct InterestedLanguagesSettingsSection: View {
     }
 
     private var addLanguageIcon: some View {
+        // 对齐集成页 `tokenActionIcon` 的标准小工具图标规格：13pt / 24×22 / 圆角 6，
+        // 避免这个 + 比设置页其它图标按钮更抢眼。
         Image(systemName: "plus")
-            .font(.system(size: 15, weight: .medium))
+            .font(.system(size: 13, weight: .medium))
             .foregroundStyle(Color.secondary)
-            .frame(width: 36, height: 28)
+            .frame(width: 24, height: 22)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.secondary.opacity(isHoveringAddLanguage ? 0.14 : 0.10))
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private var languagePickerPopover: some View {
