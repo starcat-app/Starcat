@@ -406,7 +406,12 @@ extension WeeklyFeedItem {
             badge: badge,
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,
-            inlineMetadata: nil,
+            inlineMetadata: isPinned
+                ? RepoCardInlineMetadata(
+                    systemImage: "pin.fill",
+                    text: String.l10n("weekly.pin.badge")
+                )
+                : nil,
             footerMetadata: nil,
             readStatus: nil,
             openSSFScore: openSSFScore,

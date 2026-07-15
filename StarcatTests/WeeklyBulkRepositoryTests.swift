@@ -542,6 +542,40 @@ struct WeeklyBulkRepositoryTests {
     }
 
     @MainActor
+    @Test("WeeklyContentViewModel: 来源目录动态提供 HelloGitHub 与 AI 情报筛选")
+    func dynamicSourceCatalogFiltersNewChannels() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/hello", "Go", 300, "2026-06-15T10:00:00Z"),
+                    ("owner/ai", "Swift", 200, "2026-06-15T11:00:00Z")
+                ],
+                sourcesByFullName: [
+                    "owner/hello": ["hellogithub"],
+                    "owner/ai": ["ai_intelligence"]
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let viewModel = WeeklyContentViewModel(
+            api: api,
+            languageStore: WeeklyLanguageStore(api: api),
+            bulkRepository: repo
+        )
+
+        await viewModel.loadInitialIfNeeded()
+        #expect(viewModel.availableSourceFilters.map(\.id) == ["all", "weekly", "hellogithub", "ai_intelligence"])
+        viewModel.changeSource(to: .helloGitHub)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(viewModel.items.map(\.fullName) == ["owner/hello"])
+        viewModel.changeSource(to: .aiIntelligence)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(viewModel.items.map(\.fullName) == ["owner/ai"])
+    }
+
+    @MainActor
     @Test("WeeklySelectionService: total 与 selected item 独立维护")
     func selectionServiceKeepsTotalWhenSelectionClears() async throws {
         let (repo, _) = try makeRepository { request in

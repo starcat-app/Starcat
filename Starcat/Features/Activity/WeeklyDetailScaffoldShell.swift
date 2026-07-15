@@ -175,6 +175,9 @@ struct WeeklyDetailScaffoldShell: View {
     }
 
     private func sourceURL(for item: WeeklyFeedItem) -> URL? {
+        if let url = item.sourceEntries.first(where: { $0.sourceURL != nil })?.sourceURL {
+            return url
+        }
         if let url = item.weekly?.issueURL {
             return url
         }

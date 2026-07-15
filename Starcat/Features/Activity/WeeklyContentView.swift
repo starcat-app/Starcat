@@ -224,7 +224,7 @@ struct WeeklyContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 weeklyFilterSection("weekly.filter.source") {
-                    ForEach(WeeklySourceFilter.defaultFilters) { source in
+                    ForEach(viewModel.availableSourceFilters) { source in
                         weeklyFilterRow(
                             title: source.localizedTitle,
                             isSelected: source == viewModel.selectedSource
@@ -815,6 +815,15 @@ final class WeeklyContentViewModel {
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
     private(set) var selectedSort: WeeklyFeedSort = .defaultOrder
     private(set) var selectedLanguage: String = ""
+    /// bulk v2 返回并持久化的固定来源目录；UI 筛选不再枚举硬编码渠道。
+    private(set) var sourceDescriptors: [WeeklySourceDescriptor] = []
+
+    var availableSourceFilters: [WeeklySourceFilter] {
+        guard !sourceDescriptors.isEmpty else { return WeeklySourceFilter.defaultFilters }
+        return [.all] + sourceDescriptors
+            .sorted { $0.sortOrder < $1.sortOrder }
+            .map(WeeklySourceFilter.init(descriptor:))
+    }
 
     var filterSummaryTitle: String {
         guard activeFilterCount > 0 else {
@@ -1196,6 +1205,7 @@ final class WeeklyContentViewModel {
     /// `bumpRevision`：reload 路径要刷新入场动画；首次入场不刷（避免列表上来就抖一次）。
     private func applyLocalSnapshot(_ snapshot: WeeklyBulkCachedSnapshot, bumpRevision: Bool) {
         bulkAllItems = snapshot.items
+        sourceDescriptors = snapshot.sources
         lastBulkFetchedAt = snapshot.lastFetchedAt
         dataSource = .local
         usesPagedCache = false
@@ -1210,6 +1220,7 @@ final class WeeklyContentViewModel {
         bumpRevision: Bool
     ) {
         lastBulkFetchedAt = snapshot.lastFetchedAt
+        sourceDescriptors = snapshot.sources
         dataSource = .local
         usesPagedCache = true
         loadError = nil
@@ -1331,6 +1342,7 @@ final class WeeklyContentViewModel {
         switch sort {
         case .defaultOrder:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 if lhs.latestEventAt != rhs.latestEventAt {
                     return lhs.latestEventAt > rhs.latestEventAt
                 }
@@ -1338,6 +1350,7 @@ final class WeeklyContentViewModel {
             }
         case .starsDesc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 if lhs.stars != rhs.stars {
                     return lhs.stars > rhs.stars
                 }
@@ -1345,6 +1358,7 @@ final class WeeklyContentViewModel {
             }
         case .starsAsc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 if lhs.stars != rhs.stars {
                     return lhs.stars < rhs.stars
                 }
@@ -1352,6 +1366,7 @@ final class WeeklyContentViewModel {
             }
         case .updatedDesc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 let l = lhs.card.updatedAt ?? ""
                 let r = rhs.card.updatedAt ?? ""
                 if l != r { return l > r }
@@ -1359,6 +1374,7 @@ final class WeeklyContentViewModel {
             }
         case .updatedAsc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 let l = lhs.card.updatedAt ?? "\u{FFFD}"
                 let r = rhs.card.updatedAt ?? "\u{FFFD}"
                 if l != r { return l < r }
@@ -1366,6 +1382,7 @@ final class WeeklyContentViewModel {
             }
         case .createdDesc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 let l = lhs.card.createdAt ?? ""
                 let r = rhs.card.createdAt ?? ""
                 if l != r { return l > r }
@@ -1373,6 +1390,7 @@ final class WeeklyContentViewModel {
             }
         case .createdAsc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 let l = lhs.card.createdAt ?? "\u{FFFD}"
                 let r = rhs.card.createdAt ?? "\u{FFFD}"
                 if l != r { return l < r }
@@ -1380,17 +1398,30 @@ final class WeeklyContentViewModel {
             }
         case .nameAsc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 let compare = lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName)
                 if compare != .orderedSame { return compare == .orderedAscending }
                 return lhs.ghRepoId > rhs.ghRepoId
             }
         case .nameDesc:
             return { lhs, rhs in
+                if let pinned = comparePins(lhs, rhs) { return pinned }
                 let compare = lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName)
                 if compare != .orderedSame { return compare == .orderedDescending }
                 return lhs.ghRepoId > rhs.ghRepoId
             }
         }
+    }
+
+    /// 返回 nil 表示两项都未置顶，应继续执行用户选择的普通排序。
+    /// 多个置顶项目严格按服务端 pin_position 排列，不受 Stars / 名称排序影响。
+    private static func comparePins(_ lhs: WeeklyFeedItem, _ rhs: WeeklyFeedItem) -> Bool? {
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+        guard lhs.isPinned, rhs.isPinned else { return nil }
+        let leftPosition = lhs.pinPosition ?? Int.max
+        let rightPosition = rhs.pinPosition ?? Int.max
+        if leftPosition != rightPosition { return leftPosition < rightPosition }
+        return lhs.ghRepoId > rhs.ghRepoId
     }
 
     // MARK: - Private
