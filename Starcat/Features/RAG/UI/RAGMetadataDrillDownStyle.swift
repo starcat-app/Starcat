@@ -26,7 +26,15 @@ private struct MetadataDrillDownChrome: ViewModifier {
     let isHovered: Bool
     let variant: MetadataDrillDownVariant
     /// 非 nil 时启用斑马纹底（Star Top10 等整行列表）；hover 仍走 accent 高亮。
-    let rowIndex: Int? = nil
+    let rowIndex: Int?
+
+    /// 显式保留 `rowIndex` 的默认值：`let` 属性自带初值时不会进入合成的 memberwise initializer，
+    /// 整行下钻因此无法传入行号；普通数值按钮仍可省略该参数。
+    init(isHovered: Bool, variant: MetadataDrillDownVariant, rowIndex: Int? = nil) {
+        self.isHovered = isHovered
+        self.variant = variant
+        self.rowIndex = rowIndex
+    }
 
     private var fillOpacity: Double {
         switch variant {

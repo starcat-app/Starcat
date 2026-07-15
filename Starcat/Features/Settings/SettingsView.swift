@@ -160,7 +160,7 @@ struct SettingsView: View {
         @Bindable var localeStore = localeStore
 
         return Form {
-            Section("settings.general.appearance") {
+            Section {
                 // W4-5 D1:主题切换(dong4j 2026-06-03 需求,默认 .dark)。
                 // 用 Label + segmented 让 3 个选项的图标可见(circle.lefthalf / sun.max / moon.fill),
                 // 跟 macOS "系统设置 → 外观" 的视觉语言一致,降低用户认知成本。
@@ -214,6 +214,8 @@ struct SettingsView: View {
                 // R-01 §3.1.1（2026-06-10 P1）：列表密度 Picker 已彻底移除——
                 // RepoListDensity 枚举本身也已删除（之前为保签名稳定保留单 case
                 // 是「自留技术债」，现在所有 row / skeleton 视图直接用 card 密度）。
+            } header: {
+                SettingsSectionHeader("settings.general.appearance", systemImage: "paintbrush.fill")
             }
 
             // 2026-06-15 dong4j 需求：用户面向的语言切换。
@@ -234,7 +236,7 @@ struct SettingsView: View {
             //    一次性加载，**不**会跟随 environment 切换刷新。如果用户期望连
             //    菜单栏一起切，必须重启 App（说明文字里已提示）。
             // 5. 放在「外观」后作为第二分组：显示语言与主题同属启动即感知的界面偏好。
-            Section("settings.general.language") {
+            Section {
                 Picker(selection: $localeStore.selection) {
                     ForEach(AppLocale.allCases) { option in
                         Text(option.displayName).tag(option)
@@ -248,6 +250,8 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                SettingsSectionHeader("settings.general.language", systemImage: "globe")
             }
 
             // HOM-SNAKE-MODES 2026-06-05：贡献草坪贪吃蛇玩法。
@@ -256,7 +260,7 @@ struct SettingsView: View {
             // 设计取舍：把贪吃蛇配置放在 General 而非新建 "Sidebar" Tab，是因为
             // 当前 Sidebar 可配置项只有这一个，单独开 Tab 显得空；后续若新增
             // sidebar 偏好（如折叠默认态、密度）再拆分。
-            Section("settings.snakeStyle.section") {
+            Section {
                 Picker(selection: $settings.snakeStyle) {
                     ForEach(SnakeStyle.allCases) { style in
                         Label(LocalizedStringKey(style.displayNameKey),
@@ -271,9 +275,11 @@ struct SettingsView: View {
                 Text("settings.snakeStyle.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                SettingsSectionHeader("settings.snakeStyle.section", systemImage: "arcade.stick.console.fill")
             }
 
-            Section("settings.general.detailBehavior") {
+            Section {
                 Toggle(isOn: $settings.openFirstDetailOnCategoryChange) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.general.openFirstDetailOnCategoryChange.title")
@@ -283,12 +289,14 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            } header: {
+                SettingsSectionHeader("settings.general.detailBehavior", systemImage: "sidebar.left")
             }
 
             InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
 
             // 快捷键偏好集中在 General，都是本机交互习惯，不属于 AI 模型配置。
-            Section("settings.general.shortcuts") {
+            Section {
                 Toggle(isOn: $settings.aiChatRequiresCommandReturn) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.general.shortcuts.aiCommandReturn.title")
@@ -367,12 +375,14 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            } header: {
+                SettingsSectionHeader("settings.general.shortcuts", systemImage: "keyboard")
             }
 
             // 2026-06-20：系统通知策略入口。
             // 通知只用于「用户离开 App 后需要回来处理」的低频事件；普通状态变化继续留在
             // toolbar 状态面板，避免把通知中心变成运行日志。
-            Section("settings.notifications.title") {
+            Section {
                 Toggle(isOn: $settings.notificationsEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.notifications.enabled.title")
@@ -391,6 +401,8 @@ struct SettingsView: View {
                     .disabled(!settings.notificationsEnabled)
                 Toggle("settings.notifications.mcpIssues.title", isOn: $settings.mcpIssueNotificationsEnabled)
                     .disabled(!settings.notificationsEnabled)
+            } header: {
+                SettingsSectionHeader("settings.notifications.title", systemImage: "bell")
             }
 
             // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
@@ -404,7 +416,7 @@ struct SettingsView: View {
             // 上覆盖 `accessibilityReduceMotion` 环境值，全工程 30+ 个已实现
             // reduceMotion 兜底路径的视图自动尊重新偏好（与系统级减少动态
             // 效果走同一套代码路径）。详见 `Shared/Components/AnimationOverrideModifier.swift`。
-            Section("settings.general.accessibility") {
+            Section {
                 Toggle(isOn: $settings.disableAnimations) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.general.disableAnimations.title")
@@ -414,9 +426,11 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            } header: {
+                SettingsSectionHeader("settings.general.accessibility", systemImage: "figure.roll")
             }
 
-            Section("settings.general.macOSIntegration") {
+            Section {
                 Toggle(isOn: $settings.hideDockIcon) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.general.hideDockIcon.title")
@@ -426,6 +440,8 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            } header: {
+                SettingsSectionHeader("settings.general.macOSIntegration", systemImage: "macwindow.on.rectangle")
             }
 
             // Sparkle 自动更新只存在于 Direct 分发；App Store 构建必须整段隐藏，
@@ -434,7 +450,7 @@ struct SettingsView: View {
                 directUpdateSection
             }
 
-            Section("settings.general.other") {
+            Section {
                 HStack {
                     Spacer()
 
@@ -459,6 +475,8 @@ struct SettingsView: View {
                     }
                     .disabled(!FirstRunOnboardingPreferences.canReplayManually)
                 }
+            } header: {
+                SettingsSectionHeader("settings.general.other", systemImage: "ellipsis.circle")
             }
         }
         .formStyle(.grouped)
@@ -492,7 +510,7 @@ struct SettingsView: View {
             ))
             .disabled(!dependencies.directUpdateController.isConfigured || !updateController.automaticallyChecksForUpdates)
         } header: {
-            Text("settings.pro.direct.updates.section")
+            SettingsSectionHeader("settings.pro.direct.updates.section", systemImage: "arrow.triangle.2.circlepath")
         } footer: {
             Text(LocalizedStringKey(dependencies.directUpdateController.isConfigured
                                     ? "settings.pro.direct.updates.footer"
@@ -535,7 +553,7 @@ private struct InterestedLanguagesSettingsSection: View {
     ]
 
     var body: some View {
-        Section("settings.filters.interestedLanguages.section") {
+        Section {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.filters.interestedLanguages.description")
                     .font(.caption)
@@ -578,6 +596,8 @@ private struct InterestedLanguagesSettingsSection: View {
                     FlowTagList(tags: customLanguages, removeAction: removeLanguage)
                 }
             }
+        } header: {
+            SettingsSectionHeader("settings.filters.interestedLanguages.section", systemImage: "chevron.left.forwardslash.chevron.right")
         }
     }
 
@@ -828,7 +848,7 @@ private struct DiagnosticsSettingsTab: View {
         @Bindable var settings = settings
 
         return Form {
-            Section("settings.diagnostics.export.section") {
+            Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center, spacing: 12) {
                         // 导出入口需要和说明文字保持同一行；窗口较窄时优先截断说明，
@@ -867,9 +887,11 @@ private struct DiagnosticsSettingsTab: View {
                             .truncationMode(.middle)
                     }
                 }
+            } header: {
+                SettingsSectionHeader("settings.diagnostics.export.section", systemImage: "square.and.arrow.up")
             }
 
-            Section("settings.diagnostics.telemetry.section") {
+            Section {
                 Toggle(isOn: $settings.telemetryEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.diagnostics.telemetry.enabled.title")
@@ -884,18 +906,17 @@ private struct DiagnosticsSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                SettingsSectionHeader("settings.diagnostics.telemetry.section", systemImage: "chart.bar")
             }
 
-            Section("settings.diagnostics.privacy.section") {
-                Label {
-                    Text("settings.diagnostics.privacy.description")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "lock.shield")
-                        .foregroundStyle(.green)
-                }
+            Section {
+                Text("settings.diagnostics.privacy.description")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                SettingsSectionHeader("settings.diagnostics.privacy.section", systemImage: "lock.shield")
             }
         }
         .formStyle(.grouped)
@@ -1124,7 +1145,7 @@ private struct StorageSettingsTab: View {
                 }
             }
 
-            Section("settings.storage.readmePrefetch.section") {
+            Section {
                 Toggle("settings.storage.readmePrefetch.enabled", isOn: $settings.readmePrefetchEnabled)
                     .disabled(shouldDisableStorageActions)
 
@@ -1145,9 +1166,11 @@ private struct StorageSettingsTab: View {
                 Text("settings.storage.readmePrefetch.help")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                SettingsSectionHeader("settings.storage.readmePrefetch.section", systemImage: "doc.text.magnifyingglass")
             }
 
-            Section("settings.storage.chatHistoryBackend.section") {
+            Section {
                 Picker("settings.storage.chatHistoryBackend.title", selection: $settings.chatHistoryStorageKind) {
                     ForEach(ChatHistoryStorageKind.allCases) { kind in
                         Text(LocalizedStringKey(kind.displayNameKey))
@@ -1166,9 +1189,11 @@ private struct StorageSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            } header: {
+                SettingsSectionHeader("settings.storage.chatHistoryBackend.section", systemImage: "bubble.left.and.bubble.right")
             }
 
-            Section("settings.storage.cacheUsage") {
+            Section {
                 usageRow(
                     titleKey: "settings.storage.readme",
                     usageText: readmeUsageText,
@@ -1267,14 +1292,18 @@ private struct StorageSettingsTab: View {
                     action: .codebaseMemory,
                     revealItem: .codebaseMemory
                 )
+            } header: {
+                SettingsSectionHeader("settings.storage.cacheUsage", systemImage: "internaldrive")
             }
 
             // Undo Star 历史保留设置（2026-07-05）
-            Section("activity.category.undoStar") {
+            Section {
                 UndoStarRetentionSlider(retentionDays: $settings.undoStarRetentionDays)
+            } header: {
+                SettingsSectionHeader("activity.category.undoStar", systemImage: "arrow.uturn.backward.circle")
             }
 
-            Section("settings.storage.dangerZone") {
+            Section {
                 dangerActionBlock(
                     descriptionKey: "settings.storage.clearAll.description",
                     buttonTint: Color(nsColor: .systemYellow),
@@ -1300,6 +1329,8 @@ private struct StorageSettingsTab: View {
                         Label("settings.storage.resetAll", systemImage: "trash")
                     }
                 }
+            } header: {
+                SettingsSectionHeader("settings.storage.dangerZone", systemImage: "exclamationmark.triangle.fill")
             }
 
             if isWorking {

@@ -628,22 +628,14 @@ struct RAGWorkspaceSettingsSheet: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
-            HStack(spacing: interfaceScale.scaled(6)) {
-                // 分类标题旁只放默认色图标，不加色块底，避免设置页过花。
-                Image(systemName: systemImage)
-                    .font(interfaceScale.font(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: interfaceScale.scaled(14))
-                    .accessibilityHidden(true)
-                sectionTitle(titleKey)
-                Spacer(minLength: 0)
-            }
+            // 对齐主设置页 `SettingsSectionHeader`：图标 + 主色标题；字号仍跟 interfaceScale。
+            sectionTitle(titleKey, systemImage: systemImage)
             content()
                 .padding(interfaceScale.scaled(14))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    Color(nsColor: .controlBackgroundColor).opacity(0.48),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    Color(nsColor: .controlBackgroundColor).opacity(0.52),
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                 )
         }
     }
@@ -739,11 +731,18 @@ struct RAGWorkspaceSettingsSheet: View {
         retrievalPreset = RAGRetrievalPreset.matching(settings: buildRetrievalSettings())
     }
 
-    private func sectionTitle(_ key: LocalizedStringKey) -> some View {
-        Text(key)
-            .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
+    /// 与主设置页 `SettingsSectionHeader` 同款：11pt 次色图标 + 主色标题。
+    private func sectionTitle(_ key: LocalizedStringKey, systemImage: String) -> some View {
+        HStack(spacing: interfaceScale.scaled(5)) {
+            Image(systemName: systemImage)
+                .font(interfaceScale.font(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: interfaceScale.scaled(14), height: interfaceScale.scaled(14))
+                .accessibilityHidden(true)
+            Text(key)
+                .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
+                .foregroundStyle(.primary)
+        }
     }
 
     private func settingRow(titleKey: LocalizedStringKey, value: String) -> some View {

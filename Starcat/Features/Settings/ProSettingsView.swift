@@ -310,7 +310,7 @@ struct ProSettingsTab: View {
                 }
             }
         } header: {
-            Text("settings.pro.direct.section")
+            SettingsSectionHeader("settings.pro.direct.section", systemImage: "key.horizontal.fill")
         }
     }
 
@@ -384,7 +384,7 @@ struct ProSettingsTab: View {
                     .foregroundStyle(.green)
             }
         } header: {
-            Text("settings.pro.direct.pass.section")
+            SettingsSectionHeader("settings.pro.direct.pass.section", systemImage: "person.crop.rectangle.stack")
         }
     }
 
@@ -412,7 +412,7 @@ struct ProSettingsTab: View {
                 .disabled(directLicenseManager.isRequestInFlight)
             }
         } header: {
-            Text("settings.pro.direct.cancel.section")
+            SettingsSectionHeader("settings.pro.direct.cancel.section", systemImage: "calendar.badge.minus")
         } footer: {
             Text("settings.pro.direct.cancel.footer")
         }
@@ -460,7 +460,7 @@ struct ProSettingsTab: View {
                 .disabled(directLicenseManager.isRequestInFlight)
             }
         } header: {
-            Text("settings.pro.direct.checkout.section")
+            SettingsSectionHeader("settings.pro.direct.checkout.section", systemImage: "cart")
         } footer: {
             Text("settings.pro.direct.checkout.footer")
         }
@@ -503,7 +503,7 @@ struct ProSettingsTab: View {
                 }
             }
         } header: {
-            Text("settings.pro.products.section")
+            SettingsSectionHeader("settings.pro.products.section", systemImage: "bag")
         } footer: {
             Text("settings.pro.footer")
         }
@@ -537,7 +537,7 @@ struct ProSettingsTab: View {
                 )
             }
         } header: {
-            Text("settings.pro.benefits.section")
+            SettingsSectionHeader("settings.pro.benefits.section", systemImage: "star.fill")
         }
     }
 
@@ -581,7 +581,7 @@ struct ProSettingsTab: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
         } header: {
-            Text("settings.pro.account.section")
+            SettingsSectionHeader("settings.pro.account.section", systemImage: "person.crop.circle")
         } footer: {
             Text("settings.pro.account.footer")
         }

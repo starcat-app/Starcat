@@ -25,7 +25,7 @@ struct MCPSettingsTab: View {
         @Bindable var mcpService = dependencies.mcpService
 
         return Form {
-            Section("settings.mcp.section.service") {
+            Section {
                 Toggle(isOn: Binding(
                     get: { settings.mcpServiceEnabled },
                     set: { enabled in
@@ -56,9 +56,11 @@ struct MCPSettingsTab: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            } header: {
+                SettingsSectionHeader("settings.mcp.section.service", systemImage: "point.3.connected.trianglepath.dotted")
             }
 
-            Section("settings.mcp.section.writes") {
+            Section {
                 Toggle(isOn: $settings.mcpAllowLocalWrites) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.mcp.localWrites.title")
@@ -90,9 +92,11 @@ struct MCPSettingsTab: View {
                     }
                 }
                 .disabled(!settings.mcpAllowLocalWrites)
+            } header: {
+                SettingsSectionHeader("settings.mcp.section.writes", systemImage: "pencil.and.list.clipboard")
             }
 
-            Section("settings.mcp.section.connection") {
+            Section {
                 LabeledContent("settings.mcp.status") {
                     Text(statusText(for: mcpService.state))
                         .foregroundStyle(statusColor(for: mcpService.state))
@@ -125,6 +129,8 @@ struct MCPSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                SettingsSectionHeader("settings.mcp.section.connection", systemImage: "link")
             }
 
             Section {

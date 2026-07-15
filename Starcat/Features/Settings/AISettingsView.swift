@@ -479,7 +479,7 @@ struct AISettingsTab: View {
                 }
             }
         } header: {
-            Text("settings.ai.provider.sectionTitle")
+            SettingsSectionHeader("settings.ai.provider.sectionTitle", systemImage: "server.rack")
         } footer: {
             Text("settings.ai.provider.sectionFooter")
         }
@@ -514,7 +514,7 @@ struct AISettingsTab: View {
                     }
                 }
             } label: {
-                disclosureLabel("settings.ai.discoveredModels.title", isExpanded: $isDiscoveredModelsExpanded)
+                disclosureLabel("settings.ai.discoveredModels.title", systemImage: "list.bullet.rectangle", isExpanded: $isDiscoveredModelsExpanded)
             }
         }
     }
@@ -544,7 +544,7 @@ struct AISettingsTab: View {
                     taskModelRow(taskModelTask)
                 }
             } label: {
-                disclosureLabel("settings.ai.taskModels.title", isExpanded: $isTaskModelsExpanded)
+                disclosureLabel("settings.ai.taskModels.title", systemImage: "slider.horizontal.3", isExpanded: $isTaskModelsExpanded)
             }
         }
     }
@@ -697,13 +697,21 @@ struct AISettingsTab: View {
     ///
     /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点
     /// 标题瞬切、点 chevron 平滑"的不一致体感。
-    private func disclosureLabel(_ titleKey: LocalizedStringKey, isExpanded: Binding<Bool>) -> some View {
+    private func disclosureLabel(
+        _ titleKey: LocalizedStringKey,
+        systemImage: String,
+        isExpanded: Binding<Bool>
+    ) -> some View {
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                 isExpanded.wrappedValue.toggle()
             }
         } label: {
-            HStack {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14, height: 14)
                 Text(titleKey)
                 Spacer(minLength: 0)
             }
@@ -737,7 +745,7 @@ struct AISettingsTab: View {
             DisclosureGroup(isExpanded: $isAutoTidyExpanded) {
                 autoTidyContent
             } label: {
-                disclosureLabel("settings.autoTidy.section", isExpanded: $isAutoTidyExpanded)
+                disclosureLabel("settings.autoTidy.section", systemImage: "wand.and.stars", isExpanded: $isAutoTidyExpanded)
             }
         }
     }
@@ -978,12 +986,11 @@ struct AISettingsTab: View {
     /// - 任务 picker + "恢复默认" 之前同行抢宽度，picker 被挤；改成 picker
     ///   `.labelsHidden().frame(maxWidth: .infinity)` 优先吃满宽度，按钮固定
     ///   尺寸跟在右边；
-    /// - "User Prompt Template" 改名 "User Prompt"，与 "System Prompt" 对齐
-    ///   命名；两个标题用 `.frame(maxWidth: .infinity, alignment: .leading)`
+    /// - 两个标题用 `.frame(maxWidth: .infinity, alignment: .leading)`
     ///   显式左对齐，避免 Form grouped 样式把它居中显示；
-    /// - 两个 TextEditor 改为固定高度（System 100 / User 160），TextEditor 在
-    ///   macOS 上内置垂直滚动，超出高度自动出现滚动条，不再让长 prompt 撑大
-    ///   整个设置面板。
+    /// - 两个 TextEditor 固定高度：System 通常更长，给 180；User 给一半高度 80。
+    ///   TextEditor 在 macOS 上内置垂直滚动，超出高度自动出现滚动条，不再让长
+    ///   prompt 撑大整个设置面板。
     private var promptSection: some View {
         // HOM-126 follow-up (dong4j 反馈 2026-06-07，"Prompt/模型配置/已发现模型 面板间距")：
         // 用 `VStack(spacing: 14)` 显式给开 14pt（与 `taskModelsSection` 同款），
@@ -1010,12 +1017,12 @@ struct AISettingsTab: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("System Prompt")
+                        Text("settings.ai.prompt.system")
                             .font(.caption.weight(.semibold))
                             .frame(maxWidth: .infinity, alignment: .leading)
                         TextEditor(text: promptSystemBinding(promptTask))
                             .font(.system(.caption, design: .monospaced))
-                            .frame(height: 100)
+                            .frame(height: 180)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
@@ -1023,12 +1030,12 @@ struct AISettingsTab: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("User Prompt")
+                        Text("settings.ai.prompt.user")
                             .font(.caption.weight(.semibold))
                             .frame(maxWidth: .infinity, alignment: .leading)
                         TextEditor(text: promptUserBinding(promptTask))
                             .font(.system(.caption, design: .monospaced))
-                            .frame(height: 160)
+                            .frame(height: 80)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
@@ -1041,7 +1048,7 @@ struct AISettingsTab: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } label: {
-                disclosureLabel("settings.ai.prompt.title", isExpanded: $isPromptExpanded)
+                disclosureLabel("settings.ai.prompt.title", systemImage: "text.quote", isExpanded: $isPromptExpanded)
             }
         }
     }
@@ -1085,7 +1092,7 @@ struct AISettingsTab: View {
                 }
                 .padding(.vertical, 4)
             } label: {
-                disclosureLabel("settings.aiIndex.section", isExpanded: $isAIIndexExpanded)
+                disclosureLabel("settings.aiIndex.section", systemImage: "brain.head.profile", isExpanded: $isAIIndexExpanded)
             }
         }
     }
@@ -1148,7 +1155,7 @@ struct AISettingsTab: View {
                 }
                 .padding(.vertical, 4)
             } label: {
-                disclosureLabel("settings.rag.backends.section", isExpanded: $isRAGBackendsExpanded)
+                disclosureLabel("settings.rag.backends.section", systemImage: "magnifyingglass", isExpanded: $isRAGBackendsExpanded)
             }
         }
     }
@@ -1416,7 +1423,7 @@ struct AISettingsTab: View {
             }
             .padding(.vertical, 4)
         } label: {
-            disclosureLabel("settings.aiIndex.advanced", isExpanded: $isAIIndexAdvancedExpanded)
+            disclosureLabel("settings.aiIndex.advanced", systemImage: "slider.horizontal.3", isExpanded: $isAIIndexAdvancedExpanded)
         }
     }
 
@@ -1647,7 +1654,7 @@ struct AISettingsTab: View {
                 }
                 .padding(.vertical, 4)
             } label: {
-                disclosureLabel("ai.context.settings.title", isExpanded: $isRepoContextExpanded)
+                disclosureLabel("ai.context.settings.title", systemImage: "shippingbox.fill", isExpanded: $isRepoContextExpanded)
             }
         }
     }
@@ -1925,14 +1932,11 @@ struct AISettingsTab: View {
 
     private var privacySection: some View {
         Section {
-            Label {
-                Text("settings.ai.privacy.notice")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } icon: {
-                Image(systemName: "lock.shield")
-                    .foregroundStyle(.green)
-            }
+            Text("settings.ai.privacy.notice")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } header: {
+            SettingsSectionHeader("settings.ai.privacy.section", systemImage: "lock.shield")
         }
     }
 

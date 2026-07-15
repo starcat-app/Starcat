@@ -19,6 +19,8 @@ struct RAGWorkspaceInspector: View {
     @State private var expandedDebugEventIDs: Set<UUID> = []
     /// 正在展开 payload 的 event；未完成前禁用再次点击，避免「点两次」先展开后立刻折叠。
     @State private var pendingExpandDebugEventIDs: Set<UUID> = []
+    /// 清空会删除当前会话落盘的 Debug JSON，必须先让用户确认数据范围。
+    @State private var isClearDebugTracesConfirmationPresented = false
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
     @State private var isKnowledgeRepositoryRowHovered = false
@@ -132,6 +134,19 @@ struct RAGWorkspaceInspector: View {
             // 换引用时关掉旧全文，避免 popover 挂在错误分片上。
             isCitationChunkPopoverPresented = false
         }
+        #if DEBUG
+        .alert("rag.workspace.debug.clear.confirm.title", isPresented: $isClearDebugTracesConfirmationPresented) {
+            Button("common.cancel", role: .cancel) {}
+            Button("rag.workspace.debug.clear", role: .destructive) {
+                viewModel.clearDebugTraces()
+                expandedDebugTraceIDs = []
+                expandedDebugEventIDs = []
+                pendingExpandDebugEventIDs = []
+            }
+        } message: {
+            Text("rag.workspace.debug.clear.confirm.message")
+        }
+        #endif
     }
 
     /// 调试 tab 仅在 DEBUG 且开关打开时出现，避免未开启时占 segmented 宽度。
@@ -1513,10 +1528,7 @@ struct RAGWorkspaceInspector: View {
                 Spacer()
                 // 单条导出走行内按钮；顶部只保留清空整条会话 Debug。
                 Button {
-                    viewModel.clearDebugTraces()
-                    expandedDebugTraceIDs = []
-                    expandedDebugEventIDs = []
-                    pendingExpandDebugEventIDs = []
+                    isClearDebugTracesConfirmationPresented = true
                 } label: {
                     Image(systemName: "trash")
                         .font(iconFont(size: 11, weight: .medium))

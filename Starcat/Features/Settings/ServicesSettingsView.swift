@@ -86,27 +86,21 @@ struct ServicesSettingsTab: View {
         let isProbing = probingServiceIDs.contains(service.id)
 
         Section {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Image(systemName: service.systemImage)
-                        .foregroundStyle(service.accentColor)
-                        .font(.headline)
-                    Text(service.titleKey)
-                        .font(.headline)
-                    Spacer()
-                    Link(destination: service.sourceCodeURL) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.right.square")
-                            Text("settings.services.selfHost")
-                        }
-                        .font(.caption)
-                    }
-                    .help(Text("settings.services.selfHost.help"))
-                }
+            // 说明与「自托管」同行：左文案、右跳转，避免每个服务卡片顶部多占一行。
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(service.descriptionKey)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Link(destination: service.sourceCodeURL) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.right.square")
+                        Text("settings.services.selfHost")
+                    }
+                    .font(.caption)
+                }
+                .help(Text("settings.services.selfHost.help"))
             }
             .padding(.vertical, 2)
 
@@ -165,6 +159,8 @@ struct ServicesSettingsTab: View {
                 }
                 .disabled(isProbing || !validation.canPersist)
             }
+        } header: {
+            SettingsSectionHeader(service.titleKey, systemImage: service.systemImage)
         }
     }
 

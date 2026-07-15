@@ -45,7 +45,7 @@ struct IntegrationSettingsTab: View {
                     .id(Self.localAPIKeyAnchor)
                 browserPluginSection
                 anySearchSection
-                Section("CodeFlow") {
+                Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("settings.integration.codeFlow.outputDir.title", systemImage: "point.3.connected.trianglepath.dotted")
                         .font(.headline)
@@ -101,8 +101,10 @@ struct IntegrationSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            } header: {
+                SettingsSectionHeader(verbatim: "CodeFlow", systemImage: "point.3.connected.trianglepath.dotted")
             }
-                Section("CodebaseMemory") {
+                Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("3D Code Graph", systemImage: "point.3.filled.connected.trianglepath.dotted")
                         .font(.headline)
@@ -158,6 +160,8 @@ struct IntegrationSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                } header: {
+                    SettingsSectionHeader(verbatim: "CodebaseMemory", systemImage: "point.3.filled.connected.trianglepath.dotted")
                 }
             }
             .formStyle(.grouped)
@@ -185,7 +189,7 @@ struct IntegrationSettingsTab: View {
     }
 
     private var localAPIKeySection: some View {
-        Section("settings.integration.localAPIKey.title") {
+        Section {
             VStack(alignment: .leading, spacing: 5) {
                 Label("settings.integration.localAPIKey.header", systemImage: "key.horizontal")
                     .font(.headline)
@@ -244,11 +248,13 @@ struct IntegrationSettingsTab: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            SettingsSectionHeader("settings.integration.localAPIKey.title", systemImage: "key.horizontal")
         }
     }
 
     private var browserPluginSection: some View {
-        Section("settings.integration.browserPlugin.title") {
+        Section {
             VStack(alignment: .leading, spacing: 5) {
                 Label("settings.integration.browserPlugin.header", systemImage: "puzzlepiece.extension")
                     .font(.headline)
@@ -304,6 +310,8 @@ struct IntegrationSettingsTab: View {
             Text("settings.integration.browserPlugin.description")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        } header: {
+            SettingsSectionHeader("settings.integration.browserPlugin.title", systemImage: "puzzlepiece.extension")
         }
     }
 
@@ -474,7 +482,7 @@ struct IntegrationSettingsTab: View {
     private var anySearchSection: some View {
         @Bindable var settings = settings
         return Group {
-            Section("settings.externalSearch.section") {
+            Section {
                 Toggle("settings.externalSearch.includeWebInAll", isOn: $settings.externalSearchIncludeInAll)
                 Toggle("settings.externalSearch.aiContext", isOn: $settings.externalContextEnabled)
                 Toggle(isOn: aggregateExternalContextBinding) {
@@ -515,6 +523,8 @@ struct IntegrationSettingsTab: View {
                     .foregroundStyle(.secondary)
 
                 externalSearchProviderList
+            } header: {
+                SettingsSectionHeader("settings.externalSearch.section", systemImage: "globe")
             }
         }
     }
