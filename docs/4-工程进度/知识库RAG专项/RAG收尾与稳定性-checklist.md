@@ -91,7 +91,7 @@
 - [x] **外部索引增量同步**：source debounce、批量重建与 embedding 写回共用修订号变更集；进程首次或配置/模型变化才全量初始化，后续按 chunk upsert/delete Meilisearch 与 Qdrant，人工编辑、恢复、下架和永久删除同样接入；Metadata 仅同步 Meilisearch — `RAGExternalSearchProviders.swift`、`KnowledgeRAGIndexBuilder.swift`、`RAGChunkRepository.swift`、`KnowledgeRAGWorkspaceWindowController.swift` — 2026-07-16。
 - [x] **本地向量扫描基线**：以 18,465 个真实 ready chunk、1024 维、20 次热扫描记录 P50/P95、峰值内存和取消延迟；共享余弦内核改用 Accelerate/vDSP 且复用 query 范数，P95 由 4,372.39 ms 降至 187.75 ms，内存增量由 24.31 MB 降至 14.05 MB；证据支持保留当前本地上限与可选 Qdrant，不追加 migration — `SemanticSearchService.swift`、`RAGSearchProviders.swift`、`RAGVectorScanBenchmarkTests.swift`、`RAG测试与评测方案.md` — 2026-07-16。
 - [x] **Source-aware 重建读取**：用显式读取计划约束 source 依赖；README/Notes/Summary 只读自身数据，Metadata 才读 Note、Tags 与本地事实缓存；单仓摘要改为 `ORDER BY generated_at DESC LIMIT 1`，全库重建仍一次批量预取 — `KnowledgeRAGIndexBuilder.swift`、`AISummaryRepository.swift`、`KnowledgeRAGCoreTests.swift` — 2026-07-16。
-- [ ] **候选仓库轻量查询**：为 `@repo` picker 使用轻量投影、缓存归一化搜索文本，大库达到阈值后改用分页查询。
+- [x] **候选仓库轻量查询**：`@repo` picker 改用轻量投影并预计算归一化搜索文本；知识库不超过 500 个仓库时保留内存过滤，超过阈值后使用 120ms 合并的 SQL 首屏分页，选中时才批量还原完整 Repo；索引问题名称与 GitHub URL 精确匹配不依赖当前页 — `RAGRepoCandidateRepository.swift`、`RAGMentionPickerLogic.swift`、`KnowledgeRAGWorkspaceViewModel.swift` — 2026-07-16。
 - [ ] **元数据快照版本缓存**：按数据修订版本缓存 Planner/Generator 元数据快照，不得盲用可能过期的 UI 快照。
 - [ ] **会话持久化增量更新**：回答完成后直接追加本轮持久化结果，不每轮重载全部消息与引用；保留全量重载作为切换会话和错误恢复路径。
 - [ ] **Debug 磁盘保留上界**：在已有内存 FIFO 上限之外，增加每会话文件数或总字节数上限，读取时不全量解码无限历史 JSON。

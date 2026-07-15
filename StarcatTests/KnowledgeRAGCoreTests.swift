@@ -1052,6 +1052,40 @@ struct KnowledgeRAGCoreTests {
         #expect(overlap.isEmpty)
     }
 
+    @Test("@repo 轻量候选按关键词分页并仅在选择后回填完整仓库")
+    func mentionCandidateProjectionPaging() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in 1...6 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await notes.updateLibraryState(repoId: Int64(id), state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE repos SET language = ?, stars_count = ? WHERE id = ?",
+                    arguments: [id <= 4 ? "Swift" : "Go", 100 - id, id]
+                )
+            }
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+
+        let first = try await repository.fetchMentionCandidates(query: "swift", limit: 2, offset: 0)
+        #expect(first.knowledgeCount == 6)
+        #expect(first.matchCount == 4)
+        #expect(first.candidates.count == 2)
+        #expect(first.hasMore)
+        #expect(first.candidates.allSatisfy { $0.normalizedSearchText.contains("swift") })
+
+        let second = try await repository.fetchMentionCandidates(query: "swift", limit: 2, offset: 2)
+        #expect(second.candidates.count == 2)
+        #expect(!second.hasMore)
+        #expect(Set(first.candidates.map(\.id)).isDisjoint(with: second.candidates.map(\.id)))
+
+        let hydrated = try await repository.fetchMentionRepos(ids: [3, 1])
+        #expect(hydrated.map(\.id) == [3, 1])
+        try await notes.updateLibraryState(repoId: 3, state: .outsideLibrary)
+        #expect(try await repository.fetchMentionRepos(ids: [3, 1]).map(\.id) == [1])
+    }
+
     @Test("混合融合合并命中并限制每个 repo 的 child 数")
     func hybridFusionDeduplicatesAndCapsRepo() throws {
         let chunks = (1...5).map { index in fixtureChunk(id: Int64(index), repoID: index <= 4 ? 1 : 2, source: index == 1 ? .notes : .readme) }
@@ -3494,9 +3528,7 @@ struct KnowledgeRAGCoreTests {
         let redis = mentionFixtureRepo(id: 1, fullName: "redis/redis", language: "C", stars: 50_000)
         let jedis = mentionFixtureRepo(id: 2, fullName: "redis/jedis", language: "Java", stars: 10_000)
         let awesome = mentionFixtureRepo(id: 3, fullName: "sindresorhus/awesome", language: nil, stars: 200_000)
-        let candidates = [redis, jedis, awesome].map {
-            RAGRepoCandidate(repo: $0, status: .unread, libraryUpdatedAt: nil, tagNames: ["cache"])
-        }
+        let candidates = [redis, jedis, awesome].map(RAGMentionCandidate.init(repo:))
 
         let snapshot = RAGMentionPickerLogic.build(
             candidates: candidates,
@@ -3515,16 +3547,15 @@ struct KnowledgeRAGCoreTests {
     @Test("Mention picker: 未选命中超过上限会截断并保留已选")
     func mentionPickerTruncatesUnselectedMatches() {
         let selected = mentionFixtureRepo(id: 0, fullName: "selected/repo", language: "Swift", stars: 1)
-        let allCandidates: [RAGRepoCandidate] = [
-            RAGRepoCandidate(repo: selected, status: .unread, libraryUpdatedAt: nil, tagNames: [])
-        ] + (1...RAGMentionPickerLogic.unselectedDisplayLimit + 5).map { id in
-            RAGRepoCandidate(
-                repo: mentionFixtureRepo(id: Int64(id), fullName: "owner/repo-\(id)", language: "Go", stars: id),
-                status: .unread,
-                libraryUpdatedAt: nil,
-                tagNames: []
-            )
-        }
+        let allCandidates: [RAGMentionCandidate] = [RAGMentionCandidate(repo: selected)]
+            + (1...RAGMentionPickerLogic.unselectedDisplayLimit + 5).map { id in
+                RAGMentionCandidate(repo: mentionFixtureRepo(
+                    id: Int64(id),
+                    fullName: "owner/repo-\(id)",
+                    language: "Go",
+                    stars: id
+                ))
+            }
 
         let snapshot = RAGMentionPickerLogic.build(
             candidates: allCandidates,

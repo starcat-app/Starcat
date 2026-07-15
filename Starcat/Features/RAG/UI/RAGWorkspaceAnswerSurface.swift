@@ -967,31 +967,31 @@ struct RAGWorkspaceAnswerSurface: View {
         .padding(.vertical, 16)
     }
 
-    func mentionPickerRow(_ repo: Repo, rowIndex: Int) -> some View {
-        let isHighlighted = repo.id == viewModel.highlightedMentionRepoIDValue
-        return Button { viewModel.toggleMention(repo) } label: {
+    func mentionPickerRow(_ candidate: RAGMentionCandidate, rowIndex: Int) -> some View {
+        let isHighlighted = candidate.id == viewModel.highlightedMentionRepoIDValue
+        return Button { viewModel.toggleMention(candidate) } label: {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "checkmark")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
-                    .opacity(viewModel.isMentionSelected(repo) ? 1 : 0)
+                    .opacity(viewModel.isMentionSelected(candidate) ? 1 : 0)
                     .frame(width: 12, alignment: .center)
                 RemoteAvatar(
-                    urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
+                    urlString: candidate.ownerAvatar ?? RepoAvatarURL.from(owner: candidate.owner),
                     size: 18,
                     showBorder: false
                 )
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(repo.fullName)
+                    Text(candidate.fullName)
                         .font(ragFont(.callout))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     HStack(spacing: 8) {
-                        if let language = repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        if let language = candidate.language?.trimmingCharacters(in: .whitespacesAndNewlines),
                            !language.isEmpty {
                             LanguageBadge(language: language, style: .compact)
                         }
-                        StarsBadge(count: repo.starsCount, style: .compact)
+                        StarsBadge(count: candidate.starsCount, style: .compact)
                     }
                 }
                 Spacer(minLength: 0)
@@ -1008,7 +1008,7 @@ struct RAGWorkspaceAnswerSurface: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(repo.fullName)
+        .help(candidate.fullName)
     }
 
     /// 与知识库浏览器分片列表同一套斑马纹：奇数行极淡 primary，不抢高亮色。

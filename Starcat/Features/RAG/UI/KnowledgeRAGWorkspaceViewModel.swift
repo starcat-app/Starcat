@@ -137,6 +137,8 @@ struct RAGComposerDraftStore {
 @MainActor
 @Observable
 final class KnowledgeRAGWorkspaceViewModel {
+    /// 小库一次缓存轻量投影；超过阈值后改为按 `@token` 查询首屏，避免启动期线性驻留。
+    private static let mentionCatalogThreshold = 500
     /// Debug 只用于当前窗口，仍必须有内存上界：Prompt/远程正文可能很大，长时间调试不应
     /// 因积累完整 payload 挤压正常回答渲染。
     private enum DebugTraceLimit {
@@ -266,10 +268,18 @@ final class KnowledgeRAGWorkspaceViewModel {
             }
         }
     }
-    var knowledgeRepos: [Repo] = []
     private var isMentionPickerDismissed = false
     private var highlightedMentionRepoID: Int64?
-    private var knowledgeCandidates: [RAGRepoCandidate] = []
+    private var mentionCandidates: [RAGMentionCandidate] = []
+    /// 大库分页时不会常驻全部候选，但索引问题抽屉仍需要稳定显示仓库名。
+    /// 这里只缓存轻量名称，不把完整 Repo 重新带回内存，避免抵消分页收益。
+    private var mentionRepositoryNames: [Int64: String] = [:]
+    private var mentionKnowledgeCount = 0
+    private var mentionUsesPagedQuery = false
+    private var loadedMentionQuery = ""
+    private var loadedMentionMatchCount = 0
+    private var loadedMentionHasMore = false
+    private var mentionQueryTask: Task<Void, Never>?
     var indexCoverage = RAGIndexCoverage(
         knowledgeRepoCount: 0,
         indexedRepoCount: 0,
@@ -531,25 +541,46 @@ final class KnowledgeRAGWorkspaceViewModel {
             return RAGMentionPickerSnapshot(
                 suggestions: [],
                 matchCount: 0,
-                knowledgeCount: knowledgeCandidates.count,
+                knowledgeCount: mentionKnowledgeCount,
                 selectedCount: selectedRepoContexts.count,
                 displayedCount: 0,
                 isTruncated: false
             )
         }
+        if mentionUsesPagedQuery {
+            guard query == loadedMentionQuery else {
+                return RAGMentionPickerSnapshot(
+                    suggestions: selectedRepoContexts.map(RAGMentionCandidate.init(repo:)),
+                    matchCount: 0,
+                    knowledgeCount: mentionKnowledgeCount,
+                    selectedCount: selectedRepoContexts.count,
+                    displayedCount: selectedRepoContexts.count,
+                    isTruncated: false
+                )
+            }
+            return RAGMentionPickerLogic.build(
+                candidates: mentionCandidates,
+                selected: selectedRepoContexts,
+                query: "",
+                knowledgeCount: mentionKnowledgeCount,
+                knownMatchCount: loadedMentionMatchCount,
+                pageHasMore: loadedMentionHasMore
+            )
+        }
         return RAGMentionPickerLogic.build(
-            candidates: knowledgeCandidates,
+            candidates: mentionCandidates,
             selected: selectedRepoContexts,
-            query: query
+            query: query,
+            knowledgeCount: mentionKnowledgeCount
         )
     }
 
-    var mentionSuggestions: [Repo] {
+    var mentionSuggestions: [RAGMentionCandidate] {
         mentionPickerSnapshot.suggestions
     }
 
-    func isMentionSelected(_ repo: Repo) -> Bool {
-        selectedRepoContexts.contains { $0.id == repo.id }
+    func isMentionSelected(_ candidate: RAGMentionCandidate) -> Bool {
+        selectedRepoContexts.contains { $0.id == candidate.id }
     }
 
     /// 有未完成 `@token` 就展示弹层；无命中时走空态，不再直接关闭。
@@ -569,15 +600,14 @@ final class KnowledgeRAGWorkspaceViewModel {
         do {
             async let loadedConversations = conversationStore.listConversations()
             async let loadedGroups = conversationStore.listGroups()
-            async let loadedCandidates = dependencies.ragCandidateRepository.fetchCandidates(
-                plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "knowledge"),
-                explicitRepoIDs: [],
-                explicitMode: .only
+            async let loadedMentions = dependencies.ragCandidateRepository.fetchMentionCandidates(
+                query: "",
+                limit: Self.mentionCatalogThreshold + 1,
+                offset: 0
             )
             conversations = try await loadedConversations
             conversationGroups = try await loadedGroups
-            knowledgeCandidates = try await loadedCandidates
-            knowledgeRepos = knowledgeCandidates.map(\.repo)
+            applyInitialMentionPage(try await loadedMentions)
             try await refreshIndexCoverage()
             await refreshKnowledgeBaseMetadataSnapshot()
             if let first = conversations.first {
@@ -598,14 +628,14 @@ final class KnowledgeRAGWorkspaceViewModel {
         for await _ in stream {
             guard !Task.isCancelled else { break }
             do {
-                let candidates = try await dependencies.ragCandidateRepository.fetchCandidates(
-                    plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "knowledge"),
-                    explicitRepoIDs: [],
-                    explicitMode: .only
+                let page = try await dependencies.ragCandidateRepository.fetchMentionCandidates(
+                    query: "",
+                    limit: Self.mentionCatalogThreshold + 1,
+                    offset: 0
                 )
-                knowledgeCandidates = candidates
-                knowledgeRepos = candidates.map(\.repo)
-                let currentRepoIDs = Set(knowledgeRepos.map(\.id))
+                applyInitialMentionPage(page)
+                let currentRepoIDs = Set(try await dependencies.ragCandidateRepository
+                    .fetchMentionRepos(ids: selectedRepoContexts.map(\.id)).map(\.id))
                 selectedRepoContexts.removeAll { !currentRepoIDs.contains($0.id) }
                 dependencies.ragComposerDraftStore.pruneRepos(keepingIDs: currentRepoIDs)
                 try await refreshIndexCoverage()
@@ -1346,37 +1376,63 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// GitHub 链接和旧联网授权。若仓库已离开知识库则明确报错，绝不静默扩大到全库。
     func sendSuggestedQuestion(_ action: RAGSuggestedQuestionAction) {
         guard !isAnswering else { return }
-        let repos = action.repoIDs.compactMap { repoID in
-            knowledgeRepos.first(where: { $0.id == repoID })
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let repos = try await dependencies.ragCandidateRepository.fetchMentionRepos(ids: action.repoIDs)
+                guard repos.count == action.repoIDs.count else {
+                    errorMessage = String.l10n("rag.workspace.guidance.repoUnavailable")
+                    return
+                }
+                guard !isAnswering else { return }
+                selectedRepoContexts = repos
+                explicitRepoMode = action.explicitRepoMode
+                attachments = []
+                githubLinkContexts = []
+                pendingRemoteWorkItems = []
+                approvedRemoteWorkItemIDs = []
+                draftQuestion = action.question
+                send()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
-        guard repos.count == action.repoIDs.count else {
-            errorMessage = String.l10n("rag.workspace.guidance.repoUnavailable")
-            return
-        }
-        selectedRepoContexts = repos
-        explicitRepoMode = action.explicitRepoMode
-        attachments = []
-        githubLinkContexts = []
-        pendingRemoteWorkItems = []
-        approvedRemoteWorkItemIDs = []
-        draftQuestion = action.question
-        send()
     }
 
     /// 切换 `@` 多选：写入 / 移除 chip，但不清掉输入框里的 `@token`，便于连续勾选。
-    func toggleMention(_ repo: Repo) {
-        if let index = selectedRepoContexts.firstIndex(where: { $0.id == repo.id }) {
+    func toggleMention(_ candidate: RAGMentionCandidate) {
+        if let index = selectedRepoContexts.firstIndex(where: { $0.id == candidate.id }) {
             selectedRepoContexts.remove(at: index)
         } else {
-            selectedRepoContexts.append(repo)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    guard let repo = try await dependencies.ragCandidateRepository
+                        .fetchMentionRepos(ids: [candidate.id]).first,
+                          !selectedRepoContexts.contains(where: { $0.id == repo.id }) else { return }
+                    selectedRepoContexts.append(repo)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
         }
-        highlightedMentionRepoID = repo.id
+        highlightedMentionRepoID = candidate.id
     }
 
     /// 全选当前列表可见结果（含已选置顶项与当前过滤命中）。
     func selectAllVisibleMentions() {
-        for repo in mentionSuggestions where !selectedRepoContexts.contains(where: { $0.id == repo.id }) {
-            selectedRepoContexts.append(repo)
+        let ids = mentionSuggestions.map(\.id).filter { id in
+            !selectedRepoContexts.contains(where: { $0.id == id })
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let repos = try await dependencies.ragCandidateRepository.fetchMentionRepos(ids: ids)
+                let selectedIDs = Set(selectedRepoContexts.map(\.id))
+                selectedRepoContexts.append(contentsOf: repos.filter { !selectedIDs.contains($0.id) })
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
         highlightedMentionRepoID = mentionSuggestions.first?.id ?? highlightedMentionRepoID
     }
@@ -1395,6 +1451,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         draftQuestion.removeSubrange(draftQuestion.index(after: at)..<draftQuestion.endIndex)
         isMentionPickerDismissed = false
         highlightedMentionRepoID = nil
+        schedulePagedMentionQueryIfNeeded()
     }
 
     /// `@repo` 候选由输入框持有键盘焦点。这里仅移动高亮，不改变输入内容，Enter 才会
@@ -1431,7 +1488,50 @@ final class KnowledgeRAGWorkspaceViewModel {
         // Esc 只关闭当前这次候选；继续编辑时重新打开，并让高亮回到当前候选集合的首项。
         isMentionPickerDismissed = false
         highlightedMentionRepoID = nil
+        schedulePagedMentionQueryIfNeeded()
         scheduleGitHubLinkDetection()
+    }
+
+    private func applyInitialMentionPage(_ page: RAGMentionCandidatePage) {
+        mentionKnowledgeCount = page.knowledgeCount
+        mentionUsesPagedQuery = page.knowledgeCount > Self.mentionCatalogThreshold
+        mentionCandidates = mentionUsesPagedQuery
+            ? Array(page.candidates.prefix(RAGMentionPickerLogic.unselectedDisplayLimit))
+            : page.candidates
+        cacheMentionRepositoryNames(page.candidates)
+        loadedMentionQuery = ""
+        loadedMentionMatchCount = page.matchCount
+        loadedMentionHasMore = mentionUsesPagedQuery
+    }
+
+    /// 大库输入按 120ms 合并，只保留当前 token 的首屏；旧查询完成后必须再次核对 token，
+    /// 避免较慢 SQL 结果覆盖用户后续输入。
+    private func schedulePagedMentionQueryIfNeeded() {
+        mentionQueryTask?.cancel()
+        guard mentionUsesPagedQuery, let query = mentionQuery else { return }
+        mentionQueryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(120))
+                guard let self else { return }
+                let page = try await dependencies.ragCandidateRepository.fetchMentionCandidates(
+                    query: query,
+                    limit: RAGMentionPickerLogic.unselectedDisplayLimit,
+                    offset: 0
+                )
+                try Task.checkCancellation()
+                guard mentionQuery == query else { return }
+                mentionCandidates = page.candidates
+                cacheMentionRepositoryNames(page.candidates)
+                mentionKnowledgeCount = page.knowledgeCount
+                loadedMentionQuery = query
+                loadedMentionMatchCount = page.matchCount
+                loadedMentionHasMore = page.hasMore
+            } catch is CancellationError {
+                // 连续输入会取消旧查询；不是用户可见错误。
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
     }
 
     func removeMention(repoID: Int64) {
@@ -1735,6 +1835,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                 offset: append ? existing.count : 0
             )
             indexIssueChunks[kind] = append ? existing + page.chunks : page.chunks
+            let uncachedRepoIDs = Set(page.chunks.map(\.repoId)).filter { mentionRepositoryNames[$0] == nil }
+            if !uncachedRepoIDs.isEmpty {
+                let repos = try await dependencies.ragCandidateRepository.fetchMentionRepos(ids: Array(uncachedRepoIDs))
+                for repo in repos {
+                    mentionRepositoryNames[repo.id] = repo.fullName
+                }
+            }
             if page.hasMore {
                 indexIssueHasMore.insert(kind)
             } else {
@@ -1758,7 +1865,16 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func knowledgeRepositoryName(for id: Int64) -> String {
-        knowledgeRepos.first(where: { $0.id == id })?.fullName ?? "#\(id)"
+        mentionRepositoryNames[id]
+            ?? mentionCandidates.first(where: { $0.id == id })?.fullName
+            ?? selectedRepoContexts.first(where: { $0.id == id })?.fullName
+            ?? "#\(id)"
+    }
+
+    private func cacheMentionRepositoryNames(_ candidates: [RAGMentionCandidate]) {
+        for candidate in candidates {
+            mentionRepositoryNames[candidate.id] = candidate.fullName
+        }
     }
 
     func selectCitation(_ citation: RAGCitation) {
@@ -3373,12 +3489,29 @@ final class KnowledgeRAGWorkspaceViewModel {
         let owner = String(draftQuestion[ownerRange])
         let name = String(draftQuestion[repoRange]).replacingOccurrences(of: ".git", with: "")
 
-        if let candidate = knowledgeCandidates.first(where: {
-            $0.repo.owner.caseInsensitiveCompare(owner) == .orderedSame
-                && $0.repo.name.caseInsensitiveCompare(name) == .orderedSame
-        }) {
-            if !selectedRepoContexts.contains(where: { $0.id == candidate.repo.id }) {
-                selectedRepoContexts.append(candidate.repo)
+        let visibleCandidate = mentionCandidates.first(where: {
+            $0.owner.caseInsensitiveCompare(owner) == .orderedSame
+                && $0.name.caseInsensitiveCompare(name) == .orderedSame
+        })
+        // 大库分页下，目标仓库可能不在当前首屏。用精确 full_name 触发一次轻量查询，
+        // 不能因为 UI 没加载到它就误判为“已知但未入知识库”。
+        var candidate = visibleCandidate
+        if candidate == nil,
+           let page = try? await dependencies.ragCandidateRepository.fetchMentionCandidates(
+               query: "\(owner)/\(name)",
+               limit: 5,
+               offset: 0
+           ) {
+            candidate = page.candidates.first(where: {
+                $0.owner.caseInsensitiveCompare(owner) == .orderedSame
+                    && $0.name.caseInsensitiveCompare(name) == .orderedSame
+            })
+        }
+        if let candidate {
+            mentionRepositoryNames[candidate.id] = candidate.fullName
+            if !selectedRepoContexts.contains(where: { $0.id == candidate.id }),
+               let repo = try? await dependencies.ragCandidateRepository.fetchMentionRepos(ids: [candidate.id]).first {
+                selectedRepoContexts.append(repo)
             }
             draftQuestion.removeSubrange(urlRange)
             draftQuestion = draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -9,11 +9,59 @@
 //
 
 import Foundation
+import GRDB
+
+/// `@repo` 只需要展示和检索字段；完整 `Repo` 在用户真正选中时才按 ID 回读。
+struct RAGMentionCandidate: Identifiable, Equatable, Sendable {
+    var id: Int64
+    var owner: String
+    var name: String
+    var fullName: String
+    var language: String?
+    var starsCount: Int
+    var ownerAvatar: String?
+    /// 小库内存过滤复用一次归一化结果，避免每个键入字符重复解析 topics 和拼接标签。
+    var normalizedSearchText: String
+
+    init(row: Row) {
+        id = row["id"]
+        owner = row["owner"]
+        name = row["name"]
+        fullName = row["full_name"]
+        language = row["language"]
+        starsCount = row["stars_count"]
+        ownerAvatar = row["owner_avatar"]
+        let topics: String = row["topics"] ?? ""
+        let tags: String = row["tag_names"] ?? ""
+        let description: String = row["description"] ?? ""
+        let status: String = row["status"] ?? ""
+        normalizedSearchText = Self.normalize([
+            fullName, description, language ?? "", topics, tags, status
+        ].joined(separator: " "))
+    }
+
+    init(repo: Repo) {
+        id = repo.id
+        owner = repo.owner
+        name = repo.name
+        fullName = repo.fullName
+        language = repo.language
+        starsCount = repo.starsCount
+        ownerAvatar = repo.ownerAvatar
+        normalizedSearchText = Self.normalize([
+            repo.fullName, repo.description ?? "", repo.language ?? "", repo.topicsArray.joined(separator: " ")
+        ].joined(separator: " "))
+    }
+
+    static func normalize(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+    }
+}
 
 /// `@` mention 候选列表的不可变快照，供 ViewModel / 单测共用。
 struct RAGMentionPickerSnapshot: Equatable, Sendable {
     /// 实际渲染的仓库列表（已选置顶 + 未选命中）。
-    var suggestions: [Repo]
+    var suggestions: [RAGMentionCandidate]
     /// 关键词命中总数（含已选且命中的），用于 footer。
     var matchCount: Int
     /// 知识库仓库总数。
@@ -32,57 +80,47 @@ enum RAGMentionPickerLogic {
 
     /// 按 `@` 后关键词过滤知识库候选，并把已选仓库固定置顶。
     static func build(
-        candidates: [RAGRepoCandidate],
+        candidates: [RAGMentionCandidate],
         selected: [Repo],
-        query: String
+        query: String,
+        knowledgeCount: Int? = nil,
+        knownMatchCount: Int? = nil,
+        pageHasMore: Bool = false
     ) -> RAGMentionPickerSnapshot {
-        let knowledgeIDs = Set(candidates.map(\.repo.id))
-        let selectedInKnowledge = selected.filter { knowledgeIDs.contains($0.id) }
-        let selectedIDs = Set(selectedInKnowledge.map(\.id))
+        let knowledgeIDs = Set(candidates.map(\.id))
+        let selectedInKnowledge = selected.filter { knowledgeIDs.contains($0.id) || knowledgeCount != nil }
+        let selectedCandidates = selectedInKnowledge.map(RAGMentionCandidate.init(repo:))
+        let selectedIDs = Set(selectedCandidates.map(\.id))
+        let normalizedQuery = RAGMentionCandidate.normalize(query)
 
         let matched = candidates.filter { candidate in
-            matches(candidate: candidate, query: query)
+            normalizedQuery.isEmpty || candidate.normalizedSearchText.contains(normalizedQuery)
         }
-        let matchCount = matched.count
+        let matchCount = knownMatchCount ?? matched.count
 
         let unselectedMatched = matched
-            .map(\.repo)
             .filter { !selectedIDs.contains($0.id) }
         let visibleUnselected = Array(unselectedMatched.prefix(unselectedDisplayLimit))
-        let isTruncated = unselectedMatched.count > visibleUnselected.count
-        let suggestions = selectedInKnowledge + visibleUnselected
+        let isTruncated = pageHasMore || unselectedMatched.count > visibleUnselected.count
+        let suggestions = selectedCandidates + visibleUnselected
 
         return RAGMentionPickerSnapshot(
             suggestions: suggestions,
             matchCount: matchCount,
-            knowledgeCount: candidates.count,
-            selectedCount: selectedInKnowledge.count,
+            knowledgeCount: knowledgeCount ?? candidates.count,
+            selectedCount: selectedCandidates.count,
             displayedCount: suggestions.count,
             isTruncated: isTruncated
         )
     }
 
     /// 纯文本副行：语言 · stars；入库 Sheet 等仍复用。
-    static func subtitle(for repo: Repo) -> String {
-        let stars = "★ \(repo.starsCount)"
-        if let language = repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+    static func subtitle(for candidate: RAGMentionCandidate) -> String {
+        let stars = "★ \(candidate.starsCount)"
+        if let language = candidate.language?.trimmingCharacters(in: .whitespacesAndNewlines),
            !language.isEmpty {
             return "\(language) · \(stars)"
         }
         return stars
-    }
-
-    private static func matches(candidate: RAGRepoCandidate, query: String) -> Bool {
-        guard !query.isEmpty else { return true }
-        let repo = candidate.repo
-        let searchable = [
-            repo.fullName,
-            repo.description ?? "",
-            repo.language ?? "",
-            repo.topicsArray.joined(separator: " "),
-            candidate.tagNames.joined(separator: " "),
-            candidate.status.rawValue
-        ].joined(separator: " ")
-        return searchable.localizedCaseInsensitiveContains(query)
     }
 }

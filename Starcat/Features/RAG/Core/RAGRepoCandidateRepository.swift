@@ -20,6 +20,10 @@ protocol RAGRepoCandidateRepositoryProtocol: Sendable {
 
     /// 知识库浏览器左侧列表专用分页；与 Planner 候选查询解耦，避免 semantic_only 全库哨兵 LIMIT。
     func fetchKnowledgeBrowserPage(limit: Int, offset: Int) async throws -> RAGRepoCandidatePage
+    /// Composer `@repo` 专用轻量投影；大库按关键词分页，不复用 Planner 的 `SELECT r.*`。
+    func fetchMentionCandidates(query: String, limit: Int, offset: Int) async throws -> RAGMentionCandidatePage
+    /// 用户确认选择后才批量回填完整 Repo，避免 picker 初次打开就解码全库完整行。
+    func fetchMentionRepos(ids: [Int64]) async throws -> [Repo]
 }
 
 /// 知识库浏览器仓库列表一页；`hasMore` 由 `limit + 1` 哨兵判定。
@@ -28,11 +32,107 @@ struct RAGRepoCandidatePage: Equatable, Sendable {
     var hasMore: Bool
 }
 
+struct RAGMentionCandidatePage: Equatable, Sendable {
+    var candidates: [RAGMentionCandidate]
+    var knowledgeCount: Int
+    var matchCount: Int
+    var hasMore: Bool
+}
+
 struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
     private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
         self.database = database
+    }
+
+    func fetchMentionCandidates(query: String, limit: Int, offset: Int) async throws -> RAGMentionCandidatePage {
+        precondition(limit > 0 && offset >= 0)
+        return try await database.writer.read { db in
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            let pattern = "%\(Self.escapeLike(trimmed))%"
+            let searchPredicate = """
+                (r.full_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(r.description, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(r.language, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(r.topics, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR n.status LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR EXISTS (
+                     SELECT 1 FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
+                     WHERE rt.repo_id = r.id AND t.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 ))
+                """
+            let whereClause = trimmed.isEmpty
+                ? "n.library_state = 'in_library'"
+                : "n.library_state = 'in_library' AND \(searchPredicate)"
+            let searchArguments: [any DatabaseValueConvertible] = trimmed.isEmpty
+                ? []
+                : Array(repeating: pattern as any DatabaseValueConvertible, count: 6)
+            let knowledgeCount = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE n.library_state = 'in_library'
+                """) ?? 0
+            let matchCount: Int
+            if trimmed.isEmpty {
+                matchCount = knowledgeCount
+            } else {
+                matchCount = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM repos r JOIN repo_notes n ON n.repo_id = r.id WHERE \(whereClause)",
+                    arguments: StatementArguments(searchArguments)
+                ) ?? 0
+            }
+            var pageArguments = searchArguments
+            pageArguments.append(limit + 1)
+            pageArguments.append(offset)
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT r.id, r.owner, r.name, r.full_name, r.description, r.language,
+                       r.stars_count, r.owner_avatar, r.topics, n.status,
+                       COALESCE((
+                           SELECT GROUP_CONCAT(t.name, '\u{1F}')
+                           FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
+                           WHERE rt.repo_id = r.id
+                       ), '') AS tag_names
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE \(whereClause)
+                ORDER BY r.stars_count DESC, r.full_name COLLATE NOCASE ASC
+                LIMIT ? OFFSET ?
+                """, arguments: StatementArguments(pageArguments))
+            let candidates = rows.prefix(limit).map(RAGMentionCandidate.init(row:))
+            return RAGMentionCandidatePage(
+                candidates: candidates,
+                knowledgeCount: knowledgeCount,
+                matchCount: matchCount,
+                hasMore: rows.count > limit
+            )
+        }
+    }
+
+    func fetchMentionRepos(ids: [Int64]) async throws -> [Repo] {
+        guard !ids.isEmpty else { return [] }
+        return try await database.writer.read { db in
+            let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+            let repos = try Repo.fetchAll(
+                db,
+                sql: """
+                    SELECT r.* FROM repos r
+                    JOIN repo_notes n ON n.repo_id = r.id AND n.library_state = 'in_library'
+                    WHERE r.id IN (\(placeholders))
+                    """,
+                arguments: StatementArguments(ids)
+            )
+            let byID = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
+            return ids.compactMap { byID[$0] }
+        }
+    }
+
+    private static func escapeLike(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     func fetchCandidates(
