@@ -57,7 +57,11 @@ struct MCPSettingsTab: View {
                     }
                 }
             } header: {
-                SettingsSectionHeader("settings.mcp.section.service", systemImage: "point.3.connected.trianglepath.dotted")
+                SettingsSectionHeader(
+                    "settings.mcp.section.service",
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -93,7 +97,11 @@ struct MCPSettingsTab: View {
                 }
                 .disabled(!settings.mcpAllowLocalWrites)
             } header: {
-                SettingsSectionHeader("settings.mcp.section.writes", systemImage: "pencil.and.list.clipboard")
+                SettingsSectionHeader(
+                    "settings.mcp.section.writes",
+                    systemImage: "pencil.and.list.clipboard",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -117,11 +125,15 @@ struct MCPSettingsTab: View {
                             object: "integrations.localAPIKey"
                         )
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .focusEffectDisabled()
 
                     Button("settings.mcp.copyConfig") {
                         copy(mcpService.clientConfigSnippet)
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .focusEffectDisabled()
                 }
 
@@ -130,7 +142,11 @@ struct MCPSettingsTab: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                SettingsSectionHeader("settings.mcp.section.connection", systemImage: "link")
+                SettingsSectionHeader(
+                    "settings.mcp.section.connection",
+                    systemImage: "link",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -279,6 +295,7 @@ private struct MCPPortEditorRow: View {
 
                 Button("settings.mcp.restart", action: onRestart)
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .focusEffectDisabled()
                     .disabled(!validation.isCommittable)
             }

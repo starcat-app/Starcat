@@ -50,7 +50,7 @@ struct IntegrationSettingsTab: View {
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("settings.integration.codeFlow.outputDir.title", systemImage: "point.3.connected.trianglepath.dotted")
-                        .font(.headline)
+                        .font(.callout.weight(.medium))
                     Text("settings.integration.codeFlow.outputDir.subtitle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -66,13 +66,20 @@ struct IntegrationSettingsTab: View {
                         .layoutPriority(-1)
                     Spacer()
                     Button("settings.integration.codeFlow.outputDir.choose") { chooseOutputDirectory() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                         .fixedSize()
                     Button {
                         revealOutputDirectory()
                     } label: {
                         Image(systemName: "folder")
+                            .font(.system(size: 15, weight: .medium))
+                            .frame(width: 28, height: 28)
                     }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                     .help("settings.integration.codeFlow.outputDir.revealHelp")
+                    .accessibilityLabel(Text("settings.integration.codeFlow.outputDir.revealHelp"))
                     .fixedSize()
                     ResetIconButton(help: Text("settings.integration.codeFlow.outputDir.resetHelp")) {
                         resetOutputDirectory()
@@ -107,12 +114,16 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                SettingsSectionHeader(verbatim: "CodeFlow", systemImage: "point.3.connected.trianglepath.dotted")
+                SettingsSectionHeader(
+                    verbatim: "CodeFlow",
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    style: .prominent
+                )
             }
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("3D Code Graph", systemImage: "point.3.filled.connected.trianglepath.dotted")
-                        .font(.headline)
+                        .font(.callout.weight(.medium))
                     Text("Tree-sitter index + browser-based 3D visualization")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -128,11 +139,18 @@ struct IntegrationSettingsTab: View {
                         .layoutPriority(-1)
                     Spacer()
                     Button("settings.integration.codeFlow.outputDir.choose") { chooseCodebaseMemoryOutputDirectory() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                         .fixedSize()
                     Button { revealCodebaseMemoryOutputDirectory() } label: {
                         Image(systemName: "folder")
+                            .font(.system(size: 15, weight: .medium))
+                            .frame(width: 28, height: 28)
                     }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                     .help("settings.integration.codeFlow.outputDir.revealHelp")
+                    .accessibilityLabel(Text("settings.integration.codeFlow.outputDir.revealHelp"))
                     .fixedSize()
                     ResetIconButton(help: Text("settings.integration.codeFlow.outputDir.resetHelp")) {
                         resetCodebaseMemoryOutputDirectory()
@@ -169,7 +187,11 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
                 } header: {
-                    SettingsSectionHeader(verbatim: "CodebaseMemory", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                    SettingsSectionHeader(
+                        verbatim: "CodebaseMemory",
+                        systemImage: "point.3.filled.connected.trianglepath.dotted",
+                        style: .prominent
+                    )
                 }
             }
             .formStyle(.grouped)
@@ -200,7 +222,7 @@ struct IntegrationSettingsTab: View {
         Section {
             VStack(alignment: .leading, spacing: 5) {
                 Label("settings.integration.localAPIKey.header", systemImage: "key.horizontal")
-                    .font(.headline)
+                    .font(.callout.weight(.medium))
                 Text("settings.integration.localAPIKey.subtitle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -257,7 +279,11 @@ struct IntegrationSettingsTab: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         } header: {
-            SettingsSectionHeader("settings.integration.localAPIKey.title", systemImage: "key.horizontal")
+            SettingsSectionHeader(
+                "settings.integration.localAPIKey.title",
+                systemImage: "key.horizontal",
+                style: .prominent
+            )
         }
     }
 
@@ -265,7 +291,7 @@ struct IntegrationSettingsTab: View {
         Section {
             VStack(alignment: .leading, spacing: 5) {
                 Label("settings.integration.browserPlugin.header", systemImage: "puzzlepiece.extension")
-                    .font(.headline)
+                    .font(.callout.weight(.medium))
                 Text("settings.integration.browserPlugin.subtitle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -319,7 +345,11 @@ struct IntegrationSettingsTab: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } header: {
-            SettingsSectionHeader("settings.integration.browserPlugin.title", systemImage: "puzzlepiece.extension")
+            SettingsSectionHeader(
+                "settings.integration.browserPlugin.title",
+                systemImage: "puzzlepiece.extension",
+                style: .prominent
+            )
         }
     }
 
@@ -415,6 +445,7 @@ struct IntegrationSettingsTab: View {
                 )
             }
             .buttonStyle(.bordered)
+            .controlSize(.regular)
             .focusEffectDisabled()
         }
     }
@@ -443,15 +474,15 @@ struct IntegrationSettingsTab: View {
         foregroundStyle: Color,
         isHovering: Bool
     ) -> some View {
-        // 与设置页其它工具图标对齐：走 iconSmall（约 13pt），背景也收一档，
-        // 避免本地 API Key 行的三颗操作钮比 Pro / 通行证入口更抢眼。
+        // 与全局设置页 icon-only 规范对齐：15pt glyph + 28pt 命中区，
+        // 常态不铺底，只在 hover 时提供轻量背景反馈。
         Image(systemName: systemImage)
-            .font(interfaceScale.font(.iconSmall, weight: .medium))
+            .font(interfaceScale.font(.iconMedium, weight: .medium))
             .foregroundStyle(foregroundStyle)
-            .frame(width: 24, height: 22)
+            .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.secondary.opacity(isHovering ? 0.14 : 0.10))
+                    .fill(Color.secondary.opacity(isHovering ? 0.14 : 0))
             )
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
@@ -483,6 +514,7 @@ struct IntegrationSettingsTab: View {
                     Text(verbatim: "重新授权目录")
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
             }
         }
     }
@@ -532,7 +564,11 @@ struct IntegrationSettingsTab: View {
 
                 externalSearchProviderList
             } header: {
-                SettingsSectionHeader("settings.externalSearch.section", systemImage: "globe")
+                SettingsSectionHeader(
+                    "settings.externalSearch.section",
+                    systemImage: "globe",
+                    style: .prominent
+                )
             }
         }
     }
@@ -595,11 +631,13 @@ struct IntegrationSettingsTab: View {
                             toggleAPIKeyVisibility(provider)
                         } label: {
                             Image(systemName: visibleExternalSearchAPIKeys.contains(provider) ? "eye.slash" : "eye")
-                                .frame(width: 18)
+                                .font(.system(size: 15, weight: .medium))
+                                .frame(width: 28, height: 28)
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
                         .help(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show")
+                        .accessibilityLabel(Text(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show"))
 
                         Button {
                             testExternalSearchAPIKey(provider)
@@ -611,7 +649,8 @@ struct IntegrationSettingsTab: View {
                                 Text("settings.externalSearch.apiKey.test")
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                         .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
                     }
 
@@ -629,7 +668,7 @@ struct IntegrationSettingsTab: View {
         } label: {
             HStack(spacing: 8) {
                 Text(provider.displayName)
-                    .font(.headline)
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")

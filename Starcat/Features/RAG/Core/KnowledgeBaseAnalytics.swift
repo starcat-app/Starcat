@@ -26,14 +26,26 @@ enum KnowledgeBaseAnalyticsMeasure: String, Codable, Equatable, Sendable {
     case averageStars = "average_stars"
     case maxForks = "max_forks"
     case averageForks = "average_forks"
-    /// 三项库存指标只支持全库单值统计；其 SQL 仍由本地固定映射执行。
+    /// 库存与索引诊断指标只支持全库单值统计；其 SQL 仍由本地固定映射执行。
     case repositoriesWithAISummary = "repositories_with_ai_summary"
     case repositoriesWithPrivateNotes = "repositories_with_private_notes"
     case repositoriesWithAIGeneratedNotes = "repositories_with_ai_generated_notes"
+    case repositoriesWithRecentlyEditedPrivateNotes = "repositories_with_recently_edited_private_notes"
+    case repositoriesWithRecentlyGeneratedAISummaries = "repositories_with_recently_generated_ai_summaries"
+    case excludedRAGChunks = "excluded_rag_chunks"
+    case repositoriesWithoutREADME = "repositories_without_readme"
+    case repositoriesWithoutIndexableSource = "repositories_without_indexable_source"
 
     var requiresSingleAggregateResult: Bool {
         switch self {
-        case .repositoriesWithAISummary, .repositoriesWithPrivateNotes, .repositoriesWithAIGeneratedNotes:
+        case .repositoriesWithAISummary,
+             .repositoriesWithPrivateNotes,
+             .repositoriesWithAIGeneratedNotes,
+             .repositoriesWithRecentlyEditedPrivateNotes,
+             .repositoriesWithRecentlyGeneratedAISummaries,
+             .excludedRAGChunks,
+             .repositoriesWithoutREADME,
+             .repositoriesWithoutIndexableSource:
             true
         case .count, .maxStars, .averageStars, .maxForks, .averageForks:
             false
@@ -178,6 +190,16 @@ struct KnowledgeBaseAnalyticsExecutor: KnowledgeBaseAnalyticsExecuting {
             return "COUNT(DISTINCT CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN r.id END)"
         case .repositoriesWithAIGeneratedNotes:
             return "COUNT(DISTINCT CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND n.is_ai_generated = 1 THEN r.id END)"
+        case .repositoriesWithRecentlyEditedPrivateNotes:
+            return "COUNT(DISTINCT CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND datetime(n.edited_at) >= datetime('now', '-30 days') THEN r.id END)"
+        case .repositoriesWithRecentlyGeneratedAISummaries:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id AND datetime(s.generated_at) >= datetime('now', '-30 days')) THEN r.id END)"
+        case .excludedRAGChunks:
+            return "SUM((SELECT COUNT(*) FROM rag_chunks c JOIN rag_chunk_overrides o ON o.chunk_id = c.id AND o.is_excluded = 1 WHERE c.repo_id = r.id))"
+        case .repositoriesWithoutREADME:
+            return "COUNT(DISTINCT CASE WHEN NOT EXISTS (SELECT 1 FROM rag_chunks c WHERE c.repo_id = r.id AND c.source = 'readme') THEN r.id END)"
+        case .repositoriesWithoutIndexableSource:
+            return "COUNT(DISTINCT CASE WHEN NOT EXISTS (SELECT 1 FROM rag_chunks c WHERE c.repo_id = r.id AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)) THEN r.id END)"
         }
     }
 

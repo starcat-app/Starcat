@@ -563,7 +563,9 @@ private struct KnowledgeRAGBrowserView: View {
 
     var body: some View {
         HSplitView {
-            repositoryList.frame(minWidth: 240, idealWidth: 300, maxWidth: 360)
+            // 召回测试展开后：双列数字框 + 来源勾选至少要 ~280pt 内容区；
+            // 再加 hero padding，240 会被固有宽度撑破，HSplitView 会从左侧裁切整栏。
+            repositoryList.frame(minWidth: 300, idealWidth: 320, maxWidth: 400)
             detail
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -662,6 +664,8 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                     .padding(.bottom, 12)
                 }
+                // 约束内容宽度等于侧栏，避免固有宽度撑破后被 HSplitView 从左侧裁切。
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .coordinateSpace(name: "knowledgeBrowserSidebarScroll")
             .onPreferenceChange(KnowledgeRAGBrowserScrollOffsetKey.self) { offsetY in
@@ -670,6 +674,9 @@ private struct KnowledgeRAGBrowserView: View {
 
             collapsedKnowledgeHeader
         }
+        // 把侧栏钉在可用宽度内：子视图固有宽度再大也不往左溢出裁切。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .clipped()
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
     }
 
@@ -690,6 +697,7 @@ private struct KnowledgeRAGBrowserView: View {
             retrievalTestCard
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 0...8pt 保持完整上下文，随后在 64pt 内收敛为紧凑摘要，减少列表滚动时的突变感。
@@ -935,19 +943,23 @@ private struct KnowledgeRAGBrowserView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: isRetrievalTestSettingsExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
                     Text("rag.browser.retrieval.settings.title")
                         .font(.caption.weight(.semibold))
+                        .lineLimit(1)
                     if viewModel.hasUnsavedRetrievalTestSettings {
                         Text("rag.browser.retrieval.settings.unsaved")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
                     }
-                    Spacer()
+                    Spacer(minLength: 4)
                     Text("rag.browser.retrieval.settings.draftHint")
                         .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                    Image(systemName: isRetrievalTestSettingsExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
@@ -967,7 +979,8 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                     Slider(value: retrievalTestSimilarityBinding, in: 0...1, step: 0.01)
 
-                    HStack(alignment: .top, spacing: 10) {
+                    // 窄侧栏里并排两列会被英文长标签撑破固有宽度；改纵向堆叠。
+                    VStack(alignment: .leading, spacing: 10) {
                         retrievalTestNumberField(
                             titleKey: "rag.workspace.retrieval.finalChunkLimit",
                             text: retrievalTestFinalLimitBinding
@@ -981,22 +994,27 @@ private struct KnowledgeRAGBrowserView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("rag.workspace.retrieval.sources.title")
                             .font(.caption.weight(.medium))
-                        // 四个来源必须单行展示；HStack 本身不换行，标签再锁
-                        // lineLimit(1)，窄侧栏时压缩字间距也不折到第二行。
-                        HStack(spacing: 8) {
+                        // 单行 4 个 fixedSize Toggle 在英文 locale 下固有宽度常超 300pt，
+                        // 会把整侧栏撑破并触发 HSplitView 左侧裁切；改为 2×2 网格。
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(minimum: 0), spacing: 8, alignment: .leading),
+                                GridItem(.flexible(minimum: 0), spacing: 8, alignment: .leading),
+                            ],
+                            alignment: .leading,
+                            spacing: 6
+                        ) {
                             ForEach(RAGChunkSource.allCases, id: \.self) { source in
                                 Toggle(isOn: retrievalTestSourceBinding(source)) {
                                     Text(source.titleKey)
                                         .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
+                                        .minimumScaleFactor(0.8)
                                 }
                                 .font(.caption)
                                 .toggleStyle(.checkbox)
-                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            Spacer(minLength: 0)
                         }
-                        .fixedSize(horizontal: false, vertical: true)
                     }
 
                     HStack(spacing: 8) {
@@ -1083,11 +1101,13 @@ private struct KnowledgeRAGBrowserView: View {
             Text(titleKey)
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
             TextField("", text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospacedDigit())
                 .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var retrievalTestSimilarityBinding: Binding<Double> {

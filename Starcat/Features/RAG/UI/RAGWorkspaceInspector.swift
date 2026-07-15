@@ -91,9 +91,9 @@ struct RAGWorkspaceInspector: View {
                 // 图标只与 headline 同行对齐；若跟 title+caption 整块 center，视觉上会漂到 Context 上方。
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .center, spacing: 8) {
-                        // 多层来源叠成上下文：比 doc.on.doc 更贴「本轮组装进回答的多路来源」语义，
-                        // 也与左侧 RAG rail 的 layers 图标形成同一视觉族。
-                        Image(systemName: "square.3.layers.3d.down.right.fill")
+                        // 多层来源叠成上下文：比 doc.on.doc 更贴「本轮组装进回答的多路来源」语义。
+                        // 注意使用当前 macOS 可用的 SF Symbol；不可用 symbol 会只占位、不绘制图标。
+                        Image(systemName: "square.stack.3d.down.right.fill")
                             .font(iconFont(size: 14, weight: .semibold))
                             .foregroundStyle(Color.accentColor)
                             .frame(width: 18)
@@ -439,7 +439,9 @@ struct RAGWorkspaceInspector: View {
                         metadataLanguagesGroup(Array(snapshot.topLanguages.prefix(6)))
                         metadataActivityGroup(snapshot)
                         metadataKnowledgeArtifactsGroup(snapshot)
+                        metadataContentFreshnessGroup(snapshot)
                         metadataSourceCoverageGroup(snapshot)
+                        metadataIndexAvailabilityGroup(snapshot)
                         metadataIndexGroup(snapshot.indexHealth)
 
                         if !snapshot.topStarredRepositories.isEmpty {
@@ -459,6 +461,28 @@ struct RAGWorkspaceInspector: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
+        }
+    }
+
+    /// 新鲜度只表示近 30 天发生过内容更新，不把超过 30 天的摘要误判成失效。
+    @ViewBuilder
+    private func metadataContentFreshnessGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.freshness",
+                systemImage: "clock.arrow.circlepath",
+                tint: .green,
+                helpTopic: .freshness,
+                snapshot: snapshot
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.notesEdited30d",
+                value: localizedInteger(snapshot.privateNotesEditedInLast30DaysProjectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.summariesGenerated30d",
+                value: localizedInteger(snapshot.aiSummariesGeneratedInLast30DaysProjectCount)
+            )
         }
     }
 
@@ -686,10 +710,36 @@ struct RAGWorkspaceInspector: View {
                     value: String(
                         format: String.l10n("rag.workspace.inspector.metadata.sourceCoverageFormat"),
                         localizedInteger(item.repositoryCount),
-                        localizedInteger(item.searchableChunkCount)
+                        localizedInteger(item.readyChunkCount)
                     )
                 )
             }
+        }
+    }
+
+    /// 可用性指标解释“为什么召回不到”，详细统计口径放在 Popover，主面板只保留短标签与数字。
+    @ViewBuilder
+    private func metadataIndexAvailabilityGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.availability",
+                systemImage: "checkmark.shield",
+                tint: .orange,
+                helpTopic: .availability,
+                snapshot: snapshot
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.excludedChunks",
+                value: localizedInteger(snapshot.excludedChunkCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.withoutREADME",
+                value: localizedInteger(snapshot.withoutReadmeSourceProjectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.withoutIndexableSource",
+                value: localizedInteger(snapshot.withoutIndexableSourceProjectCount)
+            )
         }
     }
 
@@ -1854,6 +1904,11 @@ struct RAGWorkspaceInspector: View {
         case .repositoriesWithAISummary: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithAISummary")
         case .repositoriesWithPrivateNotes: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithPrivateNotes")
         case .repositoriesWithAIGeneratedNotes: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithAIGeneratedNotes")
+        case .repositoriesWithRecentlyEditedPrivateNotes: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithRecentlyEditedPrivateNotes")
+        case .repositoriesWithRecentlyGeneratedAISummaries: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithRecentlyGeneratedAISummaries")
+        case .excludedRAGChunks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.excludedRAGChunks")
+        case .repositoriesWithoutREADME: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutREADME")
+        case .repositoriesWithoutIndexableSource: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutIndexableSource")
         }
     }
 

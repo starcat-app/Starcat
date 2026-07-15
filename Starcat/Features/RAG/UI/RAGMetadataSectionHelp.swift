@@ -9,32 +9,37 @@
 import SwiftUI
 
 /// 元数据面板中需要解释统计口径的分组；避免把单位和说明重复塞进窄 Inspector 行内。
-enum RAGMetadataSectionHelpTopic {
+enum RAGMetadataSectionHelpTopic: String, CaseIterable, Identifiable {
     case artifacts
+    case freshness
     case sourceCoverage
+    case availability
+
+    var id: String { rawValue }
 
     var systemImage: String {
         switch self {
         case .artifacts: return "sparkles"
+        case .freshness: return "clock.arrow.circlepath"
         case .sourceCoverage: return "square.stack.3d.up"
+        case .availability: return "checkmark.shield"
         }
     }
 
     var tint: Color {
         switch self {
         case .artifacts: return .purple
+        case .freshness: return .green
         case .sourceCoverage: return .teal
+        case .availability: return .orange
         }
     }
 
-    var keyPrefix: String { "rag.workspace.inspector.metadata.help.\(rawValue)" }
-
-    private var rawValue: String {
-        switch self {
-        case .artifacts: return "artifacts"
-        case .sourceCoverage: return "sourceCoverage"
-        }
-    }
+    var openHelpKey: String { "rag.workspace.inspector.metadata.help.\(rawValue).open" }
+    var titleKey: String { "rag.workspace.inspector.metadata.help.\(rawValue).title" }
+    var definitionTitleKey: String { "rag.workspace.inspector.metadata.help.\(rawValue).definition.title" }
+    var definitionBodyKey: String { "rag.workspace.inspector.metadata.help.\(rawValue).definition.body" }
+    var fieldsTitleKey: String { "rag.workspace.inspector.metadata.help.\(rawValue).fields.title" }
 }
 
 /// 标题旁的 info.circle。Popover 状态限定在按钮自身，避免影响 Inspector 的展开状态。
@@ -56,7 +61,7 @@ struct RAGMetadataSectionInfoButton: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(LocalizedStringKey("\(topic.keyPrefix).open"))
+        .help(LocalizedStringKey(topic.openHelpKey))
         .popover(isPresented: $isPresented, arrowEdge: .leading) {
             RAGMetadataSectionHelpPopover(topic: topic, snapshot: snapshot)
                 .appLocaleEnvironment()
@@ -90,7 +95,7 @@ struct RAGMetadataSectionHelpPopover: View {
                 .font(iconFont(size: 12, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(topic.tint)
                 .accessibilityHidden(true)
-            Text(LocalizedStringKey("\(topic.keyPrefix).title"))
+            Text(LocalizedStringKey(topic.titleKey))
                 .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(.primary)
         }
@@ -98,10 +103,10 @@ struct RAGMetadataSectionHelpPopover: View {
 
     private var definition: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(LocalizedStringKey("\(topic.keyPrefix).definition.title"))
+            Text(LocalizedStringKey(topic.definitionTitleKey))
                 .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(.primary)
-            Text(LocalizedStringKey("\(topic.keyPrefix).definition.body"))
+            Text(LocalizedStringKey(topic.definitionBodyKey))
                 .font(ragFont(.caption, scale: interfaceScale))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -118,6 +123,11 @@ struct RAGMetadataSectionHelpPopover: View {
                 ("rag.workspace.inspector.metadata.help.artifacts.field.privateNotes", localizedInteger(snapshot.privateNoteProjectCount)),
                 ("rag.workspace.inspector.metadata.help.artifacts.field.aiGeneratedNotes", localizedInteger(snapshot.aiGeneratedNoteProjectCount)),
             ])
+        case .freshness:
+            detailRows([
+                ("rag.workspace.inspector.metadata.help.freshness.field.notes", localizedInteger(snapshot.privateNotesEditedInLast30DaysProjectCount)),
+                ("rag.workspace.inspector.metadata.help.freshness.field.summaries", localizedInteger(snapshot.aiSummariesGeneratedInLast30DaysProjectCount)),
+            ])
         case .sourceCoverage:
             VStack(alignment: .leading, spacing: 8) {
                 Text("rag.workspace.inspector.metadata.help.sourceCoverage.fields.title")
@@ -129,18 +139,26 @@ struct RAGMetadataSectionHelpPopover: View {
                         value: String(
                             format: String.l10n("rag.workspace.inspector.metadata.help.sourceCoverage.valueFormat"),
                             localizedInteger(item.repositoryCount),
-                            localizedInteger(item.searchableChunkCount),
+                            localizedInteger(item.readyChunkCount),
+                            localizedInteger(item.failedChunkCount),
+                            localizedInteger(item.staleChunkCount),
                             localizedInteger(item.chunkCount)
                         )
                     )
                 }
             }
+        case .availability:
+            detailRows([
+                ("rag.workspace.inspector.metadata.help.availability.field.excludedChunks", localizedInteger(snapshot.excludedChunkCount)),
+                ("rag.workspace.inspector.metadata.help.availability.field.withoutREADME", localizedInteger(snapshot.withoutReadmeSourceProjectCount)),
+                ("rag.workspace.inspector.metadata.help.availability.field.withoutSource", localizedInteger(snapshot.withoutIndexableSourceProjectCount)),
+            ])
         }
     }
 
     private func detailRows(_ rows: [(String, String)]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(LocalizedStringKey("\(topic.keyPrefix).fields.title"))
+            Text(LocalizedStringKey(topic.fieldsTitleKey))
                 .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(.primary)
             ForEach(rows, id: \.0) { row in
@@ -160,6 +178,7 @@ struct RAGMetadataSectionHelpPopover: View {
                 .foregroundStyle(.primary)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

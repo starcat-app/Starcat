@@ -21021,6 +21021,41 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "含私有笔记的项目数" } }
       }
     },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithRecentlyEditedPrivateNotes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Recently edited private notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天编辑过笔记的项目数" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithRecentlyGeneratedAISummaries": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Recently generated AI summaries" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天生成过摘要的项目数" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.excludedRAGChunks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Excluded RAG chunks" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除 RAG 分片数" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutREADME": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories without README" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无 README 的项目数" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutIndexableSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories without indexable sources" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无可索引来源的项目数" } }
+      }
+    },
     "rag.workspace.inspector.plan.analyticsFormat": {
       "localizations": {
         "en": {
@@ -58404,11 +58439,25 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 内容" } }
       }
     },
+    "rag.workspace.inspector.metadata.group.freshness": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Content freshness" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "内容新鲜度" } }
+      }
+    },
     "rag.workspace.inspector.metadata.group.sourceCoverage": {
       "extractionState": "manual",
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "RAG source coverage" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "RAG 来源覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.group.availability": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Index availability" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "索引可用性" } }
       }
     },
     "rag.workspace.inspector.metadata.group.index": {
@@ -58558,6 +58607,41 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } }
       }
     },
+    "rag.workspace.inspector.metadata.notesEdited30d": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Notes edited (30d)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天笔记" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.summariesGenerated30d": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Summaries generated (30d)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天摘要" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.excludedChunks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Excluded chunks" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除分片" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.withoutREADME": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No README" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无 README" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.withoutIndexableSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No indexable source" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无可索引来源" } }
+      }
+    },
     "rag.workspace.inspector.metadata.help.artifacts.open": {
       "extractionState": "manual",
       "localizations": {
@@ -58621,6 +58705,55 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 生成笔记" } }
       }
     },
+    "rag.workspace.inspector.metadata.help.freshness.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Explain content freshness" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明内容新鲜度" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.freshness.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Content freshness" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "内容新鲜度" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.freshness.definition.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What counts as recent?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "怎样算近期内容？" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.freshness.definition.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Counts repositories with a non-empty private note edited, or an AI summary generated, in the last 30 days. An older summary is not automatically invalid." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "统计近 30 天编辑过非空私有笔记、或生成过 AI 摘要的项目数。超过 30 天的摘要不会因此被判定为失效。" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.freshness.fields.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.freshness.field.notes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Private notes edited" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑过私有笔记" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.freshness.field.summaries": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI summaries generated" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生成过 AI 摘要" } }
+      }
+    },
     "rag.workspace.inspector.metadata.help.sourceCoverage.open": {
       "extractionState": "manual",
       "localizations": {
@@ -58645,8 +58778,8 @@
     "rag.workspace.inspector.metadata.help.sourceCoverage.definition.body": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The main panel shows indexed repositories first, then searchable chunks. This popover adds the total chunk count; excluded chunks are not included." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主面板依次显示已索引项目数与可用分片数；这里补充总分片数。已排除的分片不计入统计。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "The main panel shows repositories with source content, then ready chunks. This popover also separates failed and stale chunks. Excluded chunks are omitted from chunk status counts." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主面板依次显示有来源内容的项目数与就绪分片数；这里进一步区分失败和过期分片。分片状态统计不包含已排除分片。" } }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.fields.title": {
@@ -58659,8 +58792,64 @@
     "rag.workspace.inspector.metadata.help.sourceCoverage.valueFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ repositories · %2$@ searchable / %3$@ total chunks" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ 个项目 · %2$@ 可用 / %3$@ 总分片" } }
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ repos\nReady %2$@ · Failed %3$@ · Stale %4$@ · Total %5$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ 个项目\n就绪 %2$@ · 失败 %3$@ · 过期 %4$@ · 总计 %5$@" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Explain index availability" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明索引可用性" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Index availability" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "索引可用性" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.definition.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Why can retrieval miss?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "为什么可能召回不到？" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.definition.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Excluded chunks are intentionally hidden from retrieval. No README means no README source was built; no indexable source means the repository has no active, non-excluded RAG chunk from any source." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除分片不会参与召回；无 README 表示未生成 README 来源；无可索引来源表示该项目不存在任何未排除的 RAG 来源分片。" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.fields.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.field.excludedChunks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Excluded chunks" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除分片" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.field.withoutREADME": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories without README" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无 README 的项目" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.help.availability.field.withoutSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repositories without indexable sources" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无可索引来源的项目" } }
       }
     },
     "rag.workspace.inspector.metadata.index.ready": {

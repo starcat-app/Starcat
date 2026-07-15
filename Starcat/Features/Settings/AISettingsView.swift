@@ -387,7 +387,12 @@ struct AISettingsTab: View {
                     Label("settings.ai.provider.add", systemImage: "plus")
                         .labelStyle(.iconOnly)
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 28, height: 28)
                 .help("settings.ai.provider.addHelp")
+                .accessibilityLabel(Text("settings.ai.provider.addHelp"))
                 .disabled(draftProfile != nil)
 
                 Button(role: .destructive) {
@@ -398,7 +403,12 @@ struct AISettingsTab: View {
                     Label("settings.ai.provider.delete", systemImage: "trash")
                         .labelStyle(.iconOnly)
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 28, height: 28)
                 .help("settings.ai.provider.deleteHelp")
+                .accessibilityLabel(Text("settings.ai.provider.deleteHelp"))
                 .disabled(selectedProfile == nil)
             }
 
@@ -469,6 +479,8 @@ struct AISettingsTab: View {
                             Label("settings.ai.provider.testButton", systemImage: "network")
                         }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .disabled(isTestingProfileID != nil || !canTest(profile))
                 }
 
@@ -479,7 +491,11 @@ struct AISettingsTab: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("settings.ai.provider.sectionTitle", systemImage: "server.rack")
+            SettingsSectionHeader(
+                "settings.ai.provider.sectionTitle",
+                systemImage: "server.rack",
+                style: .prominent
+            )
         } footer: {
             Text("settings.ai.provider.sectionFooter")
         }
@@ -1749,7 +1765,7 @@ struct AISettingsTab: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Label("ai.context.storage.outputDirectory", systemImage: "doc.text.magnifyingglass")
-                    .font(.headline)
+                    .font(.callout.weight(.medium))
                 Text("ai.context.storage.subtitle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1767,13 +1783,20 @@ struct AISettingsTab: View {
                 Button("ai.context.storage.choose") {
                     chooseAIContextOutputDirectory()
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .fixedSize()
                 Button {
                     revealAIContextOutputDirectory()
                 } label: {
                     Image(systemName: "folder")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(width: 28, height: 28)
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
                 .help(Text("ai.context.storage.revealHelp"))
+                .accessibilityLabel(Text("ai.context.storage.revealHelp"))
                 .fixedSize()
                 ResetIconButton(help: Text("ai.context.storage.resetHelp")) {
                     resetAIContextOutputDirectory()
@@ -1936,7 +1959,11 @@ struct AISettingsTab: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } header: {
-            SettingsSectionHeader("settings.ai.privacy.section", systemImage: "lock.shield")
+            SettingsSectionHeader(
+                "settings.ai.privacy.section",
+                systemImage: "lock.shield",
+                style: .prominent
+            )
         }
     }
 

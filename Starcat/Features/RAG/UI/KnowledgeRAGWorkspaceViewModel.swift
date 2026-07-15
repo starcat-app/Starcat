@@ -497,6 +497,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func newConversation() async {
+        let requestGeneration = conversationSelectionGate.begin()
         do {
             // 当前选中目录时，新会话直接归入该一级分组。
             let conversation = try await conversationStore.createConversation(
@@ -504,6 +505,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                 groupID: selectedGroupID
             )
             conversations.insert(conversation, at: 0)
+            // 创建本身已经成功时保留列表项，但若用户期间点选了别处，不再抢回当前选择。
+            guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
             selectedConversationID = conversation.id
             messages = []
             conversationContextSummary = nil
@@ -522,14 +525,18 @@ final class KnowledgeRAGWorkspaceViewModel {
             guard let detail = try await conversationStore.loadConversation(id: id) else { return }
             // 用户可能已点选另一会话。即使旧的 SQLite 读取此刻才返回，也不能覆盖 UI。
             guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
+            // Debug 文件按会话目录存放。会话切换时仅载入当前会话，避免不同问题的诊断混在一起。
+            // 内存仍保持旧→新，才能让 FIFO 上限正确淘汰最早记录；Inspector 自己倒排展示。
+            let persistedDebugTraces = (try? await debugFileStore.load(conversationID: id)) ?? []
+            // Debug 文件读取是第二个 suspension point；快速 A→B 时，A 的迟到结果不能重置 B 的界面。
+            guard !Task.isCancelled,
+                  conversationSelectionGate.isCurrent(requestGeneration) else { return }
+            // 两次读取都完成后再一次性切换选中项，避免加载窗口里出现“B 的 ID + A 的确认框”。
             selectedConversationID = id
             // 点选会话时目录选中态让位，避免误以为「新会话仍进目录」。
             selectedGroupID = nil
             messages = detail.messages
             conversationContextSummary = detail.contextSummary
-            // Debug 文件按会话目录存放。会话切换时仅载入当前会话，避免不同问题的诊断混在一起。
-            // 内存仍保持旧→新，才能让 FIFO 上限正确淘汰最早记录；Inspector 自己倒排展示。
-            let persistedDebugTraces = (try? await debugFileStore.load(conversationID: id)) ?? []
             let liveDebugTraces = liveDebugTracesByConversation[id] ?? []
             debugTraces = Dictionary(
                 (persistedDebugTraces + liveDebugTraces).map { ($0.id, $0) },
@@ -731,6 +738,10 @@ final class KnowledgeRAGWorkspaceViewModel {
         answerStartedAtByConversation.removeAll()
         answerElapsedDurationsByConversation.removeAll()
         answerElapsedDuration = nil
+        // 标题生成虽然与主回答并行，但同样持有会话 store；关窗或切库时不能留下旧库写入。
+        for conversationID in Array(conversationTitleGenerations.keys) {
+            cancelConversationTitleGeneration(for: conversationID)
+        }
     }
 
     func dismissError() {
@@ -860,8 +871,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         return duration
     }
 
-    /// 后台会话完成时不得冻结或清空当前会话的计时状态；后台落库的耗时由其请求结束时刻计算。
-    private func finishAnswerTimingIfVisible(
+    /// 只有当前 generation 能结束该会话计时；旧任务收尾不能停止同会话的新重试计时器。
+    private func finishAnswerTimingIfCurrent(
         for conversationID: UUID,
         generationID: UUID,
         fallbackStartedAt: Date
@@ -884,6 +895,13 @@ final class KnowledgeRAGWorkspaceViewModel {
         if selectedConversationID == conversationID {
             answerState = state
         }
+    }
+
+    /// 每个 `await` 后都要重新判断，不能缓存结果；否则 A 落库期间切到 B，迟到回调仍会覆盖 B。
+    private func canUpdateVisibleAnswer(for conversationID: UUID, generationID: UUID) -> Bool {
+        selectedConversationID == conversationID
+            && (answerGenerations[conversationID]?.id == generationID
+                || answerGenerations[conversationID] == nil)
     }
 
     private func clearActiveAnswerPresentation(for conversationID: UUID) {
@@ -943,7 +961,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func confirmRemoteContext() {
         guard let conversationID = selectedConversationID else { return }
-        let consent = remoteContextConsents[conversationID] ?? remoteContextConsent
+        let consent = remoteContextConsents[conversationID]
         pendingRemoteWorkItems = []
         pendingRemoteWorkItemsByConversation[conversationID] = []
         remoteContextConsents[conversationID] = nil
@@ -952,7 +970,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func skipRemoteContext() {
         guard let conversationID = selectedConversationID else { return }
-        let consent = remoteContextConsents[conversationID] ?? remoteContextConsent
+        let consent = remoteContextConsents[conversationID]
         pendingRemoteWorkItems = []
         approvedRemoteWorkItemIDs = []
         pendingRemoteWorkItemsByConversation[conversationID] = []
@@ -1843,7 +1861,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                         generateConversationTitle(
                             using: service,
                             conversationID: conversationID,
-                            firstQuestion: question
+                            firstQuestion: question,
+                            isDebugEnabled: requestSnapshot.isDebugEnabled,
+                            debugEndpoint: requestSnapshot.debugEndpoint
                         )
                     }
                 case .retrieval(let result):
@@ -1924,7 +1944,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 executionSteps: &turnExecutionSteps
             )
             syncExecutionSteps(turnExecutionSteps, for: conversationID)
-            let processingDuration = finishAnswerTimingIfVisible(
+            let processingDuration = finishAnswerTimingIfCurrent(
                 for: conversationID,
                 generationID: generationID,
                 fallbackStartedAt: turnStartedAt
@@ -1989,8 +2009,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             if canPublishCancelledState, selectedConversationID == conversationID {
                 streamingAnswer = accumulatedAnswer
             }
-            activeStreamingAnswersByConversation[conversationID] = accumulatedAnswer
-            let processingDuration = finishAnswerTimingIfVisible(
+            if canPublishCancelledState {
+                activeStreamingAnswersByConversation[conversationID] = accumulatedAnswer
+            }
+            let processingDuration = finishAnswerTimingIfCurrent(
                 for: conversationID,
                 generationID: generationID,
                 fallbackStartedAt: turnStartedAt
@@ -2027,8 +2049,10 @@ final class KnowledgeRAGWorkspaceViewModel {
                 if canPublishCancelledState, selectedConversationID == conversationID {
                     streamingAnswer = accumulatedAnswer
                 }
-                activeStreamingAnswersByConversation[conversationID] = accumulatedAnswer
-                let processingDuration = finishAnswerTimingIfVisible(
+                if canPublishCancelledState {
+                    activeStreamingAnswersByConversation[conversationID] = accumulatedAnswer
+                }
+                let processingDuration = finishAnswerTimingIfCurrent(
                     for: conversationID,
                     generationID: generationID,
                     fallbackStartedAt: turnStartedAt
@@ -2051,7 +2075,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 if answerGenerations[conversationID]?.id == generationID {
                     syncExecutionSteps(turnExecutionSteps, for: conversationID)
                     updateAnswerState(turnState, for: conversationID)
-                    _ = finishAnswerTimingIfVisible(
+                    _ = finishAnswerTimingIfCurrent(
                         for: conversationID,
                         generationID: generationID,
                         fallbackStartedAt: turnStartedAt
@@ -2065,7 +2089,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     scheduleFinalizeFailedTurn(
                         conversationID: conversationID,
                         userMessage: userMessage,
-                        question: question
+                        question: question,
+                        generationID: generationID
                     )
                 }
             }
@@ -2075,15 +2100,19 @@ final class KnowledgeRAGWorkspaceViewModel {
             state: debugTraceState(for: turnState),
             conversationID: conversationID
         )
-        await persistDebugTrace(
-            finishedDebugTrace,
-            conversationID: conversationID,
-            userMessageID: userMessage.id
-        )
-        let canFinalizeVisibleState = selectedConversationID == conversationID
-            && (answerGenerations[conversationID]?.id == generationID
-                || answerGenerations[conversationID] == nil)
-        if canFinalizeVisibleState {
+        if discardedAnswerConversationIDs.contains(conversationID) {
+            // 删除会话后不能由迟到的任务重新创建其 Debug 文件；切库时也不能写入新账户目录。
+            if let finishedDebugTrace {
+                liveDebugTracesByConversation[conversationID]?.removeAll { $0.id == finishedDebugTrace.id }
+            }
+        } else {
+            await persistDebugTrace(
+                finishedDebugTrace,
+                conversationID: conversationID,
+                userMessageID: userMessage.id
+            )
+        }
+        if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
             remoteContextConsent = nil
             if turnState != .generating { streamingPresentation = nil }
         }
@@ -2108,7 +2137,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func scheduleFinalizeFailedTurn(
         conversationID: UUID,
         userMessage: RAGStoredMessage,
-        question: String
+        question: String,
+        generationID: UUID
     ) {
         Task { [weak self] in
             guard let self else { return }
@@ -2119,8 +2149,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                     question: question,
                     createdAt: userMessage.createdAt
                 )
-                if selectedConversationID == conversationID,
-                   let detail = try await conversationStore.loadConversation(id: conversationID) {
+                if canUpdateVisibleAnswer(for: conversationID, generationID: generationID),
+                   let detail = try await conversationStore.loadConversation(id: conversationID),
+                   canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
                     messages = detail.messages
                     conversationContextSummary = detail.contextSummary
                     loadedMessageSequence &+= 1
@@ -2174,9 +2205,6 @@ final class KnowledgeRAGWorkspaceViewModel {
         generationID: UUID
     ) async {
         let partial = partialAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
-        let canUpdateVisibleState = selectedConversationID == conversationID
-            && (answerGenerations[conversationID]?.id == generationID
-                || answerGenerations[conversationID] == nil)
         if partial.isEmpty {
             // 尚无 AI 输出：保留气泡，落库用户消息，供复制 / 编辑。
             do {
@@ -2186,8 +2214,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                     question: question,
                     createdAt: userMessage.createdAt
                 )
-                if canUpdateVisibleState,
-                   let detail = try await conversationStore.loadConversation(id: conversationID) {
+                if canUpdateVisibleAnswer(for: conversationID, generationID: generationID),
+                   let detail = try await conversationStore.loadConversation(id: conversationID),
+                   canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
                     messages = detail.messages
                     conversationContextSummary = detail.contextSummary
                     loadedMessageSequence &+= 1
@@ -2197,9 +2226,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                 // 忽略：停止路径不应弹失败窗。
             } catch {
                 // 落库失败仍保留内存中的用户气泡，避免「停止后问题消失」。
-                if canUpdateVisibleState { errorMessage = error.localizedDescription }
+                if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
+                    errorMessage = error.localizedDescription
+                }
             }
-            if canUpdateVisibleState { streamingAnswer = "" }
+            if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
+                streamingAnswer = ""
+            }
         } else {
             do {
                 try await persistAnswer(
@@ -2226,7 +2259,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     processingDuration: processingDuration,
                     createdAt: ISO8601DateFormatter.shared.string(from: Date())
                 )
-                if canUpdateVisibleState {
+                if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
                     if !messages.contains(where: { $0.id == userMessage.id }) {
                         messages.append(userMessage)
                     }
@@ -2248,7 +2281,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     processingDuration: processingDuration,
                     createdAt: ISO8601DateFormatter.shared.string(from: Date())
                 )
-                if canUpdateVisibleState {
+                if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
                     if !messages.contains(where: { $0.id == userMessage.id }) {
                         messages.append(userMessage)
                     }
@@ -2265,20 +2298,20 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func generateConversationTitle(
         using service: KnowledgeRAGService,
         conversationID: UUID,
-        firstQuestion: String
+        firstQuestion: String,
+        isDebugEnabled: Bool,
+        debugEndpoint: String?
     ) {
         cancelConversationTitleGeneration(for: conversationID)
         let generationID = UUID()
-        let debugEnabled = isDebugModeEnabled
-        let debugEndpoint = selectedModelEndpoint
-        let debugTraceID = debugEnabled
+        let debugTraceID = isDebugEnabled
             ? beginDebugTrace(category: .conversationTitle, conversationID: conversationID)
             : nil
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let result = await service.generateConversationTitle(
                 firstQuestion: firstQuestion,
-                isDebugEnabled: debugEnabled,
+                isDebugEnabled: isDebugEnabled,
                 debugEndpoint: debugEndpoint
             )
             guard !Task.isCancelled,
@@ -2373,7 +2406,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         to traceID: UUID?,
         conversationID: UUID
     ) {
-        guard isDebugModeEnabled, let traceID else { return }
+        // 是否采集已在请求快照和 trace 创建时决定；后台 A 不应因当前 B 的 UI 设置变化而改写策略。
+        guard let traceID else { return }
         let boundedEvent = Self.boundedDebugEvent(event)
         // GitHub 远程上下文会并发完成；continuation 的送达顺序不保证严格等于发生时间。
         // 按 Trace 相对时间插入，Inspector 的相邻事件耗时始终可解释，且缓存/网络混合时
@@ -2898,18 +2932,16 @@ final class KnowledgeRAGWorkspaceViewModel {
             suggestedActions: suggestedActions,
             processingDuration: processingDuration
         )
-        let canUpdateVisibleState = selectedConversationID == conversationID
-            && (answerGenerations[conversationID]?.id == generationID
-                || answerGenerations[conversationID] == nil)
-        if canUpdateVisibleState,
-           let detail = try await conversationStore.loadConversation(id: conversationID) {
+        if canUpdateVisibleAnswer(for: conversationID, generationID: generationID),
+           let detail = try await conversationStore.loadConversation(id: conversationID),
+           canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
             messages = detail.messages
             conversationContextSummary = detail.contextSummary
             loadedMessageSequence &+= 1
             // 回答完成后不自动选中引用，避免强制拉开右侧「证据」tab。
         }
         conversations = try await conversationStore.listConversations()
-        if canUpdateVisibleState {
+        if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
             streamingAnswer = ""
             streamingPresentation = nil
             executionSteps = []

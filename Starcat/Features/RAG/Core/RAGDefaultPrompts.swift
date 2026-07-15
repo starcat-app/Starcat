@@ -134,7 +134,7 @@ enum RAGDefaultPrompts {
           "remoteContextRequests":[{"resource":"github_issues","query":"keywords only","reason":"string","maxRepos":5,"perRepoLimit":10,"state":"all|open|closed","sort":"created|updated","order":"asc|desc"}],
           "webSearchRequests":[{"query":"concise public web search query","reason":"string","maxResults":8}],
           "requiresLiveEvidence":false,
-          "analytics":null or {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks","direction":"asc|desc","limit":10},
+          "analytics":null or {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks|repositories_with_ai_summary|repositories_with_private_notes|repositories_with_ai_generated_notes|repositories_with_recently_edited_private_notes|repositories_with_recently_generated_ai_summaries|excluded_rag_chunks|repositories_without_readme|repositories_without_indexable_source","direction":"asc|desc","limit":10},
           "confidence":"high|medium|needs_clarification",
           "clarificationQuestion":null or string,
           "fallbackQuestions":["short actionable question"],

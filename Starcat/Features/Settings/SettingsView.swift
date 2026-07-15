@@ -922,6 +922,8 @@ private struct DiagnosticsSettingsTab: View {
                             Label("diagnostics.export.button", systemImage: "square.and.arrow.up")
                                 .lineLimit(1)
                         }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                         .disabled(isExporting)
                         .fixedSize(horizontal: true, vertical: false)
                     }
@@ -943,7 +945,11 @@ private struct DiagnosticsSettingsTab: View {
                     }
                 }
             } header: {
-                SettingsSectionHeader("settings.diagnostics.export.section", systemImage: "square.and.arrow.up")
+                SettingsSectionHeader(
+                    "settings.diagnostics.export.section",
+                    systemImage: "square.and.arrow.up",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -962,7 +968,11 @@ private struct DiagnosticsSettingsTab: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                SettingsSectionHeader("settings.diagnostics.telemetry.section", systemImage: "chart.bar")
+                SettingsSectionHeader(
+                    "settings.diagnostics.telemetry.section",
+                    systemImage: "chart.bar",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -971,7 +981,11 @@ private struct DiagnosticsSettingsTab: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                SettingsSectionHeader("settings.diagnostics.privacy.section", systemImage: "lock.shield")
+                SettingsSectionHeader(
+                    "settings.diagnostics.privacy.section",
+                    systemImage: "lock.shield",
+                    style: .prominent
+                )
             }
         }
         .formStyle(.grouped)
@@ -1214,6 +1228,7 @@ private struct StorageSettingsTab: View {
                             await triggerReadmePrefetch(using: cleaner)
                         }
                     }
+                    .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .disabled(shouldDisableReadmePrefetchRunNow)
                 }
@@ -1222,7 +1237,11 @@ private struct StorageSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
-                SettingsSectionHeader("settings.storage.readmePrefetch.section", systemImage: "doc.text.magnifyingglass")
+                SettingsSectionHeader(
+                    "settings.storage.readmePrefetch.section",
+                    systemImage: "doc.text.magnifyingglass",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -1245,7 +1264,11 @@ private struct StorageSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                SettingsSectionHeader("settings.storage.chatHistoryBackend.section", systemImage: "bubble.left.and.bubble.right")
+                SettingsSectionHeader(
+                    "settings.storage.chatHistoryBackend.section",
+                    systemImage: "bubble.left.and.bubble.right",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -1348,14 +1371,22 @@ private struct StorageSettingsTab: View {
                     revealItem: .codebaseMemory
                 )
             } header: {
-                SettingsSectionHeader("settings.storage.cacheUsage", systemImage: "internaldrive")
+                SettingsSectionHeader(
+                    "settings.storage.cacheUsage",
+                    systemImage: "internaldrive",
+                    style: .prominent
+                )
             }
 
             // Undo Star 历史保留设置（2026-07-05）
             Section {
                 UndoStarRetentionSlider(retentionDays: $settings.undoStarRetentionDays)
             } header: {
-                SettingsSectionHeader("activity.category.undoStar", systemImage: "arrow.uturn.backward.circle")
+                SettingsSectionHeader(
+                    "activity.category.undoStar",
+                    systemImage: "arrow.uturn.backward.circle",
+                    style: .prominent
+                )
             }
 
             Section {
@@ -1385,7 +1416,11 @@ private struct StorageSettingsTab: View {
                     }
                 }
             } header: {
-                SettingsSectionHeader("settings.storage.dangerZone", systemImage: "exclamationmark.triangle.fill")
+                SettingsSectionHeader(
+                    "settings.storage.dangerZone",
+                    systemImage: "exclamationmark.triangle.fill",
+                    style: .prominent
+                )
             }
 
             if isWorking {
@@ -1512,7 +1547,6 @@ private struct StorageSettingsTab: View {
                 action()
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
-                    .font(.headline)
                     .tint(buttonTint)
                     .foregroundStyle(buttonForeground)
                     .disabled(isDisabled)
@@ -1542,6 +1576,7 @@ private struct StorageSettingsTab: View {
                 Button("settings.storage.action.clear") {
                     pendingAction = action
                 }
+                .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .disabled(shouldDisableStorageActions || isWorking || isEmpty)
             }
@@ -1564,10 +1599,13 @@ private struct StorageSettingsTab: View {
             revealCacheLocation(item)
         } label: {
             Image(systemName: "folder")
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(Text("settings.storage.revealInFinder"))
+        .accessibilityLabel(Text("settings.storage.revealInFinder"))
         .disabled(shouldDisableStorageActions || isWorking)
     }
 

@@ -54,11 +54,16 @@ struct KnowledgeRAGCoreTests {
             try db.execute(sql: "UPDATE repos SET stars_count = 10, language = NULL WHERE id = 3")
             try db.execute(sql: "UPDATE repo_notes SET status = 'using', library_updated_at = datetime('now') WHERE repo_id = 1")
             try db.execute(sql: "UPDATE repo_notes SET status = 'inbox', library_updated_at = datetime('now') WHERE repo_id = 2")
-            try db.execute(sql: "UPDATE repo_notes SET content = 'human note' WHERE repo_id = 2")
-            try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1 WHERE repo_id = 3")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'human note', edited_at = datetime('now') WHERE repo_id = 2")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1, edited_at = datetime('now', '-90 days') WHERE repo_id = 3")
             try db.execute(sql: """
                 INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at)
                 VALUES (1, 'summary-model', 'summary-hash', '{}', datetime('now'))
+                """)
+            // 同一仓库的旧模型缓存不能放大覆盖率或近 30 天仓库数。
+            try db.execute(sql: """
+                INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at)
+                VALUES (1, 'old-summary-model', 'old-summary-hash', '{}', datetime('now', '-90 days'))
                 """)
             try db.execute(sql: """
                 INSERT INTO rag_chunks (
@@ -71,12 +76,32 @@ struct KnowledgeRAGCoreTests {
                     'embed-v1', 'ready', datetime('now'), datetime('now')
                 )
                 """)
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES
+                    (1, 'readme', '', 'readme', 'readme', 'README', 'readme:0', 0, '', 'README', 'failed readme', 'readme-failed', 2, 0, 'embed-v1', 'failed', datetime('now'), datetime('now')),
+                    (2, 'readme', '', 'readme', 'readme', 'README', 'readme:0', 0, '', 'README', 'stale readme', 'readme-stale', 2, 0, 'embed-v0', 'ready', datetime('now'), datetime('now')),
+                    (2, 'notes', '', 'notes', 'notes', 'Private note', 'notes:0', 0, '', 'Private note', 'excluded note', 'note-excluded', 2, 0, 'embed-v1', 'ready', datetime('now'), datetime('now'))
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_chunk_overrides (
+                    chunk_id, original_title, original_section_path, original_content, is_excluded, updated_at
+                )
+                SELECT id, title, section_path, content, 1, datetime('now')
+                FROM rag_chunks WHERE content_hash = 'note-excluded'
+                """)
         }
 
         let snapshot = try await KnowledgeBaseMetadataSnapshotProvider(
             database: database,
             embeddingModel: "embed-v1"
         ).fetch()
+        let summaryCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.summary })
+        let readmeCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.readme })
+        let noteCoverage = snapshot.sourceIndexCoverage.first(where: { $0.source == RAGChunkSource.notes })
 
         #expect(snapshot.projectCount == 3)
         #expect(snapshot.starredProjectCount == 2)
@@ -90,7 +115,18 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.aiSummaryProjectCount == 1)
         #expect(snapshot.privateNoteProjectCount == 2)
         #expect(snapshot.aiGeneratedNoteProjectCount == 1)
-        #expect(snapshot.sourceIndexCoverage.first { $0.source == .summary }?.chunkCount == 1)
+        #expect(snapshot.privateNotesEditedInLast30DaysProjectCount == 1)
+        #expect(snapshot.aiSummariesGeneratedInLast30DaysProjectCount == 1)
+        #expect(summaryCoverage?.chunkCount == 1)
+        #expect(summaryCoverage?.readyChunkCount == 1)
+        #expect(readmeCoverage?.repositoryCount == 2)
+        #expect(readmeCoverage?.failedChunkCount == 1)
+        #expect(readmeCoverage?.staleChunkCount == 1)
+        #expect(noteCoverage?.repositoryCount == 1)
+        #expect(noteCoverage?.chunkCount == 0)
+        #expect(snapshot.excludedChunkCount == 1)
+        #expect(snapshot.withoutReadmeSourceProjectCount == 1)
+        #expect(snapshot.withoutIndexableSourceProjectCount == 1)
         #expect(snapshot.topStarredRepositories.first == .init(repoID: 2, fullName: "octo/demo-2", stars: 120))
         #expect(snapshot.promptContext().contains("octo/demo-2 (120 stars)"))
 
@@ -115,10 +151,26 @@ struct KnowledgeRAGCoreTests {
             try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: Int64(id), state: .inLibrary)
         }
         try await database.writer.write { db in
-            try db.execute(sql: "UPDATE repo_notes SET content = 'human note' WHERE repo_id = 1")
-            try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1 WHERE repo_id = 2")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'human note', edited_at = datetime('now') WHERE repo_id = 1")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1, edited_at = datetime('now', '-90 days') WHERE repo_id = 2")
             try db.execute(sql: "INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at) VALUES (1, 'a', 'a', '{}', datetime('now'))")
             try db.execute(sql: "INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at) VALUES (1, 'b', 'b', '{}', datetime('now'))")
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES
+                    (1, 'readme', '', 'readme', 'readme', 'README', 'readme:0', 0, '', 'README', 'readme', 'analytics-readme', 1, 0, 'embed-v1', 'ready', datetime('now'), datetime('now')),
+                    (2, 'notes', '', 'notes', 'notes', 'Private note', 'notes:0', 0, '', 'Private note', 'excluded', 'analytics-excluded', 1, 0, 'embed-v1', 'ready', datetime('now'), datetime('now'))
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_chunk_overrides (
+                    chunk_id, original_title, original_section_path, original_content, is_excluded, updated_at
+                )
+                SELECT id, title, section_path, content, 1, datetime('now')
+                FROM rag_chunks WHERE content_hash = 'analytics-excluded'
+                """)
         }
         let executor = KnowledgeBaseAnalyticsExecutor(database: database)
         let summaryResult = try await executor.execute(
@@ -133,10 +185,35 @@ struct KnowledgeRAGCoreTests {
             plan: .init(measure: .repositoriesWithAIGeneratedNotes),
             filters: .init()
         )
+        let recentNoteResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithRecentlyEditedPrivateNotes),
+            filters: .init()
+        )
+        let recentSummaryResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithRecentlyGeneratedAISummaries),
+            filters: .init()
+        )
+        let excludedResult = try await executor.execute(
+            plan: .init(measure: .excludedRAGChunks),
+            filters: .init()
+        )
+        let withoutREADMEResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithoutREADME),
+            filters: .init()
+        )
+        let withoutSourceResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithoutIndexableSource),
+            filters: .init()
+        )
 
         #expect(summaryResult.rows == [.init(dimensionValue: nil, value: 1)])
         #expect(noteResult.rows == [.init(dimensionValue: nil, value: 2)])
         #expect(aiNoteResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(recentNoteResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(recentSummaryResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(excludedResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(withoutREADMEResult.rows == [.init(dimensionValue: nil, value: 2)])
+        #expect(withoutSourceResult.rows == [.init(dimensionValue: nil, value: 2)])
         #expect(throws: RAGQueryPlannerError.self) {
             try KnowledgeBaseAnalyticsPlan(dimension: .language, measure: .repositoriesWithAISummary).validated()
         }
