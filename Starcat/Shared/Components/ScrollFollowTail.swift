@@ -45,67 +45,6 @@
 
 import SwiftUI
 
-/// 为每次需要“重新贴住尾部”的内容更新生成不同请求。
-///
-/// `ScrollPosition` 已在 `.bottom` 时，重复设置相同 edge 不保证产生新的滚动命令。
-/// 调用方将此编号传给原生 bridge，保证合并窗口内至少有一次重新定位；完整消息落库
-/// 另走立即请求补齐末次位置。本类型不判断用户意图，仍由 `ScrollTailController`
-/// 作为唯一真源。
-struct ScrollTailRequestSequencer {
-    private(set) var requestID: UInt = 0
-    /// 当前请求是否需要动画；仅供同一轮 View 更新传给原生 bridge。
-    private(set) var animatesScroll = false
-    /// 折叠动画会连续改变文档高度；期间必须暂停自动贴底，避免桥接层按中间高度反复修正 offset。
-    private var automaticSuppressionDepth = 0
-    /// 自动跟随只需追上用户可感知的内容增长，不应与 10Hz Markdown 快照一一对应。
-    private var lastAutomaticRequestAt: TimeInterval?
-    private let minimumAutomaticInterval: TimeInterval
-
-    /// 原生 bridge 与自动请求签发共同读取此状态，确保旧请求也会在动画开始时被取消。
-    var allowsAutomaticScroll: Bool {
-        automaticSuppressionDepth == 0
-    }
-
-    init(minimumAutomaticInterval: TimeInterval = 0.20) {
-        self.minimumAutomaticInterval = max(0, minimumAutomaticInterval)
-    }
-
-    /// 生成下一次尾部定位请求。溢出后仍可通过“不等于”语义区分新旧请求。
-    ///
-    /// 自动跟随和历史恢复保持即时定位，只有用户显式点击时才传入 `true`。
-    mutating func issue(animatesScroll: Bool = false) {
-        requestID &+= 1
-        self.animatesScroll = animatesScroll
-    }
-
-    /// 暂停自动贴底。使用嵌套计数而非 Bool，避免快速连续点击时第一段动画提前恢复后续请求。
-    mutating func beginAutomaticSuppression() {
-        automaticSuppressionDepth += 1
-    }
-
-    /// 结束一层自动贴底暂停；多余的结束信号保持 no-op，避免状态下溢后永久关闭跟随。
-    mutating func endAutomaticSuppression() {
-        guard automaticSuppressionDepth > 0 else { return }
-        automaticSuppressionDepth -= 1
-    }
-
-    /// 合并流式阶段的自动贴底请求，最多约 5Hz 触发原生滚动。
-    ///
-    /// 返回值用于调用方判断本轮是否真的签发请求。历史会话安装和用户点击不走此限频，
-    /// 仍通过 `issue(animatesScroll:)` 立即到达底部。
-    @discardableResult
-    mutating func issueAutomatic(now: TimeInterval) -> Bool {
-        guard allowsAutomaticScroll else { return false }
-        if let lastAutomaticRequestAt,
-           now - lastAutomaticRequestAt < minimumAutomaticInterval {
-            return false
-        }
-        lastAutomaticRequestAt = now
-        issue()
-        return true
-    }
-}
-
 /// 对话区顶部 overscroll 检测需要的最小 geometry 快照。
 struct ScrollFollowTailMetrics: Equatable {
     let offsetY: CGFloat

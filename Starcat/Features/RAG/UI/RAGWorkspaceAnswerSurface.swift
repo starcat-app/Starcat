@@ -8,6 +8,13 @@
 import AppKit
 import SwiftUI
 
+/// RAG 中栏所有程序化滚动共用同一类 identity，避免 edge、proxy 与 AppKit offset 多套真源互相覆盖。
+private enum RAGMessageScrollTarget: Hashable, Sendable {
+    case message(UUID)
+    case liveAssistant
+    case bottom
+}
+
 struct RAGWorkspaceAnswerSurface: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -20,10 +27,8 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var composerContentHeight: CGFloat = 0
     @State private var mentionCaretAnchor: CGPoint = .zero
     @State private var messageTail = ScrollTailController()
-    /// 直接控制中栏 ScrollView 的边缘位置，避免依赖 LazyVStack 内部锚点的实现细节。
-    @State private var messageTimelinePosition = ScrollPosition()
-    /// 每个流式可视更新都签发新请求，避免已处于 `.bottom` 的位置状态吞掉后续命令。
-    @State private var messageTailRequests = ScrollTailRequestSequencer()
+    /// identity-based position 会让 SwiftUI 在 LazyVStack 高度变化时保持目标可见，滚动条与内容共享同一布局真源。
+    @State private var messageTimelinePosition = ScrollPosition(idType: RAGMessageScrollTarget.self)
     @State private var isMessageNearBottom = true
 
     private static let messageNearBottomThreshold: CGFloat = 64
@@ -129,115 +134,93 @@ struct RAGWorkspaceAnswerSurface: View {
         // 显隐只看几何「是否离底」：不要读 messageTail.isFollowing，否则滚动 phase
         // 每次变化都会整页刷新，鼠标划过按钮时更容易闪没并卡顿。
         let showsScrollToBottom = hasTimelineContent && !isMessageNearBottom
-        return ScrollViewReader { proxy in
-            ZStack(alignment: .leading) {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        ForEach(viewModel.messages) { message in
-                            messageView(message)
-                                .id(message.id)
-                        }
-                        if !viewModel.executionSteps.isEmpty
-                            || viewModel.hasStreamingContent
-                            || viewModel.isAnswering {
-                            liveAssistantMessage
-                                .id("live-assistant-message")
-                        }
-
-                        Color.clear
-                            .frame(height: 1)
-                            .background(
-                                RAGWorkspaceBottomScrollBridge(
-                                    requestID: messageTailRequests.requestID,
-                                    shouldFollow: messageTail.isFollowing
-                                        && messageTailRequests.allowsAutomaticScroll,
-                                    animatesScroll: messageTailRequests.animatesScroll
-                                )
-                            )
-                            .onScrollVisibilityChange(threshold: 0.5) { isVisible in
-                                messageTail.updateBottomVisibility(isVisible)
-                            }
+        return ZStack(alignment: .leading) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(viewModel.messages) { message in
+                        messageView(message)
+                            .id(RAGMessageScrollTarget.message(message.id))
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .scrollPosition($messageTimelinePosition)
-                .onScrollPhaseChange { _, newPhase in
-                    messageTail.updatePhase(newPhase)
-                    // 对话时间线一旦滚动（含惯性/程序贴底），正文 S1 的 NSPopover 锚点就失效；
-                    // popover 内部滚动不会改变本 ScrollView 的 phase，不会误关。
-                    if newPhase != .idle {
-                        viewModel.dismissCitationChunkPopover()
+                    if !viewModel.executionSteps.isEmpty
+                        || viewModel.hasStreamingContent
+                        || viewModel.isAnswering {
+                        liveAssistantMessage
+                            .id(RAGMessageScrollTarget.liveAssistant)
                     }
-                }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    let remaining = geometry.contentSize.height
-                        - geometry.contentOffset.y
-                        - geometry.containerSize.height
-                    return remaining <= Self.messageNearBottomThreshold
-                } action: { _, isNearBottom in
-                    guard isMessageNearBottom != isNearBottom else { return }
-                    isMessageNearBottom = isNearBottom
-                }
-                .onChange(of: viewModel.loadedMessageSequence) { _, _ in
-                    // 只在 ViewModel 已写入历史 messages 后响应；监听 selectedConversationID 会早于
-                    // LazyVStack 的内容更新，导致复用上一会话的顶部偏移。
-                    isMessageNearBottom = true
-                    messageTail.resumeFollowing()
-                    forceMessageTailScroll()
-                }
-                .onChange(of: viewModel.isAnswering) { _, isAnswering in
-                    // 先出现查询规划 / 思考等步骤，再出现正文 token；开始生成时先对齐，
-                    // 避免首段执行轨迹已把底部推离视口。
-                    guard isAnswering else { return }
-                    forceMessageTailScrollIfFollowing()
-                }
-                .onChange(of: viewModel.executionSteps.count) { _, _ in
-                    forceMessageTailScrollIfFollowing()
-                }
-                .onChange(of: viewModel.streamingPresentation?.revision) { _, revision in
-                    // `streamingPresentation` 才是实际驱动消息块重绘的快照；每个 revision
-                    // 必须重新发出命令，而不是重复设置同一个 `.bottom` 位置值。
-                    guard revision != nil else { return }
-                    forceMessageTailScrollIfFollowing()
-                }
-                .onChange(of: viewModel.messages.count) { _, _ in
-                    // 完整消息只会在发送问题或回答落库时增加，频率远低于 token 快照。
-                    // 这里必须立即定位，补偿 5Hz 合并窗口内可能被丢弃的最后一次自动请求。
-                    // 但折叠动画仍优先保持视口稳定；用户点击与历史加载不走此自动门禁。
-                    guard messageTail.isFollowing,
-                          messageTailRequests.allowsAutomaticScroll else { return }
-                    forceMessageTailScroll()
-                }
 
-                // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
-                if !outlineTurns.isEmpty {
-                    RAGConversationOutlineRail(
-                        turns: outlineTurns,
-                        onSelect: { turn in
-                            messageTail.pauseFollowing()
-                            isMessageNearBottom = false
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                                proxy.scrollTo(turn.userMessageID, anchor: .top)
-                            }
-                        },
-                        timeLabel: messageTimeLabel
-                    )
-                    .padding(.leading, 6)
-                    .padding(.vertical, 12)
-                    .frame(maxHeight: .infinity, alignment: .leading)
+                    Color.clear
+                        .frame(height: 1)
+                        .id(RAGMessageScrollTarget.bottom)
+                        .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                            messageTail.updateBottomVisibility(isVisible)
+                        }
+                }
+                // 明确告诉 ScrollPosition 哪一层提供 identity，禁止再从 AppKit document bounds 猜位置。
+                .scrollTargetLayout()
+                .padding(.horizontal, 28)
+                .padding(.vertical, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollPosition($messageTimelinePosition, anchor: .bottom)
+            .onScrollPhaseChange { _, newPhase in
+                messageTail.updatePhase(newPhase)
+                // 对话时间线一旦滚动（含惯性/程序贴底），正文 S1 的 NSPopover 锚点就失效；
+                // popover 内部滚动不会改变本 ScrollView 的 phase，不会误关。
+                if newPhase != .idle {
+                    viewModel.dismissCitationChunkPopover()
                 }
             }
-            .overlay(alignment: .bottom) {
-                if showsScrollToBottom {
-                    scrollToBottomButton {
-                        messageTail.resumeFollowing()
-                        // 手动请求优先于旧的用户滚动 phase：本次必须到底，后续 token 才继续自动跟随。
-                        forceMessageTailScroll(animated: true)
-                    }
-                    .padding(.bottom, 16)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                let remaining = geometry.contentSize.height
+                    - geometry.contentOffset.y
+                    - geometry.containerSize.height
+                return remaining <= Self.messageNearBottomThreshold
+            } action: { _, isNearBottom in
+                guard isMessageNearBottom != isNearBottom else { return }
+                isMessageNearBottom = isNearBottom
+            }
+            .onChange(of: viewModel.loadedMessageSequence) { _, _ in
+                // 只在 ViewModel 已写入历史 messages 后响应；此时 bottom identity 已进入 target layout。
+                isMessageNearBottom = true
+                messageTail.resumeFollowing()
+                forceMessageTailScroll()
+            }
+            .onChange(of: viewModel.isAnswering) { _, isAnswering in
+                // 开始回答时建立 bottom identity 锚定；后续流式高度增长由 ScrollPosition 自己保持可见。
+                guard isAnswering else { return }
+                forceMessageTailScrollIfFollowing()
+            }
+            .onChange(of: viewModel.executionSteps.count) { _, _ in
+                forceMessageTailScrollIfFollowing()
+            }
+            .onChange(of: viewModel.messages.count) { _, _ in
+                // 新问题或完整回答落库时重新确认 bottom identity；用户已上滚则不抢位置。
+                forceMessageTailScrollIfFollowing()
+            }
+
+            // 左侧大纲轨叠在时间线之上，但宽度仅覆盖横线/预览卡，不挡住正文点击。
+            if !outlineTurns.isEmpty {
+                RAGConversationOutlineRail(
+                    turns: outlineTurns,
+                    onSelect: { turn in
+                        messageTail.pauseFollowing()
+                        isMessageNearBottom = false
+                        scrollMessageIntoView(turn.userMessageID)
+                    },
+                    timeLabel: messageTimeLabel
+                )
+                .padding(.leading, 6)
+                .padding(.vertical, 12)
+                .frame(maxHeight: .infinity, alignment: .leading)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showsScrollToBottom {
+                scrollToBottomButton {
+                    messageTail.resumeFollowing()
+                    forceMessageTailScroll(animated: true)
                 }
+                .padding(.bottom, 16)
             }
         }
     }
@@ -263,40 +246,37 @@ struct RAGWorkspaceAnswerSurface: View {
         .pointerStyle(.link)
     }
 
-    /// 直接定位滚动容器的尾部。
-    ///
-    /// 历史实现依赖 `LazyVStack` 内的 item id，并曾跨 `Task.yield()` 保存 proxy；两者
-    /// 都可能在 SwiftUI 更新期间失效。`ScrollPosition` 直接驱动当前 ScrollView 的 edge，
-    /// 不依赖惰性子项是否已布局；递增请求再交给底部原生 bridge，在合并后的流式更新
-    /// 提交布局后重新贴住底部。流式快照只更新原生请求编号，完整定位保留给
-    /// 历史安装、完整消息落库和用户点击。
+    /// 定位稳定的 bottom identity；SwiftUI 同时负责内容布局、滚动位置和滚动条比例。
     func forceMessageTailScroll(animated: Bool = false) {
-        // 流式快照约 10Hz 提交；尾部跟随若每次都带动画，会形成彼此追逐的动画事务。
-        // 只有用户点击快捷入口时才允许动画；打开历史会话和自动跟随始终即时完成。
         let animatesScroll = animated && !reduceMotion
-        messageTailRequests.issue(animatesScroll: animatesScroll)
+        if animatesScroll {
+            withAnimation(.easeOut(duration: 0.22)) {
+                messageTimelinePosition.scrollTo(id: RAGMessageScrollTarget.bottom, anchor: .bottom)
+            }
+            return
+        }
         var transaction = Transaction()
-        transaction.disablesAnimations = !animatesScroll
+        transaction.disablesAnimations = true
         withTransaction(transaction) {
-            messageTimelinePosition.scrollTo(edge: .bottom)
+            messageTimelinePosition.scrollTo(id: RAGMessageScrollTarget.bottom, anchor: .bottom)
         }
     }
 
-    /// 流式更新只在用户仍在尾部时请求；手动上滚后不抢走阅读位置。
+    /// 仅在用户仍跟随尾部时确认 bottom identity；手动上滚后不抢走阅读位置。
     func forceMessageTailScrollIfFollowing() {
         guard messageTail.isFollowing else { return }
-        // 自动跟随仅签发合并后的原生请求。`ScrollPosition` 的完整定位保留给历史加载
-        // 和用户点击，避免每个 Markdown revision 同时驱动两套滚动系统。
-        _ = messageTailRequests.issueAutomatic(now: Date.timeIntervalSinceReferenceDate)
+        forceMessageTailScroll()
     }
 
-    /// 折叠动画期间同时阻止新自动请求，并让 bridge 取消尚未执行的旧请求。
-    /// 动画结束只恢复“可自动跟随”资格，不主动滚到底；下一次稳定流式更新再按原策略追尾。
-    func handleExecutionDisclosureAnimationActivityChanged(_ isActive: Bool) {
-        if isActive {
-            messageTailRequests.beginAutomaticSuppression()
+    /// 大纲跳转也写同一 ScrollPosition，不再让 ScrollViewProxy 成为第二套位置控制器。
+    func scrollMessageIntoView(_ messageID: UUID) {
+        let target = RAGMessageScrollTarget.message(messageID)
+        if reduceMotion {
+            messageTimelinePosition.scrollTo(id: target, anchor: .top)
         } else {
-            messageTailRequests.endAutomaticSuppression()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                messageTimelinePosition.scrollTo(id: target, anchor: .top)
+            }
         }
     }
 
@@ -443,8 +423,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 snapshot: snapshot,
                 executionTrace: viewModel.executionSteps,
                 activityLabel: liveAssistantActivityLabel(),
-                processingDuration: viewModel.answerElapsedDuration,
-                onExecutionDisclosureAnimationActivityChanged: handleExecutionDisclosureAnimationActivityChanged
+                processingDuration: viewModel.answerElapsedDuration
             )
         } else {
             assistantMessage(
@@ -484,8 +463,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 viewModel.selectCitation(citation)
             },
             onSuggestedAction: { action in viewModel.sendSuggestedQuestion(action) },
-            onExport: { viewModel.exportAnswer(content) },
-            onExecutionDisclosureAnimationActivityChanged: handleExecutionDisclosureAnimationActivityChanged
+            onExport: { viewModel.exportAnswer(content) }
         )
     }
 

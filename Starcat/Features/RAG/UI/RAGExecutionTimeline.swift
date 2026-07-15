@@ -86,17 +86,7 @@ struct RAGExecutionTimeline: View {
     @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     let steps: [RAGExecutionStep]
-    /// 通知外层滚动容器折叠动画的生命周期，避免动画中间帧触发自动贴底。
-    let onDisclosureAnimationActivityChanged: (Bool) -> Void
     @State private var disclosureState = RAGExecutionDisclosureState()
-
-    init(
-        steps: [RAGExecutionStep],
-        onDisclosureAnimationActivityChanged: @escaping (Bool) -> Void = { _ in }
-    ) {
-        self.steps = steps
-        self.onDisclosureAnimationActivityChanged = onDisclosureAnimationActivityChanged
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -111,20 +101,8 @@ struct RAGExecutionTimeline: View {
         let isExpanded = disclosureState.isExpanded(step)
         return VStack(alignment: .leading, spacing: 7) {
             Button {
-                onDisclosureAnimationActivityChanged(true)
-                guard !reduceMotion else {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     disclosureState.toggle(step)
-                    onDisclosureAnimationActivityChanged(false)
-                    return
-                }
-                // 使用 SwiftUI 的真实动画完成回调恢复追尾，不能用固定延时猜测布局何时稳定。
-                withAnimation(
-                    .easeInOut(duration: 0.16),
-                    completionCriteria: .logicallyComplete
-                ) {
-                    disclosureState.toggle(step)
-                } completion: {
-                    onDisclosureAnimationActivityChanged(false)
                 }
             } label: {
                 // 图标槽与消息头 Starcat logo 同宽，glyph 居中，保证竖向轴线对齐。

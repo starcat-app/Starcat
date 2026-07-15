@@ -16413,7 +16413,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这个仓库当前是“正在使用”。移出知识库后会同时改为“已读”。"
+            "value": "这个仓库当前是“使用中”。移出知识库后会同时改为“已读”。"
           }
         }
       }
@@ -30679,7 +30679,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "取消正在使用"
+            "value": "取消使用"
           }
         }
       }
@@ -30713,7 +30713,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击标记为正在使用"
+            "value": "点击标记为使用中"
           }
         }
       }
@@ -30779,7 +30779,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在使用"
+            "value": "使用中"
           }
         }
       }
@@ -30796,7 +30796,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前正在使用"
+            "value": "当前使用中"
           }
         }
       }
@@ -37576,13 +37576,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use external web context in AI features"
+            "value": "Use external web context in repo AI summary and chat"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 功能使用外部网页上下文"
+            "value": "仓库 AI 摘要与对话使用外部网页上下文"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.aiContext.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, repo AI summary and AI chat fetch external web material into the prompt. Knowledge base RAG uses the per-question web toggle in the composer and is not controlled here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，仓库 AI 摘要与 AI 对话会拉取外部网页材料写入 prompt。知识库 RAG 由问答栏联网开关单独控制，不受此设置影响。"
           }
         }
       }
@@ -37882,13 +37899,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Include external web results in All"
+            "value": "Include external web results in Global Search → All"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在“全部”范围中包含外部网页结果"
+            "value": "全局搜索「全部」分类包含外部网页结果"
+          }
+        }
+      }
+    },
+    "settings.externalSearch.includeWebInAll.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, Global Search → All mixes in web results. The Web category always searches externally regardless of this setting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，全局搜索选择「全部」时会混入网页结果；「网页」分类始终单独搜索，不受此开关影响。"
           }
         }
       }
@@ -51555,7 +51589,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你明确标记为正在使用的仓库。"
+            "value": "你明确标记为使用中的仓库。"
           }
         }
       }
@@ -51572,7 +51606,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在使用"
+            "value": "使用中"
           }
         }
       }

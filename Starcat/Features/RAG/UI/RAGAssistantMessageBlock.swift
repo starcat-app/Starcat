@@ -28,8 +28,6 @@ struct RAGAssistantMessageBlock: View {
     let onSelectCitation: (RAGCitation) -> Void
     let onSuggestedAction: (RAGSuggestedQuestionAction) -> Void
     let onExport: () -> Void
-    /// 把时间线折叠动画生命周期上送给唯一持有滚动状态的 Answer Surface。
-    let onExecutionDisclosureAnimationActivityChanged: (Bool) -> Void
 
     @State private var isHovered = false
     /// 与 `CopyFeedbackButton` 的 1.5s 反馈窗口对齐：反馈未结束前不因失悬停而隐藏。
@@ -65,10 +63,7 @@ struct RAGAssistantMessageBlock: View {
             }
 
             if !preparationSteps.isEmpty {
-                RAGExecutionTimeline(
-                    steps: preparationSteps,
-                    onDisclosureAnimationActivityChanged: onExecutionDisclosureAnimationActivityChanged
-                )
+                RAGExecutionTimeline(steps: preparationSteps)
             }
 
             if let activityLabel, !activityLabel.isEmpty {
@@ -195,8 +190,6 @@ struct RAGStreamingAssistantMessageBlock: View {
     let executionTrace: [RAGExecutionStep]
     let activityLabel: String?
     let processingDuration: TimeInterval?
-    /// 流式消息与历史消息共用同一滚动抑制契约，避免切换渲染形态时行为漂移。
-    let onExecutionDisclosureAnimationActivityChanged: (Bool) -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -223,10 +216,7 @@ struct RAGStreamingAssistantMessageBlock: View {
             }
 
             if !preparationSteps.isEmpty {
-                RAGExecutionTimeline(
-                    steps: preparationSteps,
-                    onDisclosureAnimationActivityChanged: onExecutionDisclosureAnimationActivityChanged
-                )
+                RAGExecutionTimeline(steps: preparationSteps)
             }
 
             if let activityLabel, !activityLabel.isEmpty, snapshot.isEmpty {

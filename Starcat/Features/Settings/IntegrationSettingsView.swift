@@ -533,7 +533,14 @@ struct IntegrationSettingsTab: View {
         return Group {
             Section {
                 Toggle("settings.externalSearch.includeWebInAll", isOn: $settings.externalSearchIncludeInAll)
+                Text("settings.externalSearch.includeWebInAll.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Toggle("settings.externalSearch.aiContext", isOn: $settings.externalContextEnabled)
+                Text("settings.externalSearch.aiContext.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle(isOn: aggregateExternalContextBinding) {
                     HStack(spacing: 6) {
                         Text("settings.externalSearch.aggregate")
