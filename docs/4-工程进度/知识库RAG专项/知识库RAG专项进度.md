@@ -1,10 +1,10 @@
 # 知识库 RAG 专项进度
 
-> 状态: 第 3 轮复审与正确性整改完成；性能资源上界、架构技术债与真实数据人工验收完成前不关闭
+> 状态: 阶段 1 至 9 已完成，第 4 轮收尾审查整改中；全量门禁与真实数据人工验收完成前不关闭
 > 创建: 2026-07-03
 > 启动: 2026-07-10
-> 实施分支: `codex/knowledge-rag-full-delivery`
-> 独立 worktree: `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-rag-full-delivery`
+> 当前收尾分支: `main`
+> 当前工作目录: `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat`
 > 需求讨论: `docs/2-产品/需求讨论/知识库RAG需求讨论.md`
 > 正式方案: `docs/2-产品/需求讨论/正式方案/知识库RAG正式方案.md`
 > 详细设计: `docs/3-设计/详细设计/30-本地RAG设计.md`
@@ -30,8 +30,8 @@
 - [x] 用户主动开启的 External Search 结果只作为本轮临时上下文，不写索引或远程正文历史。
 - [x] 文本、Markdown、JSON 与源码附件是本轮临时上下文，不写索引、notes 或 CloudKit；PDF/图片当前不支持。
 - [x] 本次交付包含可选 Meilisearch / Qdrant 客户端能力，但不要求用户部署服务。
-- [x] 本次不做 Code RAG、Agent/MCP 联动、CloudKit 会话同步和 reranker。
-- [x] 不为未实施的 reranker 提前增加空协议或 Settings 选项。
+- [x] 本次不做 Code RAG、Agent/MCP 联动、CloudKit 会话同步和本地 reranker 模型；可选远程 Rerank 支持 Hugging Face TEI 与 Cohere-compatible 协议。
+- [x] Rerank 只在 fusion 后、证据裁剪前启用；失败保留原排序，Token 仅存 Keychain，Debug 不记录 endpoint、Token 或候选正文。
 
 ## 3. 索引与更新
 
@@ -153,8 +153,8 @@
 - [x] Qdrant 已有 collection 在清理前校验 vectorName 和 embedding dimension。
 - [x] provider 切换后显示需要重建索引提示。
 - [x] 外部 provider 只同步公开知识库 repo；私有 repo 保持本地检索。
-- [x] 当前外部同步使用完整 replace，优先保证 source 删除和更新一致。
-- [x] Meilisearch 完整 replace 会等待异步 task 成功，失败/取消/超时不会误报同步完成。
+- [x] 外部索引以 revision 变更集合并短时间 source 更新，按 chunk upsert/delete；首次启动、配置或模型变化才全量初始化，Metadata-only 不触发 Qdrant。
+- [x] Meilisearch 增量和全量写操作均等待异步 task 成功，失败/取消/超时不会误报同步完成。
 - [x] Storage 展示 RAG index/history 大小，并可分别清理。
 - [x] 清理 RAG index 不影响 repo、README cache、notes、summary、repo embedding 或 libraryState。
 
@@ -235,8 +235,10 @@
 > 实现：App 进程级 Composer 草稿字典；离开时暂存、进入时恢复（含联网开关）；关窗前落盘；`resetTurnState` 不再误清；发送后清问题、完成后清附件，切用户库时清空。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
-- [ ] 仅在评测证明 RRF/source weight 不足后，单独设计 reranker 的本地/云端隐私边界。
-- [ ] 在大规模知识库或自托管后端成为瓶颈后，评估外部索引的 chunk 级增量同步。
+- [x] 可选远程 Rerank 已按 TEI / Cohere-compatible 独立 DTO 实现，共用有界候选快照、认证、HTTP 与 index 回填；本地 reranker 模型仍不在当前范围 — `RAGSearchProviders.swift` — 2026-07-16
+> 实现：Rerank 默认关闭，失败保留 fusion 排序；候选正文受 6,000 字符和 candidateLimit 限制，Token 只进 Keychain。
+- [x] 外部索引已改为带 revision 的 chunk 级 upsert/delete，Metadata-only 只同步 Meilisearch，Qdrant 不再全量替换 — `KnowledgeRAGIndexBuilder.swift` — 2026-07-16
+> 实现：source debounce 与批量重建共用变更集；首次、配置或模型变化全量初始化，后续只同步受影响 chunk。
 
 ## 13. RAG 收尾工作
 
@@ -287,7 +289,7 @@
 
 ## 14. 代码审查与整改
 
-> 状态: 第 1 轮 P1/P2 自动化整改与第 3 轮正确性整改完成；资源上界与架构技术债待执行。
+> 状态: 第 1、3 轮问题及阶段 7 至 9 已整改；第 4 轮文档、i18n、类型复用与最终门禁收口中。
 
 - [x] 优化流式 Markdown 的增量渲染，避免长回答逐 token 全文重解析。
 - [x] 消除历史会话加载中的 citation/remote audit N+1 查询，并为长会话建立回归基线。
