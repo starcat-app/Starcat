@@ -26,6 +26,19 @@ enum KnowledgeBaseAnalyticsMeasure: String, Codable, Equatable, Sendable {
     case averageStars = "average_stars"
     case maxForks = "max_forks"
     case averageForks = "average_forks"
+    /// 三项库存指标只支持全库单值统计；其 SQL 仍由本地固定映射执行。
+    case repositoriesWithAISummary = "repositories_with_ai_summary"
+    case repositoriesWithPrivateNotes = "repositories_with_private_notes"
+    case repositoriesWithAIGeneratedNotes = "repositories_with_ai_generated_notes"
+
+    var requiresSingleAggregateResult: Bool {
+        switch self {
+        case .repositoriesWithAISummary, .repositoriesWithPrivateNotes, .repositoriesWithAIGeneratedNotes:
+            true
+        case .count, .maxStars, .averageStars, .maxForks, .averageForks:
+            false
+        }
+    }
 }
 
 enum KnowledgeBaseAnalyticsSortDirection: String, Codable, Equatable, Sendable {
@@ -55,6 +68,9 @@ struct KnowledgeBaseAnalyticsPlan: Codable, Equatable, Sendable {
     func validated() throws -> Self {
         // 单值聚合不需要多行，固定为 1；分组结果也绝不允许模型枚举整个知识库。
         var result = self
+        if measure.requiresSingleAggregateResult, dimension != nil {
+            throw RAGQueryPlannerError.invalidPlan("库存统计不支持分组维度")
+        }
         result.limit = dimension == nil ? 1 : min(max(limit, 1), 100)
         return result
     }
@@ -156,6 +172,12 @@ struct KnowledgeBaseAnalyticsExecutor: KnowledgeBaseAnalyticsExecuting {
         case .averageStars: return "AVG(r.stars_count)"
         case .maxForks: return "MAX(r.forks_count)"
         case .averageForks: return "AVG(r.forks_count)"
+        case .repositoriesWithAISummary:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id) THEN r.id END)"
+        case .repositoriesWithPrivateNotes:
+            return "COUNT(DISTINCT CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN r.id END)"
+        case .repositoriesWithAIGeneratedNotes:
+            return "COUNT(DISTINCT CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND n.is_ai_generated = 1 THEN r.id END)"
         }
     }
 

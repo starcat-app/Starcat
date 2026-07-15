@@ -10,6 +10,7 @@ import SwiftUI
 
 struct RAGWorkspaceConversationRail: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var renameTarget: RAGConversationSummary?
@@ -182,18 +183,23 @@ struct RAGWorkspaceConversationRail: View {
             HStack(spacing: 0) {
                 Button {
                     // 单击目录行：展开/折叠，并选中该一级分组（新会话归入此处）。
-                    if isExpanded {
-                        expandedGroupIDs.remove(group.id)
-                    } else {
-                        expandedGroupIDs.insert(group.id)
+                    // 动画与元数据 / 调试折叠同款 0.16s；开启「减少动态效果」时瞬时切换。
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        if isExpanded {
+                            expandedGroupIDs.remove(group.id)
+                        } else {
+                            expandedGroupIDs.insert(group.id)
+                        }
                     }
                     viewModel.selectedGroupID = group.id
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        // 固定 chevron.right + 旋转，避免换 symbol 时无过渡。
+                        Image(systemName: "chevron.right")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .frame(width: 16)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         Image(systemName: "folder.fill")
                             .font(iconFont(size: 13, weight: .medium))
                             .foregroundStyle(isSelected ? Color.accentColor : .secondary)
@@ -254,6 +260,8 @@ struct RAGWorkspaceConversationRail: View {
                 ForEach(Array(viewModel.conversations(inGroupID: group.id).enumerated()), id: \.element.id) { index, conversation in
                     conversationRow(conversation, rowIndex: index)
                         .padding(.leading, 14)
+                        // 子会话随分组高度一起淡入淡出，避免硬切。
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }

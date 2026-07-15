@@ -20,7 +20,7 @@
 
 | 层级 | SwiftUI 写法 | 基准 | 颜色与使用边界 |
 |---|---|---:|---|
-| 分组名称 | `.subheadline.weight(.semibold)` | 15pt | `.primary`；只用于 `Section` header，短而可扫描 |
+| 分组名称 | `.body.weight(.semibold)` | 13pt | `.primary`；只用于 `Section` header，与行 Label 同字号，仅以字重表达分组边界 |
 | 行 Label | `.body` | 13pt | `.primary`；用于 Toggle、Picker、TextField、`LabeledContent` 的主标签 |
 | 行内小标题 | `.callout.weight(.medium)` | 14pt | `.primary`；只用于复杂行的内部标题，不能替代分组名称 |
 | 说明 / footer | `.caption` | 12pt | `.secondary`；说明控件作用、限制、下一步或当前状态 |
@@ -42,7 +42,7 @@
 
 | 项目 | 标准 |
 |---|---|
-| 标题 | `.subheadline.weight(.semibold)`，`.primary` |
+| 标题 | `.body.weight(.semibold)`，`.primary`；与行 Label 同为 13pt，仅字重不同 |
 | SF Symbol | 13pt medium，`.secondary` |
 | 图标布局框 | 20 × 20pt |
 | 标题与图标间距 | 6pt |

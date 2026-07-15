@@ -21736,6 +21736,12 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "低于证据分阈值" } }
       }
     },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.evidenceTokenLimit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Final evidence token budget" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过最终证据 Token 预算" } }
+      }
+    },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.belowVectorSimilarity": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Below similarity threshold" } },
@@ -21746,6 +21752,12 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Per-repository limit" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过单仓库上限" } }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.disposition.parentContextTokenLimit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Parent context token limit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过父段落 Token 上限" } }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.retained": {
@@ -58364,6 +58376,20 @@
         }
       }
     },
+    "rag.workspace.inspector.metadata.group.artifacts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI artifacts" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 内容" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.group.sourceCoverage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RAG source coverage" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RAG 来源覆盖" } }
+      }
+    },
     "rag.workspace.inspector.metadata.group.index": {
       "localizations": {
         "en": {
@@ -58474,6 +58500,41 @@
             "value": "索引总数"
           }
         }
+      }
+    },
+    "rag.workspace.inspector.metadata.aiSummaryCoverage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI summary coverage" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.privateNoteCoverage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Private note coverage" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "私有笔记覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.aiGeneratedNotes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "AI-generated notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "其中 AI 生成" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.coverageFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@ repositories" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ / %2$@ 项目" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.sourceCoverageFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ repositories · %2$@ chunks" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ 项目 · %2$@ 分片" } }
       }
     },
     "rag.workspace.inspector.metadata.index.ready": {

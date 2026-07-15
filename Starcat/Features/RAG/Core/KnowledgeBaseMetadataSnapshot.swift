@@ -33,6 +33,15 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         let embeddingModel: String
     }
 
+    /// 每种 RAG 来源在当前知识库中的实际索引覆盖。这里只记录聚合数量，不携带来源正文或仓库名单。
+    struct SourceIndexCoverage: Equatable, Sendable {
+        let source: RAGChunkSource
+        let repositoryCount: Int
+        let chunkCount: Int
+        /// 可被当前 RAG 使用的分片，含已向量化与无需向量化的 keyword-only 来源。
+        let searchableChunkCount: Int
+    }
+
     /// 快照的计算时刻（每次读取都刷新）。仅用于内部诊断，不直接展示为「更新时间」。
     let generatedAt: Date
     /// 知识库内容最后一次变化时间：在库仓库里最新的 `library_updated_at`。
@@ -55,6 +64,12 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
     let topTags: [NamedCount]
     let addedInLast30DaysCount: Int
     let pushedInLast30DaysCount: Int
+    /// 每个仓库最多计一次，避免用户切换模型后多条摘要缓存放大覆盖率。
+    let aiSummaryProjectCount: Int
+    /// 只统计正文非空的笔记；`repo_notes` 的状态行不应被误当作笔记内容。
+    let privateNoteProjectCount: Int
+    let aiGeneratedNoteProjectCount: Int
+    let sourceIndexCoverage: [SourceIndexCoverage]
     let topStarredRepositories: [TopRepository]
     let indexHealth: IndexHealth
 
@@ -65,6 +80,9 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         let tags = rendered(topTags)
         let topRepositories = topStarredRepositories.map { "\($0.fullName) (\($0.stars) stars)" }
             .joined(separator: "; ")
+        let sourceCoverage = sourceIndexCoverage.map {
+            "\($0.source.rawValue): \($0.repositoryCount) repositories, \($0.chunkCount) chunks, \($0.searchableChunkCount) searchable"
+        }.joined(separator: "; ")
         return """
         Authoritative local knowledge-base metadata snapshot (generated now; not vector-search evidence):
         - Scope: \(projectCount) in-library repositories; \(starredProjectCount) still starred; \(retainedAfterUnstarCount) retained after unstar.
@@ -72,9 +90,25 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         - Technology: \(knownLanguageProjectCount) repositories have a language; \(unknownLanguageProjectCount) unknown; top languages [\(languages)].
         - Top tags: [\(tags)].
         - Activity: \(addedInLast30DaysCount) added to the library in the last 30 days; \(pushedInLast30DaysCount) repositories pushed in the last 30 days.
+        - Knowledge artifacts: \(aiSummaryProjectCount) repositories have an AI summary; \(privateNoteProjectCount) have private notes (\(aiGeneratedNoteProjectCount) AI-generated).
+        - Indexed source coverage: [\(sourceCoverage)].
         - Star leaders (top \(topStarredRepositories.count)): [\(topRepositories)].
         - RAG index for model \(indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; ready \(indexHealth.readyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
         Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
+        """
+    }
+
+    /// 规划阶段只需知道有哪些可验证的库存事实，不应重复发送标签排行或 Star Top10 等生成阶段信息。
+    func plannerPromptContext() -> String {
+        let sourceCoverage = sourceIndexCoverage.map {
+            "\($0.source.rawValue): \($0.repositoryCount) repositories / \($0.searchableChunkCount) searchable chunks"
+        }.joined(separator: "; ")
+        return """
+        Authoritative local knowledge-base inventory (aggregate counts only; no repository names or content):
+        - Scope: \(projectCount) in-library repositories.
+        - AI summaries: \(aiSummaryProjectCount) repositories; private notes: \(privateNoteProjectCount) repositories (\(aiGeneratedNoteProjectCount) AI-generated).
+        - Indexed source coverage: [\(sourceCoverage)].
+        Use this only to choose a supported local inventory analytics metric when the user asks for these counts. Do not invent an unsupported metric or treat these aggregates as vector-search evidence.
         """
     }
 
@@ -106,7 +140,10 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                     COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id) THEN 1 ELSE 0 END), 0) AS tagged_count,
                     COALESCE(SUM(CASE WHEN r.language IS NOT NULL AND TRIM(r.language) != '' THEN 1 ELSE 0 END), 0) AS known_language_count,
                     COALESCE(SUM(CASE WHEN datetime(n.library_updated_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS added_recently_count,
-                    COALESCE(SUM(CASE WHEN datetime(r.pushed_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS pushed_recently_count
+                    COALESCE(SUM(CASE WHEN datetime(r.pushed_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS pushed_recently_count,
+                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1 ELSE 0 END), 0) AS private_note_count,
+                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND n.is_ai_generated = 1 THEN 1 ELSE 0 END), 0) AS ai_generated_note_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id) THEN 1 ELSE 0 END), 0) AS ai_summary_count
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 WHERE n.library_state = 'in_library'
@@ -212,6 +249,37 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 WHERE n.library_state = 'in_library'
                 """, arguments: [embeddingModel, embeddingModel])!
 
+            let sourceCoverageRows = try Row.fetchAll(db, sql: """
+                SELECT
+                    c.source AS source,
+                    COUNT(DISTINCT c.repo_id) AS repository_count,
+                    COUNT(c.id) AS chunk_count,
+                    COALESCE(SUM(CASE WHEN c.embedding_status IN ('ready', 'keyword_only') THEN 1 ELSE 0 END), 0) AS searchable_chunk_count
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id
+                WHERE n.library_state = 'in_library'
+                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
+                GROUP BY c.source
+                """)
+            let sourceCoverageByRawValue = Dictionary(uniqueKeysWithValues: sourceCoverageRows.compactMap { row in
+                let sourceRawValue: String = row["source"]
+                guard let source = RAGChunkSource(rawValue: sourceRawValue) else { return nil }
+                return (sourceRawValue, SourceIndexCoverage(
+                    source: source,
+                    repositoryCount: row["repository_count"],
+                    chunkCount: row["chunk_count"],
+                    searchableChunkCount: row["searchable_chunk_count"]
+                ))
+            })
+            let sourceIndexCoverage = RAGChunkSource.allCases.map {
+                sourceCoverageByRawValue[$0.rawValue] ?? SourceIndexCoverage(
+                    source: $0,
+                    repositoryCount: 0,
+                    chunkCount: 0,
+                    searchableChunkCount: 0
+                )
+            }
+
             return KnowledgeBaseMetadataSnapshot(
                 generatedAt: Date(),
                 contentUpdatedAt: Self.parseISO8601(latestContentUpdatedRaw),
@@ -231,6 +299,10 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 topTags: topTags,
                 addedInLast30DaysCount: overview["added_recently_count"],
                 pushedInLast30DaysCount: overview["pushed_recently_count"],
+                aiSummaryProjectCount: overview["ai_summary_count"],
+                privateNoteProjectCount: overview["private_note_count"],
+                aiGeneratedNoteProjectCount: overview["ai_generated_note_count"],
+                sourceIndexCoverage: sourceIndexCoverage,
                 topStarredRepositories: topStarredRepositories,
                 indexHealth: .init(
                     totalChunks: index["total_chunks"],

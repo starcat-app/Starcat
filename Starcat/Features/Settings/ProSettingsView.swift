@@ -310,7 +310,11 @@ struct ProSettingsTab: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("settings.pro.direct.section", systemImage: "key.horizontal.fill")
+            SettingsSectionHeader(
+                "settings.pro.direct.section",
+                systemImage: "key.horizontal.fill",
+                style: .prominent
+            )
         }
     }
 
@@ -323,9 +327,12 @@ struct ProSettingsTab: View {
                 Text("settings.pro.direct.button.activate")
             } icon: {
                 Image(systemName: "checkmark.seal")
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.green)
             }
         }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
         .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
@@ -337,12 +344,12 @@ struct ProSettingsTab: View {
                 Text("settings.pro.direct.button.validate")
             } icon: {
                 Image(systemName: didValidateSucceed ? "checkmark.shield.fill" : "checkmark.shield")
-                    .font(.body)
-                    .imageScale(.medium)
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(didValidateSucceed ? Color.green : Color.primary)
                     .contentTransition(.symbolEffect(.replace))
             }
         }
+        .buttonStyle(.bordered)
         .controlSize(.regular)
         .disabled(directLicenseManager.isRequestInFlight)
     }
@@ -355,11 +362,11 @@ struct ProSettingsTab: View {
                 Text("settings.pro.direct.button.deactivate")
             } icon: {
                 Image(systemName: "checkmark.circle.badge.xmark")
-                    .font(.body)
-                    .imageScale(.medium)
+                    .font(.system(size: 15, weight: .medium))
             }
             .foregroundStyle(Color.red)
         }
+        .buttonStyle(.bordered)
         .controlSize(.regular)
         .disabled(directLicenseManager.isRequestInFlight)
     }
@@ -384,7 +391,11 @@ struct ProSettingsTab: View {
                     .foregroundStyle(.green)
             }
         } header: {
-            SettingsSectionHeader("settings.pro.direct.pass.section", systemImage: "person.crop.rectangle.stack")
+            SettingsSectionHeader(
+                "settings.pro.direct.pass.section",
+                systemImage: "person.crop.rectangle.stack",
+                style: .prominent
+            )
         }
     }
 
@@ -409,10 +420,16 @@ struct ProSettingsTab: View {
                 Button("settings.pro.direct.cancel.button", role: .destructive) {
                     Task { await cancelDirectSubscription() }
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .disabled(directLicenseManager.isRequestInFlight)
             }
         } header: {
-            SettingsSectionHeader("settings.pro.direct.cancel.section", systemImage: "calendar.badge.minus")
+            SettingsSectionHeader(
+                "settings.pro.direct.cancel.section",
+                systemImage: "calendar.badge.minus",
+                style: .prominent
+            )
         } footer: {
             Text("settings.pro.direct.cancel.footer")
         }
@@ -433,6 +450,8 @@ struct ProSettingsTab: View {
                         accent: .cyan
                     )
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .disabled(directLicenseManager.isRequestInFlight)
 
                 Button {
@@ -446,6 +465,7 @@ struct ProSettingsTab: View {
                 }
                 // 年付是推荐档：用系统默认着重色突出，不加自定义 tint，避免盖住绿色图标。
                 .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
                 .disabled(directLicenseManager.isRequestInFlight)
 
                 Button {
@@ -457,10 +477,16 @@ struct ProSettingsTab: View {
                         accent: .orange
                     )
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .disabled(directLicenseManager.isRequestInFlight)
             }
         } header: {
-            SettingsSectionHeader("settings.pro.direct.checkout.section", systemImage: "cart")
+            SettingsSectionHeader(
+                "settings.pro.direct.checkout.section",
+                systemImage: "cart",
+                style: .prominent
+            )
         } footer: {
             Text("settings.pro.direct.checkout.footer")
         }
@@ -475,6 +501,7 @@ struct ProSettingsTab: View {
             Text(titleKey)
         } icon: {
             Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(accent)
         }
     }
@@ -503,7 +530,11 @@ struct ProSettingsTab: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("settings.pro.products.section", systemImage: "bag")
+            SettingsSectionHeader(
+                "settings.pro.products.section",
+                systemImage: "bag",
+                style: .prominent
+            )
         } footer: {
             Text("settings.pro.footer")
         }
@@ -537,7 +568,11 @@ struct ProSettingsTab: View {
                 )
             }
         } header: {
-            SettingsSectionHeader("settings.pro.benefits.section", systemImage: "star.fill")
+            SettingsSectionHeader(
+                "settings.pro.benefits.section",
+                systemImage: "star.fill",
+                style: .prominent
+            )
         }
     }
 
@@ -581,7 +616,11 @@ struct ProSettingsTab: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
         } header: {
-            SettingsSectionHeader("settings.pro.account.section", systemImage: "person.crop.circle")
+            SettingsSectionHeader(
+                "settings.pro.account.section",
+                systemImage: "person.crop.circle",
+                style: .prominent
+            )
         } footer: {
             Text("settings.pro.account.footer")
         }

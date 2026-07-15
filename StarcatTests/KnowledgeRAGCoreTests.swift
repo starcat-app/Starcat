@@ -54,6 +54,23 @@ struct KnowledgeRAGCoreTests {
             try db.execute(sql: "UPDATE repos SET stars_count = 10, language = NULL WHERE id = 3")
             try db.execute(sql: "UPDATE repo_notes SET status = 'using', library_updated_at = datetime('now') WHERE repo_id = 1")
             try db.execute(sql: "UPDATE repo_notes SET status = 'inbox', library_updated_at = datetime('now') WHERE repo_id = 2")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'human note' WHERE repo_id = 2")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1 WHERE repo_id = 3")
+            try db.execute(sql: """
+                INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at)
+                VALUES (1, 'summary-model', 'summary-hash', '{}', datetime('now'))
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES (
+                    1, 'summary', '', 'summary', 'summary', 'AI Summary', 'summary:0',
+                    0, '', 'AI summary', 'summary content', 'summary-chunk-hash', 2, 0,
+                    'embed-v1', 'ready', datetime('now'), datetime('now')
+                )
+                """)
         }
 
         let snapshot = try await KnowledgeBaseMetadataSnapshotProvider(
@@ -70,6 +87,10 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.starredStatusCounts.contains(.init(name: "unread", count: 1)))
         #expect(snapshot.starredTaggedProjectCount == 0)
         #expect(snapshot.starredUntaggedProjectCount == 2)
+        #expect(snapshot.aiSummaryProjectCount == 1)
+        #expect(snapshot.privateNoteProjectCount == 2)
+        #expect(snapshot.aiGeneratedNoteProjectCount == 1)
+        #expect(snapshot.sourceIndexCoverage.first { $0.source == .summary }?.chunkCount == 1)
         #expect(snapshot.topStarredRepositories.first == .init(repoID: 2, fullName: "octo/demo-2", stars: 120))
         #expect(snapshot.promptContext().contains("octo/demo-2 (120 stars)"))
 
@@ -83,6 +104,42 @@ struct KnowledgeRAGCoreTests {
         )
         #expect(prompt.userPrompt.contains("Authoritative local knowledge-base metadata snapshot"))
         #expect(prompt.userPrompt.contains("3 in-library repositories"))
+        #expect(prompt.userPrompt.contains("1 repositories have an AI summary"))
+    }
+
+    @Test("知识库库存统计按入库仓库去重，并禁止按维度分组")
+    func knowledgeBaseInventoryAnalyticsUsesWhitelistedCoverageMetrics() async throws {
+        let database = try InMemoryDatabaseManager()
+        for id in 1...3 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: Int64(id), state: .inLibrary)
+        }
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repo_notes SET content = 'human note' WHERE repo_id = 1")
+            try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1 WHERE repo_id = 2")
+            try db.execute(sql: "INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at) VALUES (1, 'a', 'a', '{}', datetime('now'))")
+            try db.execute(sql: "INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at) VALUES (1, 'b', 'b', '{}', datetime('now'))")
+        }
+        let executor = KnowledgeBaseAnalyticsExecutor(database: database)
+        let summaryResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithAISummary),
+            filters: .init()
+        )
+        let noteResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithPrivateNotes),
+            filters: .init()
+        )
+        let aiNoteResult = try await executor.execute(
+            plan: .init(measure: .repositoriesWithAIGeneratedNotes),
+            filters: .init()
+        )
+
+        #expect(summaryResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(noteResult.rows == [.init(dimensionValue: nil, value: 2)])
+        #expect(aiNoteResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(throws: RAGQueryPlannerError.self) {
+            try KnowledgeBaseAnalyticsPlan(dimension: .language, measure: .repositoriesWithAISummary).validated()
+        }
     }
 
     @Test("索引刷新汇总分别记录仓库构建与向量分片")
@@ -307,6 +364,40 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.contains("先比较数据库能力"))
         #expect(prompt.contains("2:octo/other"))
         #expect(!prompt.contains("assistant answer body"))
+    }
+
+    @Test("Planner 只接收知识库聚合库存，不接收私有正文或仓库名单")
+    func plannerReceivesAggregateMetadataInventoryOnly() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1, owner: "private", name: "secret-project")
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 1, state: .inLibrary)
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repo_notes SET content = 'do-not-send-private-note' WHERE repo_id = 1")
+            try db.execute(sql: "INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at) VALUES (1, 'model', 'hash', '{\"summary\":\"do-not-send\"}', datetime('now'))")
+        }
+        let snapshot = try await KnowledgeBaseMetadataSnapshotProvider(
+            database: database,
+            embeddingModel: "embed-v1"
+        ).fetch()
+        let spy = SpyRAGAIClient(chatResponse: """
+            {"mode":"structured_only","semanticQuery":"","filters":{},"analytics":{"dimension":null,"measure":"repositories_with_private_notes","direction":"desc","limit":1},"remoteContextRequests":[],"confidence":"high","userVisiblePlan":{}}
+            """)
+        let planner = KnowledgeRAGQueryPlanner(client: spy, model: "planner-model", parameters: .summaryDefault)
+
+        _ = try await planner.plan(
+            question: "有多少私有笔记？",
+            composerContext: .init(),
+            metadataSnapshot: snapshot,
+            onReasoningDelta: { _ in },
+            onDebugEvent: { _, _ in }
+        )
+
+        let prompt = try #require(spy.lastChatRequest?.userPrompt)
+        #expect(prompt.contains("Authoritative local knowledge-base inventory"))
+        #expect(prompt.contains("private notes: 1 repositories"))
+        #expect(!prompt.contains("private/secret-project"))
+        #expect(!prompt.contains("do-not-send-private-note"))
+        #expect(!prompt.contains("do-not-send"))
     }
 
     @Test("Planner: 网络错误不伪装成 semantic fallback")
@@ -1590,6 +1681,80 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.systemPrompt.contains("English"))
     }
 
+    @Test("最终证据预算会回传被裁掉分片的身份，供检索漏斗解释")
+    func promptEvidenceBudgetReportsLimitedChunks() {
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 1, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let first = RAGChildHit(chunk: fixtureChunk(id: 1, repoID: 1, source: .readme), score: 0.9, kind: .hybrid)
+        let second = RAGChildHit(chunk: fixtureChunk(id: 2, repoID: 1, source: .readme), score: 0.8, kind: .hybrid)
+        let bundle = RepoContextBundle(
+            candidate: candidate,
+            score: 0.9,
+            matchedChildren: [first, second],
+            sectionParents: [
+                RAGSectionParent(
+                    repoId: 1,
+                    parentKey: "first",
+                    title: "First",
+                    content: String(repeating: "first ", count: 20),
+                    childChunkIDs: [1]
+                ),
+                RAGSectionParent(
+                    repoId: 1,
+                    parentKey: "second",
+                    title: "Second",
+                    content: String(repeating: "second ", count: 20),
+                    childChunkIDs: [2]
+                )
+            ]
+        )
+        let prompt = KnowledgeRAGPromptBuilder(maxEvidenceTokens: 35).build(
+            question: "compare",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "compare"),
+            retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [bundle], childHits: [first, second]),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(prompt.evidenceTokenLimitedChunkIDs == Set([2]))
+
+        var trace = RAGRetrievalTrace(finalEvidence: [
+            RAGRetrievalHitTrace(
+                chunkID: 1,
+                repoID: 1,
+                repositoryName: "octo/demo",
+                source: .readme,
+                sectionTitle: "First",
+                rank: 1,
+                score: 0.9,
+                hitKind: .hybrid,
+                vectorSimilarity: 0.9,
+                scoreBreakdown: nil,
+                disposition: .retained
+            ),
+            RAGRetrievalHitTrace(
+                chunkID: 2,
+                repoID: 1,
+                repositoryName: "octo/demo",
+                source: .readme,
+                sectionTitle: "Second",
+                rank: 2,
+                score: 0.8,
+                hitKind: .hybrid,
+                vectorSimilarity: 0.8,
+                scoreBreakdown: nil,
+                disposition: .parentContextTokenLimit
+            )
+        ])
+        trace.markEvidenceTokenLimited(chunkIDs: prompt.evidenceTokenLimitedChunkIDs)
+        #expect(trace.finalEvidence[0].disposition == .evidenceTokenLimit)
+        #expect(trace.finalEvidence[1].disposition == .parentContextTokenLimit)
+    }
+
     @Test("可配置 Generator 模板会渲染占位符并尊重自定义文案")
     func configurableGeneratorPromptRendersPlaceholders() {
         let custom = AIPromptConfiguration(
@@ -1903,7 +2068,7 @@ struct KnowledgeRAGCoreTests {
         diagnostics.finalChildHitCount = 6
         diagnostics.bundleCount = 2
         let retrievalTrace = RAGRetrievalTrace(
-            candidates: [.init(repoID: 21, fullName: "octo/demo-21")],
+            candidates: [.init(repoID: 21, fullName: "octo/demo-21", language: "Swift", stars: 12_345)],
             semanticHits: [.init(
                 chunkID: 101,
                 repoID: 21,
@@ -1999,6 +2164,8 @@ struct KnowledgeRAGCoreTests {
         #expect(restoredRetrieval.vectorAcceptedCount == 15)
         #expect(restoredRetrieval.rerankedCount == 6)
         #expect(restoredRetrieval.trace == retrievalTrace)
+        #expect(restoredRetrieval.trace?.candidates.first?.language == "Swift")
+        #expect(restoredRetrieval.trace?.candidates.first?.stars == 12_345)
     }
 
     @Test("旧执行轨迹缺少计划快照字段时仍可解码")
@@ -2016,6 +2183,20 @@ struct KnowledgeRAGCoreTests {
         #expect(step.queryPlan == nil)
         #expect(step.retrievalSnapshot == nil)
         #expect(step.contextUsageSnapshot == nil)
+    }
+
+    @Test("旧候选仓库轨迹缺少语言与 Star 字段时仍可解码")
+    func legacyRetrievalCandidateTraceDecodesWithoutPresentationMetadata() throws {
+        let data = try #require("""
+        {
+          "repoID": 21,
+          "fullName": "octo/demo-21"
+        }
+        """.data(using: .utf8))
+
+        let trace = try JSONDecoder().decode(RAGRetrievalCandidateTrace.self, from: data)
+        #expect(trace.language == nil)
+        #expect(trace.stars == nil)
     }
 
     @Test("推荐问题随 assistant message 持久化仓库范围")

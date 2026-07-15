@@ -422,6 +422,15 @@ struct KnowledgeRAGService: Sendable {
                         continuation.finish()
                         return
                     }
+                    // 同一轮只读一次快照：Planner 只消费精简库存摘要，Generator 仍使用完整快照。
+                    // 读取失败必须降级为空，不能因为可选聚合统计阻断正常检索与问答。
+                    let metadataSnapshot: KnowledgeBaseMetadataSnapshot?
+                    do {
+                        metadataSnapshot = try await metadataSnapshotProvider?.fetch()
+                    } catch {
+                        metadataSnapshot = nil
+                        AppLog.ai.warning("RAG metadata snapshot degraded: \(error.localizedDescription, privacy: .public)")
+                    }
                     var hasPlanningReasoning = false
                     let onReasoningDelta: (String) -> Void = { text in
                         guard !text.isEmpty else { return }
@@ -432,7 +441,17 @@ struct KnowledgeRAGService: Sendable {
                         continuation.yield(.execution(.reasoningDelta(.planningReasoning, text)))
                     }
                     var plan: RAGQueryPlan
-                    if let debuggablePlanner = planner as? any KnowledgeRAGDebuggableQueryPlanning {
+                    if let metadataAwarePlanner = planner as? any KnowledgeRAGMetadataAwareQueryPlanning {
+                        plan = try await metadataAwarePlanner.plan(
+                            question: request.rawQuestion,
+                            composerContext: request.composerContext,
+                            metadataSnapshot: metadataSnapshot,
+                            onReasoningDelta: onReasoningDelta,
+                            onDebugEvent: { stage, payload in
+                                emitDebug(stage, "endpoint: \(request.debugEndpoint ?? "<unknown>")\n\n\(payload)")
+                            }
+                        )
+                    } else if let debuggablePlanner = planner as? any KnowledgeRAGDebuggableQueryPlanning {
                         plan = try await debuggablePlanner.plan(
                             question: request.rawQuestion,
                             composerContext: request.composerContext,
@@ -549,7 +568,7 @@ struct KnowledgeRAGService: Sendable {
                     let hasScopedQuery = plan.filters.hasEffectiveConditions
                         || !request.composerContext.explicitRepoIDs.isEmpty
                     var localMissingReasonKey: String?
-                    let retrieval: RAGRetrievalResult
+                    var retrieval: RAGRetrievalResult
                     if candidates.isEmpty {
                         retrieval = RAGRetrievalResult(
                             candidates: [],
@@ -804,13 +823,6 @@ struct KnowledgeRAGService: Sendable {
                         continuation.finish()
                         return
                     }
-                    let metadataSnapshot: KnowledgeBaseMetadataSnapshot?
-                    do {
-                        metadataSnapshot = try await metadataSnapshotProvider?.fetch()
-                    } catch {
-                        metadataSnapshot = nil
-                        AppLog.ai.warning("RAG metadata snapshot degraded: \(error.localizedDescription, privacy: .public)")
-                    }
                     let prompt = promptBuilder.build(
                         question: request.rawQuestion,
                         plan: plan,
@@ -823,6 +835,12 @@ struct KnowledgeRAGService: Sendable {
                         contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
                         maximumOutputTokens: generatorParameters.maxCompletionTokens
                     )
+                    // 最终 evidence token 预算发生在 Retriever 之后。把裁剪结论回写到同一份
+                    // 脱敏轨迹并再次通知 UI，当前会话与持久化执行轨迹才会看到一致的筛除原因。
+                    if !prompt.evidenceTokenLimitedChunkIDs.isEmpty {
+                        retrieval.trace?.markEvidenceTokenLimited(chunkIDs: prompt.evidenceTokenLimitedChunkIDs)
+                        continuation.yield(.retrieval(retrieval))
+                    }
                     if let metadataSnapshot {
                         continuation.yield(.metadataSnapshot(metadataSnapshot))
                     }

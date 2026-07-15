@@ -550,12 +550,17 @@ enum RAGRetrievalTraceDisposition: String, Codable, Equatable, Sendable {
     case perRepositoryLimit
     case totalLimit
     case belowEvidenceScore
+    case parentContextTokenLimit
+    case evidenceTokenLimit
 }
 
-/// 候选仓库的最小回放身份；不复制仓库描述、README 或标签等可由本地库重新取得的信息。
+/// 候选仓库的回放摘要；仅保存语言和 star 数这类可扫描的公开元数据，不复制描述、README 或标签。
 struct RAGRetrievalCandidateTrace: Identifiable, Codable, Equatable, Sendable {
     var repoID: Int64
     var fullName: String
+    /// optional 保证旧会话的 `execution_trace_json` 缺少这些新字段时仍可解码。
+    var language: String? = nil
+    var stars: Int? = nil
 
     var id: Int64 { repoID }
 }
@@ -603,6 +608,20 @@ struct RAGRetrievalTrace: Codable, Equatable, Sendable {
         self.fusionHits = fusionHits
         self.finalEvidence = finalEvidence
         self.rerank = rerank
+    }
+
+    /// Prompt 组装发生在 Retriever 返回之后；只改写原本会进入上下文的命中，
+    /// 保留父段落 token 上限的先前判定，才能在历史会话中准确说明最后一次裁剪原因。
+    mutating func markEvidenceTokenLimited(chunkIDs: Set<Int64>) {
+        guard !chunkIDs.isEmpty else { return }
+        finalEvidence = finalEvidence.map { hit in
+            guard hit.disposition == .retained,
+                  let chunkID = hit.chunkID,
+                  chunkIDs.contains(chunkID) else { return hit }
+            var limited = hit
+            limited.disposition = .evidenceTokenLimit
+            return limited
+        }
     }
 }
 

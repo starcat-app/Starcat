@@ -44,13 +44,24 @@ protocol KnowledgeRAGDebuggableQueryPlanning: KnowledgeRAGQueryPlanning {
     ) async throws -> RAGQueryPlan
 }
 
+/// 元数据由 Service 读取一次后显式传入。Planner 仍不能直接读数据库，测试替身也无需因此增加依赖。
+protocol KnowledgeRAGMetadataAwareQueryPlanning: KnowledgeRAGQueryPlanning {
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        metadataSnapshot: KnowledgeBaseMetadataSnapshot?,
+        onReasoningDelta: @escaping (String) -> Void,
+        onDebugEvent: @escaping (RAGDebugEvent.Stage, String) -> Void
+    ) async throws -> RAGQueryPlan
+}
+
 extension KnowledgeRAGQueryPlanning {
     func plan(question: String, composerContext: RAGComposerContext) async throws -> RAGQueryPlan {
         try await plan(question: question, composerContext: composerContext, onReasoningDelta: { _ in })
     }
 }
 
-struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
+struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeRAGMetadataAwareQueryPlanning {
     private let client: any AIClientProtocol
     private let model: String
     private let parameters: AIModelParameters
@@ -84,6 +95,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         try await plan(
             question: question,
             composerContext: composerContext,
+            metadataSnapshot: nil,
             onReasoningDelta: onReasoningDelta,
             onDebugEvent: { _, _ in }
         )
@@ -95,6 +107,22 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         onReasoningDelta: @escaping (String) -> Void,
         onDebugEvent: @escaping (RAGDebugEvent.Stage, String) -> Void
     ) async throws -> RAGQueryPlan {
+        try await plan(
+            question: question,
+            composerContext: composerContext,
+            metadataSnapshot: nil,
+            onReasoningDelta: onReasoningDelta,
+            onDebugEvent: onDebugEvent
+        )
+    }
+
+    func plan(
+        question: String,
+        composerContext: RAGComposerContext,
+        metadataSnapshot: KnowledgeBaseMetadataSnapshot?,
+        onReasoningDelta: @escaping (String) -> Void,
+        onDebugEvent: @escaping (RAGDebugEvent.Stage, String) -> Void
+    ) async throws -> RAGQueryPlan {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { throw RAGQueryPlannerError.emptyQuestion }
 
@@ -102,7 +130,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             systemPrompt: promptConfiguration.renderedSystemPrompt(placeholders: [
                 "outputLanguage": outputLanguage
             ]),
-            userPrompt: renderedUserPrompt(question: question, context: composerContext),
+            userPrompt: renderedUserPrompt(question: question, context: composerContext, metadataSnapshot: metadataSnapshot),
             model: model,
             parameters: parameters,
             responseFormat: .jsonObject
@@ -197,7 +225,11 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         return content
     }
 
-    private func renderedUserPrompt(question: String, context: RAGComposerContext) -> String {
+    private func renderedUserPrompt(
+        question: String,
+        context: RAGComposerContext,
+        metadataSnapshot: KnowledgeBaseMetadataSnapshot?
+    ) -> String {
         let explicit = context.explicitRepoReferences
             .map { "\($0.id):\($0.fullName)" }
             .joined(separator: ", ")
@@ -210,7 +242,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
         let previousRepos = context.previousReferencedRepos
             .map { "\($0.id):\($0.fullName)" }
             .joined(separator: ", ")
-        return promptConfiguration.renderedUserPrompt(placeholders: [
+        let basePrompt = promptConfiguration.renderedUserPrompt(placeholders: [
             "outputLanguage": outputLanguage,
             "question": question,
             // 旧版用户自定义 Planner prompt 仍可能引用这两个占位符；保留值仅为兼容，
@@ -224,7 +256,9 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
             "previousUserQuestion": context.previousUserQuestion ?? "<none>",
             "previousReferencedRepositories": previousRepos.isEmpty ? "[]" : "[\(previousRepos)]",
             "webSearchEnabled": String(context.webSearchEnabled)
-        ]) + Self.analyticsCapabilityPrompt
+        ])
+        let metadataContext = metadataSnapshot.map { "\n\n\($0.plannerPromptContext())" } ?? ""
+        return basePrompt + metadataContext + Self.analyticsCapabilityPrompt
     }
 
     static func decodeAndValidate(_ raw: String, fallbackQuestion: String) throws -> RAGQueryPlan {
@@ -318,7 +352,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning {
     private static let analyticsCapabilityPrompt = """
 
     For aggregate/ranking/filter questions, optionally include analytics. It is a local-only DSL:
-    {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks","direction":"asc|desc","limit":1}
+    {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks|repositories_with_ai_summary|repositories_with_private_notes|repositories_with_ai_generated_notes","direction":"asc|desc","limit":1}
     Use analytics only for a database aggregation or ranking. Never use SQL, table names, column names, expressions, or additional analytics fields. Set mode=structured_only when analytics is present.
     """
 

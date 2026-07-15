@@ -17,6 +17,8 @@ struct RAGPromptBuildResult: Equatable, Sendable {
     /// 已被统一预算后的历史；Service 必须发送这份而不是调用方传入的原始 history。
     var history: [AIChatMessage] = []
     var contextUsage: RAGContextUsage = .empty
+    /// 最终 evidence 预算裁掉的命中；只携带 chunk id，供 Service 回写脱敏检索轨迹。
+    var evidenceTokenLimitedChunkIDs: Set<Int64> = []
 }
 
 struct KnowledgeRAGPromptBuilder: Sendable {
@@ -51,6 +53,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         let boundedHistory = boundedHistory(history, budget: &budget)
         var citations: [String: RAGCitation] = [:]
         var evidenceSections: [String] = []
+        var evidenceTokenLimitedChunkIDs = Set<Int64>()
         var usedTokens = 0
         var nextCitation = 1
 
@@ -62,10 +65,22 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             : retrieval.bundles
         for bundle in bundles {
             var lines = [metadataLine(bundle.candidate)]
-            for parent in bundle.sectionParents {
+            for (parentIndex, parent) in bundle.sectionParents.enumerated() {
                 let tokens = TokenEstimator.estimate(text: parent.content)
-                guard usedTokens + tokens <= maxEvidenceTokens else { break }
                 let parentHits = bundle.matchedChildren.filter { parent.childChunkIDs.contains($0.chunk.id ?? -1) }
+                guard usedTokens + tokens <= maxEvidenceTokens else {
+                    // 原有策略会停止同仓库后续章节；把这批命中的身份记下，才不会让用户误以为
+                    // 分片在融合阶段丢失。这里只保存 id，不把正文写进 prompt 结果或历史。
+                    let skippedChunkIDs = bundle.sectionParents
+                        .dropFirst(parentIndex)
+                        .flatMap { skippedParent in
+                            bundle.matchedChildren
+                                .filter { skippedParent.childChunkIDs.contains($0.chunk.id ?? -1) }
+                                .compactMap { $0.chunk.id }
+                        }
+                    evidenceTokenLimitedChunkIDs.formUnion(skippedChunkIDs)
+                    break
+                }
                 let hit = parentHits.first ?? bundle.matchedChildren.first
                 let marker = "S\(nextCitation)"
                 if let hit {
@@ -183,7 +198,8 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                 systemPrompt: systemPrompt,
                 history: boundedHistory,
                 userPrompt: userPrompt
-            ))
+            )),
+            evidenceTokenLimitedChunkIDs: evidenceTokenLimitedChunkIDs
         )
     }
 

@@ -20,6 +20,29 @@ private enum RAGRetrievalDetailTarget: String, Identifiable {
     var id: String { rawValue }
 }
 
+/// 检索详情胶囊只用系统语义色的浅底与描边；正文保持 primary，明暗主题均有足够对比度。
+private enum RetrievalDetailPillTone {
+    case retrievalScore
+    case vectorSimilarity
+    case rerankScore
+    case success
+    case warning
+    case danger
+    case neutral
+
+    var color: Color {
+        switch self {
+        case .retrievalScore: return .accentColor
+        case .vectorSimilarity: return .indigo
+        case .rerankScore: return .purple
+        case .success: return .green
+        case .warning: return .orange
+        case .danger: return .red
+        case .neutral: return .gray
+        }
+    }
+}
+
 struct RAGWorkspaceInspector: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -68,8 +91,9 @@ struct RAGWorkspaceInspector: View {
                 // 图标只与 headline 同行对齐；若跟 title+caption 整块 center，视觉上会漂到 Context 上方。
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .center, spacing: 8) {
-                        // 叠放文档：表达「本轮组装进回答的多路来源」，与引用/计划/索引 tab 语义一致。
-                        Image(systemName: "doc.on.doc.fill")
+                        // 多层来源叠成上下文：比 doc.on.doc 更贴「本轮组装进回答的多路来源」语义，
+                        // 也与左侧 RAG rail 的 layers 图标形成同一视觉族。
+                        Image(systemName: "square.3.layers.3d.down.right.fill")
                             .font(iconFont(size: 14, weight: .semibold))
                             .foregroundStyle(Color.accentColor)
                             .frame(width: 18)
@@ -414,6 +438,8 @@ struct RAGWorkspaceInspector: View {
                         metadataTagsGroup(snapshot)
                         metadataLanguagesGroup(Array(snapshot.topLanguages.prefix(6)))
                         metadataActivityGroup(snapshot)
+                        metadataKnowledgeArtifactsGroup(snapshot)
+                        metadataSourceCoverageGroup(snapshot.sourceIndexCoverage)
                         metadataIndexGroup(snapshot.indexHealth)
 
                         if !snapshot.topStarredRepositories.isEmpty {
@@ -613,6 +639,63 @@ struct RAGWorkspaceInspector: View {
                 value: localizedInteger(snapshot.pushedInLast30DaysCount)
             )
         }
+    }
+
+    /// AI 摘要与私有笔记是知识库可检索内容的覆盖事实，不展示正文，避免元数据面板变成数据泄露入口。
+    @ViewBuilder
+    private func metadataKnowledgeArtifactsGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.artifacts",
+                systemImage: "sparkles",
+                tint: .purple
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.aiSummaryCoverage",
+                value: metadataCoverageValue(snapshot.aiSummaryProjectCount, total: snapshot.projectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.privateNoteCoverage",
+                value: metadataCoverageValue(snapshot.privateNoteProjectCount, total: snapshot.projectCount)
+            )
+            if snapshot.aiGeneratedNoteProjectCount > 0 {
+                metadataMetricRow(
+                    "rag.workspace.inspector.metadata.aiGeneratedNotes",
+                    value: localizedInteger(snapshot.aiGeneratedNoteProjectCount)
+                )
+            }
+        }
+    }
+
+    /// 按来源列出实际存在的索引分片，帮助用户区分“有笔记/摘要”与“该来源已进入 RAG 索引”。
+    @ViewBuilder
+    private func metadataSourceCoverageGroup(_ coverage: [KnowledgeBaseMetadataSnapshot.SourceIndexCoverage]) -> some View {
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.sourceCoverage",
+                systemImage: "square.stack.3d.up",
+                tint: .teal
+            )
+            ForEach(coverage, id: \.source.rawValue) { item in
+                metadataMetricRow(
+                    item.source.titleKey,
+                    value: String(
+                        format: String.l10n("rag.workspace.inspector.metadata.sourceCoverageFormat"),
+                        localizedInteger(item.repositoryCount),
+                        localizedInteger(item.searchableChunkCount),
+                        localizedInteger(item.chunkCount)
+                    )
+                )
+            }
+        }
+    }
+
+    private func metadataCoverageValue(_ count: Int, total: Int) -> String {
+        String(
+            format: String.l10n("rag.workspace.inspector.metadata.coverageFormat"),
+            localizedInteger(count),
+            localizedInteger(total)
+        )
     }
 
     @ViewBuilder
@@ -1408,7 +1491,7 @@ struct RAGWorkspaceInspector: View {
             .scrollIndicators(.visible)
         }
         .padding(12)
-        .frame(width: 430, height: 360, alignment: .topLeading)
+        .frame(width: 430, height: retrievalDetailPopoverHeight(target, trace: trace), alignment: .topLeading)
     }
 
     var retrievalDetailUnavailable: some View {
@@ -1424,17 +1507,43 @@ struct RAGWorkspaceInspector: View {
         rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
+    /// 详情不足一屏时收紧 popover，避免单个候选仓库被大面积空白淹没；超过上限仍由 ScrollView 承载。
+    private func retrievalDetailPopoverHeight(_ target: RAGRetrievalDetailTarget, trace: RAGRetrievalTrace) -> CGFloat {
+        let count = max(retrievalDetailCount(target, trace: trace), 1)
+        let rowHeight: CGFloat = target == .candidates ? 58 : 84
+        let minimumHeight: CGFloat = target == .candidates ? 144 : 176
+        return min(max(minimumHeight, 74 + CGFloat(count) * rowHeight), 360)
+    }
+
     private func retrievalCandidateRow(_ candidate: RAGRetrievalCandidateTrace, rowIndex: Int) -> some View {
-        RepoIdentityLabel(
-            fullName: candidate.fullName,
-            avatarSize: 16,
-            font: ragFont(.caption, weight: .semibold),
-            spacing: 6,
-            showAvatarBorder: false
-        )
+        VStack(alignment: .leading, spacing: 5) {
+            RepoIdentityLabel(
+                fullName: candidate.fullName,
+                avatarSize: 28,
+                font: ragFont(.callout, weight: .semibold),
+                spacing: 8,
+                showAvatarBorder: false
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 头像/名称仍交给 RepoIdentityLabel；语言和 star 放在同一名称缩进列，
+            // 与主窗口仓库行的二级信息结构一致，且不会影响头像缓存与占位逻辑。
+            if candidate.language?.isEmpty == false || candidate.stars != nil {
+                HStack(spacing: 10) {
+                    if let language = candidate.language, !language.isEmpty {
+                        LanguageBadge(language: language, style: .compact)
+                    }
+                    if let stars = candidate.stars {
+                        StarsBadge(count: stars, style: .compact)
+                    }
+                }
+                .padding(.leading, 36)
+                .fixedSize(horizontal: true, vertical: false)
+            }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(retrievalZebraBackground(rowIndex: rowIndex))
     }
 
@@ -1449,7 +1558,7 @@ struct RAGWorkspaceInspector: View {
                     showAvatarBorder: false
                 )
                 Spacer(minLength: 6)
-                retrievalTraceScore("rag.browser.retrieval.rankScore", value: hit.score)
+                retrievalScorePill("rag.browser.retrieval.rankScore", value: hit.score, tone: .retrievalScore)
             }
             Text(hit.sectionTitle)
                 .font(ragFont(.caption2))
@@ -1464,16 +1573,13 @@ struct RAGWorkspaceInspector: View {
                 Text("·")
                 Text(localizedHitKind(hit.hitKind))
                 if let vectorSimilarity = hit.vectorSimilarity {
-                    Text("·")
-                    retrievalTraceScore("rag.browser.retrieval.vectorSimilarity", value: vectorSimilarity)
+                    retrievalScorePill("rag.browser.retrieval.vectorSimilarity", value: vectorSimilarity, tone: .vectorSimilarity)
                 }
                 Spacer(minLength: 0)
             }
             .font(ragFont(.caption2))
             .foregroundStyle(.secondary)
-            Text(localizedRetrievalDisposition(hit.disposition))
-                .font(ragFont(.caption2))
-                .foregroundStyle(.secondary)
+            retrievalDispositionPill(hit.disposition)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
@@ -1497,7 +1603,7 @@ struct RAGWorkspaceInspector: View {
                     showAvatarBorder: false
                 )
                 Spacer(minLength: 6)
-                retrievalTraceScore("rag.browser.retrieval.rankScore", value: candidate.preRerankScore)
+                retrievalScorePill("rag.browser.retrieval.rankScore", value: candidate.preRerankScore, tone: .retrievalScore)
             }
             Text(candidate.section)
                 .font(ragFont(.caption2))
@@ -1510,8 +1616,7 @@ struct RAGWorkspaceInspector: View {
                     .accessibilityHidden(true)
                 Text(candidate.source.titleKey)
                 if let responseScore {
-                    Text("·")
-                    retrievalTraceScore("rag.workspace.inspector.plan.retrieval.detail.rerankScore", value: responseScore)
+                    retrievalScorePill("rag.workspace.inspector.plan.retrieval.detail.rerankScore", value: responseScore, tone: .rerankScore)
                 }
                 if let appliedRank {
                     Text("· #\(appliedRank)")
@@ -1525,11 +1630,46 @@ struct RAGWorkspaceInspector: View {
         .background(retrievalZebraBackground(rowIndex: rowIndex))
     }
 
-    func retrievalTraceScore(_ title: LocalizedStringKey, value: Double) -> some View {
+    /// 颜色只放在描边与浅底上，胶囊文字仍遵循 primary，确保明暗主题下的对比度稳定。
+    private func retrievalScorePill(
+        _ title: LocalizedStringKey,
+        value: Double,
+        tone: RetrievalDetailPillTone
+    ) -> some View {
         HStack(spacing: 3) {
             Text(title)
             Text(String(format: "%.3f", value))
                 .monospacedDigit()
+        }
+        .font(ragFont(.caption2, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(tone.color.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(tone.color.opacity(0.28), lineWidth: 1))
+    }
+
+    private func retrievalDispositionPill(_ disposition: RAGRetrievalTraceDisposition) -> some View {
+        Text(localizedRetrievalDisposition(disposition))
+            .font(ragFont(.caption2, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(retrievalDispositionTone(disposition).color.opacity(0.14), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(
+                    retrievalDispositionTone(disposition).color.opacity(0.28),
+                    lineWidth: 1
+                )
+            )
+    }
+
+    private func retrievalDispositionTone(_ disposition: RAGRetrievalTraceDisposition) -> RetrievalDetailPillTone {
+        switch disposition {
+        case .retained: return .success
+        case .sourceDisabled: return .neutral
+        case .belowVectorSimilarity, .belowEvidenceScore: return .danger
+        case .perRepositoryLimit, .totalLimit, .parentContextTokenLimit, .evidenceTokenLimit: return .warning
         }
     }
 
@@ -1589,6 +1729,8 @@ struct RAGWorkspaceInspector: View {
         case .perRepositoryLimit: return "rag.workspace.inspector.plan.retrieval.detail.disposition.perRepositoryLimit"
         case .totalLimit: return "rag.workspace.inspector.plan.retrieval.detail.disposition.totalLimit"
         case .belowEvidenceScore: return "rag.workspace.inspector.plan.retrieval.detail.disposition.belowEvidenceScore"
+        case .parentContextTokenLimit: return "rag.workspace.inspector.plan.retrieval.detail.disposition.parentContextTokenLimit"
+        case .evidenceTokenLimit: return "rag.workspace.inspector.plan.retrieval.detail.disposition.evidenceTokenLimit"
         }
     }
 

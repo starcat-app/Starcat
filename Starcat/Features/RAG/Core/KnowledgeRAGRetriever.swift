@@ -10,6 +10,12 @@
 
 import Foundation
 
+/// Parent 扩展与命中裁剪需要同时回传；正文仍只存在 bundle，不写入会话轨迹。
+private struct RAGBundleBuildResult {
+    var bundles: [RepoContextBundle]
+    var parentTokenLimitedChunkIDs: Set<Int64>
+}
+
 struct KnowledgeRAGRetriever: Sendable {
     private let chunkRepository: any RAGChunkRepositoryProtocol
     private let keywordProvider: any RAGKeywordSearchProvider
@@ -165,7 +171,8 @@ struct KnowledgeRAGRetriever: Sendable {
         )
         let fusionResult = fusion.applyLimits(to: rerankResult.hits)
         let hits = fusionResult.hits.filter { $0.score >= minimumEvidenceScore }
-        let bundles = try await buildBundles(hits: hits, candidates: candidates)
+        let bundleBuild = try await buildBundles(hits: hits, candidates: candidates)
+        let bundles = bundleBuild.bundles
         let trace = RAGRetrievalTrace(
             candidates: candidateTrace(candidates),
             keywordHits: hitTrace(
@@ -190,7 +197,11 @@ struct KnowledgeRAGRetriever: Sendable {
             finalEvidence: hitTrace(
                 hits,
                 repositoryNames: repositoryNames,
-                disposition: { _ in .retained }
+                disposition: { hit in
+                    guard let chunkID = hit.chunk.id,
+                          bundleBuild.parentTokenLimitedChunkIDs.contains(chunkID) else { return .retained }
+                    return .parentContextTokenLimit
+                }
             ),
             rerank: rerankResult.diagnostics.trace
         )
@@ -266,7 +277,14 @@ struct KnowledgeRAGRetriever: Sendable {
     }
 
     private func candidateTrace(_ candidates: [RAGRepoCandidate]) -> [RAGRetrievalCandidateTrace] {
-        candidates.map { RAGRetrievalCandidateTrace(repoID: $0.repo.id, fullName: $0.repo.fullName) }
+        candidates.map {
+            RAGRetrievalCandidateTrace(
+                repoID: $0.repo.id,
+                fullName: $0.repo.fullName,
+                language: $0.repo.language,
+                stars: $0.repo.starsCount
+            )
+        }
     }
 
     private func rerankCandidates(
@@ -362,7 +380,7 @@ struct KnowledgeRAGRetriever: Sendable {
         }
     }
 
-    private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> [RepoContextBundle] {
+    private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> RAGBundleBuildResult {
         let candidateByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.repo.id, $0) })
         let grouped = Dictionary(grouping: hits, by: { $0.chunk.repoId })
         let parentKeys = Set(hits.map { RAGChunkParentKey(repoID: $0.chunk.repoId, parentKey: $0.chunk.parentKey) })
@@ -373,6 +391,7 @@ struct KnowledgeRAGRetriever: Sendable {
             model: embeddingModel
         )) { RAGChunkParentKey(repoID: $0.repoId, parentKey: $0.parentKey) }
         var bundles: [RepoContextBundle] = []
+        var parentTokenLimitedChunkIDs = Set<Int64>()
 
         for (repoID, repoHits) in grouped {
             guard let candidate = candidateByID[repoID] else { continue }
@@ -387,6 +406,13 @@ struct KnowledgeRAGRetriever: Sendable {
                     anchorChunkID: hit.chunk.id,
                     tokenLimit: parentTokenLimit
                 )
+                // 同一 parent 内的其它命中若未能随 anchor 进入展开上下文，原因只能是
+                // 父段落 token 上限；保留 chunk id 即可在 UI 与历史中解释，无需复制正文。
+                let selectedChunkIDs = Set(selected.compactMap(\.id))
+                let matchedChunkIDs = repoHits
+                    .filter { $0.chunk.parentKey == hit.chunk.parentKey }
+                    .compactMap { $0.chunk.id }
+                parentTokenLimitedChunkIDs.formUnion(matchedChunkIDs.filter { !selectedChunkIDs.contains($0) })
                 parents.append(RAGSectionParent(
                     repoId: repoID,
                     parentKey: hit.chunk.parentKey,
@@ -404,7 +430,10 @@ struct KnowledgeRAGRetriever: Sendable {
                 sectionParents: parents
             ))
         }
-        return bundles.sorted { $0.score > $1.score }.prefix(repoLimit).map { $0 }
+        return RAGBundleBuildResult(
+            bundles: bundles.sorted { $0.score > $1.score }.prefix(repoLimit).map { $0 },
+            parentTokenLimitedChunkIDs: parentTokenLimitedChunkIDs
+        )
     }
 
     private func keywordHits(query: String, publicRepoIDs: [Int64], privateRepoIDs: [Int64]) async throws -> [RAGChildHit] {
