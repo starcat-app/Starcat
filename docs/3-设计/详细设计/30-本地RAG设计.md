@@ -262,6 +262,7 @@ CREATE TABLE rag_message_remote_contexts (
 - 不保存完整 chunk content snapshot。
 - 如果 chunk 后续被清理,历史里显示“引用片段已清理或需要重建索引”。
 - 会话历史只本地存储,不进 CloudKit。
+- `appendTurn` 在同一事务返回实际写入的用户/助手消息、引用、远程审计与会话摘要；回答完成后直接增量更新当前投影和后台 LRU。只有切换会话、缓存未命中及取消/失败恢复才读取完整历史。
 - 提问时只把最近 3 轮原文传给 chat model；更早消息按每条 280 字符、总计 1,800 字符压缩为受限背景摘要，避免长会话无限增加 token 成本。
 
 ## 5. Chunk 构建

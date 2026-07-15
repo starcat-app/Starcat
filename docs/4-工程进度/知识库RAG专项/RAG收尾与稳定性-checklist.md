@@ -93,7 +93,7 @@
 - [x] **Source-aware 重建读取**：用显式读取计划约束 source 依赖；README/Notes/Summary 只读自身数据，Metadata 才读 Note、Tags 与本地事实缓存；单仓摘要改为 `ORDER BY generated_at DESC LIMIT 1`，全库重建仍一次批量预取 — `KnowledgeRAGIndexBuilder.swift`、`AISummaryRepository.swift`、`KnowledgeRAGCoreTests.swift` — 2026-07-16。
 - [x] **候选仓库轻量查询**：`@repo` picker 改用轻量投影并预计算归一化搜索文本；知识库不超过 500 个仓库时保留内存过滤，超过阈值后使用 120ms 合并的 SQL 首屏分页，选中时才批量还原完整 Repo；索引问题名称与 GitHub URL 精确匹配不依赖当前页 — `RAGRepoCandidateRepository.swift`、`RAGMentionPickerLogic.swift`、`KnowledgeRAGWorkspaceViewModel.swift` — 2026-07-16。
 - [x] **元数据快照版本缓存**：追加 `v12-rag-metadata-revision`，知识库边界、Repo、标签、摘要与索引相关写入在事务内推进单调版本；Planner、Generator 与 Inspector 按版本和 embedding model 共用 actor 缓存并合并并发读取，滚动时间口径最多复用 60 秒，切库强制清空，不使用可能过期的 UI 快照 — `KnowledgeBaseMetadataSnapshot.swift`、`DatabaseMigrationsV1.swift`、`AppDependencies.swift` — 2026-07-16。
-- [ ] **会话持久化增量更新**：回答完成后直接追加本轮持久化结果，不每轮重载全部消息与引用；保留全量重载作为切换会话和错误恢复路径。
+- [x] **会话持久化增量更新**：`appendTurn` 返回事务实际写入的 summary、用户/助手消息、稳定 ID、时间戳、引用与远程审计；回答完成后对当前投影和后台 LRU 快照只追加本轮并局部更新会话摘要，不再重载全部消息、引用或会话列表；切换会话、取消/失败恢复仍走全量读取 — `RAGConversationStore.swift`、`KnowledgeRAGWorkspaceViewModel.swift` — 2026-07-16。
 - [ ] **Debug 磁盘保留上界**：在已有内存 FIFO 上限之外，增加每会话文件数或总字节数上限，读取时不全量解码无限历史 JSON。
 - [ ] **会话预取缓存预算**：最近会话不得只按 24 个完整快照限制；增加总字节/消息数预算或只预取轻量投影，并记录长会话启动 I/O、P50/P95 与峰值内存。
 

@@ -450,6 +450,41 @@ struct KnowledgeRAGCoreTests {
         #expect(retainedThird != nil)
     }
 
+    @Test("持久化轮次增量追加消息与大纲且保持幂等")
+    func conversationPresentationAppendsPersistedTurnIncrementally() {
+        let conversationID = UUID()
+        let summary = RAGConversationSummary(
+            id: conversationID,
+            title: "增量会话",
+            isPinned: false,
+            pinnedAt: nil,
+            groupID: nil,
+            createdAt: "2026-07-16T00:00:00Z",
+            updatedAt: "2026-07-16T00:01:00Z"
+        )
+        let user = RAGStoredMessage(
+            id: UUID(), conversationID: conversationID, role: .user, content: "新增问题",
+            model: nil, citations: [], remoteContextAudits: [], createdAt: "2026-07-16T00:01:00Z"
+        )
+        let assistant = RAGStoredMessage(
+            id: UUID(), conversationID: conversationID, role: .assistant, content: "新增回答",
+            model: "test", citations: [], remoteContextAudits: [], createdAt: "2026-07-16T00:01:01Z"
+        )
+        let turn = RAGPersistedConversationTurn(summary: summary, userMessage: user, assistantMessage: assistant)
+        let empty = RAGConversationPresentationSnapshot(
+            detail: RAGConversationDetail(summary: summary, messages: [], contextSummary: nil),
+            outlineTurns: [],
+            citations: []
+        )
+
+        let appended = empty.appending(turn, summary: summary)
+        let duplicate = appended.appending(turn, summary: summary)
+        #expect(appended.detail.messages == [user, assistant])
+        #expect(appended.outlineTurns.map(\.userMessageID) == [user.id])
+        #expect(duplicate.detail.messages == appended.detail.messages)
+        #expect(duplicate.outlineTurns == appended.outlineTurns)
+    }
+
     @Test("RAG Composer 草稿按会话隔离保存与恢复")
     func composerDraftStoreIsolatesPerConversation() {
         let firstID = UUID()
@@ -2332,7 +2367,7 @@ struct KnowledgeRAGCoreTests {
 
         let completedConversation = try await store.createConversation()
         try await store.renameConversation(id: completedConversation.id, title: generatedTitle)
-        try await store.appendTurn(
+        let persisted = try await store.appendTurn(
             conversationID: completedConversation.id,
             question: "总结一下这个项目的功能",
             answer: "这是一个 AI 助手项目。",
@@ -2341,6 +2376,8 @@ struct KnowledgeRAGCoreTests {
         )
 
         let completedDetail = try #require(try await store.loadConversation(id: completedConversation.id))
+        #expect(persisted.summary.title == generatedTitle)
+        #expect(persisted.assistantMessage == completedDetail.messages.last)
         #expect(completedDetail.summary.title == generatedTitle)
 
         let cancelledConversation = try await store.createConversation()
@@ -3335,7 +3372,7 @@ struct KnowledgeRAGCoreTests {
         let conversation = try await store.createConversation()
         let fetchedAt = Date(timeIntervalSince1970: 1_784_000_000)
 
-        try await store.appendTurn(
+        let persisted = try await store.appendTurn(
             conversationID: conversation.id,
             question: "近期 issue 有什么风险？",
             answer: "有一个待处理问题。",
@@ -3368,6 +3405,8 @@ struct KnowledgeRAGCoreTests {
         let loaded = try await store.loadConversation(id: conversation.id)
         let detail = try #require(loaded)
         let audit = try #require(detail.messages.last?.remoteContextAudits.first)
+        #expect(persisted.userMessage.content == "近期 issue 有什么风险？")
+        #expect(persisted.assistantMessage == detail.messages.last)
         #expect(audit.resource == .githubIssues)
         #expect(audit.repoID == 43)
         #expect(audit.sourceURL?.absoluteString == "https://github.com/octo/demo-43/issues")

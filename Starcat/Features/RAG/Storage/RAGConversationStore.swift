@@ -66,6 +66,14 @@ struct RAGConversationDetail: Equatable, Sendable {
     var contextSummary: RAGConversationContextSummary?
 }
 
+/// `appendTurn` 事务真正写入的增量结果。ViewModel 直接消费这些稳定 ID 与时间戳，
+/// 无需为了刚写入的两条消息再次加载整段会话及其全部引用/远程审计。
+struct RAGPersistedConversationTurn: Equatable, Sendable {
+    var summary: RAGConversationSummary
+    var userMessage: RAGStoredMessage
+    var assistantMessage: RAGStoredMessage
+}
+
 struct RAGConversationStatistics: Equatable, Sendable {
     var conversationCount: Int
     var messageCount: Int
@@ -83,7 +91,7 @@ protocol RAGConversationStoring: Sendable {
         content: String,
         coveredMessageCount: Int
     ) async throws
-    func appendTurn(
+    @discardableResult func appendTurn(
         conversationID: UUID,
         question: String,
         answer: String,
@@ -93,7 +101,7 @@ protocol RAGConversationStoring: Sendable {
         executionTrace: [RAGExecutionStep],
         suggestedActions: [RAGSuggestedQuestionAction],
         processingDuration: TimeInterval?
-    ) async throws
+    ) async throws -> RAGPersistedConversationTurn
     /// 仅落库用户消息（停止时尚未产生任何助手文本）。
     func appendUserMessage(
         conversationID: UUID,
@@ -239,7 +247,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         }
     }
 
-    func appendTurn(
+    @discardableResult func appendTurn(
         conversationID: UUID,
         question: String,
         answer: String,
@@ -249,13 +257,13 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         executionTrace: [RAGExecutionStep] = [],
         suggestedActions: [RAGSuggestedQuestionAction] = [],
         processingDuration: TimeInterval? = nil
-    ) async throws {
+    ) async throws -> RAGPersistedConversationTurn {
         let userID = UUID()
         let assistantID = UUID()
         let now = Date()
         let userAt = ISO8601DateFormatter.shared.string(from: now)
         let assistantAt = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(0.001))
-        try await database.writer.write { db in
+        return try await database.writer.write { db in
             let messageCount = try Int.fetchOne(
                 db,
                 sql: "SELECT COUNT(*) FROM rag_messages WHERE conversation_id = ?",
@@ -336,6 +344,55 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
             try db.execute(
                 sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
                 arguments: [assistantAt, conversationID.uuidString]
+            )
+            guard let summaryRow = try Row.fetchOne(db, sql: """
+                SELECT id, title, is_pinned, pinned_at, group_id, created_at, updated_at
+                FROM rag_conversations WHERE id = ?
+                """, arguments: [conversationID.uuidString]),
+                  let summary = Self.summary(row: summaryRow) else {
+                throw DatabaseError.openFailed(underlying: NSError(
+                    domain: "RAGConversationStore",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Persisted RAG conversation is missing"]
+                ))
+            }
+            let remoteAudits = remoteContexts.compactMap { block -> RAGRemoteContextAudit? in
+                guard let repoID = block.repoId else { return nil }
+                return RAGRemoteContextAudit(
+                    id: "\(assistantID.uuidString):\(block.id)",
+                    repoID: repoID,
+                    resource: block.resource,
+                    title: block.title,
+                    sourceURL: block.sourceURL,
+                    fetchedAt: ISO8601DateFormatter.shared.string(from: block.fetchedAt),
+                    errorMessage: block.errorMessage
+                )
+            }
+            return RAGPersistedConversationTurn(
+                summary: summary,
+                userMessage: RAGStoredMessage(
+                    id: userID,
+                    conversationID: conversationID,
+                    role: .user,
+                    content: question,
+                    model: nil,
+                    citations: [],
+                    remoteContextAudits: [],
+                    createdAt: userAt
+                ),
+                assistantMessage: RAGStoredMessage(
+                    id: assistantID,
+                    conversationID: conversationID,
+                    role: .assistant,
+                    content: answer,
+                    model: model,
+                    citations: citations,
+                    remoteContextAudits: remoteAudits,
+                    executionTrace: executionTrace,
+                    suggestedActions: suggestedActions,
+                    processingDuration: processingDuration,
+                    createdAt: assistantAt
+                )
             )
         }
     }

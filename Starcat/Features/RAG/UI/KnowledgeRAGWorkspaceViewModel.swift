@@ -36,6 +36,29 @@ struct RAGConversationPresentationSnapshot: Sendable {
     let detail: RAGConversationDetail
     let outlineTurns: [RAGConversationOutlineTurn]
     let citations: [RAGCitation]
+
+    /// 将刚提交的完整轮次追加到现有投影。只处理两条新增消息，不重新扫描长会话。
+    func appending(_ turn: RAGPersistedConversationTurn, summary: RAGConversationSummary) -> Self {
+        let newMessages = [turn.userMessage, turn.assistantMessage]
+        guard !detail.messages.contains(where: { $0.id == turn.userMessage.id || $0.id == turn.assistantMessage.id })
+        else { return self }
+        let newOutline = RAGConversationOutlineBuilder.completeTurns(from: newMessages)
+        var seen = Set(citations.map(\.id))
+        let mergedCitations = (citations + turn.assistantMessage.citations.filter { seen.insert($0.id).inserted })
+            .sorted {
+                if $0.score != $1.score { return $0.score > $1.score }
+                return $0.repoFullName.localizedStandardCompare($1.repoFullName) == .orderedAscending
+            }
+        return Self(
+            detail: RAGConversationDetail(
+                summary: summary,
+                messages: detail.messages + newMessages,
+                contextSummary: detail.contextSummary
+            ),
+            outlineTurns: outlineTurns + newOutline,
+            citations: mergedCitations
+        )
+    }
 }
 
 /// 会话正文的窗口级 LRU 快照缓存。
@@ -3361,8 +3384,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         processingDuration: TimeInterval? = nil,
         generationID: UUID
     ) async throws {
-        conversationPresentationCache.remove(conversationID)
-        try await conversationStore.appendTurn(
+        let persistedTurn = try await conversationStore.appendTurn(
             conversationID: conversationID,
             question: question,
             answer: answer,
@@ -3373,14 +3395,27 @@ final class KnowledgeRAGWorkspaceViewModel {
             suggestedActions: suggestedActions,
             processingDuration: processingDuration
         )
-        conversationPresentationCache.remove(conversationID)
-        if canUpdateVisibleAnswer(for: conversationID, generationID: generationID),
-           let detail = try await conversationStore.loadConversation(id: conversationID),
-           canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
-            applyLoadedConversationMessages(detail)
+        let summary = mergePersistedConversationSummary(persistedTurn.summary)
+        if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
+            let current = RAGConversationPresentationSnapshot(
+                detail: RAGConversationDetail(
+                    summary: summary,
+                    messages: messages,
+                    contextSummary: conversationContextSummary
+                ),
+                outlineTurns: conversationOutlineTurns,
+                citations: conversationCitations
+            )
+            let updated = current.appending(persistedTurn, summary: summary)
+            conversationPresentationCache.insert(updated)
+            messages = updated.detail.messages
+            conversationOutlineTurns = updated.outlineTurns
+            conversationCitations = updated.citations
+            loadedMessageSequence &+= 1
             // 回答完成后不自动选中引用，避免强制拉开右侧「证据」tab。
+        } else if let cached = conversationPresentationCache.value(for: conversationID) {
+            conversationPresentationCache.insert(cached.appending(persistedTurn, summary: summary))
         }
-        conversations = try await conversationStore.listConversations()
         if canUpdateVisibleAnswer(for: conversationID, generationID: generationID) {
             streamingAnswer = ""
             streamingPresentation = nil
@@ -3394,6 +3429,22 @@ final class KnowledgeRAGWorkspaceViewModel {
             draft.attachments = []
             draft.githubLinkContexts = []
         }
+    }
+
+    /// appendTurn 只改变首轮默认标题与真实活跃时间；Pin、分组和人工/AI 标题可能在回答期间
+    /// 被另一个 UI 操作更新，不能用事务开始时的旧 summary 覆盖这些较新的本地状态。
+    private func mergePersistedConversationSummary(_ persisted: RAGConversationSummary) -> RAGConversationSummary {
+        guard let index = conversations.firstIndex(where: { $0.id == persisted.id }) else {
+            conversations.append(persisted)
+            return persisted
+        }
+        var merged = conversations[index]
+        if merged.title == String.l10n("rag.workspace.newConversation") {
+            merged.title = persisted.title
+        }
+        merged.updatedAt = persisted.updatedAt
+        conversations[index] = merged
+        return merged
     }
 
     private func refreshIndexCoverage() async throws {
