@@ -175,6 +175,27 @@ struct WeeklyDTOTests {
         #expect(envelope.data.isEmpty)
         #expect(envelope.meta?.total == 0)
     }
+
+    @Test("详情事件解码通用来源字段")
+    func decodeGenericSourceEvent() throws {
+        let json = #"""
+        {
+          "id": "hellogithub:42",
+          "source": "hellogithub",
+          "source_code": "hellogithub",
+          "occurred_at": "2026-07-16T00:00:00Z",
+          "source_url": "https://hellogithub.com/periodical/volume/123",
+          "title": "一个开源项目",
+          "summary": "HelloGitHub 月刊推荐",
+          "rank": 4
+        }
+        """#
+        let event = try decoder.decode(WeeklySourceEvent.self, from: #require(json.data(using: .utf8)))
+        #expect(event.source == .helloGitHub)
+        #expect(event.sourceURL?.absoluteString == "https://hellogithub.com/periodical/volume/123")
+        #expect(event.summary == "HelloGitHub 月刊推荐")
+        #expect(event.rank == 4)
+    }
 }
 
 @Suite("Weekly 动态来源")

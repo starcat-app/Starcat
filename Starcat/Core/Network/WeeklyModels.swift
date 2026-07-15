@@ -491,21 +491,49 @@ struct WeeklyRepoDetail: Decodable, Equatable, Sendable {
 
 struct WeeklySourceEvent: Decodable, Identifiable, Equatable, Sendable {
     let id: String
-    let source: WeeklySource
+    let sourceCode: String
     let occurredAt: String
-    let url: URL?
+    let sourceURL: URL?
+    let title: String?
+    let summary: String?
+    let rank: Int?
     let weekly: WeeklyEventPayload?
     let zread: ZreadEventPayload?
     let discovery: DiscoveryEventPayload?
 
+    var source: WeeklySource { WeeklySource(rawValue: sourceCode) }
+    /// 兼容现有详情视图使用的字段名；新来源统一读取 sourceURL。
+    var url: URL? { sourceURL }
+
     enum CodingKeys: String, CodingKey {
         case id
         case source
+        case sourceCode = "source_code"
         case occurredAt = "occurred_at"
         case url
+        case sourceURL = "source_url"
+        case title
+        case summary
+        case rank
         case weekly
         case zread
         case discovery
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        sourceCode = try container.decodeIfPresent(String.self, forKey: .sourceCode)
+            ?? (try container.decode(String.self, forKey: .source))
+        occurredAt = try container.decode(String.self, forKey: .occurredAt)
+        sourceURL = try container.decodeIfPresent(URL.self, forKey: .sourceURL)
+            ?? (try container.decodeIfPresent(URL.self, forKey: .url))
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        rank = try container.decodeIfPresent(Int.self, forKey: .rank)
+        weekly = try container.decodeIfPresent(WeeklyEventPayload.self, forKey: .weekly)
+        zread = try container.decodeIfPresent(ZreadEventPayload.self, forKey: .zread)
+        discovery = try container.decodeIfPresent(DiscoveryEventPayload.self, forKey: .discovery)
     }
 }
 
