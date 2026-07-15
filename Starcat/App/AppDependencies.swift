@@ -479,6 +479,7 @@ final class AppDependencies {
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
         let backendConfiguration = settings.ragBackendConfiguration
+        try backendConfiguration.validateSelectedBackendsForRuntime()
         let rerankConfiguration = settings.ragRerankConfiguration.normalized
 
         let keywordProvider: any RAGKeywordSearchProvider
@@ -489,9 +490,11 @@ final class AppDependencies {
                 apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
                 repository: ragChunkRepository
             )
-            keywordProvider = backendConfiguration.fallbackToSQLite
-                ? FallbackRAGKeywordSearchProvider(primary: external, fallback: localKeyword)
-                : external
+            keywordProvider = FallbackRAGKeywordSearchProvider(
+                primary: external,
+                fallback: localKeyword,
+                fallbackToSQLite: backendConfiguration.fallbackToSQLite
+            )
         } else {
             keywordProvider = localKeyword
         }
@@ -504,9 +507,11 @@ final class AppDependencies {
                 apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
                 repository: ragChunkRepository
             )
-            vectorProvider = backendConfiguration.fallbackToSQLite
-                ? FallbackRAGVectorSearchProvider(primary: external, fallback: localVector)
-                : external
+            vectorProvider = FallbackRAGVectorSearchProvider(
+                primary: external,
+                fallback: localVector,
+                fallbackToSQLite: backendConfiguration.fallbackToSQLite
+            )
         } else {
             vectorProvider = localVector
         }

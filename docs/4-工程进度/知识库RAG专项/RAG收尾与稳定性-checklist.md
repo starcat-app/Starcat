@@ -77,7 +77,7 @@
 
 - [x] **Embedding 写回一致性**：追加 `v11-rag-embedding-claim`，请求前原子 claim；ready/failed 写回同时校验 chunk id、`content_hash`、pending 状态与 claim id，正文变化或人工覆盖会清空旧 claim — `RAGChunkRepository.swift`、`KnowledgeRAGIndexBuilder.swift` — 2026-07-16。
 - [x] **Meilisearch 同步 SQL**：`fetchKeywordSearchableChunks` 已正确展开 placeholders，并由 Repository 回归测试覆盖批量 repo 查询 — 2026-07-15。
-- [ ] **外部后端回退语义**：为 Meilisearch/Qdrant 查询与同步补 `fallbackToSQLite` 开启/关闭回归测试；开启时允许回退本地，关闭时不得吞掉外部错误。
+- [x] **外部后端回退语义**：Meilisearch/Qdrant 查询与索引同步共用回退错误策略；开启时普通错误或空命中可回退 SQLite，关闭时配置/查询/同步错误原样抛出，`CancellationError` 永不被吞 — `RAGBackendConfiguration.swift`、`RAGExternalSearchProviders.swift` — 2026-07-16。
 - [x] **附件能力边界与文档一致性**：当前正式支持文本、Markdown、JSON 与源码附件；PDF/图片底层分支标记为未来能力，不进入当前 UI、测试门禁或 DoD，活文档已与真实入口同步 — 2026-07-16。
 - [ ] **RAG 固定文案 i18n**：移除 `RAGUserVisiblePlan`、Planner 和 Service 兜底路径中的硬编码中文，固定文案统一走 `Localizable.xcstrings`，不翻译模型生成内容。
 

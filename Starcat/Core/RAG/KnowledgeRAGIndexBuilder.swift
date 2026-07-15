@@ -645,7 +645,10 @@ final class KnowledgeRAGIndexBuilder {
             }
         } catch {
             AppLog.ai.error("RAG external backend sync failed: \(error.localizedDescription, privacy: .public)")
-            if !configuration.fallbackToSQLite { throw error }
+            try RAGExternalBackendFallbackPolicy.handle(
+                error,
+                fallbackToSQLite: configuration.fallbackToSQLite
+            )
         }
     }
 

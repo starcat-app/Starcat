@@ -14,19 +14,28 @@ struct FallbackRAGKeywordSearchProvider: RAGKeywordSearchProvider {
     let backendName: String
     private let primary: any RAGKeywordSearchProvider
     private let fallback: any RAGKeywordSearchProvider
+    private let fallbackToSQLite: Bool
 
-    init(primary: any RAGKeywordSearchProvider, fallback: any RAGKeywordSearchProvider) {
+    init(
+        primary: any RAGKeywordSearchProvider,
+        fallback: any RAGKeywordSearchProvider,
+        fallbackToSQLite: Bool = true
+    ) {
         self.primary = primary
         self.fallback = fallback
-        self.backendName = "\(primary.backendName) → \(fallback.backendName)"
+        self.fallbackToSQLite = fallbackToSQLite
+        self.backendName = fallbackToSQLite ? "\(primary.backendName) → \(fallback.backendName)" : primary.backendName
     }
 
     func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         do {
             let hits = try await primary.search(query: query, model: model, repoIDs: repoIDs, limit: limit)
-            return hits.isEmpty ? try await fallback.search(query: query, model: model, repoIDs: repoIDs, limit: limit) : hits
+            guard hits.isEmpty, fallbackToSQLite else { return hits }
+            return try await fallback.search(query: query, model: model, repoIDs: repoIDs, limit: limit)
+        } catch {
+            try RAGExternalBackendFallbackPolicy.handle(error, fallbackToSQLite: fallbackToSQLite)
+            return try await fallback.search(query: query, model: model, repoIDs: repoIDs, limit: limit)
         }
-        catch { return try await fallback.search(query: query, model: model, repoIDs: repoIDs, limit: limit) }
     }
 }
 
@@ -34,19 +43,28 @@ struct FallbackRAGVectorSearchProvider: RAGVectorSearchProvider {
     let backendName: String
     private let primary: any RAGVectorSearchProvider
     private let fallback: any RAGVectorSearchProvider
+    private let fallbackToSQLite: Bool
 
-    init(primary: any RAGVectorSearchProvider, fallback: any RAGVectorSearchProvider) {
+    init(
+        primary: any RAGVectorSearchProvider,
+        fallback: any RAGVectorSearchProvider,
+        fallbackToSQLite: Bool = true
+    ) {
         self.primary = primary
         self.fallback = fallback
-        self.backendName = "\(primary.backendName) → \(fallback.backendName)"
+        self.fallbackToSQLite = fallbackToSQLite
+        self.backendName = fallbackToSQLite ? "\(primary.backendName) → \(fallback.backendName)" : primary.backendName
     }
 
     func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         do {
             let hits = try await primary.search(queryVector: queryVector, model: model, repoIDs: repoIDs, limit: limit)
-            return hits.isEmpty ? try await fallback.search(queryVector: queryVector, model: model, repoIDs: repoIDs, limit: limit) : hits
+            guard hits.isEmpty, fallbackToSQLite else { return hits }
+            return try await fallback.search(queryVector: queryVector, model: model, repoIDs: repoIDs, limit: limit)
+        } catch {
+            try RAGExternalBackendFallbackPolicy.handle(error, fallbackToSQLite: fallbackToSQLite)
+            return try await fallback.search(queryVector: queryVector, model: model, repoIDs: repoIDs, limit: limit)
         }
-        catch { return try await fallback.search(queryVector: queryVector, model: model, repoIDs: repoIDs, limit: limit) }
     }
 }
 

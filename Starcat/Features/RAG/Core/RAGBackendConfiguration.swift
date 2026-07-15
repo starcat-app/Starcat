@@ -151,6 +151,25 @@ struct RAGBackendConfiguration: Codable, Equatable, Sendable {
     var fallbackToSQLite = true
     var meilisearch = RAGMeilisearchConfiguration()
     var qdrant = RAGQdrantConfiguration()
+
+    /// 禁用 SQLite 回退时，外部后端配置错误必须在装配阶段暴露，不能静默改用本地实现。
+    func validateSelectedBackendsForRuntime() throws {
+        guard !fallbackToSQLite else { return }
+        if keywordBackend == .meilisearch, let message = meilisearch.validationMessage {
+            throw RAGExternalBackendError.invalidConfiguration(message)
+        }
+        if vectorBackend == .qdrant, let message = qdrant.validationMessage {
+            throw RAGExternalBackendError.invalidConfiguration(message)
+        }
+    }
+}
+
+/// 查询与索引同步共享同一错误边界：普通外部错误仅在用户允许时回退，取消永远向上传播。
+enum RAGExternalBackendFallbackPolicy {
+    static func handle(_ error: any Error, fallbackToSQLite: Bool) throws {
+        if error is CancellationError { throw error }
+        if !fallbackToSQLite { throw error }
+    }
 }
 
 enum RAGExternalBackendError: Error, LocalizedError {

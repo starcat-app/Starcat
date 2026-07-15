@@ -146,6 +146,7 @@
 - [x] endpoint/index/collection/vectorName 保存在设置；API key 只进 Keychain。
 - [x] Meilisearch/Qdrant 均支持连接测试和配置校验。
 - [x] 外部 provider 报错或空命中时按设置回退 SQLite。
+- [x] `fallbackToSQLite` 关闭时配置、查询与同步错误均向上传播；开启时只回退普通错误，取消始终保持取消语义。
 - [x] Qdrant 已有 collection 在清理前校验 vectorName 和 embedding dimension。
 - [x] provider 切换后显示需要重建索引提示。
 - [x] 外部 provider 只同步公开知识库 repo；私有 repo 保持本地检索。
@@ -300,10 +301,12 @@
 > 复审：详见 `审查报告-第3轮.md`；2026-07-16 定向 6 个 Suite、168 项测试通过。该结果不替代全量测试与真实数据验收。
 >
 > 2026-07-16: Embedding 写回一致性整改先复现旧向量覆盖新正文，再完成 claim 修复；`RAGChunkRepositoryTests + DatabaseMigrationsV1Tests` 共 36 项通过。
+>
+> 2026-07-16: 外部后端回退先复现 Meilisearch/Qdrant 吞取消，再统一查询与同步错误策略；`KnowledgeRAGCoreTests` 105 项通过。
 
 ## 15. 收尾与稳定性执行清单
 
-> 状态: 阶段 1 至 6 已完成；阶段 7 已完成 Embedding 写回一致性，外部回退与 i18n 待执行；阶段 8、9 与真实环境验收待执行。
+> 状态: 阶段 1 至 6 已完成；阶段 7 已完成 Embedding 写回一致性与外部回退，i18n 待执行；阶段 8、9 与真实环境验收待执行。
 
 > 清单：`RAG收尾与稳定性-checklist.md` 是本专项后续实现、逐项测试、commit 与验收收口的唯一执行顺序。
 > 结果：自动化整改与测试证据见 `结果报告-收尾与稳定性.md`；真实环境验收记录完成后再关闭专项。

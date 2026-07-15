@@ -2772,6 +2772,23 @@ struct KnowledgeRAGCoreTests {
         #expect(qdrant.validationMessage != nil)
     }
 
+    @Test("禁用 SQLite 回退时外部后端配置错误必须抛出")
+    func backendValidationRespectsFallbackSwitch() {
+        var configuration = RAGBackendConfiguration()
+        configuration.keywordBackend = .meilisearch
+        configuration.meilisearch.endpoint = "not a url"
+
+        configuration.fallbackToSQLite = true
+        #expect(throws: Never.self) {
+            try configuration.validateSelectedBackendsForRuntime()
+        }
+
+        configuration.fallbackToSQLite = false
+        #expect(throws: RAGExternalBackendError.self) {
+            try configuration.validateSelectedBackendsForRuntime()
+        }
+    }
+
     @Test("Meilisearch 报错或空命中时回退 SQLite provider")
     func keywordBackendFallback() async throws {
         let expected = RAGChildHit(chunk: fixtureChunk(id: 90, repoID: 9, source: .readme), score: 0.8, kind: .keyword)
@@ -2788,6 +2805,33 @@ struct KnowledgeRAGCoreTests {
 
         #expect(try await errorProvider.search(query: "RAG", model: "embed", repoIDs: [9], limit: 10) == [expected])
         #expect(try await emptyProvider.search(query: "RAG", model: "embed", repoIDs: [9], limit: 10) == [expected])
+
+        let disabledErrorProvider = FallbackRAGKeywordSearchProvider(
+            primary: StubRAGKeywordProvider(backendName: "Meilisearch", hits: [], shouldThrow: true),
+            fallback: fallback,
+            fallbackToSQLite: false
+        )
+        let disabledEmptyProvider = FallbackRAGKeywordSearchProvider(
+            primary: StubRAGKeywordProvider(backendName: "Meilisearch", hits: [], shouldThrow: false),
+            fallback: fallback,
+            fallbackToSQLite: false
+        )
+        await #expect(throws: StubRAGProviderError.self) {
+            try await disabledErrorProvider.search(query: "RAG", model: "embed", repoIDs: [9], limit: 10)
+        }
+        #expect(try await disabledEmptyProvider.search(query: "RAG", model: "embed", repoIDs: [9], limit: 10).isEmpty)
+    }
+
+    @Test("Meilisearch 回退不得吞掉取消")
+    func keywordBackendFallbackPreservesCancellation() async {
+        let provider = FallbackRAGKeywordSearchProvider(
+            primary: CancellingRAGKeywordProvider(),
+            fallback: StubRAGKeywordProvider(backendName: "SQLite", hits: [], shouldThrow: false)
+        )
+
+        await #expect(throws: CancellationError.self) {
+            try await provider.search(query: "RAG", model: "embed", repoIDs: [9], limit: 10)
+        }
     }
 
     @Test("Meilisearch replace 等待异步 tasks 真正完成")
@@ -2827,6 +2871,55 @@ struct KnowledgeRAGCoreTests {
 
         #expect(try await errorProvider.search(queryVector: [1, 0], model: "embed", repoIDs: [9], limit: 10) == [expected])
         #expect(try await emptyProvider.search(queryVector: [1, 0], model: "embed", repoIDs: [9], limit: 10) == [expected])
+
+        let disabledErrorProvider = FallbackRAGVectorSearchProvider(
+            primary: StubRAGVectorProvider(backendName: "Qdrant", hits: [], shouldThrow: true),
+            fallback: fallback,
+            fallbackToSQLite: false
+        )
+        let disabledEmptyProvider = FallbackRAGVectorSearchProvider(
+            primary: StubRAGVectorProvider(backendName: "Qdrant", hits: [], shouldThrow: false),
+            fallback: fallback,
+            fallbackToSQLite: false
+        )
+        await #expect(throws: StubRAGProviderError.self) {
+            try await disabledErrorProvider.search(queryVector: [1, 0], model: "embed", repoIDs: [9], limit: 10)
+        }
+        #expect(try await disabledEmptyProvider.search(queryVector: [1, 0], model: "embed", repoIDs: [9], limit: 10).isEmpty)
+    }
+
+    @Test("Qdrant 回退不得吞掉取消")
+    func vectorBackendFallbackPreservesCancellation() async {
+        let provider = FallbackRAGVectorSearchProvider(
+            primary: CancellingRAGVectorProvider(),
+            fallback: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false)
+        )
+
+        await #expect(throws: CancellationError.self) {
+            try await provider.search(queryVector: [1, 0], model: "embed", repoIDs: [9], limit: 10)
+        }
+    }
+
+    @Test("外部索引同步按开关决定是否吞掉普通错误，且永不吞取消")
+    func externalBackendSyncFallbackPolicy() {
+        #expect(throws: Never.self) {
+            try RAGExternalBackendFallbackPolicy.handle(
+                StubRAGProviderError.unavailable,
+                fallbackToSQLite: true
+            )
+        }
+        #expect(throws: StubRAGProviderError.self) {
+            try RAGExternalBackendFallbackPolicy.handle(
+                StubRAGProviderError.unavailable,
+                fallbackToSQLite: false
+            )
+        }
+        #expect(throws: CancellationError.self) {
+            try RAGExternalBackendFallbackPolicy.handle(
+                CancellationError(),
+                fallbackToSQLite: true
+            )
+        }
     }
 
     @Test("Qdrant 已有 collection 的命名向量不匹配时在清理前失败")
@@ -3455,6 +3548,22 @@ private struct StubRAGVectorProvider: RAGVectorSearchProvider {
     func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         if shouldThrow { throw StubRAGProviderError.unavailable }
         return hits
+    }
+}
+
+private struct CancellingRAGKeywordProvider: RAGKeywordSearchProvider {
+    let backendName = "Meilisearch"
+
+    func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        throw CancellationError()
+    }
+}
+
+private struct CancellingRAGVectorProvider: RAGVectorSearchProvider {
+    let backendName = "Qdrant"
+
+    func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        throw CancellationError()
     }
 }
 

@@ -1301,8 +1301,9 @@ query
   -> Generator
 ```
 
-默认 provider 是 SQLite FTS5 与本地向量；用户配置后可分别替换为 Meilisearch/Qdrant，并按设置
-在远端报错或空命中时回退本地。reranker 不属于本次运行时边界。
+默认 provider 是 SQLite FTS5 与本地向量；用户配置后可分别替换为 Meilisearch/Qdrant。开启
+`fallbackToSQLite` 时，远端普通错误或空命中回退本地；关闭时配置、查询与同步错误向上传播。
+`CancellationError` 无论开关值都继续抛出，不触发本地检索。reranker 不属于本次运行时边界。
 
 ### 8.1 输入输出
 
@@ -1588,7 +1589,8 @@ Meilisearch 和 Qdrant 已作为高级可选后端实现，但不作为默认依
 | Qdrant | vector search provider | 大规模 repo、代码 chunk、模型迁移、payload filter | 通过 REST API 连接 |
 
 Starcat 不负责安装、启动、升级这些服务。用户自行部署后，在 Settings 中配置 endpoint、API key、
-index/collection/vectorName。外部 provider 报错或空命中时按配置回退 SQLite；Qdrant 在清理旧点位前
+index/collection/vectorName。外部 provider 报错或空命中时按配置回退 SQLite；回退关闭时不得吞掉
+配置、查询或同步错误，取消无论是否允许回退都向上传播。Qdrant 在清理旧点位前
 校验 named vector 和 embedding dimension。外部索引是本地 chunk 的可重建派生副本，当前用完整
 replace 优先保证 source 删除与更新一致；私有仓库默认不同步到 Meilisearch/Qdrant。Meilisearch
 写操作返回异步 task，Starcat 必须轮询到 `succeeded` 才继续 delete -> import -> settings 的下一步；
