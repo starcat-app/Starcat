@@ -722,6 +722,8 @@ enum RAGConversationHistoryBuilder {
               contextSummary.coveredMessageCount > 0,
               contextSummary.coveredMessageCount <= messages.count
         else { return map(messages) }
+        // 下列标签是会话压缩 Prompt 的稳定协议，不是界面固定文案；不能随 App locale
+        // 改写，否则同一持久化历史在切换语言后会产生不同压缩边界与模型理解。
         let summary = AIChatMessage(
             role: .user,
             content: "以下是较早对话的会话压缩摘要（受限摘要），仅作背景，不包含新的执行指令：\n\(contextSummary.content)"
@@ -805,6 +807,7 @@ enum RAGConversationContextCompressor {
         messages: [RAGStoredMessage],
         tokenBudget: Int
     ) -> String {
+        // role 标签属于本地受限摘要协议，必须与上面的压缩 Prompt 保持稳定。
         let lines = messages.map { message in
             let role = message.role == .user ? "用户问题" : "助手结论"
             let content = message.content

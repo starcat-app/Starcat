@@ -81,7 +81,7 @@ struct KnowledgeBaseAnalyticsPlan: Codable, Equatable, Sendable {
         // 单值聚合不需要多行，固定为 1；分组结果也绝不允许模型枚举整个知识库。
         var result = self
         if measure.requiresSingleAggregateResult, dimension != nil {
-            throw RAGQueryPlannerError.invalidPlan("库存统计不支持分组维度")
+            throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.inventoryGroupingUnsupported"))
         }
         result.limit = dimension == nil ? 1 : min(max(limit, 1), 100)
         return result

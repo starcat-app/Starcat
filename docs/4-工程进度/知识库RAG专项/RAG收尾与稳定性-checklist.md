@@ -1,6 +1,6 @@
 # RAG 收尾与稳定性 Checklist
 
-> 状态: 第 3 轮代码复审已完成；阶段 7 正确性与能力边界、阶段 8 性能资源上界、阶段 9 架构技术债及真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
+> 状态: 第 3 轮代码复审与阶段 7 正确性整改已完成；阶段 8 性能资源上界、阶段 9 架构技术债及真实环境验收待执行。本清单按用户可感知风险、前置依赖和数据路径相关性排序。
 
 ## 目标与执行规则
 
@@ -79,7 +79,7 @@
 - [x] **Meilisearch 同步 SQL**：`fetchKeywordSearchableChunks` 已正确展开 placeholders，并由 Repository 回归测试覆盖批量 repo 查询 — 2026-07-15。
 - [x] **外部后端回退语义**：Meilisearch/Qdrant 查询与索引同步共用回退错误策略；开启时普通错误或空命中可回退 SQLite，关闭时配置/查询/同步错误原样抛出，`CancellationError` 永不被吞 — `RAGBackendConfiguration.swift`、`RAGExternalSearchProviders.swift` — 2026-07-16。
 - [x] **附件能力边界与文档一致性**：当前正式支持文本、Markdown、JSON 与源码附件；PDF/图片底层分支标记为未来能力，不进入当前 UI、测试门禁或 DoD，活文档已与真实入口同步 — 2026-07-16。
-- [ ] **RAG 固定文案 i18n**：移除 `RAGUserVisiblePlan`、Planner 和 Service 兜底路径中的硬编码中文，固定文案统一走 `Localizable.xcstrings`，不翻译模型生成内容。
+- [x] **RAG 固定文案 i18n**：计划、Planner、Service、附件与外部后端的固定产品文案统一走 `String.l10n` 和 `Localizable.xcstrings`；意图词表、Prompt 协议及模型生成内容保持原语义，并由英文环境回归测试防止固定中文泄漏 — 2026-07-16。
 
 完成条件：每项先有可稳定复现的失败测试，再实施最小修复；并发索引不产生过期 ready 向量，外部后端失败与回退符合开关语义，附件入口与文档一致，英文环境不泄漏固定中文。
 
@@ -117,6 +117,12 @@
 - 阶段 1 至 6 的代码整改与回归测试已完成；每个切片均以中文 commit 独立提交，未 push。
 - 最终全量测试：`rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test`，结果为 1377 通过、0 失败、7 跳过、1 项预期失败（总计 1385）。
 - 阶段 0 的 100/200 条历史会话基线已固化为自动化用例；真实 Provider、1 万+ chunk、超长文本附件、慢网络和真实长会话仍需要在有凭据与真实数据的环境中按本清单人工验收。
+
+## 阶段 7 实施记录（2026-07-16）
+
+- Embedding 写回、外部后端回退、附件能力边界与固定文案 i18n 均已关闭；所有代码切片分别提交且未 push。
+- i18n 先以英文环境稳定复现 8 处固定中文泄漏，再补 en/zh-Hans catalog 与运行时查表；`RAGLocalizationTests + KnowledgeRAGCoreTests` 共 107 项通过。
+- 阶段完成后运行全量 `xcodebuild test`：173 个 Suite、1438 项测试通过，0 失败，1 项已登记 known issue；真实 Provider 与真实大数据验收仍按阶段 8 后的总验收执行。
 
 ## 第 3 轮复审记录（2026-07-16）
 

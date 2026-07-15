@@ -1,6 +1,6 @@
 # 知识库 RAG 专项进度
 
-> 状态: 第 3 轮复审完成；正确性、性能资源上界、架构技术债与真实数据人工验收完成前不关闭
+> 状态: 第 3 轮复审与正确性整改完成；性能资源上界、架构技术债与真实数据人工验收完成前不关闭
 > 创建: 2026-07-03
 > 启动: 2026-07-10
 > 实施分支: `codex/knowledge-rag-full-delivery`
@@ -133,7 +133,7 @@
 - [x] 回答 GitHub 链接优先打开 Starcat 本地详情，不存在时打开浏览器。
 - [x] citation chip 定位 Inspector；展示 chunk、section、score、hitKind 和 truncated 状态。
 - [x] no knowledge/no candidates/no index/no evidence/clarification/error/cancel 均有独立 UI 状态。
-- [~] 主要固定文案已完成 en/zh-Hans i18n；`RAGUserVisiblePlan`、Planner 与 Service 的少量中文兜底待阶段 7 收口。
+- [x] RAG 产品固定文案完成 en/zh-Hans i18n；计划、Planner、Service、附件和外部后端错误均按 App 语言查表，意图词表、Prompt 协议与模型生成内容不翻译。
 - [x] 索引构建与发送问答均在 UI 和 service 装配边界校验 Pro，已有索引不会绕过门禁。
 - [x] 明确问候/致谢/告别走本地引导，其他非知识库闲聊由 Planner 返回 `guided_discovery`；两者都不检索、不生成。
 - [x] Planner 仅接收当前问题、显式 repo、附件/链接描述、上一条用户问题与上一条回答实际引用 repo，不接收证据正文或完整历史。
@@ -284,7 +284,7 @@
 
 ## 14. 代码审查与整改
 
-> 状态: 第 1 轮 P1/P2 自动化整改完成；第 3 轮正确性整改进行中，资源上界与架构技术债待执行。
+> 状态: 第 1 轮 P1/P2 自动化整改与第 3 轮正确性整改完成；资源上界与架构技术债待执行。
 
 - [x] 优化流式 Markdown 的增量渲染，避免长回答逐 token 全文重解析。
 - [x] 消除历史会话加载中的 citation/remote audit N+1 查询，并为长会话建立回归基线。
@@ -297,16 +297,19 @@
 
 - [x] 第 3 轮复审确认 Meilisearch SQL 已修复、PDF/图片不属于当前能力，并重新识别 Embedding 写回一致性、索引资源上界、会话预取缓存和运行态架构债。
 - [x] Embedding 写回增加持久化 claim，旧请求只有同时匹配 chunk id、正文 hash、pending 状态与 claim id 才能提交向量；v11 迁移保持 v7 已发布 schema 只向前演进。
+- [x] 固定产品文案统一接入 `String.l10n` 与 en/zh-Hans catalog；英文环境覆盖计划默认值、Planner、附件和外部后端错误，Prompt 协议与模型内容保持原样。
 
 > 复审：详见 `审查报告-第3轮.md`；2026-07-16 定向 6 个 Suite、168 项测试通过。该结果不替代全量测试与真实数据验收。
 >
 > 2026-07-16: Embedding 写回一致性整改先复现旧向量覆盖新正文，再完成 claim 修复；`RAGChunkRepositoryTests + DatabaseMigrationsV1Tests` 共 36 项通过。
 >
 > 2026-07-16: 外部后端回退先复现 Meilisearch/Qdrant 吞取消，再统一查询与同步错误策略；`KnowledgeRAGCoreTests` 105 项通过。
+>
+> 2026-07-16: 固定文案 i18n 先复现英文环境 8 处泄漏，再统一计划、错误与 Debug 兜底查表；定向 107 项及全量 1438 项测试通过，0 失败，1 项已登记 known issue。
 
 ## 15. 收尾与稳定性执行清单
 
-> 状态: 阶段 1 至 6 已完成；阶段 7 已完成 Embedding 写回一致性与外部回退，i18n 待执行；阶段 8、9 与真实环境验收待执行。
+> 状态: 阶段 1 至 7 已完成；阶段 8、9 与真实环境验收待执行。
 
 > 清单：`RAG收尾与稳定性-checklist.md` 是本专项后续实现、逐项测试、commit 与验收收口的唯一执行顺序。
 > 结果：自动化整改与测试证据见 `结果报告-收尾与稳定性.md`；真实环境验收记录完成后再关闭专项。

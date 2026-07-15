@@ -174,7 +174,9 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
 
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
         guard configuration.validationMessage == nil, let url = URL(string: configuration.endpoint) else {
-            throw RAGExternalBackendError.invalidConfiguration(configuration.validationMessage ?? "Rerank endpoint 无效")
+            throw RAGExternalBackendError.invalidConfiguration(
+                configuration.validationMessage ?? String.l10n("rag.core.backend.error.rerankEndpoint")
+            )
         }
         let selected = Array(candidates.prefix(configuration.candidateLimit))
         guard !selected.isEmpty else { return [] }
@@ -239,7 +241,9 @@ struct CohereCompatibleRAGReranker: RAGReranking {
 
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
         guard configuration.validationMessage == nil, let url = URL(string: configuration.endpoint) else {
-            throw RAGExternalBackendError.invalidConfiguration(configuration.validationMessage ?? "Rerank endpoint 无效")
+            throw RAGExternalBackendError.invalidConfiguration(
+                configuration.validationMessage ?? String.l10n("rag.core.backend.error.rerankEndpoint")
+            )
         }
         let selected = Array(candidates.prefix(configuration.candidateLimit))
         guard !selected.isEmpty else { return [] }

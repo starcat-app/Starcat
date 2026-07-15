@@ -29,9 +29,11 @@ struct RAGMeilisearchConfiguration: Codable, Equatable, Sendable {
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
               url.host != nil else {
-            return "Meilisearch endpoint 无效"
+            return String.l10n("rag.core.backend.error.meilisearchEndpoint")
         }
-        return Self.isValidIdentifier(indexName) ? nil : "Meilisearch index 只能包含字母、数字、- 和 _"
+        return Self.isValidIdentifier(indexName)
+            ? nil
+            : String.l10n("rag.core.backend.error.meilisearchIndex")
     }
 
     private static func isValidIdentifier(_ value: String) -> Bool {
@@ -50,10 +52,14 @@ struct RAGQdrantConfiguration: Codable, Equatable, Sendable {
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
               url.host != nil else {
-            return "Qdrant endpoint 无效"
+            return String.l10n("rag.core.backend.error.qdrantEndpoint")
         }
-        if !Self.isValidIdentifier(collectionName) { return "Qdrant collection 只能包含字母、数字、- 和 _" }
-        if !Self.isValidIdentifier(vectorName) { return "Qdrant vector name 只能包含字母、数字、- 和 _" }
+        if !Self.isValidIdentifier(collectionName) {
+            return String.l10n("rag.core.backend.error.qdrantCollection")
+        }
+        if !Self.isValidIdentifier(vectorName) {
+            return String.l10n("rag.core.backend.error.qdrantVectorName")
+        }
         return nil
     }
 
@@ -105,9 +111,9 @@ struct RAGRerankConfiguration: Codable, Equatable, Sendable {
         guard let url = URL(string: value.endpoint),
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
-              url.host != nil else { return "Rerank endpoint 无效" }
+              url.host != nil else { return String.l10n("rag.core.backend.error.rerankEndpoint") }
         if value.provider == .cohereCompatible, value.model.isEmpty {
-            return "Cohere-compatible Rerank 模型不能为空"
+            return String.l10n("rag.core.backend.error.cohereModelEmpty")
         }
         return nil
     }
@@ -181,9 +187,21 @@ enum RAGExternalBackendError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidConfiguration(let message): return message
-        case .http(let backend, let status, let message): return "\(backend) HTTP \(status)：\(message)"
-        case .invalidResponse(let backend): return "\(backend) 返回了无法解析的数据"
-        case .operationFailed(let backend, let message): return "\(backend) 操作失败：\(message)"
+        case .http(let backend, let status, let message):
+            return String(
+                format: String.l10n("rag.core.backend.error.httpFormat"),
+                backend,
+                status,
+                message
+            )
+        case .invalidResponse(let backend):
+            return String(format: String.l10n("rag.core.backend.error.invalidResponseFormat"), backend)
+        case .operationFailed(let backend, let message):
+            return String(
+                format: String.l10n("rag.core.backend.error.operationFailedFormat"),
+                backend,
+                message
+            )
         }
     }
 }

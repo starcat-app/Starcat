@@ -158,7 +158,11 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
 
     private func request(path: String, method: String, json: Any?) async throws -> Data {
         let base = configuration.endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(base)/\(path)") else { throw RAGExternalBackendError.invalidConfiguration("Meilisearch URL 无效") }
+        guard let url = URL(string: "\(base)/\(path)") else {
+            throw RAGExternalBackendError.invalidConfiguration(
+                String.l10n("rag.core.backend.error.meilisearchURL")
+            )
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 30
@@ -200,7 +204,10 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
         }
         throw RAGExternalBackendError.operationFailed(
             backend: backendName,
-            message: "task \(taskUID) 等待超时"
+            message: String(
+                format: String.l10n("rag.core.backend.error.taskTimeoutFormat"),
+                taskUID
+            )
         )
     }
 
@@ -361,16 +368,19 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
               let params = config["params"] as? [String: Any],
               let vectors = params["vectors"] as? [String: Any],
               let vector = vectors[configuration.vectorName] as? [String: Any] else {
-            throw RAGExternalBackendError.invalidConfiguration(
-                "Qdrant collection 不包含命名向量 \(configuration.vectorName)"
-            )
+            throw RAGExternalBackendError.invalidConfiguration(String(
+                format: String.l10n("rag.core.backend.error.qdrantVectorMissingFormat"),
+                configuration.vectorName
+            ))
         }
         if let expectedDimension {
             let size = (vector["size"] as? NSNumber)?.intValue
             guard size == expectedDimension else {
-                throw RAGExternalBackendError.invalidConfiguration(
-                    "Qdrant 向量维度不匹配：collection=\(size.map(String.init) ?? "unknown")，当前模型=\(expectedDimension)"
-                )
+                throw RAGExternalBackendError.invalidConfiguration(String(
+                    format: String.l10n("rag.core.backend.error.qdrantDimensionMismatchFormat"),
+                    size.map(String.init) ?? "unknown",
+                    expectedDimension
+                ))
             }
         }
     }
@@ -386,7 +396,11 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
         accepted: Range<Int>
     ) async throws -> (data: Data, status: Int) {
         let base = configuration.endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(base)/\(path)") else { throw RAGExternalBackendError.invalidConfiguration("Qdrant URL 无效") }
+        guard let url = URL(string: "\(base)/\(path)") else {
+            throw RAGExternalBackendError.invalidConfiguration(
+                String.l10n("rag.core.backend.error.qdrantURL")
+            )
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 30

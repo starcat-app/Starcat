@@ -320,6 +320,9 @@ enum RAGQueryPlanConfidence: String, Codable, Sendable {
 }
 
 struct RAGUserVisiblePlan: Codable, Equatable, Sendable {
+    /// Scope 是产品固定标签，不接受 Planner 自行决定显示语言；运行时按 App 语言查表。
+    static var defaultScope: String { String.l10n("rag.core.plan.scope.knowledge") }
+
     var scope: String
     var chips: [String]
     var semantic: String
@@ -327,7 +330,7 @@ struct RAGUserVisiblePlan: Codable, Equatable, Sendable {
     var planningNotes: [String]
 
     init(
-        scope: String = "知识库",
+        scope: String = Self.defaultScope,
         chips: [String] = [],
         semantic: String = "",
         planningNotes: [String] = []
@@ -344,7 +347,7 @@ struct RAGUserVisiblePlan: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "知识库"
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? Self.defaultScope
         chips = try container.decodeIfPresent([String].self, forKey: .chips) ?? []
         semantic = try container.decodeIfPresent(String.self, forKey: .semantic) ?? ""
         planningNotes = try container.decodeIfPresent([String].self, forKey: .planningNotes) ?? []

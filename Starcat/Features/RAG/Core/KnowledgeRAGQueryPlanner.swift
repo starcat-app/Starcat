@@ -17,9 +17,12 @@ enum RAGQueryPlannerError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .emptyQuestion:
-            return "问题不能为空"
+            return String.l10n("rag.core.plan.error.emptyQuestion")
         case .invalidPlan(let reason):
-            return "查询计划无效：\(reason)"
+            return String(
+                format: String.l10n("rag.core.plan.error.invalidFormat"),
+                reason
+            )
         }
     }
 }
@@ -160,7 +163,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
                 return try Self.decodeAndValidate(retryContent, fallbackQuestion: question)
             } catch {
                 guard Self.isPlanFormatError(error) else { throw error }
-                onDebugEvent(.failure, "查询规划两次返回均无法解析，已改用本地 semantic fallback。")
+                onDebugEvent(.failure, String.l10n("rag.core.plan.debug.unparseableFallback"))
                 return Self.semanticFallback(question)
             }
         }
@@ -197,7 +200,14 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             """)
             return content
         } catch {
-            onDebugEvent(.failure, "查询规划 LLM 请求失败（attempt \(attempt)）：\(error.localizedDescription)")
+            onDebugEvent(
+                .failure,
+                String(
+                    format: String.l10n("rag.core.plan.debug.requestFailedFormat"),
+                    attempt,
+                    error.localizedDescription
+                )
+            )
             throw error
         }
     }
@@ -264,7 +274,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
     static func decodeAndValidate(_ raw: String, fallbackQuestion: String) throws -> RAGQueryPlan {
         let json = extractJSONObject(raw)
         guard let data = json.data(using: .utf8) else {
-            throw RAGQueryPlannerError.invalidPlan("JSON 编码失败")
+            throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.jsonEncoding"))
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
@@ -299,19 +309,27 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
 
         switch plan.mode {
         case .semanticOnly:
-            guard !plan.semanticQuery.isEmpty else { throw RAGQueryPlannerError.invalidPlan("semantic_only 缺少 semanticQuery") }
+            guard !plan.semanticQuery.isEmpty else {
+                throw RAGQueryPlannerError.invalidPlan(
+                    String(format: String.l10n("rag.core.plan.error.semanticQueryMissingFormat"), "semantic_only")
+                )
+            }
             // 模型偶尔会选错 mode，但过滤字段本身有效时不丢掉用户约束。
             if plan.filters.hasEffectiveConditions || plan.sort != nil {
                 plan.mode = .filteredSemantic
             }
         case .filteredSemantic:
-            guard !plan.semanticQuery.isEmpty else { throw RAGQueryPlannerError.invalidPlan("filtered_semantic 缺少 semanticQuery") }
+            guard !plan.semanticQuery.isEmpty else {
+                throw RAGQueryPlannerError.invalidPlan(
+                    String(format: String.l10n("rag.core.plan.error.semanticQueryMissingFormat"), "filtered_semantic")
+                )
+            }
             if !plan.filters.hasEffectiveConditions, plan.sort == nil {
                 plan.mode = .semanticOnly
             }
         case .structuredOnly:
             guard plan.analytics != nil || plan.filters.hasEffectiveConditions || plan.sort != nil else {
-                throw RAGQueryPlannerError.invalidPlan("structured_only 没有结构化条件")
+                throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.structuredConditionsMissing"))
             }
         case .guidedDiscovery:
             // 引导模式不执行任何数据访问。即使不可信 Planner 同时给了过滤或联网请求，
@@ -326,7 +344,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
         case .needsClarification:
             guard let clarification = plan.clarificationQuestion?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !clarification.isEmpty else {
-                throw RAGQueryPlannerError.invalidPlan("needs_clarification 缺少追问")
+                throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.clarificationMissing"))
             }
             plan.clarificationQuestion = clarification
             plan.confidence = .needsClarification
@@ -335,7 +353,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             plan.userVisiblePlan.semantic = plan.semanticQuery
         }
         if plan.userVisiblePlan.scope.isEmpty {
-            plan.userVisiblePlan.scope = "知识库"
+            plan.userVisiblePlan.scope = RAGUserVisiblePlan.defaultScope
         }
         // 这是展示给用户的“查询规划”，而非模型隐藏推理。限制条数和长度，既保证可扫描，
         // 也避免兼容 provider 误把长篇说明塞进执行时间线。
@@ -359,13 +377,13 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
     private static func validateRanges(_ filters: RAGRepoFilter) throws {
         let values = [filters.minStars, filters.maxStars, filters.minForks, filters.maxForks].compactMap { $0 }
         guard values.allSatisfy({ $0 >= 0 && $0 <= 1_000_000_000 }) else {
-            throw RAGQueryPlannerError.invalidPlan("数值条件超出范围")
+            throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.numericRange"))
         }
         if let min = filters.minStars, let max = filters.maxStars, min > max {
-            throw RAGQueryPlannerError.invalidPlan("minStars 大于 maxStars")
+            throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.minStarsExceedsMax"))
         }
         if let min = filters.minForks, let max = filters.maxForks, min > max {
-            throw RAGQueryPlannerError.invalidPlan("minForks 大于 maxForks")
+            throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.minForksExceedsMax"))
         }
     }
 

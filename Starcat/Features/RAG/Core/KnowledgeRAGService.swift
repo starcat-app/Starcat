@@ -503,7 +503,9 @@ struct KnowledgeRAGService: Sendable {
                         return
                     }
                     if plan.mode == .needsClarification {
-                        continuation.yield(.state(.needsClarification(plan.clarificationQuestion ?? "请补充查询条件")))
+                        continuation.yield(.state(.needsClarification(
+                            plan.clarificationQuestion ?? String.l10n("rag.core.service.clarificationFallback")
+                        )))
                         continuation.finish()
                         return
                     }
@@ -515,6 +517,8 @@ struct KnowledgeRAGService: Sendable {
                         RAGAttachmentContext(
                             attachmentID: UUID(),
                             filename: "GitHub: \(reference.owner)/\(reference.repo)",
+                            // 这是送入 Prompt 的证据协议，不是 UI 固定文案。维持稳定中文标签，
+                            // 避免历史 Debug / 回放随 App locale 改变而产生不同语义。
                             content: "用户显式提供 GitHub 链接：\(reference.url.absoluteString)；Starcat 关系：\(reference.relation.rawValue)",
                             supportsFactualAnswer: false
                         )
@@ -1079,7 +1083,10 @@ struct KnowledgeRAGService: Sendable {
                 debugEvents.append(RAGDebugEvent(
                     stage: .failure,
                     elapsedSeconds: Date().timeIntervalSince(startedAt),
-                    payload: "会话压缩失败，已回退本地受限摘要：\(error.localizedDescription)"
+                    payload: String(
+                        format: String.l10n("rag.core.service.debug.compressionFallbackFormat"),
+                        error.localizedDescription
+                    )
                 ))
             }
             return .failed(debugEvents: debugEvents)
@@ -1139,7 +1146,7 @@ struct KnowledgeRAGService: Sendable {
                     debugEvents.append(RAGDebugEvent(
                         stage: .failure,
                         elapsedSeconds: Date().timeIntervalSince(startedAt),
-                        payload: "会话标题生成失败：模型返回了空标题"
+                        payload: String.l10n("rag.core.service.debug.titleEmpty")
                     ))
                 }
                 return .failed(debugEvents: debugEvents)
@@ -1167,7 +1174,10 @@ struct KnowledgeRAGService: Sendable {
                 debugEvents.append(RAGDebugEvent(
                     stage: .failure,
                     elapsedSeconds: Date().timeIntervalSince(startedAt),
-                    payload: "会话标题生成失败：\(error.localizedDescription)"
+                    payload: String(
+                        format: String.l10n("rag.core.service.debug.titleFailureFormat"),
+                        error.localizedDescription
+                    )
                 ))
             }
             return .failed(debugEvents: debugEvents)

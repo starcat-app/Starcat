@@ -469,6 +469,8 @@ private struct RemoteFetchWork: Sendable {
 }
 
 private struct RemoteFetchResult: Sendable {
+    /// 送入 Generator 的远程证据协议，不是 UI 产品文案。空结果标签也保持稳定，避免切换
+    /// App 语言后同一 GitHub 响应产生不同 Prompt；面向用户的错误另走 Localizable。
     var content: String
     var url: URL?
     var count: Int
@@ -511,7 +513,8 @@ enum GitHubRemoteContextError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .http(let status, let message): return "GitHub HTTP \(status)：\(message)"
-        case .unsupportedResource: return "GitHub Provider 不支持普通 Web 搜索"
+        case .unsupportedResource:
+            return String.l10n("rag.core.remote.error.webSearchUnsupported")
         }
     }
 }

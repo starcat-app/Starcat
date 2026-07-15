@@ -28,11 +28,16 @@ enum RAGAttachmentError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .tooManyFiles: return "单次最多添加 5 个附件"
-        case .fileTooLarge(let name): return "附件过大：\(name)"
-        case .totalTooLarge: return "附件总大小超过 20 MB"
-        case .unsupported(let name): return "暂不支持该附件类型：\(name)"
-        case .unreadable(let name): return "无法读取附件：\(name)"
+        case .tooManyFiles:
+            return String.l10n("rag.core.attachment.error.tooManyFiles")
+        case .fileTooLarge(let name):
+            return String(format: String.l10n("rag.core.attachment.error.fileTooLargeFormat"), name)
+        case .totalTooLarge:
+            return String.l10n("rag.core.attachment.error.totalTooLarge")
+        case .unsupported(let name):
+            return String(format: String.l10n("rag.core.attachment.error.unsupportedFormat"), name)
+        case .unreadable(let name):
+            return String(format: String.l10n("rag.core.attachment.error.unreadableFormat"), name)
         }
     }
 }
@@ -84,6 +89,7 @@ struct RAGAttachmentProcessor: RAGAttachmentProcessing {
                 contexts.append(RAGAttachmentContext(
                     attachmentID: attachment.id,
                     filename: attachment.filename,
+                    // vision content 是传给多模态 Provider 的稳定 Prompt 标签，不进入 UI。
                     content: "图片附件：\(attachment.filename)",
                     imageData: data,
                     contentType: attachment.contentType

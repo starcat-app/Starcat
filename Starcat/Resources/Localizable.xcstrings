@@ -19164,6 +19164,234 @@
     "Pro": {},
     "PRO": {},
     "PRO_PASS": {},
+    "rag.core.attachment.error.fileTooLargeFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Attachment is too large: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件过大：%@" } }
+      }
+    },
+    "rag.core.attachment.error.tooManyFiles": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You can attach up to 5 files at a time" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "单次最多添加 5 个附件" } }
+      }
+    },
+    "rag.core.attachment.error.totalTooLarge": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The total attachment size exceeds 20 MB" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件总大小超过 20 MB" } }
+      }
+    },
+    "rag.core.attachment.error.unreadableFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unable to read attachment: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法读取附件：%@" } }
+      }
+    },
+    "rag.core.attachment.error.unsupportedFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unsupported attachment type: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂不支持该附件类型：%@" } }
+      }
+    },
+    "rag.core.backend.error.cohereModelEmpty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The Cohere-compatible Rerank model cannot be empty" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Cohere-compatible Rerank 模型不能为空" } }
+      }
+    },
+    "rag.core.backend.error.invalidResponseFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ returned an unreadable response" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ 返回了无法解析的数据" } }
+      }
+    },
+    "rag.core.backend.error.httpFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ HTTP %d: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ HTTP %d：%@" } }
+      }
+    },
+    "rag.core.backend.error.meilisearchEndpoint": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Invalid Meilisearch endpoint" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Meilisearch endpoint 无效" } }
+      }
+    },
+    "rag.core.backend.error.meilisearchIndex": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The Meilisearch index can contain only letters, numbers, - and _" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Meilisearch index 只能包含字母、数字、- 和 _" } }
+      }
+    },
+    "rag.core.backend.error.meilisearchURL": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Invalid Meilisearch URL" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Meilisearch URL 无效" } }
+      }
+    },
+    "rag.core.backend.error.operationFailedFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ operation failed: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ 操作失败：%@" } }
+      }
+    },
+    "rag.core.backend.error.qdrantCollection": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The Qdrant collection can contain only letters, numbers, - and _" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant collection 只能包含字母、数字、- 和 _" } }
+      }
+    },
+    "rag.core.backend.error.qdrantDimensionMismatchFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Qdrant vector dimension mismatch: collection=%@, current model=%d" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant 向量维度不匹配：collection=%@，当前模型=%d" } }
+      }
+    },
+    "rag.core.backend.error.qdrantEndpoint": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Invalid Qdrant endpoint" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant endpoint 无效" } }
+      }
+    },
+    "rag.core.backend.error.qdrantURL": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Invalid Qdrant URL" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant URL 无效" } }
+      }
+    },
+    "rag.core.backend.error.qdrantVectorMissingFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The Qdrant collection does not contain the named vector %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant collection 不包含命名向量 %@" } }
+      }
+    },
+    "rag.core.backend.error.qdrantVectorName": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The Qdrant vector name can contain only letters, numbers, - and _" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant vector name 只能包含字母、数字、- 和 _" } }
+      }
+    },
+    "rag.core.backend.error.rerankEndpoint": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Invalid Rerank endpoint" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Rerank endpoint 无效" } }
+      }
+    },
+    "rag.core.backend.error.taskTimeoutFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Timed out waiting for task %d" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "task %d 等待超时" } }
+      }
+    },
+    "rag.core.plan.debug.requestFailedFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Query planning LLM request failed (attempt %d): %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询规划 LLM 请求失败（attempt %d）：%@" } }
+      }
+    },
+    "rag.core.plan.debug.unparseableFallback": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Both query planning responses were invalid. Switched to the local semantic fallback." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询规划两次返回均无法解析，已改用本地 semantic fallback。" } }
+      }
+    },
+    "rag.core.plan.error.clarificationMissing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "needs_clarification is missing a follow-up question" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "needs_clarification 缺少追问" } }
+      }
+    },
+    "rag.core.plan.error.emptyQuestion": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Question cannot be empty" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题不能为空" } }
+      }
+    },
+    "rag.core.plan.error.invalidFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Invalid query plan: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询计划无效：%@" } }
+      }
+    },
+    "rag.core.plan.error.inventoryGroupingUnsupported": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Inventory metrics do not support grouping" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "库存统计不支持分组维度" } }
+      }
+    },
+    "rag.core.plan.error.jsonEncoding": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "JSON encoding failed" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "JSON 编码失败" } }
+      }
+    },
+    "rag.core.plan.error.minForksExceedsMax": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "minForks is greater than maxForks" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "minForks 大于 maxForks" } }
+      }
+    },
+    "rag.core.plan.error.minStarsExceedsMax": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "minStars is greater than maxStars" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "minStars 大于 maxStars" } }
+      }
+    },
+    "rag.core.plan.error.numericRange": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Numeric filter is out of range" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "数值条件超出范围" } }
+      }
+    },
+    "rag.core.plan.error.semanticQueryMissingFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ is missing semanticQuery" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ 缺少 semanticQuery" } }
+      }
+    },
+    "rag.core.plan.error.structuredConditionsMissing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "structured_only has no structured conditions" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "structured_only 没有结构化条件" } }
+      }
+    },
+    "rag.core.plan.scope.knowledge": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Knowledge Base" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库" } }
+      }
+    },
+    "rag.core.remote.error.webSearchUnsupported": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The GitHub provider does not support general web search" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub Provider 不支持普通 Web 搜索" } }
+      }
+    },
+    "rag.core.service.clarificationFallback": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Please add more query details" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请补充查询条件" } }
+      }
+    },
+    "rag.core.service.debug.compressionFallbackFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Conversation compression failed. Switched to the bounded local summary: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话压缩失败，已回退本地受限摘要：%@" } }
+      }
+    },
+    "rag.core.service.debug.titleEmpty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Conversation title generation failed: the model returned an empty title" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话标题生成失败：模型返回了空标题" } }
+      }
+    },
+    "rag.core.service.debug.titleFailureFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Conversation title generation failed: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话标题生成失败：%@" } }
+      }
+    },
     "rag.demo.citation.grdbRecords.sectionPath": {
       "localizations": {
         "en": {
