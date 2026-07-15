@@ -152,7 +152,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
             let rows = try Row.fetchAll(db, sql: """
                 SELECT id, title, is_pinned, pinned_at, group_id, context_summary, context_summary_message_count, created_at, updated_at
                 FROM rag_conversations
-                ORDER BY is_pinned DESC, pinned_at DESC, updated_at DESC
+                -- 会话侧栏是稳定导航，不是最近活动 Feed；updated_at 继续记录真实活跃时间，但不参与位置计算。
+                ORDER BY is_pinned DESC, pinned_at DESC, created_at DESC
                 """)
             return rows.compactMap(Self.summary(row:))
         }

@@ -2111,15 +2111,15 @@ struct KnowledgeRAGCoreTests {
         let first = try await store.createConversation(title: "first")
         let second = try await store.createConversation(title: "second")
 
-        // 固定最近活跃时间，直接验证重命名不会篡改排序键。
+        // 同时固定创建与活跃时间，避免测试依赖两次建会话的实际时间间隔。
         try await database.writer.write { db in
             try db.execute(
-                sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
-                arguments: ["2026-07-15T10:00:00.000Z", first.id.uuidString]
+                sql: "UPDATE rag_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T10:00:00.000Z", "2026-07-15T10:00:00.000Z", first.id.uuidString]
             )
             try db.execute(
-                sql: "UPDATE rag_conversations SET updated_at = ? WHERE id = ?",
-                arguments: ["2026-07-15T11:00:00.000Z", second.id.uuidString]
+                sql: "UPDATE rag_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T11:00:00.000Z", "2026-07-15T11:00:00.000Z", second.id.uuidString]
             )
         }
 
@@ -2157,6 +2157,54 @@ struct KnowledgeRAGCoreTests {
         #expect(pinnedOrderAfterRename == pinnedOrderBeforeRename)
         #expect(pinnedFirstAfterRename.summary.updatedAt == pinnedFirstBeforeRename.summary.updatedAt)
         #expect(pinnedFirstAfterRename.summary.pinnedAt == pinnedFirstBeforeRename.summary.pinnedAt)
+    }
+
+    @Test("未置顶会话按创建时间排序，发送消息和生成回答不触发重排")
+    func conversationActivityKeepsCreationOrdering() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let first = try await store.createConversation(title: "first")
+        let second = try await store.createConversation(title: "second")
+
+        // first 会话更早创建；后续即使成为最近活跃会话，也必须留在 second 后面。
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T10:00:00.000Z", "2026-07-15T10:00:00.000Z", first.id.uuidString]
+            )
+            try db.execute(
+                sql: "UPDATE rag_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
+                arguments: ["2026-07-15T11:00:00.000Z", "2026-07-15T11:00:00.000Z", second.id.uuidString]
+            )
+        }
+
+        let originalOrder = try await store.listConversations().map(\.id)
+        try await store.appendUserMessage(
+            conversationID: first.id,
+            messageID: UUID(),
+            question: "question",
+            createdAt: "2026-07-15T12:00:00.000Z"
+        )
+        let orderAfterUserMessage = try await store.listConversations().map(\.id)
+        let firstAfterUserMessage = try #require(try await store.loadConversation(id: first.id))
+
+        #expect(originalOrder == [second.id, first.id])
+        #expect(orderAfterUserMessage == originalOrder)
+        #expect(firstAfterUserMessage.summary.updatedAt == "2026-07-15T12:00:00.000Z")
+
+        try await store.appendTurn(
+            conversationID: first.id,
+            question: "follow up",
+            answer: "answer",
+            model: "test-model",
+            citations: []
+        )
+        let orderAfterAnswer = try await store.listConversations().map(\.id)
+        let firstAfterAnswer = try #require(try await store.loadConversation(id: first.id))
+
+        #expect(orderAfterAnswer == originalOrder)
+        #expect(firstAfterAnswer.summary.createdAt == "2026-07-15T10:00:00.000Z")
+        #expect(firstAfterAnswer.summary.updatedAt != firstAfterUserMessage.summary.updatedAt)
     }
 
     @Test("会话跨置顶区与原位置迁移时必须更换 SwiftUI 行身份")
