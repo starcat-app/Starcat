@@ -19368,6 +19368,36 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub Provider 不支持普通 Web 搜索" } }
       }
     },
+    "rag.core.remote.commitActivityFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Commits in the last 12 weeks: %1$lld; active weeks: %2$lld/%3$lld." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近 12 周 commits=%1$lld，活跃周数=%2$lld/%3$lld。" } }
+      }
+    },
+    "rag.core.remote.empty.contributors": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No public contributor data is available." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的公开贡献者数据。" } }
+      }
+    },
+    "rag.core.remote.empty.matches": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No matching public results." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有匹配的公开结果。" } }
+      }
+    },
+    "rag.core.remote.empty.releases": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The repository has no public releases." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仓库没有公开 Release。" } }
+      }
+    },
+    "rag.core.remote.empty.securityAdvisories": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No public repository security advisories were returned." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有返回公开仓库安全公告。" } }
+      }
+    },
     "rag.core.service.clarificationFallback": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Please add more query details" } },

@@ -11,6 +11,24 @@
 import Foundation
 import CryptoKit
 
+/// GitHub 远程证据中由 Starcat 生成、且会直接展示在 Inspector 的固定文案。
+/// API 返回的标题、正文和字段保持原文；这里只本地化空态与聚合说明，避免英文界面泄漏中文。
+enum RAGRemoteContextCopy {
+    static var noPublicMatches: String { String.l10n("rag.core.remote.empty.matches") }
+    static var noPublicReleases: String { String.l10n("rag.core.remote.empty.releases") }
+    static var noPublicContributors: String { String.l10n("rag.core.remote.empty.contributors") }
+    static var noPublicSecurityAdvisories: String { String.l10n("rag.core.remote.empty.securityAdvisories") }
+
+    static func commitActivity(total: Int, activeWeeks: Int, weekCount: Int) -> String {
+        String(
+            format: String.l10n("rag.core.remote.commitActivityFormat"),
+            Int64(total),
+            Int64(activeWeeks),
+            Int64(weekCount)
+        )
+    }
+}
+
 protocol RAGHTTPClientProtocol: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
@@ -240,7 +258,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             .map { "\($0.0)(\($0.1))" }
             .joined(separator: ", ")
         let content = lines.isEmpty
-            ? "没有匹配的公开结果。"
+            ? RAGRemoteContextCopy.noPublicMatches
             : "observed_themes=\(themes.isEmpty ? "none" : themes)\n\n\(lines.joined(separator: "\n\n"))"
         let previews = scopedItems.prefix(min(request.perRepoLimit, 5)).compactMap { item -> RAGRemoteResultPreview? in
             guard let url = URL(string: item.htmlURL) else { return nil }
@@ -270,7 +288,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             """
         }
         return RemoteFetchResult(
-            content: lines.isEmpty ? "仓库没有公开 Release。" : lines.joined(separator: "\n\n"),
+            content: lines.isEmpty ? RAGRemoteContextCopy.noPublicReleases : lines.joined(separator: "\n\n"),
             url: url,
             count: min(releases.count, limit)
         )
@@ -286,7 +304,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         let contributors: [ContributorResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
         let lines = contributors.prefix(limit).map { "\($0.login): contributions=\($0.contributions); url=\($0.htmlURL ?? "")" }
         return RemoteFetchResult(
-            content: lines.isEmpty ? "没有可用的公开贡献者数据。" : lines.joined(separator: "\n"),
+            content: lines.isEmpty ? RAGRemoteContextCopy.noPublicContributors : lines.joined(separator: "\n"),
             url: url,
             count: min(contributors.count, limit)
         )
@@ -309,7 +327,11 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         let total = recent.reduce(0) { $0 + $1.total }
         let activeWeeks = recent.filter { $0.total > 0 }.count
         return RemoteFetchResult(
-            content: "最近 12 周 commits=\(total)，活跃周数=\(activeWeeks)/\(recent.count)。",
+            content: RAGRemoteContextCopy.commitActivity(
+                total: total,
+                activeWeeks: activeWeeks,
+                weekCount: recent.count
+            ),
             url: url,
             count: recent.count
         )
@@ -327,7 +349,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
             "\($0.ghsaID) severity=\($0.severity) cve=\($0.cveID ?? "unknown") published=\($0.publishedAt)\n\($0.summary)\nurl=\($0.htmlURL ?? "")"
         }
         return RemoteFetchResult(
-            content: lines.isEmpty ? "没有返回公开仓库安全公告。" : lines.joined(separator: "\n\n"),
+            content: lines.isEmpty ? RAGRemoteContextCopy.noPublicSecurityAdvisories : lines.joined(separator: "\n\n"),
             url: url,
             count: min(advisories.count, limit)
         )

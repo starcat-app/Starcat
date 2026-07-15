@@ -79,7 +79,7 @@
 - [x] **Meilisearch 同步 SQL**：`fetchKeywordSearchableChunks` 已正确展开 placeholders，并由 Repository 回归测试覆盖批量 repo 查询 — 2026-07-15。
 - [x] **外部后端回退语义**：Meilisearch/Qdrant 查询与索引同步共用回退错误策略；开启时普通错误或空命中可回退 SQLite，关闭时配置/查询/同步错误原样抛出，`CancellationError` 永不被吞 — `RAGBackendConfiguration.swift`、`RAGExternalSearchProviders.swift` — 2026-07-16。
 - [x] **附件能力边界与文档一致性**：当前正式支持文本、Markdown、JSON 与源码附件；PDF/图片底层分支标记为未来能力，不进入当前 UI、测试门禁或 DoD，活文档已与真实入口同步 — 2026-07-16。
-- [x] **RAG 固定文案 i18n**：计划、Planner、Service、附件与外部后端的固定产品文案统一走 `String.l10n` 和 `Localizable.xcstrings`；意图词表、Prompt 协议及模型生成内容保持原语义，并由英文环境回归测试防止固定中文泄漏 — 2026-07-16。
+- [x] **RAG 固定文案 i18n**：计划、Planner、Service、附件、外部后端及 Inspector 可见的 GitHub 远程证据空态/聚合说明统一走 `String.l10n` 和 `Localizable.xcstrings`；API/模型内容与 Prompt 协议保持原语义，英文环境回归防止固定中文泄漏 — 2026-07-16。
 
 完成条件：每项先有可稳定复现的失败测试，再实施最小修复；并发索引不产生过期 ready 向量，外部后端失败与回退符合开关语义，附件入口与文档一致，英文环境不泄漏固定中文。
 

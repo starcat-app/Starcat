@@ -341,6 +341,8 @@
 > 2026-07-16: TEI / Cohere Rerank 共用候选快照、认证、JSON HTTP 与 index 回填排序，两套协议 DTO 保持独立；越界结果与候选上限回归覆盖，`KnowledgeRAGCoreTests` 119 项通过。
 >
 > 2026-07-16: 工作台与知识库浏览器改为共用 `RAGIndexStatusProjection` 纯值读模型，空态、覆盖率和问题计数口径统一，各自 UI 状态机保持隔离；`KnowledgeRAGCoreTests` 120 项通过。
+>
+> 2026-07-16: 第 4 轮审查补齐 Inspector 可见的 GitHub 远程证据固定文案 i18n；API 返回正文保持原文，英文环境与 Core 共 123 项测试通过。
 
 ## 15. 收尾与稳定性执行清单
 

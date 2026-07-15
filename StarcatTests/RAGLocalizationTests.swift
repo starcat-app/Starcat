@@ -48,6 +48,20 @@ struct RAGLocalizationTests {
         }
     }
 
+    @Test("英文环境本地化 GitHub 远程证据固定文案")
+    func englishRemoteEvidenceCopyIsLocalized() throws {
+        try withLocaleOverride("en") {
+            #expect(RAGRemoteContextCopy.noPublicMatches == "No matching public results.")
+            #expect(RAGRemoteContextCopy.noPublicReleases == "The repository has no public releases.")
+            #expect(RAGRemoteContextCopy.noPublicContributors == "No public contributor data is available.")
+            #expect(RAGRemoteContextCopy.noPublicSecurityAdvisories == "No public repository security advisories were returned.")
+            #expect(
+                RAGRemoteContextCopy.commitActivity(total: 42, activeWeeks: 8, weekCount: 12)
+                    == "Commits in the last 12 weeks: 42; active weeks: 8/12."
+            )
+        }
+    }
+
     /// `String.l10n` 直接读取持久化 key；测试必须恢复旧值，避免影响同一 test host 中的
     /// 其它本地化断言。Suite 串行化仅保护本文件内部的切换顺序。
     private func withLocaleOverride<T>(_ raw: String, _ body: () throws -> T) throws -> T {
