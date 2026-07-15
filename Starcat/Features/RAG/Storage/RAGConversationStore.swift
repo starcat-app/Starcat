@@ -256,7 +256,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 sql: "SELECT COUNT(*) FROM rag_messages WHERE conversation_id = ?",
                 arguments: [conversationID.uuidString]
             ) ?? 0
-            if messageCount == 0 {
+            if messageCount == 0,
+               try shouldUseQuestionAsInitialTitle(db: db, conversationID: conversationID) {
                 try db.execute(
                     sql: "UPDATE rag_conversations SET title = ? WHERE id = ?",
                     arguments: [normalizedTitle(question), conversationID.uuidString]
@@ -346,7 +347,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 sql: "SELECT COUNT(*) FROM rag_messages WHERE conversation_id = ?",
                 arguments: [conversationID.uuidString]
             ) ?? 0
-            if messageCount == 0 {
+            if messageCount == 0,
+               try shouldUseQuestionAsInitialTitle(db: db, conversationID: conversationID) {
                 try db.execute(
                     sql: "UPDATE rag_conversations SET title = ? WHERE id = ?",
                     arguments: [normalizedTitle(question), conversationID.uuidString]
@@ -625,6 +627,17 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         let line = value.split(whereSeparator: \Character.isNewline).first.map(String.init) ?? value
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         return String((trimmed.isEmpty ? String.l10n("rag.workspace.newConversation") : trimmed).prefix(60))
+    }
+
+    private func shouldUseQuestionAsInitialTitle(db: Database, conversationID: UUID) throws -> Bool {
+        let currentTitle = try String.fetchOne(
+            db,
+            sql: "SELECT title FROM rag_conversations WHERE id = ?",
+            arguments: [conversationID.uuidString]
+        )
+        // 只把国际化默认占位替换成首问。AI 生成标题或人工重命名可能早于首轮落库完成，
+        // 此时不能再用问题原文覆盖已经确定的标题。
+        return currentTitle.map(normalizedTitle) == normalizedTitle(String.l10n("rag.workspace.newConversation"))
     }
 
     private func normalizedGroupTitle(_ value: String) -> String {

@@ -1935,6 +1935,38 @@ struct KnowledgeRAGCoreTests {
         #expect(AIModelParameters.summaryDefault.resolvedContextWindowTokens == 32 * 1_024)
     }
 
+    @Test("首轮落库不覆盖已生成或人工设置的会话标题")
+    func firstTurnPersistenceKeepsExistingConversationTitle() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let generatedTitle = "项目功能总结"
+
+        let completedConversation = try await store.createConversation()
+        try await store.renameConversation(id: completedConversation.id, title: generatedTitle)
+        try await store.appendTurn(
+            conversationID: completedConversation.id,
+            question: "总结一下这个项目的功能",
+            answer: "这是一个 AI 助手项目。",
+            model: "test",
+            citations: []
+        )
+
+        let completedDetail = try #require(try await store.loadConversation(id: completedConversation.id))
+        #expect(completedDetail.summary.title == generatedTitle)
+
+        let cancelledConversation = try await store.createConversation()
+        try await store.renameConversation(id: cancelledConversation.id, title: generatedTitle)
+        try await store.appendUserMessage(
+            conversationID: cancelledConversation.id,
+            messageID: UUID(),
+            question: "总结一下这个项目的功能",
+            createdAt: ISO8601DateFormatter.shared.string(from: Date())
+        )
+
+        let cancelledDetail = try #require(try await store.loadConversation(id: cancelledConversation.id))
+        #expect(cancelledDetail.summary.title == generatedTitle)
+    }
+
     @Test("会话语义摘要持久化，并只替代 recent window 外的历史")
     func conversationContextSummaryPersistsAndBuildsHistory() async throws {
         let database = try InMemoryDatabaseManager()

@@ -448,7 +448,10 @@ struct RAGWorkspaceInspector: View {
                             starLeadersSection(snapshot.topStarredRepositories)
                         }
                     }
-                    .padding(10)
+                    // leading = 0：与「元数据」标题图标左缘齐平，去掉折叠展开造成的层级缩进留白。
+                    .padding(.top, 10)
+                    .padding(.bottom, 10)
+                    .padding(.trailing, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
                 }
@@ -794,10 +797,11 @@ struct RAGWorkspaceInspector: View {
     @ViewBuilder
     private func metadataGroupCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         // 内边距收紧：分组之间主要靠标题色块区分，避免卡片垫出大空隙。
+        // leading = 0：与「元数据」标题图标左对齐；trailing 保留，避免贴右边。
         VStack(alignment: .leading, spacing: 6) {
             content()
         }
-        .padding(.horizontal, 8)
+        .padding(.trailing, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(

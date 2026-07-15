@@ -319,6 +319,8 @@ struct RAGWorkspaceSettingsSheet: View {
             // 恢复默认已放到各页 segmented 右侧的 ResetIconButton，底栏不再重复。
             Button("common.cancel") { dismiss() }
                 .font(ragFont(.body, scale: interfaceScale))
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             Button("rag.workspace.prompt.save") {
                 // 两个分区共用同一草稿生命周期：无论停在哪一栏，保存都一并写入。
                 // 未启用 Rerank 时不碰 Keychain，避免仅保存提示词/检索草稿时意外覆盖已有 Token。
@@ -330,6 +332,7 @@ struct RAGWorkspaceSettingsSheet: View {
             }
             .font(ragFont(.body, scale: interfaceScale))
             .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
             .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, interfaceScale.scaled(20))
@@ -476,7 +479,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 Slider(value: similarityBinding, in: 0.00...1.00, step: 0.01)
                     .controlSize(.small)
                 Text("rag.workspace.retrieval.minimumSimilarity.hint")
-                    .font(ragFont(.caption2, scale: interfaceScale))
+                    .font(ragFont(.caption, scale: interfaceScale))
                     .foregroundStyle(.secondary)
             }
             Divider()
@@ -508,9 +511,9 @@ struct RAGWorkspaceSettingsSheet: View {
     private var rerankSection: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
             Toggle("rag.workspace.rerank.enabled", isOn: $rerankEnabled)
-                .font(ragFont(.body, scale: interfaceScale, weight: .medium))
+                .font(ragFont(.body, scale: interfaceScale))
             Text("rag.workspace.rerank.enabled.hint")
-                .font(ragFont(.caption2, scale: interfaceScale))
+                .font(ragFont(.caption, scale: interfaceScale))
                 .foregroundStyle(.secondary)
             if rerankEnabled {
                 Divider()
@@ -559,7 +562,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 )
                 if let rerankCredentialError {
                     Text(rerankCredentialError)
-                        .font(ragFont(.caption2, scale: interfaceScale))
+                        .font(ragFont(.caption, scale: interfaceScale))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -570,7 +573,7 @@ struct RAGWorkspaceSettingsSheet: View {
     private var retrievalSourcesSection: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
             Text("rag.workspace.retrieval.sources.hint")
-                .font(ragFont(.caption2, scale: interfaceScale))
+                .font(ragFont(.caption, scale: interfaceScale))
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
                 sourceToggle(
@@ -603,13 +606,13 @@ struct RAGWorkspaceSettingsSheet: View {
         isOn: Binding<Bool>
     ) -> some View {
         Toggle(isOn: isOn) {
-            // 与 `RAGWorkspaceInspector` 证据卡同款：11pt semibold + source.tintColor。
+            // 来源图标属于行 Label 的一部分：与设置页正文同为 13pt，只用语义色区分来源。
             HStack(spacing: 5) {
                 Image(systemName: source.systemImageName)
-                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .font(interfaceScale.font(size: 13, weight: .medium))
                     .foregroundStyle(source.tintColor)
                 Text(titleKey)
-                    .font(ragFont(.callout, scale: interfaceScale))
+                    .font(ragFont(.body, scale: interfaceScale))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
@@ -624,7 +627,7 @@ struct RAGWorkspaceSettingsSheet: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
-            // 对齐主设置页 `SettingsSectionHeader`：图标 + 主色标题；字号仍跟 interfaceScale。
+            // 双栏工作台不改成 Form；此处等效采用设置页 Section header 的字号、图标和间距契约。
             sectionTitle(titleKey, systemImage: systemImage)
             content()
                 .padding(interfaceScale.scaled(14))
@@ -727,16 +730,16 @@ struct RAGWorkspaceSettingsSheet: View {
         retrievalPreset = RAGRetrievalPreset.matching(settings: buildRetrievalSettings())
     }
 
-    /// 与主设置页 `SettingsSectionHeader` 同款：11pt 次色图标 + 主色标题。
+    /// 与主设置页 `SettingsSectionHeader.prominent` 同款：13pt 图标、20pt 图标框、13pt semibold 标题。
     private func sectionTitle(_ key: LocalizedStringKey, systemImage: String) -> some View {
-        HStack(spacing: interfaceScale.scaled(5)) {
+        HStack(spacing: interfaceScale.scaled(6)) {
             Image(systemName: systemImage)
-                .font(interfaceScale.font(size: 11, weight: .medium))
+                .font(interfaceScale.font(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: interfaceScale.scaled(14), height: interfaceScale.scaled(14))
+                .frame(width: interfaceScale.scaled(20), height: interfaceScale.scaled(20))
                 .accessibilityHidden(true)
             Text(key)
-                .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
+                .font(ragFont(.body, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(.primary)
         }
     }
@@ -744,11 +747,11 @@ struct RAGWorkspaceSettingsSheet: View {
     private func settingRow(titleKey: LocalizedStringKey, value: String) -> some View {
         HStack {
             Text(titleKey)
-                .font(ragFont(.callout, scale: interfaceScale, weight: .medium))
+                .font(ragFont(.body, scale: interfaceScale))
                 .foregroundStyle(.primary)
             Spacer(minLength: interfaceScale.scaled(12))
             Text(value)
-                .font(interfaceScale.font(.code, weight: .semibold))
+                .font(ragFont(.body, scale: interfaceScale, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
         }
     }
@@ -768,26 +771,26 @@ struct RAGWorkspaceSettingsSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
                     Text(titleKey)
-                        .font(ragFont(.callout, scale: interfaceScale, weight: .medium))
+                        .font(ragFont(.body, scale: interfaceScale))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: true, vertical: false)
                     if isSecure {
                         SecureField("", text: text)
                             .textFieldStyle(.roundedBorder)
-                            .font(interfaceScale.font(.code))
+                            .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         TextField("", text: text)
                             .textFieldStyle(.roundedBorder)
-                            .font(interfaceScale.font(.code))
+                            .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
                             .lineLimit(1)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 Text(hintKey)
-                    .font(ragFont(.caption2, scale: interfaceScale))
+                    .font(ragFont(.caption, scale: interfaceScale))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -795,10 +798,10 @@ struct RAGWorkspaceSettingsSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(titleKey)
-                        .font(ragFont(.callout, scale: interfaceScale, weight: .medium))
+                        .font(ragFont(.body, scale: interfaceScale))
                         .foregroundStyle(.primary)
                     Text(hintKey)
-                        .font(ragFont(.caption2, scale: interfaceScale))
+                        .font(ragFont(.caption, scale: interfaceScale))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -806,13 +809,13 @@ struct RAGWorkspaceSettingsSheet: View {
                 if isSecure {
                     SecureField("", text: text)
                         .textFieldStyle(.roundedBorder)
-                        .font(interfaceScale.font(.code))
+                        .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
                         .lineLimit(1)
                         .frame(width: interfaceScale.scaled(80), alignment: .trailing)
                 } else {
                     TextField("", text: text)
                         .textFieldStyle(.roundedBorder)
-                        .font(interfaceScale.font(.code))
+                        .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
                         .lineLimit(1)
                         .multilineTextAlignment(.trailing)
                         .frame(width: interfaceScale.scaled(80), alignment: .trailing)
@@ -981,8 +984,8 @@ struct RAGWorkspaceSettingsSheet: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
             Text(titleKey)
-                .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(ragFont(.body, scale: interfaceScale))
+                .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             TextEditor(text: text)
                 .font(interfaceScale.font(.code))

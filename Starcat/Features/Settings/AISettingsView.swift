@@ -225,13 +225,13 @@ struct AISettingsTab: View {
             Button(role: .destructive) {
                 deleteProfile(id: profile.id)
             } label: {
-                Text("settings.ai.provider.deleteConfirm.confirmFormat \(profile.displayName)")
+                Text(String(format: String.l10n("settings.ai.provider.deleteConfirm.confirmFormat"), profile.displayName))
             }
             Button("settings.common.cancel", role: .cancel) {
                 pendingDeleteProfileID = nil
             }
         } message: { profile in
-            Text("settings.ai.provider.deleteConfirm.messageFormat \(profile.displayName)")
+            Text(String(format: String.l10n("settings.ai.provider.deleteConfirm.messageFormat"), profile.displayName))
         }
         // HOM-68 v3 (2026-06-15)：AI 代码上下文产物管理从存储 Tab 搬过来后,
         // 进入 AI Tab 时强制重扫描产物目录,让用户刚生成的产物立即可见。

@@ -35814,7 +35814,6 @@
         }
       }
     },
-    "settings.ai.provider.deleteConfirm.confirmFormat %@": {},
     "settings.ai.provider.deleteConfirm.messageFormat": {
       "extractionState": "manual",
       "localizations": {
@@ -35832,7 +35831,6 @@
         }
       }
     },
-    "settings.ai.provider.deleteConfirm.messageFormat %@": {},
     "settings.ai.provider.deleteConfirm.title": {
       "extractionState": "manual",
       "localizations": {
