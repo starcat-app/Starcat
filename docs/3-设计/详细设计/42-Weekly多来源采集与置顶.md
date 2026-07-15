@@ -31,7 +31,7 @@ Weekly 继续由 `starcat-weekly-api` 聚合。首期固定来源为 `weekly / z
 - featured API 用于日常增量，受 `HELLOGITHUB_FEATURED_MAX_PAGES` 限制；
 - periodical volume 页面用于历史回填与每月对账；
 - 回填本身是带 `cursor_json.controller=true` 的持久化控制批次，每完成一期更新 `next_volume`；
-- 子批次不能遮蔽仍在运行的 controller，`GET /internal/sources` 优先返回活动控制批次；
+- 子批次不能遮蔽仍在运行的 controller；`GET /internal/sources` 用 `latest_batch` 返回最新采集动作，用独立的 `active_backfill` 返回未结束的回填 controller；
 - 服务启动和 15 分钟扫描都会恢复未完成回填，单期错误同样按 15/30 分钟重试并保留错误信息。
 
 ## 4. API 契约
@@ -64,7 +64,7 @@ Weekly 继续由 `starcat-weekly-api` 聚合。首期固定来源为 `weekly / z
 
 `.claude/skills/starcat-weekly-import` 只负责文本解析、搜索核验、用户确认和整批提交。脚本默认 dry-run，只有显式 `--confirm` 才提交，不记录 admin key。
 
-`pages/_local-admin` 的 Weekly 卡片展示来源数、队列、最近成功/失败、活动回填进度，并提供 HelloGitHub 同步与有序多项目置顶。页面刷新时从 `latest_batch` 恢复活动任务轮询，不依赖旧页面内存。
+`pages/_local-admin` 的 Weekly 卡片展示来源数、队列、最近成功/失败、活动回填进度，并提供 HelloGitHub 同步与有序多项目置顶。页面刷新时优先从 `active_backfill` 恢复未完成历史回填；没有活动回填时才读取 `latest_batch` 展示最近采集动作，不依赖旧页面内存。
 
 ## 7. 验证基线
 
