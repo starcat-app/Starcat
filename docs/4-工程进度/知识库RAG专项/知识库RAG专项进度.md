@@ -317,6 +317,8 @@
 > 2026-07-16: 分片计算先以缺少 worker 边界的回归测试复现主线程直接 build，再实施 detached 计算与取消桥接；`RAGChunkBuilderTests` 通过。
 >
 > 2026-07-16: 外部索引同步先复现全量替换与 Metadata 误触 Qdrant 风险，再改为带修订号的 chunk upsert/delete；Repository Suite 与 5 项外部后端定向测试通过。
+>
+> 2026-07-16: 本地向量基线以 18,465 个真实 ready chunk、1024 维运行 20 次；P50 4,308.20 ms、P95 4,372.39 ms、内存增量 24.31 MB、取消 0.20 ms，确认下一步应优化余弦内核而非追加普通 SQLite 索引。
 
 ## 15. 收尾与稳定性执行清单
 
