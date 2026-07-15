@@ -44,7 +44,7 @@ struct WeeklyDTOTests {
               "open_issues": 5,
               "html_url": "https://github.com/alice/awesome-tool",
               "is_available": true,
-              "source_types": ["weekly", "zread", "future"],
+              "source_types": ["weekly", "zread", "hellogithub", "ai_intelligence", "future"],
               "first_event_at": "2024-05-02T00:00:00Z",
               "latest_event_at": "2026-05-02T00:00:00Z",
               "weekly": {
@@ -56,7 +56,18 @@ struct WeeklyDTOTests {
                 "week_end": "2026-05-07",
                 "week_label": "Week 18",
                 "rank_in_week": 2
-              }
+              },
+              "source_entries": [
+                {
+                  "source_code": "ai_intelligence",
+                  "occurred_at": "2026-07-16T00:00:00Z",
+                  "source_url": "https://example.com/ai-news",
+                  "title": "AI 情报项目",
+                  "summary": "来自一段新闻文本"
+                }
+              ],
+              "is_pinned": true,
+              "pin_position": 2
             }
           ],
           "meta": {
@@ -88,7 +99,11 @@ struct WeeklyDTOTests {
         #expect(item.language == "Go")
         #expect(item.weekly?.issueNumber == 399)
         #expect(item.zread?.weekLabel == "Week 18")
-        #expect(item.sourceTypes == [.weekly, .zread, .unknown("future")])
+        #expect(item.sourceTypes == [.weekly, .zread, .helloGitHub, .aiIntelligence, .unknown("future")])
+        #expect(item.sourceEntries.first?.source == .aiIntelligence)
+        #expect(item.sourceEntries.first?.title == "AI 情报项目")
+        #expect(item.isPinned == true)
+        #expect(item.pinPosition == 2)
         #expect(item.shortSourceLabel == "399")
         #expect(item.url.absoluteString == "https://github.com/alice/awesome-tool")
     }
@@ -159,6 +174,25 @@ struct WeeklyDTOTests {
         let envelope = try decoder.decode(StarcatEnvelope<[WeeklyFeedRepoDTO]>.self, from: data)
         #expect(envelope.data.isEmpty)
         #expect(envelope.meta?.total == 0)
+    }
+}
+
+@Suite("Weekly 动态来源")
+struct WeeklyDynamicSourceTests {
+    @Test("未知来源可从 bulk 目录生成筛选项")
+    func unknownSourceBuildsFilter() {
+        let descriptor = WeeklySourceDescriptor(
+            code: "future_channel",
+            displayNameZH: "未来渠道",
+            displayNameEN: "Future Channel",
+            iconKey: "future",
+            sortOrder: 90,
+            count: 3
+        )
+        let filter = WeeklySourceFilter(descriptor: descriptor)
+        #expect(filter.queryValue == "future_channel")
+        #expect(filter.id == "future_channel")
+        #expect(WeeklySource(rawValue: "future_channel").systemImage == "questionmark.circle.fill")
     }
 }
 

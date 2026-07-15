@@ -17,47 +17,90 @@ import Foundation
 
 // MARK: - Source
 
-enum WeeklySource: Decodable, Hashable, Sendable {
-    case weekly
-    case zread
-    case discovery
-    case unknown(String)
+struct WeeklySource: Codable, Hashable, Sendable {
+    let rawValue: String
 
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        switch raw {
-        case "weekly": self = .weekly
-        case "zread": self = .zread
-        case "discovery": self = .discovery
-        default: self = .unknown(raw)
-        }
+    static let weekly = WeeklySource(rawValue: "weekly")
+    static let zread = WeeklySource(rawValue: "zread")
+    static let discovery = WeeklySource(rawValue: "discovery")
+    static let helloGitHub = WeeklySource(rawValue: "hellogithub")
+    static let aiIntelligence = WeeklySource(rawValue: "ai_intelligence")
+
+    static func unknown(_ rawValue: String) -> WeeklySource {
+        WeeklySource(rawValue: rawValue)
     }
 
-    var rawValue: String {
-        switch self {
-        case .weekly: return "weekly"
-        case .zread: return "zread"
-        case .discovery: return "discovery"
-        case .unknown(let raw): return raw
-        }
+    init(from decoder: Decoder) throws {
+        rawValue = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     var displayName: String {
-        switch self {
-        case .weekly: return String.l10n("weekly.source.ruanyf")
-        case .zread: return "ZRead"
-        case .discovery: return "Hacker News"
-        case .unknown(let raw): return raw
+        switch rawValue {
+        case Self.weekly.rawValue: return String.l10n("weekly.source.ruanyf")
+        case Self.zread.rawValue: return "ZRead"
+        case Self.discovery.rawValue: return "Hacker News"
+        case Self.helloGitHub.rawValue: return "HelloGitHub"
+        case Self.aiIntelligence.rawValue: return String.l10n("weekly.source.aiIntelligence")
+        default: return rawValue
         }
     }
 
-    var assetName: String {
-        switch self {
-        case .weekly: return "WeeklySources/ruanyf"
-        case .zread: return "WeeklySources/weekly-zread"
-        case .discovery: return "WeeklySources/hackernews"
-        case .unknown: return "questionmark.circle.fill"
+    /// 有许可来源使用本地 asset；HelloGitHub / AI 情报首版使用 SF Symbol，
+    /// 避免在未核实品牌素材许可前复制远程图片。
+    var assetName: String? {
+        switch rawValue {
+        case Self.weekly.rawValue: return "WeeklySources/ruanyf"
+        case Self.zread.rawValue: return "WeeklySources/weekly-zread"
+        case Self.discovery.rawValue: return "WeeklySources/hackernews"
+        default: return nil
         }
+    }
+
+    var systemImage: String {
+        switch rawValue {
+        case Self.helloGitHub.rawValue: return "shippingbox.fill"
+        case Self.aiIntelligence.rawValue: return "sparkles"
+        default: return "questionmark.circle.fill"
+        }
+    }
+}
+
+/// bulk v2 返回的来源目录。客户端按该目录生成筛选项，新增后端来源无需再扩写 UI enum。
+struct WeeklySourceDescriptor: Codable, Equatable, Identifiable, Sendable {
+    var id: String { code }
+
+    let code: String
+    let displayNameZH: String
+    let displayNameEN: String
+    let iconKey: String
+    let sortOrder: Int
+    let count: Int
+
+    var source: WeeklySource { WeeklySource(rawValue: code) }
+
+    var localizedTitle: String {
+        if Locale.current.language.languageCode?.identifier == "zh" {
+            return displayNameZH
+        }
+        return displayNameEN
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case displayNameZH = "display_name_zh"
+        case displayNameEN = "display_name_en"
+        case iconKey = "icon_key"
+        case sortOrder = "sort_order"
+        case count
     }
 }
 
@@ -66,25 +109,44 @@ enum WeeklySource: Decodable, Hashable, Sendable {
 /// 它刻意独立于 `WeeklySource`：`WeeklySource` 表示后端 wire 里的真实来源，
 /// 而这里多了 `.all` 这个 UI 哨兵值。这样可以把"全部来源"留在前端状态层，
 /// 不污染后端 source 枚举，也避免把来源筛选误当成排序。
-enum WeeklySourceFilter: String, CaseIterable, Identifiable, Sendable {
-    case all
-    case weekly
-    case zread
-    case discovery
+struct WeeklySourceFilter: Identifiable, Hashable, Sendable {
+    static let all = WeeklySourceFilter(source: nil, title: nil)
+    static let weekly = WeeklySourceFilter(source: .weekly, title: nil)
+    static let zread = WeeklySourceFilter(source: .zread, title: nil)
+    static let discovery = WeeklySourceFilter(source: .discovery, title: nil)
+    static let helloGitHub = WeeklySourceFilter(source: .helloGitHub, title: nil)
+    static let aiIntelligence = WeeklySourceFilter(source: .aiIntelligence, title: nil)
+    static let defaultFilters: [WeeklySourceFilter] = [.all, .weekly, .zread, .discovery]
+
+    let source: WeeklySource?
+    private let title: String?
+
+    init(source: WeeklySource?, title: String? = nil) {
+        self.source = source
+        self.title = title
+    }
+
+    init(descriptor: WeeklySourceDescriptor) {
+        self.init(source: descriptor.source, title: descriptor.localizedTitle)
+    }
 
     var id: String { rawValue }
 
+    var rawValue: String { source?.rawValue ?? "all" }
+
+    static func == (lhs: WeeklySourceFilter, rhs: WeeklySourceFilter) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(rawValue)
+    }
+
     var localizedTitle: String {
-        switch self {
-        case .all:
+        if source == nil {
             return String.l10n("weekly.filter.source.all")
-        case .weekly:
-            return String.l10n("weekly.filter.source.ruanyf")
-        case .zread:
-            return "ZRead"
-        case .discovery:
-            return "Hacker News"
         }
+        return title ?? source?.displayName ?? rawValue
     }
 
     /// 后端 `/api/v1/repos` 的 `source` 参数值；`.all` 不发送参数。
@@ -92,19 +154,31 @@ enum WeeklySourceFilter: String, CaseIterable, Identifiable, Sendable {
         source?.rawValue
     }
 
-    /// 对应的真实 wire source。`.all` 是 UI 哨兵，不映射到后端枚举。
-    private var source: WeeklySource? {
-        switch self {
-        case .all:       return nil
-        case .weekly:    return .weekly
-        case .zread:     return .zread
-        case .discovery: return .discovery
-        }
-    }
-
     func matches(_ item: WeeklyFeedItem) -> Bool {
         guard let source else { return true }
         return item.sourceTypes.contains(source)
+    }
+}
+
+/// 仓库在某个来源下的最新代表事件。通用字段供列表与详情使用，来源私有 payload
+/// 由服务端保留，客户端不依赖它做筛选，避免新增渠道时再次扩 DTO。
+struct WeeklySourceEntry: Codable, Equatable, Sendable {
+    let sourceCode: String
+    let occurredAt: String
+    let sourceURL: URL?
+    let title: String?
+    let summary: String?
+    let rank: Int?
+
+    var source: WeeklySource { WeeklySource(rawValue: sourceCode) }
+
+    enum CodingKeys: String, CodingKey {
+        case sourceCode = "source_code"
+        case occurredAt = "occurred_at"
+        case sourceURL = "source_url"
+        case title
+        case summary
+        case rank
     }
 }
 
@@ -273,6 +347,9 @@ struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
     let weekly: WeeklySnapshot?
     let zread: ZreadSnapshot?
     let discovery: DiscoverySnapshot?
+    let sourceEntries: [WeeklySourceEntry]
+    let isPinned: Bool
+    let pinPosition: Int?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -283,6 +360,9 @@ struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
         case weekly
         case zread
         case discovery
+        case sourceEntries = "source_entries"
+        case isPinned = "is_pinned"
+        case pinPosition = "pin_position"
     }
 
     enum CardCodingKeys: String, CodingKey {
@@ -322,6 +402,9 @@ struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
         self.weekly = try c.decodeIfPresent(WeeklySnapshot.self, forKey: .weekly)
         self.zread = try c.decodeIfPresent(ZreadSnapshot.self, forKey: .zread)
         self.discovery = try c.decodeIfPresent(DiscoverySnapshot.self, forKey: .discovery)
+        self.sourceEntries = try c.decodeIfPresent([WeeklySourceEntry].self, forKey: .sourceEntries) ?? []
+        self.isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        self.pinPosition = try c.decodeIfPresent(Int.self, forKey: .pinPosition)
     }
 
     /// 从同一个扁平 JSON object 解出共享 Repo Card 字段。
@@ -378,7 +461,10 @@ struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
         latestEventAt: String,
         weekly: WeeklySnapshot? = nil,
         zread: ZreadSnapshot? = nil,
-        discovery: DiscoverySnapshot? = nil
+        discovery: DiscoverySnapshot? = nil,
+        sourceEntries: [WeeklySourceEntry] = [],
+        isPinned: Bool = false,
+        pinPosition: Int? = nil
     ) {
         self.card = card
         self.name = name ?? card.repo
@@ -389,6 +475,9 @@ struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
         self.weekly = weekly
         self.zread = zread
         self.discovery = discovery
+        self.sourceEntries = sourceEntries
+        self.isPinned = isPinned
+        self.pinPosition = pinPosition
     }
 }
 
@@ -468,6 +557,9 @@ struct WeeklyFeedItem: Identifiable, Equatable, Sendable {
     let weekly: WeeklySnapshot?
     let zread: ZreadSnapshot?
     let discovery: DiscoverySnapshot?
+    let sourceEntries: [WeeklySourceEntry]
+    let isPinned: Bool
+    let pinPosition: Int?
 
     var ghRepoId: Int64 { card.ghRepoId }
     var owner: String { card.owner }
@@ -501,6 +593,9 @@ struct WeeklyFeedItem: Identifiable, Equatable, Sendable {
         self.weekly = dto.weekly
         self.zread = dto.zread
         self.discovery = dto.discovery
+        self.sourceEntries = dto.sourceEntries
+        self.isPinned = dto.isPinned
+        self.pinPosition = dto.pinPosition
     }
 }
 

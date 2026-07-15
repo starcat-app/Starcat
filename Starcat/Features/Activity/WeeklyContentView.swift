@@ -224,7 +224,7 @@ struct WeeklyContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 weeklyFilterSection("weekly.filter.source") {
-                    ForEach(WeeklySourceFilter.allCases) { source in
+                    ForEach(WeeklySourceFilter.defaultFilters) { source in
                         weeklyFilterRow(
                             title: source.localizedTitle,
                             isSelected: source == viewModel.selectedSource

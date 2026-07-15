@@ -248,6 +248,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             if let cached = await cachedBulk(), !cached.items.isEmpty {
                 AppLog.network.warning("WeeklyBulk network failed, falling back to cache (\(cached.items.count) repos): \(error.localizedDescription, privacy: .public)")
                 return WeeklyBulkResult(
+                    sources: [],
                     items: cached.items,
                     languages: cached.languages,
                     etag: cached.etag,

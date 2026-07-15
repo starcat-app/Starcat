@@ -389,20 +389,19 @@ private struct WeeklySourceInlineBadge: View {
 
     @ViewBuilder
     private func sourceIcon(_ source: WeeklySource) -> some View {
-        switch source {
-        case .unknown:
-            Image(systemName: source.assetName)
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
-                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
-        default:
-            Image(source.assetName)
+        if let assetName = source.assetName {
+            Image(assetName)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 16, height: 16)
                 .clipShape(Circle())
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        } else {
+            Image(systemName: source.systemImage)
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
                 .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
         }
     }
