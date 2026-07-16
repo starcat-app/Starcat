@@ -243,6 +243,28 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoadingMoreChunks = false
     var isLoadingMoreRepositories = false
     var isIndexing = false
+    /// 浏览器独立于 Composer「+」面板；默认保持历史 stars 降序，打开时列表顺序不变。
+    var repositorySortOption: RepoSortOption = .starsDesc {
+        didSet {
+            guard oldValue != repositorySortOption else { return }
+            scheduleRepositoryReload(force: true)
+        }
+    }
+    var repositoryFilters: RAGComposerMentionFilters = .empty {
+        didSet {
+            guard oldValue != repositoryFilters else { return }
+            scheduleRepositoryReload(force: true)
+        }
+    }
+    var repositorySearchQuery = "" {
+        didSet {
+            guard oldValue != repositorySearchQuery else { return }
+            scheduleRepositoryReload(force: false)
+        }
+    }
+    var isRepositoryFilterPresented = false
+    var isRepositoryLanguageAddPresented = false
+    private var repositoryQueryTask: Task<Void, Never>?
     /// 每个仓库单独保存完成时间，切换仓库时不能借用其它仓库或全局刷新的时间。
     var selectedRepositoryRefreshAt: Date? {
         guard let selectedRepoID else { return nil }
@@ -275,6 +297,38 @@ private final class KnowledgeRAGBrowserViewModel {
             guard !Task.isCancelled else { break }
             await refresh()
         }
+    }
+
+    func resetRepositoryFilters() {
+        repositoryFilters = .empty
+    }
+
+    func clearRepositorySearch() {
+        repositorySearchQuery = ""
+    }
+
+    /// 关键词 120ms 合并；排序 / 筛选变更可 `force` 立即重查。
+    private func scheduleRepositoryReload(force: Bool) {
+        repositoryQueryTask?.cancel()
+        repositoryQueryTask = Task { [weak self] in
+            do {
+                if !force {
+                    try await Task.sleep(for: .milliseconds(120))
+                }
+                guard let self else { return }
+                try Task.checkCancellation()
+                await self.reloadRepositoriesFromStart()
+            } catch is CancellationError {
+                // 连续输入会取消旧查询；不是用户可见错误。
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func reloadRepositoriesFromStart() async {
+        await loadRepositories(limit: Self.repositoryPageSize, append: false)
+        await loadChunks()
     }
 
     func selectRepository(_ id: Int64) async {
@@ -493,11 +547,26 @@ private final class KnowledgeRAGBrowserViewModel {
 
     private func loadRepositories(limit: Int, append: Bool) async {
         let offset = append ? candidates.count : 0
+        let query = repositorySearchQuery
+        let sort = repositorySortOption
+        let filtersSnapshot = repositoryFilters
+        // 浏览器只下推 SQL 条件；信号可用性在 UI 层已隐藏，这里再兜底清掉。
+        var sqlFilters = filtersSnapshot
+        sqlFilters.wikiAvailability = .unknown
+        sqlFilters.healthAvailability = .unknown
+        sqlFilters.openSSFAvailability = .unknown
         do {
             let page = try await dependencies.ragCandidateRepository.fetchKnowledgeBrowserPage(
+                query: query,
                 limit: limit,
-                offset: offset
+                offset: offset,
+                sort: sort,
+                filters: sqlFilters
             )
+            // 查询期间用户可能又改了条件；过期页丢弃，避免闪回旧结果。
+            guard repositorySearchQuery == query,
+                  repositorySortOption == sort,
+                  repositoryFilters == filtersSnapshot else { return }
             if append {
                 let existingIDs = Set(candidates.map(\.repo.id))
                 candidates.append(contentsOf: page.candidates.filter { !existingIDs.contains($0.repo.id) })
@@ -692,7 +761,12 @@ private struct KnowledgeRAGBrowserView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                    // 与 Composer「+」面板同构：排序 / 筛选 + 搜索；状态独立，不串会话草稿。
+                    repositoryListControls
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(viewModel.candidates.enumerated()), id: \.element.repo.id) { rowIndex, candidate in
                             repositoryRow(candidate, rowIndex: rowIndex)
@@ -726,6 +800,45 @@ private struct KnowledgeRAGBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .clipped()
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+    }
+
+    /// 复用 Composer 筛选控件；`includeSignalFilters: false` 只保留 SQL 可下推项。
+    private var repositoryListControls: some View {
+        HStack(spacing: 8) {
+            RAGContextPickerFilterControls(
+                sortOption: $viewModel.repositorySortOption,
+                filters: $viewModel.repositoryFilters,
+                isFilterPresented: $viewModel.isRepositoryFilterPresented,
+                isLanguageAddPresented: $viewModel.isRepositoryLanguageAddPresented,
+                includeSignalFilters: false,
+                onReset: { viewModel.resetRepositoryFilters() }
+            )
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                TextField("rag.workspace.mention.searchPlaceholder", text: $viewModel.repositorySearchQuery)
+                    .textFieldStyle(.plain)
+                    .font(interfaceScale.font(size: 13))
+                if !viewModel.repositorySearchQuery.isEmpty {
+                    Button {
+                        viewModel.clearRepositorySearch()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.workspace.mention.clearFilter")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+        }
     }
 
     private var knowledgeHero: some View {
@@ -1287,13 +1400,33 @@ private struct KnowledgeRAGBrowserView: View {
                     .font(interfaceScale.font(size: 13))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                HStack(spacing: 6) {
-                    if let language = candidate.repo.language, !language.isEmpty { Text(language) }
-                    if let index { Text("\(index.readyChunks)/\(index.totalChunks)") }
+                // 元数据行：Devicon 语言图标 + 金色星标 + 索引进度；与主列表 / mention 候选同源组件。
+                HStack(spacing: 8) {
+                    if let language = candidate.repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !language.isEmpty {
+                        HStack(spacing: 4) {
+                            LanguageIconView(language: language, size: 12)
+                            Text(LanguageDisplayName.shortened(for: language))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
+                    StarsBadge(count: candidate.repo.starsCount, style: .compact)
+                    if let index {
+                        Text("\(index.readyChunks)/\(index.totalChunks)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                .font(.caption.monospaced()).foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+            // 侧栏行必须占满可用宽度，并声明整行 hit-test；否则右侧空白点不到、无悬停光标。
+            // contentShape 放在 padding 之后，与 RAGAddToLibrarySheet 行点击面一致。
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
             .background(repositoryRowBackground(rowIndex: rowIndex, selected: selected, isHovered: isHovered))
             .overlay {
                 if selected || isHovered {
@@ -1305,6 +1438,7 @@ private struct KnowledgeRAGBrowserView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pointerStyle(.link)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
         .onHover { isHovering in
             hoveredRepositoryID = isHovering ? candidate.repo.id : nil
@@ -1358,6 +1492,22 @@ private struct KnowledgeRAGBrowserView: View {
                     Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription"))
                         .font(.body)
                         .foregroundStyle(.secondary)
+
+                    // 与左侧列表同源：Devicon 语言图标 + 短名 + 金色星标。
+                    HStack(spacing: 8) {
+                        if let language = candidate.repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !language.isEmpty {
+                            HStack(spacing: 4) {
+                                LanguageIconView(language: language, size: 14)
+                                Text(LanguageDisplayName.shortened(for: language))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
+                        }
+                        StarsBadge(count: candidate.repo.starsCount, style: .compact)
+                    }
                 }
                 Spacer()
                 // logo-only：打开 Starcat 独立详情窗；文案留给 help / accessibility。

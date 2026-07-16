@@ -93,12 +93,10 @@ struct RAGWorkspaceAnswerSurface: View {
             && viewModel.streamingAnswer.isEmpty
     }
 
-    /// 缓存未命中时立即清掉上一会话正文，只显示轻量加载态；数据库读取完成后一次性安装。
+    /// 缓存未命中时立即清掉上一会话正文，用对话骨架占位；数据库读取完成后一次性安装。
     /// 这比保留 A 的内容并把左栏高亮切到 B 更诚实，也不会让加载态参与复杂布局。
     var conversationLoading: some View {
-        ProgressView()
-            .controlSize(.small)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RAGConversationSkeletonView()
     }
 
     var answerHeader: some View {
@@ -1020,12 +1018,49 @@ struct RAGWorkspaceAnswerSurface: View {
                         .font(ragFont(.callout))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if let language = candidate.language?.trimmingCharacters(in: .whitespacesAndNewlines),
                            !language.isEmpty {
                             LanguageBadge(language: language, style: .compact)
                         }
                         StarsBadge(count: candidate.starsCount, style: .compact)
+                        // 索引侧元数据：有才出胶囊，没有不占位。
+                        if candidate.chunkCount > 0 {
+                            MetaBadge(
+                                systemImage: "square.stack.3d.up",
+                                text: candidate.chunkCount.formattedShort,
+                                tint: .secondary
+                            )
+                            .help(
+                                Text(
+                                    String(
+                                        format: String.l10n("rag.workspace.mention.badge.chunks"),
+                                        locale: locale,
+                                        candidate.chunkCount
+                                    )
+                                )
+                            )
+                        }
+                        if candidate.hasAISummary {
+                            MetaBadge(
+                                systemImage: "sparkles",
+                                text: "",
+                                tint: .accentColor,
+                                iconOnly: true,
+                                accessibilityLabel: "rag.workspace.mention.badge.aiSummary"
+                            )
+                            .help("rag.workspace.mention.badge.aiSummary")
+                        }
+                        if candidate.hasPrivateNote {
+                            MetaBadge(
+                                systemImage: "note.text",
+                                text: "",
+                                tint: .orange,
+                                iconOnly: true,
+                                accessibilityLabel: "rag.workspace.mention.badge.privateNote"
+                            )
+                            .help("rag.workspace.mention.badge.privateNote")
+                        }
                     }
                 }
                 Spacer(minLength: 0)

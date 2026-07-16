@@ -61013,6 +61013,70 @@
           }
         }
       }
+    },
+    "rag.workspace.mention.badge.chunks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$d chunks indexed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$d 个分片"
+          }
+        }
+      }
+    },
+    "rag.workspace.mention.badge.aiSummary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summary available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有 AI 摘要"
+          }
+        }
+      }
+    },
+    "rag.workspace.mention.badge.privateNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private note available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有私有笔记"
+          }
+        }
+      }
+    },
+    "rag.workspace.conversation.loading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading conversation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载会话"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -19,7 +19,14 @@ protocol RAGRepoCandidateRepositoryProtocol: Sendable {
     ) async throws -> [RAGRepoCandidate]
 
     /// 知识库浏览器左侧列表专用分页；与 Planner 候选查询解耦，避免 semantic_only 全库哨兵 LIMIT。
-    func fetchKnowledgeBrowserPage(limit: Int, offset: Int) async throws -> RAGRepoCandidatePage
+    /// 排序 / 筛选复用 Composer mention 条件；Wiki 等磁盘信号不在此层处理。
+    func fetchKnowledgeBrowserPage(
+        query: String,
+        limit: Int,
+        offset: Int,
+        sort: RepoSortOption,
+        filters: RAGComposerMentionFilters
+    ) async throws -> RAGRepoCandidatePage
     /// Composer 上下文选择器专用轻量投影；大库按关键词 + 面板排序/筛选分页。
     func fetchMentionCandidates(
         query: String,
@@ -134,6 +141,9 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
             var pageArguments = arguments
             pageArguments.append(limit + 1)
             pageArguments.append(offset)
+            // 分片 / 摘要 / 笔记在同一 SELECT 带出，避免列表行二次查库（N+1）。
+            // chunk_count 走 idx_rag_chunks_repo；摘要 EXISTS 走 idx_ai_summaries_repo；
+            // 笔记直接用已 JOIN 的 repo_notes.content。
             let rows = try Row.fetchAll(db, sql: """
                 SELECT r.id, r.owner, r.name, r.full_name, r.description, r.language,
                        r.stars_count, r.owner_avatar, r.topics, n.status,
@@ -141,7 +151,17 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                            SELECT GROUP_CONCAT(t.name, '\u{1F}')
                            FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
                            WHERE rt.repo_id = r.id
-                       ), '') AS tag_names
+                       ), '') AS tag_names,
+                       COALESCE((
+                           SELECT COUNT(*) FROM rag_chunks c WHERE c.repo_id = r.id
+                       ), 0) AS chunk_count,
+                       EXISTS (
+                           SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id
+                       ) AS has_ai_summary,
+                       CASE
+                           WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1
+                           ELSE 0
+                       END AS has_private_note
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 \(joinSQL)
@@ -362,10 +382,63 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
         }
     }
 
-    func fetchKnowledgeBrowserPage(limit: Int, offset: Int) async throws -> RAGRepoCandidatePage {
+    func fetchKnowledgeBrowserPage(
+        query: String = "",
+        limit: Int,
+        offset: Int,
+        sort: RepoSortOption = .starsDesc,
+        filters: RAGComposerMentionFilters = .empty
+    ) async throws -> RAGRepoCandidatePage {
         precondition(limit > 0 && offset >= 0)
+        // 浏览器只做 SQL 可下推条件；Wiki 可用性需 DiskWikiCache，此处强制忽略。
+        var mutableFilters = filters
+        mutableFilters.wikiAvailability = .unknown
+        let sqlFilters = mutableFilters
         return try await database.writer.read { db in
-            // 与主列表一致：star 数降序，同星再按 full_name；LIMIT+1 判定是否还有下一页。
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            let pattern = "%\(Self.escapeLike(trimmed))%"
+            // 与 mention 面板同一套关键词通道，避免浏览器搜得到、Composer 搜不到（或反过来）。
+            let searchPredicate = """
+                (r.full_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(r.description, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(r.language, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(r.topics, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR n.status LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(n.content, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR EXISTS (
+                     SELECT 1 FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
+                     WHERE rt.repo_id = r.id AND t.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM ai_summaries summary
+                     WHERE summary.repo_id = r.id
+                       AND summary.summary_json LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 ))
+                """
+
+            var predicates = ["n.library_state = 'in_library'"]
+            var arguments: [any DatabaseValueConvertible] = []
+            if !trimmed.isEmpty {
+                predicates.append(searchPredicate)
+                arguments.append(contentsOf: Array(repeating: pattern as any DatabaseValueConvertible, count: 8))
+            }
+            Self.appendMentionFilters(sqlFilters, predicates: &predicates, arguments: &arguments)
+
+            var joins: [String] = []
+            if sort == .healthScoreDesc {
+                joins.append("LEFT JOIN repo_health_snapshots h_sort ON h_sort.repo_id = r.id")
+            } else if sort == .openSSFScoreDesc {
+                joins.append(
+                    "LEFT JOIN open_ssf_scores ossf_sort ON ossf_sort.repo_id = r.id AND ossf_sort.fetch_status = 'success'"
+                )
+            }
+            let joinSQL = joins.isEmpty ? "" : " " + joins.joined(separator: " ")
+            let orderBy = Self.mentionOrderClause(sort)
+
+            var pageArguments = arguments
+            pageArguments.append(limit + 1)
+            pageArguments.append(offset)
+            // 默认仍是 stars 降序；用户改排序 / 筛选后走同一分页哨兵。
             let rows = try Row.fetchAll(db, sql: """
                 SELECT r.*, n.status AS rag_status, n.library_updated_at AS rag_library_updated_at,
                        COALESCE((
@@ -375,10 +448,11 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                        ), '') AS rag_tag_names
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
-                WHERE n.library_state = 'in_library'
-                ORDER BY r.stars_count DESC, r.full_name COLLATE NOCASE ASC
+                \(joinSQL)
+                WHERE \(predicates.joined(separator: " AND "))
+                ORDER BY \(orderBy)
                 LIMIT ? OFFSET ?
-                """, arguments: [limit + 1, offset])
+                """, arguments: StatementArguments(pageArguments))
             let mapped = try rows.map(Self.mapCandidate(row:))
             return RAGRepoCandidatePage(
                 candidates: Array(mapped.prefix(limit)),

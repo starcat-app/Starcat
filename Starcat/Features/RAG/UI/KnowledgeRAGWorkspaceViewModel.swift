@@ -870,6 +870,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         do {
             // 离开当前会话前先暂存未发送草稿，避免「新建」把 @repo / 附件带走。
             saveComposerDraft(for: selectedConversationID)
+            dismissMentionPicker()
             // 当前选中目录时，新会话直接归入该一级分组。
             let conversation = try await conversationStore.createConversation(
                 title: nil,
@@ -900,35 +901,63 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 切换会话时骨架至少亮这么久，缓存命中也能看到 shimmer；读库更慢时不再额外拖延。
+    nonisolated private static let conversationSwitchSkeletonMinimum: Duration = .milliseconds(320)
+
     func selectConversation(_ id: UUID) async {
         guard selectedConversationID != id || messages.isEmpty || isConversationLoading else { return }
         let previousConversationID = selectedConversationID
         let requestGeneration = conversationSelectionGate.begin()
+        let isSwitchingConversation = previousConversationID != id
+        let skeletonStartedAt = ContinuousClock.now
+
         // 离开前写入 App 级内存草稿。回答态已有 *ByConversation；Composer 也必须按会话隔离，
         // 否则 resetTurnState 会把另一会话刚选的项目/附件清掉且无法恢复。
-        if previousConversationID != id {
+        if isSwitchingConversation {
             saveComposerDraft(for: previousConversationID)
+            // 上下文选择面板按当前会话 Composer 工作；切走会话时必须收起，避免浮在另一会话上。
+            dismissMentionPicker()
+            // 立刻进骨架：清掉上一会话正文。缓存命中也不能跳过——否则重装大消息树时中栏会假死无反馈。
+            isConversationLoading = true
+            messages = []
+            conversationContextSummary = nil
+            conversationOutlineTurns = []
+            conversationCitations = []
+            resetTurnState()
         }
+
         // 选择意图必须在第一次 await 之前提交：左栏立即响应，旧会话之后的流式事件也会
         // 因 selectedConversationID 已变化而停止投影到当前中栏。
         selectedConversationID = id
         selectedGroupID = nil
         debugTraces = []
 
+        if isSwitchingConversation {
+            // 让 SwiftUI 先画出一帧骨架，再装缓存或读库；否则同帧 loading→安装会看不见骨架。
+            await Task.yield()
+            guard conversationSelectionGate.isCurrent(requestGeneration) else { return }
+        }
+
         if let cached = conversationPresentationCache.value(for: id) {
+            if isSwitchingConversation {
+                await Self.waitForMinimumConversationSkeleton(from: skeletonStartedAt)
+                guard conversationSelectionGate.isCurrent(requestGeneration) else { return }
+            }
             installSelectedConversation(cached)
             scheduleDebugTraceLoad(for: id)
             return
         }
 
-        isConversationLoading = true
-        messages = []
-        conversationContextSummary = nil
-        conversationOutlineTurns = []
-        conversationCitations = []
-        resetTurnState()
+        if !isConversationLoading {
+            isConversationLoading = true
+            messages = []
+            conversationContextSummary = nil
+            conversationOutlineTurns = []
+            conversationCitations = []
+            resetTurnState()
+        }
+        // Composer 可先恢复；运行中的回答态等 install 时再叠，避免加载期消息区被瞬时态干扰。
         restoreComposerDraft(for: id)
-        restoreActiveAnswerPresentation(for: id)
         do {
             guard let detail = try await conversationStore.loadConversation(id: id) else {
                 if conversationSelectionGate.isCurrent(requestGeneration) {
@@ -940,6 +969,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
             let snapshot = await Self.makePresentationSnapshot(from: detail)
             guard !Task.isCancelled, conversationSelectionGate.isCurrent(requestGeneration) else { return }
+            if isSwitchingConversation {
+                await Self.waitForMinimumConversationSkeleton(from: skeletonStartedAt)
+                guard conversationSelectionGate.isCurrent(requestGeneration) else { return }
+            }
             installSelectedConversation(snapshot)
             scheduleDebugTraceLoad(for: id)
             // 切换会话不自动聚焦引用：用户停留在当前 Inspector tab，手动点芯片/正文 marker 再切「证据」。
@@ -948,6 +981,15 @@ final class KnowledgeRAGWorkspaceViewModel {
             restorePreviousConversationAfterSelectionFailure(previousConversationID)
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// 读库已超过最短时间则立刻返回；仅缓存命中过快时补足，让骨架 shimmer 跑起来。
+    private nonisolated static func waitForMinimumConversationSkeleton(
+        from startedAt: ContinuousClock.Instant
+    ) async {
+        let elapsed = ContinuousClock.now - startedAt
+        guard elapsed < conversationSwitchSkeletonMinimum else { return }
+        try? await Task.sleep(for: conversationSwitchSkeletonMinimum - elapsed)
     }
 
     /// 读取失败时恢复点击前的已知快照。性能优化不能把一次临时 SQLite 错误变成“选中空会话”；

@@ -24,14 +24,20 @@ struct RAGComposerMentionFilters: Equatable, Codable, Sendable {
 
     /// 是否相对默认态有任何收窄；用于漏斗激活态与重置按钮。
     var isActive: Bool {
+        isSQLOnlyActive
+            || wikiAvailability != .unknown
+            || healthAvailability != .unknown
+            || openSSFAvailability != .unknown
+    }
+
+    /// 仅 SQL 可直接下推的条件（不含 Wiki / Health / OpenSSF）。
+    /// 知识库浏览器筛选菜单用此判断激活态，避免把未暴露的信号筛选项算进去。
+    var isSQLOnlyActive: Bool {
         hideArchived
             || hideForks
             || status != nil
             || star != .all
             || !selectedLanguages.isEmpty
-            || wikiAvailability != .unknown
-            || healthAvailability != .unknown
-            || openSSFAvailability != .unknown
     }
 
     mutating func reset() {

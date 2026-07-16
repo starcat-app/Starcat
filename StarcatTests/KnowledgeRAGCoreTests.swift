@@ -1273,18 +1273,74 @@ struct KnowledgeRAGCoreTests {
             }
         }
         let repository = GRDBRAGRepoCandidateRepository(database: database)
-        let first = try await repository.fetchKnowledgeBrowserPage(limit: 20, offset: 0)
+        let first = try await repository.fetchKnowledgeBrowserPage(
+            query: "",
+            limit: 20,
+            offset: 0,
+            sort: .starsDesc,
+            filters: .empty
+        )
         #expect(first.candidates.count == 20)
         #expect(first.hasMore == true)
         #expect(first.candidates.map(\.repo.id) == Array(1...20).map(Int64.init))
 
-        let second = try await repository.fetchKnowledgeBrowserPage(limit: 20, offset: 20)
+        let second = try await repository.fetchKnowledgeBrowserPage(
+            query: "",
+            limit: 20,
+            offset: 20,
+            sort: .starsDesc,
+            filters: .empty
+        )
         #expect(second.candidates.count == 5)
         #expect(second.hasMore == false)
         #expect(second.candidates.map(\.repo.id) == Array(21...25).map(Int64.init))
 
         let overlap = Set(first.candidates.map(\.repo.id)).intersection(second.candidates.map(\.repo.id))
         #expect(overlap.isEmpty)
+    }
+
+    @Test("知识库浏览器列表支持关键词、语言筛选与名称排序")
+    func knowledgeBrowserRepositoryQuerySortFilter() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in 1...4 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await notes.updateLibraryState(repoId: Int64(id), state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE repos SET full_name = ?, language = ?, stars_count = ? WHERE id = ?",
+                    arguments: [
+                        id <= 2 ? "alpha/repo-\(id)" : "beta/repo-\(id)",
+                        id % 2 == 0 ? "Swift" : "Go",
+                        100 - id,
+                        id,
+                    ]
+                )
+            }
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+
+        var languageFilter = RAGComposerMentionFilters.empty
+        languageFilter.selectedLanguages = ["Swift"]
+        let filtered = try await repository.fetchKnowledgeBrowserPage(
+            query: "",
+            limit: 10,
+            offset: 0,
+            sort: .starsDesc,
+            filters: languageFilter
+        )
+        #expect(filtered.candidates.map(\.repo.id) == [2, 4])
+        #expect(filtered.candidates.allSatisfy { $0.repo.language == "Swift" })
+
+        let searched = try await repository.fetchKnowledgeBrowserPage(
+            query: "alpha",
+            limit: 10,
+            offset: 0,
+            sort: .nameAsc,
+            filters: .empty
+        )
+        #expect(searched.candidates.map(\.repo.id) == [1, 2])
+        #expect(searched.candidates.map(\.repo.fullName) == ["alpha/repo-1", "alpha/repo-2"])
     }
 
     @Test("上下文选择器轻量候选按关键词分页并仅在选择后回填完整仓库")
@@ -1345,6 +1401,56 @@ struct KnowledgeRAGCoreTests {
 
         #expect(page.matchCount == 1)
         #expect(page.candidates.map(\.id) == [1])
+    }
+
+    @Test("上下文选择器投影带出分片数、AI 摘要与私有笔记标记")
+    func mentionCandidateIndexSideMetadata() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1)
+        try await database.insertRepoFixture(id: 2)
+        let notes = GRDBRepoNoteRepository(database: database)
+        try await notes.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await notes.updateLibraryState(repoId: 2, state: .inLibrary)
+        try await notes.upsert(RepoNote(
+            repoId: 1,
+            content: "部署备忘",
+            status: "unread",
+            libraryState: LibraryState.inLibrary.rawValue,
+            isAIGenerated: false,
+            editedAt: "2026-07-17T00:00:00Z"
+        ))
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at)
+                VALUES (1, 'test-model', 'hash', '{}', datetime('now'))
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES
+                    (1, 'readme', '', 'readme', 'readme', 'README', 'readme:0', 0, '', 'README', 'a', 'h1', 1, 0, 'embed', 'ready', datetime('now'), datetime('now')),
+                    (1, 'readme', '', 'readme', 'readme', 'README', 'readme:1', 1, '', 'README', 'b', 'h2', 1, 0, 'embed', 'ready', datetime('now'), datetime('now'))
+                """)
+        }
+
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let page = try await repository.fetchMentionCandidates(
+            query: "",
+            limit: 10,
+            offset: 0,
+            sort: .starsDesc,
+            filters: .empty
+        )
+        let withMeta = try #require(page.candidates.first(where: { $0.id == 1 }))
+        let bare = try #require(page.candidates.first(where: { $0.id == 2 }))
+        #expect(withMeta.chunkCount == 2)
+        #expect(withMeta.hasAISummary)
+        #expect(withMeta.hasPrivateNote)
+        #expect(bare.chunkCount == 0)
+        #expect(!bare.hasAISummary)
+        #expect(!bare.hasPrivateNote)
     }
 
     @Test("上下文选择器支持面板排序与筛选，且筛选不含知识库维度")

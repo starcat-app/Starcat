@@ -20,6 +20,12 @@ struct RAGMentionCandidate: Identifiable, Equatable, Sendable {
     var language: String?
     var starsCount: Int
     var ownerAvatar: String?
+    /// 知识库分片总数；0 表示未索引，行内不展示胶囊。
+    var chunkCount: Int
+    /// 是否存在 `ai_summaries` 记录。
+    var hasAISummary: Bool
+    /// 是否存在非空私有笔记（`repo_notes.content`）。
+    var hasPrivateNote: Bool
     /// 小库内存过滤复用一次归一化结果，避免每个键入字符重复解析 topics 和拼接标签。
     var normalizedSearchText: String
 
@@ -31,6 +37,10 @@ struct RAGMentionCandidate: Identifiable, Equatable, Sendable {
         language = row["language"]
         starsCount = row["stars_count"]
         ownerAvatar = row["owner_avatar"]
+        chunkCount = row["chunk_count"] ?? 0
+        // EXISTS / CASE 在 SQLite 里是 0/1；GRDB 可能解成 Int64 或 Bool。
+        hasAISummary = Self.databaseFlag(row["has_ai_summary"])
+        hasPrivateNote = Self.databaseFlag(row["has_private_note"])
         let topics: String = row["topics"] ?? ""
         let tags: String = row["tag_names"] ?? ""
         let description: String = row["description"] ?? ""
@@ -48,6 +58,10 @@ struct RAGMentionCandidate: Identifiable, Equatable, Sendable {
         language = repo.language
         starsCount = repo.starsCount
         ownerAvatar = repo.ownerAvatar
+        // 仅有完整 Repo 时没有索引侧投影；徽章留空，避免展示假数据。
+        chunkCount = 0
+        hasAISummary = false
+        hasPrivateNote = false
         normalizedSearchText = Self.normalize([
             repo.fullName, repo.description ?? "", repo.language ?? "", repo.topicsArray.joined(separator: " ")
         ].joined(separator: " "))
@@ -55,6 +69,13 @@ struct RAGMentionCandidate: Identifiable, Equatable, Sendable {
 
     static func normalize(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+    }
+
+    private static func databaseFlag(_ value: DatabaseValue?) -> Bool {
+        guard let value, !value.isNull else { return false }
+        if let bool = Bool.fromDatabaseValue(value) { return bool }
+        if let int = Int64.fromDatabaseValue(value) { return int != 0 }
+        return false
     }
 }
 
@@ -91,7 +112,11 @@ enum RAGMentionPickerLogic {
     ) -> RAGMentionPickerSnapshot {
         let knowledgeIDs = Set(candidates.map(\.id))
         let selectedInKnowledge = selected.filter { knowledgeIDs.contains($0.id) || knowledgeCount != nil }
-        let selectedCandidates = selectedInKnowledge.map(RAGMentionCandidate.init(repo:))
+        // 已选置顶优先复用当前页投影（含分片/摘要/笔记），避免 `Repo` 回填把徽章抹掉。
+        let candidateByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        let selectedCandidates = selectedInKnowledge.map { repo in
+            candidateByID[repo.id] ?? RAGMentionCandidate(repo: repo)
+        }
         let selectedIDs = Set(selectedCandidates.map(\.id))
         let normalizedQuery = RAGMentionCandidate.normalize(query)
 
