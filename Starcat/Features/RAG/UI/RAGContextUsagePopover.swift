@@ -79,15 +79,16 @@ struct RAGContextWindowBreakdownView: View {
                 if showsReservedOutput, usage.reservedOutputTokens > 0 {
                     segmentLegendRow(
                         kind: .reservedOutput,
-                        tokens: usage.reservedOutputTokens,
-                        showsColorSwatch: false
+                        tokens: usage.reservedOutputTokens
                     )
                 }
             }
         }
     }
 
-    /// 整窗宽为 Context Window；已用输入分段按 token 比例着色，剩余留灰轨。
+    /// 整窗宽为 Context Window。
+    /// - budget：输入分色实块 + 半透明虚线 teal 预留区 + 灰轨剩余空位；占比仍只算输入。
+    /// - usage：仅输入分色实块 + 灰轨剩余空位。
     private var segmentedUsageBar: some View {
         GeometryReader { proxy in
             let total = CGFloat(max(usage.windowTokens, 1))
@@ -103,6 +104,10 @@ struct RAGContextWindowBreakdownView: View {
                             .fill(kind.usageSegmentColor)
                             .frame(width: width)
                     }
+                    if showsReservedOutput, usage.reservedOutputTokens > 0 {
+                        let raw = proxy.size.width * CGFloat(usage.reservedOutputTokens) / total
+                        reservedOutputBarSegment(width: max(raw, 2))
+                    }
                     Spacer(minLength: 0)
                 }
             }
@@ -111,6 +116,37 @@ struct RAGContextWindowBreakdownView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityTitleKey))
         .accessibilityValue(Text(percentFullText))
+    }
+
+    /// 预算横条中的预留输出区：半透明 teal 底 + 虚线描边，与输入实色块区分。
+    private func reservedOutputBarSegment(width: CGFloat) -> some View {
+        let tint = RAGContextUsageSegmentKind.reservedOutput.usageSegmentColor
+        return RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(tint.opacity(0.32))
+            .overlay {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .strokeBorder(tint.opacity(0.8), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+            }
+            .frame(width: width)
+    }
+
+    /// 图例色块：预留输出用与横条一致的虚线框，输入分段用实心块。
+    private func segmentLegendSwatch(for kind: RAGContextUsageSegmentKind) -> some View {
+        Group {
+            if kind == .reservedOutput, variant == .budget {
+                let tint = kind.usageSegmentColor
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(tint.opacity(0.32))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .strokeBorder(tint.opacity(0.8), style: StrokeStyle(lineWidth: 1, dash: [2, 1.5]))
+                    }
+            } else {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(kind.usageSegmentColor)
+            }
+        }
+        .frame(width: 10, height: 10)
     }
 
     private var accessibilityTitleKey: LocalizedStringKey {
@@ -122,18 +158,10 @@ struct RAGContextWindowBreakdownView: View {
 
     private func segmentLegendRow(
         kind: RAGContextUsageSegmentKind,
-        tokens: Int,
-        showsColorSwatch: Bool = true
+        tokens: Int
     ) -> some View {
         HStack(spacing: 10) {
-            if showsColorSwatch {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(kind.usageSegmentColor)
-                    .frame(width: 10, height: 10)
-            } else {
-                Color.clear
-                    .frame(width: 10, height: 10)
-            }
+            segmentLegendSwatch(for: kind)
             Text(LocalizedStringKey(kind.displayKey))
                 .font(ragFont(.caption, scale: interfaceScale))
                 .foregroundStyle(variant == .budget ? .secondary : .primary)
