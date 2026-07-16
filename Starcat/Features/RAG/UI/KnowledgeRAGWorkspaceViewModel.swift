@@ -2397,21 +2397,23 @@ final class KnowledgeRAGWorkspaceViewModel {
         let streamingMessageID = UUID()
         let streamingTimestamp = Date()
         var accumulatedAnswer = ""
-        // 正文发布严格限制为 8Hz。完整回答独立累计，较大的网络批次也不能绕过
+        // 正文发布严格限制为 15Hz。完整回答独立累计，较大的网络批次也不能绕过
         // UI 上限，否则单次回调中的 token 数越多，反而越容易触发连续重排。
-        var answerPresentationThrottle = StreamingPresentationThrottle(minimumInterval: 0.125)
+        var answerPresentationThrottle = StreamingPresentationThrottle(
+            minimumInterval: RAGStreamingPresentationCadence.answerInterval
+        )
         var presentationRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
         // Think 可能按 token 回调。完整文本留在 buffer，只有节流后的快照进入
-        // `executionSteps`。运行态严格 5Hz 且只展示最近 8,000 字符，避免长 Think
+        // `executionSteps`。运行态严格 10Hz 且只展示最近 8,000 字符，避免长 Think
         // 反复测量完整增长文本；终态仍从 buffer.text 发布完整内容并持久化。
         var planningReasoningBuffer = StreamingTextPresentationBuffer(
-            throttleInterval: 0.20,
+            throttleInterval: RAGStreamingPresentationCadence.reasoningInterval,
             immediateCharacterCount: nil,
             maximumPresentedCharacterCount: 8_000
         )
         var answerReasoningBuffer = StreamingTextPresentationBuffer(
-            throttleInterval: 0.20,
+            throttleInterval: RAGStreamingPresentationCadence.reasoningInterval,
             immediateCharacterCount: nil,
             maximumPresentedCharacterCount: 8_000
         )

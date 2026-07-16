@@ -12,6 +12,34 @@ import Testing
 
 @Suite("StreamingMarkdownChunker")
 struct StreamingMarkdownSnapshotTests {
+    @Test("RAG 正文与 Think 分别严格限制为 15Hz 和 10Hz")
+    func ragPresentationCadenceUsesStrictTimeLimits() {
+        #expect(abs(RAGStreamingPresentationCadence.answerInterval - (1.0 / 15.0)) < 0.000_001)
+        #expect(RAGStreamingPresentationCadence.reasoningInterval == 0.1)
+
+        var answerThrottle = StreamingPresentationThrottle(
+            minimumInterval: RAGStreamingPresentationCadence.answerInterval
+        )
+        let firstAnswerCommit = answerThrottle.shouldCommit(now: 0)
+        let earlyAnswerCommit = answerThrottle.shouldCommit(now: 0.05)
+        let secondAnswerCommit = answerThrottle.shouldCommit(now: 1.0 / 15.0)
+        #expect(firstAnswerCommit)
+        #expect(!earlyAnswerCommit)
+        #expect(secondAnswerCommit)
+
+        var reasoningBuffer = StreamingTextPresentationBuffer(
+            throttleInterval: RAGStreamingPresentationCadence.reasoningInterval,
+            immediateCharacterCount: nil,
+            maximumPresentedCharacterCount: 8_000
+        )
+        #expect(reasoningBuffer.append("首包", now: 0) == "首包")
+        // 较大 delta 也不能绕过 10Hz 上限；时间窗到期后一次完整发布。
+        let largeDelta = String(repeating: "x", count: 1_000)
+        #expect(reasoningBuffer.append(largeDelta, now: 0.05) == nil)
+        #expect(reasoningBuffer.append("尾", now: 0.1) == "首包" + largeDelta + "尾")
+        #expect(reasoningBuffer.flush(now: 0.2) == nil)
+    }
+
     @Test("严格节流不会被高频调用或大批次绕过")
     func strictPresentationThrottleCapsCommitFrequency() {
         var throttle = StreamingPresentationThrottle(minimumInterval: 0.125)
