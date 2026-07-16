@@ -1,13 +1,14 @@
 # RAG 流式渲染性能优化 Checklist
 
-> 状态：第五阶段执行中（20 / 24 项完成）
+> 状态：第五阶段已完成（24 / 24 项完成）
 >
 > 范围：实施流式发布、SwiftUI 观察边界、尾部滚动和历史会话渲染窗口；数据库仍一次读取完整会话，窗口只限制 SwiftUI 实际布局的消息。
 
 ## 成功标准
 
-- 正文流式快照严格不超过 8Hz，首个 delta 立即展示，结束时完整收口。
-- Think 流式展示严格不超过 5Hz，运行中只渲染最近 8,000 字符，完整文本仍用于完成态与持久化。
+- 正文流式快照严格不超过 15Hz，首个 delta 立即展示，结束时完整收口。
+- Think 流式展示严格不超过 10Hz，运行中只渲染最近 8,000 字符，完整文本仍用于完成态与持久化。
+- 总耗时和运行步骤耗时由标签内局部时钟推进，不依赖 Provider delta 到达。
 - `RAGWorkspaceAnswerSurface` 不再直接读取高频 `streamingPresentation` 与 `executionSteps`。
 - 流式尺寸变化不再通过 `onGeometryChange → @State → scrollTo` 形成反馈环。
 - 用户停留底部时继续自动贴底；主动上滚后不抢位置；滚到底部按钮仍能抵达永久 sentinel。
@@ -47,10 +48,10 @@
 
 ## 第五阶段：刷新流畅度回归整改
 
-- [ ] 运行中步骤耗时使用局部时钟刷新，不再依赖 reasoning delta 或 `executionSteps` 重绘。
-- [ ] 回答总耗时使用局部秒级时钟刷新，Provider 暂停输出时仍持续读秒。
-- [ ] 正文严格刷新上限由 8Hz 调整为 15Hz，Think 由 5Hz 调整为 10Hz；保留首包立即显示、最终 flush、8,000 字窗口和稳定 Markdown chunk。
-- [ ] 补充计时与刷新上限回归测试，运行定向 Suite 与两个 App target 编译。
+- [x] 运行中步骤耗时使用局部时钟刷新，不再依赖 reasoning delta 或 `executionSteps` 重绘。
+- [x] 回答总耗时使用局部秒级时钟刷新，Provider 暂停输出时仍持续读秒。
+- [x] 正文严格刷新上限由 8Hz 调整为 15Hz，Think 由 5Hz 调整为 10Hz；保留首包立即显示、最终 flush、8,000 字窗口和稳定 Markdown chunk。
+- [x] 补充计时与刷新上限回归测试，运行定向 Suite 与两个 App target 编译。
 
 ## 验证结果
 
@@ -58,6 +59,9 @@
 - 2026-07-15：`KnowledgeRAGCoreTests` 共 101 项通过。
 - 2026-07-15：`RAGConversationHistoryWindowTests` + `ScrollTailControllerTests` 共 18 项通过；并行测试启动器异常后以 `-parallel-testing-enabled NO` 稳定重跑。
 - 2026-07-15：`xcodegen generate`、编译与本次相关文件的 `git diff --check` 通过；真实长流 UI 仍需人工体验验收。
+- 2026-07-16：`KnowledgeRAGCoreTests` 121 项通过，覆盖运行中时钟与冻结耗时规则。
+- 2026-07-16：`StreamingMarkdownSnapshotTests` 15 项通过，覆盖 15Hz / 10Hz 严格上限、大 delta 不绕过与最终完整性。
+- 2026-07-16：`Starcat` 与 `StarcatDirect` 两个 scheme 编译通过，本次相关文件的 `git diff --check` 通过。
 
 ## 明确不在本次范围
 
