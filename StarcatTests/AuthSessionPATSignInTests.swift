@@ -40,7 +40,8 @@ struct AuthSessionPATSignInTests {
         let sessionWithKC = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         let expectedUser = Self.makeMockUser(id: 4242)
@@ -51,6 +52,8 @@ struct AuthSessionPATSignInTests {
             captured.append(userId)
         }
 
+        #expect(sessionWithKC.hasAlternativeSignInMethods)
+        #expect(sessionWithKC.isPATSignInAvailable)
         await sessionWithKC.signInWithPAT("ghp_test_token_1234567890abcdef")
 
         // state 已切到 .authenticated
@@ -74,6 +77,25 @@ struct AuthSessionPATSignInTests {
 
     // MARK: - 401：Token 无效
 
+    @Test("App Store 构建在执行层阻止 PAT 登录且不写 Keychain")
+    @MainActor
+    func signInWithPAT_appStoreBuild_isBlocked() async throws {
+        let keychain = InMemoryKeychain()
+        let session = AuthSession(
+            oauthService: MockGithubOAuthService(simulatedDelay: 0),
+            apiClient: MockGitHubAPIClient(),
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .appStore)
+        )
+
+        #expect(session.isPATSignInAvailable == false)
+        await session.signInWithPAT("ghp_must_not_be_stored")
+
+        #expect(session.isAuthenticating == false)
+        #expect(session.state == .unauthenticated)
+        #expect(try keychain.loadGithubToken() == nil)
+    }
+
     @Test("PAT 验证 401 → state 保持 unauthenticated + token 已被回滚 + lastError = .invalidToken")
     @MainActor
     func signInWithPAT_401_invalidToken() async throws {
@@ -84,7 +106,8 @@ struct AuthSessionPATSignInTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         var captured: [Int64?] = []
@@ -130,7 +153,8 @@ struct AuthSessionPATSignInTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         await session.signInWithPAT("ghp_wrong_scope_token")
@@ -164,7 +188,8 @@ struct AuthSessionPATSignInTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         await session.signInWithPAT("ghp_network_error_token")
@@ -191,7 +216,8 @@ struct AuthSessionPATSignInTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         // PAT 失败
@@ -212,7 +238,8 @@ struct AuthSessionPATSignInTests {
         AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: MockGitHubAPIClient(),
-            keychain: InMemoryKeychain()
+            keychain: InMemoryKeychain(),
+            distributionGate: DistributionGate(channel: .direct)
         )
     }
 

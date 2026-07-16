@@ -15,7 +15,6 @@
 
 import Foundation
 import Observation
-import AppKit
 
 /// 登录态。
 enum AuthState: Equatable {
@@ -23,10 +22,10 @@ enum AuthState: Equatable {
     case unauthenticated
     /// Device Flow 已发起，等待用户在浏览器输 code。
     case awaitingUserCode(OAuthDeviceCodeInfo)
-    /// 2026-06-29 新增：**专用于 Web Application Flow（PKCE）**——已打开浏览器授权页，
+    /// 2026-06-29 新增：**专用于 Web Application Flow（PKCE）**——已展示系统认证页，
     /// 等待 GitHub 回调 `starcat://callback?code=...&state=...`。
     /// 与 `.awaitingUserCode` 区别：Device Flow 让用户去浏览器输 code；Web Flow 让
-    /// 浏览器自动跳回 `starcat://callback` 触发 URL handler（见 `.onOpenURL`）。
+    /// 系统认证会话截获 `starcat://callback` 并直接把 URL 返回给 AuthSession。
     case awaitingWebCallback(WebFlowStartInfo)
     /// 已登录。
     case authenticated(user: GitHubUserDTO)
@@ -75,8 +74,8 @@ final class AuthSession {
     /// - `shouldShowLoginSheet` 是"有用户希望登录，但还没选 flow"——只设 flag 不启动流程
     ///
     /// 调用方：11 个详情页的"未登录引导"调 `requestLoginSheet()`，让 ContentView 弹 sheet
-    /// 展示 idle 态的 `GithubAuthView`（含 Device Flow CTA + PAT 折叠区），用户在 sheet 内
-    /// 自己选 flow。
+    /// 展示 idle 态的 `GithubAuthView`。App Store 只提供 Web Flow，Direct 另外提供
+    /// Device Flow 与 PAT，用户在 sheet 内选择可用方式。
     ///
     /// 收尾路径（5 处）都清 flag：① runDeviceFlow 成功 emit .authenticated ② signInWithPAT
     /// 成功 emit .authenticated ③ cancelSignIn ④ signOut ⑤ invalidateSession。
@@ -88,6 +87,25 @@ final class AuthSession {
     /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
     private let apiClient: any GitHubAPIClientProtocol
     private let keychain: any KeychainManaging
+    /// Web Flow 的系统认证窗口。通过协议注入，避免单测弹出真实 UI。
+    private let webAuthenticationSession: any WebAuthenticationSessionProviding
+    /// 分发渠道门控。Device Flow 与 PAT 是 Direct 版备选登录方式。
+    private let distributionGate: DistributionGate
+
+    /// 当前构建是否允许展示和启动 Device Flow。
+    var isDeviceFlowAvailable: Bool {
+        distributionGate.isAvailable(.deviceFlowLogin)
+    }
+
+    /// 当前构建是否允许展示和使用 PAT 登录。
+    var isPATSignInAvailable: Bool {
+        distributionGate.isAvailable(.personalAccessTokenLogin)
+    }
+
+    /// 当前构建是否存在可展示的备选登录方式。
+    var hasAlternativeSignInMethods: Bool {
+        isDeviceFlowAvailable || isPATSignInAvailable
+    }
 
     /// 2026-06-06 UserProfileService（A 方案）：可选注入，便于：
     /// ① 启动期从磁盘缓存 prime 出 user → state 秒显（消除 sidebar 200-800ms 空白）；
@@ -159,14 +177,20 @@ final class AuthSession {
     ///   - oauthService: Device Flow 实现（Real 或 Mock）。
     ///   - apiClient: 用于登录后立刻拉 /user 验证 token。
     ///   - keychain: token 存储。
+    ///   - webAuthenticationSession: Web Flow 的系统认证窗口实现。
+    ///   - distributionGate: App Store / Direct 分发渠道能力门控。
     init(
         oauthService: any GithubOAuthServiceProtocol,
         apiClient: any GitHubAPIClientProtocol,
-        keychain: any KeychainManaging = KeychainManager.shared
+        keychain: any KeychainManaging = KeychainManager.shared,
+        webAuthenticationSession: any WebAuthenticationSessionProviding = SystemWebAuthenticationSession(),
+        distributionGate: DistributionGate = DistributionGate()
     ) {
         self.oauthService = oauthService
         self.apiClient = apiClient
         self.keychain = keychain
+        self.webAuthenticationSession = webAuthenticationSession
+        self.distributionGate = distributionGate
     }
 
     // MARK: - 启动时恢复登录
@@ -249,6 +273,13 @@ final class AuthSession {
     /// 触发 Device Flow 登录。
     /// 一次只允许一个登录流程进行中。
     func signIn() {
+        do {
+            // App Store 构建不能只靠 UI 隐藏入口；执行层也必须拒绝会打开默认浏览器的流程。
+            try distributionGate.requireAvailable(.deviceFlowLogin)
+        } catch {
+            AppLog.auth.warning("Device Flow: blocked for App Store distribution")
+            return
+        }
         guard !isAuthenticating else { return }
         isAuthenticating = true
         lastError = nil
@@ -265,7 +296,7 @@ final class AuthSession {
     /// - `signIn()`：立刻启动 Device Flow（`isAuthenticating = true` + 后台 task 跑 beginDeviceFlow），
     ///   sheet 弹出来已经是 awaitingUserCode 态
     /// - `requestLoginSheet()`：**只**设 `shouldShowLoginSheet = true`，不启动任何 OAuth 流程。
-    ///   sheet 弹出来是 idle 态，含 Device Flow CTA + PAT 折叠区，让用户自己选
+    ///   sheet 弹出来是 idle 态，展示当前分发渠道允许的登录方式，让用户自己选
     ///
     /// 调用方：11 个详情页的"未登录引导"——用户点这些按钮时**没指定**走哪个 flow，
     /// 应当给用户选择权，而不是被强制走 Device Flow。
@@ -282,15 +313,14 @@ final class AuthSession {
     ///
     /// 与 Device Flow 区别：
     /// - Device Flow：客户端轮询 `/login/oauth/access_token` 等用户授权
-    /// - Web Flow (PKCE)：客户端**不**轮询，依赖 macOS URL handler `starcat://callback`
-    ///   接收 GitHub 浏览器跳转回来的 code（用户在浏览器里点 Authorize 后 GitHub
-    ///   会跳到 `starcat://callback?code=...&state=...`）
+    /// - Web Flow (PKCE)：客户端**不**轮询，由 `ASWebAuthenticationSession` 展示 GitHub
+    ///   授权页并截获 `starcat://callback?code=...&state=...`
     ///
     /// 流程：
     /// ① 调 `oauthService.beginWebFlow()` 拿到 authorizationURL + state + expiresAt
     /// ② emit `.awaitingWebCallback(info)`，UI 切到 awaitingWebCallbackView
-    /// ③ `NSWorkspace.open(info.authorizationURL)` 打开浏览器
-    /// ④（异步等）`.onOpenURL` 监听到 `starcat://callback` → `handleWebFlowCallback(url:)`
+    /// ③ `ASWebAuthenticationSession` 在 App 内展示系统认证页
+    /// ④ 系统会话截获 `starcat://callback` → `handleWebFlowCallback(url:)`
     /// ⑤ handleWebFlowCallback 用 code 换 token + 落 Keychain + 拉 /user + emit .authenticated
     func signInWithWebFlow() {
         // 与 Device Flow 同款守门：一次只允许一个登录流程进行中
@@ -305,8 +335,7 @@ final class AuthSession {
         }
     }
 
-    /// Web Flow 主流程：beginWebFlow → emit state → 打开浏览器 → 等回调。
-    /// 浏览器回调由 `.onOpenURL` 触发 `handleWebFlowCallback(url:)` 处理。
+    /// Web Flow 主流程：beginWebFlow → emit state → 展示系统认证页 → 等回调。
     private func runWebFlow() async {
         defer {
             isAuthenticating = false
@@ -314,28 +343,50 @@ final class AuthSession {
         do {
             let info = try await oauthService.beginWebFlow()
             self.state = .awaitingWebCallback(info)
-            // 打开浏览器（authorization URL 已在 beginWebFlow 拼好）
-            NSWorkspace.shared.open(info.authorizationURL)
-            AppLog.auth.info("Web Flow: opened browser, waiting for starcat://callback")
+            try webAuthenticationSession.start(
+                authorizationURL: info.authorizationURL,
+                callbackURLScheme: AppConstants.oauthCallbackScheme
+            ) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let callbackURL):
+                    Task { await self.handleWebFlowCallback(url: callbackURL) }
+                case .failure(.cancelled):
+                    self.finishCancelledWebFlow()
+                case .failure(let error):
+                    AppLog.auth.error("Web Flow: system session failed: \(error.localizedDescription, privacy: .public)")
+                    self.lastError = error
+                    self.state = .unauthenticated
+                    Task { await self.oauthService.resetWebFlow() }
+                }
+            }
+            AppLog.auth.info("Web Flow: presented ASWebAuthenticationSession, waiting for starcat://callback")
         } catch {
             AppLog.auth.error("Web Flow: begin failed: \(error.localizedDescription, privacy: .public)")
             self.lastError = error as? LocalizedError
             self.state = .unauthenticated
+            Task { await oauthService.resetWebFlow() }
         }
     }
 
     /// 取消 Web Flow（用户在 awaitingWebCallback 态点 Cancel）。
     func cancelWebFlow() {
-        // 复用 cancelSignIn 路径：isAuthenticating 守门 + state 切回 + 重置 actor
+        webAuthenticationSession.cancel()
+        finishCancelledWebFlow()
+    }
+
+    /// 用户关闭系统认证窗口或点击 Web Flow 的 Cancel 时统一收尾。
+    private func finishCancelledWebFlow() {
         isAuthenticating = false
         state = .unauthenticated
+        lastError = nil
         shouldShowLoginSheet = false
         Task { await oauthService.resetWebFlow() }
     }
 
     /// 处理 `starcat://callback?code=...&state=...` 回调 URL。
     ///
-    /// 入口：ContentView / StarcatApp 的 `.onOpenURL { url in authSession.handleWebFlowCallback(url: url) }`
+    /// 主入口：`ASWebAuthenticationSession` completion。App 的 `.onOpenURL` 保留为兼容兜底。
     ///
     /// 行为：
     /// 1. 校验当前 state 必须是 `.awaitingWebCallback`（否则忽略，避免误处理 Device Flow 路径
@@ -601,6 +652,13 @@ final class AuthSession {
     ///   `NetworkError.transport` 文案。
     /// - 验证后 token 保留（不会因为后续 401 之外的错误丢掉 PAT）——只有失败路径才删。
     func signInWithPAT(_ token: String) async {
+        do {
+            // App Store 登录必须统一走 ASWebAuthenticationSession，PAT 不能只靠 UI 隐藏。
+            try distributionGate.requireAvailable(.personalAccessTokenLogin)
+        } catch {
+            AppLog.auth.warning("PAT sign-in: blocked for App Store distribution")
+            return
+        }
         // 与 signIn() 同款守门：一次只允许一个登录流程进行中。
         // 用户在 PAT 折叠区连点两次「使用此 Token 登录」时，第二次 await 立刻返回。
         guard !isAuthenticating else { return }

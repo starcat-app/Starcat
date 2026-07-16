@@ -108,10 +108,10 @@ protocol GithubOAuthServiceProtocol: Sendable {
     /// 阶段 1：生成 PKCE verifier/challenge + state + 完整 authorization URL。
     ///
     /// 纯本地计算（SecRandomCopyBytes + SHA256 + URL 拼装），不发起任何网络请求——
-    /// `/login/oauth/authorize` 是用户浏览器端点，客户端只构造 URL 让用户打开。
+    /// `/login/oauth/authorize` 是 Web 授权端点，客户端只负责构造 URL。
     ///
     /// 返回的 `WebFlowStartInfo`：
-    /// - `authorizationURL` 给 UI 调 `NSWorkspace.open()` 打开浏览器
+    /// - `authorizationURL` 交给 `ASWebAuthenticationSession` 展示系统认证页
     /// - `state` 必须保存（用于校验 callback 回来的 state 防 CSRF）
     /// - `expiresAt` 兜底（超过 5 分钟未收到回调视为过期）
     func beginWebFlow() async throws -> WebFlowStartInfo

@@ -6,8 +6,8 @@
 //
 //  与 `GithubDeviceFlowService` 的区别：
 //  - Device Flow 走 `urn:ietf:params:oauth:grant-type:device-code`，客户端**轮询** token
-//  - Web Flow 走 Authorization Code + PKCE（RFC 7636），客户端**接收浏览器回调**
-//    （macOS `starcat://callback?code=...&state=...`）后用 code + code_verifier 换 token
+//  - Web Flow 走 Authorization Code + PKCE（RFC 7636），客户端通过系统认证会话接收回调
+//    （`starcat://callback?code=...&state=...`）后用 code + code_verifier 换 token
 //
 //  PKCE 协议三要素：
 //  1. `code_verifier` — 客户端生成的 32 字节随机串（base64url），只保存在客户端
@@ -16,8 +16,8 @@
 //
 //  流程：
 //  ① beginWebFlow() 生成 verifier + challenge + state + authorizationURL
-//  ② UI 调 NSWorkspace.open(authorizationURL) 让用户在浏览器授权
-//  ③ GitHub 跳到 starcat://callback?code=...&state=... → macOS 唤起 App
+//  ② AuthSession 用 ASWebAuthenticationSession 展示 GitHub 授权页
+//  ③ 系统认证会话截获 starcat://callback?code=...&state=... 回调
 //  ④ AuthSession.handleWebFlowCallback(url:) 调 exchangeCodeForToken(code:)
 //  ⑤ POST /login/oauth/access_token with code + code_verifier → access_token
 //
@@ -25,7 +25,7 @@
 //  - `code_verifier` 绝不离开 actor 边界（exchangeCodeForToken 内部使用，签名不暴露 verifier）
 //  - `state` 校验失败必须拒绝（防 CSRF 攻击）
 //  - `expiresAt` 之后未收到回调视为过期（GitHub code 寿命 10 分钟）
-//  - URLSession 走默认（无需 GitHubAuthRedirectDelegate，因为 authorize 是浏览器端点）
+//  - URLSession 走默认（authorize 页面由 ASWebAuthenticationSession 承载）
 //
 
 import Foundation

@@ -25,8 +25,7 @@ struct ContentView: View {
     /// 弹登录 sheet 时（shouldShowLoginSheet = true）显示 GithubAuthView sheet。
     ///
     /// 2026-06-29 改造：增加 `shouldShowLoginSheet` 条件，让 11 个详情页的"未登录引导"
-    /// 只弹 sheet 不强制走 Device Flow——sheet 弹出来是 idle 态，用户在 sheet 内自己选
-    /// Device Flow / PAT。
+    /// 只弹 sheet 不预设 flow——App Store 只展示 Web Flow；Direct 另外提供 Device Flow 与 PAT。
     ///
     /// 注意：不使用 `!isAuthenticated` 作为条件，是为了避免应用启动时就弹出登录窗口，
     /// 用户需要先浏览 trending，点击详情遇到 403 后才主动登录。

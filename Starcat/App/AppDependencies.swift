@@ -689,10 +689,14 @@ final class AppDependencies {
         }
         self.oauthService = oauth
 
+        let distributionChannel = DistributionChannel.current
+        let distributionGate = DistributionGate(channel: distributionChannel)
+        self.distributionGate = distributionGate
         let session = AuthSession(
             oauthService: oauth,
             apiClient: api,
-            keychain: KeychainManager.shared
+            keychain: KeychainManager.shared,
+            distributionGate: distributionGate
         )
         self.authSession = session
 
@@ -733,8 +737,6 @@ final class AppDependencies {
         )
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
-        let distributionChannel = DistributionChannel.current
-        self.distributionGate = DistributionGate(channel: distributionChannel)
         let subscriptions = SubscriptionManager(
             settings: settings,
             startTransactionListener: distributionChannel.isAppStore

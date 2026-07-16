@@ -11,6 +11,8 @@
 //  - 状态机：state 在 .awaitingWebCallback 但 callback 的 state 不匹配 → 拒绝（防 CSRF）
 //  - 状态机：state 过期后 callback → 拒绝
 //  - 状态机：isAuthenticating 守门（同 Device Flow / PAT）
+//  - 系统认证：授权 URL + callback scheme 交给 ASWebAuthenticationSession 适配层
+//  - 系统认证：成功回调自动进入既有 callback 状态机；取消时关闭会话并清状态
 //  - 防误伤：handleWebFlowCallback 不破坏 Device Flow state machine
 //
 //  设计取舍：
@@ -27,15 +29,43 @@ struct AuthSessionWebFlowTests {
 
     // MARK: - signInWithWebFlow 基础行为
 
+    @Test("ASWebAuthenticationSession 后台回调可安全切回 MainActor")
+    @MainActor
+    func systemCallback_acceptsBackgroundQueue() async {
+        let expectedURL = URL(string: "starcat://callback?code=test&state=test-state")!
+
+        let result: Result<URL, WebAuthenticationSessionError> = await withCheckedContinuation {
+            continuation in
+            let callback = SystemWebAuthenticationSession.makeSystemCallback { result in
+                continuation.resume(returning: result)
+            }
+
+            // 真实 AuthenticationServices completion 由后台 XPC 队列触发。这里故意
+            // 从全局队列进入 callback，回归覆盖曾触发 _dispatch_assert_queue_fail 的路径。
+            DispatchQueue.global(qos: .userInitiated).async {
+                callback(expectedURL, nil)
+            }
+        }
+
+        switch result {
+        case .success(let callbackURL):
+            #expect(callbackURL == expectedURL)
+        case .failure(let error):
+            Issue.record("后台 callback 应成功返回 URL，实际错误：\(error.localizedDescription)")
+        }
+    }
+
     @Test("signInWithWebFlow → state 切到 .awaitingWebCallback（专用于 Web Flow）")
     @MainActor
     func signInWithWebFlow_emitsAwaitingWebCallback() async throws {
         let keychain = InMemoryKeychain()
         let api = MockGitHubAPIClient()
+        let webAuthenticationSession = MockWebAuthenticationSession()
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            webAuthenticationSession: webAuthenticationSession
         )
 
         session.signInWithWebFlow()
@@ -49,6 +79,8 @@ struct AuthSessionWebFlowTests {
             #expect(info.state == Self.extractState(from: info), "state 应与 URL 参数一致")
             #expect(info.authorizationURL.absoluteString.contains("github.com/login/oauth/authorize"))
             #expect(info.authorizationURL.absoluteString.contains("code_challenge="))
+            #expect(webAuthenticationSession.authorizationURL == info.authorizationURL)
+            #expect(webAuthenticationSession.callbackURLScheme == AppConstants.oauthCallbackScheme)
         } else {
             Issue.record("期望 state == .awaitingWebCallback，实际 \(session.state)")
         }
@@ -73,11 +105,13 @@ struct AuthSessionWebFlowTests {
         let api = MockGitHubAPIClient()
         let expectedUser = Self.makeMockUser(id: 555)
         api.getCurrentUserHandler = { expectedUser }
+        let webAuthenticationSession = MockWebAuthenticationSession()
 
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            webAuthenticationSession: webAuthenticationSession
         )
 
         // 启动 Web Flow（异步切 state，需等）
@@ -90,7 +124,8 @@ struct AuthSessionWebFlowTests {
         // 构造 callback URL（用 runtime 生成的 state，不再硬编码）
         let actualState = Self.extractStateFromSession(session)
         let callbackURL = URL(string: "starcat://callback?code=test_code&state=\(actualState)")!
-        await session.handleWebFlowCallback(url: callbackURL)
+        webAuthenticationSession.complete(with: .success(callbackURL))
+        try await Self.waitForState(session) { $0.isAuthenticated }
 
         if case .authenticated(let user) = session.state {
             #expect(user.id == 555)
@@ -112,7 +147,8 @@ struct AuthSessionWebFlowTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            webAuthenticationSession: MockWebAuthenticationSession()
         )
         // 不调 signInWithWebFlow，state 仍是 .unauthenticated
 
@@ -136,7 +172,8 @@ struct AuthSessionWebFlowTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            webAuthenticationSession: MockWebAuthenticationSession()
         )
 
         session.signInWithWebFlow()
@@ -230,7 +267,9 @@ struct AuthSessionWebFlowTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            webAuthenticationSession: MockWebAuthenticationSession(),
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         // 启动 Web Flow 然后故意触发 state mismatch（让 state 切回 .unauthenticated）
@@ -254,6 +293,45 @@ struct AuthSessionWebFlowTests {
 
     // MARK: - 收尾路径
 
+    @Test("cancelWebFlow 关闭系统认证会话并回到未登录态")
+    @MainActor
+    func cancelWebFlow_cancelsSystemSession() async throws {
+        let webAuthenticationSession = MockWebAuthenticationSession()
+        let session = AuthSession(
+            oauthService: MockGithubOAuthService(simulatedDelay: 0),
+            apiClient: MockGitHubAPIClient(),
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: webAuthenticationSession
+        )
+
+        session.signInWithWebFlow()
+        try await Self.waitForState(session) { $0.isAwaitingWebCallback }
+        session.cancelWebFlow()
+
+        #expect(webAuthenticationSession.cancelCallCount == 1)
+        #expect(session.state == .unauthenticated)
+        #expect(session.lastError == nil)
+    }
+
+    @Test("关闭系统认证窗口按正常取消处理，不展示错误")
+    @MainActor
+    func systemSessionCancellation_resetsWithoutError() async throws {
+        let webAuthenticationSession = MockWebAuthenticationSession()
+        let session = AuthSession(
+            oauthService: MockGithubOAuthService(simulatedDelay: 0),
+            apiClient: MockGitHubAPIClient(),
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: webAuthenticationSession
+        )
+
+        session.signInWithWebFlow()
+        try await Self.waitForState(session) { $0.isAwaitingWebCallback }
+        webAuthenticationSession.complete(with: .failure(.cancelled))
+
+        #expect(session.state == .unauthenticated)
+        #expect(session.lastError == nil)
+    }
+
     @Test("signOut 后 handleWebFlowCallback 被忽略")
     @MainActor
     func handleWebFlowCallback_afterSignOut_ignored() async throws {
@@ -276,7 +354,8 @@ struct AuthSessionWebFlowTests {
         AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: MockGitHubAPIClient(),
-            keychain: InMemoryKeychain()
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: MockWebAuthenticationSession()
         )
     }
 
@@ -331,5 +410,42 @@ struct AuthSessionWebFlowTests {
             twitterUsername: nil,
             htmlUrl: nil
         )
+    }
+}
+
+/// Web Flow 单测替身：只记录系统认证参数，并由测试显式触发回调。
+///
+/// 真实 `ASWebAuthenticationSession` 需要可见 NSWindow，不能在无 UI 的 test host 中启动；
+/// 通过该替身可以验证 AuthSession 的接线，同时保持测试确定性。
+@MainActor
+private final class MockWebAuthenticationSession: WebAuthenticationSessionProviding {
+    private(set) var authorizationURL: URL?
+    private(set) var callbackURLScheme: String?
+    private(set) var cancelCallCount = 0
+    private var completion: (@MainActor @Sendable (
+        Result<URL, WebAuthenticationSessionError>
+    ) -> Void)?
+
+    func start(
+        authorizationURL: URL,
+        callbackURLScheme: String,
+        completion: @escaping @MainActor @Sendable (
+            Result<URL, WebAuthenticationSessionError>
+        ) -> Void
+    ) throws {
+        self.authorizationURL = authorizationURL
+        self.callbackURLScheme = callbackURLScheme
+        self.completion = completion
+    }
+
+    func cancel() {
+        cancelCallCount += 1
+        completion = nil
+    }
+
+    func complete(with result: Result<URL, WebAuthenticationSessionError>) {
+        let completion = completion
+        self.completion = nil
+        completion?(result)
     }
 }

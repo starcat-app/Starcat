@@ -38,5 +38,7 @@ struct DistributionGateTests {
 
         #expect(gate.isAvailable(.automaticUpdates) == false)
         #expect(gate.isAvailable(.directLicense) == false)
+        #expect(gate.isAvailable(.deviceFlowLogin) == false)
+        #expect(gate.isAvailable(.personalAccessTokenLogin) == false)
     }
 }

@@ -84,7 +84,8 @@ struct AuthSessionRequestLoginSheetTests {
             // simulatedDelay = 0 让 MockGithubOAuthService 立即返回 token
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         session.requestLoginSheet()
@@ -116,7 +117,8 @@ struct AuthSessionRequestLoginSheetTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         session.requestLoginSheet()
@@ -179,6 +181,25 @@ struct AuthSessionRequestLoginSheetTests {
 
     // MARK: - 防误伤：requestLoginSheet 不污染 Device Flow 状态机
 
+    @Test("App Store 构建在执行层阻止 Device Flow")
+    @MainActor
+    func signIn_appStoreBuild_doesNotStartDeviceFlow() {
+        let session = AuthSession(
+            oauthService: MockGithubOAuthService(simulatedDelay: 0),
+            apiClient: MockGitHubAPIClient(),
+            keychain: InMemoryKeychain(),
+            distributionGate: DistributionGate(channel: .appStore)
+        )
+
+        #expect(session.isDeviceFlowAvailable == false)
+        #expect(session.isPATSignInAvailable == false)
+        #expect(session.hasAlternativeSignInMethods == false)
+        session.signIn()
+
+        #expect(session.isAuthenticating == false)
+        #expect(session.state == .unauthenticated)
+    }
+
     @Test("requestLoginSheet 不影响后续 signIn() 启动 Device Flow")
     @MainActor
     func requestLoginSheet_doesNotBlockSubsequentSignIn() async throws {
@@ -188,7 +209,8 @@ struct AuthSessionRequestLoginSheetTests {
         let session = AuthSession(
             oauthService: MockGithubOAuthService(simulatedDelay: 0),
             apiClient: api,
-            keychain: keychain
+            keychain: keychain,
+            distributionGate: DistributionGate(channel: .direct)
         )
 
         // 用户在 sheet 内选了 Device Flow 主 CTA（signIn）

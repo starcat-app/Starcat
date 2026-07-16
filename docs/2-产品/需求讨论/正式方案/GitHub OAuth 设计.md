@@ -1,7 +1,7 @@
 # GitHub OAuth 设计
 
 > Starcat 三种 GitHub 登录方式（Web Application Flow / Device Flow / PAT 直接输入）的设计文档。
-> 本文档同时作为「新增 PAT 直接登录 + 规划 Web Application Flow」两份实现工作的技术规范。
+> 本文档同时记录 PAT 直接登录与 Web Application Flow 的实现技术规范。
 
 ---
 
@@ -10,18 +10,16 @@
 Starcat 需要访问用户的 GitHub Stars 数据。GitHub 提供了多种「让用户授权」的方式，**每种方式的 UX 体验、安全模型、工程成本都不一样**。本文档：
 
 1. 对比 Web Application Flow 与 Device Flow 的概念、优缺点、适用场景
-2. 给出 Starcat 的**当前实现**（Device Flow）的代码位置与状态机
-3. 规划**新增的两种方式**：
-   - **PAT 直接输入**（P0，本次落地）
-   - **Web Application Flow**（W6 或后端就绪后落地）
+2. 给出 Starcat 三种登录方式的代码位置与状态机
+3. 明确 Device Flow 仍是默认入口，PAT 与 Web Application Flow 由用户主动选择
 
 ### 1.1 三种登录方式概览
 
 | 方式 | 协议位置 | Starcat 状态 |
 |---|---|---|
-| **Web Application Flow**（Authorization Code + PKCE / 后端代理） | OAuth 2.0 RFC 6749 §4.1 + RFC 7636（PKCE） | 🔜 计划 W6 |
+| **Web Application Flow**（Authorization Code + PKCE） | OAuth 2.0 RFC 6749 §4.1 + RFC 7636（PKCE） | ✅ 可选方式（ASWebAuthenticationSession） |
 | **Device Flow** | OAuth 2.0 RFC 8628（GitHub 自定义端点） | ✅ **当前默认**（2026-05 落地） |
-| **PAT 直接输入** | 非 OAuth（用户手动生成 GitHub Personal Access Token） | 🔜 本次新增 |
+| **PAT 直接输入** | 非 OAuth（用户手动生成 GitHub Personal Access Token） | ✅ 可选方式 |
 
 ### 1.2 术语表
 
@@ -68,8 +66,7 @@ Web Flow / Device Flow / PAT 三种方式的 scope 列表完全一致——它�
 
 ## 三、Web Application Flow（Authorization Code）
 
-> 状态：🔜 计划 W6 或后端就绪后。
-> 本章节为「实现技术规范」，**W6 之前**不写代码，先做设计沉淀。
+> 状态：✅ 已实现。2026-07-16 起授权页面由 `ASWebAuthenticationSession` 承载。
 
 ### 3.1 流程
 
@@ -80,7 +77,7 @@ Web Flow / Device Flow / PAT 三种方式的 scope 列表完全一致——它�
 │                                                              │
 │  1. App 生成 state + (可选) code_verifier, 保存本地         │
 │                                                              │
-│  2. 打开浏览器：                                            │
+│  2. ASWebAuthenticationSession 展示授权页：                 │
 │     https://github.com/login/oauth/authorize              │
 │     ?client_id=xxx                                        │
 │     &scope=read:user,public_repo                         │
@@ -91,7 +88,7 @@ Web Flow / Device Flow / PAT 三种方式的 scope 列表完全一致——它�
 │                                                              │
 │  3. 用户在 GitHub 页面点击 Authorize                        │
 │                                                              │
-│  4. GitHub 回调：                                           │
+│  4. 系统认证会话截获 GitHub 回调：                          │
 │     starcat://callback?code=xxx&state=random_state       │
 │                                                              │
 │  5. App 用 code + code_verifier 换 token：                │
@@ -342,11 +339,11 @@ enum AuthState: Equatable {
 ```
 ──────  或选择其他方式  ──────
 ▸ 使用 Personal Access Token
-▸ Web Application Flow（即将推出）
+▸ Web Application Flow
 ```
 
 - 「使用 Personal Access Token」点击后展开：SecureField（带明文切换）+ 「获取 Token 链接」+ 「使用此 Token 登录」按钮
-- 「Web Application Flow」disabled 状态 + tooltip「W6 即将推出」
+- 「Web Application Flow」由用户主动选择，授权页通过 `ASWebAuthenticationSession` 展示；主 CTA 仍走 Device Flow
 
 #### 5.4.2 状态机扩展
 
@@ -443,7 +440,7 @@ enum GithubPATError: LocalizedError {
 | **撤销** | 用户在 GitHub OAuth App 撤销 | 同上 | 用户在 PAT 列表撤销 |
 | **实现复杂度** | 高（PKCE 协议 + URL scheme） | 中（轮询 + 状态机） | 低（Keychain + /user 验证） |
 | **macOS 沙盒兼容性** | 需注册 URL scheme | ✅ 零配置 | ✅ 零配置 |
-| **Starcat 当前状态** | 🔜 W6 计划 | ✅ **当前默认** | 🔜 本次新增 |
+| **Starcat 当前状态** | ✅ 可选方式 | ✅ **当前默认** | ✅ 可选方式 |
 | **Starcat 适用人群** | 标准 OAuth 用户 | 标准用户 | 开发者 / 高级用户 |
 
 ### 6.1 选择决策树
@@ -453,7 +450,7 @@ enum GithubPATError: LocalizedError {
 ├── 普通用户 → Device Flow（默认 CTA）
 ├── 开发者 / 有 PAT → 点「其他登录方式」→ PAT 直接输入
 ├── OAuth App 未注册 → 点「其他登录方式」→ PAT 兜底
-└── W6 之后 → Web Application Flow（标准 OAuth 体验）
+└── 用户主动选择 Web Application Flow → 系统认证窗口完成标准 OAuth
 ```
 
 ---
@@ -505,7 +502,7 @@ enum AuthError: Error, LocalizedError {
 
 ## 八、后续完善点
 
-- [ ] **W6：实现 Web Application Flow**（PKCE 或后端代理，待 GitHub OAuth App 注册 + 选定方案后启动）
+- [x] **实现 Web Application Flow**（PKCE + `ASWebAuthenticationSession`，Device Flow 保持默认）
 - [ ] **PAT 设置页管理**（已登录用户在设置页查看 / 更换 / 删除 token）
 - [ ] **PAT 撤销监听**（GitHub Webhook 不可用，仅支持「用户主动在 GitHub 撤销后下次启动 401 清掉」）
 - [ ] **三种方式统一抽象**（`SignInStrategy` protocol，让 `AuthSession.signIn(strategy:)` 走同一入口）
@@ -521,6 +518,7 @@ enum AuthError: Error, LocalizedError {
 | OAuth 协议 | `Starcat/Features/Auth/GithubOAuthServiceProtocol.swift` |
 | Device Flow 真实实现 | `Starcat/Features/Auth/GithubDeviceFlowService.swift` |
 | Device Flow Mock | `Starcat/Features/Auth/MockGithubOAuthService.swift` |
+| Web Flow 系统认证窗口 | `Starcat/Features/Auth/WebAuthenticationSession.swift` |
 | 状态机 | `Starcat/Features/Auth/AuthSession.swift` |
 | 登录 UI | `Starcat/Features/Auth/GithubAuthView.swift` |
 | 装配 | `Starcat/App/AppDependencies.swift` |

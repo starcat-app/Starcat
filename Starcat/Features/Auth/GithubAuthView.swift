@@ -2,7 +2,7 @@
 //  GithubAuthView.swift
 //  Starcat
 //
-//  GitHub 登录页（Device Flow） · V2 视觉升级版（2026-06-03 上线）。
+//  GitHub 登录页（Web Flow 默认，Device Flow / PAT 备选） · V2 视觉升级版。
 //
 //  设计参考 dong4j 提供的 Radian 风格截图：卡片式布局 + 顶部 hero 视觉插图 +
 //  标题 / 副标题 + 全宽主按钮 + 暖色渐变 user_code 卡片。
@@ -176,12 +176,14 @@ struct GithubAuthView: View {
 
             stateSection
 
-            // 2026-06-29：idle / error 态下显示「其他登录方式」折叠区。
-            // connecting / awaitingCode / authenticated 态不显示——避免和 Device Flow UI 抢焦点。
-            if case .idle = derivedState {
-                alternativeSection
-            } else if case .error = derivedState {
-                alternativeSection
+            // App Store 只允许 ASWebAuthenticationSession，不生成备选登录区域及其外链。
+            // Direct 在 idle / error 态保留 Device Flow 与 PAT，其他状态仍隐藏以免抢焦点。
+            if authSession.hasAlternativeSignInMethods {
+                if case .idle = derivedState {
+                    alternativeSection
+                } else if case .error = derivedState {
+                    alternativeSection
+                }
             }
 
             if case .error = derivedState {
@@ -230,14 +232,14 @@ struct GithubAuthView: View {
     ///
     /// 包含两个子折叠项：
     /// - **PAT 直接输入**：展开后是 SecureField + 提交按钮（可立即登录）
-    /// - **Web Application Flow**：W6 之前的占位，disabled + 「即将推出」徽章
+    /// - **Device Flow**：用户希望改用设备码时手动选择
     ///
     /// 设计要点：
     /// 2026-06-29：「或选择其他登录方式」折叠组（默认折叠）。
     ///
     /// dong4j 要求**不要** DisclosureGroup 的 `>` chevron，改为纯 Button 点击整行
     /// 展开/折叠——与 PAT 折叠项同款 `withAnimation(.easeInOut(0.18))`。
-    /// 默认折叠减少视觉噪音，用户需要非 Device Flow 登录时才展开。
+    /// 默认折叠减少视觉噪音，用户需要非 Web Flow 登录时才展开。
     private var alternativeSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             // 可点击整行（分隔线 + "或选择其他方式" 文案）
@@ -264,35 +266,39 @@ struct GithubAuthView: View {
             .focusEffectDisabled()
             .accessibilityLabel(Text("authV2.alternative.divider"))
 
-            // 展开后显示两个按钮：Web Flow（tertiary 白底有边框）+ PAT（tertiary 白底有边框）
+            // 本区域只会在 Direct 构建生成，展开后显示 Device Flow + PAT。
             // 与主 CTA 蓝色 primary 按钮区分开，表明这些是"备选"登录方式
             if isAlternativeExpanded {
                 VStack(alignment: .leading, spacing: 10) {
-                    // Web Application Flow（tertiary 按钮）
-                    bigButton(style: .tertiary, action: {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                            isAlternativeExpanded = false
-                        }
-                        authSession.signInWithWebFlow()
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "globe")
-                            Text("authV2.alternative.webflow")
-                                .fontWeight(.medium)
+                    if authSession.isDeviceFlowAvailable {
+                        // Device Flow 会打开默认浏览器，只向 Direct 构建提供该入口。
+                        bigButton(style: .tertiary, action: {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                isAlternativeExpanded = false
+                            }
+                            authSession.signIn()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "number.square")
+                                Text("authV2.alternative.deviceFlow")
+                                    .fontWeight(.medium)
+                            }
                         }
                     }
 
-                    // Personal Access Token（tertiary 按钮）
-                    bigButton(style: .tertiary, action: {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                            isAlternativeExpanded = false
-                            showPATInput = true
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "person.badge.key")
-                            Text("authV2.alternative.pat")
-                                .fontWeight(.medium)
+                    if authSession.isPATSignInAvailable {
+                        // PAT 获取入口会跳转 GitHub 设置页，同样只向 Direct 构建提供。
+                        bigButton(style: .tertiary, action: {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                isAlternativeExpanded = false
+                                showPATInput = true
+                            }
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "person.badge.key")
+                                Text("authV2.alternative.pat")
+                                    .fontWeight(.medium)
+                            }
                         }
                     }
                 }
@@ -315,7 +321,7 @@ struct GithubAuthView: View {
     }
 
     /// connecting 瞬时态：与按钮等高的灰底占位，spinner + 文案。
-    /// AuthSession.signIn() 之后到 .awaitingUserCode 之前的过渡（拿 user_code 网络耗时）。
+    /// 主 Web Flow 或备选 Device Flow 启动后，到各自 awaiting 状态前显示。
     private var connectingView: some View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
@@ -784,10 +790,10 @@ struct GithubAuthView: View {
 
     // MARK: - 交互
 
-    /// 点 Continue：调 AuthSession 发起 Device Flow。
-    /// state 切换到 .awaitingUserCode 由 AuthSession 异步推送，UI 自动重渲染。
+    /// 点主 CTA：通过 ASWebAuthenticationSession 发起默认 Web Flow。
+    /// state 切换到 .awaitingWebCallback 由 AuthSession 异步推送，UI 自动重渲染。
     private func triggerContinue() {
-        authSession.signIn()
+        authSession.signInWithWebFlow()
     }
 
     /// 2026-06-29：点 PAT 提交按钮 / 输入框按回车 → 调 AuthSession.signInWithPAT。

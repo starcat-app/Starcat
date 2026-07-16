@@ -21,6 +21,10 @@ enum ChannelFeature: String, CaseIterable, Sendable {
     case localAutomation
     /// Direct 版外部工具桥接，例如后续需要访问沙盒外工具链或用户环境。
     case externalToolBridge
+    /// Direct 版 GitHub Device Flow。该流程会跳转默认浏览器，不向 App Store 构建暴露。
+    case deviceFlowLogin
+    /// Direct 版 Personal Access Token 登录及 Token 获取入口。
+    case personalAccessTokenLogin
 }
 
 /// 分发渠道门控失败。
@@ -46,7 +50,9 @@ struct DistributionGate: Sendable {
         case .automaticUpdates,
              .directLicense,
              .localAutomation,
-             .externalToolBridge:
+             .externalToolBridge,
+             .deviceFlowLogin,
+             .personalAccessTokenLogin:
             return channel.isDirect
         }
     }
