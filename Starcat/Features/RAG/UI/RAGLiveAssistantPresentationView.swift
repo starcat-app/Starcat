@@ -9,7 +9,7 @@ import SwiftUI
 
 /// 只订阅当前流式回答所需的高频状态。
 ///
-/// `streamingPresentation` 最多每秒变化 8 次，Think 与计时也会更新。如果这些读取发生
+/// `streamingPresentation` 与 Think 会高频更新，计时则由标签内的局部时钟独立推进。如果这些读取发生
 /// 在整个回答中栏的根 View 中，SwiftUI 会同时重算历史消息、输入框和浮层。独立子 View
 /// 让高频刷新停在当前助手消息内，历史 Markdown 继续由稳定的 Equatable 边界复用。
 struct RAGLiveAssistantPresentationView: View {
@@ -22,7 +22,8 @@ struct RAGLiveAssistantPresentationView: View {
                     snapshot: snapshot,
                     executionTrace: viewModel.executionSteps,
                     activityLabel: activityLabel,
-                    processingDuration: viewModel.answerElapsedDuration
+                    processingDuration: viewModel.answerElapsedDuration,
+                    processingStartedAt: viewModel.answerStartedAt
                 )
             } else if shouldShowFallback {
                 RAGAssistantMessageBlock(
@@ -33,6 +34,7 @@ struct RAGLiveAssistantPresentationView: View {
                     executionTrace: viewModel.executionSteps,
                     activityLabel: activityLabel,
                     processingDuration: viewModel.answerElapsedDuration,
+                    processingStartedAt: viewModel.answerStartedAt,
                     suggestedActions: [],
                     onSelectCitation: { _ in },
                     onSuggestedAction: { viewModel.sendSuggestedQuestion($0) },

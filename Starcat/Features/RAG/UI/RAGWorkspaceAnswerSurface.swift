@@ -509,6 +509,7 @@ struct RAGWorkspaceAnswerSurface: View {
             executionTrace: executionTrace,
             activityLabel: activityLabel,
             processingDuration: processingDuration,
+            processingStartedAt: nil,
             suggestedActions: suggestedActions,
             onSelectCitation: { citation in
                 // 底部芯片：只定位右侧证据，不弹分片（与改前一致）。

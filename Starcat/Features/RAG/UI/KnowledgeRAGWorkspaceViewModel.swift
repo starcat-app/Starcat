@@ -430,8 +430,13 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 流式阶段只提交稳定 Markdown chunk 与未闭合尾部，避免每个 delta 重解析完整回答。
     var streamingPresentation: StreamingMarkdownSnapshot?
     var answerState: RAGAnswerState = .idle
-    /// 运行中每秒刷新，终态冻结为最后一个 LLM 响应结束时的真实耗时。
+    /// 运行中由消息头的局部时钟推进，终态冻结为最后一个 LLM 响应结束时的真实耗时。
     var answerElapsedDuration: TimeInterval?
+    /// 只暴露当前会话的起点，让读秒在标签局部刷新，不因 Provider 无 delta 而停顿。
+    var answerStartedAt: Date? {
+        guard let selectedConversationID else { return nil }
+        return answerStartedAtByConversation[selectedConversationID]
+    }
     /// 用户气泡原地编辑：非 nil 时该消息进入图 4 编辑态。
     var editingUserMessageID: UUID?
     var editingUserDraft = ""
@@ -1425,10 +1430,9 @@ final class KnowledgeRAGWorkspaceViewModel {
                 guard let self,
                       self.answerStartedAtByConversation[conversationID] == startedAt else { return }
                 let duration = Date().timeIntervalSince(startedAt)
+                // 后台会话仍每秒保存恢复快照；当前消息头由局部 TimelineView
+                // 刷新，避免为一个读秒使整个流式回答树重算。
                 self.updateRuntimeState(for: conversationID) { $0.elapsedDuration = duration }
-                if self.selectedConversationID == conversationID {
-                    self.answerElapsedDuration = duration
-                }
             }
         }
     }

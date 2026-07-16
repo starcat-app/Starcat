@@ -24,6 +24,8 @@ struct RAGAssistantMessageBlock: View {
     let activityLabel: String?
     /// 从提交问题到最后一个 LLM 响应结束的耗时；运行中持续刷新，历史回答保持冻结值。
     let processingDuration: TimeInterval?
+    /// 运行中的起点；nil 表示已完成的历史回答，不建立周期时钟。
+    let processingStartedAt: Date?
     let suggestedActions: [RAGSuggestedQuestionAction]
     let onSelectCitation: (RAGCitation) -> Void
     let onSuggestedAction: (RAGSuggestedQuestionAction) -> Void
@@ -57,7 +59,10 @@ struct RAGAssistantMessageBlock: View {
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
                 if let processingDuration {
-                    RAGProcessingDurationLabel(duration: processingDuration)
+                    RAGProcessingDurationLabel(
+                        duration: processingDuration,
+                        startedAt: processingStartedAt
+                    )
                 }
                 Spacer(minLength: 0)
             }
@@ -189,6 +194,7 @@ struct RAGStreamingAssistantMessageBlock: View {
     let executionTrace: [RAGExecutionStep]
     let activityLabel: String?
     let processingDuration: TimeInterval?
+    let processingStartedAt: Date?
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -209,7 +215,10 @@ struct RAGStreamingAssistantMessageBlock: View {
                     .font(interfaceScale.font(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
                 if let processingDuration {
-                    RAGProcessingDurationLabel(duration: processingDuration)
+                    RAGProcessingDurationLabel(
+                        duration: processingDuration,
+                        startedAt: processingStartedAt
+                    )
                 }
                 Spacer(minLength: 0)
             }
@@ -258,14 +267,42 @@ private struct RAGProcessingDurationLabel: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let duration: TimeInterval
+    let startedAt: Date?
 
     var body: some View {
+        if let startedAt {
+            // 读秒只重算这个小标签；Provider 停顿、Think 节流或正文合并都不会使它冻结。
+            TimelineView(.periodic(from: .now, by: RAGLiveDurationClock.processingTickInterval)) { context in
+                durationLabel(RAGLiveDurationClock.duration(
+                    recordedDuration: duration,
+                    startedAt: startedAt,
+                    now: context.date
+                ))
+            }
+        } else {
+            durationLabel(duration)
+        }
+    }
+
+    private func durationLabel(_ duration: TimeInterval) -> some View {
         HStack(spacing: 3) {
             Text("rag.workspace.message.processingDuration")
             Text(verbatim: RAGProcessingDurationFormatter.string(for: duration))
         }
         .font(interfaceScale.font(.captionSmall, weight: .medium))
         .foregroundStyle(.secondary)
+    }
+}
+
+/// 运行中耗时的纯计算规则。UI 只需提供当前时刻，无需借用流式文本变化驱动读秒。
+enum RAGLiveDurationClock {
+    static let processingTickInterval: TimeInterval = 1
+    static let stepTickInterval: TimeInterval = 0.1
+
+    static func duration(recordedDuration: TimeInterval, startedAt: Date?, now: Date) -> TimeInterval {
+        guard let startedAt else { return max(0, recordedDuration) }
+        // 切回后台会话时，已记录快照可能略大于本帧时钟差；耗时不应倒退。
+        return max(max(0, recordedDuration), now.timeIntervalSince(startedAt))
     }
 }
 

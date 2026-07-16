@@ -1044,6 +1044,28 @@ struct KnowledgeRAGCoreTests {
         #expect(step.elapsedDuration(at: startedAt.addingTimeInterval(99)) == 1.25)
     }
 
+    @Test("运行中读秒由起点推进而不依赖流式快照")
+    func liveDurationClockAdvancesWithoutStreamMutation() {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 20_000)
+        let now = startedAt.addingTimeInterval(5)
+
+        #expect(RAGLiveDurationClock.duration(
+            recordedDuration: 1,
+            startedAt: startedAt,
+            now: now
+        ) == 5)
+        #expect(RAGLiveDurationClock.duration(
+            recordedDuration: 3.25,
+            startedAt: nil,
+            now: now
+        ) == 3.25)
+        #expect(RAGLiveDurationClock.duration(
+            recordedDuration: 8,
+            startedAt: startedAt,
+            now: now
+        ) == 8)
+    }
+
     @Test("RAG 执行步骤运行中可手动折叠且完成后仍自动折叠")
     func executionDisclosureSupportsRunningManualToggle() {
         var disclosure = RAGExecutionDisclosureState()

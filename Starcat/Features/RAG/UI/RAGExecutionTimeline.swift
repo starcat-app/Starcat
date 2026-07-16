@@ -174,7 +174,20 @@ struct RAGExecutionTimeline: View {
     /// 回答前的可折叠步骤显示真实耗时；结束后固定为真实起止时间差。
     @ViewBuilder
     private func executionDuration(_ step: RAGExecutionStep) -> some View {
-        if let duration = step.elapsedDuration() {
+        if step.state == .running, step.startedAt != nil {
+            // 步骤耗时与 reasoning delta 解耦：Provider 无新字符时仍以 0.1s 精度读秒，
+            // 且 TimelineView 只包围数字标签，不会驱动整条执行轨迹刷新。
+            TimelineView(.periodic(from: .now, by: RAGLiveDurationClock.stepTickInterval)) { context in
+                executionDurationText(step.elapsedDuration(at: context.date))
+            }
+        } else {
+            executionDurationText(step.elapsedDuration())
+        }
+    }
+
+    @ViewBuilder
+    private func executionDurationText(_ duration: TimeInterval?) -> some View {
+        if let duration {
             Text(String(
                 format: String.l10n("rag.workspace.execution.duration.format"),
                 locale: locale,
