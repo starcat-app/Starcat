@@ -53,7 +53,9 @@ struct UnifiedFilterMenu: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var isPresented = false
+    @State private var localPresented = false
+    /// 可选外绑：调用方需要在 Esc 等路径感知「筛选浮层是否打开」时传入。
+    private var externalPresented: Binding<Bool>?
 
     let items: [FilterMenuItem]
     let isAnyFilterActive: Bool
@@ -67,24 +69,36 @@ struct UnifiedFilterMenu: View {
         isAnyFilterActive: Bool,
         accessibilityLabel: LocalizedStringKey = "list.filter.status",
         helpKey: LocalizedStringKey = "list.filter.hint",
+        isPresented: Binding<Bool>? = nil,
         onReset: (() -> Void)? = nil
     ) {
         self.items = items
         self.isAnyFilterActive = isAnyFilterActive
         self.accessibilityLabel = accessibilityLabel
         self.helpKey = helpKey
+        self.externalPresented = isPresented
         self.onReset = onReset
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { externalPresented?.wrappedValue ?? localPresented },
+            set: { newValue in
+                localPresented = newValue
+                externalPresented?.wrappedValue = newValue
+            }
+        )
     }
 
     var body: some View {
         Button {
-            isPresented.toggle()
+            isPresented.wrappedValue.toggle()
         } label: {
             filterIcon
         }
         .focusEffectDisabled()
         .help(isAnyFilterActive ? Text("list.filter.active") : Text(helpKey))
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+        .popover(isPresented: isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(items) { item in
@@ -110,7 +124,7 @@ struct UnifiedFilterMenu: View {
                         .padding(.horizontal, 12)
 
                     Button(role: .destructive) {
-                        isPresented = false
+                        isPresented.wrappedValue = false
                         onReset()
                     } label: {
                         Label("list.filter.reset", systemImage: "arrow.counterclockwise")
@@ -124,6 +138,10 @@ struct UnifiedFilterMenu: View {
             }
             .frame(width: 260, alignment: .leading)
             .appLocaleEnvironment()
+            // popover 打开时 Esc 只关筛选，避免外层面板/TextField 的 onExitCommand 一并触发。
+            .onExitCommand {
+                isPresented.wrappedValue = false
+            }
         }
     }
 

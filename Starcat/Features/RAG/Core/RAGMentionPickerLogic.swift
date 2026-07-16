@@ -77,6 +77,8 @@ struct RAGMentionPickerSnapshot: Equatable, Sendable {
 enum RAGMentionPickerLogic {
     /// 列表默认展示上限：已选全部保留，未选命中最多再塞这么多。
     static let unselectedDisplayLimit = 80
+    /// Composer 明确上下文仓库上限。知识库可达数千，禁止「全选」一次塞满。
+    static let maxSelectedRepoContexts = 20
 
     /// 按 `@` 后关键词过滤知识库候选，并把已选仓库固定置顶。
     static func build(

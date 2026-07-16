@@ -1287,7 +1287,7 @@ struct KnowledgeRAGCoreTests {
         #expect(overlap.isEmpty)
     }
 
-    @Test("@repo 轻量候选按关键词分页并仅在选择后回填完整仓库")
+    @Test("上下文选择器轻量候选按关键词分页并仅在选择后回填完整仓库")
     func mentionCandidateProjectionPaging() async throws {
         let database = try InMemoryDatabaseManager()
         let notes = GRDBRepoNoteRepository(database: database)
@@ -1319,6 +1319,85 @@ struct KnowledgeRAGCoreTests {
         #expect(hydrated.map(\.id) == [3, 1])
         try await notes.updateLibraryState(repoId: 3, state: .outsideLibrary)
         #expect(try await repository.fetchMentionRepos(ids: [3, 1]).map(\.id) == [1])
+    }
+
+    @Test("上下文选择器关键词覆盖私有笔记")
+    func contextPickerCandidateMatchesPrivateNotes() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1)
+        let notes = GRDBRepoNoteRepository(database: database)
+        try await notes.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await notes.upsert(RepoNote(
+            repoId: 1,
+            content: "用于替代旧版部署脚本",
+            status: "unread",
+            libraryState: LibraryState.inLibrary.rawValue,
+            isAIGenerated: false,
+            editedAt: "2026-07-16T00:00:00Z"
+        ))
+
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let page = try await repository.fetchMentionCandidates(
+            query: "替代旧版",
+            limit: 20,
+            offset: 0
+        )
+
+        #expect(page.matchCount == 1)
+        #expect(page.candidates.map(\.id) == [1])
+    }
+
+    @Test("上下文选择器支持面板排序与筛选，且筛选不含知识库维度")
+    func mentionCandidateSortAndFilters() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in 1...4 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await notes.updateLibraryState(repoId: Int64(id), state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: """
+                        UPDATE repos
+                        SET language = ?, stars_count = ?, is_fork = ?, is_archived = ?
+                        WHERE id = ?
+                        """,
+                    arguments: [
+                        id % 2 == 0 ? "Go" : "Swift",
+                        id * 10,
+                        id == 4,
+                        id == 3,
+                        id
+                    ]
+                )
+            }
+        }
+
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+
+        let byStars = try await repository.fetchMentionCandidates(
+            query: "",
+            limit: 10,
+            offset: 0,
+            sort: .starsDesc,
+            filters: .empty
+        )
+        #expect(byStars.candidates.map(\.id) == [4, 3, 2, 1])
+
+        var filters = RAGComposerMentionFilters.empty
+        filters.selectedLanguages = ["Swift"]
+        filters.hideForks = true
+        filters.hideArchived = true
+        let filtered = try await repository.fetchMentionCandidates(
+            query: "",
+            limit: 10,
+            offset: 0,
+            sort: .starsDesc,
+            filters: filters
+        )
+        #expect(filtered.candidates.map(\.id) == [1])
+        #expect(filters.isActive)
+        #expect(RAGComposerMentionFilters.empty.isActive == false)
+        #expect(RAGComposerMentionSort.default == .starredAtDesc)
     }
 
     @Test("混合融合合并命中并限制每个 repo 的 child 数")
@@ -3887,6 +3966,11 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.matchCount == 2)
         #expect(snapshot.displayedCount == 3)
         #expect(!snapshot.isTruncated)
+    }
+
+    @Test("Composer 明确上下文仓库上限为 20，禁止全选式塞库")
+    func composerSelectedRepoContextCapIsTwenty() {
+        #expect(RAGMentionPickerLogic.maxSelectedRepoContexts == 20)
     }
 
     @Test("Mention picker: 未选命中超过上限会截断并保留已选")

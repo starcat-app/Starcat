@@ -123,6 +123,8 @@ struct RepoListView: View {
     @State private var activityItemCount = 0
     @State private var smartSearchExpandToken = 0
     @State private var toolbarSearchHistory: [SearchHistory] = []
+    @State private var showingInterestedLanguagePicker = false
+    @State private var interestedLanguageDraft = ""
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -2124,7 +2126,27 @@ struct RepoListView: View {
 
     private func languageFilterSection() -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            filterSectionHeader(title: "list.filter.language", icon: "globe")
+            HStack(spacing: 6) {
+                filterSectionHeader(title: "list.filter.language", icon: "globe")
+                Spacer(minLength: 0)
+                Button {
+                    interestedLanguageDraft = ""
+                    showingInterestedLanguagePicker = true
+                } label: {
+                    // 与「语言」分类 globe 同规格，方便在全局筛选里直接加语言。
+                    Label("settings.filters.interestedLanguages.add", systemImage: "plus.circle")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("settings.filters.interestedLanguages.add")
+                .popover(isPresented: $showingInterestedLanguagePicker, arrowEdge: .trailing) {
+                    interestedLanguagePickerPopover
+                        .frame(width: 280, height: 300)
+                        .padding(14)
+                }
+            }
 
             if !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
                 Button {
@@ -2149,6 +2171,77 @@ struct RepoListView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var interestedLanguagePickerPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField(
+                "settings.filters.interestedLanguages.add.placeholder",
+                text: $interestedLanguageDraft
+            )
+            .textFieldStyle(.roundedBorder)
+
+            let query = interestedLanguageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let results = LinguistLanguageCatalog.search(query)
+            if query.isEmpty {
+                Text("settings.filters.interestedLanguages.add.placeholder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            } else if results.isEmpty {
+                Text("settings.filters.interestedLanguages.search.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            } else {
+                List(results, id: \.self) { language in
+                    Button {
+                        toggleInterestedLanguageFromFilter(language)
+                    } label: {
+                        HStack(spacing: 8) {
+                            // Menu 外的 popover 可用通用 LanguageIconView。
+                            LanguageIconView(language: language, size: 16)
+                            Text(language)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if isInterestedLanguage(language) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private func isInterestedLanguage(_ language: String) -> Bool {
+        settings.interestedLanguages.contains {
+            $0.caseInsensitiveCompare(language) == .orderedSame
+        }
+    }
+
+    /// 多选追加感兴趣语言，并同步勾进当前全局语言筛选；不关闭 popover。
+    private func toggleInterestedLanguageFromFilter(_ language: String) {
+        if isInterestedLanguage(language) {
+            settings.interestedLanguages = settings.interestedLanguages.filter {
+                $0.caseInsensitiveCompare(language) != .orderedSame
+            }
+            let remaining = viewModel.effectiveGlobalFilterState.globalFilterLanguages.filter {
+                $0.caseInsensitiveCompare(language) != .orderedSame
+            }
+            viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: remaining)
+        } else {
+            settings.interestedLanguages = AppSettings.normalizedLanguageList(
+                settings.interestedLanguages + [language]
+            )
+            let updated = AppSettings.normalizedLanguageList(
+                viewModel.effectiveGlobalFilterState.globalFilterLanguages + [language]
+            )
+            viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: updated)
         }
     }
 

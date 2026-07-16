@@ -20,8 +20,14 @@ protocol RAGRepoCandidateRepositoryProtocol: Sendable {
 
     /// 知识库浏览器左侧列表专用分页；与 Planner 候选查询解耦，避免 semantic_only 全库哨兵 LIMIT。
     func fetchKnowledgeBrowserPage(limit: Int, offset: Int) async throws -> RAGRepoCandidatePage
-    /// Composer `@repo` 专用轻量投影；大库按关键词分页，不复用 Planner 的 `SELECT r.*`。
-    func fetchMentionCandidates(query: String, limit: Int, offset: Int) async throws -> RAGMentionCandidatePage
+    /// Composer 上下文选择器专用轻量投影；大库按关键词 + 面板排序/筛选分页。
+    func fetchMentionCandidates(
+        query: String,
+        limit: Int,
+        offset: Int,
+        sort: RepoSortOption,
+        filters: RAGComposerMentionFilters
+    ) async throws -> RAGMentionCandidatePage
     /// 用户确认选择后才批量回填完整 Repo，避免 picker 初次打开就解码全库完整行。
     func fetchMentionRepos(ids: [Int64]) async throws -> [Repo]
 }
@@ -46,8 +52,33 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
         self.database = database
     }
 
-    func fetchMentionCandidates(query: String, limit: Int, offset: Int) async throws -> RAGMentionCandidatePage {
+    func fetchMentionCandidates(
+        query: String,
+        limit: Int,
+        offset: Int,
+        sort: RepoSortOption = RAGComposerMentionSort.default,
+        filters: RAGComposerMentionFilters = .empty
+    ) async throws -> RAGMentionCandidatePage {
         precondition(limit > 0 && offset >= 0)
+        // Wiki 可用性在 DiskWikiCache（MainActor），本仓库只下推 SQLite 可表达的条件。
+        var sqlFilters = filters
+        sqlFilters.wikiAvailability = .unknown
+        return try await fetchMentionCandidatesSQL(
+            query: query,
+            limit: limit,
+            offset: offset,
+            sort: sort,
+            filters: sqlFilters
+        )
+    }
+
+    private func fetchMentionCandidatesSQL(
+        query: String,
+        limit: Int,
+        offset: Int,
+        sort: RepoSortOption,
+        filters: RAGComposerMentionFilters
+    ) async throws -> RAGMentionCandidatePage {
         return try await database.writer.read { db in
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             let pattern = "%\(Self.escapeLike(trimmed))%"
@@ -57,33 +88,50 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                  OR COALESCE(r.language, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
                  OR COALESCE(r.topics, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
                  OR n.status LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 OR COALESCE(n.content, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
                  OR EXISTS (
                      SELECT 1 FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
                      WHERE rt.repo_id = r.id AND t.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM ai_summaries summary
+                     WHERE summary.repo_id = r.id
+                       AND summary.summary_json LIKE ? ESCAPE '\\' COLLATE NOCASE
                  ))
                 """
-            let whereClause = trimmed.isEmpty
-                ? "n.library_state = 'in_library'"
-                : "n.library_state = 'in_library' AND \(searchPredicate)"
-            let searchArguments: [any DatabaseValueConvertible] = trimmed.isEmpty
-                ? []
-                : Array(repeating: pattern as any DatabaseValueConvertible, count: 6)
+
+            var predicates = ["n.library_state = 'in_library'"]
+            var arguments: [any DatabaseValueConvertible] = []
+            if !trimmed.isEmpty {
+                predicates.append(searchPredicate)
+                arguments.append(contentsOf: Array(repeating: pattern as any DatabaseValueConvertible, count: 8))
+            }
+            Self.appendMentionFilters(filters, predicates: &predicates, arguments: &arguments)
+
+            let whereClause = predicates.joined(separator: " AND ")
             let knowledgeCount = try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 WHERE n.library_state = 'in_library'
                 """) ?? 0
-            let matchCount: Int
-            if trimmed.isEmpty {
-                matchCount = knowledgeCount
-            } else {
-                matchCount = try Int.fetchOne(
-                    db,
-                    sql: "SELECT COUNT(*) FROM repos r JOIN repo_notes n ON n.repo_id = r.id WHERE \(whereClause)",
-                    arguments: StatementArguments(searchArguments)
-                ) ?? 0
+            let matchCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM repos r JOIN repo_notes n ON n.repo_id = r.id WHERE \(whereClause)",
+                arguments: StatementArguments(arguments)
+            ) ?? 0
+
+            var joins: [String] = []
+            if sort == .healthScoreDesc {
+                joins.append("LEFT JOIN repo_health_snapshots h_sort ON h_sort.repo_id = r.id")
+            } else if sort == .openSSFScoreDesc {
+                joins.append(
+                    "LEFT JOIN open_ssf_scores ossf_sort ON ossf_sort.repo_id = r.id AND ossf_sort.fetch_status = 'success'"
+                )
             }
-            var pageArguments = searchArguments
+            let joinSQL = joins.isEmpty ? "" : " " + joins.joined(separator: " ")
+            let orderBy = Self.mentionOrderClause(sort)
+
+            var pageArguments = arguments
             pageArguments.append(limit + 1)
             pageArguments.append(offset)
             let rows = try Row.fetchAll(db, sql: """
@@ -96,8 +144,9 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                        ), '') AS tag_names
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
+                \(joinSQL)
                 WHERE \(whereClause)
-                ORDER BY r.stars_count DESC, r.full_name COLLATE NOCASE ASC
+                ORDER BY \(orderBy)
                 LIMIT ? OFFSET ?
                 """, arguments: StatementArguments(pageArguments))
             let candidates = rows.prefix(limit).map(RAGMentionCandidate.init(row:))
@@ -107,6 +156,114 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                 matchCount: matchCount,
                 hasMore: rows.count > limit
             )
+        }
+    }
+
+    private static func appendMentionFilters(
+        _ filters: RAGComposerMentionFilters,
+        predicates: inout [String],
+        arguments: inout [any DatabaseValueConvertible]
+    ) {
+        if filters.hideArchived {
+            predicates.append("r.is_archived = 0")
+        }
+        if filters.hideForks {
+            predicates.append("r.is_fork = 0")
+        }
+        switch filters.star {
+        case .all:
+            break
+        case .starred:
+            predicates.append("r.is_starred = 1")
+        case .unstarred:
+            predicates.append("r.is_starred = 0")
+        }
+        if let status = filters.status {
+            if status == .unread {
+                predicates.append("COALESCE(n.status, 'unread') = ?")
+            } else {
+                predicates.append("n.status = ?")
+            }
+            arguments.append(status.rawValue)
+        }
+        let languages = filters.selectedLanguages
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !languages.isEmpty {
+            let placeholders = Array(repeating: "?", count: languages.count).joined(separator: ", ")
+            predicates.append("r.language IN (\(placeholders))")
+            arguments.append(contentsOf: languages.sorted())
+        }
+        switch filters.healthAvailability {
+        case .unknown:
+            break
+        case .available:
+            predicates.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_health_snapshots h_filter
+                    WHERE h_filter.repo_id = r.id
+                      AND h_filter.fetch_status != 'failed'
+                )
+                """)
+        case .missing:
+            predicates.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_health_snapshots h_filter
+                    WHERE h_filter.repo_id = r.id
+                      AND h_filter.fetch_status != 'failed'
+                )
+                """)
+        }
+        switch filters.openSSFAvailability {
+        case .unknown:
+            break
+        case .available:
+            predicates.append("""
+                EXISTS (
+                    SELECT 1 FROM open_ssf_scores ossf_filter
+                    WHERE ossf_filter.repo_id = r.id
+                      AND ossf_filter.fetch_status = 'success'
+                      AND ossf_filter.aggregate_score IS NOT NULL
+                )
+                """)
+        case .missing:
+            predicates.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM open_ssf_scores ossf_filter
+                    WHERE ossf_filter.repo_id = r.id
+                      AND ossf_filter.fetch_status = 'success'
+                      AND ossf_filter.aggregate_score IS NOT NULL
+                )
+                """)
+        }
+    }
+
+    private static func mentionOrderClause(_ sort: RepoSortOption) -> String {
+        switch sort {
+        case .starredAtDesc:
+            return "COALESCE(r.starred_at, n.library_updated_at, r.cached_at) DESC, r.id DESC"
+        case .starredAtAsc:
+            return "r.starred_at IS NULL ASC, r.starred_at ASC, r.id ASC"
+        case .nameAsc:
+            return "LOWER(r.full_name) ASC, r.id ASC"
+        case .nameDesc:
+            return "LOWER(r.full_name) DESC, r.id DESC"
+        case .starsDesc:
+            return "r.stars_count DESC, r.full_name COLLATE NOCASE ASC"
+        case .starsAsc:
+            return "r.stars_count ASC, r.full_name COLLATE NOCASE ASC"
+        case .updatedDesc:
+            return "r.pushed_at DESC, r.id DESC"
+        case .updatedAsc:
+            return "r.pushed_at IS NULL ASC, r.pushed_at ASC, r.id ASC"
+        case .createdDesc:
+            return "r.created_at DESC, r.id DESC"
+        case .createdAsc:
+            return "r.created_at IS NULL ASC, r.created_at ASC, r.id ASC"
+        case .healthScoreDesc:
+            return "h_sort.repo_id IS NULL ASC, h_sort.overall_score DESC, r.stars_count DESC, r.id DESC"
+        case .openSSFScoreDesc:
+            return "ossf_sort.aggregate_score IS NULL ASC, ossf_sort.aggregate_score DESC, r.stars_count DESC, r.id DESC"
         }
     }
 

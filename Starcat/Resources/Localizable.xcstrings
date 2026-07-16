@@ -19166,272 +19166,722 @@
     "PRO_PASS": {},
     "rag.core.attachment.error.fileTooLargeFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Attachment is too large: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件过大：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attachment is too large: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件过大：%@"
+          }
+        }
       }
     },
     "rag.core.attachment.error.tooManyFiles": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "You can attach up to 5 files at a time" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "单次最多添加 5 个附件" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can attach up to 5 files at a time"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单次最多添加 5 个附件"
+          }
+        }
       }
     },
     "rag.core.attachment.error.totalTooLarge": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The total attachment size exceeds 20 MB" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件总大小超过 20 MB" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The total attachment size exceeds 20 MB"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件总大小超过 20 MB"
+          }
+        }
       }
     },
     "rag.core.attachment.error.unreadableFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Unable to read attachment: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法读取附件：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to read attachment: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取附件：%@"
+          }
+        }
       }
     },
     "rag.core.attachment.error.unsupportedFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Unsupported attachment type: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂不支持该附件类型：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported attachment type: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂不支持该附件类型：%@"
+          }
+        }
       }
     },
     "rag.core.backend.error.cohereModelEmpty": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The Cohere-compatible Rerank model cannot be empty" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Cohere-compatible Rerank 模型不能为空" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Cohere-compatible Rerank model cannot be empty"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cohere-compatible Rerank 模型不能为空"
+          }
+        }
       }
     },
     "rag.core.backend.error.invalidResponseFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%@ returned an unreadable response" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ 返回了无法解析的数据" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ returned an unreadable response"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 返回了无法解析的数据"
+          }
+        }
       }
     },
     "rag.core.backend.error.httpFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%@ HTTP %d: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ HTTP %d：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ HTTP %d: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ HTTP %d：%@"
+          }
+        }
       }
     },
     "rag.core.backend.error.meilisearchEndpoint": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Invalid Meilisearch endpoint" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Meilisearch endpoint 无效" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid Meilisearch endpoint"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meilisearch endpoint 无效"
+          }
+        }
       }
     },
     "rag.core.backend.error.meilisearchIndex": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The Meilisearch index can contain only letters, numbers, - and _" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Meilisearch index 只能包含字母、数字、- 和 _" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Meilisearch index can contain only letters, numbers, - and _"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meilisearch index 只能包含字母、数字、- 和 _"
+          }
+        }
       }
     },
     "rag.core.backend.error.meilisearchURL": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Invalid Meilisearch URL" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Meilisearch URL 无效" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid Meilisearch URL"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meilisearch URL 无效"
+          }
+        }
       }
     },
     "rag.core.backend.error.operationFailedFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%@ operation failed: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ 操作失败：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ operation failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 操作失败：%@"
+          }
+        }
       }
     },
     "rag.core.backend.error.qdrantCollection": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The Qdrant collection can contain only letters, numbers, - and _" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant collection 只能包含字母、数字、- 和 _" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Qdrant collection can contain only letters, numbers, - and _"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant collection 只能包含字母、数字、- 和 _"
+          }
+        }
       }
     },
     "rag.core.backend.error.qdrantDimensionMismatchFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Qdrant vector dimension mismatch: collection=%@, current model=%d" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant 向量维度不匹配：collection=%@，当前模型=%d" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant vector dimension mismatch: collection=%@, current model=%d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant 向量维度不匹配：collection=%@，当前模型=%d"
+          }
+        }
       }
     },
     "rag.core.backend.error.qdrantEndpoint": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Invalid Qdrant endpoint" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant endpoint 无效" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid Qdrant endpoint"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant endpoint 无效"
+          }
+        }
       }
     },
     "rag.core.backend.error.qdrantURL": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Invalid Qdrant URL" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant URL 无效" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid Qdrant URL"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant URL 无效"
+          }
+        }
       }
     },
     "rag.core.backend.error.qdrantVectorMissingFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The Qdrant collection does not contain the named vector %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant collection 不包含命名向量 %@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Qdrant collection does not contain the named vector %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant collection 不包含命名向量 %@"
+          }
+        }
       }
     },
     "rag.core.backend.error.qdrantVectorName": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The Qdrant vector name can contain only letters, numbers, - and _" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Qdrant vector name 只能包含字母、数字、- 和 _" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Qdrant vector name can contain only letters, numbers, - and _"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qdrant vector name 只能包含字母、数字、- 和 _"
+          }
+        }
       }
     },
     "rag.core.backend.error.rerankEndpoint": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Invalid Rerank endpoint" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Rerank endpoint 无效" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid Rerank endpoint"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rerank endpoint 无效"
+          }
+        }
       }
     },
     "rag.core.backend.error.taskTimeoutFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Timed out waiting for task %d" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "task %d 等待超时" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out waiting for task %d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "task %d 等待超时"
+          }
+        }
       }
     },
     "rag.core.plan.debug.requestFailedFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Query planning LLM request failed (attempt %d): %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询规划 LLM 请求失败（attempt %d）：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Query planning LLM request failed (attempt %d): %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查询规划 LLM 请求失败（attempt %d）：%@"
+          }
+        }
       }
     },
     "rag.core.plan.debug.unparseableFallback": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Both query planning responses were invalid. Switched to the local semantic fallback." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询规划两次返回均无法解析，已改用本地 semantic fallback。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Both query planning responses were invalid. Switched to the local semantic fallback."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查询规划两次返回均无法解析，已改用本地 semantic fallback。"
+          }
+        }
       }
     },
     "rag.core.plan.error.clarificationMissing": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "needs_clarification is missing a follow-up question" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "needs_clarification 缺少追问" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "needs_clarification is missing a follow-up question"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "needs_clarification 缺少追问"
+          }
+        }
       }
     },
     "rag.core.plan.error.emptyQuestion": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Question cannot be empty" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题不能为空" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Question cannot be empty"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题不能为空"
+          }
+        }
       }
     },
     "rag.core.plan.error.invalidFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Invalid query plan: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查询计划无效：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid query plan: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查询计划无效：%@"
+          }
+        }
       }
     },
     "rag.core.plan.error.inventoryGroupingUnsupported": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Inventory metrics do not support grouping" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "库存统计不支持分组维度" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inventory metrics do not support grouping"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "库存统计不支持分组维度"
+          }
+        }
       }
     },
     "rag.core.plan.error.jsonEncoding": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "JSON encoding failed" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "JSON 编码失败" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON encoding failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON 编码失败"
+          }
+        }
       }
     },
     "rag.core.plan.error.minForksExceedsMax": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "minForks is greater than maxForks" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "minForks 大于 maxForks" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "minForks is greater than maxForks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "minForks 大于 maxForks"
+          }
+        }
       }
     },
     "rag.core.plan.error.minStarsExceedsMax": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "minStars is greater than maxStars" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "minStars 大于 maxStars" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "minStars is greater than maxStars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "minStars 大于 maxStars"
+          }
+        }
       }
     },
     "rag.core.plan.error.numericRange": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Numeric filter is out of range" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "数值条件超出范围" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numeric filter is out of range"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数值条件超出范围"
+          }
+        }
       }
     },
     "rag.core.plan.error.semanticQueryMissingFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%@ is missing semanticQuery" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ 缺少 semanticQuery" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is missing semanticQuery"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 缺少 semanticQuery"
+          }
+        }
       }
     },
     "rag.core.plan.error.structuredConditionsMissing": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "structured_only has no structured conditions" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "structured_only 没有结构化条件" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "structured_only has no structured conditions"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "structured_only 没有结构化条件"
+          }
+        }
       }
     },
     "rag.core.plan.scope.knowledge": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Knowledge Base" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Knowledge Base"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识库"
+          }
+        }
       }
     },
     "rag.core.remote.error.webSearchUnsupported": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The GitHub provider does not support general web search" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub Provider 不支持普通 Web 搜索" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The GitHub provider does not support general web search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Provider 不支持普通 Web 搜索"
+          }
+        }
       }
     },
     "rag.core.remote.error.githubHTTPFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "GitHub HTTP %1$lld: %2$@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub HTTP %1$lld：%2$@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub HTTP %1$lld: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub HTTP %1$lld：%2$@"
+          }
+        }
       }
     },
     "rag.core.remote.commitActivityFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Commits in the last 12 weeks: %1$lld; active weeks: %2$lld/%3$lld." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近 12 周 commits=%1$lld，活跃周数=%2$lld/%3$lld。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commits in the last 12 weeks: %1$lld; active weeks: %2$lld/%3$lld."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近 12 周 commits=%1$lld，活跃周数=%2$lld/%3$lld。"
+          }
+        }
       }
     },
     "rag.core.remote.empty.contributors": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No public contributor data is available." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的公开贡献者数据。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No public contributor data is available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用的公开贡献者数据。"
+          }
+        }
       }
     },
     "rag.core.remote.empty.matches": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No matching public results." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有匹配的公开结果。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matching public results."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的公开结果。"
+          }
+        }
       }
     },
     "rag.core.remote.empty.releases": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The repository has no public releases." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仓库没有公开 Release。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The repository has no public releases."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库没有公开 Release。"
+          }
+        }
       }
     },
     "rag.core.remote.empty.securityAdvisories": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No public repository security advisories were returned." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有返回公开仓库安全公告。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No public repository security advisories were returned."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有返回公开仓库安全公告。"
+          }
+        }
       }
     },
     "rag.core.service.clarificationFallback": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Please add more query details" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请补充查询条件" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please add more query details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请补充查询条件"
+          }
+        }
       }
     },
     "rag.core.service.debug.compressionFallbackFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Conversation compression failed. Switched to the bounded local summary: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话压缩失败，已回退本地受限摘要：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation compression failed. Switched to the bounded local summary: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话压缩失败，已回退本地受限摘要：%@"
+          }
+        }
       }
     },
     "rag.core.service.debug.titleEmpty": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Conversation title generation failed: the model returned an empty title" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话标题生成失败：模型返回了空标题" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation title generation failed: the model returned an empty title"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话标题生成失败：模型返回了空标题"
+          }
+        }
       }
     },
     "rag.core.service.debug.titleFailureFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Conversation title generation failed: %@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话标题生成失败：%@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation title generation failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话标题生成失败：%@"
+          }
+        }
       }
     },
     "rag.storage.error.conversationMissing": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The persisted RAG conversation is missing" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "持久化的 RAG 会话不存在" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The persisted RAG conversation is missing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "持久化的 RAG 会话不存在"
+          }
+        }
       }
     },
     "rag.demo.citation.grdbRecords.sectionPath": {
@@ -20812,14 +21262,34 @@
     },
     "rag.workspace.inspector.metadata.updatedAt.help": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Last time knowledge-base content changed (latest library update among in-library repositories)." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识库内容最后一次变化的时间（在库仓库里最新的加入 / 更新时间）。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last time knowledge-base content changed (latest library update among in-library repositories)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识库内容最后一次变化的时间（在库仓库里最新的加入 / 更新时间）。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.updatedAt.unknown": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Not updated yet" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚无更新" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not updated yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚无更新"
+          }
+        }
       }
     },
     "rag.workspace.inspector.chunkMissing": {
@@ -21273,57 +21743,137 @@
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithAIGeneratedNotes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories with AI-generated notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "含 AI 生成笔记的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories with AI-generated notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含 AI 生成笔记的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithAISummary": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories with AI summaries" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "含 AI 摘要的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories with AI summaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含 AI 摘要的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithPrivateNotes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories with private notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "含私有笔记的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories with private notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含私有笔记的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithRecentlyEditedPrivateNotes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Recently edited private notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天编辑过笔记的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently edited private notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 30 天编辑过笔记的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithRecentlyGeneratedAISummaries": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Recently generated AI summaries" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天生成过摘要的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently generated AI summaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 30 天生成过摘要的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.excludedRAGChunks": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Excluded RAG chunks" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除 RAG 分片数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluded RAG chunks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已排除 RAG 分片数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutREADME": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories without README" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无 README 的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories without README"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无 README 的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutIndexableSource": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories without indexable sources" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无可索引来源的项目数" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories without indexable sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无可索引来源的项目数"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.analyticsFormat": {
@@ -21408,278 +21958,738 @@
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.open": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Learn about question understanding" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解问题理解" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about question understanding"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解问题理解"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Question understanding" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题理解" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Question understanding"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题理解"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.definition.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What is question understanding?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "问题理解是什么？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is question understanding?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题理解是什么？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.definition.body": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The Planner model's interpretation of your question before retrieval runs. It shows what Starcat believes you are asking and how it will search semantically." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索执行前，Planner 模型对你问题的理解结果：展示 Starcat 认为你在问什么，以及将如何改写为语义检索。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Planner model's interpretation of your question before retrieval runs. It shows what Starcat believes you are asking and how it will search semantically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索执行前，Planner 模型对你问题的理解结果：展示 Starcat 认为你在问什么，以及将如何改写为语义检索。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.fields.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields in this section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本节字段含义"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.field.originalQuestion": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Original question: the text you sent from Composer." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "原始问题：你在 Composer 发送的原文。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original question: the text you sent from Composer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始问题：你在 Composer 发送的原文。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.field.semanticQuery": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Semantic query: Planner-rewritten keywords used for vector and keyword retrieval." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义查询：Planner 改写后的检索词，用于向量与关键词召回。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semantic query: Planner-rewritten keywords used for vector and keyword retrieval."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语义查询：Planner 改写后的检索词，用于向量与关键词召回。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.questionUnderstanding.field.planningNotes": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Plan notes: short AI-generated explanations (up to 3) of what Starcat will do next." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "规划说明：Planner 生成的简短说明（最多 3 条），描述接下来打算做什么。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan notes: short AI-generated explanations (up to 3) of what Starcat will do next."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规划说明：Planner 生成的简短说明（最多 3 条），描述接下来打算做什么。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.open": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Learn about execution strategy" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解执行策略" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about execution strategy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解执行策略"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Execution strategy" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "执行策略" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Execution strategy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行策略"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.definition.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What is execution strategy?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "执行策略是什么？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is execution strategy?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行策略是什么？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.definition.body": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "How Starcat will query your local knowledge base: execution mode, repository filters, sorting, and optional structured analytics. This is the Planner's local retrieval plan." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Starcat 如何在本地知识库中检索：执行模式、仓库筛选、排序，以及可选的结构化统计。这是 Planner 给出的本地检索方案。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How Starcat will query your local knowledge base: execution mode, repository filters, sorting, and optional structured analytics. This is the Planner's local retrieval plan."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 如何在本地知识库中检索：执行模式、仓库筛选、排序，以及可选的结构化统计。这是 Planner 给出的本地检索方案。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.fields.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields in this section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本节字段含义"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.field.mode": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Plan mode: semantic-only, filtered semantic, structured-only, or guided discovery." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划模式：纯语义、带过滤语义、仅结构化，或引导发现。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan mode: semantic-only, filtered semantic, structured-only, or guided discovery."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划模式：纯语义、带过滤语义、仅结构化，或引导发现。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.field.filters": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Filters: repository constraints inferred from your question (language, stars, tags, etc.)." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "筛选条件：Planner 从问题推断的仓库约束（语言、Star 数、标签等）。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filters: repository constraints inferred from your question (language, stars, tags, etc.)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "筛选条件：Planner 从问题推断的仓库约束（语言、Star 数、标签等）。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.field.sort": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Sort: how candidate repositories are ordered before retrieval." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "排序：检索前候选仓库的排列方式。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sort: how candidate repositories are ordered before retrieval."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排序：检索前候选仓库的排列方式。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.field.candidateLimit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Candidate limit: maximum repositories entering the retrieval funnel." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选上限：进入检索漏斗的仓库数量上限。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Candidate limit: maximum repositories entering the retrieval funnel."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候选上限：进入检索漏斗的仓库数量上限。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.executionStrategy.field.analytics": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Analytics: optional structured aggregation over metadata (count, top-N, averages)." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "结构化分析：对元数据做聚合统计（计数、Top-N、均值等）。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analytics: optional structured aggregation over metadata (count, top-N, averages)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结构化分析：对元数据做聚合统计（计数、Top-N、均值等）。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.open": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Learn about network plan" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解联网计划" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about network plan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解联网计划"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Network plan" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "联网计划" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network plan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联网计划"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.definition.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What is network plan?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "联网计划是什么？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is network plan?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联网计划是什么？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.definition.body": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Whether live external evidence is needed and what Starcat will fetch from GitHub or the public web. Shown only when the Planner requests network access." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "是否需要拉取实时外部证据，以及将从 GitHub 或公开互联网获取什么。仅在 Planner 请求联网时出现。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whether live external evidence is needed and what Starcat will fetch from GitHub or the public web. Shown only when the Planner requests network access."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "是否需要拉取实时外部证据，以及将从 GitHub 或公开互联网获取什么。仅在 Planner 请求联网时出现。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.fields.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields in this section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本节字段含义"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.field.liveEvidence": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Live context: whether stale local chunks are insufficient and network fetch is required." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "实时上下文：本地分片是否不足以安全回答，必须联网补充。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live context: whether stale local chunks are insufficient and network fetch is required."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时上下文：本地分片是否不足以安全回答，必须联网补充。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.field.remoteContext": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "GitHub remote context: Issues, PRs, or other GitHub API resources with query and per-repo limits." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub 远程上下文：Issues、PR 等 GitHub API 资源及其查询词与每仓库上限。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub remote context: Issues, PRs, or other GitHub API resources with query and per-repo limits."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub 远程上下文：Issues、PR 等 GitHub API 资源及其查询词与每仓库上限。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.networkPlan.field.webSearch": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Web search: public internet queries when enabled in Composer and approved by the Planner." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "互联网搜索：Composer 已开启联网且 Planner 认为需要时，发起的公开网页检索。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web search: public internet queries when enabled in Composer and approved by the Planner."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互联网搜索：Composer 已开启联网且 Planner 认为需要时，发起的公开网页检索。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.open": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Learn about retrieval funnel" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解检索漏斗" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about retrieval funnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解检索漏斗"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Retrieval funnel" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索漏斗" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retrieval funnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索漏斗"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.definition.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What is retrieval funnel?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索漏斗是什么？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is retrieval funnel?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索漏斗是什么？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.definition.body": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Actual retrieval statistics for this turn: how many repositories and chunks passed each stage from candidates to final evidence. This replays execution, not the Planner's intent." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮检索的实际统计：从候选仓库到最终证据，各阶段通过了多少仓库与分片。这是执行回放，不是 Planner 的意图描述。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actual retrieval statistics for this turn: how many repositories and chunks passed each stage from candidates to final evidence. This replays execution, not the Planner's intent."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮检索的实际统计：从候选仓库到最终证据，各阶段通过了多少仓库与分片。这是执行回放，不是 Planner 的意图描述。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.fields.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields in this section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本节字段含义"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.candidates": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Candidates: repositories that entered the funnel after plan filters." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选仓库：经过计划筛选后进入漏斗的仓库数。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Candidates: repositories that entered the funnel after plan filters."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候选仓库：经过计划筛选后进入漏斗的仓库数。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.keyword": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Keyword recall: raw hits vs. chunks accepted after keyword scoring." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词召回：原始命中数 vs. 评分后采纳的分片数。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword recall: raw hits vs. chunks accepted after keyword scoring."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词召回：原始命中数 vs. 评分后采纳的分片数。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.vector": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Vector recall: raw hits vs. chunks accepted after similarity threshold." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量召回：原始命中数 vs. 相似度阈值后采纳的分片数。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vector recall: raw hits vs. chunks accepted after similarity threshold."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量召回：原始命中数 vs. 相似度阈值后采纳的分片数。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.fusion": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Fusion: unique chunks after merging keyword and vector results." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "融合：关键词与向量结果合并去重后的唯一分片数。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fusion: unique chunks after merging keyword and vector results."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "融合：关键词与向量结果合并去重后的唯一分片数。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.rerank": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Rerank: optional second-pass scoring when a rerank provider is configured." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重排序：配置了 Rerank 服务时的二次打分结果。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rerank: optional second-pass scoring when a rerank provider is configured."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重排序：配置了 Rerank 服务时的二次打分结果。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.result": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Final evidence: chunks and repositories actually injected into the prompt." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终结果：实际注入 Prompt 的分片数与仓库数。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Final evidence: chunks and repositories actually injected into the prompt."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最终结果：实际注入 Prompt 的分片数与仓库数。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.retrievalFunnel.field.outcome": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Outcome: whether evidence was found, empty, or switched to guided discovery." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索判定：是否找到证据、无证据，或转为引导发现。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outcome: whether evidence was found, empty, or switched to guided discovery."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索判定：是否找到证据、无证据，或转为引导发现。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.open": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Learn about context budget" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "了解上下文预算" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about context budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解上下文预算"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Context budget" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "上下文预算" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文预算"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.definition.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What is context budget?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "上下文预算是什么？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is context budget?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文预算是什么？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.definition.body": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "After planning and retrieval, Starcat allocates the model context window across prompt segments and lists reserved output space separately." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划与检索完成后，系统按当前模型 Context Window 为本轮 Prompt 分配各分片，并单独列出预留的输出空间。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After planning and retrieval, Starcat allocates the model context window across prompt segments and lists reserved output space separately."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划与检索完成后，系统按当前模型 Context Window 为本轮 Prompt 分配各分片，并单独列出预留的输出空间。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.fields.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Fields in this section" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本节字段含义" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields in this section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本节字段含义"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.field.segments": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Input segments: system, history, question, evidence, remote content, and attachments." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "输入分片：系统提示、历史、问题、证据、远程内容与附件。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input segments: system, history, question, evidence, remote content, and attachments."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入分片：系统提示、历史、问题、证据、远程内容与附件。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.field.reservedOutput": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Reserved output: tokens set aside for the model reply; not counted in the usage percentage." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "预留输出：为模型回答保留的分片；不计入顶部占用百分比。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reserved output: tokens set aside for the model reply; not counted in the usage percentage."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预留输出：为模型回答保留的分片；不计入顶部占用百分比。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.help.contextBudget.field.window": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Window total: the configured context window for the selected model." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "窗口总量：当前所选模型配置的 Context Window 上限。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window total: the configured context window for the selected model."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口总量：当前所选模型配置的 Context Window 上限。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.filter.archived": {
@@ -22052,122 +23062,322 @@
     },
     "rag.workspace.inspector.plan.retrieval.detail.candidates": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Candidate repositories" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选仓库" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Candidate repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候选仓库"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.belowEvidenceScore": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Below evidence-score threshold" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "低于证据分阈值" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Below evidence-score threshold"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低于证据分阈值"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.evidenceTokenLimit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Final evidence token budget" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过最终证据 Token 预算" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Final evidence token budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过最终证据 Token 预算"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.belowVectorSimilarity": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Below similarity threshold" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "低于相似度阈值" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Below similarity threshold"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低于相似度阈值"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.perRepositoryLimit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Per-repository limit" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过单仓库上限" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per-repository limit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过单仓库上限"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.parentContextTokenLimit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Parent context token limit" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过父段落 Token 上限" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parent context token limit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过父段落 Token 上限"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.retained": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Retained" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保留" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retained"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保留"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.sourceDisabled": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Source disabled" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "来源未启用" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源未启用"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.disposition.totalLimit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Total evidence limit" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "超过总证据上限" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total evidence limit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过总证据上限"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.finalEvidence": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Final evidence" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终证据" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Final evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最终证据"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.fusion": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Hybrid fusion" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "混合融合" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hybrid fusion"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混合融合"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.help": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "View this retrieval stage" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "查看该检索阶段详情" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View this retrieval stage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看该检索阶段详情"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.hitKind.hybrid": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Hybrid" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "混合命中" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hybrid"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混合命中"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.hitKind.keyword": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Keyword" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词命中" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词命中"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.hitKind.vector": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Semantic" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义命中" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semantic"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语义命中"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.keyword": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Keyword recall" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词召回" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword recall"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词召回"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.rerank": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Rerank" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重排" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rerank"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重排"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.rerankScore": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Rerank score" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重排分" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rerank score"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重排分"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.semantic": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Semantic recall" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义召回" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semantic recall"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语义召回"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.detail.unavailable": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Detailed retrieval data is unavailable for this conversation." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此会话没有保存逐项检索详情。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed retrieval data is unavailable for this conversation."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此会话没有保存逐项检索详情。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.retrieval.funnelFormat": {
@@ -23322,34 +24532,18 @@
         }
       }
     },
-    "rag.workspace.mention.selectVisible": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select all"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全选"
-          }
-        }
-      }
-    },
     "rag.workspace.mention.stats": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Selected %1$d · Knowledge %2$d"
+            "value": "Selected %1$d/%2$d · Knowledge %3$d"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已选 %1$d · 知识库 %2$d"
+            "value": "已选 %1$d/%2$d · 知识库 %3$d"
           }
         }
       }
@@ -36030,7 +37224,6 @@
         }
       }
     },
-
     "settings.ai.prompt.system": {
       "extractionState": "manual",
       "localizations": {
@@ -58819,29 +60012,69 @@
     "rag.workspace.inspector.metadata.group.artifacts": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI artifacts" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 内容" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI artifacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 内容"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.group.freshness": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Content freshness" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "内容新鲜度" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content freshness"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容新鲜度"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.group.sourceCoverage": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RAG source coverage" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RAG 来源覆盖" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAG source coverage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAG 来源覆盖"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.group.availability": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Index availability" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "索引可用性" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Index availability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "索引可用性"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.group.index": {
@@ -58959,281 +60192,681 @@
     "rag.workspace.inspector.metadata.aiSummaryCoverage": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI summaries" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.privateNoteCoverage": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Private notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "私有笔记" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私有笔记"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.aiGeneratedNotes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI-generated notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "其中 AI 生成" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI-generated notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其中 AI 生成"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.coverageFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.sourceCoverageFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.notesEdited30d": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Notes · 30d" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天笔记" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes · 30d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 30 天笔记"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.summariesGenerated30d": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Summaries · 30d" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "近 30 天摘要" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summaries · 30d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 30 天摘要"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.excludedChunks": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Excluded chunks" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除分片" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluded chunks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已排除分片"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.withoutREADME": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No README" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无 README" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No README"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无 README"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.withoutIndexableSource": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No indexable source" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无可索引来源" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No indexable source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无可索引来源"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.open": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Explain AI artifacts" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明 AI 内容" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explain AI artifacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明 AI 内容"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI artifacts" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 内容" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI artifacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 内容"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.definition.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What do these numbers mean?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这些数字代表什么？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What do these numbers mean?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些数字代表什么？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.definition.body": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Coverage is calculated from repositories currently in the knowledge base. Only aggregate counts are shown; note and summary content is never exposed here." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "覆盖率以当前已入库项目为范围。这里只展示聚合数量，不展示笔记或摘要正文。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coverage is calculated from repositories currently in the knowledge base. Only aggregate counts are shown; note and summary content is never exposed here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "覆盖率以当前已入库项目为范围。这里只展示聚合数量，不展示笔记或摘要正文。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.fields.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快照明细"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.field.scope": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "In-library repositories" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已入库项目" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In-library repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已入库项目"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.field.aiSummaries": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI summaries" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 摘要" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.field.privateNotes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Private notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "私有笔记" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私有笔记"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.artifacts.field.aiGeneratedNotes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI-generated notes" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "AI 生成笔记" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI-generated notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 生成笔记"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.open": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Explain content freshness" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明内容新鲜度" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explain content freshness"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明内容新鲜度"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Content freshness" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "内容新鲜度" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content freshness"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容新鲜度"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.definition.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What counts as recent?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "怎样算近期内容？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What counts as recent?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "怎样算近期内容？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.definition.body": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Counts repositories with a non-empty private note edited, or an AI summary generated, in the last 30 days. An older summary is not automatically invalid." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "统计近 30 天编辑过非空私有笔记、或生成过 AI 摘要的项目数。超过 30 天的摘要不会因此被判定为失效。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Counts repositories with a non-empty private note edited, or an AI summary generated, in the last 30 days. An older summary is not automatically invalid."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计近 30 天编辑过非空私有笔记、或生成过 AI 摘要的项目数。超过 30 天的摘要不会因此被判定为失效。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.fields.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快照明细"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.field.notes": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Private notes edited" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑过私有笔记" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private notes edited"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑过私有笔记"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.freshness.field.summaries": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "AI summaries generated" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生成过 AI 摘要" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summaries generated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成过 AI 摘要"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.open": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Explain RAG source coverage" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明 RAG 来源覆盖" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explain RAG source coverage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明 RAG 来源覆盖"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RAG source coverage" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RAG 来源覆盖" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAG source coverage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAG 来源覆盖"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.definition.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "How to read the compact values" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "如何阅读紧凑数值" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How to read the compact values"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如何阅读紧凑数值"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.definition.body": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The main panel shows repositories with source content, then ready chunks. This popover also separates failed and stale chunks. Excluded chunks are omitted from chunk status counts." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主面板依次显示有来源内容的项目数与就绪分片数；这里进一步区分失败和过期分片。分片状态统计不包含已排除分片。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The main panel shows repositories with source content, then ready chunks. This popover also separates failed and stale chunks. Excluded chunks are omitted from chunk status counts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主面板依次显示有来源内容的项目数与就绪分片数；这里进一步区分失败和过期分片。分片状态统计不包含已排除分片。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.fields.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快照明细"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.sourceCoverage.valueFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$@ repos\nReady %2$@ · Failed %3$@ · Stale %4$@ · Total %5$@" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@ 个项目\n就绪 %2$@ · 失败 %3$@ · 过期 %4$@ · 总计 %5$@" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ repos\nReady %2$@ · Failed %3$@ · Stale %4$@ · Total %5$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 个项目\n就绪 %2$@ · 失败 %3$@ · 过期 %4$@ · 总计 %5$@"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.open": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Explain index availability" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "说明索引可用性" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explain index availability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明索引可用性"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Index availability" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "索引可用性" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Index availability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "索引可用性"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.definition.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Why can retrieval miss?" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "为什么可能召回不到？" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Why can retrieval miss?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为什么可能召回不到？"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.definition.body": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Excluded chunks are intentionally hidden from retrieval. No README means no README source was built; no indexable source means the repository has no active, non-excluded RAG chunk from any source." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除分片不会参与召回；无 README 表示未生成 README 来源；无可索引来源表示该项目不存在任何未排除的 RAG 来源分片。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluded chunks are intentionally hidden from retrieval. No README means no README source was built; no indexable source means the repository has no active, non-excluded RAG chunk from any source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已排除分片不会参与召回；无 README 表示未生成 README 来源；无可索引来源表示该项目不存在任何未排除的 RAG 来源分片。"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.fields.title": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Snapshot details" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快照明细" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快照明细"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.field.excludedChunks": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Excluded chunks" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已排除分片" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluded chunks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已排除分片"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.field.withoutREADME": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories without README" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无 README 的项目" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories without README"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无 README 的项目"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.help.availability.field.withoutSource": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repositories without indexable sources" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无可索引来源的项目" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories without indexable sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无可索引来源的项目"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.index.ready": {
@@ -59329,6 +60962,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无语言分布"
+          }
+        }
+      }
+    },
+    "rag.workspace.mention.selectionLimit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can select up to %1$d repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多选择 %1$d 个仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.mention.languageHint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reuse interested languages from Settings. Tap + to add more."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复用设置里的感兴趣语言；点右侧 + 可添加更多。"
+          }
+        }
+      }
+    },
+    "rag.workspace.mention.searchPlaceholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search knowledge base repositories"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索知识库仓库"
           }
         }
       }

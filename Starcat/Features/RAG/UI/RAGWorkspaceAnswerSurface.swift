@@ -25,7 +25,7 @@ struct RAGWorkspaceAnswerSurface: View {
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var composerContentHeight: CGFloat = 0
-    @State private var mentionCaretAnchor: CGPoint = .zero
+    @FocusState private var isContextPickerSearchFocused: Bool
     @State private var messageTail = ScrollTailController()
     @State private var historyWindow = RAGConversationHistoryWindow()
     @State private var isMessageNearBottom = true
@@ -40,26 +40,45 @@ struct RAGWorkspaceAnswerSurface: View {
         interfaceScale.font(size: size, weight: weight)
     }
 
+    /// 上下文选择面板固定高度；与定位偏移共用同一常量，避免盖住 Composer。
+    private static let contextPickerPanelHeight: CGFloat = 480
+    private static let contextPickerPanelGap: CGFloat = 8
+
     var body: some View {
         VStack(spacing: 0) {
             answerHeader
             Divider()
-            // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
-            if viewModel.isConversationLoading {
-                conversationLoading
-            } else if showsEmptyConversation {
-                emptyConversation
-            } else {
-                messageTimeline
-            }
-            if !viewModel.pendingRemoteWorkItems.isEmpty {
-                Divider()
-                remoteConfirmation
-            }
-            // 空会话已有大空态 CTA；有消息时再挂一条补救横幅，避免提问后无入口。
-            if viewModel.isKnowledgeBaseEmpty && !showsEmptyConversation {
-                Divider()
-                emptyKnowledgeBanner
+            // 面板放在「消息区」ZStack 底边，Composer 是下方独立兄弟视图。
+            // 这样面板永远停在 chip/输入框之上，既不参与 Composer 布局，也不可能盖住它。
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
+                    if viewModel.isConversationLoading {
+                        conversationLoading
+                    } else if showsEmptyConversation {
+                        emptyConversation
+                    } else {
+                        messageTimeline
+                    }
+                    if !viewModel.pendingRemoteWorkItems.isEmpty {
+                        Divider()
+                        remoteConfirmation
+                    }
+                    // 空会话已有大空态 CTA；有消息时再挂一条补救横幅，避免提问后无入口。
+                    if viewModel.isKnowledgeBaseEmpty && !showsEmptyConversation {
+                        Divider()
+                        emptyKnowledgeBanner
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if viewModel.isContextPickerPresented {
+                    contextPickerPanel
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, Self.contextPickerPanelGap)
+                        .zIndex(1)
+                }
             }
             Divider()
             commandComposer
@@ -623,36 +642,30 @@ struct RAGWorkspaceAnswerSurface: View {
                     font: composerNSFont,
                     maximumHeight: composerMaximumHeight,
                     onHeightChange: { composerContentHeight = $0 },
-                    onMentionAnchorChange: { mentionCaretAnchor = $0 },
+                    // 仍回传 @ 的位置供编辑器内部保持布局计算；上下文面板不再依赖它定位。
+                    onMentionAnchorChange: { _ in },
                     onCommand: handleComposerCommand
                 )
                 // AppKit scroll view 在弹性 VStack 中会忽略子视图的最大高度；由外层显式
                 // 约束，首帧严格保持两行，文本变多时再增长到既有上限。
                 .frame(height: composerEditorHeight)
-                .background(alignment: .topLeading) {
-                    Color.clear
-                        .frame(width: 1, height: 1)
-                        .offset(x: mentionCaretAnchor.x, y: mentionCaretAnchor.y)
-                        .popover(
-                            isPresented: Binding(
-                                get: { viewModel.isMentionPickerPresented },
-                                set: { presented in
-                                    if !presented {
-                                        viewModel.dismissMentionPicker()
-                                    }
-                                }
-                            ),
-                            attachmentAnchor: .rect(.bounds),
-                            arrowEdge: .top
-                        ) {
-                            mentionPicker
-                        }
-                }
                 .onChange(of: viewModel.draftQuestion) { _, _ in
                     viewModel.handleDraftQuestionChanged()
                 }
 
                 HStack(alignment: .center, spacing: 8) {
+                    // 添加上下文是 Composer 的首要入口，固定放在左下角；不能挤进右侧
+                    // 附件 / 联网 / 发送的执行操作组。
+                    Button { viewModel.presentContextPicker() } label: {
+                        Image(systemName: "plus")
+                            .font(iconFont(size: 14, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .foregroundStyle(.secondary)
+                    .help("rag.workspace.mention.title")
+
                     // Prompt 预算快照：放在底栏最左侧的纯进度环，作为最克制的附属指示器，
                     // 不与右侧的动作按钮（附件 / 联网 / 发送）争视觉权重。
                     RAGContextUsageButton(usage: viewModel.composerContextUsage)
@@ -806,19 +819,62 @@ struct RAGWorkspaceAnswerSurface: View {
         .ragContextChipCapsule()
     }
 
-    /// `@` 多选弹层：顶部统计 + 当前筛选词 + 已选置顶列表；筛选源仍是输入框 `@token`。
-    var mentionPicker: some View {
+    /// 全宽悬浮上下文选择面板：停在消息区底边、Composer 上方，已选仓库始终置顶。
+    var contextPickerPanel: some View {
         let snapshot = viewModel.mentionPickerSnapshot
-        let filterText = viewModel.mentionQuery ?? ""
 
         return VStack(alignment: .leading, spacing: 0) {
-            mentionPickerHeader(snapshot: snapshot)
+            contextPickerHeader(snapshot: snapshot)
             Divider()
-            mentionPickerFilterRow(filterText: filterText)
-            Divider()
+            HStack(spacing: 8) {
+                RAGContextPickerFilterControls(viewModel: viewModel)
 
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                    TextField("rag.workspace.mention.searchPlaceholder", text: $viewModel.contextPickerQuery)
+                        .textFieldStyle(.plain)
+                        .font(ragFont(.callout))
+                        .focused($isContextPickerSearchFocused)
+                        .onChange(of: viewModel.contextPickerQuery) { _, _ in
+                            viewModel.handleContextPickerQueryChanged()
+                        }
+                        .onSubmit {
+                            viewModel.selectHighlightedMention()
+                        }
+                        .onExitCommand {
+                            viewModel.handleContextPickerEscape()
+                        }
+                    if !viewModel.contextPickerQuery.isEmpty {
+                        Button {
+                            viewModel.clearMentionFilter()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help("rag.workspace.mention.clearFilter")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+
+            // 无结果时仍占满列表区全宽全高，只在顶部给提示；避免空态 ideal size 把整块面板挤窄居中。
             if snapshot.suggestions.isEmpty {
-                mentionPickerEmptyState(hasKnowledge: snapshot.knowledgeCount > 0, hasFilter: !filterText.isEmpty)
+                mentionPickerEmptyState(
+                    hasKnowledge: snapshot.knowledgeCount > 0,
+                    hasFilter: !viewModel.contextPickerQuery.isEmpty || viewModel.mentionFilters.isActive
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -827,7 +883,7 @@ struct RAGWorkspaceAnswerSurface: View {
                         }
                     }
                 }
-                .frame(maxHeight: 280)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             if snapshot.isTruncated {
@@ -846,18 +902,29 @@ struct RAGWorkspaceAnswerSurface: View {
                 .padding(.vertical, 6)
             }
         }
-        .frame(width: 320)
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.16), radius: 12, y: 5)
+        .frame(height: Self.contextPickerPanelHeight)
+        .onAppear { isContextPickerSearchFocused = true }
+        .onChange(of: viewModel.isContextPickerPresented) { _, presented in
+            if presented { isContextPickerSearchFocused = true }
+        }
         .appLocaleEnvironment()
     }
 
-    func mentionPickerHeader(snapshot: RAGMentionPickerSnapshot) -> some View {
+    func contextPickerHeader(snapshot: RAGMentionPickerSnapshot) -> some View {
         HStack(spacing: 8) {
             Text(
                 String(
                     format: String.l10n("rag.workspace.mention.stats"),
                     locale: locale,
                     snapshot.selectedCount,
+                    KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts,
                     snapshot.knowledgeCount
                 )
             )
@@ -866,18 +933,6 @@ struct RAGWorkspaceAnswerSurface: View {
             .lineLimit(1)
 
             Spacer(minLength: 4)
-
-            Button {
-                viewModel.selectAllVisibleMentions()
-            } label: {
-                Text("rag.workspace.mention.selectVisible")
-                    .font(ragFont(.caption, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(Color.accentColor)
-            .disabled(snapshot.suggestions.isEmpty)
-            .help("rag.workspace.mention.selectVisible")
 
             Button {
                 viewModel.clearSelectedMentions()
@@ -890,49 +945,21 @@ struct RAGWorkspaceAnswerSurface: View {
             .foregroundStyle(.secondary)
             .disabled(snapshot.selectedCount == 0)
             .help("rag.workspace.mention.clearSelected")
+
+            Button {
+                viewModel.dismissMentionPicker()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("common.close")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-    }
-
-    func mentionPickerFilterRow(filterText: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(ragFont(.caption))
-                .foregroundStyle(.secondary)
-            if filterText.isEmpty {
-                Text("rag.workspace.mention.filterHint")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            } else {
-                Text(
-                    String(
-                        format: String.l10n("rag.workspace.mention.filterLabel"),
-                        locale: locale,
-                        filterText
-                    )
-                )
-                .font(ragFont(.caption))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            if !filterText.isEmpty {
-                Button {
-                    viewModel.clearMentionFilter()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("rag.workspace.mention.clearFilter")
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
     }
 
     func mentionPickerEmptyState(hasKnowledge: Bool, hasFilter: Bool) -> some View {
@@ -970,16 +997,22 @@ struct RAGWorkspaceAnswerSurface: View {
 
     func mentionPickerRow(_ candidate: RAGMentionCandidate, rowIndex: Int) -> some View {
         let isHighlighted = candidate.id == viewModel.highlightedMentionRepoIDValue
+        let isSelected = viewModel.isMentionSelected(candidate)
+        // 已达上限时仍允许取消已选项；未选中的行禁用，避免一次塞进上千仓库。
+        let selectionFull = viewModel.selectedRepoContexts.count
+            >= KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts
+        let canToggle = isSelected || !selectionFull
         return Button { viewModel.toggleMention(candidate) } label: {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "checkmark")
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
-                    .opacity(viewModel.isMentionSelected(candidate) ? 1 : 0)
+                    .opacity(isSelected ? 1 : 0)
                     .frame(width: 12, alignment: .center)
                 RemoteAvatar(
                     urlString: candidate.ownerAvatar ?? RepoAvatarURL.from(owner: candidate.owner),
-                    size: 18,
+                    // 双行行高居中时 18pt 偏小；提到接近主列表 repo logo 观感。
+                    size: 28,
                     showBorder: false
                 )
                 VStack(alignment: .leading, spacing: 3) {
@@ -1001,6 +1034,7 @@ struct RAGWorkspaceAnswerSurface: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .opacity(canToggle ? 1 : 0.45)
             .background(
                 isHighlighted
                     ? Color.accentColor.opacity(0.12)
@@ -1009,7 +1043,18 @@ struct RAGWorkspaceAnswerSurface: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(candidate.fullName)
+        .disabled(!canToggle)
+        .help(
+            canToggle
+                ? Text(candidate.fullName)
+                : Text(
+                    String(
+                        format: String.l10n("rag.workspace.mention.selectionLimit"),
+                        locale: locale,
+                        KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts
+                    )
+                )
+        )
     }
 
     /// 与知识库浏览器分片列表同一套斑马纹：奇数行极淡 primary，不抢高亮色。
@@ -1117,7 +1162,7 @@ struct RAGWorkspaceAnswerSurface: View {
         case .returnKey(let modifiers):
             let flags = modifiers.intersection(.deviceIndependentFlagsMask)
             // @ 候选打开时：Enter 切换勾选；Cmd+Enter 仍走发送偏好。
-            if viewModel.isMentionPickerPresented, !flags.contains(.command) {
+            if viewModel.isContextPickerPresented, !flags.contains(.command) {
                 viewModel.selectHighlightedMention()
                 return true
             }
@@ -1136,17 +1181,15 @@ struct RAGWorkspaceAnswerSurface: View {
             viewModel.send()
             return true
         case .upArrow:
-            guard viewModel.isMentionPickerPresented else { return false }
+            guard viewModel.isContextPickerPresented else { return false }
             viewModel.moveMentionSelection(by: -1)
             return true
         case .downArrow:
-            guard viewModel.isMentionPickerPresented else { return false }
+            guard viewModel.isContextPickerPresented else { return false }
             viewModel.moveMentionSelection(by: 1)
             return true
         case .escape:
-            guard viewModel.isMentionPickerPresented else { return false }
-            viewModel.dismissMentionPicker()
-            return true
+            return viewModel.handleContextPickerEscape()
         }
     }
 
