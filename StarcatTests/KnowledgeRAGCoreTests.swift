@@ -674,9 +674,44 @@ struct KnowledgeRAGCoreTests {
         let citation = fixtureCitation(marker: "S1")
 
         let display = RAGMarkdownText.prepareForDisplay("[S1]octo/demo", citations: [citation])
+        let repositoryDisplay = RAGMarkdownText.prepareForDisplay(
+            "[octo/demo](https://github.com/octo/demo)",
+            citations: []
+        )
+        let nonRepositoryDisplay = RAGMarkdownText.prepareForDisplay(
+            "[octo/demo issues](https://github.com/octo/demo/issues)",
+            citations: []
+        )
 
         #expect(display.contains("[S1](starcat-rag://citation/\(citation.id.uuidString))"))
         #expect(display.contains("\n\nocto/demo"))
+        #expect(repositoryDisplay.contains(
+            "[![octo avatar](starcat-rag-avatar://octo)](https://github.com/octo/demo) [octo/demo](https://github.com/octo/demo)"
+        ))
+        #expect(!nonRepositoryDisplay.contains("starcat-rag-avatar"))
+    }
+
+    @Test("RAG Markdown 仅拆出标准表格并保留代码围栏")
+    func ragMarkdownTableParserPreservesFencedPipes() {
+        let source = """
+        Before
+
+        | Name | Stars |
+        | --- | ---: |
+        | Starcat | 42 |
+
+        ```swift
+        let pipeline = "a | b"
+        ```
+
+        After
+        """
+
+        #expect(RAGMarkdownTableParser.split(source) == [
+            .markdown("Before\n"),
+            .table("| Name | Stars |\n| --- | ---: |\n| Starcat | 42 |"),
+            .markdown("\n```swift\nlet pipeline = \"a | b\"\n```\n\nAfter")
+        ])
     }
 
     @Test("Planner: 无筛选问题保持 semantic_only")

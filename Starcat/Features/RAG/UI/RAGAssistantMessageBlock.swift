@@ -67,6 +67,22 @@ struct RAGAssistantMessageBlock: View {
                 Spacer(minLength: 0)
             }
 
+            assistantMessageContent
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard showsActions else { return }
+            isHovered = hovering
+        }
+        .onDisappear {
+            copyFeedbackPinTask?.cancel()
+            copyFeedbackPinTask = nil
+        }
+    }
+
+    @ViewBuilder
+    private var assistantMessageContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if !preparationSteps.isEmpty {
                 RAGExecutionTimeline(steps: preparationSteps)
             }
@@ -85,7 +101,6 @@ struct RAGAssistantMessageBlock: View {
             if !content.isEmpty {
                 RAGStableStoredMarkdown(content: content, citations: citations)
                     .equatable()
-                    .frame(maxWidth: 900, alignment: .leading)
             }
 
             if !content.isEmpty, !citations.isEmpty {
@@ -151,15 +166,7 @@ struct RAGAssistantMessageBlock: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: areActionsRevealed)
             }
         }
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            guard showsActions else { return }
-            isHovered = hovering
-        }
-        .onDisappear {
-            copyFeedbackPinTask?.cancel()
-            copyFeedbackPinTask = nil
-        }
+        .frame(maxWidth: RAGMessageContentMetrics.maxWidth, alignment: .leading)
     }
 
     /// 钉住动作条直到复制反馈结束（与 CopyFeedbackButton 1.5s 窗口一致）。
@@ -223,6 +230,13 @@ struct RAGStreamingAssistantMessageBlock: View {
                 Spacer(minLength: 0)
             }
 
+            streamingAssistantMessageContent
+        }
+    }
+
+    @ViewBuilder
+    private var streamingAssistantMessageContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if !preparationSteps.isEmpty {
                 RAGExecutionTimeline(steps: preparationSteps)
             }
@@ -247,7 +261,6 @@ struct RAGStreamingAssistantMessageBlock: View {
                 // 长回答可能把 SwiftUI 主线程拖入 AttributeGraph livelock。完成态仍可整条复制。
                 Text(snapshot.liveTail)
                     .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
-                    .frame(maxWidth: 900, alignment: .leading)
             }
 
             if !snapshot.isEmpty, let activityLabel, !activityLabel.isEmpty {
@@ -259,6 +272,7 @@ struct RAGStreamingAssistantMessageBlock: View {
                 }
             }
         }
+        .frame(maxWidth: RAGMessageContentMetrics.maxWidth, alignment: .leading)
     }
 }
 
@@ -320,6 +334,5 @@ private struct RAGStableStreamingMarkdownChunk: View, Equatable {
 
     var body: some View {
         RAGMarkdownText(content: markdown)
-            .frame(maxWidth: 900, alignment: .leading)
     }
 }

@@ -1361,34 +1361,9 @@ struct RAGWorkspaceInspector: View {
                             tint: .green,
                             helpTopic: .contextBudget
                         ) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(String(
-                                    format: String.l10n("rag.workspace.context.percentFull"),
-                                    Int((usage.usageRatio * 100).rounded())
-                                ))
-                                .font(ragFont(.caption, weight: .semibold))
-                                Spacer(minLength: 8)
-                                Text(String(
-                                    format: String.l10n("rag.workspace.context.tokensSummary"),
-                                    contextTokenText(usage.inputTokens),
-                                    contextTokenText(usage.windowTokens)
-                                ))
-                                .font(ragFont(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                            }
-                            ProgressView(value: usage.usageRatio)
-                                .progressViewStyle(.linear)
-                                .controlSize(.mini)
-                                .tint(.accentColor)
-                            ForEach(activeContextSegments(usage)) { kind in
-                                planMetricRow(
-                                    LocalizedStringKey(kind.displayKey),
-                                    value: contextTokenText(usage.tokenCount(for: kind))
-                                )
-                            }
-                            planMetricRow(
-                                "rag.workspace.context.reservedOutput",
-                                value: contextTokenText(usage.reservedOutputTokens)
+                            RAGContextWindowBreakdownView(
+                                usage: usage,
+                                variant: .budget
                             )
                         }
                     }
@@ -1966,20 +1941,6 @@ struct RAGWorkspaceInspector: View {
             case .metadata: return String.l10n("rag.browser.source.metadata")
             }
         }.joined(separator: ", ")
-    }
-
-    func activeContextSegments(_ usage: RAGContextUsage) -> [RAGContextUsageSegmentKind] {
-        RAGContextUsageSegmentKind.allCases.filter {
-            $0 != .reservedOutput && usage.tokenCount(for: $0) > 0
-        }
-    }
-
-    func contextTokenText(_ tokens: Int) -> String {
-        if tokens >= 1_000 {
-            return (Double(tokens) / 1_000)
-                .formatted(.number.precision(.fractionLength(0...1)).locale(locale)) + "K"
-        }
-        return localizedInteger(tokens)
     }
 
     func localizedInteger(_ value: Int) -> String {

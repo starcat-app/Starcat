@@ -24346,6 +24346,22 @@
         }
       }
     },
+    "rag.workspace.code.copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制代码"
+          }
+        }
+      }
+    },
     "rag.workspace.citations.collapse": {
       "localizations": {
         "en": {
@@ -24390,6 +24406,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "导出 Markdown"
+          }
+        }
+      }
+    },
+    "rag.workspace.table.copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy table Markdown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制表格 Markdown"
           }
         }
       }

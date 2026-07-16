@@ -453,12 +453,13 @@ struct AppSettingsTests {
         let legacyDefaults = makeIsolatedDefaults()
         let legacySettings = AppSettings(defaults: legacyDefaults)
         legacySettings.ragPromptSettings = RAGPromptSettings(
-            generator: RAGDefaultPrompts.generatorBeforeExternalWeb,
+            generator: RAGDefaultPrompts.generatorBeforeRepositoryLinks,
             planner: RAGDefaultPrompts.plannerBeforeNetworkSearch
         )
 
         let upgraded = AppSettings(defaults: legacyDefaults)
         #expect(upgraded.ragPromptSettings.generator == RAGDefaultPrompts.generator)
+        #expect(upgraded.ragPromptSettings.generator.systemPrompt.contains("canonical full name"))
         #expect(upgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("webSearchRequests"))
 

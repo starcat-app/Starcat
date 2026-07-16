@@ -86,6 +86,12 @@ enum RAGMessageAvatarMetrics {
     static let cornerRadius: CGFloat = 5
 }
 
+/// 助手消息头像下方的阅读列宽度：Think 时间线、正文 Markdown、引用与操作条共用同一上限，
+/// 避免宽屏下执行轨迹铺满而正文仍停在较窄列里的视觉错位。
+enum RAGMessageContentMetrics {
+    static let maxWidth: CGFloat = 900
+}
+
 enum RAGConversationDropTarget: Equatable {
     case group(UUID)
     case ungrouped

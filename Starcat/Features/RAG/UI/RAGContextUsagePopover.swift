@@ -10,6 +10,173 @@
 
 import SwiftUI
 
+// MARK: - 分段配色
+
+extension RAGContextUsageSegmentKind {
+    /// 分段色与进度条色块一一对应；用系统语义色适配明暗主题。
+    var usageSegmentColor: Color {
+        switch self {
+        case .system: return Color(nsColor: .systemGray)
+        case .historySummary: return Color(nsColor: .systemGreen)
+        case .recentMessages: return Color(nsColor: .systemOrange)
+        case .question: return Color(nsColor: .systemBlue)
+        case .evidence: return Color(nsColor: .systemPink)
+        case .remoteContext: return Color(nsColor: .systemPurple)
+        case .attachments: return Color(nsColor: .systemYellow)
+        case .reservedOutput: return Color(nsColor: .systemTeal)
+        }
+    }
+}
+
+// MARK: - 分色堆叠条（预算 / 占用共用渲染，语义由外层承载）
+
+/// 上下文预算与上下文占用的展示变体。
+/// 两者共用分色堆叠条，但图例样式、是否展示预留输出、无障碍文案不同。
+enum RAGContextWindowBreakdownVariant {
+    /// Inspector Plan：本轮计划与检索完成后的实际快照，单独列出预留输出。
+    case budget
+    /// Composer：输入期实时预览，只展示输入分段。
+    case usage
+}
+
+/// Context Window 分色堆叠条 + 图例。不含标题，由外层 planSection / Popover 提供。
+struct RAGContextWindowBreakdownView: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
+
+    let usage: RAGContextUsage
+    let variant: RAGContextWindowBreakdownVariant
+
+    /// 只列出已装进 Prompt 的输入分段；预留输出仅在 budget 变体的图例中单独展示。
+    private var activeSegments: [RAGContextUsageSegmentKind] {
+        RAGContextUsageSegmentKind.allCases.filter {
+            $0 != .reservedOutput && usage.tokenCount(for: $0) > 0
+        }
+    }
+
+    private var showsReservedOutput: Bool {
+        variant == .budget
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(percentFullText)
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(tokensSummaryText)
+                    .font(ragFont(.caption, scale: interfaceScale).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            segmentedUsageBar
+
+            VStack(spacing: 8) {
+                ForEach(activeSegments) { kind in
+                    segmentLegendRow(kind: kind, tokens: usage.tokenCount(for: kind))
+                }
+                if showsReservedOutput, usage.reservedOutputTokens > 0 {
+                    segmentLegendRow(
+                        kind: .reservedOutput,
+                        tokens: usage.reservedOutputTokens,
+                        showsColorSwatch: false
+                    )
+                }
+            }
+        }
+    }
+
+    /// 整窗宽为 Context Window；已用输入分段按 token 比例着色，剩余留灰轨。
+    private var segmentedUsageBar: some View {
+        GeometryReader { proxy in
+            let total = CGFloat(max(usage.windowTokens, 1))
+            let spacing: CGFloat = 1.5
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.secondary.opacity(0.18))
+                HStack(spacing: spacing) {
+                    ForEach(activeSegments) { kind in
+                        let raw = proxy.size.width * CGFloat(usage.tokenCount(for: kind)) / total
+                        let width = max(raw, 2)
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(kind.usageSegmentColor)
+                            .frame(width: width)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(height: 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(accessibilityTitleKey))
+        .accessibilityValue(Text(percentFullText))
+    }
+
+    private var accessibilityTitleKey: LocalizedStringKey {
+        switch variant {
+        case .budget: return "rag.workspace.inspector.plan.contextBudget"
+        case .usage: return "rag.workspace.context.title"
+        }
+    }
+
+    private func segmentLegendRow(
+        kind: RAGContextUsageSegmentKind,
+        tokens: Int,
+        showsColorSwatch: Bool = true
+    ) -> some View {
+        HStack(spacing: 10) {
+            if showsColorSwatch {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(kind.usageSegmentColor)
+                    .frame(width: 10, height: 10)
+            } else {
+                Color.clear
+                    .frame(width: 10, height: 10)
+            }
+            Text(LocalizedStringKey(kind.displayKey))
+                .font(ragFont(.caption, scale: interfaceScale))
+                .foregroundStyle(variant == .budget ? .secondary : .primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(Self.tokenText(tokens, locale: locale))
+                .font(
+                    ragFont(
+                        .caption,
+                        scale: interfaceScale,
+                        weight: variant == .budget ? .semibold : .regular
+                    )
+                    .monospacedDigit()
+                )
+                .foregroundStyle(variant == .budget ? .primary : .secondary)
+        }
+    }
+
+    private var percentFullText: String {
+        let percent = Int((usage.usageRatio * 100).rounded())
+        return String(format: String.l10n("rag.workspace.context.percentFull"), locale: locale, percent)
+    }
+
+    private var tokensSummaryText: String {
+        String(
+            format: String.l10n("rag.workspace.context.tokensSummary"),
+            locale: locale,
+            Self.tokenText(usage.inputTokens, locale: locale),
+            Self.tokenText(usage.windowTokens, locale: locale)
+        )
+    }
+
+    static func tokenText(_ tokens: Int, locale: Locale) -> String {
+        if tokens >= 1_000 {
+            let value = Double(tokens) / 1_000
+            return value.formatted(.number.precision(.fractionLength(0...1)).locale(locale)) + "K"
+        }
+        return tokens.formatted(.number.locale(locale))
+    }
+}
+
+// MARK: - Composer 入口
+
 struct RAGContextUsageButton: View {
     let usage: RAGContextUsage
     @State private var isPresented = false
@@ -46,24 +213,15 @@ struct RAGContextUsageButton: View {
 
 struct RAGContextUsagePopover: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    @Environment(\.locale) private var locale
 
     let usage: RAGContextUsage
 
-    /// 只列出已装进 Prompt 的输入分段；故意跳过 reservedOutput。
-    private var activeSegments: [RAGContextUsageSegmentKind] {
-        RAGContextUsageSegmentKind.allCases.filter {
-            $0 != .reservedOutput && usage.tokenCount(for: $0) > 0
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // 与 Inspector「上下文预算」planSection 同款前缀图标，便于两处扫读时建立视觉关联。
             HStack(spacing: 6) {
                 Image(systemName: "gauge.with.dots.needle.33percent")
                     .font(iconFont(size: 12, scale: interfaceScale, weight: .semibold))
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 16)
                     .accessibilityHidden(true)
                 Text("rag.workspace.context.title")
@@ -71,101 +229,10 @@ struct RAGContextUsagePopover: View {
                     .foregroundStyle(.primary)
             }
 
-            HStack(alignment: .firstTextBaseline) {
-                Text(percentFullText)
-                    .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                Text(tokensSummaryText)
-                    .font(ragFont(.caption, scale: interfaceScale).monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            segmentedUsageBar
-
-            VStack(spacing: 8) {
-                ForEach(activeSegments) { kind in
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(segmentColor(kind))
-                            .frame(width: 10, height: 10)
-                        // displayKey 是 String，必须包成 LocalizedStringKey，否则会当原文画出 key。
-                        Text(LocalizedStringKey(kind.displayKey))
-                            .font(ragFont(.caption, scale: interfaceScale))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text(tokenText(usage.tokenCount(for: kind)))
-                            .font(ragFont(.caption, scale: interfaceScale).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+            RAGContextWindowBreakdownView(usage: usage, variant: .usage)
         }
         .padding(16)
         .frame(width: 320 * interfaceScale.multiplier)
         .focusEffectDisabled()
-    }
-
-    /// 整窗宽为 Context Window；已用输入分段按 token 比例着色，剩余留灰轨。
-    private var segmentedUsageBar: some View {
-        GeometryReader { proxy in
-            let total = CGFloat(max(usage.windowTokens, 1))
-            let spacing: CGFloat = 1.5
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.secondary.opacity(0.18))
-                HStack(spacing: spacing) {
-                    ForEach(activeSegments) { kind in
-                        let raw = proxy.size.width * CGFloat(usage.tokenCount(for: kind)) / total
-                        let width = max(raw, 2)
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(segmentColor(kind))
-                            .frame(width: width)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-        }
-        .frame(height: 10)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("rag.workspace.context.title"))
-        .accessibilityValue(Text(percentFullText))
-    }
-
-    private var percentFullText: String {
-        let percent = Int((usage.usageRatio * 100).rounded())
-        return String(format: String.l10n("rag.workspace.context.percentFull"), locale: locale, percent)
-    }
-
-    private var tokensSummaryText: String {
-        String(
-            format: String.l10n("rag.workspace.context.tokensSummary"),
-            locale: locale,
-            tokenText(usage.inputTokens),
-            tokenText(usage.windowTokens)
-        )
-    }
-
-    private func tokenText(_ tokens: Int) -> String {
-        if tokens >= 1_000 {
-            let value = Double(tokens) / 1_000
-            return value.formatted(.number.precision(.fractionLength(0...1)).locale(locale)) + "K"
-        }
-        return "\(tokens)"
-    }
-
-    /// 分段色与进度条色块一一对应；用系统语义色适配明暗主题。
-    private func segmentColor(_ kind: RAGContextUsageSegmentKind) -> Color {
-        switch kind {
-        case .system: return Color(nsColor: .systemGray)
-        case .historySummary: return Color(nsColor: .systemGreen)
-        case .recentMessages: return Color(nsColor: .systemOrange)
-        case .question: return Color(nsColor: .systemBlue)
-        case .evidence: return Color(nsColor: .systemPurple)
-        case .remoteContext: return Color(nsColor: .systemPink)
-        case .attachments: return Color(nsColor: .systemYellow)
-        case .reservedOutput: return Color(nsColor: .systemTeal) // UI 已过滤，保留穷尽分支
-        }
     }
 }
