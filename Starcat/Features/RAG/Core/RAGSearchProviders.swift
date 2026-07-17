@@ -18,6 +18,12 @@ struct RAGKeywordSearchQuery: Equatable, Sendable {
     var sqliteFTS5Expression: String
     var externalQuery: String
     var usedSemanticFallback: Bool
+
+    /// 空 terms 没有可执行的字面意图。Provider 必须返回零命中，不能把空字符串交给
+    /// SQLite MATCH 或外部搜索后端，以免语法错误或被解释成全量检索。
+    var isExecutable: Bool {
+        !terms.isEmpty && !sqliteFTS5Expression.isEmpty && !externalQuery.isEmpty
+    }
 }
 
 /// RAG 专用 OR 查询构造器。普通搜索继续使用 `FTSQuery.sanitize` 的 AND 语义。
@@ -91,6 +97,7 @@ struct SQLiteRAGKeywordSearchProvider: RAGKeywordSearchProvider {
     }
 
     func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        guard query.isExecutable else { return [] }
         let hits = try await repository.keywordSearch(
             query: query.sqliteFTS5Expression,
             model: model,

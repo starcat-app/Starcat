@@ -4121,6 +4121,22 @@ struct KnowledgeRAGCoreTests {
         #expect(try await disabledEmptyProvider.search(query: query, model: "embed", repoIDs: [9], limit: 10).isEmpty)
     }
 
+    @Test("空关键词不会访问外部或 SQLite fallback provider")
+    func emptyKeywordQuerySkipsAllProviders() async throws {
+        let primary = RAGCallCountRecorder()
+        let fallback = RAGCallCountRecorder()
+        let provider = FallbackRAGKeywordSearchProvider(
+            primary: CountingRAGKeywordProvider(backendName: "Meilisearch", recorder: primary),
+            fallback: CountingRAGKeywordProvider(backendName: "SQLite", recorder: fallback)
+        )
+        let query = RAGKeywordQueryBuilder.build(keywordQueries: [], semanticQuery: "the and repository")
+
+        #expect(!query.isExecutable)
+        #expect(try await provider.search(query: query, model: "embed", repoIDs: [9], limit: 10).isEmpty)
+        #expect(await primary.count() == 0)
+        #expect(await fallback.count() == 0)
+    }
+
     @Test("Meilisearch 回退不得吞掉取消")
     func keywordBackendFallbackPreservesCancellation() async {
         let provider = FallbackRAGKeywordSearchProvider(
@@ -4910,6 +4926,28 @@ private actor RAGKeywordQueryRecorder {
 
     func latestQuery() -> RAGKeywordSearchQuery? {
         query
+    }
+}
+
+private actor RAGCallCountRecorder {
+    private var value = 0
+
+    func record() {
+        value += 1
+    }
+
+    func count() -> Int {
+        value
+    }
+}
+
+private struct CountingRAGKeywordProvider: RAGKeywordSearchProvider {
+    let backendName: String
+    let recorder: RAGCallCountRecorder
+
+    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        await recorder.record()
+        return []
     }
 }
 
