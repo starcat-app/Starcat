@@ -1,6 +1,6 @@
 # RAG 双语关键词 OR 检索实施方案
 
-> 状态：已确认，按 Checklist 实施中
+> 状态：已完成；实现与验证见结果报告
 > 日期：2026-07-17
 > 范围：知识库 RAG Query Planner、SQLite FTS5 关键词召回、混合检索与 Inspector/Debug 可观测性
 > 关联清单：`RAG双语关键词OR检索Checklist.md`
