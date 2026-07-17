@@ -3933,6 +3933,10 @@ struct KnowledgeRAGCoreTests {
             diagnostics: diagnostics,
             trace: retrievalTrace
         ))
+        let snapshotJSON = String(decoding: try JSONEncoder().encode(retrievalSnapshot), as: UTF8.self)
+        #expect(!snapshotJSON.contains("keyword degraded"))
+        #expect(!snapshotJSON.contains("vector degraded"))
+        #expect(snapshotJSON.contains(RAGRetrievalBranchFailure.providerError.rawValue))
         let contextSnapshot = RAGContextUsageSnapshot(usage: RAGContextUsage(
             windowTokens: 32_768,
             reservedOutputTokens: 4_096,
@@ -4040,9 +4044,9 @@ struct KnowledgeRAGCoreTests {
             detail.messages.last?.executionTrace.first(where: { $0.kind == .retrieval })?.retrievalSnapshot
         )
         #expect(restoredRetrieval.keywordAcceptedCount == 16)
-        #expect(restoredRetrieval.keywordErrorDescription == "keyword degraded")
+        #expect(restoredRetrieval.keywordFailure == .providerError)
         #expect(restoredRetrieval.vectorAcceptedCount == 15)
-        #expect(restoredRetrieval.vectorErrorDescription == "vector degraded")
+        #expect(restoredRetrieval.vectorFailure == .providerError)
         #expect(restoredRetrieval.rerankedCount == 6)
         #expect(restoredRetrieval.trace == retrievalTrace)
         #expect(restoredRetrieval.trace?.keywordQuery?.terms == plan.keywordQueries)
@@ -4113,37 +4117,37 @@ struct KnowledgeRAGCoreTests {
         #expect(RAGRetrievalBranchStatus.resolve(
             raw: 0,
             accepted: 0,
-            errorDescription: nil,
+            failure: nil,
             outcome: .noEvidence
         ) == .completed(raw: 0, accepted: 0))
         #expect(RAGRetrievalBranchStatus.resolve(
             raw: 0,
             accepted: 0,
-            errorDescription: "provider unavailable",
+            failure: .providerError,
             outcome: .noEvidence
-        ) == .failed("provider unavailable"))
+        ) == .failed(.providerError))
         #expect(RAGRetrievalBranchStatus.resolve(
             raw: 0,
             accepted: 0,
-            errorDescription: nil,
+            failure: nil,
             outcome: .noCandidates
         ) == .skipped)
         #expect(RAGRetrievalBranchStatus.resolve(
             raw: 0,
             accepted: 0,
-            errorDescription: nil,
+            failure: nil,
             outcome: .noReadyChunks
         ) == .skipped)
         #expect(RAGRetrievalBranchStatus.resolve(
             raw: 0,
             accepted: 0,
-            errorDescription: nil,
+            failure: nil,
             outcome: .sourcesDisabled
         ) == .skipped)
         #expect(RAGRetrievalBranchStatus.resolve(
             raw: 0,
             accepted: 0,
-            errorDescription: nil,
+            failure: nil,
             outcome: .skippedStructured
         ) == .skipped)
     }

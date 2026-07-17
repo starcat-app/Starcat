@@ -931,17 +931,17 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
 /// 也保证当前轮与历史快照使用同一套“0 命中 / 失败 / 跳过”语义。
 enum RAGRetrievalBranchStatus: Equatable, Sendable {
     case completed(raw: Int, accepted: Int)
-    case failed(String)
+    case failed(RAGRetrievalBranchFailure)
     case skipped
 
     static func resolve(
         raw: Int,
         accepted: Int,
-        errorDescription: String?,
+        failure: RAGRetrievalBranchFailure?,
         outcome: RAGRetrievalDiagnostics.Outcome?
     ) -> Self {
-        if let errorDescription, !errorDescription.isEmpty {
-            return .failed(errorDescription)
+        if let failure {
+            return .failed(failure)
         }
         if outcome == .noCandidates
             || outcome == .noReadyChunks
@@ -953,20 +953,26 @@ enum RAGRetrievalBranchStatus: Equatable, Sendable {
     }
 }
 
+/// 可随会话持久化的安全失败分类。原始 provider 错误可能包含自托管 endpoint 或系统路径，
+/// 只允许留在当前轮 Diagnostics/Debug，历史 Snapshot 仅保存这个稳定 code。
+enum RAGRetrievalBranchFailure: String, Codable, Equatable, Sendable {
+    case providerError = "provider_error"
+}
+
 /// “计划”面板可回放的检索结果摘要。
 ///
 /// `RAGRetrievalDiagnostics` 仍是当前轮 Debug 事实，可能包含 provider 错误；
-/// 历史会话保留数量、安全设置、分支错误与不含正文的检索轨迹，避免复制知识库正文。
+/// 历史会话保留数量、安全设置、分支失败分类与不含正文的检索轨迹，避免复制原始外部错误或正文。
 struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
     var settings: RAGRetrievalSettings?
     var candidateRepoCount: Int
     var keywordRawCount: Int
     var keywordAcceptedCount: Int
     /// optional 保证旧会话快照仍可解码，同时让 0 命中与执行失败不再混为一谈。
-    var keywordErrorDescription: String? = nil
+    var keywordFailure: RAGRetrievalBranchFailure? = nil
     var vectorRawCount: Int
     var vectorAcceptedCount: Int
-    var vectorErrorDescription: String? = nil
+    var vectorFailure: RAGRetrievalBranchFailure? = nil
     var fusionUniqueCount: Int
     var rankingFilteredCount: Int
     var rerankState: RAGRerankDiagnostics.State?
@@ -983,10 +989,10 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
             candidateRepoCount = result.candidates.count
             keywordRawCount = 0
             keywordAcceptedCount = 0
-            keywordErrorDescription = nil
+            keywordFailure = nil
             vectorRawCount = 0
             vectorAcceptedCount = 0
-            vectorErrorDescription = nil
+            vectorFailure = nil
             fusionUniqueCount = result.childHits.count
             rankingFilteredCount = 0
             rerankState = nil
@@ -1004,7 +1010,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
         candidateRepoCount = diagnostics.candidateRepoCount
         keywordRawCount = diagnostics.keywordRawCount
         keywordAcceptedCount = max(diagnostics.keywordRawCount - diagnostics.keywordSourceFilteredCount, 0)
-        keywordErrorDescription = diagnostics.keywordErrorDescription
+        keywordFailure = diagnostics.keywordErrorDescription == nil ? nil : .providerError
         vectorRawCount = diagnostics.vectorRawCount
         vectorAcceptedCount = max(
             diagnostics.vectorRawCount
@@ -1012,7 +1018,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
                 - diagnostics.vectorSimilarityFilteredCount,
             0
         )
-        vectorErrorDescription = diagnostics.vectorErrorDescription
+        vectorFailure = diagnostics.vectorErrorDescription == nil ? nil : .providerError
         fusionUniqueCount = diagnostics.fusion.uniqueCount
         rankingFilteredCount = diagnostics.fusion.perRepositoryLimitFilteredCount
             + diagnostics.fusion.totalLimitFilteredCount

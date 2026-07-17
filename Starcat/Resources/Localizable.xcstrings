@@ -23716,6 +23716,22 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.retrieval.branch.providerError": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "retrieval provider unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索服务不可用"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.retrieval.branch.skipped": {
       "localizations": {
         "en": {

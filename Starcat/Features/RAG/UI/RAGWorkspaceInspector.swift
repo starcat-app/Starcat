@@ -1475,7 +1475,7 @@ struct RAGWorkspaceInspector: View {
                                 value: localizedRetrievalBranch(
                                     raw: retrieval.keywordRawCount,
                                     accepted: retrieval.keywordAcceptedCount,
-                                    errorDescription: retrieval.keywordErrorDescription,
+                                    failure: retrieval.keywordFailure,
                                     outcome: retrieval.outcome
                                 ),
                                 target: .keyword,
@@ -1486,7 +1486,7 @@ struct RAGWorkspaceInspector: View {
                                 value: localizedRetrievalBranch(
                                     raw: retrieval.vectorRawCount,
                                     accepted: retrieval.vectorAcceptedCount,
-                                    errorDescription: retrieval.vectorErrorDescription,
+                                    failure: retrieval.vectorFailure,
                                     outcome: retrieval.outcome
                                 ),
                                 target: .semantic,
@@ -2124,25 +2124,31 @@ struct RAGWorkspaceInspector: View {
     func localizedRetrievalBranch(
         raw: Int,
         accepted: Int,
-        errorDescription: String?,
+        failure: RAGRetrievalBranchFailure?,
         outcome: RAGRetrievalDiagnostics.Outcome?
     ) -> String {
         switch RAGRetrievalBranchStatus.resolve(
             raw: raw,
             accepted: accepted,
-            errorDescription: errorDescription,
+            failure: failure,
             outcome: outcome
         ) {
         case .completed(let raw, let accepted):
             return localizedFunnelCount(raw: raw, accepted: accepted)
-        case .failed(let errorDescription):
-            let conciseError = String(errorDescription.prefix(80))
+        case .failed(let failure):
             return String(
                 format: String.l10n("rag.workspace.inspector.plan.retrieval.branch.failedFormat"),
-                conciseError
+                localizedRetrievalFailure(failure)
             )
         case .skipped:
             return String.l10n("rag.workspace.inspector.plan.retrieval.branch.skipped")
+        }
+    }
+
+    func localizedRetrievalFailure(_ failure: RAGRetrievalBranchFailure) -> String {
+        switch failure {
+        case .providerError:
+            return String.l10n("rag.workspace.inspector.plan.retrieval.branch.providerError")
         }
     }
 
