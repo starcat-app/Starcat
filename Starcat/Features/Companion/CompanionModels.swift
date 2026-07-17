@@ -21,7 +21,16 @@ struct CompanionPingResponse: Codable, Equatable {
         schemaVersion: 1,
         status: "ok",
         app: "Starcat",
-        capabilities: ["repo-context", "notes", "tags", "ai-summary", "actions", "events"]
+        capabilities: [
+            "repo-context",
+            "notes",
+            "tags",
+            "ai-summary",
+            "actions",
+            "events",
+            "star-state",
+            "recommendations-pagination"
+        ]
     )
 }
 
@@ -29,6 +38,7 @@ struct CompanionRepoContextResponse: Codable, Equatable {
     let schemaVersion: Int
     let repo: CompanionRepoDTO
     let recommendations: [CompanionRecommendationDTO]
+    let recommendationsHasMore: Bool
     let wikiLinks: [CompanionWikiLinkDTO]
     let tags: [CompanionTagDTO]
     let availableTags: [CompanionTagDTO]
@@ -60,6 +70,41 @@ struct CompanionRecommendationDTO: Codable, Equatable {
     let stars: Int
     let score: Double?
     let reason: String?
+}
+
+/// 浏览器插件请求下一页推荐。服务端根据本地推荐缓存中的 nextOffset 翻页，
+/// 不信任浏览器传入 offset，避免快速重复点击造成跳页或覆盖已有快照。
+struct CompanionRecommendationsMoreRequest: Codable, Equatable {
+    let owner: String
+    let repo: String
+}
+
+/// 推荐翻页只返回本次新增项；插件负责与当前页面已有项去重后追加。
+struct CompanionRecommendationsPageResponse: Codable, Equatable {
+    let schemaVersion: Int
+    let status: String
+    let recommendations: [CompanionRecommendationDTO]
+    let hasMore: Bool
+}
+
+enum CompanionStarState: String, Codable, Equatable {
+    case starred
+    case unstarred
+}
+
+/// GitHub 页面已经确认后的 Star 状态，不是一次“切换”指令。
+/// 使用目标态而不是 toggle，保证重试和快速连续点击都是幂等的。
+struct CompanionStarStateUpdateRequest: Codable, Equatable {
+    let owner: String
+    let repo: String
+    let state: CompanionStarState
+}
+
+struct CompanionStarStateUpdateResponse: Codable, Equatable {
+    let schemaVersion: Int
+    let status: String
+    let repoID: Int64?
+    let state: CompanionStarState
 }
 
 struct CompanionWikiLinkDTO: Codable, Equatable {

@@ -42982,6 +42982,74 @@
         }
       }
     },
+    "settings.pro.direct.validationError.generic": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Validation failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "校验失败"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.validationError.invalidLicense": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "License invalid"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权已失效"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.validationError.network": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络错误"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.validationError.service": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务暂不可用"
+          }
+        }
+      }
+    },
     "settings.pro.direct.license.button.manage": {
       "extractionState": "manual",
       "localizations": {
@@ -44246,13 +44314,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pro access is active on this Mac."
+            "value": "Pro is active. Welcome to Starcat Pro."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这台 Mac 已启用 Pro 权益。"
+            "value": "Pro 已开通，欢迎加入 Starcat Pro。"
           }
         }
       }
@@ -44336,23 +44404,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "订阅后解锁 AI、搜索、Release 追踪与更高本地额度。"
-          }
-        }
-      }
-    },
-    "settings.pro.successBanner": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pro is active. Welcome to Starcat Pro."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pro 已开通，欢迎加入 Starcat Pro。"
           }
         }
       }

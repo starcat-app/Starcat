@@ -220,6 +220,9 @@ struct CompanionContextProviderTests {
         #expect(context.note?.content == "library note")
         #expect(context.tags.map { $0.name } == ["AI"])
         #expect(context.availableTags.map { $0.name } == ["AI"])
+        #expect(context.actions.openInStarcat == true)
+        #expect(context.actions.codeflow == true)
+        #expect(context.actions.codebase == true)
     }
 
     @Test("cached health and OpenSSF are exposed without refresh")
@@ -293,8 +296,8 @@ struct CompanionContextProviderTests {
         ])
     }
 
-    @Test("recommendations are mapped and limited")
-    func recommendationsAreMappedAndLimited() async throws {
+    @Test("recommendations keep the detail-page page size and pagination state")
+    func recommendationsAreMappedWithPaginationState() async throws {
         let repo = makeRepo(isStarred: true)
         let provider = CompanionContextProvider(
             lookupRepo: { _, _ in repo },
@@ -314,12 +317,14 @@ struct CompanionContextProviderTests {
                         reasons: ["similar users", "shared topics"]
                     )
                 }
-            }
+            },
+            lookupRecommendationsHasMore: { _ in true }
         )
 
         let context = try await provider.context(owner: "apple", repo: "swift")
 
-        #expect(context.recommendations.count == 5)
+        #expect(context.recommendations.count == 6)
+        #expect(context.recommendationsHasMore == true)
         #expect(context.recommendations.first?.repoID == 1)
         #expect(context.recommendations.first?.fullName == "owner0/repo0")
         #expect(context.recommendations.first?.reason == "similar users")

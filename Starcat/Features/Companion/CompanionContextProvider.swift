@@ -14,6 +14,13 @@ enum CompanionContextError: Error, Equatable {
     case invalidRepoPath
 }
 
+/// Companion 只需要推荐页的展示数据与“是否还有下一页”。nextOffset 仍由
+/// `RecommendationContextService` 的磁盘快照持有，不能交给浏览器决定。
+private struct CompanionRecommendationPageSource {
+    let items: [RepoRecommendationItem]
+    let hasMore: Bool
+}
+
 struct CompanionContextProvider {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
     private let lookupLibraryState: @Sendable (Int64) async throws -> LibraryState
@@ -24,7 +31,7 @@ struct CompanionContextProvider {
     private let lookupHealth: @Sendable (Int64) async throws -> RepoHealthSnapshot?
     private let lookupOpenSSF: @Sendable (Int64) async throws -> OpenSSFScoreRecord?
     private let lookupWikiLinks: @Sendable (String, String) async -> [WikiLink]
-    private let lookupRecommendations: @Sendable (Int64) async throws -> [RepoRecommendationItem]
+    private let lookupRecommendationPage: @Sendable (Int64) async throws -> CompanionRecommendationPageSource
     private let isProUser: @Sendable () async -> Bool
 
     init(
@@ -76,12 +83,15 @@ struct CompanionContextProvider {
                 return []
             }
         }
-        lookupRecommendations = { repoID in
-            guard let recommendationContextService else { return [] }
-            if let cached = await MainActor.run(body: { recommendationContextService.cachedSnapshot(repoID: repoID) }) {
-                return cached.items
+        lookupRecommendationPage = { repoID in
+            guard let recommendationContextService else {
+                return CompanionRecommendationPageSource(items: [], hasMore: false)
             }
-            return try await recommendationContextService.refresh(repoID: repoID).items
+            if let cached = await MainActor.run(body: { recommendationContextService.cachedSnapshot(repoID: repoID) }) {
+                return CompanionRecommendationPageSource(items: cached.items, hasMore: cached.hasMore)
+            }
+            let fresh = try await recommendationContextService.refresh(repoID: repoID)
+            return CompanionRecommendationPageSource(items: fresh.items, hasMore: fresh.hasMore)
         }
         isProUser = {
             await MainActor.run {
@@ -102,6 +112,7 @@ struct CompanionContextProvider {
         lookupOpenSSF: @escaping @Sendable (Int64) async throws -> OpenSSFScoreRecord? = { _ in nil },
         lookupWikiLinks: @escaping @Sendable (String, String) async -> [WikiLink] = { _, _ in [] },
         lookupRecommendations: @escaping @Sendable (Int64) async throws -> [RepoRecommendationItem] = { _ in [] },
+        lookupRecommendationsHasMore: @escaping @Sendable (Int64) async throws -> Bool = { _ in false },
         isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
@@ -113,7 +124,12 @@ struct CompanionContextProvider {
         self.lookupHealth = lookupHealth
         self.lookupOpenSSF = lookupOpenSSF
         self.lookupWikiLinks = lookupWikiLinks
-        self.lookupRecommendations = lookupRecommendations
+        lookupRecommendationPage = { repoID in
+            CompanionRecommendationPageSource(
+                items: try await lookupRecommendations(repoID),
+                hasMore: try await lookupRecommendationsHasMore(repoID)
+            )
+        }
         self.isProUser = isProUser
     }
 
@@ -134,16 +150,27 @@ struct CompanionContextProvider {
         // is cut at the local API boundary instead of relying on content-script UI
         // hiding. Private notes remain available for starred repos because they are
         // first-party local data, not one of the paid external insight surfaces.
-        let aiSummary = hasProEntitlement ? await summaryDTO(for: localRepo) : nil
+        let aiSummary = hasProEntitlement
+            ? await summaryDTO(for: localRepo, libraryState: libraryState)
+            : nil
         let health = hasProEntitlement ? await healthDTO(for: localRepo) : nil
         let openssf = hasProEntitlement ? await openSSFDTO(for: localRepo) : nil
         let wikiLinks = hasProEntitlement ? await wikiLinkDTOs(owner: owner, name: name) : []
-        let recommendations = hasProEntitlement ? await recommendationDTOs(for: localRepo) : []
-        let canOpenLocalActions = localRepo?.isStarred == true && hasProEntitlement
+        let recommendationPage = hasProEntitlement
+            ? await recommendationPageDTO(for: localRepo)
+            : CompanionRecommendationsPageResponse(
+                schemaVersion: 1,
+                status: "ok",
+                recommendations: [],
+                hasMore: false
+            )
+        let canOpenLocalActions = isActiveLocalRepo(localRepo, libraryState: libraryState)
+            && hasProEntitlement
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo, libraryState: libraryState),
-            recommendations: recommendations,
+            recommendations: recommendationPage.recommendations,
+            recommendationsHasMore: recommendationPage.hasMore,
             wikiLinks: wikiLinks,
             tags: tags,
             availableTags: availableTags,
@@ -161,25 +188,43 @@ struct CompanionContextProvider {
         )
     }
 
-    private func recommendationDTOs(for repo: Repo?) async -> [CompanionRecommendationDTO] {
-        guard let repo, repo.id > 0 else { return [] }
-        do {
-            return try await lookupRecommendations(repo.id)
-                .prefix(5)
-                .map { item in
-                    CompanionRecommendationDTO(
-                        repoID: item.repoID,
-                        fullName: item.fullName,
-                        description: item.description,
-                        language: item.language,
-                        stars: item.stars,
-                        score: item.score,
-                        reason: item.reasons.first
-                    )
-                }
-        } catch {
-            return []
+    private func recommendationPageDTO(for repo: Repo?) async -> CompanionRecommendationsPageResponse {
+        guard let repo, repo.id > 0 else {
+            return CompanionRecommendationsPageResponse(
+                schemaVersion: 1,
+                status: "ok",
+                recommendations: [],
+                hasMore: false
+            )
         }
+        do {
+            let page = try await lookupRecommendationPage(repo.id)
+            return CompanionRecommendationsPageResponse(
+                schemaVersion: 1,
+                status: "ok",
+                recommendations: page.items.map(Self.recommendationDTO(_:)),
+                hasMore: page.hasMore
+            )
+        } catch {
+            return CompanionRecommendationsPageResponse(
+                schemaVersion: 1,
+                status: "ok",
+                recommendations: [],
+                hasMore: false
+            )
+        }
+    }
+
+    static func recommendationDTO(_ item: RepoRecommendationItem) -> CompanionRecommendationDTO {
+        CompanionRecommendationDTO(
+            repoID: item.repoID,
+            fullName: item.fullName,
+            description: item.description,
+            language: item.language,
+            stars: item.stars,
+            score: item.score,
+            reason: item.reasons.first
+        )
     }
 
     private func wikiLinkDTOs(owner: String, name: String) async -> [CompanionWikiLinkDTO] {
@@ -221,8 +266,8 @@ struct CompanionContextProvider {
         }
     }
 
-    private func summaryDTO(for repo: Repo?) async -> CompanionAISummaryDTO? {
-        guard let repo, repo.isStarred else { return nil }
+    private func summaryDTO(for repo: Repo?, libraryState: LibraryState) async -> CompanionAISummaryDTO? {
+        guard let repo, isActiveLocalRepo(repo, libraryState: libraryState) else { return nil }
         do {
             guard let record = try await lookupLatestSummary(repo.id) else { return nil }
             return Self.summaryDTO(record)
@@ -323,7 +368,7 @@ struct CompanionContextProvider {
         return trimmed?.isEmpty == false ? trimmed : nil
     }
 
-    private static func isValidGitHubPathComponent(_ value: String) -> Bool {
+    static func isValidGitHubPathComponent(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= 100 else { return false }
         return value.allSatisfy { character in
             character.isASCII

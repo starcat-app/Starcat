@@ -11,6 +11,44 @@ import StoreKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// 手动校验的用户可见失败分类。
+///
+/// License API 的诊断码仍保留在 manager / 日志中；设置页只显示短句，避免内部细节
+/// 撑开操作行，也避免把 HTTP 状态码、provider 名称等实现信息暴露给用户。
+private enum DirectValidationFailure {
+    case network
+    case serviceUnavailable
+    case invalidLicense
+    case generic
+
+    init(errorCode: String) {
+        let normalizedCode = errorCode.lowercased()
+        if normalizedCode.hasPrefix("transport_") || normalizedCode == "transport_error" {
+            self = .network
+        } else if ["license_not_found", "license_revoked", "license_expired", "invalid_license"].contains(normalizedCode) {
+            self = .invalidLicense
+        } else if normalizedCode.hasPrefix("http_")
+                    || ["provider_unavailable", "billing_not_ready", "unauthorized_client"].contains(normalizedCode) {
+            self = .serviceUnavailable
+        } else {
+            self = .generic
+        }
+    }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .network:
+            return "settings.pro.direct.validationError.network"
+        case .serviceUnavailable:
+            return "settings.pro.direct.validationError.service"
+        case .invalidLicense:
+            return "settings.pro.direct.validationError.invalidLicense"
+        case .generic:
+            return "settings.pro.direct.validationError.generic"
+        }
+    }
+}
+
 /// Pro 订阅设置页。
 ///
 /// 本页只负责展示与触发购买动作；权益真相源在聚合 provider，业务门控在
@@ -24,7 +62,6 @@ struct ProSettingsTab: View {
     @Environment(\.openURL) private var openURL
 
     @State private var confettiTrigger: Int = 0
-    @State private var showSuccessMessage: Bool = false
     @State private var showDirectDeactivationSuccess = false
     @State private var showCancelSubscriptionSuccess: Bool = false
     @State private var isOfferCodeRedemptionPresented = false
@@ -38,6 +75,8 @@ struct ProSettingsTab: View {
     /// 「校验」成功后短暂切换为绿色勾；连续点击会重置 1.5s 计时。
     @State private var didValidateSucceed = false
     @State private var validateFeedbackTask: Task<Void, Never>?
+    /// 手动校验失败只展示短分类，不把后端错误码或网络内部细节暴露给用户。
+    @State private var directValidationFailure: DirectValidationFailure?
 
     private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
 
@@ -130,12 +169,7 @@ struct ProSettingsTab: View {
             Text("settings.pro.direct.deactivate.confirm.message")
         }
         .starcatOfferCodeRedemption(isPresented: $isOfferCodeRedemptionPresented) {
-            showSuccessMessage = true
-            confettiTrigger += 1
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(4))
-                showSuccessMessage = false
-            }
+            showActivationSuccess()
         }
         .task {
             if isDirectBuild {
@@ -218,12 +252,6 @@ struct ProSettingsTab: View {
                     .foregroundStyle(.secondary)
                 }
 
-                if showSuccessMessage {
-                    Label("settings.pro.successBanner", systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(.green)
-                        .font(.callout.weight(.medium))
-                }
-
                 if showDirectDeactivationSuccess {
                     Label("settings.pro.direct.deactivate.success", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -259,7 +287,8 @@ struct ProSettingsTab: View {
                 )
 
                 HStack(spacing: 10) {
-                    Spacer()
+                    directValidationFailureLabel
+                    Spacer(minLength: 8)
                     directValidateButton
                     directDeactivateButton
                 }
@@ -299,7 +328,8 @@ struct ProSettingsTab: View {
                     .textFieldStyle(.roundedBorder)
 
                 HStack {
-                    Spacer()
+                    directValidationFailureLabel
+                    Spacer(minLength: 8)
                     directActivateButton
                 }
             }
@@ -346,6 +376,17 @@ struct ProSettingsTab: View {
         .buttonStyle(.bordered)
         .controlSize(.regular)
         .disabled(directLicenseManager.isRequestInFlight)
+    }
+
+    @ViewBuilder
+    private var directValidationFailureLabel: some View {
+        if let directValidationFailure {
+            Label(directValidationFailure.titleKey, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .help(Text(directValidationFailure.titleKey))
+        }
     }
 
     private var directDeactivateButton: some View {
@@ -622,6 +663,7 @@ struct ProSettingsTab: View {
     }
 
     private func activateDirectLicense() async {
+        directValidationFailure = nil
         let didActivate = await directLicenseManager.activate(licenseKey: directLicenseKey)
         guard didActivate else { return }
         directLicenseKey = ""
@@ -630,8 +672,20 @@ struct ProSettingsTab: View {
     }
 
     private func validateDirectLicense() async {
-        let didActivate = await directLicenseManager.validateStoredLicense()
-        guard didActivate else { return }
+        directValidationFailure = nil
+        let entitlementIsActive = await directLicenseManager.validateStoredLicense()
+
+        // `validateStoredLicense()` 的 Bool 表示“本地权益是否仍有效”：网络失败时为了
+        // 不误撤销 Pro 也可能返回 true。UI 必须再看本次错误码，不能把“保留权益”
+        // 错画成校验成功的绿色勾和彩带。
+        if let errorCode = directLicenseManager.validationRecord.lastErrorCode {
+            directValidationFailure = DirectValidationFailure(errorCode: errorCode)
+            return
+        }
+        guard entitlementIsActive else {
+            directValidationFailure = .generic
+            return
+        }
         flashValidateSuccess()
         showActivationSuccess()
     }
@@ -679,14 +733,9 @@ struct ProSettingsTab: View {
         openURL(url)
     }
 
+    /// 成功信息已经固定在顶部 Pro 状态行；这里只触发彩带，避免临时插入行造成布局跳动。
     private func showActivationSuccess() {
-        showSuccessMessage = true
         confettiTrigger += 1
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
-            showSuccessMessage = false
-        }
     }
 
     private var activeExpirationDate: Date? {

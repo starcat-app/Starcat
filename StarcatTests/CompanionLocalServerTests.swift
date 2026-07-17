@@ -61,6 +61,26 @@ struct CompanionLocalServerTests {
         )
     }
 
+    private func makeServer(starStateHandler: CompanionStarStateHandler) throws -> CompanionLocalServer {
+        let keychain = InMemoryKeychain()
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        return CompanionLocalServer(
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
+            starStateHandler: starStateHandler
+        )
+    }
+
+    private func makeServer(recommendationHandler: CompanionRecommendationHandler) throws -> CompanionLocalServer {
+        let keychain = InMemoryKeychain()
+        try keychain.storeServiceAPIKey("test-token", forService: "local_api")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        return CompanionLocalServer(
+            configuration: CompanionConfiguration(localAPIKeyStore: StarcatLocalAPIKeyStore(keychain: keychain), defaults: defaults),
+            recommendationHandler: recommendationHandler
+        )
+    }
+
     @Test("GET /plugin/v1/ping 带 token 返回 200")
     func pingReturnsOK() async throws {
         let server = try makeServer()
@@ -251,6 +271,103 @@ struct CompanionLocalServerTests {
 
         #expect(statusCode(response) == 400)
         #expect(bodyString(response).contains("missing_repo"))
+    }
+
+    @Test("POST /plugin/v1/stars/state 把已确认的 Star 目标态写入 Starcat")
+    func postStarStateAppliesStarredTarget() async throws {
+        let handler = CompanionStarStateHandler(
+            lookupRepo: { _, _ in
+                Issue.record("starred 目标态不应先依赖本地 repo")
+                return nil
+            },
+            star: { owner, repo in
+                #expect(owner == "apple")
+                #expect(repo == "swift")
+                return Self.makeRepo(isStarred: true)
+            },
+            unstar: { _ in
+                Issue.record("starred 目标态不应调用 unstar")
+            }
+        )
+        let server = try makeServer(starStateHandler: handler)
+        let response = await server.handle(request("""
+        POST /plugin/v1/stars/state HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","state":"starred"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"state\":\"starred\""))
+        #expect(bodyString(response).contains("\"repo_id\":44838949"))
+    }
+
+    @Test("POST /plugin/v1/stars/state 取消 Star 时走保留私有数据的权威 unstar 链路")
+    func postStarStateAppliesUnstarredTarget() async throws {
+        let handler = CompanionStarStateHandler(
+            lookupRepo: { owner, repo in
+                #expect(owner == "apple")
+                #expect(repo == "swift")
+                return Self.makeRepo(isStarred: true)
+            },
+            star: { _, _ in
+                Issue.record("unstarred 目标态不应调用 star")
+                return Self.makeRepo(isStarred: true)
+            },
+            unstar: { repo in
+                #expect(repo.id == 44_838_949)
+            }
+        )
+        let server = try makeServer(starStateHandler: handler)
+        let response = await server.handle(request("""
+        POST /plugin/v1/stars/state HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","state":"unstarred"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"state\":\"unstarred\""))
+    }
+
+    @Test("POST /plugin/v1/recommendations/more 返回新增推荐和下一页状态")
+    func postRecommendationsMoreReturnsNextPage() async throws {
+        let handler = CompanionRecommendationHandler(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            loadNextPage: { repoID in
+                #expect(repoID == 44_838_949)
+                return CompanionRecommendationsPageResponse(
+                    schemaVersion: 1,
+                    status: "ok",
+                    recommendations: [
+                        CompanionRecommendationDTO(
+                            repoID: 2,
+                            fullName: "swiftlang/swift-package-manager",
+                            description: "Package manager",
+                            language: "Swift",
+                            stars: 10,
+                            score: 0.8,
+                            reason: "shared topics"
+                        )
+                    ],
+                    hasMore: false
+                )
+            }
+        )
+        let server = try makeServer(recommendationHandler: handler)
+        let response = await server.handle(request("""
+        POST /plugin/v1/recommendations/more HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("swift-package-manager"))
+        #expect(bodyString(response).contains("\"has_more\":false"))
     }
 
     @Test("PATCH /plugin/v1/notes 保存私人笔记")

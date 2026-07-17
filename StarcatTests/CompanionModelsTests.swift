@@ -20,7 +20,16 @@ struct CompanionModelsTests {
         #expect(object["schema_version"] as? Int == 1)
         #expect(object["status"] as? String == "ok")
         #expect(object["app"] as? String == "Starcat")
-        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "tags", "ai-summary", "actions", "events"])
+        #expect(object["capabilities"] as? [String] == [
+            "repo-context",
+            "notes",
+            "tags",
+            "ai-summary",
+            "actions",
+            "events",
+            "star-state",
+            "recommendations-pagination"
+        ])
     }
 
     @Test("repo-context response keeps snake_case contract")
@@ -39,6 +48,7 @@ struct CompanionModelsTests {
                 isInLibrary: true
             ),
             recommendations: [],
+            recommendationsHasMore: true,
             wikiLinks: [
                 CompanionWikiLinkDTO(source: "deepwiki", title: "DeepWiki", url: "https://deepwiki.com/apple/swift")
             ],
@@ -72,6 +82,7 @@ struct CompanionModelsTests {
         #expect(object["wiki_links"] is [[String: Any]])
         #expect(object["tags"] is [[String: Any]])
         #expect(object["available_tags"] is [[String: Any]])
+        #expect(object["recommendations_has_more"] as? Bool == true)
         #expect((object["ai_summary"] as? [String: Any])?["markdown"] as? String == "summary")
         #expect(actions["open_in_starcat"] as? Bool == true)
         #expect(actions["generate_summary"] as? Bool == true)

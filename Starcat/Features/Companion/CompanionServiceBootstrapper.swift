@@ -64,6 +64,15 @@ enum CompanionServiceBootstrapper {
             dispatcher: dependencies.companionActionDispatcher,
             entitlementGate: dependencies.entitlementGate
         )
+        let starStateHandler = CompanionStarStateHandler(
+            repoRepository: dependencies.repoRepository,
+            starActionService: dependencies.starActionService
+        )
+        let recommendationHandler = CompanionRecommendationHandler(
+            repoRepository: dependencies.repoRepository,
+            service: dependencies.recommendationContextService,
+            entitlementGate: dependencies.entitlementGate
+        )
         let eventHub = CompanionEventHub(
             lookupTags: { repoID in
                 let tags = try await dependencies.repoTagRepository.fetchTags(forRepo: repoID)
@@ -81,6 +90,8 @@ enum CompanionServiceBootstrapper {
             tagWriter: tagWriter,
             libraryStateWriter: libraryStateWriter,
             actionHandler: actionHandler,
+            starStateHandler: starStateHandler,
+            recommendationHandler: recommendationHandler,
             eventHub: eventHub
         )
         server?.stop()

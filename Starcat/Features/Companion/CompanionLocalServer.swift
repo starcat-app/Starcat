@@ -22,6 +22,8 @@ final class CompanionLocalServer {
     private let tagWriter: CompanionTagWriter?
     private let libraryStateWriter: CompanionLibraryStateWriter?
     private let actionHandler: CompanionActionHandler?
+    private let starStateHandler: CompanionStarStateHandler?
+    private let recommendationHandler: CompanionRecommendationHandler?
     private let eventHub: CompanionEventHub
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
@@ -43,6 +45,8 @@ final class CompanionLocalServer {
         tagWriter: CompanionTagWriter? = nil,
         libraryStateWriter: CompanionLibraryStateWriter? = nil,
         actionHandler: CompanionActionHandler? = nil,
+        starStateHandler: CompanionStarStateHandler? = nil,
+        recommendationHandler: CompanionRecommendationHandler? = nil,
         eventHub: CompanionEventHub? = nil
     ) {
         self.configuration = configuration
@@ -51,6 +55,8 @@ final class CompanionLocalServer {
         self.tagWriter = tagWriter
         self.libraryStateWriter = libraryStateWriter
         self.actionHandler = actionHandler
+        self.starStateHandler = starStateHandler
+        self.recommendationHandler = recommendationHandler
         self.eventHub = eventHub ?? CompanionEventHub()
     }
 
@@ -162,6 +168,10 @@ final class CompanionLocalServer {
             )
         case ("GET", "/plugin/v1/repo-context"):
             return await repoContextResponse(request: request, origin: origin)
+        case ("POST", "/plugin/v1/stars/state"):
+            return await updateStarStateResponse(request: request, origin: origin)
+        case ("POST", "/plugin/v1/recommendations/more"):
+            return await recommendationsMoreResponse(request: request, origin: origin)
         case ("GET", "/plugin/v1/events"):
             return response(status: 426, body: ["error": "stream_required"], origin: origin)
         case ("PATCH", "/plugin/v1/notes"):
@@ -239,6 +249,59 @@ final class CompanionLocalServer {
             return response(status: 400, body: ["error": "invalid_repo"], origin: origin)
         } catch {
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+    }
+
+    private func updateStarStateResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let starStateHandler else {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+        let payload: CompanionStarStateUpdateRequest
+        do {
+            payload = try Self.jsonDecoder.decode(CompanionStarStateUpdateRequest.self, from: request.body)
+        } catch {
+            return response(status: 400, body: ["error": "bad_json"], origin: origin)
+        }
+
+        do {
+            let result = try await starStateHandler.apply(
+                owner: payload.owner,
+                repo: payload.repo,
+                state: payload.state
+            )
+            return response(status: 200, body: result, origin: origin)
+        } catch CompanionStarStateError.invalidRepoPath {
+            return response(status: 400, body: ["error": "invalid_repo"], origin: origin)
+        } catch StarActionError.notAuthenticated {
+            // Bearer key 已通过，但 Starcat 尚未登录 GitHub；用 409 与本地 API 401 区分。
+            return response(status: 409, body: ["error": "github_not_authenticated"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "star_state_update_failed"], origin: origin)
+        }
+    }
+
+    private func recommendationsMoreResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let recommendationHandler else {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+        let payload: CompanionRecommendationsMoreRequest
+        do {
+            payload = try Self.jsonDecoder.decode(CompanionRecommendationsMoreRequest.self, from: request.body)
+        } catch {
+            return response(status: 400, body: ["error": "bad_json"], origin: origin)
+        }
+
+        do {
+            let result = try await recommendationHandler.loadMore(owner: payload.owner, repo: payload.repo)
+            return response(status: 200, body: result, origin: origin)
+        } catch CompanionRecommendationError.invalidRepoPath {
+            return response(status: 400, body: ["error": "invalid_repo"], origin: origin)
+        } catch CompanionRecommendationError.repoNotFound {
+            return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
+        } catch CompanionRecommendationError.requiresPro {
+            return response(status: 403, body: ["error": "requires_pro"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "recommendations_load_failed"], origin: origin)
         }
     }
 
@@ -402,6 +465,7 @@ final class CompanionLocalServer {
         let reason: String = switch status {
         case 200: "OK"
         case 204: "No Content"
+        case 409: "Conflict"
         case 426: "Upgrade Required"
         case 400: "Bad Request"
         case 401: "Unauthorized"
