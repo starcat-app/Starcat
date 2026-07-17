@@ -96,6 +96,7 @@ struct KnowledgeRAGRetriever: Sendable {
 
     func retrieve(
         semanticQuery: String,
+        keywordQueries: [String] = [],
         candidates: [RAGRepoCandidate],
         explicitMode: RAGExplicitRepoMode,
         explicitRepoIDs: [Int64],
@@ -123,12 +124,16 @@ struct KnowledgeRAGRetriever: Sendable {
 
         let publicRepoIDs = candidates.filter { !$0.repo.isPrivate }.map(\.repo.id)
         let privateRepoIDs = candidates.filter(\.repo.isPrivate).map(\.repo.id)
+        let keywordQuery = RAGKeywordQueryBuilder.build(
+            keywordQueries: keywordQueries,
+            semanticQuery: query
+        )
         // keyword 与 query embedding/vector 没有数据依赖。先同时启动两路，既保留原来的
         // 独立降级语义，也避免网络 embedding 的等待时间串行叠加到 FTS 查询之后。
         progress(.keywordSearchStarted)
         progress(.semanticSearchStarted)
         async let keywordResult = keywordRetrieval(
-            query: query,
+            query: keywordQuery,
             publicRepoIDs: publicRepoIDs,
             privateRepoIDs: privateRepoIDs
         )
@@ -436,7 +441,11 @@ struct KnowledgeRAGRetriever: Sendable {
         )
     }
 
-    private func keywordHits(query: String, publicRepoIDs: [Int64], privateRepoIDs: [Int64]) async throws -> [RAGChildHit] {
+    private func keywordHits(
+        query: RAGKeywordSearchQuery,
+        publicRepoIDs: [Int64],
+        privateRepoIDs: [Int64]
+    ) async throws -> [RAGChildHit] {
         var hits: [RAGChildHit] = []
         if !publicRepoIDs.isEmpty {
             hits += try await keywordProvider.search(
@@ -458,7 +467,7 @@ struct KnowledgeRAGRetriever: Sendable {
     }
 
     private func keywordRetrieval(
-        query: String,
+        query: RAGKeywordSearchQuery,
         publicRepoIDs: [Int64],
         privateRepoIDs: [Int64]
     ) async -> RAGRetrievalBranchResult {
