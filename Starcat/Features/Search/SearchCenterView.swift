@@ -901,7 +901,9 @@ struct SearchCenterView: View {
                 .foregroundStyle(tint)
                 .frame(width: 12, height: 12)
                 .padding(4)
-                .background(tint.opacity(0.10), in: Circle())
+                // 提高来源图标底座的可见度，避免 GitHub 的动态 primary 色在浅色背景上
+                // 显得比相邻操作图标更小；仍使用语义 tint，明暗主题会自动切换。
+                .background(tint.opacity(0.18), in: Circle())
                 .overlay {
                     Circle()
                         .stroke(tint.opacity(0.18), lineWidth: 0.5)
