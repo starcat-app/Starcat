@@ -1,0 +1,48 @@
+# RAG Wiki 元数据审查报告（第 3 轮）
+
+> 审查日期：2026-07-17  
+> 审查范围：测试矩阵、i18n、实施方案、详细设计、专项进度、Checklist、提交与工程门禁  
+> 审查结论：发现 1 个 P1、1 个 P2；修复后执行全量测试与双 target build
+
+## 已核对
+
+- `Localizable.xcstrings` JSON 合法；Metadata 系统管理错误文案具有 en / zh-Hans 翻译。
+- 本分支新增 Swift 代码没有引入 `String(localized:)` 或 `NSLocalizedString(...)` 调用。
+- 未新增 RAG schema / migration / Wiki source / Prompt placeholder / Debug stage，符合 v7 已收口边界。
+- `docs/功能实现总览.md` 仅只读核对，分支无修改；最终报告只能提供待 dong4j 确认的同步草案。
+- 当前 19 个提交均为中文 message，并按文档、缓存、补齐、Metadata、Prompt、禁删/UI、测试和审查修复拆分；未 push。
+- 第一、二轮报告均遵守“先报告、再修复、再回填”。
+
+## 发现项
+
+### P1：Checklist 声称的新入库与精确重建测试尚未形成直接证据
+
+后台测试覆盖启动扫描和切库取消，但尚未直接发送 `.repoLibraryStateDidChange` 验证新仓库入队。缓存测试锁定了 save/reset payload，却没有让 `KnowledgeRAGIndexBuilder` 使用同一个可测试的事件路由，因此 owner/repo 或 repositoryKeys 的解析变化仍可能让精确重建静默失效。
+
+修复要求：
+
+1. 增加“新仓库加入知识库后入队并写缓存”测试；
+2. 抽出最小的 Wiki Metadata 事件路由纯函数，让 builder 的 save/reset 监听复用；
+3. 增加 change 精确单仓、reset 多仓与非法 payload 忽略测试；
+4. 通过后才能勾选 Checklist 的 Metadata 精确重建测试项。
+
+### P2：正式设计文档未精确反映第二轮修复后的两阶段语义
+
+详细设计仍写成“先试放仓库完整 Metadata，再逐段加入普通证据”，容易被理解为逐仓库交错装配；它没有明确“所有可保留仓库 Metadata 先于任意普通分片”。方案和详细设计也未记录 cold miss 完成后详情 / 搜索原地回填、缓存清空时移除旧链接。
+
+修复要求：同步实施方案、详细设计和专项进度，明确两阶段全局优先级与前台 save/reset 事件行为。
+
+## 工程门禁现状
+
+- Wiki / RAG 六组定向测试：通过。
+- `KnowledgeRAGCoreTests` + `RAGChunkRepositoryTests`：第二轮修复后通过。
+- `Starcat` Debug build：通过。
+- 全量 test、`StarcatDirect` Debug build：本轮修复后执行。
+- 已知非本需求 warning：`KnowledgeRAGCoreTests` 中既有 `@MainActor shouldOfferExternalSearchSettings` 测试诊断；不在本专项扩大修改。
+
+## 本轮后续动作
+
+1. 补新入库与事件路由测试。
+2. 同步三处正式文档。
+3. 执行全量 test、双 target build 和最终静态检查。
+4. 回填本报告与 Checklist，再进行一轮无新增缺口复审。
