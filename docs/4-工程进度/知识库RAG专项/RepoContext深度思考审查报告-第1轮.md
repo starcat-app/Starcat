@@ -2,7 +2,7 @@
 
 > 日期：2026-07-17
 > 范围：架构、预算、XML 合法性、证据门禁、取消语义、数据库与隐私边界
-> 结论：发现 1 个 P1、1 个 P2；本报告先落档，随后按问题逐项修复并回填。
+> 结论：发现的 1 个 P1、1 个 P2 均已修复，架构与执行边界审查通过。
 
 ## 1. 审查方法
 
@@ -53,4 +53,8 @@
 
 ## 5. 修复回填
 
-> 待第 1 轮问题修复提交完成后回填 commit、测试与最终结论。
+- 修复提交：`a1174b6c RAG：修复 RepoContext XML 校验与执行边界测试`。
+- P1：Service 在发出 success snapshot 前验证 XML 非空、可解析且存在根节点；失败统一转为 `invalid_or_empty_repo_context_xml` degraded，不产生 RepoContext document/citation。
+- P2：补齐 Provider degraded、`CancellationError` + cleanup、空/非法 XML，以及 execution trace/citation 历史 round-trip 测试。
+- 修复后验证：`xcodebuild -quiet -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/KnowledgeRAGCoreTests test` 通过；仅保留该 Suite 既有 MainActor warning。
+- 最终结论：本轮问题已清零，可以进入第 2 轮 UI、草稿持久化与可观测性审查。
