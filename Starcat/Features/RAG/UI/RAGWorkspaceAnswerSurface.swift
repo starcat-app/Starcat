@@ -29,6 +29,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var messageTail = ScrollTailController()
     @State private var historyWindow = RAGConversationHistoryWindow()
     @State private var isMessageNearBottom = true
+    @State private var isComposerContextExpanded = false
 
     private static let messageNearBottomThreshold: CGFloat = 64
 
@@ -588,37 +589,11 @@ struct RAGWorkspaceAnswerSurface: View {
             || !viewModel.githubLinkContexts.isEmpty
 
         return VStack(alignment: .leading, spacing: 8) {
-            // chip 放在输入框外（对齐 Agent），并按中栏宽度自动换行。
+            // 上下文放在输入框外（对齐 Agent）。单行直接展示；超过一行时默认收进
+            // 折叠面板，避免大量仓库和附件持续挤占消息阅读区。
             if hasContextChips {
-                HStack(alignment: .top, spacing: 8) {
-                    RAGFlowLayout(spacing: 7) {
-                        ForEach(viewModel.selectedRepoContexts) { repo in
-                            repoContextChip(repo)
-                        }
-                        ForEach(viewModel.attachments) { attachment in
-                            contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
-                                viewModel.removeAttachment(attachment.id)
-                            }
-                        }
-                        ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
-                            githubLinkChip(reference)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Button {
-                        viewModel.clearComposerContext()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(iconFont(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help("rag.workspace.composer.clearContext")
-                }
-                .padding(.horizontal, 16)
+                composerContextSection
+                    .padding(.horizontal, 16)
             }
 
             if let reason = viewModel.composerBlockingReason {
@@ -717,9 +692,8 @@ struct RAGWorkspaceAnswerSurface: View {
                         .focusEffectDisabled()
                         .help("rag.workspace.composer.cancel")
                     } else {
-                        let canSend = !viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            && viewModel.composerBlockingReason == nil
-                        Button { viewModel.send() } label: {
+                        let canSend = composerCanSend
+                        Button { submitComposerQuestion() } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(iconFont(size: 22, weight: .semibold))
                                 .foregroundStyle(canSend ? Color.accentColor : .secondary)
@@ -737,6 +711,142 @@ struct RAGWorkspaceAnswerSurface: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 12)
+        .onChange(of: composerContextItemCount) { _, itemCount in
+            // 清空上下文后恢复默认折叠态；下次重新选择大量仓库时不会继承旧展开状态。
+            if itemCount == 0 {
+                isComposerContextExpanded = false
+            }
+        }
+    }
+
+    /// 单行 chip 的可用高度上限。留出少量字体缩放余量，但仍显著小于两行 chip
+    /// （两行至少包含 2×chip 高度 + 7pt 行距），供 `ViewThatFits` 准确判断折行。
+    var composerContextCollapsedHeight: CGFloat {
+        interfaceScale.scaled(32)
+    }
+
+    var composerContextItemCount: Int {
+        viewModel.selectedRepoContexts.count
+            + viewModel.attachments.count
+            + viewModel.githubLinkContexts.count
+    }
+
+    /// 上下文展示区：折叠态用 `ViewThatFits` 先尝试完整 FlowLayout。
+    /// 能在一行高度内放下就原样显示；放不下才退化为整行可点击的折叠标题。
+    var composerContextSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if isComposerContextExpanded {
+                HStack(alignment: .center, spacing: 8) {
+                    composerContextDisclosureButton(isExpanded: true)
+                    clearComposerContextButton
+                }
+                composerContextFlow
+            } else {
+                HStack(alignment: .center, spacing: 8) {
+                    ViewThatFits(in: .vertical) {
+                        composerContextFlow
+                            .fixedSize(horizontal: false, vertical: true)
+                        composerContextDisclosureButton(isExpanded: false)
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: composerContextCollapsedHeight,
+                        maxHeight: composerContextCollapsedHeight,
+                        alignment: .topLeading
+                    )
+
+                    clearComposerContextButton
+                }
+            }
+        }
+    }
+
+    var composerContextFlow: some View {
+        RAGFlowLayout(spacing: 7) {
+            ForEach(viewModel.selectedRepoContexts) { repo in
+                repoContextChip(repo)
+            }
+            ForEach(viewModel.attachments) { attachment in
+                contextChip(title: attachmentChipTitle(attachment), icon: attachmentIcon(attachment)) {
+                    viewModel.removeAttachment(attachment.id)
+                }
+            }
+            ForEach(viewModel.githubLinkContexts, id: \.url) { reference in
+                githubLinkChip(reference)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 折叠标题遵守“整行点击”规范；chevron 只表达状态，清空操作留在外层独立按钮。
+    func composerContextDisclosureButton(isExpanded: Bool) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                isComposerContextExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(iconFont(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("rag.workspace.composer.contextDisclosure")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                composerContextCount(systemImage: "shippingbox", count: viewModel.selectedRepoContexts.count)
+                composerContextCount(systemImage: "paperclip", count: viewModel.attachments.count)
+                composerContextCount(systemImage: "link", count: viewModel.githubLinkContexts.count)
+            }
+            .frame(maxWidth: .infinity, minHeight: composerContextCollapsedHeight, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    @ViewBuilder
+    func composerContextCount(systemImage: String, count: Int) -> some View {
+        if count > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: systemImage)
+                Text(count.formatted())
+                    .monospacedDigit()
+            }
+            .font(ragFont(.caption))
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    var clearComposerContextButton: some View {
+        Button {
+            isComposerContextExpanded = false
+            viewModel.clearComposerContext()
+        } label: {
+            Image(systemName: "xmark.circle.fill")
+                .font(iconFont(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("rag.workspace.composer.clearContext")
+    }
+
+    var composerCanSend: Bool {
+        !viewModel.isAnswering
+            && !viewModel.draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && viewModel.composerBlockingReason == nil
+    }
+
+    /// 按钮、Return 与 ⌘Return 共用同一发送入口，保证展开面板只在真实发送时收起。
+    func submitComposerQuestion() {
+        guard composerCanSend else { return }
+        if isComposerContextExpanded {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                isComposerContextExpanded = false
+            }
+        }
+        viewModel.send()
     }
 
     /// 附件等非仓库 chip：左侧 SF Symbol + 文案 + 移除。
@@ -875,11 +985,13 @@ struct RAGWorkspaceAnswerSurface: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(snapshot.suggestions.enumerated()), id: \.element.id) { index, repo in
-                            mentionPickerRow(repo, rowIndex: index)
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(snapshot.suggestions) { repo in
+                            mentionPickerRow(repo)
                         }
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -993,7 +1105,7 @@ struct RAGWorkspaceAnswerSurface: View {
         .padding(.vertical, 16)
     }
 
-    func mentionPickerRow(_ candidate: RAGMentionCandidate, rowIndex: Int) -> some View {
+    func mentionPickerRow(_ candidate: RAGMentionCandidate) -> some View {
         let isHighlighted = candidate.id == viewModel.highlightedMentionRepoIDValue
         let isSelected = viewModel.isMentionSelected(candidate)
         // 已达上限时仍允许取消已选项；未选中的行禁用，避免一次塞进上千仓库。
@@ -1001,80 +1113,54 @@ struct RAGWorkspaceAnswerSurface: View {
             >= KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts
         let canToggle = isSelected || !selectionFull
         return Button { viewModel.toggleMention(candidate) } label: {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "checkmark")
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .opacity(isSelected ? 1 : 0)
-                    .frame(width: 12, alignment: .center)
-                RemoteAvatar(
-                    urlString: candidate.ownerAvatar ?? RepoAvatarURL.from(owner: candidate.owner),
-                    // 双行行高居中时 18pt 偏小；提到接近主列表 repo logo 观感。
-                    size: 28,
-                    showBorder: false
-                )
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(candidate.fullName)
-                        .font(ragFont(.callout))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    HStack(spacing: 6) {
-                        if let language = candidate.language?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !language.isEmpty {
-                            LanguageBadge(language: language, style: .compact)
-                        }
-                        StarsBadge(count: candidate.starsCount, style: .compact)
-                        // 索引侧元数据：有才出胶囊，没有不占位。
-                        if candidate.chunkCount > 0 {
-                            MetaBadge(
-                                systemImage: "square.stack.3d.up",
-                                text: candidate.chunkCount.formattedShort,
-                                tint: .secondary
+            UnifiedCompactRepoRow(
+                fullName: candidate.fullName,
+                owner: candidate.owner,
+                ownerAvatarURL: candidate.ownerAvatar,
+                language: candidate.language,
+                starsCount: candidate.starsCount,
+                isChecked: isSelected,
+                isHighlighted: isHighlighted,
+                isEnabled: canToggle
+            ) {
+                // 索引侧元数据属于 RAG，不下沉进共享 Row 的仓库身份模型。
+                if candidate.chunkCount > 0 {
+                    MetaBadge(
+                        systemImage: "square.stack.3d.up",
+                        text: candidate.chunkCount.formattedShort,
+                        tint: .secondary
+                    )
+                    .help(
+                        Text(
+                            String(
+                                format: String.l10n("rag.workspace.mention.badge.chunks"),
+                                locale: locale,
+                                candidate.chunkCount
                             )
-                            .help(
-                                Text(
-                                    String(
-                                        format: String.l10n("rag.workspace.mention.badge.chunks"),
-                                        locale: locale,
-                                        candidate.chunkCount
-                                    )
-                                )
-                            )
-                        }
-                        if candidate.hasAISummary {
-                            MetaBadge(
-                                systemImage: "sparkles",
-                                text: "",
-                                tint: .accentColor,
-                                iconOnly: true,
-                                accessibilityLabel: "rag.workspace.mention.badge.aiSummary"
-                            )
-                            .help("rag.workspace.mention.badge.aiSummary")
-                        }
-                        if candidate.hasPrivateNote {
-                            MetaBadge(
-                                systemImage: "note.text",
-                                text: "",
-                                tint: .orange,
-                                iconOnly: true,
-                                accessibilityLabel: "rag.workspace.mention.badge.privateNote"
-                            )
-                            .help("rag.workspace.mention.badge.privateNote")
-                        }
-                    }
+                        )
+                    )
                 }
-                Spacer(minLength: 0)
+                if candidate.hasAISummary {
+                    MetaBadge(
+                        systemImage: "sparkles",
+                        text: "",
+                        tint: .accentColor,
+                        iconOnly: true,
+                        accessibilityLabel: "rag.workspace.mention.badge.aiSummary"
+                    )
+                    .help("rag.workspace.mention.badge.aiSummary")
+                }
+                if candidate.hasPrivateNote {
+                    MetaBadge(
+                        systemImage: "note.text",
+                        text: "",
+                        tint: .orange,
+                        iconOnly: true,
+                        accessibilityLabel: "rag.workspace.mention.badge.privateNote"
+                    )
+                    .help("rag.workspace.mention.badge.privateNote")
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .opacity(canToggle ? 1 : 0.45)
-            .background(
-                isHighlighted
-                    ? Color.accentColor.opacity(0.12)
-                    : mentionZebraBackground(rowIndex: rowIndex)
-            )
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -1090,11 +1176,6 @@ struct RAGWorkspaceAnswerSurface: View {
                     )
                 )
         )
-    }
-
-    /// 与知识库浏览器分片列表同一套斑马纹：奇数行极淡 primary，不抢高亮色。
-    func mentionZebraBackground(rowIndex: Int) -> Color {
-        rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
     var modelMenu: some View {
@@ -1124,9 +1205,9 @@ struct RAGWorkspaceAnswerSurface: View {
                 Text(viewModel.selectedModelDisplayName)
                     .lineLimit(1)
             }
-            .ragComposerCapsuleChip(font: ragFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
+        .ragComposerMenuLabelStyle(font: ragFont(.caption, weight: .semibold))
         .fixedSize()
         .help("rag.workspace.composer.model")
     }
@@ -1143,7 +1224,7 @@ struct RAGWorkspaceAnswerSurface: View {
             .pickerStyle(.inline)
         } label: {
             HStack(spacing: 6) {
-                // 与模型胶囊的 14pt 品牌 logo 对齐：SF Symbol 默认跟随字号会比 logo
+                // 与模型菜单的 14pt 品牌 logo 对齐：SF Symbol 默认跟随字号会比 logo
                 // 更粗更沉，这里固定成 14×14 让两个底栏菜单图标视觉等大。
                 Image(systemName: "scope")
                     .resizable()
@@ -1152,9 +1233,9 @@ struct RAGWorkspaceAnswerSurface: View {
                 Text(repoModeKey(viewModel.explicitRepoMode))
                     .lineLimit(1)
             }
-            .ragComposerCapsuleChip(font: ragFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
+        .ragComposerMenuLabelStyle(font: ragFont(.caption, weight: .semibold))
         .fixedSize()
         .help("rag.workspace.composer.scope")
     }
@@ -1205,7 +1286,7 @@ struct RAGWorkspaceAnswerSurface: View {
             // 开=⌘↩发送 / Return 换行；关=Return 发送 / ⌘↩ 换行。
             if settings.aiChatRequiresCommandReturn {
                 if flags.contains(.command) {
-                    viewModel.send()
+                    submitComposerQuestion()
                     return true
                 }
                 return false
@@ -1213,7 +1294,7 @@ struct RAGWorkspaceAnswerSurface: View {
             if flags.contains(.command) {
                 return false
             }
-            viewModel.send()
+            submitComposerQuestion()
             return true
         case .upArrow:
             guard viewModel.isContextPickerPresented else { return false }

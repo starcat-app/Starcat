@@ -1065,6 +1065,9 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     var chunkID: Int64?
     var repoID: Int64
     var repoFullName: String
+    /// 仅用于 UI 语义色；当前回答直接取检索候选，历史回答由仓库表联表补齐。
+    /// 仓库被删除或没有主语言时保持 nil，引用 chip 回退原有稳定色盘。
+    var repoLanguage: String? = nil
     var source: RAGChunkSource
     var sectionTitle: String
     /// 融合后的检索排序分，用于回放本轮分片排序，不能作为百分比相关度解读。

@@ -236,12 +236,14 @@ extension Repo {
     /// - Parameters:
     ///   - badge: 场景独有徽章（manage 场景通常 nil）
     ///   - inlineMetadata: fullName 同行右侧的小型元信息（发行版聚合卡片使用）
+    ///   - footerMetadata: 属性行内的轻量元信息（例如知识库索引进度）
     ///   - readStatus: 阅读状态（Manage 场景由 `HomeViewModel.statusMap` 注入；
     ///     其他场景保持 nil 即可，UnifiedRepoRow 不会渲染角标）
     /// - Returns: 视图数据；`isStarred` 直接读 `self.isStarred`（本地 DB 是真值）
     func asCardData(
         badge: CardBadge? = nil,
         inlineMetadata: RepoCardInlineMetadata? = nil,
+        footerMetadata: RepoCardInlineMetadata? = nil,
         readStatus: RepoStatus? = nil,
         isInLibrary: Bool = false,
         openSSFScore: OpenSSFScoreBadgeData? = nil,
@@ -266,7 +268,7 @@ extension Repo {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: inlineMetadata,
-            footerMetadata: nil,
+            footerMetadata: footerMetadata,
             readStatus: readStatus,
             openSSFScore: openSSFScore,
             healthBadge: healthBadge

@@ -20300,6 +20300,22 @@
         }
       }
     },
+    "rag.workspace.composer.contextDisclosure": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected context"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选择的上下文"
+          }
+        }
+      }
+    },
     "rag.workspace.composer.cancel": {
       "localizations": {
         "en": {
