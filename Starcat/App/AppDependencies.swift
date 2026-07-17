@@ -137,6 +137,8 @@ final class AppDependencies {
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
+    /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
+    let repoAIContextProvider: RepoAIContextProvider
     /// AI 对话历史磁盘存储。由依赖容器显式装配，避免 ViewModel 默认参数读取 MainActor 单例。
     let diskChatHistoryStore: DiskChatHistoryStore
 
@@ -565,11 +567,14 @@ final class AppDependencies {
                 selection: settings.externalContextProviderSelection,
                 aggregateEnabled: settings.aggregateExternalContextSearchEnabled && settings.isProUser
             ),
+            repoContextProvider: repoAIContextProvider,
+            repoContextTokenBudget: settings.aiRepoContextTokenBudget,
             generatorClient: chatClient,
             generatorModel: chatSelection.modelName,
             generatorParameters: chatSelection.parameters,
             promptBuilder: KnowledgeRAGPromptBuilder(
                 maxEvidenceTokens: retrievalSettings.evidenceTokenBudget,
+                maxRepoContextTokens: settings.aiRepoContextTokenBudget,
                 promptConfiguration: ragPrompts.generator,
                 outputLanguage: outputLanguage
             ),
@@ -811,6 +816,7 @@ final class AppDependencies {
             storage: repoContextStorage,
             settings: self.settings
         )
+        self.repoAIContextProvider = repoAIContextProvider
 
         let aiInsight = RepoAIInsightService(
             summaryRepository: summaryRepo,

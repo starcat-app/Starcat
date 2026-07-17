@@ -105,6 +105,7 @@ struct RAGRepoContextSnapshot: Codable, Equatable, Sendable {
     var outcome: RAGRepoContextOutcome
     var wasProjected: Bool
     var projectionReason: String?
+    var degradationReason: String? = nil
     var citationMarker: String?
     var preparedAt: Date
 }

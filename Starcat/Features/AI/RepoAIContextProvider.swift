@@ -55,6 +55,8 @@ struct RepoAIContextResult: Sendable {
     let xml: String
 
     let metadata: PackMetadata
+    /// true 表示四件套缓存命中；false 表示本轮实际下载并重新 pack。
+    let cacheHit: Bool
 }
 
 /// Y4：context 准备结果三态。
@@ -99,7 +101,17 @@ enum RepoAIContextProgress: Sendable, Equatable {
 /// `@Observable` 状态，必须主线程；provider 在任意 actor 上调用回调即可。
 typealias RepoAIContextProgressCallback = @MainActor (RepoAIContextProgress) -> Void
 
-struct RepoAIContextProvider {
+protocol RepoAIContextProviding: Sendable {
+    func contextOutcome(
+        for repo: Repo,
+        onProgress: RepoAIContextProgressCallback?
+    ) async throws -> RepoAIContextOutcome
+    func cleanupTemporaryContextPreparation(for repo: Repo)
+}
+
+/// `settings` 的读取严格通过 MainActor 快照，pipeline 本身只消费不可变值。
+/// 该类型由 AppDependencies 单例持有并跨问答 Task 复用，因此显式声明并发边界。
+struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
 
     private let snapshotService: SharedSnapshotService
     private let storage: RepoContextStorage
@@ -290,7 +302,12 @@ struct RepoAIContextProvider {
             // W4：缓存命中时**不**发 `.downloadingArchive` 事件——chip 行要直接切到
             // 「全部完成」或保持 idle（具体由 consumer 决定），避免误导用户「明明秒开
             // 却看到下载步骤」。这里不调用 onProgress，让 consumer 自己判断 ready。
-            return RepoAIContextResult(url: existing.contextURL, xml: xml, metadata: existing.metadata)
+            return RepoAIContextResult(
+                url: existing.contextURL,
+                xml: xml,
+                metadata: existing.metadata,
+                cacheHit: true
+            )
         }
 
         // ④ 不命中 → 走完整 pipeline：下载 ZIP + Packer
@@ -342,7 +359,12 @@ struct RepoAIContextProvider {
             )
             throw RepoContextStorageError.outputDirectoryUnavailable
         }
-        return RepoAIContextResult(url: output.contextURL, xml: xml, metadata: resolvedMetadata)
+        return RepoAIContextResult(
+            url: output.contextURL,
+            xml: xml,
+            metadata: resolvedMetadata,
+            cacheHit: false
+        )
     }
 
     /// 极少触发的兜底（storage 写盘成功但 existingProject 又读不出）：用 input + output 拼一个

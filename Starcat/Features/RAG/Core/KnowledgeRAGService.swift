@@ -6,6 +6,7 @@
 //  remote/attachments -> Generator。每个早停状态都显式返回，避免“没搜到仍让模型自由回答”。
 //
 
+import CryptoKit
 import Foundation
 
 enum KnowledgeRAGServiceEvent: Sendable {
@@ -13,6 +14,8 @@ enum KnowledgeRAGServiceEvent: Sendable {
     case execution(RAGExecutionEvent)
     case plan(RAGQueryPlan)
     case retrieval(RAGRetrievalResult)
+    /// 只在本轮内存传递实际进入 Prompt 的 XML；execution trace 仅保存 snapshot。
+    case repoContext(RAGRepoContextDocument)
     case remoteContextConfirmation([RAGResolvedRemoteWorkItem])
     case remoteContext([RAGRemoteContextBlock])
     case terminal(RAGTerminalResponse)
@@ -36,6 +39,8 @@ enum RAGExecutionEvent: Sendable {
     case reasoningCompleted(RAGExecutionStepKind)
     case retrieval(RAGRetrievalProgress)
     case retrievalCompleted(RAGRetrievalResult)
+    case repoContextProgress(RepoAIContextProgress)
+    case repoContextCompleted(RAGRepoContextSnapshot)
     case remoteContextPrepared([RAGResolvedRemoteWorkItem])
     case webSearchPrepared([RAGWebSearchRequest])
     case remoteContextProgress(completed: Int, total: Int)
@@ -59,6 +64,9 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
         case structuredAnalytics = "structured_analytics"
         case rerank
         case retrieval
+        case repoContextRequest = "repo_context_request"
+        case repoContextResponse = "repo_context_response"
+        case repoContextProjection = "repo_context_projection"
         case remoteRequest = "remote_request"
         case remoteResponse = "remote_response"
         case remoteContext
@@ -377,6 +385,11 @@ struct RAGRemoteContextPhaseOutput: Sendable {
     let resolvedWorkItems: [RAGResolvedRemoteWorkItem]
 }
 
+struct RAGRepoContextPhaseOutput: Sendable {
+    let document: RAGRepoContextDocument?
+    let snapshot: RAGRepoContextSnapshot?
+}
+
 struct RAGRetrievalPhaseOutput: Sendable {
     let attachmentContexts: [RAGAttachmentContext]
     let analyticsResult: KnowledgeBaseAnalyticsResult?
@@ -401,6 +414,8 @@ struct KnowledgeRAGService: Sendable {
     private let remoteContextProvider: any KnowledgeRAGRemoteContextProviding
     private let webSearchProvider: any RAGWebSearchProviding
     private let attachmentProcessor: any RAGAttachmentProcessing
+    private let repoContextProvider: (any RepoAIContextProviding)?
+    private let repoContextTokenBudget: Int
     private let generatorClient: any AIClientProtocol
     private let generatorModel: String
     private let generatorParameters: AIModelParameters
@@ -421,6 +436,8 @@ struct KnowledgeRAGService: Sendable {
         remoteContextProvider: any KnowledgeRAGRemoteContextProviding = EmptyKnowledgeRAGRemoteContextProvider(),
         webSearchProvider: any RAGWebSearchProviding = EmptyRAGWebSearchProvider(),
         attachmentProcessor: any RAGAttachmentProcessing = RAGAttachmentProcessor(),
+        repoContextProvider: (any RepoAIContextProviding)? = nil,
+        repoContextTokenBudget: Int = 8_000,
         generatorClient: any AIClientProtocol,
         generatorModel: String,
         generatorParameters: AIModelParameters,
@@ -437,6 +454,8 @@ struct KnowledgeRAGService: Sendable {
         self.remoteContextProvider = remoteContextProvider
         self.webSearchProvider = webSearchProvider
         self.attachmentProcessor = attachmentProcessor
+        self.repoContextProvider = repoContextProvider
+        self.repoContextTokenBudget = min(max(repoContextTokenBudget, 1_024), 64 * 1_024)
         self.generatorClient = generatorClient
         self.generatorModel = generatorModel
         self.generatorParameters = generatorParameters
@@ -494,6 +513,12 @@ struct KnowledgeRAGService: Sendable {
                     let hasScopedQuery = retrievalOutput.hasScopedQuery
                     let localMissingReasonKey = retrievalOutput.localMissingReasonKey
 
+                    let repoContextOutput = try await runRepoContextPhase(
+                        request: request,
+                        plan: plan,
+                        sink: sink
+                    )
+
                     let remoteOutput = try await runRemoteContextPhase(
                         request: request,
                         plan: plan,
@@ -513,6 +538,7 @@ struct KnowledgeRAGService: Sendable {
                         retrieval: retrieval,
                         metadataSnapshot: metadataSnapshot,
                         analyticsResult: analyticsResult,
+                        repoContextDocument: repoContextOutput.document,
                         remoteBlocks: remoteBlocks,
                         attachmentContexts: attachmentContexts,
                         history: history,
@@ -636,6 +662,28 @@ struct KnowledgeRAGService: Sendable {
         plan.remoteContextRequests.removeAll {
             request.composerContext.disabledRemoteResources.contains($0.resource)
         }
+        // RepoContext 目标只能来自本地唯一显式选择。Planner 不参与目标选择，即使返回了
+        // 伪造字段也会被这里覆盖；不满足单项目条件时明确清空。
+        if request.composerContext.deepThinkingEnabled,
+           request.composerContext.explicitRepoIDs.count == 1,
+           request.composerContext.explicitRepoReferences.count == 1,
+           let repoID = request.composerContext.explicitRepoIDs.first,
+           let reference = request.composerContext.explicitRepoReferences.first,
+           reference.id == repoID {
+            plan.repoContextRequest = RAGRepoContextRequest(
+                repoID: repoID,
+                repoFullName: reference.fullName,
+                reason: String.l10n("rag.workspace.repoContext.planReason"),
+                configuredTokenBudget: repoContextTokenBudget
+            )
+            if !plan.userVisiblePlan.planningNotes.contains(where: { $0 == String.l10n("rag.workspace.repoContext.planNote") }) {
+                plan.userVisiblePlan.planningNotes = Array(
+                    (plan.userVisiblePlan.planningNotes + [String.l10n("rag.workspace.repoContext.planNote")]).prefix(3)
+                )
+            }
+        } else {
+            plan.repoContextRequest = nil
+        }
         sink.debug(.plan, """
         mode: \(plan.mode.rawValue)
         semanticQuery: \(plan.semanticQuery)
@@ -645,6 +693,7 @@ struct KnowledgeRAGService: Sendable {
         remoteContextRequests: \(plan.remoteContextRequests.map { "\($0.resource.rawValue): \($0.reason)" }.joined(separator: "\n"))
         webSearchRequests: \(plan.webSearchRequests.map { "\($0.query): \($0.reason)" }.joined(separator: "\n"))
         requiresLiveEvidence: \(plan.requiresLiveEvidence)
+        repoContextRequest: \(String(reflecting: plan.repoContextRequest))
         analytics: \(String(reflecting: plan.analytics))
         """)
         sink.yield(.plan(plan))
@@ -664,6 +713,121 @@ struct KnowledgeRAGService: Sendable {
             return nil
         }
         return RAGPlanningPhaseOutput(plan: plan, metadataSnapshot: metadataSnapshot)
+    }
+
+    /// RepoContext 位于本地检索之后、联网之前。这样时间线顺序稳定，且代码上下文失败时
+    /// 仍可保留本地分片、附件或后续联网证据继续回答。
+    func runRepoContextPhase(
+        request: RAGServiceRequest,
+        plan: RAGQueryPlan,
+        sink: RAGServiceEventSink
+    ) async throws -> RAGRepoContextPhaseOutput {
+        guard let repoRequest = plan.repoContextRequest else {
+            return RAGRepoContextPhaseOutput(document: nil, snapshot: nil)
+        }
+        sink.yield(.execution(.started(.repoContext)))
+        sink.debug(.repoContextRequest, """
+        repoID: \(repoRequest.repoID)
+        repoFullName: \(repoRequest.repoFullName)
+        configuredTokenBudget: \(repoRequest.configuredTokenBudget)
+        reason: \(repoRequest.reason)
+        """)
+
+        guard request.composerContext.deepThinkingEnabled,
+              request.composerContext.explicitRepoIDs == [repoRequest.repoID],
+              let provider = repoContextProvider,
+              let repo = try await candidateRepository.fetchMentionRepos(ids: [repoRequest.repoID]).first,
+              repo.fullName == repoRequest.repoFullName else {
+            let snapshot = degradedRepoContextSnapshot(
+                request: repoRequest,
+                outcome: .degraded,
+                reason: "single_repository_scope_required"
+            )
+            sink.yield(.execution(.repoContextCompleted(snapshot)))
+            sink.debug(.repoContextResponse, "outcome: degraded\nreason: single_repository_scope_required")
+            return RAGRepoContextPhaseOutput(document: nil, snapshot: snapshot)
+        }
+
+        do {
+            let outcome = try await provider.contextOutcome(for: repo) { progress in
+                sink.yield(.execution(.repoContextProgress(progress)))
+            }
+            switch outcome {
+            case .success(let result):
+                let hash = SHA256.hash(data: Data(result.xml.utf8)).map { String(format: "%02x", $0) }.joined()
+                let snapshot = RAGRepoContextSnapshot(
+                    repoID: repo.id,
+                    repoFullName: repo.fullName,
+                    commitSHA: result.metadata.commitSha,
+                    contentHash: hash,
+                    configuredTokenBudget: repoRequest.configuredTokenBudget,
+                    originalTokens: TokenEstimator.estimate(text: result.xml),
+                    sentTokens: 0,
+                    cacheHit: result.cacheHit,
+                    outcome: .success,
+                    wasProjected: false,
+                    projectionReason: nil,
+                    citationMarker: nil,
+                    preparedAt: .now
+                )
+                let document = RAGRepoContextDocument(snapshot: snapshot, xml: result.xml)
+                sink.yield(.execution(.repoContextCompleted(snapshot)))
+                sink.debug(.repoContextResponse, """
+                outcome: success
+                repoFullName: \(repo.fullName)
+                commitSHA: \(result.metadata.commitSha)
+                contentHash: \(hash)
+                cacheHit: \(result.cacheHit)
+                configuredTokenBudget: \(repoRequest.configuredTokenBudget)
+                originalTokens: \(snapshot.originalTokens)
+                """)
+                return RAGRepoContextPhaseOutput(document: document, snapshot: snapshot)
+            case .featureDisabled:
+                let snapshot = degradedRepoContextSnapshot(
+                    request: repoRequest,
+                    outcome: .featureDisabled,
+                    reason: "repo_context_feature_disabled"
+                )
+                sink.yield(.execution(.repoContextCompleted(snapshot)))
+                sink.debug(.repoContextResponse, "outcome: feature_disabled")
+                return RAGRepoContextPhaseOutput(document: nil, snapshot: snapshot)
+            case .degraded(let reason):
+                let snapshot = degradedRepoContextSnapshot(
+                    request: repoRequest,
+                    outcome: .degraded,
+                    reason: String(describing: reason)
+                )
+                sink.yield(.execution(.repoContextCompleted(snapshot)))
+                sink.debug(.repoContextResponse, "outcome: degraded\nreason: \(String(describing: reason))")
+                return RAGRepoContextPhaseOutput(document: nil, snapshot: snapshot)
+            }
+        } catch is CancellationError {
+            provider.cleanupTemporaryContextPreparation(for: repo)
+            throw CancellationError()
+        }
+    }
+
+    private func degradedRepoContextSnapshot(
+        request: RAGRepoContextRequest,
+        outcome: RAGRepoContextOutcome,
+        reason: String
+    ) -> RAGRepoContextSnapshot {
+        RAGRepoContextSnapshot(
+            repoID: request.repoID,
+            repoFullName: request.repoFullName,
+            commitSHA: nil,
+            contentHash: nil,
+            configuredTokenBudget: request.configuredTokenBudget,
+            originalTokens: 0,
+            sentTokens: 0,
+            cacheHit: false,
+            outcome: outcome,
+            wasProjected: false,
+            projectionReason: nil,
+            degradationReason: reason,
+            citationMarker: nil,
+            preparedAt: .now
+        )
     }
 
     /// Retrieval 阶段负责附件预处理、本地结构化分析、候选查询与混合召回；输出保留早停
@@ -952,6 +1116,7 @@ struct KnowledgeRAGService: Sendable {
         retrieval initialRetrieval: RAGRetrievalResult,
         metadataSnapshot: KnowledgeBaseMetadataSnapshot?,
         analyticsResult: KnowledgeBaseAnalyticsResult?,
+        repoContextDocument: RAGRepoContextDocument?,
         remoteBlocks: [RAGRemoteContextBlock],
         attachmentContexts: [RAGAttachmentContext],
         history: [AIChatMessage],
@@ -966,6 +1131,8 @@ struct KnowledgeRAGService: Sendable {
         let hasStructuredEvidence = plan.mode == .structuredOnly && !retrieval.candidates.isEmpty
         let hasAnalyticsEvidence = analyticsResult != nil
         let hasLocalEvidence = !retrieval.bundles.isEmpty
+        let hasRepoContextEvidence = repoContextDocument?.snapshot.outcome == .success
+            && repoContextDocument?.xml.isEmpty == false
         let hasRemoteEvidence = remoteBlocks.contains {
             $0.outcome == .success && $0.resultCount > 0 && !$0.content.isEmpty
         }
@@ -984,7 +1151,8 @@ struct KnowledgeRAGService: Sendable {
             sink.yield(.state(.noRelevantChunks))
             return nil
         }
-        guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence || hasRemoteEvidence || hasAttachmentEvidence
+        guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence || hasRepoContextEvidence
+                || hasRemoteEvidence || hasAttachmentEvidence
         else {
             let answerKey: String
             let terminalState: RAGAnswerState
@@ -1022,12 +1190,38 @@ struct KnowledgeRAGService: Sendable {
             retrieval: retrieval,
             metadataSnapshot: metadataSnapshot,
             analyticsResult: analyticsResult,
+            repoContextDocument: repoContextDocument,
             remoteBlocks: remoteBlocks,
             attachmentContexts: attachmentContexts,
             history: history,
             contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
             maximumOutputTokens: generatorParameters.maxCompletionTokens
         )
+        // 极小模型窗口或损坏 XML 可能让投影失败。RepoContext 是唯一证据时必须回到
+        // 无证据门禁，不能把没有 XML 的 Prompt 交给 Generator 自由回答。
+        let hasNonRepoEvidence = hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence
+            || hasRemoteEvidence || hasAttachmentEvidence
+        guard hasNonRepoEvidence || prompt.repoContextDocument != nil else {
+            sink.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
+                plan: plan,
+                composerContext: request.composerContext,
+                answerKey: "rag.workspace.guidance.noEvidenceReply"
+            )))
+            sink.yield(.state(.noRelevantChunks))
+            return nil
+        }
+        if let projected = prompt.repoContextDocument {
+            sink.debug(.repoContextProjection, """
+            repoFullName: \(projected.snapshot.repoFullName)
+            configuredTokenBudget: \(projected.snapshot.configuredTokenBudget)
+            originalTokens: \(projected.snapshot.originalTokens)
+            sentTokens: \(projected.snapshot.sentTokens)
+            wasProjected: \(projected.snapshot.wasProjected)
+            reason: \(projected.snapshot.projectionReason ?? "<none>")
+            """)
+            sink.yield(.repoContext(projected))
+            sink.yield(.execution(.repoContextCompleted(projected.snapshot)))
+        }
         // 最终 evidence token 预算发生在 Retriever 之后。把裁剪结论回写到同一份
         // 脱敏轨迹并再次通知 UI，当前会话与持久化执行轨迹才会看到一致的筛除原因。
         if !prompt.evidenceTokenLimitedChunkIDs.isEmpty {
@@ -1040,6 +1234,7 @@ struct KnowledgeRAGService: Sendable {
             + (hasStructuredEvidence ? retrieval.candidates.count : 0)
             + remoteBlocks.filter { $0.outcome == .success && $0.resultCount > 0 }.count
             + attachmentContexts.filter(\.supportsFactualAnswer).count
+            + (prompt.repoContextDocument == nil ? 0 : 1)
         return RAGPromptPhaseOutput(
             prompt: prompt,
             retrieval: retrieval,

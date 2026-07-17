@@ -2731,6 +2731,10 @@ final class KnowledgeRAGWorkspaceViewModel {
                     if selectedConversationID == conversationID {
                         retrieval = result
                     }
+                case .repoContext:
+                    // XML 正文只在本轮内存中流转。后续由 Inspector 接住同一份投影结果，
+                    // 这里先消费事件，避免误把正文写进通用历史状态。
+                    break
                 case .remoteContextConfirmation(let workItems):
                     pendingRemoteWorkItemsByConversation[conversationID] = workItems
                     approvedRemoteWorkItemIDsByConversation[conversationID] = Set(workItems.map(\.id))
@@ -3536,6 +3540,38 @@ final class KnowledgeRAGWorkspaceViewModel {
                 )
                 step.retrievalSnapshot = RAGRetrievalSnapshot(result: result)
                 completeExecutionStep(&step)
+            }
+
+        case .repoContextProgress(let progress):
+            updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
+                let key = switch progress {
+                case .resolvingBranch: "rag.workspace.execution.repoContext.resolvingBranch"
+                case .downloadingArchive: "rag.workspace.execution.repoContext.downloadingArchive"
+                case .packingContext: "rag.workspace.execution.repoContext.packingContext"
+                }
+                let detail = String.l10n(key)
+                if step.details.last != detail {
+                    step.details.append(detail)
+                }
+            }
+
+        case .repoContextCompleted(let snapshot):
+            updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
+                step.repoContextSnapshot = snapshot
+                step.details.append(String(
+                    format: String.l10n("rag.workspace.execution.repoContext.tokensFormat"),
+                    snapshot.sentTokens,
+                    snapshot.originalTokens
+                ))
+                step.summary = switch snapshot.outcome {
+                case .success: String.l10n("rag.workspace.execution.repoContext.completed")
+                case .featureDisabled: String.l10n("rag.workspace.execution.repoContext.disabled")
+                case .degraded: String.l10n("rag.workspace.execution.repoContext.degraded")
+                }
+                completeExecutionStep(&step)
+                if snapshot.outcome != .success {
+                    step.state = .skipped
+                }
             }
 
         case .remoteContextPrepared(let workItems):

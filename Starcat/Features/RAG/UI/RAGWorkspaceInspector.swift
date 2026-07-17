@@ -2420,6 +2420,9 @@ struct RAGWorkspaceInspector: View {
         case .structuredAnalytics: return "rag.workspace.debug.stage.structuredAnalytics"
         case .rerank: return "rag.workspace.debug.stage.rerank"
         case .retrieval: return "rag.workspace.debug.stage.retrieval"
+        case .repoContextRequest: return "rag.workspace.debug.stage.repoContextRequest"
+        case .repoContextResponse: return "rag.workspace.debug.stage.repoContextResponse"
+        case .repoContextProjection: return "rag.workspace.debug.stage.repoContextProjection"
         case .remoteRequest: return "rag.workspace.debug.stage.remoteRequest"
         case .remoteResponse: return "rag.workspace.debug.stage.remoteResponse"
         case .remoteContext: return "rag.workspace.debug.stage.remoteContext"
@@ -2452,6 +2455,12 @@ struct RAGWorkspaceInspector: View {
             return "arrow.up.arrow.down.circle"
         case .retrieval:
             return "magnifyingglass"
+        case .repoContextRequest:
+            return "shippingbox"
+        case .repoContextResponse:
+            return "doc.badge.gearshape"
+        case .repoContextProjection:
+            return "arrow.down.right.and.arrow.up.left"
         case .remoteRequest:
             return "network"
         case .remoteResponse:
