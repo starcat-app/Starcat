@@ -376,11 +376,11 @@
 
 > 状态: 核心实现与定向自动化已完成，专项多轮审查和最终工程门禁进行中；人工 UI 点击未执行且不会伪造。详细范围见 `RAG-Wiki元数据实施方案.md` 与 `RAG-Wiki元数据Checklist.md`。
 
-- [x] 详情页、搜索详情、Repo AI 与 Companion 统一使用 cache-first Wiki 服务；私有仓库不出站。
+- [x] 详情页、搜索详情、Repo AI 与 Companion 统一使用 cache-first Wiki 服务；私有仓库不出站，详情/搜索在 change/reset 后原地更新链接。
 - [x] 后台补齐支持 fresh 跳过、stale/miss 排队、小并发、repo 去重、启动扫描、新入库监听与切库 generation 屏障。
 - [x] DeepWiki、ZRead、CodeWiki 有效链接写入现有唯一 `metadata:0`，索引器只读磁盘缓存且不发网络。
 - [x] 最终命中仓库附加完整 Metadata；缺失时精简兜底，`structured_only` 保持精简，不新增 placeholder/hit/citation。
-- [x] Evidence 预算先保留仓库完整 Metadata，再裁剪普通分片；Metadata 无法完整容纳时跳过整个仓库。
+- [x] Evidence 预算先全局保留所有可容纳仓库的完整 Metadata，再装配并裁剪普通分片；Metadata 无法完整容纳时跳过该仓库。
 - [x] Metadata UI、ViewModel/domain 与 Repository 多层禁删；仍可查看、编辑并展示可点击 Wiki 链接。
 - [x] 定向测试覆盖 TTL 路由、私有门禁、并发去重、切库取消、Metadata 输出/读取、Prompt 与禁删/URL 解析。
 - [ ] 完成至少三轮专项审查、全量测试、双 target build、Checklist 与结果报告。

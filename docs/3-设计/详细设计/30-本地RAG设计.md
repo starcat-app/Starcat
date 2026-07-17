@@ -2422,7 +2422,7 @@ Settings -> Storage 建议增加:
 
 ### 20.2 cache-first 后台补齐
 
-详情页、搜索详情、Repo AI Chat 与 Companion 统一调用 `WikiContextService.cacheFirstLinks`：fresh 只读磁盘，stale 返回旧值并排队，miss 返回空值并排队。服务内队列固定小并发，并在排队与执行期间按 `owner/name` 去重。
+详情页、搜索详情、Repo AI Chat 与 Companion 统一调用 `WikiContextService.cacheFirstLinks`：fresh 只读磁盘，stale 返回旧值并排队，miss 返回空值并排队。服务内队列固定小并发，并在排队与执行期间按 `owner/name` 去重。详情页与搜索详情监听 cache change/reset 事件，按当前 repo identity 原地回填或移除链接；监听回调只读缓存，不再次触发网络。
 
 `WikiKnowledgeBackfillCoordinator` 在当前用户数据库就绪后扫描已有知识库，并监听新入库通知。账号切换先停止通知与扫描，再取消 Wiki 队列并推进 generation；旧请求即使延迟返回也不能触发新数据库 Metadata 写入。网络失败不阻塞 UI、RAG 索引或问答，后续按双 TTL 重新探测。
 
@@ -2448,7 +2448,7 @@ Retriever 在最终 repo limit 确定后批量读取各仓库有效 `metadata:0`
 - `structured_only` 继续使用候选仓库精简元数据，不批量加载全库 Metadata；
 - 维持没有 `{metadataSection}`，仓库 Metadata 属于 `{evidenceSection}`；`{repoContextSection}` 不受影响。
 
-Evidence 组装先试放仓库完整 Metadata，再逐段加入带 citation 的普通证据。空间不足时先移除普通分片；如果连 Metadata 都无法完整容纳，则跳过整个仓库，禁止字符级截断 Metadata。该段仍受模型总输入窗口和输出预留约束。
+Evidence 使用全局两阶段装配：第一阶段只按得分顺序试放所有可保留仓库的完整 Metadata，不加入任何普通分片；第二阶段才逐段加入带 citation 的普通证据。空间不足时先移除普通分片；如果连某仓库 Metadata 都无法完整容纳，则跳过该仓库，禁止字符级截断 Metadata。该段仍受模型总输入窗口和输出预留约束。
 
 ### 20.5 浏览器管理语义
 
