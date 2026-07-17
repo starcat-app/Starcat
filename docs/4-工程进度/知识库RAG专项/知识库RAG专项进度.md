@@ -374,7 +374,7 @@
 
 ## 17. RepoContext 分片管理
 
-> 状态: 核心实现与定向测试完成，正在执行多轮审查和最终门禁；人工 UI 验收未执行且不会伪造。
+> 状态: 核心实现、四轮审查、全量测试、双 Debug target build、Checklist 与结果报告已完成；人工 UI 验收未执行且不会伪造。
 
 - [x] 已有 `context.xml` 作为特殊托管项固定展示在 metadata 之后，独立显示 RepoContext `0 / 1`，不污染 `rag_chunks`、embedding、分页或普通统计。
 - [x] RepoContext 行复用现有分片编辑 sheet，支持 XML 根节点校验、UTF-8 原子保存、metadata 派生值同步和破坏性删除确认。
@@ -384,5 +384,5 @@
 - [x] 全局代码上下文开关关闭时只引导前往 AI 设置，不静默修改用户设置。
 - [x] 生成期间阻止重复生成、RepoContext 编辑和删除；成功立即刷新第二项，失败保留重试入口。
 - [x] RepoContext 存储与浏览器定向测试覆盖读取、顺序、编辑校验、metadata、删除、下载草稿与生成状态映射。
-- [ ] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
+- [x] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
 - [ ] 人工验证真实大仓下载耗时、阶段切换、停止响应、编辑删除和下载 sheet；该项只记录，不以自动化代替。
