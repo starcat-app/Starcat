@@ -2,7 +2,7 @@
 
 > 审查日期：2026-07-17  
 > 审查范围：前三轮修复复验、UI 规范、禁删恢复边界、最终门禁与工作区状态  
-> 审查结论：发现 1 个 P2 UI 规范问题；修复后增加第 5 轮零缺口审查
+> 审查结论：发现 1 个 P2 UI 规范问题，已修复并通过定向测试 / Debug build
 
 ## 已核对
 
@@ -21,9 +21,11 @@ Metadata 行新增的 `Label(link.title, systemImage: "link")` 使用 `.foregrou
 
 修复要求：改为 `.foregroundStyle(.primary)`，链接身份继续由 link 图标、pointer 和点击行为表达，不改变布局、顺序或交互。
 
+> 修复状态：已完成。Wiki 链接改用 `.primary`，提交 `2e62032`；`RAGChunkRepositoryTests` 与 `Starcat` Debug build 通过。
+
 ## 本轮后续动作
 
-1. 修复 Wiki 链接 foreground 并提交。
-2. 重跑 `Starcat` Debug build 与分片 UI 相关定向测试。
-3. 回填本报告。
-4. 执行第 5 轮零新增缺口审查。
+1. [x] 修复 Wiki 链接 foreground 并提交。
+2. [x] 重跑 `Starcat` Debug build 与分片 UI 相关定向测试。
+3. [x] 回填本报告。
+4. [x] 进入第 5 轮零新增缺口审查。
