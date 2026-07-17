@@ -23,6 +23,22 @@ struct RAGPromptBuildResult: Equatable, Sendable {
     var repoContextDocument: RAGRepoContextDocument? = nil
 }
 
+private struct RAGEvidenceBlockDraft {
+    var text: String
+    var chunkIDs: Set<Int64>
+}
+
+private struct RAGEvidenceRepositoryDraft {
+    var metadata: String
+    var allMatchedChunkIDs: Set<Int64>
+    var blocks: [RAGEvidenceBlockDraft]
+}
+
+private struct RAGEvidenceAssembly {
+    var text: String
+    var limitedChunkIDs: Set<Int64>
+}
+
 struct KnowledgeRAGPromptBuilder: Sendable {
     var maxEvidenceTokens = 12_000
     /// 与 `maxEvidenceTokens` 完全独立；实际值由 RepoContext Provider 的配置快照决定。
@@ -57,9 +73,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         let systemPrompt = budget.consume(renderedSystem, kind: .system)
         let boundedHistory = boundedHistory(history, budget: &budget)
         var citations: [String: RAGCitation] = [:]
-        var evidenceSections: [String] = []
-        var evidenceTokenLimitedChunkIDs = Set<Int64>()
-        var usedTokens = 0
+        var evidenceDrafts: [RAGEvidenceRepositoryDraft] = []
         var nextCitation = 1
 
         let structuredRowLimit = min(max(plan.candidateLimit ?? 50, 1), 50)
@@ -69,23 +83,12 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             ? retrieval.candidates.prefix(structuredRowLimit).map { structuredBundle($0) }
             : retrieval.bundles
         for bundle in bundles {
-            var lines = [metadataLine(bundle.candidate)]
-            for (parentIndex, parent) in bundle.sectionParents.enumerated() {
-                let tokens = TokenEstimator.estimate(text: parent.content)
+            // 普通检索 bundle 优先使用仓库完整 Metadata；缺失/被排除时才退回精简头。
+            // structured_only 的 bundle 没有加载系统分片，继续使用精简事实，避免全库读取。
+            let repositoryMetadata = bundle.metadataContent ?? metadataLine(bundle.candidate)
+            var blocks: [RAGEvidenceBlockDraft] = []
+            for parent in bundle.sectionParents {
                 let parentHits = bundle.matchedChildren.filter { parent.childChunkIDs.contains($0.chunk.id ?? -1) }
-                guard usedTokens + tokens <= maxEvidenceTokens else {
-                    // 原有策略会停止同仓库后续章节；把这批命中的身份记下，才不会让用户误以为
-                    // 分片在融合阶段丢失。这里只保存 id，不把正文写进 prompt 结果或历史。
-                    let skippedChunkIDs = bundle.sectionParents
-                        .dropFirst(parentIndex)
-                        .flatMap { skippedParent in
-                            bundle.matchedChildren
-                                .filter { skippedParent.childChunkIDs.contains($0.chunk.id ?? -1) }
-                                .compactMap { $0.chunk.id }
-                        }
-                    evidenceTokenLimitedChunkIDs.formUnion(skippedChunkIDs)
-                    break
-                }
                 let hit = parentHits.first ?? bundle.matchedChildren.first
                 let marker = "S\(nextCitation)"
                 if let hit {
@@ -105,13 +108,19 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                         sourceURL: URL(string: bundle.candidate.repo.htmlUrl)
                     )
                     nextCitation += 1
-                    lines.append("[\(marker)] \(parent.title)\n\(parent.content)")
-                    usedTokens += tokens
+                    blocks.append(RAGEvidenceBlockDraft(
+                        text: "[\(marker)] \(parent.title)\n\(parent.content)",
+                        chunkIDs: Set(parentHits.compactMap { $0.chunk.id })
+                    ))
                 }
             }
             // structured_only 没有 child hit，也必须把数据库事实送给模型；这类回答的 repo
             // 链接由 UI 根据 candidate 提供，不伪造 chunk citation。
-            evidenceSections.append(lines.joined(separator: "\n\n"))
+            evidenceDrafts.append(RAGEvidenceRepositoryDraft(
+                metadata: repositoryMetadata,
+                allMatchedChunkIDs: Set(bundle.matchedChildren.compactMap { $0.chunk.id }),
+                blocks: blocks
+            ))
         }
 
         var remoteTokens = 0
@@ -217,14 +226,16 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                 }
             }
         }
-        let evidenceBody = evidenceSections.joined(separator: "\n\n---\n\n")
-        let evidenceSection = evidenceBody.isEmpty
+        // 组装时使用“当前模型剩余窗口”和 evidence 配置上限的较小值。每个仓库先放完整
+        // Metadata，再逐段加入普通证据；空间不足时只移除普通分片或整个仓库，绝不字符截断 Metadata。
+        let evidenceAssembly = assembleEvidence(
+            evidenceDrafts,
+            tokenLimit: min(maxEvidenceTokens, budget.remainingInputTokens)
+        )
+        let evidenceTokenLimitedChunkIDs = evidenceAssembly.limitedChunkIDs
+        let evidenceSection = evidenceAssembly.text.isEmpty
             ? ""
-            : budget.consume(
-                "\n\nLocal knowledge-base evidence:\n\(evidenceBody)",
-                kind: .evidence,
-                preferredLimit: maxEvidenceTokens
-            )
+            : budget.consume(evidenceAssembly.text, kind: .evidence, preferredLimit: maxEvidenceTokens)
         citations = citations.filter {
             evidenceSection.contains("[\($0.key)]") || repoContextSection.contains("[\($0.key)]")
         }
@@ -379,6 +390,66 @@ struct KnowledgeRAGPromptBuilder: Sendable {
 
     private func structuredBundle(_ candidate: RAGRepoCandidate) -> RepoContextBundle {
         RepoContextBundle(candidate: candidate, score: 0, matchedChildren: [], sectionParents: [])
+    }
+
+    /// Metadata-first 的 evidence 装配器。所有试放都用最终字符串回算同一个 TokenEstimator，
+    /// 因此返回内容再进入 RAGContextBudget.consume 时不会触发二次字符裁剪。
+    private func assembleEvidence(
+        _ drafts: [RAGEvidenceRepositoryDraft],
+        tokenLimit: Int
+    ) -> RAGEvidenceAssembly {
+        guard tokenLimit > 0 else {
+            return RAGEvidenceAssembly(
+                text: "",
+                limitedChunkIDs: drafts.reduce(into: Set<Int64>()) { $0.formUnion($1.allMatchedChunkIDs) }
+            )
+        }
+        let prefix = "\n\nLocal knowledge-base evidence:\n"
+        var renderedRepositories: [String] = []
+        var limitedChunkIDs = Set<Int64>()
+
+        func rendered(_ repositories: [String]) -> String {
+            repositories.isEmpty ? "" : prefix + repositories.joined(separator: "\n\n---\n\n")
+        }
+
+        // 第一阶段只放各仓库 Metadata。不能在这里夹入任何普通分片，否则高分仓库的
+        // 长正文会先吃完预算，让已经进入最终 bundle 的后续仓库失去 Metadata。
+        var includedDrafts: [RAGEvidenceRepositoryDraft] = []
+        var renderedParts: [[String]] = []
+        for draft in drafts {
+            let parts = [draft.metadata]
+            let metadataCandidate = rendered(
+                renderedParts.map { $0.joined(separator: "\n\n") }
+                    + [parts.joined(separator: "\n\n")]
+            )
+            guard TokenEstimator.estimate(text: metadataCandidate) <= tokenLimit else {
+                limitedChunkIDs.formUnion(draft.allMatchedChunkIDs)
+                continue
+            }
+            includedDrafts.append(draft)
+            renderedParts.append(parts)
+        }
+
+        // 第二阶段才按仓库顺序加入普通证据。某仓库后续块放不下时，不影响已保留的
+        // Metadata，也允许继续尝试下一仓库更短的证据块。
+        for (repositoryIndex, draft) in includedDrafts.enumerated() {
+            for (index, block) in draft.blocks.enumerated() {
+                var candidateParts = renderedParts
+                candidateParts[repositoryIndex].append(block.text)
+                let candidate = rendered(candidateParts.map { $0.joined(separator: "\n\n") })
+                guard TokenEstimator.estimate(text: candidate) <= tokenLimit else {
+                    limitedChunkIDs.formUnion(
+                        draft.blocks.dropFirst(index).reduce(into: Set<Int64>()) {
+                            $0.formUnion($1.chunkIDs)
+                        }
+                    )
+                    break
+                }
+                renderedParts = candidateParts
+            }
+        }
+        renderedRepositories = renderedParts.map { $0.joined(separator: "\n\n") }
+        return RAGEvidenceAssembly(text: rendered(renderedRepositories), limitedChunkIDs: limitedChunkIDs)
     }
 
     private func metadataLine(_ candidate: RAGRepoCandidate) -> String {

@@ -53,17 +53,31 @@ extension WikiAPI: WikiStatusFetching {}
 @MainActor
 final class WikiContextService {
 
+    private struct RefreshRequest: Sendable {
+        let key: WikiRepoKey
+        let generation: UInt64
+    }
+
     // MARK: - 依赖
 
     private let cache: DiskWikiCache
     private let fetcher: WikiStatusFetching
 
-    /// 同一 `(owner, repo)` 的并发去重：fire-and-forget refresh 之间互相复用。
+    /// 同一 `(owner, repo)` 的并发去重：排队和执行阶段都只能存在一份请求。
     private var inFlightRefreshes: [WikiRepoKey: Task<Void, Never>] = [:]
+    private var pendingRefreshes: [RefreshRequest] = []
+    private var pendingKeys: Set<WikiRepoKey> = []
+    private var refreshGeneration: UInt64 = 0
+    private let maximumConcurrentRefreshes: Int
 
-    init(cache: DiskWikiCache, fetcher: WikiStatusFetching) {
+    init(
+        cache: DiskWikiCache,
+        fetcher: WikiStatusFetching,
+        maximumConcurrentRefreshes: Int = 2
+    ) {
         self.cache = cache
         self.fetcher = fetcher
+        self.maximumConcurrentRefreshes = max(1, maximumConcurrentRefreshes)
     }
 
     // MARK: - 同步只读：bootstrap / 设置页 / chat 第一条用
@@ -81,6 +95,22 @@ final class WikiContextService {
         cache.load(owner: owner, repo: repo)
     }
 
+    /// 所有前台消费方共用的 cache-first 入口。fresh 只读缓存，stale / miss 只排队，
+    /// 因此详情渲染、Companion 和 AI bootstrap 都不会等待外部 Wiki 网络。
+    func cacheFirstLinks(
+        owner: String,
+        repo: String,
+        isPrivate: Bool
+    ) -> [WikiLink] {
+        // 私有仓库名称本身也属于用户数据，不能发送给第三方 Wiki 服务。
+        guard !isPrivate else { return [] }
+        let snapshot = cache.load(owner: owner, repo: repo)
+        if snapshot?.freshness() != .fresh {
+            enqueueRefresh(owner: owner, repo: repo, isPrivate: false)
+        }
+        return snapshot?.indexedLinks ?? []
+    }
+
     // MARK: - 异步刷新
 
     /// fire-and-forget 后台刷新：如果该 repo 没在刷，启一个 Task 跑 `WikiAPI.fetchStatus`
@@ -89,20 +119,26 @@ final class WikiContextService {
     /// 典型触发路径：
     /// - `RepoAIChatViewModel.bootstrap`：cache miss 或 stale 时调一下；
     /// - 详情页打开 wiki popover 时（未来接入）。
-    func refreshInBackground(owner: String, repo: String) {
-        let key = WikiRepoKey(owner: owner, repo: repo)
-        if inFlightRefreshes[key] != nil { return }
+    func refreshInBackground(owner: String, repo: String, isPrivate: Bool = false) {
+        enqueueRefresh(owner: owner, repo: repo, isPrivate: isPrivate)
+    }
 
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.performRefresh(owner: owner, repo: repo)
-        }
-        inFlightRefreshes[key] = task
+    /// 后台批量补齐与前台 miss 共用同一有界队列。这里不直接为每个仓库创建网络 Task，
+    /// 避免大知识库启动时瞬间产生数千个连接和 Task。
+    func enqueueRefresh(owner: String, repo: String, isPrivate: Bool) {
+        guard !isPrivate else { return }
+        let key = WikiRepoKey(owner: owner, repo: repo)
+        guard inFlightRefreshes[key] == nil, !pendingKeys.contains(key) else { return }
+
+        pendingKeys.insert(key)
+        pendingRefreshes.append(RefreshRequest(key: key, generation: refreshGeneration))
+        drainRefreshQueue()
     }
 
     /// 同步阻塞版本：拉一次最新结果并返回 `[WikiLink]`，抛错暴露给调用方。
     /// 首版没有 UI 入口调用此方法，留作"详情页强制刷新"未来接入。
-    func refresh(owner: String, repo: String) async throws -> [WikiLink] {
+    func refresh(owner: String, repo: String, isPrivate: Bool = false) async throws -> [WikiLink] {
+        guard !isPrivate else { return [] }
         let items = try await fetcher.fetchStatus(owner: owner, repo: repo)
         let snapshot = WikiCacheSnapshot(
             owner: owner,
@@ -115,17 +151,30 @@ final class WikiContextService {
         return snapshot.indexedLinks
     }
 
+    /// 账号 / 数据库切换前取消旧队列并推进 generation。旧网络请求即使不响应取消，
+    /// 返回后也会因 generation 不匹配而跳过写盘与后续 Metadata 事件。
+    func cancelPendingRefreshes() async {
+        refreshGeneration &+= 1
+        pendingRefreshes.removeAll()
+        pendingKeys.removeAll()
+        let tasks = Array(inFlightRefreshes.values)
+        inFlightRefreshes.removeAll()
+        tasks.forEach { $0.cancel() }
+        for task in tasks {
+            await task.value
+        }
+    }
+
     // MARK: - 私有
 
-    private func performRefresh(owner: String, repo: String) async {
-        let key = WikiRepoKey(owner: owner, repo: repo)
-        defer { inFlightRefreshes[key] = nil }
-
+    private func performRefresh(_ request: RefreshRequest) async {
         do {
-            let items = try await fetcher.fetchStatus(owner: owner, repo: repo)
+            let items = try await fetcher.fetchStatus(owner: request.key.owner, repo: request.key.repo)
+            try Task.checkCancellation()
+            guard request.generation == refreshGeneration else { return }
             let snapshot = WikiCacheSnapshot(
-                owner: owner,
-                repo: repo,
+                owner: request.key.owner,
+                repo: request.key.repo,
                 probedAt: Date(),
                 nextProbeAt: WikiCacheSnapshot.computeNextProbeAt(items: items),
                 items: items
@@ -133,11 +182,34 @@ final class WikiContextService {
             do {
                 try cache.save(snapshot: snapshot)
             } catch {
-                AppLog.ai.warning("Wiki context: cache save failed owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                AppLog.ai.warning("Wiki context: cache save failed owner=\(request.key.owner, privacy: .public) repo=\(request.key.repo, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             }
+        } catch is CancellationError {
+            // 切库和 App 生命周期取消属于正常路径，不记录为网络故障。
         } catch {
             // 网络失败静默：wiki 是辅助上下文，挂了不影响对话主流程。
-            AppLog.ai.info("Wiki context: refresh failed owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            AppLog.ai.info("Wiki context: refresh failed owner=\(request.key.owner, privacy: .public) repo=\(request.key.repo, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func drainRefreshQueue() {
+        while inFlightRefreshes.count < maximumConcurrentRefreshes,
+              !pendingRefreshes.isEmpty {
+            let request = pendingRefreshes.removeFirst()
+            pendingKeys.remove(request.key)
+            guard request.generation == refreshGeneration else { continue }
+            let task = Task { [weak self] in
+                guard let self else { return }
+                await self.performRefresh(request)
+                self.finishRefresh(request)
+            }
+            inFlightRefreshes[request.key] = task
+        }
+    }
+
+    private func finishRefresh(_ request: RefreshRequest) {
+        guard request.generation == refreshGeneration else { return }
+        inFlightRefreshes[request.key] = nil
+        drainRefreshQueue()
     }
 }

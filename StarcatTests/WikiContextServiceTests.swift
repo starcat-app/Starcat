@@ -110,6 +110,159 @@ struct WikiContextServiceTests {
         #expect(links.first?.source == .deepWiki)
     }
 
+    @Test("cache-first fresh 不发网络，stale 与 miss 进入后台队列")
+    func testCacheFirstFreshnessRouting() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(source: .deepWiki, status: .indexed, url: "https://deepwiki.com/a/b")]
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "fresh",
+            repo: "repo",
+            probedAt: Date(),
+            nextProbeAt: Date().addingTimeInterval(60),
+            items: items
+        ))
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "stale",
+            repo: "repo",
+            probedAt: Date().addingTimeInterval(-120),
+            nextProbeAt: Date().addingTimeInterval(-60),
+            items: items
+        ))
+        let fetcher = StubWikiFetcher(items: items, delay: 0.01)
+        let svc = WikiContextService(cache: cache, fetcher: fetcher)
+
+        #expect(svc.cacheFirstLinks(owner: "fresh", repo: "repo", isPrivate: false).count == 1)
+        #expect(svc.cacheFirstLinks(owner: "stale", repo: "repo", isPrivate: false).count == 1)
+        #expect(svc.cacheFirstLinks(owner: "miss", repo: "repo", isPrivate: false).isEmpty)
+        try await pollUntil(timeoutMs: 2000) { fetcher.callCount == 2 }
+        #expect(fetcher.callCount == 2)
+    }
+
+    @Test("私有仓库不读出外部链接也不发网络")
+    func testPrivateRepositoryNeverRefreshes() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let fetcher = StubWikiFetcher(delay: 0)
+        let svc = WikiContextService(cache: cache, fetcher: fetcher)
+
+        #expect(svc.cacheFirstLinks(owner: "private", repo: "repo", isPrivate: true).isEmpty)
+        svc.refreshInBackground(owner: "private", repo: "repo", isPrivate: true)
+        #expect(try await svc.refresh(owner: "private", repo: "repo", isPrivate: true).isEmpty)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(fetcher.callCount == 0)
+    }
+
+    @Test("后台队列限制最大并发并对排队请求去重")
+    func testBoundedQueueAndPendingDeduplication() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(source: .deepWiki, status: .indexed, url: "https://deepwiki.com/a/b")]
+        let fetcher = StubWikiFetcher(items: items, delay: 0.1)
+        let svc = WikiContextService(cache: cache, fetcher: fetcher, maximumConcurrentRefreshes: 1)
+
+        svc.refreshInBackground(owner: "a", repo: "one")
+        svc.refreshInBackground(owner: "a", repo: "two")
+        svc.refreshInBackground(owner: "a", repo: "two")
+        try await pollUntil(timeoutMs: 3000) {
+            svc.cachedSnapshot(owner: "a", repo: "two") != nil
+        }
+        #expect(fetcher.callCount == 2)
+    }
+
+    @Test("后台补齐启动扫描跳过 fresh 与私有仓库")
+    func testKnowledgeBackfillStartupScan() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(source: .deepWiki, status: .indexed, url: "https://deepwiki.com/a/miss")]
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "a",
+            repo: "fresh",
+            probedAt: Date(),
+            nextProbeAt: Date().addingTimeInterval(60),
+            items: items
+        ))
+        let fetcher = StubWikiFetcher(items: items, delay: 0.01)
+        let service = WikiContextService(cache: cache, fetcher: fetcher, maximumConcurrentRefreshes: 1)
+        let repos = [
+            makeRepo(id: 1, owner: "a", name: "fresh"),
+            makeRepo(id: 2, owner: "a", name: "miss"),
+            makeRepo(id: 3, owner: "secret", name: "private", isPrivate: true)
+        ]
+        let coordinator = WikiKnowledgeBackfillCoordinator(
+            wikiContextService: service,
+            fetchKnowledgeRepos: { repos },
+            findRepo: { id in repos.first { $0.id == id } }
+        )
+
+        coordinator.start()
+        try await pollUntil(timeoutMs: 2000) {
+            service.cachedSnapshot(owner: "a", repo: "miss") != nil
+        }
+        #expect(fetcher.callCount == 1)
+        #expect(service.cachedSnapshot(owner: "secret", repo: "private") == nil)
+        await coordinator.suspendForUserDatabaseChange()
+    }
+
+    @Test("后台补齐切库会取消旧 generation 写盘")
+    func testKnowledgeBackfillCancellationPreventsOldWrite() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(source: .deepWiki, status: .indexed, url: "https://deepwiki.com/old/repo")]
+        let fetcher = StubWikiFetcher(items: items, delay: 0.4)
+        let service = WikiContextService(cache: cache, fetcher: fetcher)
+        let repo = makeRepo(id: 1, owner: "old", name: "repo")
+        let coordinator = WikiKnowledgeBackfillCoordinator(
+            wikiContextService: service,
+            fetchKnowledgeRepos: { [repo] },
+            findRepo: { _ in repo }
+        )
+
+        coordinator.start()
+        try await pollUntil(timeoutMs: 1000) { fetcher.callCount == 1 }
+        await coordinator.suspendForUserDatabaseChange()
+        try await Task.sleep(for: .milliseconds(450))
+        #expect(service.cachedSnapshot(owner: "old", repo: "repo") == nil)
+    }
+
+    @Test("仓库新加入知识库后通过通知进入统一补齐队列")
+    func testKnowledgeBackfillEnqueuesNewLibraryRepository() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(
+            source: .deepWiki,
+            status: .indexed,
+            url: "https://deepwiki.com/new/repo"
+        )]
+        let fetcher = StubWikiFetcher(items: items, delay: 0.01)
+        let service = WikiContextService(cache: cache, fetcher: fetcher)
+        let repo = makeRepo(id: 77, owner: "new", name: "repo")
+        let coordinator = WikiKnowledgeBackfillCoordinator(
+            wikiContextService: service,
+            fetchKnowledgeRepos: { [] },
+            findRepo: { id in id == repo.id ? repo : nil }
+        )
+
+        coordinator.start()
+        // 先让 AsyncSequence 完成 observer 注册，避免测试把通知发在监听任务启动之前。
+        await Task.yield()
+        try await Task.sleep(for: .milliseconds(20))
+        NotificationCenter.default.post(
+            name: .repoLibraryStateDidChange,
+            object: nil,
+            userInfo: [
+                "repoId": repo.id,
+                "libraryState": LibraryState.inLibrary.rawValue
+            ]
+        )
+
+        try await pollUntil(timeoutMs: 2000) {
+            service.cachedSnapshot(owner: repo.owner, repo: repo.name) != nil
+        }
+        #expect(fetcher.callCount == 1)
+        await coordinator.suspendForUserDatabaseChange()
+    }
+
     // MARK: - refresh 同步路径
 
     @Test("refresh 调 fetcher + 写盘 + 返回 indexedLinks")
@@ -206,5 +359,39 @@ struct WikiContextServiceTests {
             if condition() { return }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
+    }
+
+    private func makeRepo(
+        id: Int64,
+        owner: String,
+        name: String,
+        isPrivate: Bool = false
+    ) -> Repo {
+        Repo(
+            id: id,
+            owner: owner,
+            name: name,
+            fullName: "\(owner)/\(name)",
+            description: nil,
+            language: nil,
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/\(owner)/\(name)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: isPrivate,
+            isFork: false,
+            isArchived: false,
+            isStarred: true,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
     }
 }

@@ -247,4 +247,81 @@ struct DiskWikiCacheTests {
         try cache.save(snapshot: makeSnapshot(owner: "x", repo: "y"))
         #expect(cache.load(owner: "x", repo: "y") != nil)
     }
+
+    // MARK: - Metadata 增量重建通知
+
+    @Test("save 通知携带 owner/repo，供索引器精确重建 Metadata")
+    func savePostsRepositoryIdentity() throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let recorder = WikiCacheNotificationRecorder()
+        let token = NotificationCenter.default.addObserver(
+            forName: .wikiCacheDidChange,
+            object: cache,
+            queue: nil
+        ) { notification in
+            recorder.recordChange(
+                owner: notification.userInfo?["owner"] as? String,
+                repo: notification.userInfo?["repo"] as? String
+            )
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        try cache.save(snapshot: makeSnapshot(owner: "octo", repo: "demo"))
+
+        #expect(recorder.changedKey == WikiRepoKey(owner: "octo", repo: "demo"))
+    }
+
+    @Test("deleteEverything 通知保留清空前的全部仓库 identity")
+    func deleteEverythingPostsAffectedRepositoryKeys() throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        try cache.save(snapshot: makeSnapshot(owner: "octo", repo: "one"))
+        try cache.save(snapshot: makeSnapshot(owner: "swiftlang", repo: "two"))
+
+        let recorder = WikiCacheNotificationRecorder()
+        let token = NotificationCenter.default.addObserver(
+            forName: .wikiCacheDidReset,
+            object: cache,
+            queue: nil
+        ) { notification in
+            recorder.recordReset(keys: notification.userInfo?["repositoryKeys"] as? [WikiRepoKey])
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        try cache.deleteEverything()
+
+        #expect(recorder.resetKeys == Set([
+            WikiRepoKey(owner: "octo", repo: "one"),
+            WikiRepoKey(owner: "swiftlang", repo: "two")
+        ]))
+    }
+}
+
+/// NotificationCenter 的回调没有 actor 隔离；通过锁记录 payload，避免测试本身产生数据竞争。
+private final class WikiCacheNotificationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedChangedKey: WikiRepoKey?
+    private var storedResetKeys: Set<WikiRepoKey> = []
+
+    var changedKey: WikiRepoKey? {
+        lock.withLock { storedChangedKey }
+    }
+
+    var resetKeys: Set<WikiRepoKey> {
+        lock.withLock { storedResetKeys }
+    }
+
+    func recordChange(owner: String?, repo: String?) {
+        lock.withLock {
+            guard let owner, let repo else { return }
+            storedChangedKey = WikiRepoKey(owner: owner, repo: repo)
+        }
+    }
+
+    func recordReset(keys: [WikiRepoKey]?) {
+        lock.withLock {
+            storedResetKeys = Set(keys ?? [])
+        }
+    }
 }

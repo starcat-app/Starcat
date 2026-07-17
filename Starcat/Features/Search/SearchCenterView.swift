@@ -2495,6 +2495,12 @@ private struct SearchRemoteRepoDetailView: View {
         .task(id: candidate.identity) {
             await loadWikiLinks(repo: repo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidChange)) { notification in
+            reloadWikiLinksIfChanged(notification, repo: repo)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidReset)) { notification in
+            reloadWikiLinksIfReset(notification, repo: repo)
+        }
     }
 
     private var emptyState: some View {
@@ -2868,24 +2874,31 @@ private struct SearchRemoteRepoDetailView: View {
         }
     }
 
-    /// 拉一次 wiki 状态。错误静默 —— wiki 是辅助信息，失败不应污染搜索弹窗
-    /// 主流程；与 `RepoWikiMenu.loadLinks()` 的失败处理同款。
+    /// 统一走 cache-first Wiki 服务。搜索详情只消费已有缓存；miss / stale 进入后台队列，
+    /// 不再为一个临时搜索卡片阻塞等待外部 Wiki API。
     private func loadWikiLinks(repo: Repo) async {
         wikiLinks = []
-        do {
-            let items = try await dependencies.wikiAPI.fetchStatus(
-                owner: repo.owner,
-                repo: repo.name
-            )
-            guard !Task.isCancelled else { return }
-            wikiLinks = RepoWikiMenuState.make(items: items)
-        } catch is CancellationError {
-            // SwiftUI 切换 candidate 的正常取消（未来若支持卡片间切换时触发）
-        } catch {
-            AppLog.network.warning(
-                "search-detail wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-        }
+        let links = dependencies.wikiContextService.cacheFirstLinks(
+            owner: repo.owner,
+            repo: repo.name,
+            isPrivate: repo.isPrivate
+        )
+        guard !Task.isCancelled else { return }
+        wikiLinks = links
+    }
+
+    /// 冷缓存探测完成后原地展示当前搜索仓库的 Wiki；只读缓存，避免事件触发二次请求。
+    private func reloadWikiLinksIfChanged(_ notification: Notification, repo: Repo) {
+        guard notification.userInfo?["owner"] as? String == repo.owner,
+              notification.userInfo?["repo"] as? String == repo.name else { return }
+        wikiLinks = dependencies.wikiContextService.cachedLinks(owner: repo.owner, repo: repo.name)
+    }
+
+    /// 清空缓存后移除当前卡片上的旧 Wiki 链接。
+    private func reloadWikiLinksIfReset(_ notification: Notification, repo: Repo) {
+        guard let keys = notification.userInfo?["repositoryKeys"] as? [WikiRepoKey],
+              keys.contains(WikiRepoKey(owner: repo.owner, repo: repo.name)) else { return }
+        wikiLinks = []
     }
 
     // MARK: - Action row

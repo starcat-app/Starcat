@@ -390,3 +390,17 @@
 - [x] RepoContext 存储与浏览器定向测试覆盖读取、顺序、编辑校验、metadata、删除、下载草稿与生成状态映射。
 - [x] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
 - [ ] 人工验证真实大仓下载耗时、阶段切换、停止响应、编辑删除和下载 sheet；该项只记录，不以自动化代替。
+
+## 18. Wiki 链接与仓库 Metadata
+
+> 状态: 核心实现、五轮专项审查、全量测试、双 target Debug build、Checklist 与结果报告已完成；人工 UI 点击未执行且不会伪造。详细范围见 `RAG-Wiki元数据实施方案.md`、`RAG-Wiki元数据Checklist.md` 与 `RAG-Wiki元数据结果报告.md`。
+
+- [x] 详情页、搜索详情、Repo AI 与 Companion 统一使用 cache-first Wiki 服务；私有仓库不出站，详情/搜索在 change/reset 后原地更新链接。
+- [x] 后台补齐支持 fresh 跳过、stale/miss 排队、小并发、repo 去重、启动扫描、新入库监听与切库 generation 屏障。
+- [x] DeepWiki、ZRead、CodeWiki 有效链接写入现有唯一 `metadata:0`，索引器只读磁盘缓存且不发网络。
+- [x] 最终命中仓库附加完整 Metadata；缺失时精简兜底，`structured_only` 保持精简，不新增 placeholder/hit/citation。
+- [x] Evidence 预算先全局保留所有可容纳仓库的完整 Metadata，再装配并裁剪普通分片；Metadata 无法完整容纳时跳过该仓库。
+- [x] Metadata UI、ViewModel/domain 与 Repository 多层禁删；仍可查看、编辑并展示可点击 Wiki 链接。
+- [x] 定向测试覆盖 TTL 路由、私有门禁、并发去重、切库取消、Metadata 输出/读取、Prompt 与禁删/URL 解析。
+- [x] 完成五轮专项审查、全量测试、双 target build、Checklist 与结果报告。
+- [ ] 人工验证 Metadata Wiki 链接点击、编辑后禁删状态及真实后台补齐视觉更新。

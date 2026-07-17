@@ -2449,3 +2449,50 @@ Settings -> Storage 建议增加:
 
 - RepoContext 文件继续由 `RepoContextStorage` 管理，不写普通消息、notes、CloudKit 或 External Search query。
 - 主动生成沿用现有 BYOK 和私有仓库边界；知识库管理页不会额外上传 XML。
+
+## 21. Wiki 链接与仓库 Metadata
+
+> 2026-07-17 增补。实施清单与审查边界见 `docs/4-工程进度/知识库RAG专项/RAG-Wiki元数据实施方案.md`。
+
+### 21.1 产品边界
+
+- Starcat 只查询 DeepWiki、ZRead、CodeWiki 是否已收录公开仓库，不抓取或索引 Wiki 正文。
+- 私有仓库 identity 不发送给外部 Wiki 服务。
+- Wiki 不新增 `RAGChunkSource`、数据库 migration、Prompt placeholder、execution step、Debug stage 或 citation。
+- 有效链接只允许 `indexed` 且 URL scheme 为 `http` / `https`。
+
+### 21.2 cache-first 后台补齐
+
+详情页、搜索详情、Repo AI Chat 与 Companion 统一调用 `WikiContextService.cacheFirstLinks`：fresh 只读磁盘，stale 返回旧值并排队，miss 返回空值并排队。服务内队列固定小并发，并在排队与执行期间按 `owner/name` 去重。详情页与搜索详情监听 cache change/reset 事件，按当前 repo identity 原地回填或移除链接；监听回调只读缓存，不再次触发网络。
+
+`WikiKnowledgeBackfillCoordinator` 在当前用户数据库就绪后扫描已有知识库，并监听新入库通知。账号切换先停止通知与扫描，再取消 Wiki 队列并推进 generation；旧请求即使延迟返回也不能触发新数据库 Metadata 写入。网络失败不阻塞 UI、RAG 索引或问答，后续按双 TTL 重新探测。
+
+### 21.3 Metadata 内容与重建
+
+每个仓库继续只有一个 `source = metadata`、`chunk_key = metadata:0`、`embedding_status = keyword_only` 分片。Builder 从 `DiskWikiCache` 按固定顺序追加：
+
+```text
+Wiki DeepWiki: https://...
+Wiki ZRead: https://...
+Wiki CodeWiki: https://...
+```
+
+空值与未收录来源省略。`KnowledgeRAGIndexBuilder` 只读本地 Wiki cache，不持有 Wiki API。单仓快照写入只刷新对应 repo Metadata；清空 cache 使用清理前 identity 列表刷新受影响仓库。source diff 的 content hash 继续避免无内容变化的重复写入。
+
+### 21.4 Prompt 语义
+
+Retriever 在最终 repo limit 确定后批量读取各仓库有效 `metadata:0`，将正文放入 `RepoContextBundle.metadataContent`。它是仓库 bundle 的固定上下文头，不新增 hit、score 或 citation：
+
+- 普通检索存在完整 Metadata 时只输出完整正文，不重复精简元数据；
+- Metadata 缺失或历史上被排除时使用精简元数据兜底；
+- Metadata 自身被 FTS 命中也只输出一次；
+- `structured_only` 继续使用候选仓库精简元数据，不批量加载全库 Metadata；
+- 维持没有 `{metadataSection}`，仓库 Metadata 属于 `{evidenceSection}`；`{repoContextSection}` 不受影响。
+
+Evidence 使用全局两阶段装配：第一阶段只按得分顺序试放所有可保留仓库的完整 Metadata，不加入任何普通分片；第二阶段才逐段加入带 citation 的普通证据。空间不足时先移除普通分片；如果连某仓库 Metadata 都无法完整容纳，则跳过该仓库，禁止字符级截断 Metadata。该段仍受模型总输入窗口和输出预留约束。
+
+### 21.5 浏览器管理语义
+
+Metadata 是系统维护的仓库上下文分片：允许查看和保存人工 override，但 UI 不显示删除按钮，ViewModel、domain read model 与 Repository 均拒绝下架和永久删除。其它 source 的两阶段删除与恢复行为不变。
+
+知识库右侧 Metadata 行解析固定 `Wiki <Provider>: <URL>` 格式，以独立按钮调用 `NSWorkspace.open`。解析再次校验 provider 与 `http` / `https`，避免人工 override 注入任意 scheme。LLM 回答中的 Wiki Markdown 链接继续复用现有外链打开路径。

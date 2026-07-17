@@ -207,17 +207,29 @@ final class DiskWikiCache {
         let data = try encoder.encode(snapshot)
         try data.write(to: url, options: .atomic)
         reload()
+        NotificationCenter.default.post(
+            name: .wikiCacheDidChange,
+            object: self,
+            userInfo: ["owner": snapshot.owner, "repo": snapshot.repo]
+        )
     }
 
     // MARK: - 清理
 
     /// 设置页"清除 Wiki 缓存"按钮入口：删整个 `wiki-cache/` 目录后立即 reload。
     func deleteEverything() throws {
+        // 清理前保留受影响 identity，让当前用户数据库只重建真正可能含 Wiki 链接的 Metadata。
+        let affectedKeys = cachedRepositoryKeys()
         let root = try rootURL()
         if fileManager.fileExists(atPath: root.path) {
             try fileManager.removeItem(at: root)
         }
         reload()
+        NotificationCenter.default.post(
+            name: .wikiCacheDidReset,
+            object: self,
+            userInfo: ["repositoryKeys": affectedKeys]
+        )
     }
 
     // MARK: - 重扫盘：刷新 totalBytes / itemCount
@@ -279,6 +291,16 @@ final class DiskWikiCache {
         return out
     }
 
+    /// 仅用于 cache reset 的精确失效通知；损坏文件会被忽略，避免清缓存动作因单文件失败而中断。
+    private func cachedRepositoryKeys() -> [WikiRepoKey] {
+        guard let root = try? rootURL() else { return [] }
+        return collectJSONFiles(under: root).compactMap { url in
+            guard let data = try? Data(contentsOf: url),
+                  let snapshot = try? decoder.decode(WikiCacheSnapshot.self, from: data) else { return nil }
+            return WikiRepoKey(owner: snapshot.owner, repo: snapshot.repo)
+        }
+    }
+
     /// 路径段安全校验：挡 `..` / 含路径分隔符 / 空串 / 控制字符。
     /// 与 `WikiAPI.isValidRepoPart` 共同构成多层防御。
     nonisolated static func assertSafePathComponent(_ value: String) throws {
@@ -292,4 +314,11 @@ final class DiskWikiCache {
             throw DiskWikiCacheError.unsafePathComponent(value)
         }
     }
+}
+
+extension Notification.Name {
+    /// 单仓库 Wiki 快照写盘后触发，RAG 索引器据此只刷新对应 Metadata。
+    static let wikiCacheDidChange = Notification.Name("StarcatWikiCacheDidChange")
+    /// 清空 Wiki 磁盘缓存后触发，userInfo 携带清理前存在的仓库 identity。
+    static let wikiCacheDidReset = Notification.Name("StarcatWikiCacheDidReset")
 }

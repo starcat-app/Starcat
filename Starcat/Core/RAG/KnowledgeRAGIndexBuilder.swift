@@ -12,6 +12,22 @@
 import Foundation
 import Observation
 
+/// Wiki cache 通知到 Metadata 刷新 identity 的唯一解析入口。
+///
+/// DiskWikiCache、前台 UI 与索引器共享同一 payload 契约；把解析保持为纯函数，才能用
+/// 单元测试防止字段名变化后索引器静默停止增量重建。
+enum RAGWikiMetadataRefreshRoute {
+    static func changedRepository(from notification: Notification) -> WikiRepoKey? {
+        guard let owner = notification.userInfo?["owner"] as? String,
+              let repo = notification.userInfo?["repo"] as? String else { return nil }
+        return WikiRepoKey(owner: owner, repo: repo)
+    }
+
+    static func resetRepositories(from notification: Notification) -> [WikiRepoKey] {
+        notification.userInfo?["repositoryKeys"] as? [WikiRepoKey] ?? []
+    }
+}
+
 enum RAGIndexingStatus: Equatable, Sendable {
     case idle
     case fetchingReadmes(processedRepos: Int, totalRepos: Int)
@@ -138,6 +154,8 @@ final class KnowledgeRAGIndexBuilder {
     private let releaseRepository: (any ReleaseRepositoryProtocol)?
     private let healthRepository: (any RepoHealthRepositoryProtocol)?
     private let openSSFRepository: (any OpenSSFScoreRepositoryProtocol)?
+    /// Wiki 只读磁盘缓存；索引器不得持有 Wiki API 或等待外部网络。
+    private let wikiCache: DiskWikiCache?
     private let settings: AppSettings
     private let entitlementGate: EntitlementGate
     private let keychain: any KeychainManaging
@@ -179,6 +197,7 @@ final class KnowledgeRAGIndexBuilder {
         releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
         healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
+        wikiCache: DiskWikiCache? = nil,
         settings: AppSettings,
         entitlementGate: EntitlementGate,
         keychain: any KeychainManaging = KeychainManager.shared,
@@ -195,6 +214,7 @@ final class KnowledgeRAGIndexBuilder {
         self.releaseRepository = releaseRepository
         self.healthRepository = healthRepository
         self.openSSFRepository = openSSFRepository
+        self.wikiCache = wikiCache
         self.settings = settings
         self.entitlementGate = entitlementGate
         self.keychain = keychain
@@ -320,6 +340,30 @@ final class KnowledgeRAGIndexBuilder {
                 }
             })
         }
+        observationTasks.append(Task { [weak self] in
+            let stream = NotificationCenter.default.notifications(named: .wikiCacheDidChange)
+            for await notification in stream {
+                guard let key = RAGWikiMetadataRefreshRoute.changedRepository(from: notification),
+                      let repo = try? await self?.repoRepository.findByOwnerName(owner: key.owner, name: key.repo)
+                else { continue }
+                await self?.refresh(repo: repo, sources: [.metadata])
+            }
+        })
+        observationTasks.append(Task { [weak self] in
+            let stream = NotificationCenter.default.notifications(named: .wikiCacheDidReset)
+            for await notification in stream {
+                guard let self else { continue }
+                let keys = RAGWikiMetadataRefreshRoute.resetRepositories(from: notification)
+                for key in keys {
+                    // 清空缓存可能涉及大量仓库；builder 停止或切库后必须立刻退出，
+                    // 不能吞掉 CancellationError 后继续访问已经切换的 repository。
+                    guard !Task.isCancelled else { return }
+                    guard let repo = try? await self.repoRepository.findByOwnerName(owner: key.owner, name: key.repo)
+                    else { continue }
+                    await self.refresh(repo: repo, sources: [.metadata])
+                }
+            }
+        })
     }
 
     /// 全量重建只表示“重新计算 source diff + 补齐待处理 embedding”，内容未变的 ready chunk
@@ -505,7 +549,7 @@ final class KnowledgeRAGIndexBuilder {
             : []
         let readme = readPlan.readsReadme ? try await readmeRepository.findContent(repoId: repo.id) : nil
         let summaryText = readPlan.readsSummary ? summary.flatMap(Self.summaryText) : nil
-        let metadataSnapshot = readPlan.readsMetadataSnapshot ? await loadMetadataSnapshot(repoID: repo.id) : nil
+        let metadataSnapshot = readPlan.readsMetadataSnapshot ? await loadMetadataSnapshot(repo: repo) : nil
         let output = try await RAGChunkBuildExecutor.build(RAGChunkBuildInput(
             repo: repo,
             readme: readme,
@@ -535,26 +579,34 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     /// 从本地缓存聚合 Metadata；单项读取失败时省略该项，不让辅助缓存阻断主索引。
-    private func loadMetadataSnapshot(repoID: Int64) async -> RAGMetadataSnapshot {
+    private func loadMetadataSnapshot(repo: Repo) async -> RAGMetadataSnapshot {
         let latestRelease: ReleaseRecord?
         if let releaseRepository {
-            latestRelease = try? await releaseRepository.latest(forRepo: repoID)
+            latestRelease = try? await releaseRepository.latest(forRepo: repo.id)
         } else {
             latestRelease = nil
         }
         let health: RepoHealthSnapshot?
         if let healthRepository {
-            health = try? await healthRepository.snapshot(for: repoID)
+            health = try? await healthRepository.snapshot(for: repo.id)
         } else {
             health = nil
         }
         let openSSF: OpenSSFScoreRecord?
         if let openSSFRepository {
-            openSSF = try? await openSSFRepository.record(for: repoID)
+            openSSF = try? await openSSFRepository.record(for: repo.id)
         } else {
             openSSF = nil
         }
-        return RAGMetadataSnapshot(latestRelease: latestRelease, health: health, openSSF: openSSF)
+        let wikiLinks = repo.isPrivate
+            ? []
+            : wikiCache?.load(owner: repo.owner, repo: repo.name)?.indexedLinks ?? []
+        return RAGMetadataSnapshot(
+            latestRelease: latestRelease,
+            health: health,
+            openSSF: openSSF,
+            wikiLinks: wikiLinks
+        )
     }
 
     /// 仅补齐本地没有 Markdown 的 README。索引器不能假设详情页或后台预拉已经访问过仓库，

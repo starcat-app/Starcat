@@ -19,6 +19,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunkIdentities(repoId: Int64) async throws -> [RAGDeletedChunkIdentity]
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
+    /// 为最终仓库 bundle 批量读取系统 Metadata。Metadata 是 keyword_only，不得复用只查 ready 向量的 parent API。
+    func fetchActiveMetadata(repoIDs: [Int64]) async throws -> [RAGChunk]
     /// 只统计知识库边界内待向量化分片，不读取正文或 embedding BLOB。
     func countChunksNeedingEmbedding() async throws -> Int
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
@@ -50,6 +52,17 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func restoreKnowledgeChunk(id: Int64) async throws
     func totalBytes() async throws -> Int64
     func deleteAll() async throws
+}
+
+enum RAGChunkMutationError: LocalizedError, Equatable {
+    case metadataIsSystemManaged
+
+    var errorDescription: String? {
+        switch self {
+        case .metadataIsSystemManaged:
+            return String.l10n("rag.browser.chunk.metadataManaged")
+        }
+    }
 }
 
 /// SQLite BLOB 向量扫描的轻量行。正文和 citation 元数据只在最终 Top-K 确定后才回填，
@@ -90,6 +103,9 @@ struct RAGManagedChunk: Identifiable, Equatable, Sendable {
     var isExcluded: Bool
     var hasOverride: Bool
     var id: Int64 { chunk.id ?? -1 }
+
+    /// Metadata 是维持仓库上下文完整性的系统分片，只允许查看和编辑，不允许下架或永久删除。
+    var allowsRemoval: Bool { chunk.source != .metadata }
 }
 
 /// 管理器按页读取分片，避免仅为了显示少量预览就在内存中加载整个仓库。
@@ -352,6 +368,31 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.repo_id, c.parent_key, c.chunk_index
                 """, arguments: StatementArguments(arguments))
+        }
+    }
+
+    func fetchActiveMetadata(repoIDs: [Int64]) async throws -> [RAGChunk] {
+        guard !repoIDs.isEmpty else { return [] }
+        return try await database.writer.read { db in
+            var result: [RAGChunk] = []
+            for batch in Self.idBatches(repoIDs) {
+                let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+                result += try RAGChunk.fetchAll(db, sql: """
+                    SELECT c.*
+                    FROM rag_chunks c
+                    JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                    WHERE c.repo_id IN (\(placeholders))
+                      AND c.source = 'metadata'
+                      AND c.chunk_key = 'metadata:0'
+                      AND c.embedding_status = 'keyword_only'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o
+                          WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                      )
+                    ORDER BY c.repo_id
+                    """, arguments: StatementArguments(batch))
+            }
+            return result
         }
     }
 
@@ -851,6 +892,10 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
 
     func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws {
         try await database.writer.write { db in
+            if isExcluded,
+               try RAGChunk.fetchOne(db, key: id)?.source == .metadata {
+                throw RAGChunkMutationError.metadataIsSystemManaged
+            }
             try ensureOverrideBaseline(db, chunkID: id)
             try db.execute(sql: "UPDATE rag_chunk_overrides SET is_excluded = ?, updated_at = ? WHERE chunk_id = ?", arguments: [isExcluded, ISO8601DateFormatter.shared.string(from: Date()), id])
         }
@@ -860,6 +905,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
     func permanentlyDeleteKnowledgeChunk(id: Int64) async throws {
         try await database.writer.write { db in
             guard let chunk = try RAGChunk.fetchOne(db, key: id) else { return }
+            guard chunk.source != .metadata else {
+                throw RAGChunkMutationError.metadataIsSystemManaged
+            }
             try db.execute(
                 sql: "DELETE FROM rag_chunk_tombstones WHERE repo_id = ? AND source = ? AND source_id = ? AND chunk_key = ?",
                 arguments: [chunk.repoId, chunk.source.rawValue, chunk.sourceId, chunk.chunkKey]
