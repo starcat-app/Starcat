@@ -361,7 +361,7 @@
 
 ## 16. RepoContext 深度思考（2026-07-17）
 
-> 状态: 核心实现、三轮问题审查、RAG 定向测试、全量测试与双 Debug target build 已完成；等待清洁复审与结果报告。详细证据见 `RepoContext深度思考Checklist.md` 和三轮审查报告。
+> 状态: RepoContext 深度思考核心实现、四轮审查、RAG 定向测试、全量测试、双 Debug target build 与结果报告已完成；人工 UI 点选未执行且未伪造。详细证据见 `RepoContext深度思考Checklist.md`、四轮审查报告与结果报告。
 
 - [x] Composer 顺序为附件 → 联网搜索 → 深度思考 → 发送；只有单项目可开启，附件数量不限，按会话草稿恢复。
 - [x] Generator 新增独立 `{repoContextSection}`，RepoContext 不使用 chunk evidence budget，但受配置预算和模型总窗口约束。
