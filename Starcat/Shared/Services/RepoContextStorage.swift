@@ -75,6 +75,17 @@ struct RepoContextStoredProject: Identifiable, Equatable, Sendable {
     }
 }
 
+/// 知识库浏览器可直接消费的 RepoContext 文档快照。
+///
+/// UI 不持有 security-scoped URL，避免在授权 scope 已关闭后自行读文件；所有正文 IO
+/// 仍由 `RepoContextStorage` 在 `withOutputRoot` 内完成。
+struct RepoContextDocument: Sendable {
+    let xml: String
+    let metadata: PackMetadata
+
+    var id: String { "\(metadata.owner)/\(metadata.repo)" }
+}
+
 /// HOM-203：产物根目录的汇总缓存（落盘为 `<root>/.starcat-summary.json`）。
 ///
 /// 作用：让设置页 UI 一次磁盘读取拿到 4 个汇总数字（项目数 / 占用 / 累计生成 /
@@ -124,6 +135,8 @@ struct RepoContextSummary: Codable, Sendable, Equatable {
 enum RepoContextStorageError: LocalizedError {
     case outputDirectoryUnavailable
     case invalidBookmark
+    case invalidXML
+    case invalidRootElement
 
     var errorDescription: String? {
         switch self {
@@ -131,6 +144,10 @@ enum RepoContextStorageError: LocalizedError {
             return String.l10n("repoContext.storage.error.outputDirectoryUnavailable")
         case .invalidBookmark:
             return String.l10n("repoContext.storage.error.invalidBookmark")
+        case .invalidXML:
+            return String.l10n("repoContext.storage.error.invalidXML")
+        case .invalidRootElement:
+            return String.l10n("repoContext.storage.error.invalidRootElement")
         }
     }
 }
@@ -317,6 +334,96 @@ final class RepoContextStorage {
             guard fileManager.fileExists(atPath: url.path) else { return nil }
             let xml = try String(contentsOf: url, encoding: .utf8)
             return xml.isEmpty ? nil : xml
+        }
+    }
+
+    /// 一次性读取 XML 与 metadata，供知识库浏览器构建特殊托管分片。
+    ///
+    /// 不能让 ViewModel 先查项目再拿 URL 读取正文：自定义输出目录的 security scope
+    /// 会在第一次调用返回时关闭。这里把两份真源放在同一个授权闭包内读取。
+    func loadDocument(owner: String, repo: String) throws -> RepoContextDocument? {
+        try withOutputRoot { root in
+            let directory = projectDirectory(root: root, owner: owner, repo: repo)
+            guard let project = try loadProject(directory: directory) else { return nil }
+            let xml = try String(contentsOf: project.contextURL, encoding: .utf8)
+            guard !xml.isEmpty else { return nil }
+            return RepoContextDocument(xml: xml, metadata: project.metadata)
+        }
+    }
+
+    /// 保存用户在知识库分片编辑器中修改的真实 `context.xml`。
+    ///
+    /// 手工编辑不是一次重新生成，因此保留 `generatedAt` / `generationCount`，只刷新
+    /// 正文派生的 token、字节数与最近访问时间。校验和 metadata 编码都在任何写入前
+    /// 完成，非法草稿不会破坏已有缓存。
+    func saveEditedContextXML(_ xml: String, owner: String, repo: String) throws -> RepoContextDocument {
+        try Self.validateContextXML(xml)
+        let xmlData = Data(xml.utf8)
+
+        return try withOutputRoot { root in
+            let directory = projectDirectory(root: root, owner: owner, repo: repo)
+            guard let existing = try loadProject(directory: directory) else {
+                throw RepoContextStorageError.outputDirectoryUnavailable
+            }
+
+            let updatedStats = PackStats(
+                totalFiles: existing.metadata.stats.totalFiles,
+                tier0Count: existing.metadata.stats.tier0Count,
+                tier1Count: existing.metadata.stats.tier1Count,
+                tier2Count: existing.metadata.stats.tier2Count,
+                estimatedTokens: existing.metadata.stats.estimatedTokens,
+                actualTokens: TokenEstimator.estimate(text: xml),
+                contextXmlBytes: xmlData.count
+            )
+            let updatedMetadata = PackMetadata(
+                schemaVersion: existing.metadata.schemaVersion,
+                tierRulesVersion: existing.metadata.tierRulesVersion,
+                tokenEstimatorVersion: existing.metadata.tokenEstimatorVersion,
+                owner: existing.metadata.owner,
+                repo: existing.metadata.repo,
+                ref: existing.metadata.ref,
+                commitSha: existing.metadata.commitSha,
+                generatedAt: existing.metadata.generatedAt,
+                tokenBudget: existing.metadata.tokenBudget,
+                stats: updatedStats,
+                skippedFiles: existing.metadata.skippedFiles,
+                warnings: existing.metadata.warnings,
+                tier1MaxLines: existing.metadata.tier1MaxLines,
+                lastAccessedAt: .now,
+                generationCount: existing.metadata.generationCount
+            )
+            // 两份新数据都先在内存构建成功，再进入原子替换；如果第二次写入失败，尽力
+            // 回滚原数据，避免 context.xml 与 metadata.json 长期错配。
+            let metadataData = try PackMetadataCoder.encoder.encode(updatedMetadata)
+            let originalXML = try Data(contentsOf: existing.contextURL)
+            let originalMetadata = try Data(contentsOf: existing.metadataURL)
+            do {
+                try xmlData.write(to: existing.contextURL, options: .atomic)
+                try metadataData.write(to: existing.metadataURL, options: .atomic)
+            } catch {
+                try? originalXML.write(to: existing.contextURL, options: .atomic)
+                try? originalMetadata.write(to: existing.metadataURL, options: .atomic)
+                throw error
+            }
+
+            guard let updated = try loadProject(directory: directory) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            updateSummaryAfterEdit(root: root, oldProject: existing, newProject: updated)
+            return RepoContextDocument(xml: xml, metadata: updated.metadata)
+        }
+    }
+
+    /// Foundation XMLDocument 同时负责语法与根节点校验；不做字符级“看起来像 XML”判断。
+    private static func validateContextXML(_ xml: String) throws {
+        let document: XMLDocument
+        do {
+            document = try XMLDocument(xmlString: xml, options: [])
+        } catch {
+            throw RepoContextStorageError.invalidXML
+        }
+        guard document.rootElement()?.name == "repository" else {
+            throw RepoContextStorageError.invalidRootElement
         }
     }
 
@@ -572,6 +679,28 @@ final class RepoContextStorage {
             totalBytes: totalBytes,
             totalGenerationCount: totalGenerationCount,
             latestGeneratedAt: latestGeneratedAt,
+            updatedAt: .now
+        )
+        writeSummary(updated, root: root)
+        summary = updated
+    }
+
+    /// 手工编辑只改变项目占用，不增加“累计生成次数”或生成时间。
+    private func updateSummaryAfterEdit(
+        root: URL,
+        oldProject: RepoContextStoredProject,
+        newProject: RepoContextStoredProject
+    ) {
+        guard let base = summary ?? readSummary(root: root) else {
+            try? rebuildSummaryOnDisk(root: root)
+            return
+        }
+        let updated = RepoContextSummary(
+            schemaVersion: RepoContextSummary.currentSchemaVersion,
+            projectCount: base.projectCount,
+            totalBytes: max(0, base.totalBytes + newProject.totalBytes - oldProject.totalBytes),
+            totalGenerationCount: base.totalGenerationCount,
+            latestGeneratedAt: base.latestGeneratedAt,
             updatedAt: .now
         )
         writeSummary(updated, root: root)

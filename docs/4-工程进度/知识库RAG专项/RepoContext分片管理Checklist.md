@@ -24,13 +24,13 @@
 
 ## 2. RepoContext 存储与编辑能力
 
-- [ ] 增加知识库浏览器所需的 RepoContext 快照读取能力。
-- [ ] 保存前解析 XML 并要求根节点为 `<repository>`。
-- [ ] 合法编辑使用 UTF-8 原子写入真实 `context.xml`。
-- [ ] 保存后同步刷新 metadata 的 token、字节数与访问时间。
-- [ ] 非法保存保持原文件不变并返回可展示错误。
-- [ ] 删除完整 RepoContext 项目产物，不写 tombstone。
-- [ ] 补齐读取、保存、校验、metadata 与删除单元测试。
+- [x] 增加知识库浏览器所需的 RepoContext 快照读取能力。
+- [x] 保存前解析 XML 并要求根节点为 `<repository>`。
+- [x] 合法编辑使用 UTF-8 原子写入真实 `context.xml`。
+- [x] 保存后同步刷新 metadata 的 token、字节数与访问时间。
+- [x] 非法保存保持原文件不变并返回可展示错误。
+- [x] 删除完整 RepoContext 项目产物，不写 tombstone。
+- [x] 补齐读取、保存、校验、metadata 与删除单元测试。
 
 ## 3. 第二项展示与分片管理 UI
 
