@@ -2,7 +2,7 @@
 
 > 审查日期：2026-07-17  
 > 审查范围：Wiki 数据流、缓存生命周期、后台补齐、私有仓库边界、账号 / 数据库切换屏障  
-> 审查结论：发现 1 个 P1、1 个 P2，修复后进入下一轮审查
+> 审查结论：发现 1 个 P1、1 个 P2，均已修复并通过定向测试
 
 ## 已核对
 
@@ -21,14 +21,18 @@
 
 修复要求：在循环入口显式检测取消并立即退出，保持与 builder 其他生命周期监听一致。
 
+> 修复状态：已完成。reset key 循环改为 `guard !Task.isCancelled else { return }`，提交 `cd6d011`。
+
 ### P2：缓存变更通知契约缺少单元测试
 
 当前实现依赖 `.wikiCacheDidChange` 携带 `owner` / `repo`，以及 `.wikiCacheDidReset` 携带清空前的 `repositoryKeys` 来执行精确 Metadata 重建，但 `DiskWikiCacheTests` 尚未锁定这个通知 payload。后续字段名或发送时机变化可能静默破坏增量重建。
 
 修复要求：分别为 `save` 与 `deleteEverything` 增加通知 payload 测试，并验证清空事件保留受影响仓库 identity。
 
+> 修复状态：已完成。新增 save / reset 两个通知契约测试，`DiskWikiCacheTests` 全量通过，提交 `d0571a4`。
+
 ## 本轮后续动作
 
-1. 修正 reset 监听的取消处理并提交。
-2. 补充缓存通知契约测试并提交。
-3. 回填本报告的修复状态后，开始第 2 轮 UI 与上下文语义审查。
+1. [x] 修正 reset 监听的取消处理并提交。
+2. [x] 补充缓存通知契约测试并提交。
+3. [x] 回填本报告的修复状态，开始第 2 轮 UI 与上下文语义审查。
