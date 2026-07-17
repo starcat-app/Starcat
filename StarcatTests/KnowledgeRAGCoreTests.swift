@@ -2004,6 +2004,57 @@ struct KnowledgeRAGCoreTests {
         #expect(!retrievalDiagnostics.debugPayload().contains(rerank.debugPayload()))
     }
 
+    @Test("Rerank Debug 显示真实分数并把未参与候选压缩为备注")
+    func rerankDebugRendersScoreAndCompactsTrailingCandidates() {
+        let trace = RAGRerankTrace(
+            query: "query",
+            model: nil,
+            candidateLimit: 2,
+            inputCandidates: [
+                .init(
+                    inputIndex: 0,
+                    repositoryName: "octo/first",
+                    source: .readme,
+                    section: "First",
+                    preRerankScore: 0.5
+                ),
+                .init(
+                    inputIndex: 1,
+                    repositoryName: "octo/second",
+                    source: .readme,
+                    section: "Second",
+                    preRerankScore: 0.4
+                )
+            ],
+            responseResults: [.init(inputIndex: 0, rerankScore: 0.842)],
+            appliedOrder: [
+                .init(rank: 1, inputIndex: 0, rerankScore: 0.842),
+                .init(rank: 2, inputIndex: 1, rerankScore: nil),
+                .init(rank: 3, inputIndex: nil, rerankScore: nil),
+                .init(rank: 4, inputIndex: nil, rerankScore: nil)
+            ]
+        )
+        let payload = RAGRerankDebugPayload(diagnostics: RAGRerankDiagnostics(
+            state: .completed,
+            provider: .huggingFaceTEI,
+            candidateCount: 2,
+            rerankedCount: 1,
+            trace: trace
+        ))
+
+        let rendered = payload.renderedText()
+        let notes = payload.renderedAppliedNotes()
+        #expect(rendered.contains("0.842000"))
+        #expect(!rendered.contains("Rerank score 0.000000"))
+        #expect(notes.count == 2)
+        #expect(notes.allSatisfy { rendered.contains($0) })
+        #expect(notes.contains(String(
+            format: String.l10n("rag.workspace.debug.rerank.appliedUnsentNoteFormat"),
+            2,
+            2
+        )))
+    }
+
     @MainActor
     @Test("工作台保留独立 Rerank Debug 的结构化内容")
     func workspaceDebugEventPreservesRerankPayload() {

@@ -30,13 +30,15 @@ struct StarcatCompactMark: View {
 /// 这里改成等边方底，与 GitHub mark 并排时更整齐。
 struct SquareLogoActionChrome: ViewModifier {
     var side: CGFloat = 28
+    /// 默认保持中性浅底；品牌入口可传入更醒目的语义背景色。
+    var backgroundColor: Color = Color.secondary.opacity(0.10)
 
     func body(content: Content) -> some View {
         content
             .frame(width: side, height: side)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.secondary.opacity(0.10))
+                    .fill(backgroundColor)
             )
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
@@ -44,7 +46,10 @@ struct SquareLogoActionChrome: ViewModifier {
 
 extension View {
     /// 给 logo-only 按钮套正方形浅底，替代 `.bordered` 胶囊底。
-    func squareLogoActionChrome(side: CGFloat = 28) -> some View {
-        modifier(SquareLogoActionChrome(side: side))
+    func squareLogoActionChrome(
+        side: CGFloat = 28,
+        backgroundColor: Color = Color.secondary.opacity(0.10)
+    ) -> some View {
+        modifier(SquareLogoActionChrome(side: side, backgroundColor: backgroundColor))
     }
 }

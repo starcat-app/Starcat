@@ -151,26 +151,25 @@ struct RAGWorkspaceInspector: View {
             .padding(.top, 12)
             .padding(.bottom, 10)
 
-            ScrollView {
-                switch inspectorTab {
-                case .evidence: evidenceInspector
-                case .plan: planInspector
-                case .index: indexInspector
-                #if DEBUG
-                case .debug: debugInspector
-                #endif
+            ScrollViewReader { proxy in
+                ScrollView {
+                    switch inspectorTab {
+                    case .evidence: evidenceInspector
+                    case .plan: planInspector
+                    case .index: indexInspector
+                    #if DEBUG
+                    case .debug: debugInspector
+                    #endif
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .onChange(of: viewModel.citationFocusSequence) { _, _ in
+                    focusSelectedCitation(using: proxy)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
-        .onChange(of: viewModel.citationFocusSequence) { _, _ in
-            // 用 sequence 而不是 citation.id：同条芯片再点时 id 不变，仍需从调试等 tab 切回证据。
-            if viewModel.selectedCitation != nil {
-                inspectorTab = .evidence
-            }
-        }
         .onChange(of: viewModel.selectedCitation?.id) { _, _ in
             // 换引用时关掉旧全文，避免 popover 挂在错误分片上。
             isCitationChunkPopoverPresented = false
@@ -188,6 +187,26 @@ struct RAGWorkspaceInspector: View {
             Text("rag.workspace.debug.clear.confirm.message")
         }
         #endif
+    }
+
+    /// 正文引用先驱动展开状态，再等 SwiftUI 提交引用 tab 的布局后定位目标行。
+    /// 直接同步 `scrollTo` 时，目标可能仍在计划/索引 tab 中尚未挂载，滚动请求会被静默丢弃。
+    private func focusSelectedCitation(using proxy: ScrollViewProxy) {
+        guard let citationID = viewModel.selectedCitation?.id else { return }
+        inspectorTab = .evidence
+
+        Task { @MainActor in
+            await Task.yield()
+            // 用户快速连点不同引用时，只执行最后一次仍然有效的定位，避免视口跳回旧目标。
+            guard viewModel.selectedCitation?.id == citationID else { return }
+            if reduceMotion {
+                proxy.scrollTo(citationID, anchor: .top)
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(citationID, anchor: .top)
+                }
+            }
+        }
     }
 
     /// 调试 tab 仅在 DEBUG 且开关打开时出现，避免未开启时占 segmented 宽度。
@@ -304,6 +323,8 @@ struct RAGWorkspaceInspector: View {
                             }
                         }
                     }
+                    // ScrollViewReader 必须定位整张卡片；展开后仍以标题顶部作为稳定锚点。
+                    .id(citation.id)
                 }
             }
 
@@ -2227,8 +2248,35 @@ struct RAGWorkspaceInspector: View {
     /// 不应因其中出现数字而被误标为检索关键信息。
     private func debugPayloadText(for event: RAGDebugEvent) -> Text {
         let payload = event.renderedPayload()
-        guard event.retrievalPayload != nil else { return Text(payload) }
-        return highlightedDebugPayload(payload)
+        if event.retrievalPayload != nil {
+            return highlightedDebugPayload(payload)
+        }
+        if let rerankPayload = event.rerankPayload {
+            return styledRerankDebugPayload(
+                payload,
+                notes: rerankPayload.renderedAppliedNotes()
+            )
+        }
+        return Text(payload)
+    }
+
+    /// Rerank 主体继续使用紧凑等宽字；仅汇总说明降一级为灰色备注，减少长 Trace 的视觉噪音。
+    private func styledRerankDebugPayload(_ payload: String, notes: [String]) -> Text {
+        let noteRanges = notes
+            .compactMap { payload.range(of: $0) }
+            .sorted { $0.lowerBound < $1.lowerBound }
+        guard !noteRanges.isEmpty else { return Text(payload) }
+
+        var result = Text("")
+        var cursor = payload.startIndex
+        for range in noteRanges {
+            result = result + Text(String(payload[cursor..<range.lowerBound]))
+            result = result + Text(String(payload[range]))
+                .font(interfaceScale.font(size: 10, design: .monospaced))
+                .foregroundColor(.secondary)
+            cursor = range.upperBound
+        }
+        return result + Text(String(payload[cursor...]))
     }
 
     /// 数值是检索配置和漏斗判读的关键线索；在保留等宽调试文本可复制性的同时，用系统强调色

@@ -1583,10 +1583,14 @@ private struct KnowledgeRAGBrowserView: View {
                 } label: {
                     // App Icon 带玻璃外框，小尺寸下主体看不清；裁掉外围放大黑猫/金星。
                     StarcatCompactMark(size: 16)
-                        .squareLogoActionChrome()
+                        .squareLogoActionChrome(
+                            backgroundColor: Color.fromHex6(0xF59E0B).opacity(0.26)
+                        )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                // 与左侧知识库删除按钮复用同一套 hover 反馈，并自动尊重“减少动态效果”。
+                .pressableHover()
                 .help("rag.browser.open")
                 .accessibilityLabel(Text("rag.browser.open"))
             }

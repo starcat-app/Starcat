@@ -158,12 +158,23 @@ struct RAGRerankDebugPayload: Codable, Sendable {
         ] + trace.responseResults.map { result in
             String(format: String.l10n("rag.workspace.debug.rerank.responseResultFormat"), result.inputIndex, result.rerankScore)
         }
-        let appliedLines = trace.appliedOrder.map { item in
-            if let inputIndex = item.inputIndex, let rerankScore = item.rerankScore {
-                return String(format: String.l10n("rag.workspace.debug.rerank.appliedResultFormat"), item.rank, inputIndex, rerankScore)
-            }
-            return String(format: String.l10n("rag.workspace.debug.rerank.appliedFallbackFormat"), item.rank)
+        let appliedLines = trace.appliedOrder.compactMap { item -> String? in
+            guard let inputIndex = item.inputIndex, let rerankScore = item.rerankScore else { return nil }
+            return String(
+                format: String.l10n("rag.workspace.debug.rerank.appliedResultFormat"),
+                item.rank,
+                inputIndex,
+                rerankScore
+            )
         }
+        // 超过候选上限的分片只保留一条备注，避免大型召回结果把 Debug 面板刷成长列表。
+        // 已发送但服务端漏回的候选单独说明，不能与“未发送”混为同一种降级原因。
+        let appliedDetails = [
+            appliedLines.map { "- \($0)" }.joined(separator: "\n"),
+            renderedAppliedNotes().joined(separator: "\n")
+        ]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
         return [
             diagnostics.debugPayload(),
             String.l10n("rag.workspace.debug.rerank.request.title"),
@@ -171,8 +182,32 @@ struct RAGRerankDebugPayload: Codable, Sendable {
             String.l10n("rag.workspace.debug.rerank.response.title"),
             responseLines.map { "- \($0)" }.joined(separator: "\n"),
             String.l10n("rag.workspace.debug.rerank.applied.title"),
-            appliedLines.map { "- \($0)" }.joined(separator: "\n")
+            appliedDetails
         ].joined(separator: "\n\n")
+    }
+
+    /// 返回需要在 Inspector 中降级为备注样式的行；复制与导出仍保留同一份可读文本。
+    func renderedAppliedNotes() -> [String] {
+        guard let trace = diagnostics.trace else { return [] }
+        let missingResponseCount = trace.appliedOrder.filter { item in
+            item.inputIndex != nil && item.rerankScore == nil
+        }.count
+        let unsentCount = trace.appliedOrder.filter { $0.inputIndex == nil }.count
+        var notes: [String] = []
+        if missingResponseCount > 0 {
+            notes.append(String(
+                format: String.l10n("rag.workspace.debug.rerank.appliedMissingResponseNoteFormat"),
+                missingResponseCount
+            ))
+        }
+        if unsentCount > 0 {
+            notes.append(String(
+                format: String.l10n("rag.workspace.debug.rerank.appliedUnsentNoteFormat"),
+                trace.inputCandidates.count,
+                unsentCount
+            ))
+        }
+        return notes
     }
 
     var storedPayloadUTF8ByteCount: Int {

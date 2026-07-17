@@ -30,8 +30,11 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var historyWindow = RAGConversationHistoryWindow()
     @State private var isMessageNearBottom = true
     @State private var isComposerContextExpanded = false
+    @State private var isConversationSkeletonHandoffVisible = false
 
     private static let messageNearBottomThreshold: CGFloat = 64
+    private static let conversationSkeletonHandoffDelay: Duration = .milliseconds(50)
+    private static let conversationSkeletonFadeDuration: TimeInterval = 0.16
 
     private func ragFont(_ role: RAGFontRole, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
         interfaceScale.font(role.typography, weight: weight, design: design)
@@ -53,14 +56,7 @@ struct RAGWorkspaceAnswerSurface: View {
             // 这样面板永远停在 chip/输入框之上，既不参与 Composer 布局，也不可能盖住它。
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
-                    if viewModel.isConversationLoading {
-                        conversationLoading
-                    } else if showsEmptyConversation {
-                        emptyConversation
-                    } else {
-                        messageTimeline
-                    }
+                    conversationContent
                     if !viewModel.pendingRemoteWorkItems.isEmpty {
                         Divider()
                         remoteConfirmation
@@ -92,6 +88,67 @@ struct RAGWorkspaceAnswerSurface: View {
         viewModel.messages.isEmpty
             && !viewModel.isAnswering
             && viewModel.streamingAnswer.isEmpty
+    }
+
+    /// 会话正文与骨架采用两阶段交接：正文先在不透明骨架下完成首次布局，再淡出骨架。
+    /// 如果直接用 `if/else` 替换，Markdown 首次解析会占用主线程并冻住 shimmer，随后才硬切到正文。
+    var conversationContent: some View {
+        let isLoading = viewModel.isConversationLoading
+        return ZStack {
+            // 加载期间不保留上一会话，避免左栏已经选中 B、中栏却仍显示 A 的误导状态。
+            // 安装完成后先挂载正文；此时 handoff 骨架仍在最上层，遮住首轮解析和布局。
+            if !isLoading {
+                // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
+                if showsEmptyConversation {
+                    emptyConversation
+                } else {
+                    messageTimeline
+                }
+            }
+
+            if isLoading || isConversationSkeletonHandoffVisible {
+                conversationLoading
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // `task(id:)` 会在加载状态再次变化或 View 消失时自动取消旧任务，连续切换会话时
+        // 上一会话的延迟淡出因此不能误删当前会话的骨架。
+        .task(id: isLoading) {
+            await updateConversationSkeletonHandoff(isLoading: isLoading)
+        }
+    }
+
+    /// `Task.yield()` 只让出执行权，不保证 AppKit 已提交显示帧；额外等待一个很短的显示窗口，
+    /// 让正文首帧真正落到骨架下方后再淡出。Reduce Motion 下仍保留两阶段挂载，但不播放淡出。
+    @MainActor
+    private func updateConversationSkeletonHandoff(isLoading: Bool) async {
+        if isLoading {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                isConversationSkeletonHandoffVisible = true
+            }
+            return
+        }
+
+        guard isConversationSkeletonHandoffVisible else { return }
+        await Task.yield()
+        try? await Task.sleep(for: Self.conversationSkeletonHandoffDelay)
+        guard !Task.isCancelled, !viewModel.isConversationLoading else { return }
+
+        if reduceMotion {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                isConversationSkeletonHandoffVisible = false
+            }
+        } else {
+            withAnimation(.easeOut(duration: Self.conversationSkeletonFadeDuration)) {
+                isConversationSkeletonHandoffVisible = false
+            }
+        }
     }
 
     /// 缓存未命中时立即清掉上一会话正文，用对话骨架占位；数据库读取完成后一次性安装。

@@ -26996,18 +26996,18 @@
         }
       }
     },
-    "rag.workspace.debug.rerank.appliedFallbackFormat": {
+    "rag.workspace.debug.rerank.appliedMissingResponseNoteFormat": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "#%lld: not sent to Rerank; retained the hybrid order."
+            "value": "Note: Rerank did not return %lld submitted candidates; their hybrid retrieval order was retained."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "第 %lld 位：未发送至 Rerank，保留综合检索顺序。"
+            "value": "备注：Rerank 未返回 %lld 个已发送候选，已按综合检索顺序保留。"
           }
         }
       }
@@ -27017,13 +27017,29 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "#%1$lld: input [%2$lld], Rerank score %.6f"
+            "value": "#%1$lld: input [%2$lld], Rerank score %3$.6f"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "第 %1$lld 位：输入 [%2$lld]，Rerank 分 %.6f"
+            "value": "第 %1$lld 位：输入 [%2$lld]，Rerank 分 %3$.6f"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.rerank.appliedUnsentNoteFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Note: Rerank candidates: %1$lld chunks; the remaining %2$lld chunks did not participate in Rerank and retained the hybrid retrieval order."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注：Rerank 候选 %1$lld 个分片；后续 %2$lld 个分片不参与 Rerank，按综合检索顺序保留。"
           }
         }
       }

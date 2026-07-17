@@ -59,6 +59,9 @@ struct RAGWorkspaceConversationRail: View {
     @State private var renameGroupTarget: RAGConversationGroup?
     @State private var renameGroupDraft = ""
     @State private var conversationDropTarget: RAGConversationDropTarget?
+    @State private var isKnowledgeBaseHovered = false
+    @State private var isNewConversationHovered = false
+    @State private var hoveredConversationID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -93,16 +96,21 @@ struct RAGWorkspaceConversationRail: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        // rail 本身是 controlBackground；这里用 textBackground + separator
-                        // 描边做出可见灰底，明暗主题都对比够用；只让 + 图标走 accent 蓝。
-                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                        // 默认与当前会话选中态使用同一淡蓝底；hover 仅加深背景，不缩放整行。
+                        .background(
+                            Color.accentColor.opacity(isNewConversationHovered ? 0.18 : 0.11),
+                            in: RoundedRectangle(cornerRadius: 7)
                         )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .pointerStyle(.link)
+                .onHover { isNewConversationHovered = $0 }
+                .onDisappear { isNewConversationHovered = false }
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.15),
+                    value: isNewConversationHovered
+                )
             }
             .padding(14)
 
@@ -197,7 +205,7 @@ struct RAGWorkspaceConversationRail: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Label("rag.workspace.status.knowledgeBase", systemImage: "books.vertical")
-                        .font(ragFont(.caption, weight: .semibold))
+                        .font(ragFont(.callout, weight: .semibold))
                     Spacer()
                     Image(systemName: viewModel.isKnowledgeBaseEmpty ? "plus.circle" : "arrow.up.right.square")
                         .font(iconFont(size: 13, weight: .medium))
@@ -212,9 +220,22 @@ struct RAGWorkspaceConversationRail: View {
             }
         }
         .padding(10)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
+        // 默认保留知识库入口的灰底，hover 仅切换背景色，避免破坏侧栏布局稳定性。
+        .background(
+            isKnowledgeBaseHovered
+                ? Color.accentColor.opacity(0.08)
+                : Color(nsColor: .textBackgroundColor).opacity(0.58),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .pointerStyle(.link)
+        .onHover { isKnowledgeBaseHovered = $0 }
+        .onDisappear { isKnowledgeBaseHovered = false }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.15),
+            value: isKnowledgeBaseHovered
+        )
         .help(
             Text(
                 viewModel.isKnowledgeBaseEmpty
@@ -322,6 +343,7 @@ struct RAGWorkspaceConversationRail: View {
 
     func conversationRow(_ conversation: RAGConversationSummary, rowIndex: Int) -> some View {
         let selected = conversation.id == viewModel.selectedConversationID
+        let isHovered = conversation.id == hoveredConversationID
         return HStack(spacing: 0) {
             Button {
                 Task { await viewModel.selectConversation(conversation.id) }
@@ -355,6 +377,7 @@ struct RAGWorkspaceConversationRail: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .pointerStyle(.link)
 
             Menu {
                 Button(
@@ -399,15 +422,39 @@ struct RAGWorkspaceConversationRail: View {
             .help("rag.workspace.conversation.actions")
             .padding(.trailing, 6)
         }
-        // 选中态优先 accent 高亮；未选中时按行号交替斑马纹（与调试/元数据同 0.045 约定），明暗主题都可扫描。
-        .background(
-            selected
-                ? Color.accentColor.opacity(0.11)
-                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
-        )
+        // 选中态始终优先；hover 只加深或补充轻量 accent 背景，不改变行尺寸。
+        .background(conversationRowBackground(selected: selected, isHovered: isHovered, rowIndex: rowIndex))
         .clipShape(RoundedRectangle(cornerRadius: 7))
+        .contentShape(RoundedRectangle(cornerRadius: 7))
         .padding(.horizontal, 8)
+        .onHover { hovering in
+            if hovering {
+                hoveredConversationID = conversation.id
+            } else if hoveredConversationID == conversation.id {
+                hoveredConversationID = nil
+            }
+        }
+        .onDisappear {
+            if hoveredConversationID == conversation.id {
+                hoveredConversationID = nil
+            }
+        }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.15),
+            value: isHovered
+        )
         .draggable(conversation.id.uuidString)
+    }
+
+    /// 会话行沿用选中态淡蓝底；普通 hover 再弱一档，保留选中与悬停的视觉层级。
+    private func conversationRowBackground(selected: Bool, isHovered: Bool, rowIndex: Int) -> Color {
+        if selected {
+            return Color.accentColor.opacity(isHovered ? 0.18 : 0.11)
+        }
+        if isHovered {
+            return Color.accentColor.opacity(0.08)
+        }
+        return rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)
     }
 
     /// 从拖拽 payload 解析会话 UUID，再写入目标分组（`nil` = 未分组）。
