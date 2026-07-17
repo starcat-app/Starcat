@@ -81,16 +81,16 @@
 
 ## 7. 自动化验证
 
-- [ ] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
-- [ ] RepoContext 存储与知识库浏览器定向测试通过。
-- [ ] RAG 相关定向 Suite 通过。
-- [ ] 全量 `StarcatTests` 通过。
-- [ ] `Starcat` Debug build 通过。
-- [ ] `StarcatDirect` Debug build 通过。
-- [ ] `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
-- [ ] i18n 禁用 API 扫描通过。
-- [ ] `git diff --check` 通过。
-- [ ] 未新增 warning / error；既有问题单独记录，不冒充本需求回归。
+- [x] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
+- [x] RepoContext 存储与知识库浏览器定向测试通过。
+- [x] RAG 相关定向 Suite 通过。
+- [x] 全量 `StarcatTests` 通过。
+- [x] `Starcat` Debug build 通过。
+- [x] `StarcatDirect` Debug build 通过。
+- [x] `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
+- [x] i18n 禁用 API 扫描通过。
+- [x] `git diff --check` 通过。
+- [x] 未新增 warning / error；既有问题单独记录，不冒充本需求回归。
 
 ## 8. 第一轮审查：架构、数据与取消边界
 
@@ -115,13 +115,13 @@
 
 ## 10. 第三轮审查：测试、文档与工程进度一致性
 
-- [ ] 先新增并提交第三轮审查报告。
-- [ ] 对照方案、代码、测试、i18n、专项进度和 Checklist 逐项检查。
-- [ ] 只读核对 `docs/功能实现总览.md` 并起草待确认同步内容。
-- [ ] 核对每个小功能、每轮报告和修复均有独立中文 commit。
-- [ ] 执行最终定向测试、全量测试、双 target build 与静态检查。
-- [ ] 报告发现的问题逐个修复并按小功能提交。
-- [ ] 修复后再次执行最终门禁并回填报告。
+- [x] 先新增并提交第三轮审查报告。
+- [x] 对照方案、代码、测试、i18n、专项进度和 Checklist 逐项检查。
+- [x] 只读核对 `docs/功能实现总览.md` 并起草待确认同步内容。
+- [x] 核对每个小功能、每轮报告和修复均有独立中文 commit。
+- [x] 执行最终定向测试、全量测试、双 target build 与静态检查。
+- [x] 报告发现的问题逐个修复并按小功能提交。
+- [x] 修复后再次执行最终门禁并回填报告。
 
 ## 11. 清洁复审与最终收口
 

@@ -2,7 +2,7 @@
 
 > 日期：2026-07-17
 > 范围：测试、文档、Checklist、提交历史与工程进度一致性
-> 结论：发现 2 个 P2 测试证据缺口，先记录报告，待独立提交修复后回填。
+> 结论：发现的 2 个 P2 测试证据缺口均已修复，最终自动化门禁通过，测试、文档与工程进度一致性审查通过。
 
 ## 1. 审查方法
 
@@ -45,4 +45,20 @@
 
 ## 5. 修复回填
 
-待修复提交完成后回填。
+- 修复提交：`3b509a55 test(rag): 补齐 RepoContext 下载与独立统计证据`。
+- 下载测试改为在已有 RepoContext fixture 上导出未保存草稿，再重读真源，确认 XML、stats 和 generationCount 均未改变。
+- RepoContext `0 / 1` 抽为只接收 RepoContext 快照的纯展示函数，视图不再内联借用普通分片状态；新增存在/不存在两态测试。
+- 修复后 RepoContext 定向测试 9 项通过；RAG 组合 `RepoContextStorageTests + SharedSnapshotServiceTests + KnowledgeRAGCoreTests` 共 157 项 / 3 suites 通过。
+- 全量 Swift Testing 1503 项 / 176 suites 通过，0 失败，保留 1 个项目既有 known issue；`Starcat` 与 `StarcatDirect` Debug build 均成功且 quiet 输出无 warning/error。
+- `xcodegen generate`、xcstrings JSON、RepoContext 双语完整性、禁用本地化 API 扫描和 `git diff --check` 均通过。
+- 最终结论：本轮问题已清零，可以进入清洁复审。
+
+## 6. `docs/功能实现总览.md` 待确认同步草案
+
+本轮严格未修改总览。若 dong4j 后续明确允许同步，建议在知识库 RAG 对应章节增加：
+
+`- [x] **RepoContext 分片管理** — 已有 XML 固定展示为 metadata 后第二项，支持编辑、删除、下载、主动生成、阶段进度与取消 — \`KnowledgeRAGWorkspaceWindowController.swift\` / \`RepoContextStorage.swift\` — 2026-07-17`
+
+建议紧跟：
+
+`> 实现：RepoContext 保持文件真源并作为特殊托管项展示，不写 rag_chunks；生成复用 RepoAIContextProvider，取消只清理 .tmp 并保留正式缓存。人工真实大仓与 UI 点击仍按结果报告列为待验收。`
