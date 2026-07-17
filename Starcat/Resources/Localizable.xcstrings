@@ -28598,6 +28598,22 @@
         }
       }
     },
+    "rag.browser.chunk.metadataManaged": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository Metadata is system-managed and cannot be removed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库元数据由系统维护，不能删除"
+          }
+        }
+      }
+    },
     "rag.browser.chunk.permanentDelete": {
       "localizations": {
         "en": {

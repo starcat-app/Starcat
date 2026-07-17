@@ -307,6 +307,62 @@ struct RAGChunkRepositoryTests {
         #expect(metadata.first?.embeddingStatus == .keywordOnly)
     }
 
+    @Test("Metadata 拒绝下架和永久删除但仍允许编辑")
+    func metadataCannotBeRemoved() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 46)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 46, state: .inLibrary)
+        _ = try await repository.replaceSource(
+            repoId: 46,
+            source: .metadata,
+            drafts: [RAGChunkDraft(
+                repoId: 46,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "Metadata",
+                content: "Repository: octo/demo",
+                tokenCount: 5,
+                isTruncated: false
+            )]
+        )
+        let id = try #require(try await repository.fetchKnowledgeChunks(repoId: 46).first?.id)
+
+        await #expect(throws: RAGChunkMutationError.metadataIsSystemManaged) {
+            try await repository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
+        }
+        await #expect(throws: RAGChunkMutationError.metadataIsSystemManaged) {
+            try await repository.permanentlyDeleteKnowledgeChunk(id: id)
+        }
+        try await repository.saveKnowledgeChunkOverride(
+            id: id,
+            title: "Metadata",
+            sectionPath: "Metadata",
+            content: "Repository: octo/edited"
+        )
+        let metadata = try #require(try await repository.fetchActiveMetadata(repoIDs: [46]).first)
+        #expect(metadata.content == "Repository: octo/edited")
+    }
+
+    @Test("Metadata Wiki 链接解析只接受固定 provider 与 http(s)")
+    func metadataWikiLinkParserRejectsUnsafeURLs() {
+        let links = RAGMetadataWikiLinkParser.links(in: """
+            Repository: octo/demo
+            Wiki CodeWiki: https://codewiki.example/octo/demo
+            Wiki DeepWiki: javascript:alert(1)
+            Wiki ZRead: http://zread.example/octo/demo
+            Wiki Unknown: https://example.com
+            """)
+
+        #expect(links.map(\.source) == [.zread, .codeWiki])
+        #expect(links.allSatisfy { ["http", "https"].contains($0.url.scheme) })
+    }
+
     @Test("Embedding 队列总数独立统计且正文只按 limit 读取")
     func embeddingQueueCountsWithoutLoadingAllContent() async throws {
         let (database, repository) = try makeRepository()

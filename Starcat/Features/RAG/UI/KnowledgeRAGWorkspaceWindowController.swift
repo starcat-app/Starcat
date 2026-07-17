@@ -15,6 +15,28 @@ import MarkdownUI
 import Observation
 import SwiftUI
 
+/// 从 Metadata 正文提取可点击 Wiki 链接。只接受 Builder 的固定行格式和 http(s)，
+/// 避免人工 override 中的任意 scheme 被当作可执行外链。
+enum RAGMetadataWikiLinkParser {
+    static func links(in content: String) -> [WikiLink] {
+        content.split(separator: "\n").compactMap { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let mappings: [(prefix: String, source: WikiSource)] = [
+                ("Wiki DeepWiki: ", .deepWiki),
+                ("Wiki ZRead: ", .zread),
+                ("Wiki CodeWiki: ", .codeWiki)
+            ]
+            guard let mapping = mappings.first(where: { line.hasPrefix($0.prefix) }),
+                  let url = URL(string: String(line.dropFirst(mapping.prefix.count))),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  url.host?.isEmpty == false else { return nil }
+            return WikiLink(source: mapping.source, url: url)
+        }
+        .sorted { $0.source.sortOrder < $1.source.sortOrder }
+    }
+}
+
 /// 知识库 RAG 工作台窗口尺寸策略。
 private enum KnowledgeRAGWorkspaceWindowMetrics {
     static let defaultContentSize = NSSize(width: 1440, height: 820)
@@ -514,7 +536,7 @@ private final class KnowledgeRAGBrowserViewModel {
 
     /// 首次删除仅下架：仍显示在管理列表且可编辑，但 SQL 召回会立即排除它。
     func disableChunk(_ managed: RAGManagedChunk) async {
-        guard let id = managed.chunk.id else { return }
+        guard managed.allowsRemoval, let id = managed.chunk.id else { return }
         do {
             try await dependencies.ragChunkRepository.setKnowledgeChunkExcluded(id: id, isExcluded: true)
             // 下架只更新当前项；整页 refresh 会丢掉“加载更多”已有的数据并回到第一页。
@@ -528,7 +550,7 @@ private final class KnowledgeRAGBrowserViewModel {
 
     /// 对已下架项的第二次删除才是永久删除：写 tombstone 并移除索引行，后续 source 重建也不会复活。
     func permanentlyDeleteChunk(_ managed: RAGManagedChunk) async {
-        guard let id = managed.chunk.id else { return }
+        guard managed.allowsRemoval, let id = managed.chunk.id else { return }
         do {
             try await dependencies.ragChunkRepository.permanentlyDeleteKnowledgeChunk(id: id)
             chunks.removeAll { $0.id == id }
@@ -1691,31 +1713,55 @@ private struct KnowledgeRAGBrowserView: View {
         let chunk = managed.chunk
         let status = effectiveStatus(for: chunk)
         let isHovered = hoveredChunkID == managed.id
+        let wikiLinks = chunk.source == .metadata
+            ? RAGMetadataWikiLinkParser.links(in: chunk.content)
+            : []
         return HStack(alignment: .top, spacing: 8) {
-            Button { editingChunk = managed } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 7) {
-                        // 与证据卡 / 引用列表同源：来源 SF Symbol + tint。
-                        Image(systemName: chunk.source.systemImageName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(chunk.source.tintColor)
-                            .accessibilityHidden(true)
-                        Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
-                        Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                        Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                Button { editingChunk = managed } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 7) {
+                            // 与证据卡 / 引用列表同源：来源 SF Symbol + tint。
+                            Image(systemName: chunk.source.systemImageName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(chunk.source.tintColor)
+                                .accessibilityHidden(true)
+                            Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
+                            Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Spacer()
+                        }
+                        Text(chunk.content).font(.body).lineLimit(3)
+                        if let error = chunk.embeddingError, !error.isEmpty { Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2) }
                     }
-                    Text(chunk.content).font(.body).lineLimit(3)
-                    if let error = chunk.embeddingError, !error.isEmpty { Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2) }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+
+                if !wikiLinks.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(wikiLinks) { link in
+                            Button {
+                                NSWorkspace.shared.open(link.url)
+                            } label: {
+                                Label(link.title, systemImage: "link")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .buttonStyle(.plain)
+                            .focusEffectDisabled()
+                            .pointerStyle(.link)
+                            .help(Text(verbatim: link.url.absoluteString))
+                        }
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pointerStyle(.link)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // 状态使用可读的 caption-strong；编辑和删除是行内操作，跟随 row-title 图标尺寸。
             HStack(alignment: .center, spacing: 8) {
@@ -1733,23 +1779,25 @@ private struct KnowledgeRAGBrowserView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(managedStatusColor(managed, embeddingStatus: status))
                 .symbolRenderingMode(.hierarchical)
-                Button(role: .destructive) {
-                    if managed.isExcluded {
-                        permanentlyDeletingChunk = managed
-                    } else {
-                        Task { await viewModel.disableChunk(managed) }
+                if managed.allowsRemoval {
+                    Button(role: .destructive) {
+                        if managed.isExcluded {
+                            permanentlyDeletingChunk = managed
+                        } else {
+                            Task { await viewModel.disableChunk(managed) }
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .frame(width: 28, height: 16)
+                            .contentShape(Rectangle())
                     }
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.subheadline)
-                        .frame(width: 28, height: 16)
-                        .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pointerStyle(.link)
+                    .foregroundStyle(.red)
+                    .help(managed.isExcluded ? "rag.browser.chunk.permanentDelete" : "rag.browser.chunk.disable")
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pointerStyle(.link)
-                .foregroundStyle(.red)
-                .help(managed.isExcluded ? "rag.browser.chunk.permanentDelete" : "rag.browser.chunk.disable")
             }
             .frame(minHeight: 18)
         }

@@ -53,6 +53,17 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func deleteAll() async throws
 }
 
+enum RAGChunkMutationError: LocalizedError, Equatable {
+    case metadataIsSystemManaged
+
+    var errorDescription: String? {
+        switch self {
+        case .metadataIsSystemManaged:
+            return String.l10n("rag.browser.chunk.metadataManaged")
+        }
+    }
+}
+
 /// SQLite BLOB 向量扫描的轻量行。正文和 citation 元数据只在最终 Top-K 确定后才回填，
 /// 否则 1 万个分片会因无关正文造成不必要的峰值内存。
 struct RAGChunkEmbedding: Sendable {
@@ -91,6 +102,9 @@ struct RAGManagedChunk: Identifiable, Equatable, Sendable {
     var isExcluded: Bool
     var hasOverride: Bool
     var id: Int64 { chunk.id ?? -1 }
+
+    /// Metadata 是维持仓库上下文完整性的系统分片，只允许查看和编辑，不允许下架或永久删除。
+    var allowsRemoval: Bool { chunk.source != .metadata }
 }
 
 /// 管理器按页读取分片，避免仅为了显示少量预览就在内存中加载整个仓库。
@@ -877,6 +891,10 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
 
     func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws {
         try await database.writer.write { db in
+            if isExcluded,
+               try RAGChunk.fetchOne(db, key: id)?.source == .metadata {
+                throw RAGChunkMutationError.metadataIsSystemManaged
+            }
             try ensureOverrideBaseline(db, chunkID: id)
             try db.execute(sql: "UPDATE rag_chunk_overrides SET is_excluded = ?, updated_at = ? WHERE chunk_id = ?", arguments: [isExcluded, ISO8601DateFormatter.shared.string(from: Date()), id])
         }
@@ -886,6 +904,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
     func permanentlyDeleteKnowledgeChunk(id: Int64) async throws {
         try await database.writer.write { db in
             guard let chunk = try RAGChunk.fetchOne(db, key: id) else { return }
+            guard chunk.source != .metadata else {
+                throw RAGChunkMutationError.metadataIsSystemManaged
+            }
             try db.execute(
                 sql: "DELETE FROM rag_chunk_tombstones WHERE repo_id = ? AND source = ? AND source_id = ? AND chunk_key = ?",
                 arguments: [chunk.repoId, chunk.source.rawValue, chunk.sourceId, chunk.chunkKey]
