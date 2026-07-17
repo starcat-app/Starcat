@@ -613,13 +613,15 @@ final class HomeViewModel {
     /// 知识库状态写入成功后的本地同步入口。
     ///
     /// Repository 成功后才调用这里，避免乐观更新。知识库列表有 SWR 缓存，任何
-    /// libraryState 变化都必须先失效相关缓存；否则用户从其它页面加入知识库后再点
+    /// libraryState **真实变化**都必须先失效相关缓存；否则用户从其它页面加入知识库后再点
     /// Sidebar「知识库」，会命中旧缓存，必须手动刷新才看到新卡片。
+    ///
+    /// 状态未变时必须 no-op：详情页打开时曾误把「只读 libraryState」也打进这条路径，
+    /// 在 `.library` 分类下会无条件整页重查列表（见 RepoDetailScaffold.loadLibraryState）。
     func applyLibraryStateChange(repoId: Int64, state: LibraryState) {
+        guard libraryStateMap[repoId] != state else { return }
         invalidateLibraryDerivedCaches()
-        let didChange = libraryStateMap[repoId] != state
         libraryStateMap[repoId] = state
-        guard didChange || selectionNeedsReloadAfterLibraryStateChange else { return }
         guard selectionNeedsReloadAfterLibraryStateChange else { return }
         reloadOrApplyCurrentManageView()
     }

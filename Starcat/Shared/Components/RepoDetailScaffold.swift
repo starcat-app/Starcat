@@ -599,13 +599,18 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         libraryState == .inLibrary
     }
 
+    /// 只给详情页 ❤️ 按钮读真实入库状态。
+    ///
+    /// 关键约束：这里**不能**调 `applyLibraryStateChange`。那条入口会失效知识库
+    /// listCache，并在当前停在「知识库」分类时整页 `reloadDatabasePagedItems(.reset)`。
+    /// 用户只是点开详情查看 README，状态并未写入变化，却会看到中栏列表被刷一次。
+    /// 真正入库 / 移出走 `setLibraryState`；其它窗口改状态走 `.repoLibraryStateDidChange`。
     private func loadLibraryState(for repo: Repo) async {
         guard repo.id > 0 else {
             libraryState = .outsideLibrary
             return
         }
         libraryState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? .outsideLibrary
-        homeViewModel.applyLibraryStateChange(repoId: repo.id, state: libraryState)
     }
 
     private func handleLibraryToggleTapped() async {
