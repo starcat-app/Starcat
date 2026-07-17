@@ -70,6 +70,8 @@ struct RAGWorkspaceInspector: View {
     @State private var retrievalDetailTarget: RAGRetrievalDetailTarget?
     /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
     @State private var isKnowledgeMetadataExpanded = false
+    /// RepoContext 是本轮显式开启的高价值证据；默认展开，让未被回答引用的 XML 仍可核对。
+    @State private var isRepoContextExpanded = true
     /// Star Top10 是次级排行，默认折叠在元数据展开内容内部。
     @State private var isStarLeadersExpanded = false
 
@@ -234,7 +236,12 @@ struct RAGWorkspaceInspector: View {
         VStack(alignment: .leading, spacing: 10) {
             knowledgeBaseMetadataPanel
 
-            // 元数据是面向整个知识库的事实，引用是本轮命中的证据；用分割线明确两者不能互相替代。
+            if viewModel.displayedRepoContextSnapshot != nil {
+                Divider().padding(.vertical, 2)
+                repoContextEvidencePanel
+            }
+
+            // 元数据/RepoContext 是本轮上下文，引用是回答实际保留的 marker；分割线明确两者不能互相替代。
             Divider().padding(.vertical, 2)
 
             if allCitations.isEmpty {
@@ -398,6 +405,48 @@ struct RAGWorkspaceInspector: View {
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: viewModel.selectedCitation?.id)
+    }
+
+    /// RepoContext 不依赖回答是否保留 `[S<n>]` marker：只要本轮成功准备过，就作为独立
+    /// 仓库级证据展示。它不进入普通 citation/chunk 数量，也不会伪装成 metadata source。
+    private var repoContextEvidencePanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    isRepoContextExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "brain.head.profile")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("rag.workspace.repoContext.title")
+                            .font(ragFont(.caption, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        if let snapshot = viewModel.displayedRepoContextSnapshot {
+                            Text(snapshot.repoFullName)
+                                .font(ragFont(.caption2))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: isRepoContextExpanded ? "chevron.down" : "chevron.right")
+                        .font(iconFont(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if isRepoContextExpanded {
+                repoContextCitationDetail
+                    .padding(.leading, 18)
+            }
+        }
     }
 
     @ViewBuilder
