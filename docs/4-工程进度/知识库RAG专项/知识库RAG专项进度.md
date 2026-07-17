@@ -358,3 +358,16 @@
 
 > 清单：`RAG收尾与稳定性-checklist.md` 是本专项后续实现、逐项测试、commit 与验收收口的唯一执行顺序。
 > 结果：历史阶段 1 至 6 见 `结果报告-收尾与稳定性.md`；本轮完整结果见 `结果报告-RAG收尾优化.md`，真实证据见 `真实环境验收记录-2026-07-16.md`。
+
+## 16. RepoContext 深度思考（2026-07-17）
+
+> 状态: 核心实现与定向自动化已完成；专项多轮审查、全量门禁和人工 UI 验收待收口。详细清单见 `RepoContext深度思考Checklist.md`。
+
+- [x] Composer 顺序为附件 → 联网搜索 → 深度思考 → 发送；只有单项目可开启，附件数量不限，按会话草稿恢复。
+- [x] Generator 新增独立 `{repoContextSection}`，RepoContext 不使用 chunk evidence budget，但受配置预算和模型总窗口约束。
+- [x] 复用 `RepoAIContextProvider`，执行阶段位于本地检索之后、联网之前；普通失败降级，取消保持终止语义。
+- [x] 时间线、Plan、Debug Trace、citation 和 Evidence Inspector 提供独立 RepoContext 可解释性。
+- [x] 历史只保存 commit/hash/token 审计元数据；磁盘 XML 必须匹配 commit/hash 才能回放，不写 `rag_chunks`、消息正文或 CloudKit。
+- [x] 定向测试覆盖单项目 + 多附件、多项目拒绝、独立预算、模板占位符、合法 XML 投影与 citation。
+- [ ] 完成至少三轮专项审查、全量测试、双 target build 与结果报告。
+- [ ] 人工验证按钮交互、真实 GitHub 下载/缓存/降级、Inspector XML 滚动/复制和 Debug 隐私提示。

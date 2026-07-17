@@ -2377,3 +2377,34 @@ Settings -> Storage 建议增加:
 - `GRDB Transaction`: `RAGChunkRepository.upsert(...)` 批量写入。
 - `Codable`: RAG 会话 citation JSON。
 - `Task.cancel`: 用户停止 RAG 生成。
+
+## 19. 单项目 RepoContext 深度思考
+
+> 2026-07-17 增补。实施细节与审查边界见 `docs/4-工程进度/知识库RAG专项/RepoContext深度思考实施方案.md`。
+
+### 19.1 Composer 与执行顺序
+
+- Composer 操作顺序固定为“附件 → 联网搜索 → 深度思考 → 发送”；深度思考使用 icon-only `brain.head.profile`。
+- 只有恰好选中一个显式知识库项目时可开启；附件数量不参与门禁。项目范围变成 0 个或多个时立即关闭。
+- 开关与联网开关一样保存在按会话 `RAGComposerDraftStore`，请求开始前冻结快照；Service 再次校验唯一项目，Planner 无权改选目标。
+- 主执行链为 Planner → 本地候选/检索 → RepoContext → GitHub/External Search → Generator。RepoContext 普通失败允许其它真实证据继续，取消仍终止整轮。
+
+### 19.2 Prompt 与预算
+
+- Generator 使用独立 `{repoContextSection}`，不合并进 `{evidenceSection}`；当前功能上线前没有需要兼容的用户模板，缺少新占位符的旧配置直接恢复默认模板。
+- RepoContext XML 不使用 chunk `evidenceTokenBudget`、topK、per-repo child cap 或 chunk hard cap；其上限来自 `aiRepoContextTokenBudget`。
+- RepoContext 仍服从模型总输入窗口和输出预留。空间不足时使用 XML 感知投影器按完整节点裁剪，并写入 `<truncation>`，投影结果必须能被 `XMLDocument` 重新解析。
+- 成功且非空的 RepoContext 是真实仓库级证据，可以在普通分片零命中时单独通过 Generator 证据门禁。
+
+### 19.3 可解释性与持久化
+
+- `RAGExecutionStepKind.repoContext` 展示分支解析、下载、打包、投影与成功/降级结果；Debug Trace 使用 `repoContextRequest`、`repoContextResponse`、`repoContextProjection` 三个独立 stage。
+- Plan 单列目标项目、原因、配置预算和结果；RepoContext 使用独立 `RAGCitationSource.repoContext`，不扩展 `RAGChunkSource`，因此不计入普通索引覆盖和分片统计。
+- Evidence 引用详情展示本轮实际发送的 `context.xml`、commit、原文 hash、cache/generated 与 token 统计；正文 `[S<n>]` 定位该证据，不显示“分片已删除”。
+- 会话只持久化 `RAGRepoContextSnapshot` 审计元数据和 citation，不保存 XML 正文。历史回放仅在当前磁盘缓存的 repo、commit 与原文 hash 全部匹配时按当轮 `sentTokens` 重建投影，否则只显示不可回放提示。
+
+### 19.4 隐私边界
+
+- RepoContext XML 不写 `rag_chunks`、notes、普通消息正文或 CloudKit，也不进入 External Search query。
+- 私有仓库 identity 继续受 External Search 授权边界约束；RepoContext 只发送给用户已选择的 BYOK chat Provider。
+- Debug 的最终 Prompt stage 可能包含完整代码 XML，并按现有 Debug 本地文件机制落盘；RepoContext 专用 stage 只保存摘要，避免重复保存 XML。清理当前会话 Debug 时一并删除。
