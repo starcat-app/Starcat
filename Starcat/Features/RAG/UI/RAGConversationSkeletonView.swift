@@ -6,6 +6,9 @@
 //  使用 Core Animation 驱动 shimmer，形状对齐用户右气泡 / 助手左列。
 //  正文首次布局占用主线程时，动画仍由 Render Server 连续播放，不会先停住再恢复。
 //
+//  宽度约束（2026-07-18）：助手正文行不再用 520/480 绝对上限，改为铺满中栏 +
+//  trailing inset 模拟收尾行，避免宽工作台右侧留白（同 ReadmeSkeletonView）。
+//
 
 import AppKit
 import SwiftUI
@@ -71,7 +74,9 @@ struct RAGConversationSkeletonView: View {
                 }
             }
 
-            // 助手消息：左头像 + 多行正文（对齐 Readme 段落 shimmer）
+            // 助手消息：左头像 + 多行正文。
+            // 正文行用 infinity + trailing inset，避免硬编码 520/480 在宽中栏留下右侧空白
+            // （与 ReadmeSkeletonView 同款约束：外层跟栏宽，短行用 inset 模拟收尾）。
             HStack(alignment: .top, spacing: 8) {
                 RAGSkeletonShapeBlock(
                     width: RAGMessageAvatarMetrics.size,
@@ -88,24 +93,27 @@ struct RAGConversationSkeletonView: View {
                     )
                     RAGSkeletonShapeBlock(
                         width: nil,
-                        maxWidth: 520,
+                        maxWidth: .infinity,
                         height: 12,
                         cornerRadius: 4,
                         fill: fill
                     )
                     RAGSkeletonShapeBlock(
                         width: nil,
-                        maxWidth: 480,
+                        maxWidth: .infinity,
                         height: 12,
                         cornerRadius: 4,
                         fill: fill
                     )
+                    .padding(.trailing, 40)
                     RAGSkeletonShapeBlock(
-                        width: 220,
+                        width: nil,
+                        maxWidth: .infinity,
                         height: 12,
                         cornerRadius: 4,
                         fill: fill
                     )
+                    .padding(.trailing, 120)
                 }
                 Spacer(minLength: 0)
             }
