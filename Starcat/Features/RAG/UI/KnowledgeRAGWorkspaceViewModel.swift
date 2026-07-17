@@ -709,6 +709,16 @@ final class KnowledgeRAGWorkspaceViewModel {
             .first(where: { $0.repoContextSnapshot != nil })?.repoContextSnapshot
     }
 
+    /// degraded snapshot 只负责 Plan/时间线审计，并不代表存在可核对的 XML 证据。
+    /// 集中成纯判断，避免 Inspector 仅凭“有 snapshot”就展示一张误导性的空证据卡。
+    var shouldDisplayRepoContextEvidence: Bool {
+        Self.shouldDisplayRepoContextEvidence(for: displayedRepoContextSnapshot)
+    }
+
+    static func shouldDisplayRepoContextEvidence(for snapshot: RAGRepoContextSnapshot?) -> Bool {
+        snapshot?.outcome == .success
+    }
+
     /// 计划快照与最近一轮问答绑定；原始问题从用户消息恢复，无需在 execution trace 再复制。
     var displayedPlanQuestion: String? {
         messages.last(where: { $0.role == .user })?.content
@@ -3639,6 +3649,23 @@ final class KnowledgeRAGWorkspaceViewModel {
                 case .packingContext: "rag.workspace.execution.repoContext.packingContext"
                 }
                 let detail = String.l10n(key)
+                if step.details.last != detail {
+                    step.details.append(detail)
+                }
+            }
+
+        case .repoContextPrepared(let snapshot):
+            updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
+                step.repoContextSnapshot = snapshot
+                step.details.append(String(
+                    format: String.l10n("rag.workspace.execution.repoContext.xmlPreparedFormat"),
+                    snapshot.originalTokens
+                ))
+            }
+
+        case .repoContextProjectionStarted:
+            updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
+                let detail = String.l10n("rag.workspace.execution.repoContext.projecting")
                 if step.details.last != detail {
                     step.details.append(detail)
                 }

@@ -40,6 +40,10 @@ enum RAGExecutionEvent: Sendable {
     case retrieval(RAGRetrievalProgress)
     case retrievalCompleted(RAGRetrievalResult)
     case repoContextProgress(RepoAIContextProgress)
+    /// Provider 已准备合法 XML，但尚未按本轮模型总窗口计算最终发送投影。
+    case repoContextPrepared(RAGRepoContextSnapshot)
+    /// 投影发生在所有其它上下文已知之后，必须作为真实子状态展示，不能提前伪报完成。
+    case repoContextProjectionStarted
     case repoContextCompleted(RAGRepoContextSnapshot)
     case remoteContextPrepared([RAGResolvedRemoteWorkItem])
     case webSearchPrepared([RAGWebSearchRequest])
@@ -787,7 +791,7 @@ struct KnowledgeRAGService: Sendable {
                     preparedAt: .now
                 )
                 let document = RAGRepoContextDocument(snapshot: snapshot, xml: result.xml)
-                sink.yield(.execution(.repoContextCompleted(snapshot)))
+                sink.yield(.execution(.repoContextPrepared(snapshot)))
                 sink.debug(.repoContextResponse, """
                 outcome: success
                 repoFullName: \(repo.fullName)
@@ -1200,6 +1204,9 @@ struct KnowledgeRAGService: Sendable {
             sink.yield(.state(terminalState))
             return nil
         }
+        if repoContextDocument != nil {
+            sink.yield(.execution(.repoContextProjectionStarted))
+        }
         let prompt = promptBuilder.build(
             question: request.rawQuestion,
             plan: plan,
@@ -1213,8 +1220,25 @@ struct KnowledgeRAGService: Sendable {
             contextWindowTokens: generatorParameters.resolvedContextWindowTokens,
             maximumOutputTokens: generatorParameters.maxCompletionTokens
         )
-        // 极小模型窗口或损坏 XML 可能让投影失败。RepoContext 是唯一证据时必须回到
-        // 无证据门禁，不能把没有 XML 的 Prompt 交给 Generator 自由回答。
+        // 极小模型窗口或损坏 XML 可能让投影失败。无论是否还有其它证据，都先把
+        // RepoContext 明确收口为 degraded，避免时间线被后续步骤隐式完成后伪装成功。
+        if prompt.repoContextDocument == nil, let source = repoContextDocument {
+            var degraded = source.snapshot
+            degraded.sentTokens = 0
+            degraded.outcome = .degraded
+            degraded.wasProjected = false
+            degraded.projectionReason = nil
+            degraded.degradationReason = "total_context_projection_unavailable"
+            degraded.citationMarker = nil
+            sink.debug(.repoContextProjection, """
+            repoFullName: \(degraded.repoFullName)
+            outcome: degraded
+            reason: total_context_projection_unavailable
+            """)
+            sink.yield(.execution(.repoContextCompleted(degraded)))
+        }
+        // RepoContext 是唯一证据时必须回到无证据门禁，不能把没有 XML 的 Prompt
+        // 交给 Generator 自由回答。
         let hasNonRepoEvidence = hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence
             || hasRemoteEvidence || hasAttachmentEvidence
         guard hasNonRepoEvidence || prompt.repoContextDocument != nil else {

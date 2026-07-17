@@ -237,7 +237,7 @@ struct RAGWorkspaceInspector: View {
         VStack(alignment: .leading, spacing: 10) {
             knowledgeBaseMetadataPanel
 
-            if viewModel.displayedRepoContextSnapshot != nil {
+            if viewModel.shouldDisplayRepoContextEvidence {
                 Divider().padding(.vertical, 2)
                 repoContextEvidencePanel
             }

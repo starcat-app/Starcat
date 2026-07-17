@@ -2373,6 +2373,7 @@ struct KnowledgeRAGCoreTests {
         )
         var repoContextDocument: RAGRepoContextDocument?
         var citations: [RAGCitation] = []
+        var repoContextPhases: [String] = []
         for try await event in service.ask(request: RAGServiceRequest(
             rawQuestion: "结合源码和附件分析实现",
             composerContext: RAGComposerContext(
@@ -2385,14 +2386,51 @@ struct KnowledgeRAGCoreTests {
         )) {
             if case .repoContext(let document) = event { repoContextDocument = document }
             if case .completed(_, _, let usedCitations, _) = event { citations = usedCitations }
+            if case .execution(let execution) = event {
+                switch execution {
+                case .repoContextPrepared: repoContextPhases.append("prepared")
+                case .repoContextProjectionStarted: repoContextPhases.append("projecting")
+                case .repoContextCompleted: repoContextPhases.append("completed")
+                default: break
+                }
+            }
         }
 
         #expect(repoContextProvider.callCount == 1)
         #expect(repoContextDocument?.snapshot.repoFullName == "octo/demo-21")
         #expect(repoContextDocument?.xml.contains("DemoService") == true)
         #expect(citations.map(\.source) == [.repoContext])
+        #expect(repoContextPhases == ["prepared", "projecting", "completed"])
         #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == true)
         #expect(spy.lastChatRequest?.userPrompt.contains("附件事实") == true)
+    }
+
+    @MainActor
+    @Test("RepoContext 独立证据区只接受成功快照")
+    func repoContextEvidenceVisibilityRejectsDegradedSnapshots() {
+        let success = RAGRepoContextSnapshot(
+            repoID: 21,
+            repoFullName: "octo/demo-21",
+            commitSHA: "0123456789abcdef0123456789abcdef01234567",
+            contentHash: "hash",
+            configuredTokenBudget: 8_000,
+            originalTokens: 1_000,
+            sentTokens: 900,
+            cacheHit: true,
+            outcome: .success,
+            wasProjected: true,
+            projectionReason: "model_context_window",
+            citationMarker: "S1",
+            preparedAt: .now
+        )
+        var degraded = success
+        degraded.outcome = .degraded
+        degraded.sentTokens = 0
+        degraded.degradationReason = "pack_failure"
+
+        #expect(KnowledgeRAGWorkspaceViewModel.shouldDisplayRepoContextEvidence(for: success))
+        #expect(!KnowledgeRAGWorkspaceViewModel.shouldDisplayRepoContextEvidence(for: degraded))
+        #expect(!KnowledgeRAGWorkspaceViewModel.shouldDisplayRepoContextEvidence(for: nil))
     }
 
     @Test("深度思考在多项目范围下不会调用 RepoContext Provider")

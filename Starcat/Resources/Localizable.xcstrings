@@ -25374,6 +25374,18 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在生成项目上下文 XML" } }
       }
     },
+    "rag.workspace.execution.repoContext.xmlPreparedFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Generated repository context XML (%lld tokens)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已生成项目上下文 XML（%lld tokens）" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.projecting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Projecting XML against the model context window" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在按模型总上下文窗口投影 XML" } }
+      }
+    },
     "rag.workspace.execution.repoContext.tokensFormat": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Sent %1$lld / %2$lld tokens" } },
