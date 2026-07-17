@@ -1751,7 +1751,7 @@ private struct KnowledgeRAGBrowserView: View {
                             } label: {
                                 Label(link.title, systemImage: "link")
                                     .font(.caption.weight(.medium))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(.primary)
                             }
                             .buttonStyle(.plain)
                             .focusEffectDisabled()
