@@ -36,6 +36,21 @@ struct RepoContextStorageTests {
         #expect(!identity.accepts(currentID: currentID, selectedRepoID: nil))
     }
 
+    @Test("切仓会清除所有 RepoContext 生成展示状态")
+    func resetsRepoContextGenerationPresentationOnRepositoryChange() {
+        let states: [RepoContextGenerationState] = [
+            .idle,
+            .preparing(.downloading),
+            .succeeded(cacheHit: false),
+            .failed("failure"),
+            .cancelled,
+        ]
+
+        for state in states {
+            #expect(state.resetForRepositoryLifecycle() == .idle)
+        }
+    }
+
     @Test("RepoContext 固定插入 metadata 后且缺 metadata 时置顶")
     func ordersRepoContextAfterMetadata() {
         #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.metadata, .readme]) == 1)

@@ -306,6 +306,9 @@ enum RepoContextGenerationState: Equatable, Sendable {
         guard case .preparing(let step) = self else { return nil }
         return step
     }
+
+    /// repo 切换后的提示必须属于新仓库；无论旧状态是成功、失败还是活动中都收回 idle。
+    func resetForRepositoryLifecycle() -> Self { .idle }
 }
 
 /// 生成结果只有同时属于当前请求和当前仓库才可回写。抽成纯值对象后，无需暴露整个
@@ -534,8 +537,8 @@ private final class KnowledgeRAGBrowserViewModel {
         repoContextGenerationRepo = nil
         if isGeneratingRepoContext {
             repoContextGenerationState = .cancelled
-            repoContextGenerationState = .idle
         }
+        repoContextGenerationState = repoContextGenerationState.resetForRepositoryLifecycle()
         if let repo {
             dependencies.repoAIContextProvider.cleanupTemporaryContextPreparation(for: repo)
         }
