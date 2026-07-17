@@ -761,7 +761,7 @@ struct KnowledgeRAGService: Sendable {
                 let trimmedXML = result.xml.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmedXML.isEmpty,
                       let parsedXML = try? XMLDocument(xmlString: trimmedXML),
-                      parsedXML.rootElement() != nil else {
+                      parsedXML.rootElement()?.name == "repository" else {
                     let snapshot = degradedRepoContextSnapshot(
                         request: repoRequest,
                         outcome: .degraded,

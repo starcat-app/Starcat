@@ -30,6 +30,17 @@ struct RAGRepoContextXMLProjector: Sendable {
     func project(_ xml: String, tokenBudget: Int) throws -> RAGRepoContextProjection {
         let originalTokens = TokenEstimator.estimate(text: xml)
         guard tokenBudget > 0 else { throw RAGRepoContextXMLProjectorError.budgetTooSmall }
+        // 即使原文无需裁剪也必须先验证正式 `<repository>` schema。过去的早返回会让
+        // 任意合法 XML 绕过根节点契约，直到模型窗口变小时才突然失败。
+        let document: XMLDocument
+        do {
+            document = try XMLDocument(xmlString: xml, options: [.nodePreserveWhitespace])
+        } catch {
+            throw RAGRepoContextXMLProjectorError.invalidXML
+        }
+        guard let root = document.rootElement(), root.name == "repository" else {
+            throw RAGRepoContextXMLProjectorError.invalidXML
+        }
         guard originalTokens > tokenBudget else {
             return RAGRepoContextProjection(
                 xml: xml,
@@ -39,16 +50,6 @@ struct RAGRepoContextXMLProjector: Sendable {
                 removedFileCount: 0,
                 reason: nil
             )
-        }
-
-        let document: XMLDocument
-        do {
-            document = try XMLDocument(xmlString: xml, options: [.nodePreserveWhitespace])
-        } catch {
-            throw RAGRepoContextXMLProjectorError.invalidXML
-        }
-        guard let root = document.rootElement(), root.name == "repository" else {
-            throw RAGRepoContextXMLProjectorError.invalidXML
         }
 
         let truncation = XMLElement(name: "truncation")

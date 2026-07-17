@@ -2484,7 +2484,7 @@ struct KnowledgeRAGCoreTests {
 
     @Test("RepoContext 空或非法 XML 降级，不产生成功文档")
     func invalidRepoContextXMLDegradesBeforePrompt() async throws {
-        for invalidXML in ["", "<repoContext><broken></repoContext>"] {
+        for invalidXML in ["", "<repository><broken></repository>", "<repoContext />"] {
             let database = try InMemoryDatabaseManager()
             try await database.insertRepoFixture(id: 21)
             try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
@@ -3188,6 +3188,13 @@ struct KnowledgeRAGCoreTests {
         #expect(projection.removedFileCount > 0)
         #expect(projection.xml.contains("<truncation"))
         #expect(try XMLDocument(xmlString: projection.xml).rootElement()?.name == "repository")
+    }
+
+    @Test("RepoContext 即使无需投影也必须验证 repository 根节点")
+    func repoContextProjectionValidatesUnprojectedSchema() {
+        #expect(throws: RAGRepoContextXMLProjectorError.invalidXML) {
+            try RAGRepoContextXMLProjector().project("<repoContext />", tokenBudget: 8_000)
+        }
     }
 
     @Test("缺少 RepoContext 占位符的旧 Generator 配置直接收口到新默认协议")
@@ -4968,11 +4975,10 @@ private final class FixedRepoContextProvider: @unchecked Sendable, RepoAIContext
         await onProgress?(.packingContext)
         let defaultXML = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <repoContext>
-          <repository>\(repo.fullName)</repository>
+        <repository owner="\(repo.owner)" name="\(repo.name)">
           <fileList><file path="Sources/DemoService.swift" /></fileList>
-          <files><file path="Sources/DemoService.swift"><![CDATA[struct DemoService {}]]></file></files>
-        </repoContext>
+          <keyFiles><file path="Sources/DemoService.swift"><![CDATA[struct DemoService {}]]></file></keyFiles>
+        </repository>
         """
         let xml = switch mode {
         case .success(let xmlOverride): xmlOverride ?? defaultXML
