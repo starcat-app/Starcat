@@ -4159,6 +4159,56 @@ struct KnowledgeRAGCoreTests {
         #expect(trace.keywordQuery == nil)
     }
 
+    @Test("旧检索快照与诊断缺少本次新增字段时仍可解码")
+    func legacyRetrievalSnapshotAndDiagnosticsDecodeWithoutNewFields() throws {
+        let query = RAGKeywordQueryTrace(query: RAGKeywordQueryBuilder.build(
+            keywordQueries: ["数据库", "database"],
+            semanticQuery: "database architecture"
+        ))
+        var diagnostics = RAGRetrievalDiagnostics(
+            settings: .balanced,
+            candidateRepoCount: 2,
+            keywordQuery: query,
+            outcome: .noEvidence
+        )
+        diagnostics.keywordRawCount = 3
+        diagnostics.vectorRawCount = 4
+        diagnostics.keywordErrorDescription = "must not enter history"
+        diagnostics.vectorErrorDescription = "must not enter history"
+
+        var diagnosticsObject = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(diagnostics)) as? [String: Any]
+        )
+        diagnosticsObject.removeValue(forKey: "keywordQuery")
+        let legacyDiagnostics = try JSONDecoder().decode(
+            RAGRetrievalDiagnostics.self,
+            from: JSONSerialization.data(withJSONObject: diagnosticsObject)
+        )
+        #expect(legacyDiagnostics.keywordQuery == nil)
+        #expect(legacyDiagnostics.keywordRawCount == 3)
+        #expect(legacyDiagnostics.vectorRawCount == 4)
+
+        let snapshot = RAGRetrievalSnapshot(result: RAGRetrievalResult(
+            candidates: [],
+            bundles: [],
+            childHits: [],
+            diagnostics: diagnostics
+        ))
+        var snapshotObject = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any]
+        )
+        snapshotObject.removeValue(forKey: "keywordFailure")
+        snapshotObject.removeValue(forKey: "vectorFailure")
+        let legacySnapshot = try JSONDecoder().decode(
+            RAGRetrievalSnapshot.self,
+            from: JSONSerialization.data(withJSONObject: snapshotObject)
+        )
+        #expect(legacySnapshot.keywordFailure == nil)
+        #expect(legacySnapshot.vectorFailure == nil)
+        #expect(legacySnapshot.keywordRawCount == 3)
+        #expect(legacySnapshot.vectorRawCount == 4)
+    }
+
     @Test("检索分支读模型区分零命中、失败与跳过")
     func retrievalBranchStatusDistinguishesZeroFailureAndSkipped() {
         #expect(RAGRetrievalBranchStatus.resolve(
