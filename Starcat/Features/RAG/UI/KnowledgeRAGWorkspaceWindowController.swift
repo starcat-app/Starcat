@@ -255,6 +255,11 @@ enum KnowledgeRAGBrowserManagedItem: Identifiable {
         guard let metadataIndex = sources.firstIndex(of: .metadata) else { return 0 }
         return min(metadataIndex + 1, sources.count)
     }
+
+    /// RepoContext 是仓库级单件产物，统计只能看文件快照是否存在，不能借用普通 chunk 数量。
+    static func repoContextAvailability(repoContext: RepoContextDocument?) -> String {
+        repoContext == nil ? "0 / 1" : "1 / 1"
+    }
 }
 
 /// RepoContext XML 导出的纯文件能力。NSSavePanel 留在 View，文件名与原子写入保持可单测。
@@ -1907,7 +1912,9 @@ private struct KnowledgeRAGBrowserView: View {
                     stat("rag.workspace.status.staleChunks", value: "\(index.staleChunks)", color: .purple)
                     stat(
                         "rag.browser.repoContext.stat",
-                        value: viewModel.repoContextDocument == nil ? "0 / 1" : "1 / 1",
+                        value: KnowledgeRAGBrowserManagedItem.repoContextAvailability(
+                            repoContext: viewModel.repoContextDocument
+                        ),
                         color: .purple
                     )
                 }

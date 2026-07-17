@@ -60,6 +60,11 @@ struct RepoContextStorageTests {
 
     @Test("XML 下载文件名稳定且写入当前草稿")
     func exportsCurrentDraft() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let cachedBeforeExport = try #require(
+            try fixture.storage.loadDocument(owner: fixture.owner, repo: fixture.repo)
+        )
         #expect(
             RepoContextXMLExport.defaultFilename(owner: "microsoft", repo: "vscode")
                 == "microsoft-vscode-context.xml"
@@ -76,6 +81,24 @@ struct RepoContextStorageTests {
         try RepoContextXMLExport.writeDraft(draft, to: url)
 
         #expect(try String(contentsOf: url, encoding: .utf8) == draft)
+        let cachedAfterExport = try #require(
+            try fixture.storage.loadDocument(owner: fixture.owner, repo: fixture.repo)
+        )
+        #expect(cachedAfterExport.xml == cachedBeforeExport.xml)
+        #expect(cachedAfterExport.metadata.stats == cachedBeforeExport.metadata.stats)
+        #expect(cachedAfterExport.metadata.generationCount == cachedBeforeExport.metadata.generationCount)
+    }
+
+    @Test("RepoContext 独立统计只取决于 XML 是否存在")
+    func reportsIndependentRepoContextAvailability() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let document = try #require(
+            try fixture.storage.loadDocument(owner: fixture.owner, repo: fixture.repo)
+        )
+
+        #expect(KnowledgeRAGBrowserManagedItem.repoContextAvailability(repoContext: nil) == "0 / 1")
+        #expect(KnowledgeRAGBrowserManagedItem.repoContextAvailability(repoContext: document) == "1 / 1")
     }
 
     @Test("合法编辑原子更新 XML 与 metadata，但不增加生成次数")
