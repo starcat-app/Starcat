@@ -237,6 +237,10 @@
 > 实现：App 进程级 Composer 草稿字典；离开时暂存、进入时恢复（含联网开关）；关窗前落盘；`resetTurnState` 不再误清；发送后清问题、完成后清附件，切用户库时清空。
 - [ ] 建立脱敏真实问答评测集，记录 Recall@K、nDCG、引用覆盖率、拒答准确率与 P50/P95 耗时。
 - [ ] 完成中文与中英文混合查询的 FTS/语义召回对比，根据评测决定是否增加查询扩展或分词策略。
+- [x] RAG Planner 拆分 `semanticQuery` 与 3～8 个双语 `keywordQueries`，FTS5 使用安全 OR，普通搜索 AND 保持不变 — `KnowledgeRAGQueryPlanner.swift`、`RAGSearchProviders.swift` — 2026-07-17
+> 实现：中文问题同时覆盖中英文术语；执行层负责去重、限长、转义和旧 Prompt 降级，显式 repo 只通过 id 限定范围。
+- [x] Plan、Debug 与历史检索轨迹展示实际关键词和 FTS5 表达式，漏斗区分 0 命中、失败与跳过 — `KnowledgeRAGModels.swift`、`RAGWorkspaceInspector.swift` — 2026-07-17
+> 实现：只持久化有界查询和分支错误，不复制分片正文；旧会话缺少新增 optional 字段时仍可解码。
 - [x] 可选远程 Rerank 已按 TEI / Cohere-compatible 独立 DTO 实现，共用有界候选快照、认证、HTTP 与 index 回填；本地 reranker 模型仍不在当前范围 — `RAGSearchProviders.swift` — 2026-07-16
 > 实现：Rerank 默认关闭，失败保留 fusion 排序；候选正文受 6,000 字符和 candidateLimit 限制，Token 只进 Keychain。
 - [x] 外部索引已改为带 revision 的 chunk 级 upsert/delete，Metadata-only 只同步 Meilisearch，Qdrant 不再全量替换 — `KnowledgeRAGIndexBuilder.swift` — 2026-07-16

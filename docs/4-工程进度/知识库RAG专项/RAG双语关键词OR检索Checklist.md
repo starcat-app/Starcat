@@ -42,38 +42,38 @@
 - [x] 每个关键词和短语独立安全转义，模型文本不能注入 FTS5 语法。
 - [x] 多项使用显式 OR，任意一个关键词命中即可召回。
 - [x] 空关键词数组使用 `semanticQuery` 的有界 OR token 降级。
-- [ ] 最终 FTS5 表达式可进入检索 Trace，但不记录分片正文。
+- [x] 最终 FTS5 表达式可进入检索 Trace，但不记录分片正文。
 - [x] 补齐转义、OR、短语、去重、数量和降级单元测试。
 
 ## 4. Retriever 与仓库范围
 
-- [ ] `KnowledgeRAGService` 将 `semanticQuery` 和 `keywordQueries` 分别传入 Retriever。
-- [ ] Keyword 分支只消费关键词查询，Vector 与 Rerank 继续消费 `semanticQuery`。
-- [ ] 单仓库 `.only` 只在选中 repo id 内召回。
-- [ ] 多仓库 `.only` 只在选中 repo ids 内统一召回。
-- [ ] `.prefer` 保留既有 repo boost，`.exclude` 不被关键词恢复。
-- [ ] repo 名不作为 FTS 必须命中的关键词。
-- [ ] Keyword / Vector 保持并行和独立降级语义。
-- [ ] SQLite 默认路径与 Meilisearch/fallback 路径使用一致的关键词协议。
-- [ ] 补齐范围、融合、单分支失败与零命中测试。
+- [x] `KnowledgeRAGService` 将 `semanticQuery` 和 `keywordQueries` 分别传入 Retriever。
+- [x] Keyword 分支只消费关键词查询，Vector 与 Rerank 继续消费 `semanticQuery`。
+- [x] 单仓库 `.only` 只在选中 repo id 内召回。
+- [x] 多仓库 `.only` 只在选中 repo ids 内统一召回。
+- [x] `.prefer` 保留既有 repo boost，`.exclude` 不被关键词恢复。
+- [x] repo 名不作为 FTS 必须命中的关键词。
+- [x] Keyword / Vector 保持并行和独立降级语义。
+- [x] SQLite 默认路径与 Meilisearch/fallback 路径使用一致的关键词协议。
+- [x] 补齐范围、融合、单分支失败与零命中测试。
 
 ## 5. Plan、检索漏斗与 Debug
 
-- [ ] Plan 展示实际 `semanticQuery` 与校验后的 `keywordQueries`。
-- [ ] Retrieval Trace 保存最终 FTS5 表达式和两路分支状态。
-- [ ] 检索漏斗区分成功零命中、执行失败与已跳过。
-- [ ] 检索漏斗继续展示候选、召回、融合、重排和最终证据真实数量。
-- [ ] 历史会话与 Debug JSON 缺少新增字段时仍可恢复。
-- [ ] 所有新增固定文案补齐 en / zh-Hans i18n。
-- [ ] 补齐 Inspector read model、历史解码与 Debug payload 测试。
+- [x] Plan 展示实际 `semanticQuery` 与校验后的 `keywordQueries`。
+- [x] Retrieval Trace 保存最终 FTS5 表达式和两路分支状态。
+- [x] 检索漏斗区分成功零命中、执行失败与已跳过。
+- [x] 检索漏斗继续展示候选、召回、融合、重排和最终证据真实数量。
+- [x] 历史会话与 Debug JSON 缺少新增字段时仍可恢复。
+- [x] 所有新增固定文案补齐 en / zh-Hans i18n。
+- [x] 补齐 Inspector read model、历史解码与 Debug payload 测试。
 
 ## 6. 正式文档与工程进度
 
-- [ ] 更新 `docs/3-设计/详细设计/29-关键词与全文检索设计.md`，明确普通 AND 与 RAG OR 的边界。
-- [ ] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md`，记录双查询协议和双语规则。
-- [ ] 更新 `docs/1-立项/开发前问题清单.md`，记录正式设计决策。
-- [ ] 更新 `docs/4-工程进度/知识库RAG专项/知识库RAG专项进度.md`，同步真实实现和验证状态。
-- [ ] 核对文档中的字段名、数量、降级和 repo scope 与代码完全一致。
+- [x] 更新 `docs/3-设计/详细设计/29-关键词与全文检索设计.md`，明确普通 AND 与 RAG OR 的边界。
+- [x] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md`，记录双查询协议和双语规则。
+- [x] 更新 `docs/1-立项/开发前问题清单.md`，记录正式设计决策。
+- [x] 更新 `docs/4-工程进度/知识库RAG专项/知识库RAG专项进度.md`，同步真实实现和验证状态。
+- [x] 核对文档中的字段名、数量、降级和 repo scope 与代码完全一致。
 
 ## 7. 自动化验证
 

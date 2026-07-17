@@ -642,8 +642,9 @@ RAG 入口前需要一个小型 AI Query Planner。它不回答用户问题,只�
 
 1. 判断用户问题是否包含 repo-level 结构化筛选。
 2. 把用户问题改写成更适合 embedding 检索的 `semanticQuery`。
-3. 区分语义问答、结构化列表、筛选后语义问答和需要追问。
-4. 给 UI 输出可解释的 plan chips,让用户知道系统查了什么。
+3. 同时生成 3～8 个面向字面召回的双语 `keywordQueries`。
+4. 区分语义问答、结构化列表、筛选后语义问答和需要追问。
+5. 给 UI 输出可解释的 plan chips,让用户知道系统查了什么。
 
 ### 7.1 为什么用 AI Planner
 
@@ -769,6 +770,7 @@ Planner 只能为这三类覆盖率选择固定的单值 analytics measure，且
 struct RAGQueryPlan: Codable, Sendable {
     var mode: RAGQueryMode
     var semanticQuery: String
+    var keywordQueries: [String]
     var filters: RAGRepoFilter
     var sort: RAGRepoSort?
     var candidateLimit: Int?
@@ -856,6 +858,16 @@ struct RAGUserVisiblePlan: Codable, Sendable {
     var semantic: String
 }
 ```
+
+`semanticQuery` 与 `keywordQueries` 是两个不可互换的执行字段：前者只用于 query embedding、
+vector 和 Rerank；后者只用于 SQLite FTS5 / Meilisearch 关键词召回。Planner 为中文问题保留
+2～4 个中文核心概念，并补充 2～4 个 README 中常见的英文技术表达；类名、函数名、文件名、
+配置项和错误码保持原文。执行层 trim、忽略大小写去重、限制每项 80 字符且最多 8 项，删除
+精确低信息词，并排除显式 repo 的 `owner/name` 与短名称。
+
+`keywordQueries` 缺失时解码为 `[]`，兼容旧计划与旧会话。官方默认 Planner Prompt 只从
+上一版官方默认值升级；自定义 Prompt 原样保留，执行层对空数组使用 `semanticQuery` 的有界
+OR token 降级。
 
 `candidateLimit` 默认:
 
@@ -1258,6 +1270,7 @@ RAG 工作台在回答前或回答顶部展示 plan:
 筛选: 正在使用 · Swift · stars > 10000
 排序: stars desc
 语义: 适合做本地 RAG 的库
+关键词: 本地 RAG · 向量检索 · local RAG · vector search
 ```
 
 交互规则:
@@ -1295,10 +1308,11 @@ Starcat 的 RAG 方向定义为 **面向 GitHub Repo 的 Local-First Hybrid RAG*
 默认链路:
 
 ```text
-query
-  -> keyword search: SQLite FTS5
-  -> vector search: local embedding table
+RAGQueryPlan
+  -> keywordQueries: SQLite FTS5 OR / Meilisearch
+  -> semanticQuery: query embedding / local vector / Qdrant
   -> fusion: RRF / weighted score
+  -> optional rerank: semanticQuery
   -> repo aggregation
   -> parent context packing
   -> Generator
@@ -1306,27 +1320,25 @@ query
 
 默认 provider 是 SQLite FTS5 与本地向量；用户配置后可分别替换为 Meilisearch/Qdrant。开启
 `fallbackToSQLite` 时，远端普通错误或空命中回退本地；关闭时配置、查询与同步错误向上传播。
-`CancellationError` 无论开关值都继续抛出，不触发本地检索。reranker 不属于本次运行时边界。
+`CancellationError` 无论开关值都继续抛出，不触发本地检索。可选远程 Rerank 在融合后使用
+`semanticQuery` 重排，失败时保留原融合顺序。
 
 ### 8.1 输入输出
 
 ```swift
-struct RAGRetrievalQuery {
-    var text: String
-    var scope: RAGScope = .knowledge
-    var keywordTopK: Int = 30
-    var vectorTopK: Int = 30
-    var fusionTopK: Int = 20
-    var topRepoLimit: Int = 5
-    var perRepoLimit: Int = 3
+struct RAGKeywordSearchQuery {
+    var terms: [String]
+    var sqliteFTS5Expression: String
+    var externalQuery: String
+    var usedSemanticFallback: Bool
 }
 
 protocol RAGKeywordSearchProvider {
-    func search(_ query: RAGRetrievalQuery, candidates: RAGRepoCandidateSet) async throws -> [RAGRetrievalHit]
+    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
 }
 
 protocol RAGVectorSearchProvider {
-    func search(_ query: RAGRetrievalQuery, candidates: RAGRepoCandidateSet) async throws -> [RAGRetrievalHit]
+    func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
 }
 
 protocol RAGHybridFusionEngine {
@@ -1427,6 +1439,12 @@ WHERE n.library_state = 'in_library'
 
 Keyword search 负责精确词、库名、API、文件路径、错误码等问题。例如“有没有用 GRDB”“哪里提到 WKWebView”。Vector search 负责语义相近问题。例如“适合做本地数据库的 Swift 项目”。两者不能互相替代。
 
+RAG 关键词分支不调用普通搜索的 `FTSQuery.sanitize`。`RAGKeywordQueryBuilder` 对每个
+Planner 关键词独立双引号转义、追加前缀匹配，再用显式 OR 连接；模型返回的操作符、括号和
+引号都只能作为字面内容。Meilisearch 接收同一组 terms 拼接出的纯文本，不接收 SQLite
+表达式。中文问题若只生成英文关键词，只能命中含英文术语的分片；默认双语协议必须同时生成
+中英文关键词，真正跨语言同义匹配仍依赖 embedding。
+
 两路检索独立降级: query embedding/vector provider 失败时仍使用 keyword hits;keyword provider
 失败时仍使用 vector hits。只有两路都失败才把本轮作为检索错误返回,不能让单路故障抹掉有效证据。
 
@@ -1462,6 +1480,10 @@ Hybrid search 前必须先生成候选过滤条件,避免上下文污染。
 | `embedding_status` | 只召回 ready |
 
 对于 repo 级问答,最重要的是 `repo_id` 过滤。用户显式指定 `@repoA` 时,不能做全库无约束向量检索。
+
+同一规则也作用于关键词分支：`.only` 单仓库使用一个 repo id，`.only` 多仓库使用确定的
+repo id 集合，`.exclude` 在候选层排除，`.prefer` 只在既有候选内增加融合 boost。repo 名
+不加入 FTS5 关键词；有索引但无字面或语义命中时返回 `no_evidence`，不能扩大到其它仓库。
 
 ### 8.5 排序信号
 
@@ -2252,6 +2274,9 @@ Settings -> Storage 建议增加:
 - `explicitRepoMode = .exclude` 时排除 explicit repo ids。
 - `.only` 模式下 explicit repo 无 ready chunks 返回 `no_index`,不扩大范围。
 - keyword provider 能召回精确关键词。
+- RAG 多关键词使用安全 OR，任一中英文关键词命中即可召回。
+- repo 名未出现在分片中时，显式单仓库和多仓库 scope 仍可正常召回。
+- 旧 Planner Prompt 缺少关键词时使用 `semanticQuery` 的有界 OR token 降级。
 - vector provider 能召回语义相近内容。
 - fusion engine 能合并 keyword/vector 双路结果并去重。
 - Inspector 所需命中方式包含 keyword / vector / hybrid。
