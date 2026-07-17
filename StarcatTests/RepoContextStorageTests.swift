@@ -24,6 +24,18 @@ struct RepoContextStorageTests {
         #expect(!RepoContextGenerationState.cancelled.isActive)
     }
 
+    @Test("RepoContext 生成结果必须同时匹配请求与仓库身份")
+    func rejectsStaleRepoContextGenerationIdentity() {
+        let currentID = UUID()
+        let identity = RepoContextGenerationIdentity(id: currentID, repoID: 42)
+
+        #expect(identity.accepts(currentID: currentID, selectedRepoID: 42))
+        #expect(!identity.accepts(currentID: UUID(), selectedRepoID: 42))
+        #expect(!identity.accepts(currentID: currentID, selectedRepoID: 84))
+        #expect(!identity.accepts(currentID: nil, selectedRepoID: 42))
+        #expect(!identity.accepts(currentID: currentID, selectedRepoID: nil))
+    }
+
     @Test("RepoContext 固定插入 metadata 后且缺 metadata 时置顶")
     func ordersRepoContextAfterMetadata() {
         #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.metadata, .readme]) == 1)

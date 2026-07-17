@@ -308,6 +308,17 @@ enum RepoContextGenerationState: Equatable, Sendable {
     }
 }
 
+/// 生成结果只有同时属于当前请求和当前仓库才可回写。抽成纯值对象后，无需暴露整个
+/// 浏览器 ViewModel 就能锁定取消后迟到、切仓后迟到两类竞态。
+struct RepoContextGenerationIdentity: Equatable, Sendable {
+    let id: UUID
+    let repoID: Int64
+
+    func accepts(currentID: UUID?, selectedRepoID: Int64?) -> Bool {
+        id == currentID && repoID == selectedRepoID
+    }
+}
+
 /// 浏览器的只读状态协调器。仓库列表与聚合状态必须来自同一次刷新，避免索引重建中出现
 /// “仓库已显示但统计仍属于旧模型”的错配。
 @MainActor
@@ -330,7 +341,7 @@ private final class KnowledgeRAGBrowserViewModel {
     var repoContextGenerationState: RepoContextGenerationState = .idle
     var isRepoContextSettingsPromptPresented = false
     /// UUID 同时防护 repo 切换与“取消后旧 task 迟到回写”两类竞态。
-    private var repoContextGenerationID: UUID?
+    private var repoContextGenerationIdentity: RepoContextGenerationIdentity?
     private var repoContextGenerationTask: Task<Void, Never>?
     private var repoContextGenerationRepo: Repo?
     var hasMoreChunks = false
@@ -456,8 +467,8 @@ private final class KnowledgeRAGBrowserViewModel {
             return
         }
 
-        let generationID = UUID()
-        repoContextGenerationID = generationID
+        let generationIdentity = RepoContextGenerationIdentity(id: UUID(), repoID: repo.id)
+        repoContextGenerationIdentity = generationIdentity
         repoContextGenerationRepo = repo
         repoContextGenerationState = .preparing(.resolving)
         let provider = dependencies.repoAIContextProvider
@@ -467,13 +478,17 @@ private final class KnowledgeRAGBrowserViewModel {
             do {
                 let outcome = try await provider.contextOutcome(for: repo) { [weak self] progress in
                     guard let self,
-                          self.repoContextGenerationID == generationID,
-                          self.selectedRepoID == repo.id else { return }
+                          generationIdentity.accepts(
+                              currentID: self.repoContextGenerationIdentity?.id,
+                              selectedRepoID: self.selectedRepoID
+                          ) else { return }
                     self.repoContextGenerationState = .preparing(RepoContextGenerationStep.map(progress))
                 }
                 try Task.checkCancellation()
-                guard repoContextGenerationID == generationID,
-                      selectedRepoID == repo.id else { return }
+                guard generationIdentity.accepts(
+                    currentID: repoContextGenerationIdentity?.id,
+                    selectedRepoID: selectedRepoID
+                ) else { return }
                 switch outcome {
                 case .success(let result):
                     repoContextDocument = RepoContextDocument(xml: result.xml, metadata: result.metadata)
@@ -485,17 +500,23 @@ private final class KnowledgeRAGBrowserViewModel {
                 case .degraded(let reason):
                     repoContextGenerationState = .failed(String.l10n(reason.bannerMessageKey))
                 }
-                repoContextGenerationID = nil
+                repoContextGenerationIdentity = nil
                 repoContextGenerationTask = nil
                 repoContextGenerationRepo = nil
             } catch is CancellationError {
-                guard repoContextGenerationID == generationID else { return }
+                guard generationIdentity.accepts(
+                    currentID: repoContextGenerationIdentity?.id,
+                    selectedRepoID: selectedRepoID
+                ) else { return }
                 repoContextGenerationState = .cancelled
                 repoContextGenerationState = .idle
                 repoContextGenerationTask = nil
                 repoContextGenerationRepo = nil
             } catch {
-                guard repoContextGenerationID == generationID else { return }
+                guard generationIdentity.accepts(
+                    currentID: repoContextGenerationIdentity?.id,
+                    selectedRepoID: selectedRepoID
+                ) else { return }
                 repoContextGenerationState = .failed(error.localizedDescription)
                 repoContextGenerationTask = nil
                 repoContextGenerationRepo = nil
@@ -507,7 +528,7 @@ private final class KnowledgeRAGBrowserViewModel {
     /// 所以下次生成仍可命中缓存，也不会因取消丢失现有第二项。
     func cancelRepoContextGeneration() {
         let repo = repoContextGenerationRepo
-        repoContextGenerationID = nil
+        repoContextGenerationIdentity = nil
         repoContextGenerationTask?.cancel()
         repoContextGenerationTask = nil
         repoContextGenerationRepo = nil
@@ -836,7 +857,11 @@ private final class KnowledgeRAGBrowserViewModel {
                         selectedRepoID = candidates.first?.repo.id
                     }
                 } else if !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
+                    // 搜索/筛选可让当前仓库从候选集中消失。这也是一次真实切仓，必须
+                    // 走与用户点击相同的取消边界，不能让旧下载/打包在后台继续。
+                    cancelRepoContextGeneration()
                     selectedRepoID = candidates.first?.repo.id
+                    repoContextDocument = nil
                 }
             }
             hasMoreRepositories = page.hasMore
