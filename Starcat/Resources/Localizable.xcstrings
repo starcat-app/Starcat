@@ -26560,6 +26560,22 @@
         }
       }
     },
+    "rag.workspace.context.repoContext": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository context"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库上下文"
+          }
+        }
+      }
+    },
     "rag.workspace.context.reservedOutput": {
       "localizations": {
         "en": {
