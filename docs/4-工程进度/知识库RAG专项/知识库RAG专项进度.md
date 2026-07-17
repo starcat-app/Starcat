@@ -240,7 +240,7 @@
 - [x] RAG Planner 拆分 `semanticQuery` 与 3～8 个双语 `keywordQueries`，FTS5 使用安全 OR，普通搜索 AND 保持不变 — `KnowledgeRAGQueryPlanner.swift`、`RAGSearchProviders.swift` — 2026-07-17
 > 实现：中文问题同时覆盖中英文术语；执行层负责去重、限长、转义和旧 Prompt 降级，显式 repo 只通过 id 限定范围。
 - [x] Plan、Debug 与历史检索轨迹展示实际关键词和 FTS5 表达式，漏斗区分 0 命中、失败与跳过 — `KnowledgeRAGModels.swift`、`RAGWorkspaceInspector.swift` — 2026-07-17
-> 实现：只持久化有界查询和分支错误，不复制分片正文；旧会话缺少新增 optional 字段时仍可解码。
+> 实现：只持久化有界查询和安全 failure code，不复制原始外部错误或分片正文；旧会话缺少新增 optional 字段时仍可解码。
 - [x] 可选远程 Rerank 已按 TEI / Cohere-compatible 独立 DTO 实现，共用有界候选快照、认证、HTTP 与 index 回填；本地 reranker 模型仍不在当前范围 — `RAGSearchProviders.swift` — 2026-07-16
 > 实现：Rerank 默认关闭，失败保留 fusion 排序；候选正文受 6,000 字符和 candidateLimit 限制，Token 只进 Keychain。
 - [x] 外部索引已改为带 revision 的 chunk 级 upsert/delete，Metadata-only 只同步 Meilisearch，Qdrant 不再全量替换 — `KnowledgeRAGIndexBuilder.swift` — 2026-07-16

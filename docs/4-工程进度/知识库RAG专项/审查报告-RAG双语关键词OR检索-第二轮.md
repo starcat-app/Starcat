@@ -4,6 +4,7 @@
 > 审查范围：Retriever 独立降级、Plan/漏斗/Debug 真实值、历史回放与隐私边界
 > 审查基线：`1d8c2ed`
 > 结论：发现 3 项需要修复的问题，先记录本报告，再进入修复提交
+> 修复回填：3 项均已修复，相关定向测试通过
 
 ## 1. 已核验证据
 
@@ -65,3 +66,15 @@ Keyword 失败时 Vector 命中仍能进入最终证据，也没有断言对应�
 - 历史 JSON 不含原始 provider 错误字符串，只含安全 failure code。
 - Keyword 失败时 Vector 证据仍可进入最终结果。
 - 重跑 `KnowledgeRAGCoreTests`、`RAGLocalizationTests` 与历史持久化相关测试。
+
+## 5. 修复回填
+
+| 问题 | 修复证据 | 状态 |
+|---|---|---|
+| R2-1 | `d915baf` 将 `noCandidates`、`noReadyChunks` 与其它未执行 outcome 统一映射为 skipped | 已关闭 |
+| R2-2 | `72ee0de` 以 `RAGRetrievalBranchFailure.providerError` 替代历史原始错误字符串，并补 JSON 反向断言 | 已关闭 |
+| R2-3 | `89dfb9f` 增加 Keyword 失败、Vector 命中仍保留的 Retriever 回归测试 | 已关闭 |
+
+修复后 `KnowledgeRAGCoreTests` 多次通过，包含历史 Snapshot、漏斗状态和双向独立降级；
+`RAGLocalizationTests` 与 catalog JSON 校验通过。历史编码断言确认不再包含测试用原始 provider
+错误字符串，只包含稳定的 `provider_error` code。
