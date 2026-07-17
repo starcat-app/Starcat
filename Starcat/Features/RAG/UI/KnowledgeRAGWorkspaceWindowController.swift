@@ -990,6 +990,7 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var isKnowledgeOverviewExpanded = false
     @State private var isRetrievalTestExpanded = false
     @State private var isKnowledgeOverviewHovered = false
+    @State private var hoveredKnowledgeOverviewMetricID: String?
     @State private var isRetrievalTestHovered = false
     @State private var isRetrievalTestSettingsExpanded = false
     @State private var knowledgeHeroCollapseProgress: CGFloat = 0
@@ -1353,45 +1354,128 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private var knowledgeOverviewContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(viewModel.embeddingModel)
-                .font(.caption.monospaced())
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                // primary 低透明在明暗主题都会反转，比 controlBackground 叠在卡片上更明显。
-                .background(Color.primary.opacity(0.08), in: Capsule())
-                .overlay(Capsule().stroke(Color.primary.opacity(0.16)))
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
-                alignment: .leading,
-                spacing: 8
-            ) {
-                overviewStat("rag.workspace.status.repos", value: "\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)", color: .blue)
-                overviewStat("rag.workspace.status.readyChunks", value: "\(viewModel.indexStatus.readyChunks)", color: .green)
-                overviewStat("rag.workspace.status.pendingChunks", value: "\(viewModel.indexStatus.pendingChunks)", color: .orange)
-                overviewStat("rag.workspace.status.failedChunks", value: "\(viewModel.indexStatus.failedChunks)", color: .red)
-                overviewStat("rag.workspace.status.staleChunks", value: "\(viewModel.indexStatus.staleChunks)", color: .purple)
+        let indexedRepos = viewModel.indexStatus.indexedRepoCount
+        let knowledgeRepos = viewModel.indexStatus.knowledgeRepoCount
+        let isCoverageComplete = knowledgeRepos > 0 && indexedRepos >= knowledgeRepos
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("rag.browser.overview.model")
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text(viewModel.embeddingModel)
+                    .font(interfaceScale.font(.caption, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(viewModel.embeddingModel)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("rag.browser.overview.repositoryCoverage")
+                        .font(interfaceScale.font(.body, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    Text("\(indexedRepos)/\(knowledgeRepos)")
+                        .font(interfaceScale.font(.caption, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(isCoverageComplete ? Color.green : Color.primary)
+                }
+                ProgressView(
+                    value: Double(indexedRepos),
+                    total: Double(max(knowledgeRepos, 1))
+                )
+                .progressViewStyle(.linear)
+                .controlSize(.small)
+                .tint(isCoverageComplete ? Color.green : Color.accentColor)
+                // 原生线性条偏厚；只压缩视觉高度，不改变可用宽度和覆盖比例。
+                .scaleEffect(x: 1, y: 0.65, anchor: .center)
+                .frame(height: 7)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 2) {
+                overviewMetricRow(
+                    id: "ready",
+                    "rag.workspace.status.readyChunks",
+                    value: "\(viewModel.indexStatus.readyChunks)",
+                    rowIndex: 0
+                )
+                overviewMetricRow(
+                    id: "pending",
+                    "rag.workspace.status.pendingChunks",
+                    value: "\(viewModel.indexStatus.pendingChunks)",
+                    rowIndex: 1,
+                    issueColor: viewModel.indexStatus.pendingChunks > 0 ? .orange : nil
+                )
+                overviewMetricRow(
+                    id: "failed",
+                    "rag.workspace.status.failedChunks",
+                    value: "\(viewModel.indexStatus.failedChunks)",
+                    rowIndex: 2,
+                    issueColor: viewModel.indexStatus.failedChunks > 0 ? .red : nil
+                )
+                overviewMetricRow(
+                    id: "stale",
+                    "rag.workspace.status.staleChunks",
+                    value: "\(viewModel.indexStatus.staleChunks)",
+                    rowIndex: 3,
+                    issueColor: viewModel.indexStatus.staleChunks > 0 ? .purple : nil
+                )
             }
         }
     }
 
-    /// 分类标题与仓库列表项目名同为 body semibold；数字降一档，避免统计值压过分类名称。
-    private func overviewStat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 5) {
-                Circle().fill(color).frame(width: 7, height: 7)
-                Text(key)
-                    .font(interfaceScale.font(.body, weight: .semibold))
-                    .lineLimit(1)
-            }
+    /// 与知识库其他数据列表保持一致：连续斑马纹负责可扫描性，hover 只用于当前行聚焦。
+    /// 数值默认中性；待处理 / 失败 / 过期只有非零时才使用状态色，避免健康状态五颜六色。
+    private func overviewMetricRow(
+        id: String,
+        _ key: LocalizedStringKey,
+        value: String,
+        rowIndex: Int,
+        issueColor: Color? = nil
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(key)
+                .font(interfaceScale.font(.body, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
             Text(value)
                 .font(interfaceScale.font(.caption, weight: .semibold))
                 .monospacedDigit()
+                .foregroundStyle(issueColor ?? .primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            hoveredKnowledgeOverviewMetricID == id
+                ? Color.accentColor.opacity(0.08)
+                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+        )
+        .onHover { isHovered in
+            if reduceMotion {
+                hoveredKnowledgeOverviewMetricID = isHovered
+                    ? id
+                    : (hoveredKnowledgeOverviewMetricID == id ? nil : hoveredKnowledgeOverviewMetricID)
+            } else {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    hoveredKnowledgeOverviewMetricID = isHovered
+                        ? id
+                        : (hoveredKnowledgeOverviewMetricID == id ? nil : hoveredKnowledgeOverviewMetricID)
+                }
+            }
+        }
+        .onDisappear {
+            if hoveredKnowledgeOverviewMetricID == id {
+                hoveredKnowledgeOverviewMetricID = nil
+            }
+        }
     }
 
     private var retrievalTestCard: some View {

@@ -400,6 +400,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private let conversationSelectionGate = RAGLatestRequestGate()
     /// Debug 读取与正文选择分开；清空、关闭 Debug 或再次切换都会使迟到结果失效。
     private let debugTraceLoadGate = RAGLatestRequestGate()
+    /// 正文引用弹层关闭或切换后，迟到的分片读取不能写入下一次打开的弹层。
+    private let citationChunkPopoverGate = RAGLatestRequestGate()
     /// 最近会话的完整持久化展示快照。缓存不参与 Observation，写入后由本类显式失效。
     @ObservationIgnored private var conversationPresentationCache = RAGConversationPresentationCache()
     /// 工作台稳定后低优先级预热最近会话；关窗/切库必须取消，避免继续读取旧数据库。
@@ -2331,6 +2333,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         // 右侧证据换到另一条时，关掉正文 S1 的分片弹层。
         if let openID = citationChunkPopoverCitationID, openID != citation.id {
             citationChunkPopoverCitationID = nil
+            _ = citationChunkPopoverGate.begin()
             RAGCitationChunkNSPopoverPresenter.shared.dismiss()
         }
         selectedCitation = citation
@@ -2364,7 +2367,12 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectCitation(citation)
             return
         }
+        // 同一 marker 的快速连点只保留第一次：popover 已经处于 loading / 展示态时重新创建，
+        // 会先关闭再打开，既造成闪烁，也让上一轮异步读取有机会命中新弹层。
+        guard citationChunkPopoverCitationID != citation.id else { return }
+
         let clickPoint = NSEvent.mouseLocation
+        let requestGeneration = citationChunkPopoverGate.begin()
         citationChunkPopoverCitationID = citation.id
         let scale = dependencies.settings.interfaceScale
         let isMissing = citation.chunkID == nil
@@ -2375,7 +2383,10 @@ final class KnowledgeRAGWorkspaceViewModel {
             screenPoint: clickPoint,
             interfaceScale: scale,
             onDismiss: { [weak self] in
-                self?.citationChunkPopoverCitationID = nil
+                guard let self,
+                      self.citationChunkPopoverGate.isCurrent(requestGeneration) else { return }
+                self.citationChunkPopoverCitationID = nil
+                _ = self.citationChunkPopoverGate.begin()
             }
         )
         // 弹层先以 loading 出现；正文路径不碰 selectedCitation，避免 Inspector 跳转。
@@ -2383,7 +2394,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         Task { [weak self] in
             guard let self else { return }
             let chunk = try? await dependencies.ragChunkRepository.fetchChunks(ids: [chunkID]).first
-            guard citationChunkPopoverCitationID == citation.id else { return }
+            guard citationChunkPopoverCitationID == citation.id,
+                  citationChunkPopoverGate.isCurrent(requestGeneration) else { return }
             RAGCitationChunkNSPopoverPresenter.shared.update(
                 citation: citation,
                 chunk: chunk,
@@ -2396,6 +2408,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     func dismissCitationChunkPopover() {
         guard citationChunkPopoverCitationID != nil else { return }
         citationChunkPopoverCitationID = nil
+        _ = citationChunkPopoverGate.begin()
         RAGCitationChunkNSPopoverPresenter.shared.dismiss()
     }
 
@@ -2405,6 +2418,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedCitation = nil
             selectedCitationChunk = nil
             citationChunkPopoverCitationID = nil
+            _ = citationChunkPopoverGate.begin()
             RAGCitationChunkNSPopoverPresenter.shared.dismiss()
             return
         }
@@ -2652,6 +2666,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             selectedCitation = nil
             selectedCitationChunk = nil
             citationChunkPopoverCitationID = nil
+            _ = citationChunkPopoverGate.begin()
             errorMessage = nil
         }
         // 只清问题草稿。此时内存里的 @repo/附件可能已属于另一会话，绝不能反写回本会话。
@@ -3996,6 +4011,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         selectedCitation = nil
         selectedCitationChunk = nil
         citationChunkPopoverCitationID = nil
+        _ = citationChunkPopoverGate.begin()
     }
 
     /// 离开会话前把当前 Composer 写入 App 级内存草稿。空状态也要保存，避免清掉 chip 后又被旧草稿填回。

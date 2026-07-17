@@ -17,6 +17,90 @@ enum RAGCitationChunkPopoverMetrics {
     static let height: CGFloat = 460
 }
 
+/// Popover 大正文的统一两阶段交接：先提交轻量骨架，再把正文挂在骨架下完成首次布局，
+/// 最后淡出骨架。这样点击事务不会和大段 Markdown / XML 的首轮布局挤在同一帧。
+///
+/// `contentID` 变化会取消旧任务并重新从骨架开始，避免连续切换引用时旧交接状态泄漏。
+struct RAGPopoverSkeletonHandoff<Placeholder: View, Content: View>: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    let contentID: UUID
+    private let placeholder: () -> Placeholder
+    private let content: () -> Content
+
+    @State private var phase: Phase = .placeholder
+
+    private enum Phase: Equatable {
+        case placeholder
+        case mounted
+        case revealed
+    }
+
+    init(
+        contentID: UUID,
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.contentID = contentID
+        self.placeholder = placeholder
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if phase != .placeholder {
+                content()
+                    .opacity(phase == .revealed ? 1 : 0)
+                    .allowsHitTesting(phase == .revealed)
+                    .accessibilityHidden(phase != .revealed)
+            }
+
+            if phase != .revealed {
+                placeholder()
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+        .task(id: contentID) {
+            await performHandoff()
+        }
+    }
+
+    /// 至少把骨架提交一个显示帧，再挂载正文；正文完成首次布局后才开始视觉交接。
+    /// Reduce Motion 仍保留分帧挂载来保护响应性，只关闭淡入淡出动画。
+    @MainActor
+    private func performHandoff() async {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            phase = .placeholder
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(16))
+        } catch {
+            return
+        }
+        guard !Task.isCancelled else { return }
+
+        withTransaction(transaction) {
+            phase = .mounted
+        }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+
+        if reduceMotion {
+            withTransaction(transaction) {
+                phase = .revealed
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.18)) {
+                phase = .revealed
+            }
+        }
+    }
+}
+
 /// 命中分片全文：顶部来源头（logo + 全名 + 来源·路径）+ Markdown 渲染正文 + 底部状态栏。
 struct RAGCitationChunkPopoverContent: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -25,6 +109,14 @@ struct RAGCitationChunkPopoverContent: View {
     let chunk: RAGChunk
 
     var body: some View {
+        RAGPopoverSkeletonHandoff(contentID: citation.id) {
+            RAGCitationChunkLoadingPopoverContent(citation: citation)
+        } content: {
+            resolvedContent
+        }
+    }
+
+    private var resolvedContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             RAGCitationChunkSourceHeader(citation: citation)
 
@@ -286,7 +378,7 @@ private struct RAGCitationChunkStatusBar: View {
 }
 
 /// 与右侧证据列表行同构：第一行 logo+全名，第二行 source 图标 +「来源 · section」。
-private struct RAGCitationChunkSourceHeader: View {
+struct RAGCitationChunkSourceHeader: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let citation: RAGCitation
@@ -322,6 +414,14 @@ struct RAGCitationChunkMissingPopoverContent: View {
     let citation: RAGCitation
 
     var body: some View {
+        RAGPopoverSkeletonHandoff(contentID: citation.id) {
+            RAGCitationChunkLoadingPopoverContent(citation: citation)
+        } content: {
+            missingContent
+        }
+    }
+
+    private var missingContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             RAGCitationChunkSourceHeader(citation: citation)
             Divider()
@@ -340,9 +440,10 @@ struct RAGCitationChunkMissingPopoverContent: View {
     }
 }
 
-/// 加载中占位：先画出来源头，正文区转圈。
+/// 加载中占位：来源事实立即可见，正文与状态栏使用共享 shimmer 骨架。
 struct RAGCitationChunkLoadingPopoverContent: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
 
     let citation: RAGCitation
 
@@ -350,9 +451,49 @@ struct RAGCitationChunkLoadingPopoverContent: View {
         VStack(alignment: .leading, spacing: 10) {
             RAGCitationChunkSourceHeader(citation: citation)
             Divider()
-            ProgressView()
-                .controlSize(.regular)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Text("rag.workspace.inspector.chunkPreview")
+                .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            SkeletonAnimatedPhase { phase in
+                let palette = SkeletonPalette.forColorScheme(colorScheme)
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(0..<8, id: \.self) { index in
+                        SkeletonBlock(
+                            maxWidth: index == 2 || index == 6
+                                ? interfaceScale.scaled(250)
+                                : nil,
+                            height: interfaceScale.scaled(9),
+                            cornerRadius: 3,
+                            phase: phase,
+                            phaseOffset: Double(index) * 0.07,
+                            palette: palette
+                        )
+                    }
+                    Spacer(minLength: 0)
+                    Divider()
+                    HStack(spacing: 8) {
+                        SkeletonBlock(
+                            width: interfaceScale.scaled(64),
+                            height: interfaceScale.scaled(8),
+                            cornerRadius: 3,
+                            phase: phase,
+                            palette: palette
+                        )
+                        SkeletonBlock(
+                            width: interfaceScale.scaled(92),
+                            height: interfaceScale.scaled(8),
+                            cornerRadius: 3,
+                            phase: phase,
+                            phaseOffset: 0.12,
+                            palette: palette
+                        )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityLabel(Text("rag.workspace.conversation.loading"))
         }
         .padding(14)
         .frame(

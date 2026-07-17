@@ -28854,6 +28854,38 @@
         }
       }
     },
+    "rag.browser.overview.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedding model"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量模型"
+          }
+        }
+      }
+    },
+    "rag.browser.overview.repositoryCoverage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository coverage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库覆盖"
+          }
+        }
+      }
+    },
     "rag.browser.repositories": {
       "localizations": {
         "en": {

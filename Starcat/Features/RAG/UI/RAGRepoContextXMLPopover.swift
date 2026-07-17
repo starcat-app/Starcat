@@ -21,8 +21,16 @@ struct RAGRepoContextXMLPopoverContent: View {
     let document: RAGRepoContextDocument
 
     var body: some View {
+        RAGPopoverSkeletonHandoff(contentID: citation.id) {
+            RAGRepoContextXMLLoadingPopoverContent(citation: citation)
+        } content: {
+            resolvedContent
+        }
+    }
+
+    private var resolvedContent: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sourceHeader
+            RAGCitationChunkSourceHeader(citation: citation)
 
             Divider()
 
@@ -52,30 +60,6 @@ struct RAGRepoContextXMLPopoverContent: View {
             alignment: .topLeading
         )
         .appLocaleEnvironment()
-    }
-
-    /// 与命中分片弹层同构：第一行识别仓库，第二行说明证据类型和 context.xml 版本。
-    private var sourceHeader: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            RepoIdentityLabel(
-                fullName: citation.repoFullName,
-                avatarSize: 16,
-                font: ragFont(.callout, scale: interfaceScale, weight: .semibold),
-                spacing: 6,
-                showAvatarBorder: false
-            )
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Image(systemName: citation.source.systemImageName)
-                    .font(iconFont(size: 11, scale: interfaceScale, weight: .semibold))
-                    .foregroundStyle(citation.source.tintColor)
-                (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
-                    .font(ragFont(.caption2, scale: interfaceScale))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 状态栏只放核对完整 XML 时仍有用的版本事实；详细字段继续保留在右侧引用卡片中。
@@ -109,6 +93,67 @@ struct RAGRepoContextXMLPopoverContent: View {
                 ? String.l10n("rag.workspace.repoContext.projection.projected")
                 : String.l10n("rag.workspace.repoContext.projection.original")
         ]
+    }
+}
+
+/// Repo Context XML 与普通分片共用同一交接节奏；画布更宽，因此增加骨架行数，
+/// 让加载态在 680pt popover 中仍能表达真实正文密度而不是一块空白。
+private struct RAGRepoContextXMLLoadingPopoverContent: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
+
+    let citation: RAGCitation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            RAGCitationChunkSourceHeader(citation: citation)
+            Divider()
+
+            Text("rag.workspace.repoContext.xml")
+                .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            SkeletonAnimatedPhase { phase in
+                let palette = SkeletonPalette.forColorScheme(colorScheme)
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(0..<11, id: \.self) { index in
+                        SkeletonBlock(
+                            maxWidth: index == 3 || index == 8
+                                ? interfaceScale.scaled(470)
+                                : nil,
+                            height: interfaceScale.scaled(9),
+                            cornerRadius: 3,
+                            phase: phase,
+                            phaseOffset: Double(index) * 0.055,
+                            palette: palette
+                        )
+                    }
+                    Spacer(minLength: 0)
+                    Divider()
+                    HStack(spacing: 8) {
+                        ForEach(0..<4, id: \.self) { index in
+                            SkeletonBlock(
+                                width: interfaceScale.scaled(index.isMultiple(of: 2) ? 82 : 110),
+                                height: interfaceScale.scaled(8),
+                                cornerRadius: 3,
+                                phase: phase,
+                                phaseOffset: Double(index) * 0.1,
+                                palette: palette
+                            )
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityLabel(Text("rag.workspace.conversation.loading"))
+        }
+        .padding(14)
+        .frame(
+            width: interfaceScale.scaled(RAGRepoContextXMLPopoverMetrics.width),
+            height: interfaceScale.scaled(RAGRepoContextXMLPopoverMetrics.height),
+            alignment: .topLeading
+        )
+        .appLocaleEnvironment()
     }
 }
 
