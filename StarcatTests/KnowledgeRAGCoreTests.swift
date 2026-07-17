@@ -2771,7 +2771,7 @@ struct KnowledgeRAGCoreTests {
                 chunkID: 1,
                 repoID: 1,
                 repositoryName: "octo/demo",
-                source: .readme,
+                source: RAGChunkSource.readme,
                 sectionTitle: "First",
                 rank: 1,
                 score: 0.9,
@@ -2784,7 +2784,7 @@ struct KnowledgeRAGCoreTests {
                 chunkID: 2,
                 repoID: 1,
                 repositoryName: "octo/demo",
-                source: .readme,
+                source: RAGChunkSource.readme,
                 sectionTitle: "Second",
                 rank: 2,
                 score: 0.8,
@@ -2817,7 +2817,7 @@ struct KnowledgeRAGCoreTests {
     func configurableGeneratorPromptRendersPlaceholders() {
         let custom = AIPromptConfiguration(
             systemPrompt: "LANG={outputLanguage}; CUSTOM_SYSTEM",
-            userPromptTemplate: "Q:{questionSection}|E:{evidenceSection}"
+            userPromptTemplate: "Q:{questionSection}|E:{evidenceSection}|C:{repoContextSection}"
         )
         let prompt = KnowledgeRAGPromptBuilder(
             promptConfiguration: custom,
@@ -2834,6 +2834,101 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.userPrompt.contains("User question:"))
         #expect(prompt.userPrompt.contains("hello"))
         #expect(!prompt.userPrompt.contains("{questionSection}"))
+    }
+
+    @Test("RepoContext 使用独立占位符与预算分段且不受 evidence budget 限制")
+    func repoContextUsesIndependentPromptSectionAndBudget() {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <repository owner="octo" repo="demo" commitSha="abc123">
+          <directoryStructure><![CDATA[Sources/App.swift]]></directoryStructure>
+          <keyFiles><file path="Package.swift" tier="0"><![CDATA[let package = "demo"]]></file></keyFiles>
+          <entryPoints><file path="Sources/App.swift" tier="1"><![CDATA[struct App {}]]></file></entryPoints>
+          <fileList><file path="Sources/Helper.swift" tier="2"/></fileList>
+          <stats totalFiles="3"/>
+        </repository>
+        """
+        let document = RAGRepoContextDocument(
+            snapshot: RAGRepoContextSnapshot(
+                repoID: 1,
+                repoFullName: "octo/demo",
+                commitSHA: "abc123",
+                contentHash: "hash",
+                configuredTokenBudget: 8_000,
+                originalTokens: 0,
+                sentTokens: 0,
+                cacheHit: true,
+                outcome: .success,
+                wasProjected: false,
+                projectionReason: nil,
+                citationMarker: nil,
+                preparedAt: .now
+            ),
+            xml: xml
+        )
+        let prompt = KnowledgeRAGPromptBuilder(
+            maxEvidenceTokens: 1,
+            maxRepoContextTokens: 8_000
+        ).build(
+            question: "代码入口在哪里？",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "代码入口", repoContextRequest: .init(
+                repoID: 1,
+                repoFullName: "octo/demo",
+                reason: "用户开启深度思考",
+                configuredTokenBudget: 8_000
+            )),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            repoContextDocument: document,
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(prompt.userPrompt.contains("Project code context:"))
+        #expect(prompt.userPrompt.contains("<repository"))
+        #expect(!prompt.userPrompt.contains("{repoContextSection}"))
+        #expect(prompt.contextUsage.tokenCount(for: .repoContext) > 0)
+        #expect(prompt.contextUsage.tokenCount(for: .evidence) == 0)
+        #expect(prompt.repoContextDocument?.snapshot.citationMarker == "S1")
+        #expect(prompt.citationsByMarker["S1"]?.source == .repoContext)
+        #expect(prompt.citationsByMarker["S1"]?.chunkID == nil)
+    }
+
+    @Test("RepoContext 总窗口投影始终输出合法 XML")
+    func repoContextProjectionKeepsValidXML() throws {
+        let files = (0..<40).map { index in
+            "<file path=\"Sources/File\(index).swift\" tier=\"0\"><![CDATA[\(String(repeating: "let value = \(index)\n", count: 30))]]></file>"
+        }.joined()
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <repository owner="octo" repo="demo">
+          <directoryStructure><![CDATA[Sources\n\(String(repeating: "  File.swift\n", count: 100))]]></directoryStructure>
+          <keyFiles>\(files)</keyFiles>
+          <entryPoints><file path="Sources/App.swift" tier="1"><![CDATA[struct App {}]]></file></entryPoints>
+          <fileList><file path="Sources/Other.swift" tier="2"/></fileList>
+          <stats totalFiles="42"/>
+        </repository>
+        """
+        let projection = try RAGRepoContextXMLProjector().project(xml, tokenBudget: 500)
+
+        #expect(projection.wasProjected)
+        #expect(projection.projectedTokens <= 500)
+        #expect(projection.removedFileCount > 0)
+        #expect(projection.xml.contains("<truncation"))
+        #expect(try XMLDocument(xmlString: projection.xml).rootElement()?.name == "repository")
+    }
+
+    @Test("缺少 RepoContext 占位符的旧 Generator 配置直接收口到新默认协议")
+    func ragPromptSettingsRequireRepoContextPlaceholder() throws {
+        let settings = RAGPromptSettings(
+            generator: AIPromptConfiguration(systemPrompt: "old", userPromptTemplate: "{evidenceSection}"),
+            planner: RAGDefaultPrompts.planner
+        )
+        let decoded = try JSONDecoder().decode(
+            RAGPromptSettings.self,
+            from: JSONEncoder().encode(settings)
+        )
+        #expect(decoded.generator == RAGDefaultPrompts.generator)
+        #expect(decoded.generator.userPromptTemplate.contains("{repoContextSection}"))
     }
 
     @Test("统一 Context Budget 会同时限制历史、证据、远程内容、附件与输出预留")
@@ -3282,7 +3377,7 @@ struct KnowledgeRAGCoreTests {
                 chunkID: chunkID,
                 repoID: 42,
                 repoFullName: "octo/demo-42",
-                source: .readme,
+                source: RAGCitationSource.readme,
                 sectionTitle: "Intro",
                 score: 0.9,
                 hitKind: .hybrid,
@@ -4149,7 +4244,7 @@ struct KnowledgeRAGCoreTests {
             chunkID: 1,
             repoID: 1,
             repoFullName: "octo/demo",
-            source: .readme,
+            source: RAGCitationSource.readme,
             sectionTitle: "README > Test",
             score: 0.9,
             hitKind: .hybrid,

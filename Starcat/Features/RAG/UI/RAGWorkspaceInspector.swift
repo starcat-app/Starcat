@@ -1802,6 +1802,7 @@ struct RAGWorkspaceInspector: View {
         case .keyword: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.keyword"
         case .vector: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.vector"
         case .hybrid: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.hybrid"
+        case .repoContext: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.repoContext"
         }
     }
 
@@ -2668,6 +2669,8 @@ struct RAGWorkspaceInspector: View {
             "rag.workspace.inspector.retrievalScore.formula.keyword"
         case .hybrid:
             "rag.workspace.inspector.retrievalScore.formula.hybrid"
+        case .repoContext:
+            "rag.workspace.inspector.retrievalScore.formula.repoContext"
         }
     }
 
@@ -2692,6 +2695,8 @@ struct RAGWorkspaceInspector: View {
             return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
         case .hybrid:
             return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2)) + \(formattedScoreValue(score.vectorWeight, precision: 2)) / (\(rrfConstant) + \(score.vectorRank ?? 0)) + \(formattedScoreValue(score.vectorSimilarity ?? 0, precision: 3)) × \(formattedScoreValue(score.vectorScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
+        case .repoContext:
+            return String.l10n("rag.workspace.inspector.retrievalScore.formula.repoContext")
         }
     }
 

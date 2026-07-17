@@ -265,7 +265,8 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             "pastedGitHubLinks": links.isEmpty ? "[]" : "[\(links)]",
             "previousUserQuestion": context.previousUserQuestion ?? "<none>",
             "previousReferencedRepositories": previousRepos.isEmpty ? "[]" : "[\(previousRepos)]",
-            "webSearchEnabled": String(context.webSearchEnabled)
+            "webSearchEnabled": String(context.webSearchEnabled),
+            "deepThinkingEnabled": String(context.deepThinkingEnabled)
         ])
         let metadataContext = metadataSnapshot.map { "\n\n\($0.plannerPromptContext())" } ?? ""
         return basePrompt + metadataContext + Self.analyticsCapabilityPrompt

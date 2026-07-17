@@ -41,3 +41,36 @@ extension RAGChunkSource {
         }
     }
 }
+
+extension RAGCitationSource {
+    /// RepoContext 是仓库级临时证据，使用独立 brain 图标；其它来源保持与分片一致。
+    var systemImageName: String {
+        switch self {
+        case .readme: return "books.vertical.circle"
+        case .notes: return "square.and.pencil.circle"
+        case .summary: return "character.bubble"
+        case .metadata: return "tag.circle"
+        case .repoContext: return "brain"
+        }
+    }
+
+    var tintColor: Color {
+        switch self {
+        case .readme: return .blue
+        case .notes: return .orange
+        case .summary: return .purple
+        case .metadata: return .teal
+        case .repoContext: return .indigo
+        }
+    }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .readme: return "rag.browser.source.readme"
+        case .notes: return "rag.browser.source.notes"
+        case .summary: return "rag.browser.source.summary"
+        case .metadata: return "rag.browser.source.metadata"
+        case .repoContext: return "rag.workspace.repoContext.title"
+        }
+    }
+}

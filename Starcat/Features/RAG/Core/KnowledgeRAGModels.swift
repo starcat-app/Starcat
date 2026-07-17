@@ -69,8 +69,51 @@ struct RAGComposerContext: Equatable, Sendable {
     /// Composer 的 `globe` 开关是本轮明确联网授权。开启后 GitHub 临时上下文无需再次
     /// 确认，普通 External Search 也可以直接执行；关闭时仍保留原有 GitHub 逐项确认。
     var webSearchEnabled = false
+    /// “深度思考”是用户对本轮单项目 RepoContext 的显式授权。目标仓库不由 Planner
+    /// 选择，而是由本地执行层从唯一显式 repo scope 解析，避免模型扩大代码读取范围。
+    var deepThinkingEnabled = false
     /// 用户可以在执行前移除 Planner 建议的远程上下文 chip。
     var disabledRemoteResources: Set<RAGRemoteContextResource> = []
+}
+
+/// 本地标准化的 RepoContext 请求。它只描述用户已经明确选择的唯一项目，不携带 XML，
+/// 因此可以安全进入 Planner、执行轨迹和历史回放。
+struct RAGRepoContextRequest: Codable, Equatable, Sendable {
+    var repoID: Int64
+    var repoFullName: String
+    var reason: String
+    var configuredTokenBudget: Int
+}
+
+enum RAGRepoContextOutcome: String, Codable, Equatable, Sendable {
+    case success
+    case featureDisabled = "feature_disabled"
+    case degraded
+}
+
+/// 会话历史只保存 RepoContext 的审计元数据，不复制 `context.xml` 正文。
+/// `sentTokens` 和 `wasProjected` 描述最终进入 Generator 的版本，而不是磁盘原文件。
+struct RAGRepoContextSnapshot: Codable, Equatable, Sendable {
+    var repoID: Int64
+    var repoFullName: String
+    var commitSHA: String?
+    var contentHash: String?
+    var configuredTokenBudget: Int
+    var originalTokens: Int
+    var sentTokens: Int
+    var cacheHit: Bool
+    var outcome: RAGRepoContextOutcome
+    var wasProjected: Bool
+    var projectionReason: String?
+    var citationMarker: String?
+    var preparedAt: Date
+}
+
+/// RepoContext 正文只在本轮内存态流转。历史回放必须凭 snapshot 的 commit/hash 从
+/// `RepoContextStorage` 重新核验，不能把后来生成的 XML 冒充旧证据。
+struct RAGRepoContextDocument: Equatable, Sendable {
+    var snapshot: RAGRepoContextSnapshot
+    var xml: String
 }
 
 struct RAGServiceRequest: Sendable {
@@ -362,6 +405,7 @@ enum RAGExecutionStepKind: String, Codable, CaseIterable, Sendable {
     case planning
     case planningReasoning
     case retrieval
+    case repoContext
     case remoteContext
     case answerReasoning
     case generation
@@ -389,6 +433,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
     var retrievalSnapshot: RAGRetrievalSnapshot?
     /// Context Window 仅保存 token 数字，绝不把 Prompt 预览写入历史。
     var contextUsageSnapshot: RAGContextUsageSnapshot?
+    /// RepoContext 只保存 commit/hash/token 等审计元数据，绝不保存 XML 正文。
+    var repoContextSnapshot: RAGRepoContextSnapshot?
 
     var id: RAGExecutionStepKind { kind }
 
@@ -402,7 +448,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         remoteAuditItems: [RAGRemoteExecutionAuditItem]? = nil,
         queryPlan: RAGQueryPlan? = nil,
         retrievalSnapshot: RAGRetrievalSnapshot? = nil,
-        contextUsageSnapshot: RAGContextUsageSnapshot? = nil
+        contextUsageSnapshot: RAGContextUsageSnapshot? = nil,
+        repoContextSnapshot: RAGRepoContextSnapshot? = nil
     ) {
         self.kind = kind
         self.state = state
@@ -414,6 +461,7 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         self.queryPlan = queryPlan
         self.retrievalSnapshot = retrievalSnapshot
         self.contextUsageSnapshot = contextUsageSnapshot
+        self.repoContextSnapshot = repoContextSnapshot
     }
 
     /// 运行中以当前时刻持续计时，完成后固定为真实结束时刻，供用户核验步骤耗时。
@@ -441,6 +489,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     var candidateLimit: Int?
     var remoteContextRequests: [RAGRemoteContextRequest]
     var webSearchRequests: [RAGWebSearchRequest]
+    /// 由本地执行层根据唯一显式项目写入；Planner JSON 不拥有目标选择权。
+    var repoContextRequest: RAGRepoContextRequest?
     /// 为 true 时，本地知识片段不能替代实时结果；联网失败必须明确终止而不是生成旧答案。
     var requiresLiveEvidence: Bool
     var confidence: RAGQueryPlanConfidence
@@ -452,7 +502,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case mode, semanticQuery, filters, sort, candidateLimit, remoteContextRequests
-        case webSearchRequests, requiresLiveEvidence, analytics
+        case webSearchRequests, repoContextRequest, requiresLiveEvidence, analytics
         case confidence, clarificationQuestion, fallbackQuestions, userVisiblePlan
     }
 
@@ -464,6 +514,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         candidateLimit: Int? = nil,
         remoteContextRequests: [RAGRemoteContextRequest] = [],
         webSearchRequests: [RAGWebSearchRequest] = [],
+        repoContextRequest: RAGRepoContextRequest? = nil,
         requiresLiveEvidence: Bool = false,
         confidence: RAGQueryPlanConfidence = .high,
         clarificationQuestion: String? = nil,
@@ -478,6 +529,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         self.candidateLimit = candidateLimit
         self.remoteContextRequests = remoteContextRequests
         self.webSearchRequests = webSearchRequests
+        self.repoContextRequest = repoContextRequest
         self.requiresLiveEvidence = requiresLiveEvidence
         self.confidence = confidence
         self.clarificationQuestion = clarificationQuestion
@@ -495,6 +547,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         candidateLimit = try container.decodeIfPresent(Int.self, forKey: .candidateLimit)
         remoteContextRequests = try container.decodeIfPresent([RAGRemoteContextRequest].self, forKey: .remoteContextRequests) ?? []
         webSearchRequests = try container.decodeIfPresent([RAGWebSearchRequest].self, forKey: .webSearchRequests) ?? []
+        repoContextRequest = try container.decodeIfPresent(RAGRepoContextRequest.self, forKey: .repoContextRequest)
         requiresLiveEvidence = try container.decodeIfPresent(Bool.self, forKey: .requiresLiveEvidence) ?? false
         confidence = try container.decodeIfPresent(RAGQueryPlanConfidence.self, forKey: .confidence) ?? .medium
         clarificationQuestion = try container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
@@ -515,6 +568,26 @@ enum RAGHitKind: String, Codable, Sendable {
     case keyword
     case vector
     case hybrid
+    case repoContext = "repo_context"
+}
+
+/// Citation 的来源集合与数据库分片来源刻意分离。`repoContext` 是仓库级临时证据，
+/// 不能加入 `RAGChunkSource.CaseIterable`，否则会污染索引覆盖率与检索设置。
+enum RAGCitationSource: String, Codable, Equatable, Sendable {
+    case readme
+    case notes
+    case summary
+    case metadata
+    case repoContext = "repo_context"
+
+    init(chunkSource: RAGChunkSource) {
+        self = switch chunkSource {
+        case .readme: .readme
+        case .notes: .notes
+        case .summary: .summary
+        case .metadata: .metadata
+        }
+    }
 }
 
 /// 单次检索的不可变计算快照。排名和权重都取自融合当刻，不能从最终分数可靠倒推。
@@ -1068,7 +1141,7 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     /// 仅用于 UI 语义色；当前回答直接取检索候选，历史回答由仓库表联表补齐。
     /// 仓库被删除或没有主语言时保持 nil，引用 chip 回退原有稳定色盘。
     var repoLanguage: String? = nil
-    var source: RAGChunkSource
+    var source: RAGCitationSource
     var sectionTitle: String
     /// 融合后的检索排序分，用于回放本轮分片排序，不能作为百分比相关度解读。
     var score: Double
@@ -1078,6 +1151,37 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     /// 与本轮引用绑定的融合快照；旧历史没有该字段时为 nil。
     var scoreBreakdown: RAGScoreBreakdown? = nil
     var sourceURL: URL?
+
+    init(
+        id: UUID,
+        marker: String,
+        chunkID: Int64?,
+        repoID: Int64,
+        repoFullName: String,
+        repoLanguage: String? = nil,
+        source: RAGCitationSource,
+        sectionTitle: String,
+        score: Double,
+        hitKind: RAGHitKind,
+        vectorSimilarity: Double?,
+        scoreBreakdown: RAGScoreBreakdown? = nil,
+        sourceURL: URL?
+    ) {
+        self.id = id
+        self.marker = marker
+        self.chunkID = chunkID
+        self.repoID = repoID
+        self.repoFullName = repoFullName
+        self.repoLanguage = repoLanguage
+        self.source = source
+        self.sectionTitle = sectionTitle
+        self.score = score
+        self.hitKind = hitKind
+        self.vectorSimilarity = vectorSimilarity
+        self.scoreBreakdown = scoreBreakdown
+        self.sourceURL = sourceURL
+    }
+
 }
 
 enum RAGAnswerState: Equatable, Sendable {

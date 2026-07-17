@@ -18,6 +18,7 @@ enum RAGContextUsageSegmentKind: String, CaseIterable, Codable, Identifiable, Se
     case recentMessages
     case question
     case evidence
+    case repoContext
     case remoteContext
     case attachments
     case reservedOutput
@@ -31,6 +32,7 @@ enum RAGContextUsageSegmentKind: String, CaseIterable, Codable, Identifiable, Se
         case .recentMessages: return "rag.workspace.context.recentMessages"
         case .question: return "rag.workspace.context.question"
         case .evidence: return "rag.workspace.context.evidence"
+        case .repoContext: return "rag.workspace.context.repoContext"
         case .remoteContext: return "rag.workspace.context.remote"
         case .attachments: return "rag.workspace.context.attachments"
         case .reservedOutput: return "rag.workspace.context.reservedOutput"

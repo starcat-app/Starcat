@@ -619,7 +619,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         for row in rows {
             guard let messageID = UUID(uuidString: row["message_id"]),
                   let id = UUID(uuidString: row["id"]),
-                  let source = RAGChunkSource(rawValue: row["source"]),
+                  let source = RAGCitationSource(rawValue: row["source"]),
                   let hitKind = RAGHitKind(rawValue: row["hit_kind"]) else { continue }
             let sourceURLString: String? = row["source_url"]
             let scoreBreakdownJSON: String? = row["score_breakdown_json"]
