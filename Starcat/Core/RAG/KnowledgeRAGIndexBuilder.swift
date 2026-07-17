@@ -341,7 +341,9 @@ final class KnowledgeRAGIndexBuilder {
                       let keys = notification.userInfo?["repositoryKeys"] as? [WikiRepoKey]
                 else { continue }
                 for key in keys {
-                    try? Task.checkCancellation()
+                    // 清空缓存可能涉及大量仓库；builder 停止或切库后必须立刻退出，
+                    // 不能吞掉 CancellationError 后继续访问已经切换的 repository。
+                    guard !Task.isCancelled else { return }
                     guard let repo = try? await self.repoRepository.findByOwnerName(owner: key.owner, name: key.repo)
                     else { continue }
                     await self.refresh(repo: repo, sources: [.metadata])
