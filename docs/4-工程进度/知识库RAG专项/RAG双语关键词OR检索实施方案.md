@@ -150,7 +150,9 @@ FTS5 只做字面匹配，不负责中英翻译。双语关键词用于同时覆
 - Keyword / Vector 错误摘要；
 - `执行成功但 0 命中`、`执行失败`、`已跳过` 三种状态。
 
-Debug Trace 记录原始问题、`semanticQuery`、`keywordQueries`、最终 FTS5 表达式、分支错误与命中统计。Trace 不复制分片正文，不新增隐私数据范围。
+Planner/Debug 记录原始问题与 `semanticQuery`；`RAGRetrievalTrace` 保存经过校验的
+`keywordQueries` 和最终 FTS5 表达式，`RAGRetrievalSnapshot` 保存分支错误与命中统计。
+两者都不复制分片正文，不新增隐私数据范围。
 
 ## 9. 兼容与数据边界
 

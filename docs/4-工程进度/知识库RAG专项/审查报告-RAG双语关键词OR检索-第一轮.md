@@ -4,6 +4,7 @@
 > 审查范围：Query Plan 协议、Planner 兼容升级、FTS5 查询安全、repo scope 与基础测试
 > 审查基线：`531764b6`
 > 结论：发现 4 项需要修复的问题，先记录本报告，再进入修复提交
+> 修复回填：4 项均已修复，相关定向测试通过
 
 ## 1. 已核验证据
 
@@ -75,3 +76,15 @@ Meilisearch 和 fallback provider 入口没有统一 `terms.isEmpty` 守卫。SQ
 - 方案、正式设计、Checklist 与代码中的 Trace/Snapshot 职责一致。
 - 重跑 `FTSQueryTests`、`KnowledgeRAGCoreTests`、`RAGChunkRepositoryTests` 和
   `RAGLocalizationTests`。
+
+## 5. 修复回填
+
+| 问题 | 修复证据 | 状态 |
+|---|---|---|
+| R1-1 | `1728b4c` 在 SQLite、Meilisearch 与 fallback 入口统一短路空 terms，并增加零调用测试 | 已关闭 |
+| R1-2 | `0b2fd30` 增加多仓库 `.only`、`.prefer`、`.exclude` 与 provider repo id 录制测试 | 已关闭 |
+| R1-3 | `ebe5072` 抽出 `RAGRetrievalBranchStatus`，直接覆盖 0、failed、skipped | 已关闭 |
+| R1-4 | 本次文档回填明确 Trace 保存查询、Snapshot 保存分支状态 | 已关闭 |
+
+修复后已重跑 `KnowledgeRAGCoreTests` 与 `FTSQueryTests`，命令退出码为 0；完整 RAG 定向
+Suite 在进入本轮审查前也已通过。未发现修复引入的新 warning 或 schema 变化。

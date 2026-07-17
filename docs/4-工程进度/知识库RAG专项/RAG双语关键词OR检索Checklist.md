@@ -60,7 +60,7 @@
 ## 5. Plan、检索漏斗与 Debug
 
 - [x] Plan 展示实际 `semanticQuery` 与校验后的 `keywordQueries`。
-- [x] Retrieval Trace 保存最终 FTS5 表达式和两路分支状态。
+- [x] Retrieval Trace 保存最终 FTS5 表达式，Retrieval Snapshot 保存两路分支状态。
 - [x] 检索漏斗区分成功零命中、执行失败与已跳过。
 - [x] 检索漏斗继续展示候选、召回、融合、重排和最终证据真实数量。
 - [x] 历史会话与 Debug JSON 缺少新增字段时仍可恢复。
@@ -77,12 +77,12 @@
 
 ## 7. 自动化验证
 
-- [ ] 新增 Swift 文件后执行 `xcodegen generate`。
-- [ ] `rtk git diff --check` 通过。
-- [ ] `rtk jq empty Starcat/Resources/Localizable.xcstrings` 通过。
-- [ ] Query Plan、Planner、FTS5、Retriever 与 Inspector 定向测试通过。
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build-for-testing` 通过。
-- [ ] RAG 相关定向 Suite 通过。
+- [x] 新增 Swift 文件后执行 `xcodegen generate`（本次没有新增 Swift 文件，已生成工程核对）。
+- [x] `rtk git diff --check` 通过。
+- [x] `rtk jq empty Starcat/Resources/Localizable.xcstrings` 通过。
+- [x] Query Plan、Planner、FTS5、Retriever 与 Inspector 定向测试通过。
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build-for-testing` 通过。
+- [x] RAG 相关定向 Suite 通过。
 - [ ] 全量 `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test` 通过。
 - [ ] `Starcat` Debug target build 通过。
 - [ ] `StarcatDirect` Debug target build 通过。
@@ -90,12 +90,12 @@
 
 ## 8. 第一轮审查：协议、兼容与范围
 
-- [ ] 先新增并提交第一轮审查报告。
-- [ ] 对照方案审查 Query Plan、Planner Prompt、默认模板升级与旧 JSON 兼容。
-- [ ] 审查 OR 构造的安全性、边界输入和 fallback。
-- [ ] 审查单仓库、多仓库、prefer、exclude 是否可能越界。
-- [ ] 报告发现的问题逐项修复并按小功能提交。
-- [ ] 修复后重跑相关定向测试并回填报告。
+- [x] 先新增并提交第一轮审查报告。
+- [x] 对照方案审查 Query Plan、Planner Prompt、默认模板升级与旧 JSON 兼容。
+- [x] 审查 OR 构造的安全性、边界输入和 fallback。
+- [x] 审查单仓库、多仓库、prefer、exclude 是否可能越界。
+- [x] 报告发现的问题逐项修复并按小功能提交。
+- [x] 修复后重跑相关定向测试并回填报告。
 
 ## 9. 第二轮审查：检索、可观测性与测试
 
