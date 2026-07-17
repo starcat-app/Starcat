@@ -485,6 +485,8 @@ enum RAGRetrievalProgress: Sendable {
 struct RAGQueryPlan: Codable, Equatable, Sendable {
     var mode: RAGQueryMode
     var semanticQuery: String
+    /// 供关键词 Provider 使用的高信息量字面查询；与面向 embedding 的自然语言查询分离。
+    var keywordQueries: [String]
     var filters: RAGRepoFilter
     var sort: RAGRepoSort?
     var candidateLimit: Int?
@@ -502,7 +504,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     var analytics: KnowledgeBaseAnalyticsPlan?
 
     enum CodingKeys: String, CodingKey {
-        case mode, semanticQuery, filters, sort, candidateLimit, remoteContextRequests
+        case mode, semanticQuery, keywordQueries, filters, sort, candidateLimit, remoteContextRequests
         case webSearchRequests, repoContextRequest, requiresLiveEvidence, analytics
         case confidence, clarificationQuestion, fallbackQuestions, userVisiblePlan
     }
@@ -510,6 +512,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     init(
         mode: RAGQueryMode,
         semanticQuery: String,
+        keywordQueries: [String] = [],
         filters: RAGRepoFilter = .init(),
         sort: RAGRepoSort? = nil,
         candidateLimit: Int? = nil,
@@ -525,6 +528,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     ) {
         self.mode = mode
         self.semanticQuery = semanticQuery
+        self.keywordQueries = keywordQueries
         self.filters = filters
         self.sort = sort
         self.candidateLimit = candidateLimit
@@ -543,6 +547,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mode = try container.decode(RAGQueryMode.self, forKey: .mode)
         semanticQuery = try container.decodeIfPresent(String.self, forKey: .semanticQuery) ?? ""
+        // 旧会话和旧自定义 Planner Prompt 没有该字段；空数组交给 Retriever 的本地 OR 兜底。
+        keywordQueries = try container.decodeIfPresent([String].self, forKey: .keywordQueries) ?? []
         filters = try container.decodeIfPresent(RAGRepoFilter.self, forKey: .filters) ?? .init()
         sort = try container.decodeIfPresent(RAGRepoSort.self, forKey: .sort)
         candidateLimit = try container.decodeIfPresent(Int.self, forKey: .candidateLimit)
@@ -661,9 +667,25 @@ struct RAGRetrievalHitTrace: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// 关键词分支实际执行的安全查询。只保存短关键词和生成后的 FTS5 表达式，
+/// 不保存用户原始问题或任何分片正文，便于历史会话解释“本轮到底搜了什么”。
+struct RAGKeywordQueryTrace: Codable, Equatable, Sendable {
+    var terms: [String]
+    var fts5Expression: String
+    var usedSemanticFallback: Bool
+
+    init(query: RAGKeywordSearchQuery) {
+        terms = query.terms
+        fts5Expression = query.sqliteFTS5Expression
+        usedSemanticFallback = query.usedSemanticFallback
+    }
+}
+
 /// 同一轮检索的逐阶段脱敏明细。它与 `RAGRetrievalSnapshot` 一起写入既有会话轨迹，
 /// 让用户重开历史会话时仍能查看“哪些仓库/分片为何进入或离开漏斗”。
 struct RAGRetrievalTrace: Codable, Equatable, Sendable {
+    /// optional 保证升级前的历史执行轨迹仍可解码。
+    var keywordQuery: RAGKeywordQueryTrace? = nil
     var candidates: [RAGRetrievalCandidateTrace]
     var keywordHits: [RAGRetrievalHitTrace]
     var semanticHits: [RAGRetrievalHitTrace]
@@ -672,6 +694,7 @@ struct RAGRetrievalTrace: Codable, Equatable, Sendable {
     var rerank: RAGRerankTrace?
 
     init(
+        keywordQuery: RAGKeywordQueryTrace? = nil,
         candidates: [RAGRetrievalCandidateTrace] = [],
         keywordHits: [RAGRetrievalHitTrace] = [],
         semanticHits: [RAGRetrievalHitTrace] = [],
@@ -679,6 +702,7 @@ struct RAGRetrievalTrace: Codable, Equatable, Sendable {
         finalEvidence: [RAGRetrievalHitTrace] = [],
         rerank: RAGRerankTrace? = nil
     ) {
+        self.keywordQuery = keywordQuery
         self.candidates = candidates
         self.keywordHits = keywordHits
         self.semanticHits = semanticHits
@@ -810,6 +834,8 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
 
     var settings: RAGRetrievalSettings
     var candidateRepoCount: Int
+    /// 实际执行的关键词查询；optional 用于兼容旧版 Debug JSON。
+    var keywordQuery: RAGKeywordQueryTrace? = nil
     var keywordRawCount = 0
     var keywordSourceFilteredCount = 0
     var keywordErrorDescription: String?
@@ -857,6 +883,7 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.evidenceLimitsFormat"), settings.finalEvidenceChunkLimit, settings.perRepositoryEvidenceLimit))
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.tokenBudgetFormat"), settings.evidenceTokenBudget))
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.settings.sourcesFormat"), sourceNames.isEmpty ? String.l10n("rag.workspace.debug.retrieval.sources.none") : sourceNames))
+        \(debugKeywordQuery())
 
         \(String.l10n("rag.workspace.debug.retrieval.funnel.title"))
         - \(String(format: String.l10n("rag.workspace.debug.retrieval.funnel.candidatesFormat"), candidateRepoCount))
@@ -868,6 +895,19 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
 
         \(String.l10n("rag.workspace.debug.retrieval.conclusion.title"))
         \(conclusion)
+        """
+    }
+
+    private func debugKeywordQuery() -> String {
+        guard let keywordQuery else { return "" }
+        let fallback = keywordQuery.usedSemanticFallback
+            ? "\n- \(String.l10n("rag.workspace.debug.retrieval.query.semanticFallback"))"
+            : ""
+        return """
+
+        \(String.l10n("rag.workspace.debug.retrieval.query.title"))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.query.termsFormat"), keywordQuery.terms.joined(separator: ", ")))
+        - \(String(format: String.l10n("rag.workspace.debug.retrieval.query.ftsFormat"), keywordQuery.fts5Expression))\(fallback)
         """
     }
 
@@ -887,17 +927,52 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
     }
 }
 
+/// 检索漏斗单分支的纯值状态。把判断从 SwiftUI View 中抽离，既能直接回归测试，
+/// 也保证当前轮与历史快照使用同一套“0 命中 / 失败 / 跳过”语义。
+enum RAGRetrievalBranchStatus: Equatable, Sendable {
+    case completed(raw: Int, accepted: Int)
+    case failed(RAGRetrievalBranchFailure)
+    case skipped
+
+    static func resolve(
+        raw: Int,
+        accepted: Int,
+        failure: RAGRetrievalBranchFailure?,
+        outcome: RAGRetrievalDiagnostics.Outcome?
+    ) -> Self {
+        if let failure {
+            return .failed(failure)
+        }
+        if outcome == .noCandidates
+            || outcome == .noReadyChunks
+            || outcome == .sourcesDisabled
+            || outcome == .skippedStructured {
+            return .skipped
+        }
+        return .completed(raw: raw, accepted: accepted)
+    }
+}
+
+/// 可随会话持久化的安全失败分类。原始 provider 错误可能包含自托管 endpoint 或系统路径，
+/// 只允许留在当前轮 Diagnostics/Debug，历史 Snapshot 仅保存这个稳定 code。
+enum RAGRetrievalBranchFailure: String, Codable, Equatable, Sendable {
+    case providerError = "provider_error"
+}
+
 /// “计划”面板可回放的检索结果摘要。
 ///
 /// `RAGRetrievalDiagnostics` 仍是当前轮 Debug 事实，可能包含 provider 错误；
-/// 历史会话保留数量、安全设置与不含正文的检索轨迹，避免把外部错误或知识库正文长期复制一份。
+/// 历史会话保留数量、安全设置、分支失败分类与不含正文的检索轨迹，避免复制原始外部错误或正文。
 struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
     var settings: RAGRetrievalSettings?
     var candidateRepoCount: Int
     var keywordRawCount: Int
     var keywordAcceptedCount: Int
+    /// optional 保证旧会话快照仍可解码，同时让 0 命中与执行失败不再混为一谈。
+    var keywordFailure: RAGRetrievalBranchFailure? = nil
     var vectorRawCount: Int
     var vectorAcceptedCount: Int
+    var vectorFailure: RAGRetrievalBranchFailure? = nil
     var fusionUniqueCount: Int
     var rankingFilteredCount: Int
     var rerankState: RAGRerankDiagnostics.State?
@@ -914,8 +989,10 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
             candidateRepoCount = result.candidates.count
             keywordRawCount = 0
             keywordAcceptedCount = 0
+            keywordFailure = nil
             vectorRawCount = 0
             vectorAcceptedCount = 0
+            vectorFailure = nil
             fusionUniqueCount = result.childHits.count
             rankingFilteredCount = 0
             rerankState = nil
@@ -933,6 +1010,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
         candidateRepoCount = diagnostics.candidateRepoCount
         keywordRawCount = diagnostics.keywordRawCount
         keywordAcceptedCount = max(diagnostics.keywordRawCount - diagnostics.keywordSourceFilteredCount, 0)
+        keywordFailure = diagnostics.keywordErrorDescription == nil ? nil : .providerError
         vectorRawCount = diagnostics.vectorRawCount
         vectorAcceptedCount = max(
             diagnostics.vectorRawCount
@@ -940,6 +1018,7 @@ struct RAGRetrievalSnapshot: Codable, Equatable, Sendable {
                 - diagnostics.vectorSimilarityFilteredCount,
             0
         )
+        vectorFailure = diagnostics.vectorErrorDescription == nil ? nil : .providerError
         fusionUniqueCount = diagnostics.fusion.uniqueCount
         rankingFilteredCount = diagnostics.fusion.perRepositoryLimitFilteredCount
             + diagnostics.fusion.totalLimitFilteredCount

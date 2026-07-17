@@ -11,9 +11,76 @@
 
 import Foundation
 
+/// Provider 共用的关键词查询快照。SQLite 使用已转义的 FTS5 OR 表达式，外部后端只接收
+/// 纯字面文本；两者都来自同一组有界 terms，避免把 FTS5 语法泄漏给 Meilisearch。
+struct RAGKeywordSearchQuery: Equatable, Sendable {
+    var terms: [String]
+    var sqliteFTS5Expression: String
+    var externalQuery: String
+    var usedSemanticFallback: Bool
+
+    /// 空 terms 没有可执行的字面意图。Provider 必须返回零命中，不能把空字符串交给
+    /// SQLite MATCH 或外部搜索后端，以免语法错误或被解释成全量检索。
+    var isExecutable: Bool {
+        !terms.isEmpty && !sqliteFTS5Expression.isEmpty && !externalQuery.isEmpty
+    }
+}
+
+/// RAG 专用 OR 查询构造器。普通搜索继续使用 `FTSQuery.sanitize` 的 AND 语义。
+///
+/// LLM 输出只能作为不可信字面文本：所有 term 都包入双引号并转义内部引号，模型返回的
+/// `OR` / `NOT` / 括号等不会成为可执行操作符。旧 Prompt 缺少关键词时，语义查询只按
+/// 空白拆成有界 OR token；这条降级追求“至少可召回”，不再复用精度优先的旧 AND。
+enum RAGKeywordQueryBuilder {
+    static let maximumTermCount = 8
+    static let maximumTermLength = 80
+
+    static func build(keywordQueries: [String], semanticQuery: String) -> RAGKeywordSearchQuery {
+        let plannedTerms = normalizedTerms(keywordQueries, splitsWords: false)
+        let usedSemanticFallback = plannedTerms.isEmpty
+        let terms = usedSemanticFallback
+            ? normalizedTerms([semanticQuery], splitsWords: true)
+            : plannedTerms
+        return RAGKeywordSearchQuery(
+            terms: terms,
+            sqliteFTS5Expression: terms.map(fts5Clause).joined(separator: " OR "),
+            externalQuery: terms.joined(separator: " "),
+            usedSemanticFallback: usedSemanticFallback
+        )
+    }
+
+    private static func normalizedTerms(_ values: [String], splitsWords: Bool) -> [String] {
+        let stopWords: Set<String> = [
+            "a", "an", "and", "about", "for", "in", "introduction", "of", "overview",
+            "project", "repository", "the", "to"
+        ]
+        let candidates = splitsWords
+            ? values.flatMap { $0.split(whereSeparator: { $0.isWhitespace }).map(String.init) }
+            : values
+        var seen: Set<String> = []
+        var result: [String] = []
+        for candidate in candidates {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = String(trimmed.prefix(maximumTermLength))
+            let identity = value.lowercased()
+            guard !value.isEmpty,
+                  !stopWords.contains(identity),
+                  seen.insert(identity).inserted else { continue }
+            result.append(value)
+            if result.count == maximumTermCount { break }
+        }
+        return result
+    }
+
+    private static func fts5Clause(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\"*"
+    }
+}
+
 protocol RAGKeywordSearchProvider: Sendable {
     var backendName: String { get }
-    func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
+    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
 }
 
 protocol RAGVectorSearchProvider: Sendable {
@@ -29,8 +96,14 @@ struct SQLiteRAGKeywordSearchProvider: RAGKeywordSearchProvider {
         self.repository = repository
     }
 
-    func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
-        let hits = try await repository.keywordSearch(query: query, model: model, repoIDs: repoIDs, limit: limit)
+    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        guard query.isExecutable else { return [] }
+        let hits = try await repository.keywordSearch(
+            query: query.sqliteFTS5Expression,
+            model: model,
+            repoIDs: repoIDs,
+            limit: limit
+        )
         // SQLite bm25 的绝对值与语料规模有关，跨查询不可直接比较；这里保留相对次序，
         // 由 fusion 使用 reciprocal rank 与 vector 统一量纲。
         return hits.enumerated().map { index, hit in

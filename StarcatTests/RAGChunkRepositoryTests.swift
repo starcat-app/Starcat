@@ -217,7 +217,10 @@ struct RAGChunkRepositoryTests {
         )
 
         let hits = try await repository.keywordSearch(
-            query: "vector",
+            query: RAGKeywordQueryBuilder.build(
+                keywordQueries: ["missing term", "vector"],
+                semanticQuery: ""
+            ).sqliteFTS5Expression,
             model: "embed-v1",
             repoIDs: [10, 11],
             limit: 10
@@ -255,7 +258,10 @@ struct RAGChunkRepositoryTests {
         #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [43]))
 
         let keywordHits = try await repository.keywordSearch(
-            query: "homepage",
+            query: RAGKeywordQueryBuilder.build(
+                keywordQueries: ["homepage"],
+                semanticQuery: ""
+            ).sqliteFTS5Expression,
             model: "embed-v1",
             repoIDs: [43],
             limit: 10

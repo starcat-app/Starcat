@@ -31,6 +31,7 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
     /// 关键词后端可同步当前模型的向量分片与本地 FTS-only Metadata；向量后端只能使用 ready 分片。
     func fetchKeywordSearchableChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
+    /// `query` 必须是由 RAG 专用构造器生成的安全 FTS5 表达式；Repository 不再二次改写语义。
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
     func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws
     func markFailed(_ chunks: [RAGEmbeddingIdentity], claimID: String, error: String) async throws
@@ -545,7 +546,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
     }
 
     func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit] {
-        let ftsQuery = FTSQuery.sanitize(query)
+        let ftsQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ftsQuery.isEmpty, !repoIDs.isEmpty, limit > 0 else { return [] }
         return try await database.writer.read { db in
             let placeholders = Array(repeating: "?", count: repoIDs.count).joined(separator: ",")

@@ -1448,6 +1448,13 @@ struct RAGWorkspaceInspector: View {
                         if !semanticQuery.isEmpty {
                             planQuestionValue("rag.workspace.inspector.semanticQuery", value: semanticQuery)
                         }
+                        let keywordQueries = resolvedKeywordQueries(plan)
+                        if !keywordQueries.isEmpty {
+                            planQuestionValue(
+                                "rag.workspace.inspector.keywordQueries",
+                                value: keywordQueries.joined(separator: " · ")
+                            )
+                        }
                         if !plan.userVisiblePlan.planningNotes.isEmpty {
                             Text("rag.workspace.inspector.planNotes")
                                 .font(ragFont(.caption))
@@ -1637,18 +1644,22 @@ struct RAGWorkspaceInspector: View {
                             )
                             retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.keyword",
-                                value: localizedFunnelCount(
+                                value: localizedRetrievalBranch(
                                     raw: retrieval.keywordRawCount,
-                                    accepted: retrieval.keywordAcceptedCount
+                                    accepted: retrieval.keywordAcceptedCount,
+                                    failure: retrieval.keywordFailure,
+                                    outcome: retrieval.outcome
                                 ),
                                 target: .keyword,
                                 trace: trace
                             )
                             retrievalMetricRow(
                                 "rag.workspace.inspector.plan.retrieval.vector",
-                                value: localizedFunnelCount(
+                                value: localizedRetrievalBranch(
                                     raw: retrieval.vectorRawCount,
-                                    accepted: retrieval.vectorAcceptedCount
+                                    accepted: retrieval.vectorAcceptedCount,
+                                    failure: retrieval.vectorFailure,
+                                    outcome: retrieval.outcome
                                 ),
                                 target: .semantic,
                                 trace: trace
@@ -2278,6 +2289,46 @@ struct RAGWorkspaceInspector: View {
 
     func localizedFunnelCount(raw: Int, accepted: Int) -> String {
         String(format: String.l10n("rag.workspace.inspector.plan.retrieval.funnelFormat"), raw, accepted)
+    }
+
+    /// `0` 只有在分支确实执行完成后才表示零命中；跳过和失败必须给出不同状态，
+    /// 否则用户会误以为限定仓库后根本没有运行分片检索。
+    func localizedRetrievalBranch(
+        raw: Int,
+        accepted: Int,
+        failure: RAGRetrievalBranchFailure?,
+        outcome: RAGRetrievalDiagnostics.Outcome?
+    ) -> String {
+        switch RAGRetrievalBranchStatus.resolve(
+            raw: raw,
+            accepted: accepted,
+            failure: failure,
+            outcome: outcome
+        ) {
+        case .completed(let raw, let accepted):
+            return localizedFunnelCount(raw: raw, accepted: accepted)
+        case .failed(let failure):
+            return String(
+                format: String.l10n("rag.workspace.inspector.plan.retrieval.branch.failedFormat"),
+                localizedRetrievalFailure(failure)
+            )
+        case .skipped:
+            return String.l10n("rag.workspace.inspector.plan.retrieval.branch.skipped")
+        }
+    }
+
+    func localizedRetrievalFailure(_ failure: RAGRetrievalBranchFailure) -> String {
+        switch failure {
+        case .providerError:
+            return String.l10n("rag.workspace.inspector.plan.retrieval.branch.providerError")
+        }
+    }
+
+    /// 新计划直接展示 Planner 关键词；旧自定义 Prompt 没有该字段时，回退到 Retriever
+    /// 实际执行的查询轨迹，确保界面展示与真实 FTS5 请求一致。
+    func resolvedKeywordQueries(_ plan: RAGQueryPlan) -> [String] {
+        if !plan.keywordQueries.isEmpty { return plan.keywordQueries }
+        return viewModel.displayedRetrievalTrace?.keywordQuery?.terms ?? []
     }
 
     func localizedRerank(_ snapshot: RAGRetrievalSnapshot) -> String {

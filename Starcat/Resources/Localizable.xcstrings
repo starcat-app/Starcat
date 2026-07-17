@@ -23684,6 +23684,54 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.retrieval.branch.failedFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行失败 · %@"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.branch.providerError": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "retrieval provider unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检索服务不可用"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.branch.skipped": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skipped"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.retrieval.detail.unavailable": {
       "localizations": {
         "en": {
@@ -24608,6 +24656,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.keywordQueries": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword queries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词查询"
           }
         }
       }
@@ -27840,6 +27904,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "最低向量相似度：%.2f"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.retrieval.query.ftsFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FTS5 expression: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FTS5 表达式：%@"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.retrieval.query.semanticFallback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source: optimized-query fallback"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源：优化问题降级"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.retrieval.query.termsFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terms: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词：%@"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.retrieval.query.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyword Query"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词查询"
           }
         }
       }

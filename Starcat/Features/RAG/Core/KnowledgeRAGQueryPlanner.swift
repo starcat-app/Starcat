@@ -128,6 +128,12 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
     ) async throws -> RAGQueryPlan {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { throw RAGQueryPlannerError.emptyQuestion }
+        // 仓库范围已经由 id 强制执行；从关键词中移除显式 fullName/name，避免 identity
+        // 没出现在 README 分片时把字面召回错误收紧为零。
+        let excludedKeywordTerms = Set(composerContext.explicitRepoReferences.flatMap { reference in
+            let name = reference.fullName.split(separator: "/").last.map(String.init) ?? reference.fullName
+            return [reference.fullName, name]
+        })
 
         let request = AIChatRequest(
             systemPrompt: promptConfiguration.renderedSystemPrompt(placeholders: [
@@ -145,7 +151,11 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             onDebugEvent: onDebugEvent
         )
         do {
-            return try Self.decodeAndValidate(firstContent, fallbackQuestion: question)
+            return try Self.decodeAndValidate(
+                firstContent,
+                fallbackQuestion: question,
+                excludedKeywordTerms: excludedKeywordTerms
+            )
         } catch {
             guard Self.isPlanFormatError(error) else { throw error }
             // 部分 OpenAI-compatible 服务忽略 response_format 或会在 JSON 外加解释；只有
@@ -160,7 +170,11 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
                 onDebugEvent: onDebugEvent
             )
             do {
-                return try Self.decodeAndValidate(retryContent, fallbackQuestion: question)
+                return try Self.decodeAndValidate(
+                    retryContent,
+                    fallbackQuestion: question,
+                    excludedKeywordTerms: excludedKeywordTerms
+                )
             } catch {
                 guard Self.isPlanFormatError(error) else { throw error }
                 onDebugEvent(.failure, String.l10n("rag.core.plan.debug.unparseableFallback"))
@@ -272,7 +286,11 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
         return basePrompt + metadataContext + Self.analyticsCapabilityPrompt
     }
 
-    static func decodeAndValidate(_ raw: String, fallbackQuestion: String) throws -> RAGQueryPlan {
+    static func decodeAndValidate(
+        _ raw: String,
+        fallbackQuestion: String,
+        excludedKeywordTerms: Set<String> = []
+    ) throws -> RAGQueryPlan {
         let json = extractJSONObject(raw)
         guard let data = json.data(using: .utf8) else {
             throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.jsonEncoding"))
@@ -294,6 +312,10 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
         var plan = try decoder.decode(RAGQueryPlan.self, from: data)
         try validateRanges(plan.filters)
         plan.semanticQuery = plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        plan.keywordQueries = normalizedKeywordQueries(
+            plan.keywordQueries,
+            excluding: excludedKeywordTerms
+        )
         plan.candidateLimit = plan.candidateLimit.map { min(max($0, 1), 1_000) }
         plan.remoteContextRequests = normalizeRemoteContextRequests(plan.remoteContextRequests)
         plan.webSearchRequests = normalizeWebSearchRequests(plan.webSearchRequests)
@@ -303,6 +325,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             // 聚合/排行由本地执行器完成，不需要分片检索，也不能附带任意联网副作用。
             plan.mode = .structuredOnly
             plan.semanticQuery = ""
+            plan.keywordQueries = []
             plan.remoteContextRequests = []
             plan.webSearchRequests = []
             plan.requiresLiveEvidence = false
@@ -329,6 +352,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
                 plan.mode = .semanticOnly
             }
         case .structuredOnly:
+            plan.keywordQueries = []
             guard plan.analytics != nil || plan.filters.hasEffectiveConditions || plan.sort != nil else {
                 throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.structuredConditionsMissing"))
             }
@@ -336,6 +360,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             // 引导模式不执行任何数据访问。即使不可信 Planner 同时给了过滤或联网请求，
             // 本地也必须清空，不能让一条闲聊问题触发隐藏副作用。
             plan.semanticQuery = ""
+            plan.keywordQueries = []
             plan.filters = .init()
             plan.sort = nil
             plan.candidateLimit = nil
@@ -343,6 +368,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             plan.webSearchRequests = []
             plan.requiresLiveEvidence = false
         case .needsClarification:
+            plan.keywordQueries = []
             guard let clarification = plan.clarificationQuestion?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !clarification.isEmpty else {
                 throw RAGQueryPlannerError.invalidPlan(String.l10n("rag.core.plan.error.clarificationMissing"))
@@ -364,6 +390,33 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             .prefix(3)
             .map { String($0.prefix(180)) }
         return plan
+    }
+
+    /// Planner 是概率输出，因此本地必须把数量、长度、低信息词和重复项收口为稳定协议。
+    /// 这里只接受字面文本，不解析或执行模型返回的任何 FTS5 操作符。
+    private static func normalizedKeywordQueries(
+        _ values: [String],
+        excluding excludedTerms: Set<String>
+    ) -> [String] {
+        let lowInformationTerms: Set<String> = [
+            "project", "repository", "introduction", "overview",
+            "项目", "仓库", "介绍", "如何", "怎么"
+        ]
+        let excluded = Set(excludedTerms.map { $0.lowercased() })
+        var seen: Set<String> = []
+        var normalized: [String] = []
+        for rawValue in values {
+            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+            let limited = String(value.prefix(80))
+            let identity = limited.lowercased()
+            guard !lowInformationTerms.contains(identity),
+                  !excluded.contains(identity),
+                  seen.insert(identity).inserted else { continue }
+            normalized.append(limited)
+            if normalized.count == 8 { break }
+        }
+        return normalized
     }
 
     /// 作为不可编辑的附加约束拼到 Planner 请求。即使用户保留旧自定义模板，模型也仍能知道

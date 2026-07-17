@@ -121,7 +121,8 @@ struct FallbackRAGKeywordSearchProvider: RAGKeywordSearchProvider {
         self.backendName = fallbackToSQLite ? "\(primary.backendName) → \(fallback.backendName)" : primary.backendName
     }
 
-    func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        guard query.isExecutable else { return [] }
         do {
             let hits = try await primary.search(query: query, model: model, repoIDs: repoIDs, limit: limit)
             guard hits.isEmpty, fallbackToSQLite else { return hits }
@@ -181,10 +182,11 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
         self.httpClient = httpClient
     }
 
-    func search(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+        guard query.isExecutable else { return [] }
         try validate()
         let filter = "repo_id IN [\(repoIDs.map(String.init).joined(separator: ","))] AND ((embedding_model = \"\(escape(model))\" AND embedding_status = \"ready\") OR embedding_status = \"keyword_only\")"
-        let body: [String: Any] = ["q": query, "limit": limit, "filter": filter, "attributesToRetrieve": ["id"]]
+        let body: [String: Any] = ["q": query.externalQuery, "limit": limit, "filter": filter, "attributesToRetrieve": ["id"]]
         let data = try await request(path: "indexes/\(configuration.indexName)/search", method: "POST", json: body)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let hits = object["hits"] as? [[String: Any]] else {
