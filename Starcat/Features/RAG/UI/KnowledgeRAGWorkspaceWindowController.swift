@@ -14,6 +14,7 @@ import AppKit
 import MarkdownUI
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 知识库 RAG 工作台窗口尺寸策略。
 private enum KnowledgeRAGWorkspaceWindowMetrics {
@@ -248,6 +249,23 @@ enum KnowledgeRAGBrowserManagedItem: Identifiable {
     static func repoContextInsertionIndex(in sources: [RAGChunkSource]) -> Int {
         guard let metadataIndex = sources.firstIndex(of: .metadata) else { return 0 }
         return min(metadataIndex + 1, sources.count)
+    }
+}
+
+/// RepoContext XML 导出的纯文件能力。NSSavePanel 留在 View，文件名与原子写入保持可单测。
+enum RepoContextXMLExport {
+    static func defaultFilename(owner: String, repo: String) -> String {
+        "\(safeFilenameComponent(owner))-\(safeFilenameComponent(repo))-context.xml"
+    }
+
+    static func writeDraft(_ xml: String, to url: URL) throws {
+        try Data(xml.utf8).write(to: url, options: .atomic)
+    }
+
+    private static func safeFilenameComponent(_ value: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/:\\")
+        let parts = value.components(separatedBy: invalid).filter { !$0.isEmpty }
+        return parts.isEmpty ? "repository" : parts.joined(separator: "-")
     }
 }
 
@@ -2050,6 +2068,7 @@ private struct KnowledgeRAGChunkEditor: View {
     let editorTitleKey: LocalizedStringKey
     let locksMetadataFields: Bool
     let usesMonospacedEditor: Bool
+    let repoContextExportIdentity: (owner: String, repo: String)?
     let isExcluded: Bool?
     let retrievalMetadata: (repositoryName: String, ownerAvatarURL: String?, kind: String, score: Double, vectorSimilarity: Double?)?
     let onSave: ((String, String, String) async -> String?)?
@@ -2068,6 +2087,7 @@ private struct KnowledgeRAGChunkEditor: View {
         editorTitleKey = "rag.browser.chunk.edit"
         locksMetadataFields = false
         usesMonospacedEditor = false
+        repoContextExportIdentity = nil
         isExcluded = chunk.isExcluded
         retrievalMetadata = nil
         self.onSave = onSave
@@ -2084,6 +2104,7 @@ private struct KnowledgeRAGChunkEditor: View {
         editorTitleKey = "rag.browser.repoContext.title"
         locksMetadataFields = true
         usesMonospacedEditor = true
+        repoContextExportIdentity = (repoContext.metadata.owner, repoContext.metadata.repo)
         isExcluded = nil
         retrievalMetadata = nil
         self.onSave = { _, _, content in await onSave(content) }
@@ -2100,6 +2121,7 @@ private struct KnowledgeRAGChunkEditor: View {
         editorTitleKey = "rag.browser.retrieval.detail"
         locksMetadataFields = false
         usesMonospacedEditor = false
+        repoContextExportIdentity = nil
         isExcluded = nil
         retrievalMetadata = (
             hit.repositoryName,
@@ -2139,6 +2161,19 @@ private struct KnowledgeRAGChunkEditor: View {
                     .focusEffectDisabled()
                     .help("rag.browser.chunk.edit")
                     .accessibilityLabel(Text("rag.browser.chunk.edit"))
+                }
+                if repoContextExportIdentity != nil {
+                    Button {
+                        exportRepoContextDraft()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.title3.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.browser.repoContext.download")
+                    .accessibilityLabel(Text("rag.browser.repoContext.download"))
                 }
                 SheetCloseButton(action: { dismiss() })
             }
@@ -2255,6 +2290,28 @@ private struct KnowledgeRAGChunkEditor: View {
             height: interfaceScale.scaled(540),
             alignment: .topLeading
         )
+    }
+
+    /// 导出当前 `@State content`，因此用户尚未点击保存的修改也会进入下载文件；此操作
+    /// 不调用 storage，不会改变缓存、metadata 或编辑器脏状态。
+    private func exportRepoContextDraft() {
+        guard let identity = repoContextExportIdentity else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.xml]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = RepoContextXMLExport.defaultFilename(
+            owner: identity.owner,
+            repo: identity.repo
+        )
+        panel.title = String.l10n("rag.browser.repoContext.download.panelTitle")
+        panel.prompt = String.l10n("rag.browser.repoContext.download.action")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try RepoContextXMLExport.writeDraft(content, to: url)
+            saveErrorMessage = nil
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
     }
 
     /// 与证据 popover 同分片 Markdown 气质，略放大以适配 680 详情窗。

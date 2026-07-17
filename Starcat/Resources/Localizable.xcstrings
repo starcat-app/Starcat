@@ -24612,18 +24612,18 @@
         }
       }
     },
-    "rag.workspace.inspector.remoteContext": {
+    "rag.workspace.inspector.network": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remote context"
+            "value": "Network"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "远程上下文"
+            "value": "网络"
           }
         }
       }
@@ -28934,6 +28934,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除 RepoContext XML？"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.download": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载 XML"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.download.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.download.panelTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download RepoContext XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载 RepoContext XML"
           }
         }
       }

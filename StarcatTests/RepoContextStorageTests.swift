@@ -19,6 +19,26 @@ struct RepoContextStorageTests {
         #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.readme, .notes]) == 0)
     }
 
+    @Test("XML 下载文件名稳定且写入当前草稿")
+    func exportsCurrentDraft() throws {
+        #expect(
+            RepoContextXMLExport.defaultFilename(owner: "microsoft", repo: "vscode")
+                == "microsoft-vscode-context.xml"
+        )
+        #expect(
+            RepoContextXMLExport.defaultFilename(owner: "owner/name", repo: "repo:test")
+                == "owner-name-repo-test-context.xml"
+        )
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-repocontext-export-\(UUID().uuidString).xml")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let draft = "<repository><draft>尚未保存</draft></repository>"
+
+        try RepoContextXMLExport.writeDraft(draft, to: url)
+
+        #expect(try String(contentsOf: url, encoding: .utf8) == draft)
+    }
+
     @Test("合法编辑原子更新 XML 与 metadata，但不增加生成次数")
     func savesEditedDocumentAndDerivedMetadata() throws {
         let fixture = try makeFixture()

@@ -46,12 +46,12 @@
 
 ## 4. XML 下载
 
-- [ ] 编辑 sheet header 增加 `square.and.arrow.down` 下载按钮。
-- [ ] `NSSavePanel` 限定 XML，默认文件名为 `<owner>-<repo>-context.xml`。
-- [ ] 导出当前编辑器草稿，包括未保存修改。
-- [ ] 下载不修改缓存和编辑器脏状态。
-- [ ] 用户取消静默返回，写入失败在 sheet 展示错误。
-- [ ] 补齐导出文件名、当前草稿与缓存不变测试。
+- [x] 编辑 sheet header 增加 `square.and.arrow.down` 下载按钮。
+- [x] `NSSavePanel` 限定 XML，默认文件名为 `<owner>-<repo>-context.xml`。
+- [x] 导出当前编辑器草稿，包括未保存修改。
+- [x] 下载不修改缓存和编辑器脏状态。
+- [x] 用户取消静默返回，写入失败在 sheet 展示错误。
+- [x] 补齐导出文件名、当前草稿与缓存不变测试。
 
 ## 5. 主动生成、进度与取消
 
