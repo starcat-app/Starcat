@@ -2381,11 +2381,105 @@ struct RAGWorkspaceInspector: View {
                 )
             }
 
+            // 来源覆盖 + 无法召回缺口：均来自元数据快照。快照要等首次问答或打开工作台时才拉取，
+            // 因此为空时整段隐藏，不占位、不显示占位 0。
+            if let snapshot = viewModel.knowledgeBaseMetadataSnapshot {
+                if !snapshot.sourceIndexCoverage.isEmpty {
+                    Divider()
+                    indexSourceCoverageSection(snapshot)
+                }
+
+                Divider()
+                indexCoverageGapSection(snapshot)
+            }
+
             Divider()
 
             indexBuildSection
         }
         .padding(Self.inspectorContentInset)
+    }
+
+    /// 各来源实际进入 RAG 的分片覆盖，帮助区分「有摘要/笔记」与「该来源已可检索」。
+    @ViewBuilder
+    func indexSourceCoverageSection(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("rag.workspace.inspector.metadata.group.sourceCoverage")
+                .font(ragFont(.callout, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(snapshot.sourceIndexCoverage.enumerated()), id: \.element.source.rawValue) { index, item in
+                    indexInfoRow(
+                        item.source.titleKey,
+                        value: String(
+                            format: String.l10n("rag.workspace.inspector.metadata.sourceCoverageFormat"),
+                            localizedInteger(item.repositoryCount),
+                            localizedInteger(item.readyChunkCount)
+                        ),
+                        rowIndex: index
+                    )
+                }
+            }
+        }
+    }
+
+    /// 无法召回的缺口：无 README / 无可索引来源属于「有仓库却召不到」，>0 时以橙色提示；
+    /// 已排除分片是用户主动行为，保持中性色不误报为告警。
+    @ViewBuilder
+    func indexCoverageGapSection(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("rag.workspace.inspector.metadata.group.availability")
+                .font(ragFont(.callout, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                indexInfoRow(
+                    "rag.workspace.inspector.metadata.withoutREADME",
+                    value: localizedInteger(snapshot.withoutReadmeSourceProjectCount),
+                    rowIndex: 0,
+                    valueColor: snapshot.withoutReadmeSourceProjectCount > 0 ? .orange : .secondary
+                )
+                indexInfoRow(
+                    "rag.workspace.inspector.metadata.withoutIndexableSource",
+                    value: localizedInteger(snapshot.withoutIndexableSourceProjectCount),
+                    rowIndex: 1,
+                    valueColor: snapshot.withoutIndexableSourceProjectCount > 0 ? .orange : .secondary
+                )
+                indexInfoRow(
+                    "rag.workspace.inspector.metadata.excludedChunks",
+                    value: localizedInteger(snapshot.excludedChunkCount),
+                    rowIndex: 2
+                )
+            }
+        }
+    }
+
+    /// 索引 Tab 内的只读键值行：非交互，仅斑马纹分隔，字号与 issue / 构建阶段行保持一致。
+    func indexInfoRow(
+        _ label: LocalizedStringKey,
+        value: String,
+        rowIndex: Int,
+        valueColor: Color = .secondary
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(ragFont(.caption))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(ragFont(.caption, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(valueColor)
+                .frame(minWidth: 44, alignment: .trailing)
+        }
+        .padding(.horizontal, Self.indexRowHorizontalPadding)
+        .padding(.vertical, Self.indexRowVerticalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045),
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+        )
     }
 
     #if DEBUG
@@ -3412,7 +3506,9 @@ struct RAGWorkspaceInspector: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("rag.workspace.status.readyChunks")
+                // 明确标注为「向量就绪」，与下方「关键词就绪」区分：两者是同一批分片的两种可检索能力，
+                // 而非互斥集合，因此都以 total 为分母展示，避免用户误读为占比之和应为 100%。
+                Text("rag.workspace.inspector.metadata.index.ready")
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
@@ -3423,6 +3519,23 @@ struct RAGWorkspaceInspector: View {
                     .contentTransition(.numericText())
             }
 
+            // 关键词就绪来自元数据快照（indexStatus 不含该口径）；仅在有快照且存在仅关键词分片时展示，
+            // 空库或纯向量库不显示，避免恒为 0 的噪声行。
+            if let keywordReady = viewModel.knowledgeBaseMetadataSnapshot?.indexHealth.keywordOnlyChunks,
+               keywordReady > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("rag.workspace.inspector.metadata.index.keywordReady")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text("\(keywordReady.formatted()) / \(totalChunks.formatted())")
+                        .font(ragFont(.caption, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .contentTransition(.numericText())
+                }
+            }
+
             ProgressView(value: Double(readyChunks), total: Double(max(totalChunks, 1)))
                 .progressViewStyle(.linear)
                 .controlSize(.mini)
@@ -3431,6 +3544,19 @@ struct RAGWorkspaceInspector: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 7)
                 .animation(.easeInOut(duration: 0.18), value: readyChunks)
+
+            // 当前向量模型决定 ready/stale 口径：换模型后旧分片会整体判为过期，这里让用户随时可核对。
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("rag.browser.overview.model")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text(viewModel.embeddingModel)
+                    .font(ragFont(.caption, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
     }
 
