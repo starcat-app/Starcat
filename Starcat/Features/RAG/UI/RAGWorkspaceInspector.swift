@@ -47,6 +47,7 @@ struct RAGWorkspaceInspector: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var inspectorTab: RAGInspectorTab = .evidence
@@ -54,6 +55,11 @@ struct RAGWorkspaceInspector: View {
     @State private var expandedDebugEventIDs: Set<UUID> = []
     /// 正在展开 payload 的 event；未完成前禁用再次点击，避免「点两次」先展开后立刻折叠。
     @State private var pendingExpandDebugEventIDs: Set<UUID> = []
+    /// 已在后台整理完成的正文快照。主线程只消费分块结果，不再同步生成整段 payload。
+    @State private var debugPayloadPresentations: [UUID: RAGDebugPayloadPresentation] = [:]
+    /// 正在后台准备的展开项；与 generation 配合，折叠后到达的旧结果不能重新撑开正文。
+    @State private var loadingDebugPayloadIDs: Set<UUID> = []
+    @State private var debugPayloadLoadGenerations: [UUID: UUID] = [:]
     /// 清空会删除当前会话落盘的 Debug JSON，必须先让用户确认数据范围。
     @State private var isClearDebugTracesConfirmationPresented = false
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
@@ -65,6 +71,15 @@ struct RAGWorkspaceInspector: View {
     @State private var hoveredDebugEventID: UUID?
     /// 光标悬停的引用行；用于给列表加 hover 高亮，展开态优先级更高。
     @State private var hoveredCitationID: UUID?
+    /// 引用是证据 Inspector 的主内容，首次进入默认展开；正文引用跳转也会主动展开。
+    @State private var isCitationsExpanded = true
+    @State private var isCitationsSectionHovered = false
+    /// 网络证据通常只用于核验实时来源，默认收起，避免历史记录挤占引用列表。
+    @State private var isNetworkExpanded = false
+    @State private var isNetworkSectionHovered = false
+    /// 网络记录与引用卡片同为可展开证据行；ID 加 live/history 前缀避免两类来源碰撞。
+    @State private var expandedNetworkItemID: String?
+    @State private var hoveredNetworkItemID: String?
     @State private var isRetrievalScoreExplanationPresented = false
     @State private var isCitationChunkPopoverPresented = false
     @State private var isRepoContextXMLPopoverPresented = false
@@ -187,14 +202,17 @@ struct RAGWorkspaceInspector: View {
             isRepoContextXMLPopoverPresented = false
             isRepoContextXMLPopoverOpening = false
         }
+        .onChange(of: viewModel.selectedConversationID) { _, _ in
+            // 展示快照复制了 Debug payload；切会话时必须连同 generation 一起释放，
+            // 否则旧任务回调和旧正文会在窗口级 State 中持续占用内存。
+            resetDebugExpansionState()
+        }
         #if DEBUG
         .alert("rag.workspace.debug.clear.confirm.title", isPresented: $isClearDebugTracesConfirmationPresented) {
             Button("common.cancel", role: .cancel) {}
             Button("rag.workspace.debug.clear", role: .destructive) {
                 viewModel.clearDebugTraces()
-                expandedDebugTraceIDs = []
-                expandedDebugEventIDs = []
-                pendingExpandDebugEventIDs = []
+                resetDebugExpansionState()
             }
         } message: {
             Text("rag.workspace.debug.clear.confirm.message")
@@ -208,6 +226,7 @@ struct RAGWorkspaceInspector: View {
     private func focusSelectedCitation(using proxy: ScrollViewProxy) {
         guard let citationID = viewModel.selectedCitation?.id else { return }
         inspectorTab = .evidence
+        isCitationsExpanded = true
 
         Task { @MainActor in
             await Task.yield()
@@ -247,162 +266,299 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.body))
                     .foregroundStyle(.secondary)
             } else {
-                // 引文分组标题：前缀引用气泡图标，与元数据分组的「彩色前缀图标 + 标题」保持同一视觉语言。
-                HStack(spacing: 5) {
-                    Image(systemName: "quote.bubble.fill")
-                        .font(iconFont(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text("rag.workspace.inspector.citations")
-                        .font(ragFont(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                }
-
-                // 手风琴：引用列表在上，点一条在该行下方展开细节。
-                ForEach(allCitations) { citation in
-                    let isExpanded = viewModel.selectedCitation?.id == citation.id
-                    VStack(alignment: .leading, spacing: 0) {
-                        Button {
-                            viewModel.toggleCitation(citation)
-                        } label: {
-                            HStack(alignment: .top, spacing: 8) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    RepoIdentityLabel(
-                                        fullName: citation.repoFullName,
-                                        avatarSize: 16,
-                                        font: ragFont(.callout, weight: .semibold),
-                                        spacing: 6,
-                                        showAvatarBorder: false
-                                    )
-                                    // source 图标跟面包屑同排：一眼对来源类型，又不挤第一行 logo。
-                                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                                        Image(systemName: citation.source.systemImageName)
-                                            .font(iconFont(size: 11, weight: .semibold))
-                                            .foregroundStyle(citation.source.tintColor)
-                                        // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
-                                        (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
-                                            .font(ragFont(.caption2))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.tail)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                Spacer(minLength: 4)
-                                Image(systemName: "chevron.right")
-                                    .font(iconFont(size: 11, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-
-                        if isExpanded {
-                            citationDetail(citation)
-                                .padding(.horizontal, 10)
-                                .padding(.bottom, 10)
-                        }
+                // 与元数据同构：整行点击、右侧 chevron 和 hover 底色保持一致。
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        isCitationsExpanded.toggle()
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "quote.bubble.fill")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("rag.workspace.inspector.citations")
+                            .font(ragFont(.callout, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isCitationsExpanded ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
                     .background(
-                        // 展开态优先用 accent 底；未展开时光标悬停给一层浅 accent 反馈，其余保持默认底。
-                        isExpanded
-                            ? Color.accentColor.opacity(0.08)
-                            : (hoveredCitationID == citation.id
-                                ? Color.accentColor.opacity(0.045)
-                                : Color(nsColor: .textBackgroundColor).opacity(0.55)),
-                        in: RoundedRectangle(cornerRadius: 8)
+                        isCitationsSectionHovered ? Color.accentColor.opacity(0.08) : .clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
-                    .overlay(
-                        // 悬停时描一圈淡 accent 边，强化「可点击 + 当前聚焦」的视觉线索。
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(
-                                hoveredCitationID == citation.id && !isExpanded
-                                    ? Color.accentColor.opacity(0.35)
-                                    : Color.clear,
-                                lineWidth: 1
-                            )
-                    )
-                    .onHover { isHovering in
-                        if reduceMotion {
-                            hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
-                        } else {
-                            withAnimation(.easeInOut(duration: 0.12)) {
-                                hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+                .onHover { isCitationsSectionHovered = $0 }
+                .onDisappear { isCitationsSectionHovered = false }
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.15),
+                    value: isCitationsSectionHovered
+                )
+
+                if isCitationsExpanded {
+                    // 手风琴：引用列表在上，点一条在该行下方展开细节。
+                    ForEach(allCitations) { citation in
+                        let isExpanded = viewModel.selectedCitation?.id == citation.id
+                        VStack(alignment: .leading, spacing: 0) {
+                            Button {
+                                viewModel.toggleCitation(citation)
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        RepoIdentityLabel(
+                                            fullName: citation.repoFullName,
+                                            avatarSize: 16,
+                                            font: ragFont(.callout, weight: .semibold),
+                                            spacing: 6,
+                                            showAvatarBorder: false
+                                        )
+                                        // source 图标跟面包屑同排：一眼对来源类型，又不挤第一行 logo。
+                                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                            Image(systemName: citation.source.systemImageName)
+                                                .font(iconFont(size: 11, weight: .semibold))
+                                                .foregroundStyle(citation.source.tintColor)
+                                            // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
+                                            (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
+                                                .font(ragFont(.caption2))
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    Spacer(minLength: 4)
+                                    Image(systemName: "chevron.right")
+                                        .font(iconFont(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .focusEffectDisabled()
+
+                            if isExpanded {
+                                citationDetail(citation)
+                                    .padding(.horizontal, 10)
+                                    .padding(.bottom, 10)
                             }
                         }
-                    }
-                    // ScrollViewReader 必须定位整张卡片；展开后仍以标题顶部作为稳定锚点。
-                    .id(citation.id)
-                }
-            }
-
-            if !viewModel.remoteBlocks.isEmpty {
-                Divider().padding(.top, 4)
-                Text("rag.workspace.inspector.remoteContext")
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                ForEach(viewModel.remoteBlocks, id: \.id) { block in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(block.title)
-                            .font(ragFont(.callout, weight: .semibold))
-                        Text(block.errorMessage ?? block.content)
-                            .font(ragFont(.caption))
-                            .foregroundStyle(block.errorMessage == nil
-                                ? Color(nsColor: .secondaryLabelColor)
-                                : Color.orange)
-                            .lineLimit(6)
-                        inspectorValue(
-                            "rag.workspace.inspector.fetchedAt",
-                            value: localizedTimestamp(block.fetchedAt)
+                        .background(
+                            // 展开态优先用 accent 底；未展开时光标悬停给一层浅 accent 反馈，其余保持默认底。
+                            isExpanded
+                                ? Color.accentColor.opacity(0.08)
+                                : (hoveredCitationID == citation.id
+                                    ? Color.accentColor.opacity(0.045)
+                                    : Color(nsColor: .textBackgroundColor).opacity(0.55)),
+                            in: RoundedRectangle(cornerRadius: 8)
                         )
-                        if let url = block.sourceURL {
-                            Link(destination: url) {
-                                Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                        .overlay(
+                            // 悬停时描一圈淡 accent 边，强化「可点击 + 当前聚焦」的视觉线索。
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(
+                                    hoveredCitationID == citation.id && !isExpanded
+                                        ? Color.accentColor.opacity(0.35)
+                                        : Color.clear,
+                                    lineWidth: 1
+                                )
+                        )
+                        .onHover { isHovering in
+                            if reduceMotion {
+                                hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.12)) {
+                                    hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
+                                }
                             }
-                            .font(ragFont(.caption))
                         }
+                        // ScrollViewReader 必须定位整张卡片；展开后仍以标题顶部作为稳定锚点。
+                        .id(citation.id)
                     }
-                    .padding(.vertical, 5)
                 }
             }
 
-            if !viewModel.historicalRemoteContextAudits.isEmpty {
+            if !viewModel.remoteBlocks.isEmpty || !viewModel.historicalRemoteContextAudits.isEmpty {
                 Divider().padding(.top, 4)
-                Text("rag.workspace.inspector.remoteContext")
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                ForEach(viewModel.historicalRemoteContextAudits) { audit in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(audit.title)
-                            .font(ragFont(.callout, weight: .semibold))
-                        if let errorMessage = audit.errorMessage {
-                            Text(errorMessage)
-                                .font(ragFont(.caption))
-                                .foregroundStyle(.orange)
-                        }
-                        inspectorValue("rag.workspace.inspector.fetchedAt", value: audit.fetchedAt)
-                        if let url = audit.sourceURL {
-                            Link(destination: url) {
-                                Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
-                            }
-                            .font(ragFont(.caption))
-                        }
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        isNetworkExpanded.toggle()
                     }
-                    .padding(.vertical, 5)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "network")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("rag.workspace.inspector.network")
+                            .font(ragFont(.callout, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(iconFont(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isNetworkExpanded ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .background(
+                        isNetworkSectionHovered ? Color.accentColor.opacity(0.08) : .clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+                .onHover { isNetworkSectionHovered = $0 }
+                .onDisappear { isNetworkSectionHovered = false }
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.15),
+                    value: isNetworkSectionHovered
+                )
+
+                if isNetworkExpanded {
+                    ForEach(Array(viewModel.remoteBlocks.enumerated()), id: \.element.id) { rowIndex, block in
+                        networkContextRow(
+                            id: "live:\(block.id)",
+                            title: block.title,
+                            detail: block.errorMessage ?? block.content,
+                            isError: block.errorMessage != nil,
+                            fetchedAt: localizedTimestamp(block.fetchedAt),
+                            sourceURL: block.sourceURL,
+                            rowIndex: rowIndex
+                        )
+                    }
+
+                    ForEach(
+                        Array(viewModel.historicalRemoteContextAudits.enumerated()),
+                        id: \.element.id
+                    ) { rowIndex, audit in
+                        networkContextRow(
+                            id: "history:\(audit.id)",
+                            title: audit.title,
+                            detail: audit.errorMessage,
+                            isError: audit.errorMessage != nil,
+                            fetchedAt: localizedTimestamp(audit.fetchedAt),
+                            sourceURL: audit.sourceURL,
+                            rowIndex: viewModel.remoteBlocks.count + rowIndex
+                        )
+                    }
                 }
             }
         }
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: viewModel.selectedCitation?.id)
+    }
+
+    /// 网络证据行与引用行使用同一信息层级：callout 标题、caption 字段、右侧 chevron。
+    /// 默认底色叠加既有 4.5% primary 斑马纹；hover / 展开态由 accent 覆盖，保证整行反馈。
+    private func networkContextRow(
+        id: String,
+        title: String,
+        detail: String?,
+        isError: Bool,
+        fetchedAt: String,
+        sourceURL: URL?,
+        rowIndex: Int
+    ) -> some View {
+        let isExpanded = expandedNetworkItemID == id
+        let isHovered = hoveredNetworkItemID == id
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    expandedNetworkItemID = isExpanded ? nil : id
+                }
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(ragFont(.callout, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        (Text("rag.workspace.inspector.fetchedAt") + Text(" · \(fetchedAt)"))
+                            .font(ragFont(.caption2))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 9) {
+                    if let detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(ragFont(.caption))
+                            .foregroundStyle(isError ? Color.orange : Color.secondary)
+                            .lineLimit(6)
+                            .textSelection(.enabled)
+                    }
+                    citationField("rag.workspace.inspector.fetchedAt", value: fetchedAt)
+                    if let sourceURL {
+                        Link(destination: sourceURL) {
+                            Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                        }
+                        .font(ragFont(.caption, weight: .semibold))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+        }
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(
+                    isExpanded
+                        ? Color.accentColor.opacity(0.08)
+                        : (isHovered
+                            ? Color.accentColor.opacity(0.045)
+                            : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)))
+                )
+                .allowsHitTesting(false)
+        }
+        .onHover { isHovering in
+            if reduceMotion {
+                hoveredNetworkItemID = isHovering ? id : (hoveredNetworkItemID == id ? nil : hoveredNetworkItemID)
+            } else {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    hoveredNetworkItemID = isHovering ? id : (hoveredNetworkItemID == id ? nil : hoveredNetworkItemID)
+                }
+            }
+        }
+        .onDisappear {
+            if hoveredNetworkItemID == id {
+                hoveredNetworkItemID = nil
+            }
+        }
     }
 
     @ViewBuilder
@@ -2439,12 +2595,21 @@ struct RAGWorkspaceInspector: View {
             }
 
             if isExpanded {
-                debugPayloadText(for: event)
-                    .font(ragFont(.caption2, design: .monospaced))
-                    .textSelection(.enabled)
-                    .onAppear {
-                        finishPendingDebugEventExpand(event.id)
-                    }
+                if let presentation = debugPayloadPresentation(for: event.id),
+                   let block = presentation.block(for: event.id) {
+                    debugPayloadChunks(for: event, block: block)
+                        .onAppear {
+                            finishPendingDebugEventExpand(event.id)
+                        }
+                } else {
+                    debugPayloadLoadingSkeleton()
+                        .onAppear {
+                            scheduleDebugPayloadPreparation(
+                                expansionID: event.id,
+                                events: [event]
+                            )
+                        }
+                }
             }
         }
         .padding(.horizontal, 6)
@@ -2484,6 +2649,7 @@ struct RAGWorkspaceInspector: View {
     ) -> some View {
         let groupID = events.first?.id
         let isExpanded = groupID.map { expandedDebugEventIDs.contains($0) } ?? false
+        let isExpandPending = groupID.map { pendingExpandDebugEventIDs.contains($0) } ?? false
         let totalDuration = events.reduce(0) { result, event in
             result + (stepDurations[event.id] ?? 0)
         }
@@ -2508,15 +2674,23 @@ struct RAGWorkspaceInspector: View {
                     // 给复制留位，保证 chevron 与普通 stage 行保持同一列。
                     Color.clear
                         .frame(width: 10)
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(ragFont(.caption2, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 12)
+                    if isExpandPending {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(ragFont(.caption2, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .disabled(isExpandPending)
+            .opacity(isExpandPending ? 0.72 : 1)
             .overlay(alignment: .trailing) {
                 CopyFeedbackButton(
                     providesContent: {
@@ -2536,16 +2710,32 @@ struct RAGWorkspaceInspector: View {
                 .padding(.trailing, 18)
             }
 
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(events.enumerated()), id: \.element.id) { blockIndex, event in
-                        if blockIndex > 0 {
-                            Divider()
+            if isExpanded, let groupID {
+                if let presentation = debugPayloadPresentation(for: groupID) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(events.enumerated()), id: \.element.id) { blockIndex, event in
+                            if blockIndex > 0 {
+                                Divider()
+                            }
+                            if let block = presentation.block(for: event.id) {
+                                debugRepoContextBlock(event, block: block)
+                            }
                         }
-                        debugRepoContextBlock(event)
                     }
+                    .padding(.horizontal, 6)
+                    .onAppear {
+                        finishPendingDebugEventExpand(groupID)
+                    }
+                } else {
+                    debugPayloadLoadingSkeleton(lineCount: 5)
+                        .padding(.horizontal, 6)
+                        .onAppear {
+                            scheduleDebugPayloadPreparation(
+                                expansionID: groupID,
+                                events: events
+                            )
+                        }
                 }
-                .padding(.horizontal, 6)
             }
         }
         .padding(.horizontal, 6)
@@ -2577,7 +2767,10 @@ struct RAGWorkspaceInspector: View {
     }
 
     /// 组内区块只承担阶段辨识与 payload 展示，不再重复复制、耗时和折叠控件。
-    private func debugRepoContextBlock(_ event: RAGDebugEvent) -> some View {
+    private func debugRepoContextBlock(
+        _ event: RAGDebugEvent,
+        block: RAGDebugPayloadPresentation.Block
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: debugStageIcon(event.stage))
@@ -2589,9 +2782,7 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.caption2, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            debugPayloadText(for: event)
-                .font(ragFont(.caption2, design: .monospaced))
-                .textSelection(.enabled)
+            debugPayloadChunks(for: event, block: block)
         }
         .padding(.vertical, 8)
     }
@@ -2607,18 +2798,42 @@ struct RAGWorkspaceInspector: View {
 
     /// 仅检索诊断拥有稳定的结构化指标；Prompt、模型响应等自由文本可能含端口、模型版本或参数，
     /// 不应因其中出现数字而被误标为检索关键信息。
-    private func debugPayloadText(for event: RAGDebugEvent) -> Text {
-        let payload = event.renderedPayload()
+    private func debugPayloadText(
+        for event: RAGDebugEvent,
+        payload: String,
+        rerankAppliedNotes: [String]
+    ) -> Text {
         if event.retrievalPayload != nil {
             return highlightedDebugPayload(payload)
         }
-        if let rerankPayload = event.rerankPayload {
+        if event.rerankPayload != nil {
             return styledRerankDebugPayload(
                 payload,
-                notes: rerankPayload.renderedAppliedNotes()
+                notes: rerankAppliedNotes
             )
         }
         return Text(payload)
+    }
+
+    /// 每个 Text 都有严格体积上限，并由外层 ScrollView 的 LazyVStack 按视口挂载。
+    /// 这样既保留选中/复制能力，也不会让一段超长 Prompt 独占整个窗口的主线程。
+    @ViewBuilder
+    private func debugPayloadChunks(
+        for event: RAGDebugEvent,
+        block: RAGDebugPayloadPresentation.Block
+    ) -> some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(block.chunks.indices, id: \.self) { index in
+                debugPayloadText(
+                    for: event,
+                    payload: block.displayText(at: index),
+                    rerankAppliedNotes: block.rerankAppliedNotes
+                )
+                .font(ragFont(.caption2, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     /// Rerank 主体继续使用紧凑等宽字；仅汇总说明降一级为灰色备注，减少长 Trace 的视觉噪音。
@@ -2661,16 +2876,23 @@ struct RAGWorkspaceInspector: View {
     /// 避免热更新或历史视图状态让已合并的子阶段残留为独立展开项。
     private func toggleRepoContextDebugGroupExpansion(_ events: [RAGDebugEvent]) {
         guard let groupID = events.first?.id else { return }
+        let eventIDs = Set(events.map(\.id))
         let isExpanded = expandedDebugEventIDs.contains(groupID)
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-            if isExpanded {
-                expandedDebugEventIDs.subtract(events.map(\.id))
-                pendingExpandDebugEventIDs.subtract(events.map(\.id))
-            } else {
-                expandedDebugEventIDs.insert(groupID)
+        if isExpanded {
+            // 正文尚未挂载完成时不允许折叠，与普通 stage 行同一把锁。
+            guard !pendingExpandDebugEventIDs.contains(groupID) else { return }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                expandedDebugEventIDs.subtract(eventIDs)
+                ()
             }
-            ()
+            clearDebugEventExpandState(groupID)
+            for eventID in eventIDs where eventID != groupID {
+                clearDebugEventExpandState(eventID)
+            }
+            return
         }
+
+        beginDebugEventExpand(groupID)
     }
 
     /// 由累计 `elapsedSeconds` 差分得到本步耗时；首条相对 ask 起点。
@@ -2692,7 +2914,9 @@ struct RAGWorkspaceInspector: View {
                 expandedDebugTraceIDs.remove(trace.id)
                 let eventIDs = Set(trace.events.map(\.id))
                 expandedDebugEventIDs.subtract(eventIDs)
-                pendingExpandDebugEventIDs.subtract(eventIDs)
+                for eventID in eventIDs {
+                    clearDebugEventExpandState(eventID)
+                }
             } else {
                 expandedDebugTraceIDs.insert(trace.id)
             }
@@ -2700,35 +2924,128 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
-    /// 折叠可立刻切；展开先加 pending 锁，等 payload `onAppear`（或超时兜底）再解锁。
+    /// 折叠可立刻切；展开先立刻打开壳子 + pending 锁，正文延后到下一帧挂载。
     private func toggleDebugEventExpansion(_ event: RAGDebugEvent) {
         let isExpanded = expandedDebugEventIDs.contains(event.id)
         if isExpanded {
+            guard !pendingExpandDebugEventIDs.contains(event.id) else { return }
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                 expandedDebugEventIDs.remove(event.id)
                 ()
             }
-            pendingExpandDebugEventIDs.remove(event.id)
+            clearDebugEventExpandState(event.id)
             return
         }
 
-        guard !pendingExpandDebugEventIDs.contains(event.id) else { return }
-        pendingExpandDebugEventIDs.insert(event.id)
+        beginDebugEventExpand(event.id)
+    }
+
+    /// 统一展开入口：先展开 + 上锁，骨架占位；正文渲染完成前不能再点。
+    private func beginDebugEventExpand(_ eventID: UUID) {
+        guard !pendingExpandDebugEventIDs.contains(eventID) else { return }
+        let generation = UUID()
+        pendingExpandDebugEventIDs.insert(eventID)
+        debugPayloadPresentations.removeValue(forKey: eventID)
+        loadingDebugPayloadIDs.remove(eventID)
+        debugPayloadLoadGenerations[eventID] = generation
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-            expandedDebugEventIDs.insert(event.id)
+            expandedDebugEventIDs.insert(eventID)
             ()
         }
 
-        // 极端超大 payload 若 `onAppear` 迟迟不来，2s 后仍解锁，避免行永久禁用。
-        let eventID = event.id
+        // 兜底只解除交互锁，绝不能像旧实现一样强制挂载尚未准备好的巨型 Text；
+        // 后台任务完成后仍可正常提交，用户也可以先折叠离开。
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
+            guard expandedDebugEventIDs.contains(eventID),
+                  debugPayloadLoadGenerations[eventID] == generation else { return }
             finishPendingDebugEventExpand(eventID)
         }
     }
 
+    /// 骨架出现后才开始后台准备。`RAGDebugEvent` 是 Sendable，字符串整理和分块可以安全
+    /// 离开 MainActor；主线程最终只提交不可变快照，不承担 Prompt/XML 的同步构建成本。
+    private func scheduleDebugPayloadPreparation(
+        expansionID: UUID,
+        events: [RAGDebugEvent]
+    ) {
+        guard expandedDebugEventIDs.contains(expansionID),
+              debugPayloadPresentation(for: expansionID) == nil,
+              !loadingDebugPayloadIDs.contains(expansionID) else { return }
+
+        let generation = debugPayloadLoadGenerations[expansionID] ?? UUID()
+        let localeIdentifier = locale.identifier
+        debugPayloadLoadGenerations[expansionID] = generation
+        loadingDebugPayloadIDs.insert(expansionID)
+
+        Task { @MainActor in
+            let presentation = await Task.detached(priority: .userInitiated) {
+                RAGDebugPayloadPresentationBuilder.make(
+                    expansionID: expansionID,
+                    events: events,
+                    localeIdentifier: localeIdentifier
+                )
+            }.value
+
+            // 折叠/重开会换 generation；旧任务即使稍后返回，也只能被丢弃。
+            guard debugPayloadLoadGenerations[expansionID] == generation else { return }
+            loadingDebugPayloadIDs.remove(expansionID)
+            guard expandedDebugEventIDs.contains(expansionID),
+                  locale.identifier == localeIdentifier else { return }
+            debugPayloadPresentations[expansionID] = presentation
+        }
+    }
+
+    private func debugPayloadPresentation(
+        for expansionID: UUID
+    ) -> RAGDebugPayloadPresentation? {
+        guard let presentation = debugPayloadPresentations[expansionID],
+              presentation.localeIdentifier == locale.identifier else { return nil }
+        return presentation
+    }
+
     private func finishPendingDebugEventExpand(_ eventID: UUID) {
         pendingExpandDebugEventIDs.remove(eventID)
+    }
+
+    private func clearDebugEventExpandState(_ eventID: UUID) {
+        pendingExpandDebugEventIDs.remove(eventID)
+        debugPayloadPresentations.removeValue(forKey: eventID)
+        loadingDebugPayloadIDs.remove(eventID)
+        debugPayloadLoadGenerations.removeValue(forKey: eventID)
+    }
+
+    private func resetDebugExpansionState() {
+        expandedDebugTraceIDs = []
+        expandedDebugEventIDs = []
+        pendingExpandDebugEventIDs = []
+        debugPayloadPresentations = [:]
+        loadingDebugPayloadIDs = []
+        debugPayloadLoadGenerations = [:]
+    }
+
+    /// Debug 正文加载占位：行数短、不抢主线程，只表达「已展开、正在挂载」。
+    @ViewBuilder
+    private func debugPayloadLoadingSkeleton(lineCount: Int = 4) -> some View {
+        SkeletonAnimatedPhase { phase in
+            let palette = SkeletonPalette.forColorScheme(colorScheme)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(0..<lineCount, id: \.self) { index in
+                    SkeletonBlock(
+                        width: nil,
+                        maxWidth: index == lineCount - 1 ? 160 : nil,
+                        height: 8,
+                        cornerRadius: 3,
+                        phase: phase,
+                        phaseOffset: Double(index) * 0.08,
+                        palette: palette
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+            .accessibilityLabel(Text("rag.workspace.conversation.loading"))
+        }
     }
 
     func debugStageKey(_ stage: RAGDebugEvent.Stage) -> LocalizedStringKey {
@@ -3295,6 +3612,14 @@ struct RAGWorkspaceInspector: View {
     }
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
+    }
+
+    /// 历史网络审计从 SQLite 读出 ISO8601 字符串；展示时再按当前 App 语言和时区格式化。
+    /// 旧数据若无法解析则保留原值，避免为了视觉一致性吞掉可用于排查的信息。
+    func localizedTimestamp(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let date = ISO8601DateFormatter.githubDate(from: value) else { return value }
+        return localizedTimestamp(date)
     }
 
     /// 引用详情里展示分片入库时间；ISO 解析失败则跳过，不堆原始字符串。

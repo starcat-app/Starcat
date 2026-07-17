@@ -1394,6 +1394,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         editingUserMessageID = nil
         editingUserDraft = ""
+        // 发送后问题区需要让出空间给回答流；已选仓库仍保留在 chip，只收起选择面板。
+        dismissMentionPicker()
         // 发送当下立刻清输入框并同步草稿，避免 Task 调度前切走仍把同一段问题存回草稿。
         draftQuestion = ""
         dependencies.ragComposerDraftStore.update(conversationID) { draft in
