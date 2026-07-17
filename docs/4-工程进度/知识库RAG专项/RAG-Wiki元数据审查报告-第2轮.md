@@ -2,7 +2,7 @@
 
 > 审查日期：2026-07-17  
 > 审查范围：Metadata Prompt 语义、预算顺序、citation/hit、知识库分片 UI、详情与搜索 Wiki 展示  
-> 审查结论：发现 1 个 P1、2 个 P2，修复后进入测试与文档一致性审查
+> 审查结论：发现 1 个 P1、2 个 P2，均已修复并通过定向测试 / Debug build
 
 ## 已核对
 
@@ -20,11 +20,15 @@
 
 修复要求：改成两阶段装配。第一阶段只按得分顺序放置各仓库完整 Metadata，Metadata 放不下时减少仓库；第二阶段才在已保留仓库之间加入普通证据。增加双仓库预算测试，证明后一个仓库 Metadata 优先于前一个仓库正文。
 
+> 修复状态：已完成。evidence 改为 Metadata / 普通分片两阶段装配，新增双仓库预算测试，提交 `b11a450`。
+
 ### P2：详情页与全局搜索在冷缓存刷新完成后不会原地显示 Wiki
 
 两处 UI 已改成 cache-first，但只在首次 task 中读取一次。cache miss 会正确排队并写盘，当前页面却不监听 `.wikiCacheDidChange`，因此链接只能在离开并重新进入后看到；相较旧的阻塞请求形成可见行为回退。
 
 修复要求：详情与搜索详情监听缓存变更事件，只在事件 identity 与当前仓库一致时从缓存重新读取；不重复发网络请求，并防止 repo 切换后旧事件覆盖新状态。
+
+> 修复状态：已完成。详情与搜索同时响应 save / reset 事件，按当前 repo identity 过滤且只读缓存，提交 `8b649b4`。
 
 ### P2：Prompt 关键分支缺少直接测试闭环
 
@@ -32,9 +36,11 @@
 
 修复要求：补齐上述测试，并继续断言 Metadata 本身不产生 citation/hit。
 
+> 修复状态：已完成。新增 structured-only compact、双仓库 Metadata-first 测试，并修正完整 / fallback 断言的精确 repo identity，随 `b11a450` 提交。
+
 ## 本轮后续动作
 
-1. 两阶段重写 Metadata-first evidence 装配并补测试。
-2. 为详情页和全局搜索增加缓存变更后的原地回填。
-3. 补齐 structured-only 与多仓库预算测试。
-4. 运行相关测试并回填本报告。
+1. [x] 两阶段重写 Metadata-first evidence 装配并补测试。
+2. [x] 为详情页和全局搜索增加缓存变更后的原地回填。
+3. [x] 补齐 structured-only 与多仓库预算测试。
+4. [x] `KnowledgeRAGCoreTests`、`RAGChunkRepositoryTests` 与 `Starcat` Debug build 通过。
