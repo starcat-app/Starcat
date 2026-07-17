@@ -155,6 +155,8 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
 /// 复用单个知识库浏览器窗口。它只读本地知识库数据，索引操作仍交由既有 builder 执行。
 final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDelegate {
     private static var shared: KnowledgeRAGBrowserWindowController?
+    /// 窗口关闭时必须能取消正在下载/打包的 RepoContext 任务，不能只让 SwiftUI 视图释放。
+    private let viewModel: KnowledgeRAGBrowserViewModel
 
     @MainActor
     static func show(
@@ -196,12 +198,12 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     }
 
     private init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
-        let content = KnowledgeRAGBrowserView(
-            viewModel: KnowledgeRAGBrowserViewModel(
-                dependencies: dependencies,
-                homeViewModel: homeViewModel
-            )
+        let viewModel = KnowledgeRAGBrowserViewModel(
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
         )
+        self.viewModel = viewModel
+        let content = KnowledgeRAGBrowserView(viewModel: viewModel)
         .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
         let window = NSWindow(contentViewController: NSHostingController(rootView: content))
         window.title = ""
@@ -218,7 +220,10 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("KnowledgeRAGBrowserWindowController does not support storyboard initialization") }
 
-    func windowWillClose(_ notification: Notification) { Self.shared = nil }
+    func windowWillClose(_ notification: Notification) {
+        viewModel.cancelRepoContextGeneration()
+        Self.shared = nil
+    }
 }
 
 /// 知识库详情的联合展示项。RepoContext 只存在于这个展示模型，绝不伪造成数据库分片。
@@ -269,6 +274,40 @@ enum RepoContextXMLExport {
     }
 }
 
+/// RepoContext 主动生成只展示 provider 能确认的真实阶段，不虚构无法测量的百分比。
+enum RepoContextGenerationStep: Int, CaseIterable, Sendable, Hashable {
+    case resolving
+    case downloading
+    case packing
+
+    static func map(_ progress: RepoAIContextProgress) -> Self {
+        switch progress {
+        case .resolvingBranch, .checkingCache: return .resolving
+        case .downloadingArchive: return .downloading
+        case .packingContext: return .packing
+        }
+    }
+}
+
+/// 生成状态显式保留成功、失败与取消语义；取消完成后 UI 会收回 idle，但不会误报失败。
+enum RepoContextGenerationState: Equatable, Sendable {
+    case idle
+    case preparing(RepoContextGenerationStep)
+    case succeeded(cacheHit: Bool)
+    case failed(String)
+    case cancelled
+
+    var isActive: Bool {
+        if case .preparing = self { return true }
+        return false
+    }
+
+    var currentStep: RepoContextGenerationStep? {
+        guard case .preparing(let step) = self else { return nil }
+        return step
+    }
+}
+
 /// 浏览器的只读状态协调器。仓库列表与聚合状态必须来自同一次刷新，避免索引重建中出现
 /// “仓库已显示但统计仍属于旧模型”的错配。
 @MainActor
@@ -288,6 +327,12 @@ private final class KnowledgeRAGBrowserViewModel {
     var chunks: [RAGManagedChunk] = []
     /// RepoContext 是文件系统产物，不进入 `rag_chunks`；浏览器只在展示层把它合并为特殊项。
     var repoContextDocument: RepoContextDocument?
+    var repoContextGenerationState: RepoContextGenerationState = .idle
+    var isRepoContextSettingsPromptPresented = false
+    /// UUID 同时防护 repo 切换与“取消后旧 task 迟到回写”两类竞态。
+    private var repoContextGenerationID: UUID?
+    private var repoContextGenerationTask: Task<Void, Never>?
+    private var repoContextGenerationRepo: Repo?
     var hasMoreChunks = false
     var hasMoreRepositories = false
     var isLoading = false
@@ -348,6 +393,7 @@ private final class KnowledgeRAGBrowserViewModel {
     var managedItems: [KnowledgeRAGBrowserManagedItem] {
         KnowledgeRAGBrowserManagedItem.merge(chunks: chunks, repoContext: repoContextDocument)
     }
+    var isGeneratingRepoContext: Bool { repoContextGenerationState.isActive }
 
     func bootstrap() async { await refresh(showsLoading: true) }
 
@@ -392,12 +438,86 @@ private final class KnowledgeRAGBrowserViewModel {
 
     func selectRepository(_ id: Int64) async {
         guard selectedRepoID != id else { return }
+        cancelRepoContextGeneration()
         let requestGeneration = repositorySelectionGate.begin()
         preservesEmptySelection = false
         selectedRepoID = id
         // 先清掉旧仓库 XML，避免磁盘读取完成前短暂展示上一项目的第二行。
         repoContextDocument = nil
         await loadChunks(selectionGeneration: requestGeneration)
+    }
+
+    /// 用户主动生成或重新生成 RepoContext。下载、缓存和打包都复用统一 provider，
+    /// 知识库 UI 只负责生命周期与展示，不复制第二套文件流水线。
+    func generateRepoContext() {
+        guard !isGeneratingRepoContext, let repo = selectedCandidate?.repo else { return }
+        guard dependencies.settings.aiRepoContextEnabled else {
+            isRepoContextSettingsPromptPresented = true
+            return
+        }
+
+        let generationID = UUID()
+        repoContextGenerationID = generationID
+        repoContextGenerationRepo = repo
+        repoContextGenerationState = .preparing(.resolving)
+        let provider = dependencies.repoAIContextProvider
+
+        repoContextGenerationTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let outcome = try await provider.contextOutcome(for: repo) { [weak self] progress in
+                    guard let self,
+                          self.repoContextGenerationID == generationID,
+                          self.selectedRepoID == repo.id else { return }
+                    self.repoContextGenerationState = .preparing(RepoContextGenerationStep.map(progress))
+                }
+                try Task.checkCancellation()
+                guard repoContextGenerationID == generationID,
+                      selectedRepoID == repo.id else { return }
+                switch outcome {
+                case .success(let result):
+                    repoContextDocument = RepoContextDocument(xml: result.xml, metadata: result.metadata)
+                    repoContextGenerationState = .succeeded(cacheHit: result.cacheHit)
+                case .featureDisabled:
+                    // 设置可能在任务执行期间被关闭；不擅自改回开关，仍提示用户处理。
+                    repoContextGenerationState = .idle
+                    isRepoContextSettingsPromptPresented = true
+                case .degraded(let reason):
+                    repoContextGenerationState = .failed(String.l10n(reason.bannerMessageKey))
+                }
+                repoContextGenerationID = nil
+                repoContextGenerationTask = nil
+                repoContextGenerationRepo = nil
+            } catch is CancellationError {
+                guard repoContextGenerationID == generationID else { return }
+                repoContextGenerationState = .cancelled
+                repoContextGenerationState = .idle
+                repoContextGenerationTask = nil
+                repoContextGenerationRepo = nil
+            } catch {
+                guard repoContextGenerationID == generationID else { return }
+                repoContextGenerationState = .failed(error.localizedDescription)
+                repoContextGenerationTask = nil
+                repoContextGenerationRepo = nil
+            }
+        }
+    }
+
+    /// 停止只清理由本轮下载留下的 `.tmp`；provider 明确保留正式 ZIP 和旧有效 XML，
+    /// 所以下次生成仍可命中缓存，也不会因取消丢失现有第二项。
+    func cancelRepoContextGeneration() {
+        let repo = repoContextGenerationRepo
+        repoContextGenerationID = nil
+        repoContextGenerationTask?.cancel()
+        repoContextGenerationTask = nil
+        repoContextGenerationRepo = nil
+        if isGeneratingRepoContext {
+            repoContextGenerationState = .cancelled
+            repoContextGenerationState = .idle
+        }
+        if let repo {
+            dependencies.repoAIContextProvider.cleanupTemporaryContextPreparation(for: repo)
+        }
     }
 
     /// 复用主详情页的知识库移出规则；正在使用的仓库需要先由用户确认状态降级。
@@ -573,6 +693,7 @@ private final class KnowledgeRAGBrowserViewModel {
 
     /// 编辑的是 RepoContext 文件真源；成功后直接替换当前展示快照，不触发普通 RAG 重建。
     func saveRepoContextXML(_ xml: String) -> String? {
+        guard !isGeneratingRepoContext else { return String.l10n("rag.browser.repoContext.generation.inProgress") }
         guard let repo = selectedCandidate?.repo else { return String.l10n("rag.browser.repoContext.error.noRepository") }
         do {
             repoContextDocument = try dependencies.repoContextStorage.saveEditedContextXML(
@@ -588,6 +709,7 @@ private final class KnowledgeRAGBrowserViewModel {
 
     /// RepoContext 删除不写 tombstone；它不是索引分片，用户以后可以重新生成。
     func deleteRepoContext() {
+        guard !isGeneratingRepoContext else { return }
         guard let repo = selectedCandidate?.repo else { return }
         do {
             try dependencies.repoContextStorage.deleteProject(owner: repo.owner, repo: repo.name)
@@ -751,6 +873,7 @@ private final class KnowledgeRAGBrowserViewModel {
             indexes.removeValue(forKey: repoID)
             return
         }
+        cancelRepoContextGeneration()
         // 让仍在执行的分片读取失效，避免移出后旧请求把右栏内容重新写回来。
         _ = repositorySelectionGate.begin()
         preservesEmptySelection = true
@@ -829,6 +952,8 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var hoveredRetrievalHitID: Int64?
     @State private var hoveredChunkID: Int64?
     @State private var hoveredRepoContextID: String?
+    @State private var hoveredRepoContextGenerationStep: RepoContextGenerationStep?
+    @FocusState private var focusedRepoContextGenerationStep: RepoContextGenerationStep?
     @State private var isKnowledgeOverviewExpanded = false
     @State private var isRetrievalTestExpanded = false
     @State private var isKnowledgeOverviewHovered = false
@@ -943,6 +1068,17 @@ private struct KnowledgeRAGBrowserView: View {
             }
         } message: {
             Text("rag.browser.repoContext.delete.message")
+        }
+        .alert(
+            "rag.browser.repoContext.settings.title",
+            isPresented: $viewModel.isRepoContextSettingsPromptPresented
+        ) {
+            Button("common.cancel", role: .cancel) {}
+            Button("rag.browser.repoContext.settings.action") {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+        } message: {
+            Text("rag.browser.repoContext.settings.message")
         }
         .alert(
             "library.removeUsing.confirmTitle",
@@ -1209,15 +1345,18 @@ private struct KnowledgeRAGBrowserView: View {
         }
     }
 
-    /// 圆点与标签同行；数字与整块一起靠左。
+    /// 分类标题与仓库列表项目名同为 body semibold；数字降一档，避免统计值压过分类名称。
     private func overviewStat(_ key: LocalizedStringKey, value: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 7, height: 7)
-                Text(key).font(.caption).lineLimit(1)
+                Text(key)
+                    .font(interfaceScale.font(.body, weight: .semibold))
+                    .lineLimit(1)
             }
             Text(value)
-                .font(.callout.weight(.semibold).monospacedDigit())
+                .font(interfaceScale.font(.caption, weight: .semibold))
+                .monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1756,6 +1895,18 @@ private struct KnowledgeRAGBrowserView: View {
                     repositoryIndexStatisticsLabel(index)
                 }
                 repositoryRefreshTime
+                Button {
+                    viewModel.generateRepoContext()
+                } label: {
+                    Label(
+                        viewModel.repoContextDocument == nil
+                            ? "rag.browser.repoContext.generate"
+                            : "rag.browser.repoContext.regenerate",
+                        systemImage: "chevron.left.forwardslash.chevron.right"
+                    )
+                }
+                .controlSize(.small)
+                .disabled(viewModel.isGeneratingRepoContext)
                 // icon-only：统一走 SyncIconButton，与上下文-索引刷新一致。
                 SyncIconButton(
                     isRefreshing: viewModel.isIndexing,
@@ -1767,6 +1918,7 @@ private struct KnowledgeRAGBrowserView: View {
                     viewModel.rebuildIndex()
                 }
             }
+            repoContextGenerationProgress
             if viewModel.managedItems.isEmpty {
                 ContentUnavailableView("rag.browser.noChunks", systemImage: "doc.text").frame(maxWidth: .infinity, minHeight: 180)
             } else {
@@ -1787,6 +1939,107 @@ private struct KnowledgeRAGBrowserView: View {
                     chunkLoadMore
                 }
             }
+        }
+    }
+
+    /// 三段 chip 只表达 provider 已到达的离散边界。当前 spinner 可 hover / focus 为停止，
+    /// 与主窗口 AI 摘要的取消交互保持一致，也照顾键盘用户。
+    @ViewBuilder
+    private var repoContextGenerationProgress: some View {
+        switch viewModel.repoContextGenerationState {
+        case .idle, .cancelled:
+            EmptyView()
+        case .preparing(let currentStep):
+            HStack(spacing: 8) {
+                ForEach(RepoContextGenerationStep.allCases, id: \.self) { step in
+                    repoContextGenerationChip(step, currentStep: currentStep)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 2)
+        case .succeeded(let cacheHit):
+            Label(
+                cacheHit
+                    ? "rag.browser.repoContext.generation.cacheHit"
+                    : "rag.browser.repoContext.generation.succeeded",
+                systemImage: "checkmark.circle.fill"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.green)
+        case .failed(let message):
+            Label {
+                Text(verbatim: message)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+                .font(.caption)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func repoContextGenerationChip(
+        _ step: RepoContextGenerationStep,
+        currentStep: RepoContextGenerationStep
+    ) -> some View {
+        let isCurrent = step == currentStep
+        let isCompleted = step.rawValue < currentStep.rawValue
+        let offersStop = isCurrent && (
+            hoveredRepoContextGenerationStep == step || focusedRepoContextGenerationStep == step
+        )
+        return Button {
+            guard isCurrent else { return }
+            viewModel.cancelRepoContextGeneration()
+        } label: {
+            HStack(spacing: 5) {
+                Group {
+                    if isCompleted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else if offersStop {
+                        Image(systemName: "stop.circle.fill")
+                            .foregroundStyle(.red)
+                    } else if isCurrent {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "circle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 13, height: 13)
+                Text(LocalizedStringKey(repoContextGenerationStepLocalizationKey(step)))
+                    .foregroundStyle(isCurrent || isCompleted ? .primary : .secondary)
+            }
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(isCurrent ? 0.09 : 0.05), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .focused($focusedRepoContextGenerationStep, equals: step)
+        .onHover { hoveredRepoContextGenerationStep = $0 ? step : nil }
+        .disabled(!isCurrent)
+        .help(String.l10n(
+            isCurrent
+                ? "rag.browser.repoContext.generation.stop"
+                : repoContextGenerationStepLocalizationKey(step)
+        ))
+        .accessibilityLabel(Text(
+            LocalizedStringKey(
+                isCurrent
+                    ? "rag.browser.repoContext.generation.stop"
+                    : repoContextGenerationStepLocalizationKey(step)
+            )
+        ))
+    }
+
+    private func repoContextGenerationStepLocalizationKey(_ step: RepoContextGenerationStep) -> String {
+        switch step {
+        case .resolving: return "rag.browser.repoContext.generation.resolving"
+        case .downloading: return "rag.browser.repoContext.generation.downloading"
+        case .packing: return "rag.browser.repoContext.generation.packing"
         }
     }
 
@@ -1915,6 +2168,7 @@ private struct KnowledgeRAGBrowserView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .pointerStyle(.link)
+            .disabled(viewModel.isGeneratingRepoContext)
 
             HStack(alignment: .center, spacing: 8) {
                 Label("rag.browser.repoContext.available", systemImage: "checkmark.circle.fill")
@@ -1934,6 +2188,7 @@ private struct KnowledgeRAGBrowserView: View {
                 .focusEffectDisabled()
                 .pointerStyle(.link)
                 .foregroundStyle(.red)
+                .disabled(viewModel.isGeneratingRepoContext)
                 .help("rag.browser.repoContext.delete.action")
             }
             .frame(minHeight: 18)

@@ -29006,6 +29006,210 @@
         }
       }
     },
+    "rag.browser.repoContext.generate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate RepoContext XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成 RepoContext XML"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.cacheHit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Existing RepoContext XML is ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复用现有 RepoContext XML"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.downloading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载代码"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.inProgress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext XML is being generated. Stop it before editing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext XML 正在生成，请先停止生成再编辑。"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.packing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成 XML"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.resolving": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolve repository"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析仓库"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop RepoContext generation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止生成 RepoContext"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.generation.succeeded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext XML generated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext XML 已生成"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.regenerate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerate RepoContext XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成 RepoContext XML"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.settings.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open AI Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前往 AI 设置"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.settings.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable code context in AI Settings before generating RepoContext XML. Starcat will not change this setting automatically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在 AI 设置中开启代码上下文，再生成 RepoContext XML。Starcat 不会自动修改此设置。"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.settings.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code Context Is Disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代码上下文未开启"
+          }
+        }
+      }
+    },
     "rag.browser.repoContext.stat": {
       "extractionState": "manual",
       "localizations": {

@@ -41,8 +41,8 @@
 - [x] 点击 RepoContext 行复用 `KnowledgeRAGChunkEditor` sheet，不使用 popover。
 - [x] 编辑器固定标题和路径，正文使用等宽字体。
 - [x] 保存失败时 sheet 不关闭并展示校验/写入错误。
-- [ ] 行尾删除提供破坏性确认，生成期间禁用编辑和删除。
-- [ ] 补齐展示顺序、独立统计与交互 read model 测试。
+- [x] 行尾删除提供破坏性确认，生成期间禁用编辑和删除。
+- [x] 补齐展示顺序、独立统计与交互 read model 测试。
 
 ## 4. XML 下载
 
@@ -55,25 +55,25 @@
 
 ## 5. 主动生成、进度与取消
 
-- [ ] 详情页增加“生成 / 重新生成 RepoContext XML”入口。
-- [ ] 复用 `AppDependencies.repoAIContextProvider`，不复制下载与打包实现。
-- [ ] 全局开关关闭时不静默修改设置，并提供前往 AI 设置的引导。
-- [ ] 状态机覆盖 resolving、downloading、packing、succeeded、failed、cancelled。
-- [ ] 展示真实阶段，不伪造无法测量的百分比。
-- [ ] 活动 spinner 在 hover / focus 时切换为 `stop.circle.fill`。
-- [ ] 点击停止取消 Task，并调用现有临时文件窄清理。
-- [ ] 取消保留正式 ZIP 与旧有效 XML，`CancellationError` 不显示为失败。
-- [ ] repo 切换和窗口关闭时取消旧任务并清理临时文件。
-- [ ] 生成期间阻止重复生成、编辑和删除。
-- [ ] 成功后立即刷新第二项，失败可重试。
-- [ ] 补齐状态映射、取消、缓存保留和过期结果防护测试。
+- [x] 详情页增加“生成 / 重新生成 RepoContext XML”入口。
+- [x] 复用 `AppDependencies.repoAIContextProvider`，不复制下载与打包实现。
+- [x] 全局开关关闭时不静默修改设置，并提供前往 AI 设置的引导。
+- [x] 状态机覆盖 resolving、downloading、packing、succeeded、failed、cancelled。
+- [x] 展示真实阶段，不伪造无法测量的百分比。
+- [x] 活动 spinner 在 hover / focus 时切换为 `stop.circle.fill`。
+- [x] 点击停止取消 Task，并调用现有临时文件窄清理。
+- [x] 取消保留正式 ZIP 与旧有效 XML，`CancellationError` 不显示为失败。
+- [x] repo 切换和窗口关闭时取消旧任务并清理临时文件。
+- [x] 生成期间阻止重复生成、编辑和删除。
+- [x] 成功后立即刷新第二项，失败可重试。
+- [x] 补齐状态映射、取消、缓存保留和过期结果防护测试。
 
 ## 6. i18n、文档与隐私
 
-- [ ] 所有新增固定文案进入 `Localizable.xcstrings`，en / zh-Hans 完整。
-- [ ] sheet 根视图挂 `.appLocaleEnvironment()`。
-- [ ] 所有 `.buttonStyle(.plain)` 按钮补 `.focusEffectDisabled()`。
-- [ ] 颜色只使用 `.primary` / `.secondary` 与明确状态色。
+- [x] 所有新增固定文案进入 `Localizable.xcstrings`，en / zh-Hans 完整。
+- [x] sheet 根视图挂 `.appLocaleEnvironment()`。
+- [x] 所有 `.buttonStyle(.plain)` 按钮补 `.focusEffectDisabled()`。
+- [x] 颜色只使用 `.primary` / `.secondary` 与明确状态色。
 - [ ] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md` 的 RepoContext 管理边界。
 - [ ] 更新知识库 RAG 专项进度，但不伪造人工验收。
 - [ ] 不修改 `docs/功能实现总览.md`；仅在报告中给出待确认同步草案。

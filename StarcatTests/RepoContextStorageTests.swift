@@ -12,6 +12,18 @@ import Testing
 @Suite("RepoContextStorage")
 @MainActor
 struct RepoContextStorageTests {
+    @Test("主动生成状态映射覆盖缓存检查、下载与打包")
+    func mapsRepoContextGenerationProgress() {
+        #expect(RepoContextGenerationStep.map(.resolvingBranch) == .resolving)
+        #expect(RepoContextGenerationStep.map(.checkingCache) == .resolving)
+        #expect(RepoContextGenerationStep.map(.downloadingArchive) == .downloading)
+        #expect(RepoContextGenerationStep.map(.packingContext) == .packing)
+        #expect(RepoContextGenerationState.preparing(.packing).isActive)
+        #expect(!RepoContextGenerationState.succeeded(cacheHit: true).isActive)
+        #expect(!RepoContextGenerationState.failed("failure").isActive)
+        #expect(!RepoContextGenerationState.cancelled.isActive)
+    }
+
     @Test("RepoContext 固定插入 metadata 后且缺 metadata 时置顶")
     func ordersRepoContextAfterMetadata() {
         #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.metadata, .readme]) == 1)
