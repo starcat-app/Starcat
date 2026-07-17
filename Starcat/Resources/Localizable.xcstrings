@@ -45352,13 +45352,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recently Added to Library"
+            "value": "Recently Added"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最近加入知识库"
+            "value": "最近入库"
           }
         }
       }
