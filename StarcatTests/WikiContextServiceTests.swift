@@ -110,6 +110,66 @@ struct WikiContextServiceTests {
         #expect(links.first?.source == .deepWiki)
     }
 
+    @Test("cache-first fresh 不发网络，stale 与 miss 进入后台队列")
+    func testCacheFirstFreshnessRouting() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(source: .deepWiki, status: .indexed, url: "https://deepwiki.com/a/b")]
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "fresh",
+            repo: "repo",
+            probedAt: Date(),
+            nextProbeAt: Date().addingTimeInterval(60),
+            items: items
+        ))
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "stale",
+            repo: "repo",
+            probedAt: Date().addingTimeInterval(-120),
+            nextProbeAt: Date().addingTimeInterval(-60),
+            items: items
+        ))
+        let fetcher = StubWikiFetcher(items: items, delay: 0.01)
+        let svc = WikiContextService(cache: cache, fetcher: fetcher)
+
+        #expect(svc.cacheFirstLinks(owner: "fresh", repo: "repo", isPrivate: false).count == 1)
+        #expect(svc.cacheFirstLinks(owner: "stale", repo: "repo", isPrivate: false).count == 1)
+        #expect(svc.cacheFirstLinks(owner: "miss", repo: "repo", isPrivate: false).isEmpty)
+        try await pollUntil(timeoutMs: 2000) { fetcher.callCount == 2 }
+        #expect(fetcher.callCount == 2)
+    }
+
+    @Test("私有仓库不读出外部链接也不发网络")
+    func testPrivateRepositoryNeverRefreshes() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let fetcher = StubWikiFetcher(delay: 0)
+        let svc = WikiContextService(cache: cache, fetcher: fetcher)
+
+        #expect(svc.cacheFirstLinks(owner: "private", repo: "repo", isPrivate: true).isEmpty)
+        svc.refreshInBackground(owner: "private", repo: "repo", isPrivate: true)
+        #expect(try await svc.refresh(owner: "private", repo: "repo", isPrivate: true).isEmpty)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(fetcher.callCount == 0)
+    }
+
+    @Test("后台队列限制最大并发并对排队请求去重")
+    func testBoundedQueueAndPendingDeduplication() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(source: .deepWiki, status: .indexed, url: "https://deepwiki.com/a/b")]
+        let fetcher = StubWikiFetcher(items: items, delay: 0.1)
+        let svc = WikiContextService(cache: cache, fetcher: fetcher, maximumConcurrentRefreshes: 1)
+
+        svc.refreshInBackground(owner: "a", repo: "one")
+        svc.refreshInBackground(owner: "a", repo: "two")
+        svc.refreshInBackground(owner: "a", repo: "two")
+        try await pollUntil(timeoutMs: 3000) {
+            svc.cachedSnapshot(owner: "a", repo: "two") != nil
+        }
+        #expect(fetcher.callCount == 2)
+    }
+
     // MARK: - refresh 同步路径
 
     @Test("refresh 调 fetcher + 写盘 + 返回 indexedLinks")

@@ -339,19 +339,11 @@ final class RepoAIChatViewModel {
     ///   直接吞错（最常见的是输出目录授权失败，用户没设置过 CodeFlow 即正常状态）。
     private func prefetchStarcatResources(repo: Repo) {
         if let wikiContextService {
-            self.wikiLinks = wikiContextService.cachedLinks(owner: repo.owner, repo: repo.name)
-            // 决策：cache miss 一定触发后台刷新；cache hit 时按 snapshot.freshness 判
-            // —— stale 才刷新，fresh 完全跳过（省 API + 网络）。
-            let snapshot = wikiContextService.cachedSnapshot(owner: repo.owner, repo: repo.name)
-            let shouldRefresh: Bool
-            if let snapshot {
-                shouldRefresh = snapshot.freshness() == .stale
-            } else {
-                shouldRefresh = true
-            }
-            if shouldRefresh {
-                wikiContextService.refreshInBackground(owner: repo.owner, repo: repo.name)
-            }
+            self.wikiLinks = wikiContextService.cacheFirstLinks(
+                owner: repo.owner,
+                repo: repo.name,
+                isPrivate: repo.isPrivate
+            )
         } else {
             self.wikiLinks = []
         }

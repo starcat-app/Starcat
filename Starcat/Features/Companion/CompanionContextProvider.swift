@@ -72,15 +72,8 @@ struct CompanionContextProvider {
         }
         lookupWikiLinks = { owner, name in
             guard let wikiContextService else { return [] }
-            let cached = await MainActor.run {
-                let cached = wikiContextService.cachedLinks(owner: owner, repo: name)
-                return cached.isEmpty ? nil : cached
-            }
-            if let cached { return cached }
-            do {
-                return try await wikiContextService.refresh(owner: owner, repo: name)
-            } catch {
-                return []
+            return await MainActor.run {
+                wikiContextService.cacheFirstLinks(owner: owner, repo: name, isPrivate: false)
             }
         }
         lookupRecommendationPage = { repoID in
@@ -155,7 +148,9 @@ struct CompanionContextProvider {
             : nil
         let health = hasProEntitlement ? await healthDTO(for: localRepo) : nil
         let openssf = hasProEntitlement ? await openSSFDTO(for: localRepo) : nil
-        let wikiLinks = hasProEntitlement ? await wikiLinkDTOs(owner: owner, name: name) : []
+        let wikiLinks = hasProEntitlement && localRepo?.isPrivate != true
+            ? await wikiLinkDTOs(owner: owner, name: name)
+            : []
         let recommendationPage = hasProEntitlement
             ? await recommendationPageDTO(for: localRepo)
             : CompanionRecommendationsPageResponse(

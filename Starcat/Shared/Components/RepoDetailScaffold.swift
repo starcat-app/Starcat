@@ -732,25 +732,19 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         "\(repo.owner)/\(repo.name)"
     }
 
-    /// 每次详情 repo 变化先隐藏旧 Wiki 菜单，再探测当前 repo 是否已有 indexed 服务商。
+    /// 每次详情 repo 变化先隐藏旧 Wiki 菜单，再从统一 cache-first 服务读取。
+    /// stale / miss 只进入有界后台队列，详情页不等待外部 Wiki 网络。
     @MainActor
     private func loadWikiLinks(for repo: Repo) async {
         wikiLinks = []
         let key = wikiLookupKey(for: repo)
         wikiRepoKey = key
-
-        do {
-            let items = try await dependencies.wikiAPI.fetchStatus(owner: repo.owner, repo: repo.name)
-            guard !Task.isCancelled, wikiRepoKey == key else { return }
-            wikiLinks = RepoWikiMenuState.make(items: items)
-        } catch is CancellationError {
-            // 快速切换详情时 SwiftUI 会取消旧任务，这是正常路径。
-        } catch {
-            guard wikiRepoKey == key else { return }
-            wikiLinks = []
-            AppLog.network.warning(
-                "wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-        }
+        let links = dependencies.wikiContextService.cacheFirstLinks(
+            owner: repo.owner,
+            repo: repo.name,
+            isPrivate: repo.isPrivate
+        )
+        guard !Task.isCancelled, wikiRepoKey == key else { return }
+        wikiLinks = links
     }
 }
