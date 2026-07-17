@@ -759,6 +759,11 @@ struct RAGWorkspaceAnswerSurface: View {
                           : (viewModel.deepThinkingEnabled
                              ? "rag.workspace.composer.deepThinking.on"
                              : "rag.workspace.composer.deepThinking.off"))
+                    .accessibilityLabel(Text(!viewModel.canEnableDeepThinking
+                                             ? "rag.workspace.composer.deepThinking.singleRepoRequired"
+                                             : (viewModel.deepThinkingEnabled
+                                                ? "rag.workspace.composer.deepThinking.on"
+                                                : "rag.workspace.composer.deepThinking.off")))
 
                     if viewModel.isAnswering {
                         Button { viewModel.cancelAnswer() } label: {
