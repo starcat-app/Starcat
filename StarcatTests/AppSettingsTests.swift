@@ -464,6 +464,15 @@ struct AppSettingsTests {
         #expect(upgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("webSearchRequests"))
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("keywordQueries"))
+        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("Retrieval, not the Planner"))
+
+        let scopeGuardDefaults = makeIsolatedDefaults()
+        let scopeGuardSettings = AppSettings(defaults: scopeGuardDefaults)
+        scopeGuardSettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: RAGDefaultPrompts.plannerBeforeExplicitRepoScopeGuard
+        )
+        #expect(AppSettings(defaults: scopeGuardDefaults).ragPromptSettings.planner == RAGDefaultPrompts.planner)
 
         let previousDefaults = makeIsolatedDefaults()
         let previousSettings = AppSettings(defaults: previousDefaults)

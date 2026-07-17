@@ -663,6 +663,11 @@ struct KnowledgeRAGService: Sendable {
             plan: plan,
             composerContext: request.composerContext
         )
+        plan = RAGExplicitRepositoryPlanGuard.resolve(
+            question: request.rawQuestion,
+            plan: plan,
+            composerContext: request.composerContext
+        )
         plan.remoteContextRequests.removeAll {
             request.composerContext.disabledRemoteResources.contains($0.resource)
         }
@@ -1646,4 +1651,37 @@ struct KnowledgeRAGService: Sendable {
         return String(trimmed.prefix(48))
     }
 
+}
+
+/// 显式限定仓库后，Planner 只能决定“怎么检索”，不能在尚未检索时断言仓库没有证据。
+/// 纯寒暄已在进入 Planner 前由 `RAGQueryGuidance.pureSocialResponse` 终止，因此这里仅恢复
+/// 被模型误判为 guided_discovery 的仓库事实问题，避免 Metadata 永远没有机会进入 Generator。
+enum RAGExplicitRepositoryPlanGuard {
+    static func resolve(
+        question: String,
+        plan initialPlan: RAGQueryPlan,
+        composerContext: RAGComposerContext
+    ) -> RAGQueryPlan {
+        var plan = initialPlan
+        let query = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard plan.mode == .guidedDiscovery,
+              composerContext.explicitRepoMode == .only,
+              !composerContext.explicitRepoIDs.isEmpty,
+              !query.isEmpty
+        else { return plan }
+
+        plan.mode = .semanticOnly
+        plan.semanticQuery = query
+        // Metadata 是 keyword-only 分片；加入稳定的英文兜底可保证中文仓库事实问题仍会
+        // 进入 Metadata FTS，同时候选范围已由 explicitRepoIDs 强制约束，不会扩大数据边界。
+        plan.keywordQueries = [query, "metadata"]
+        plan.confidence = .medium
+        plan.clarificationQuestion = nil
+        plan.fallbackQuestions = []
+        plan.userVisiblePlan = RAGUserVisiblePlan(
+            chips: composerContext.explicitRepoReferences.map(\.fullName),
+            semantic: query
+        )
+        return plan
+    }
 }

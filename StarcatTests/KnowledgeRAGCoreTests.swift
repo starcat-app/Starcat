@@ -2574,6 +2574,88 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.callCount == 0)
     }
 
+    @Test("显式仓库 Wiki 问题被误判为引导时仍检索 Metadata 并进入 Generator")
+    func explicitRepositoryWikiQuestionRestoresMetadataRetrieval() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 1, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        _ = try await chunks.replaceSource(
+            repoId: 1,
+            source: .metadata,
+            drafts: [RAGChunkDraft(
+                repoId: 1,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "octo/demo",
+                content: """
+                Repository: octo/demo
+                Wiki DeepWiki: https://deepwiki.com/octo/demo
+                Wiki ZRead: https://zread.ai/octo/demo
+                """,
+                tokenCount: 24,
+                isTruncated: false
+            )]
+        )
+        let spy = SpyRAGAIClient(chatResponse: "已找到 Wiki 链接")
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .guidedDiscovery,
+                semanticQuery: "",
+                fallbackQuestions: ["查看仓库主页"],
+                userVisiblePlan: RAGUserVisiblePlan(
+                    semantic: "知识库没有 Wiki",
+                    planningNotes: ["无法从本地知识库获取 Wiki 信息"]
+                )
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        let question = "这个项目的 wiki 站点有哪些"
+        let context = RAGComposerContext(
+            explicitRepoIDs: [1],
+            explicitRepoReferences: [.init(id: 1, fullName: "octo/demo")],
+            explicitRepoMode: .only
+        )
+        var emittedPlan: RAGQueryPlan?
+        var retrieval: RAGRetrievalResult?
+        var states: [RAGAnswerState] = []
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: question,
+            composerContext: context,
+            conversationID: nil
+        )) {
+            if case .plan(let plan) = event { emittedPlan = plan }
+            if case .retrieval(let value) = event { retrieval = value }
+            if case .state(let state) = event { states.append(state) }
+        }
+
+        #expect(emittedPlan?.mode == .semanticOnly)
+        #expect(emittedPlan?.semanticQuery == question)
+        #expect(emittedPlan?.keywordQueries.contains("metadata") == true)
+        #expect(emittedPlan?.userVisiblePlan.planningNotes.isEmpty == true)
+        #expect(retrieval?.bundles.first?.metadataContent?.contains("Wiki DeepWiki") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("https://deepwiki.com/octo/demo") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("https://zread.ai/octo/demo") == true)
+        #expect(states.contains(.completed))
+    }
+
     @Test("知识库无候选但有真实附件时仍进入 Generator")
     func attachmentOnlyQuestionCanGenerateAnswer() async throws {
         let database = try InMemoryDatabaseManager()

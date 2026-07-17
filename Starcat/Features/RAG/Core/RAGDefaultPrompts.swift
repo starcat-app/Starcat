@@ -61,6 +61,7 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
         planner = decodedPlanner == RAGDefaultPrompts.plannerBeforeGuidedDiscovery
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeNetworkSearch
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeKeywordQueries
+            || decodedPlanner == RAGDefaultPrompts.plannerBeforeExplicitRepoScopeGuard
             ? RAGDefaultPrompts.planner
             : decodedPlanner
         compressor = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .compressor)
@@ -112,6 +113,11 @@ enum RAGDefaultPrompts {
         Data boundary: query only GitHub repositories in the user's Starcat knowledge base. The local executor enforces this boundary.
         Supported filter fields: status(using/read/unread), languages, tags, minStars, maxStars, minForks, maxForks, license, includeArchived, includeForks, starredAfter, starredBefore, libraryUpdatedAfter, libraryUpdatedBefore, repoCreatedAfter, repoCreatedBefore, pushedAfter, pushedBefore.
         Dates must be ISO-8601. Do not invent fields. When the user has no filter intent, filters must be an empty object.
+
+        Explicit repository scope:
+        - When explicitRepositories is not empty, factual questions about those selected repositories are inside the knowledge-base boundary even when their content is not repeated in this planning prompt.
+        - Repository metadata such as homepage, wiki links, license, language, topics, stars, forks, releases, health, OpenSSF, and timestamps is searchable local evidence. Use semantic_only or filtered_semantic to retrieve it.
+        - Never claim that selected-repository content is absent merely because this planning prompt only contains repository identities and aggregate inventory. Retrieval, not the Planner, determines whether evidence exists.
 
         mode:
         - semantic_only: no structured filters; semanticQuery is the optimized retrieval question.
@@ -172,10 +178,23 @@ enum RAGDefaultPrompts {
         """
     )
 
+    /// 2026-07-18 显式仓库范围门禁之前发布的 Planner 默认值。
+    /// 精确移除新增协议，只用于升级仍在使用官方默认模板的用户；自定义 Prompt 保持不变。
+    static let plannerBeforeExplicitRepoScopeGuard = AIPromptConfiguration(
+        systemPrompt: planner.systemPrompt.replacingOccurrences(of: """
+            Explicit repository scope:
+            - When explicitRepositories is not empty, factual questions about those selected repositories are inside the knowledge-base boundary even when their content is not repeated in this planning prompt.
+            - Repository metadata such as homepage, wiki links, license, language, topics, stars, forks, releases, health, OpenSSF, and timestamps is searchable local evidence. Use semantic_only or filtered_semantic to retrieve it.
+            - Never claim that selected-repository content is absent merely because this planning prompt only contains repository identities and aggregate inventory. Retrieval, not the Planner, determines whether evidence exists.
+
+            """, with: ""),
+        userPromptTemplate: planner.userPromptTemplate
+    )
+
     /// 2026-07-17 双语关键词协议之前发布的 Planner 默认值。
     /// 通过精确移除本次新增段落还原旧字符串，只用于识别官方默认配置；用户自定义内容不升级。
     static let plannerBeforeKeywordQueries = AIPromptConfiguration(
-        systemPrompt: planner.systemPrompt
+        systemPrompt: plannerBeforeExplicitRepoScopeGuard.systemPrompt
             .replacingOccurrences(of: """
             keywordQueries:
             - For semantic_only and filtered_semantic, return 3-8 high-information lexical queries for keyword retrieval.
@@ -189,7 +208,7 @@ enum RAGDefaultPrompts {
                 of: "          \"keywordQueries\":[\"3-8 bilingual lexical queries for semantic modes; otherwise empty\"],\n",
                 with: ""
             ),
-        userPromptTemplate: planner.userPromptTemplate
+        userPromptTemplate: plannerBeforeExplicitRepoScopeGuard.userPromptTemplate
     )
 
     /// 2026-07-16 正文仓库链接规范之前发布的 Generator 默认值。
