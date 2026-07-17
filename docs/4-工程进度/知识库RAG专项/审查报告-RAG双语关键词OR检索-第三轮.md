@@ -3,7 +3,7 @@
 > 审查日期：2026-07-17
 > 审查范围：正式设计、专项进度、Checklist、提交历史与最终工程门禁准备
 > 审查基线：`1a2cd1c`
-> 结论：发现 2 项文档一致性问题；最终全量测试与双 target build 尚待本轮修复后执行
+> 结论：发现 2 项文档一致性问题和 1 项 worktree 构建问题；先记录后逐项修复
 
 ## 1. 已核验证据
 
@@ -39,11 +39,25 @@ Prompt 要求模型生成 3～8 个关键词，但本地校验只执行去空、
 修复要求：所有正式文档统一写成“Prompt 目标 3～8 项；执行层硬上限 8，过滤后可少于 3”，
 避免未来为了满足文档错误补词。
 
+### R3-3：StarcatDirect Debug 依赖未跟踪的独立仓库
+
+严重度：P1
+
+最终门禁中 `StarcatDirect` 的 `Copy Changelog Resource` 失败。`project.yml` 硬编码读取
+`supports/starcat-pro/CHANGELOG*.md`，但 `supports/starcat-pro` 是未被当前 Git worktree 跟踪
+的独立仓库；干净 worktree 必然缺少该路径。根目录已有受 Git 跟踪的双语 CHANGELOG，
+`Starcat` target 可正常使用。
+
+修复要求：Direct Release 继续严格要求公开 `starcat-pro` 更新日志，避免错误发布内容；Debug
+构建在独立仓库缺失时允许明确告警并回退根目录 CHANGELOG，使任意干净 worktree 可完成
+编译与单测。修改 `project.yml` 后重新执行 `xcodegen generate` 并重跑 Direct Debug build。
+
 ## 3. 工程进度核对
 
 - 专项进度新增两条完成项，且保留“真实中英混合评测集”未完成项，没有把合成单测冒充质量评测。
 - Checklist 第一、二轮报告与修复提交均已回填。
-- 全量 test、`Starcat` Debug build、`StarcatDirect` Debug build 仍保持未勾选，符合尚未执行的事实。
+- 全量 test 已通过 1547 项（1538 通过、8 跳过、1 预期失败、0 失败），`Starcat` Debug
+  build 已通过；`StarcatDirect` 首次门禁因 R3-3 失败，尚不能勾选。
 - 最终结果报告与总览拟同步文案尚未生成，属于后续收口步骤，不提前标记完成。
 
 ## 4. 修复后最终门禁
