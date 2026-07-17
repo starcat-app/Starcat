@@ -20392,6 +20392,36 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮发送的 context.xml" } }
       }
     },
+    "rag.workspace.repoContext.xml.expand": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open the complete context.xml" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开完整 context.xml" } }
+      }
+    },
+    "rag.workspace.repoContext.projection": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "XML projection" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "XML 投影" } }
+      }
+    },
+    "rag.workspace.repoContext.projection.projected": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Projected to the available model window" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已按模型可用窗口投影" } }
+      }
+    },
+    "rag.workspace.repoContext.projection.original": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Original XML fit without projection" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "原始 XML 可直接容纳" } }
+      }
+    },
+    "rag.workspace.repoContext.projectionReason": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Projection reason" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "投影原因" } }
+      }
+    },
     "rag.workspace.repoContext.copy": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Copy context.xml" } },

@@ -67,6 +67,7 @@ struct RAGWorkspaceInspector: View {
     @State private var hoveredCitationID: UUID?
     @State private var isRetrievalScoreExplanationPresented = false
     @State private var isCitationChunkPopoverPresented = false
+    @State private var isRepoContextXMLPopoverPresented = false
     @State private var retrievalDetailTarget: RAGRetrievalDetailTarget?
     /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
     @State private var isKnowledgeMetadataExpanded = false
@@ -1183,6 +1184,15 @@ struct RAGWorkspaceInspector: View {
                     ? String.l10n("rag.workspace.repoContext.cache.hit")
                     : String.l10n("rag.workspace.repoContext.cache.generated")
             )
+            citationField(
+                "rag.workspace.repoContext.projection",
+                value: snapshot.wasProjected
+                    ? String.l10n("rag.workspace.repoContext.projection.projected")
+                    : String.l10n("rag.workspace.repoContext.projection.original")
+            )
+            if let reason = snapshot.projectionReason, !reason.isEmpty {
+                citationField("rag.workspace.repoContext.projectionReason", value: reason)
+            }
         }
 
         if let document = viewModel.repoContextDocument {
@@ -1201,19 +1211,37 @@ struct RAGWorkspaceInspector: View {
                             .foregroundStyle(didCopy ? Color.green : Color.secondary)
                     }
                 }
-                ScrollView(.horizontal) {
+                Button {
+                    isRepoContextXMLPopoverPresented = true
+                } label: {
                     Text(document.xml)
                         .font(ragFont(.caption2, design: .monospaced))
                         .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: true, vertical: false)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(5)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .frame(maxHeight: 260)
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("rag.workspace.repoContext.xml.expand")
                 .padding(8)
                 .background(
                     Color(nsColor: .textBackgroundColor).opacity(0.72),
                     in: RoundedRectangle(cornerRadius: 6)
                 )
+                .popover(isPresented: $isRepoContextXMLPopoverPresented, arrowEdge: .leading) {
+                    ScrollView([.horizontal, .vertical]) {
+                        Text(document.xml)
+                            .font(ragFont(.caption2, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: true, vertical: true)
+                            .padding(14)
+                    }
+                    .frame(minWidth: 680, idealWidth: 760, minHeight: 420, idealHeight: 520)
+                }
             }
         } else {
             Label("rag.workspace.repoContext.historyUnavailable", systemImage: "clock.badge.exclamationmark")
@@ -1371,6 +1399,28 @@ struct RAGWorkspaceInspector: View {
                                 planMetricRow(
                                     "rag.workspace.inspector.plan.repoContext.status",
                                     value: localizedRepoContextOutcome(snapshot.outcome)
+                                )
+                                if let commitSHA = snapshot.commitSHA {
+                                    planMetricRow(
+                                        "rag.workspace.repoContext.commit",
+                                        value: String(commitSHA.prefix(12))
+                                    )
+                                }
+                                planMetricRow(
+                                    "rag.workspace.repoContext.cache",
+                                    value: snapshot.cacheHit
+                                        ? String.l10n("rag.workspace.repoContext.cache.hit")
+                                        : String.l10n("rag.workspace.repoContext.cache.generated")
+                                )
+                                planMetricRow(
+                                    "rag.workspace.repoContext.tokens",
+                                    value: "\(snapshot.sentTokens) / \(snapshot.originalTokens)"
+                                )
+                                planMetricRow(
+                                    "rag.workspace.repoContext.projection",
+                                    value: snapshot.wasProjected
+                                        ? String.l10n("rag.workspace.repoContext.projection.projected")
+                                        : String.l10n("rag.workspace.repoContext.projection.original")
                                 )
                             }
                         }
