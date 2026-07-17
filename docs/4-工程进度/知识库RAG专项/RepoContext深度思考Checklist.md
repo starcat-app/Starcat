@@ -26,82 +26,82 @@
 
 ## 2. 模型、计划与 Prompt 协议
 
-- [ ] 新增 `deepThinkingEnabled` Composer / request snapshot 字段。
-- [ ] 新增本地标准化 `RAGRepoContextRequest`，只接受唯一显式项目。
-- [ ] Planner 输入和 `RAGQueryPlan` 保存 RepoContext 请求与用户可见说明。
-- [ ] 新增独立 `RAGContextBudget.Segment.repoContext`。
-- [ ] Generator 默认模板新增且强制验证 `{repoContextSection}`。
-- [ ] `KnowledgeRAGPromptBuilder` 独立构建 RepoContext section。
-- [ ] 新增 XML 感知投影器，保证投影后 XML 合法并记录统计。
-- [ ] RepoContext 不使用 `evidenceTokenBudget`、topK、child cap 或 chunk hard cap。
-- [ ] RepoContext 仍服从模型总上下文窗口和输出保留预算。
-- [ ] 补齐模型、Planner、Prompt、预算和 XML 投影单元测试。
+- [x] 新增 `deepThinkingEnabled` Composer / request snapshot 字段。
+- [x] 新增本地标准化 `RAGRepoContextRequest`，只接受唯一显式项目。
+- [x] Planner 输入和 `RAGQueryPlan` 保存 RepoContext 请求与用户可见说明。
+- [x] 新增独立 `RAGContextBudget.Segment.repoContext`。
+- [x] Generator 默认模板新增且强制验证 `{repoContextSection}`。
+- [x] `KnowledgeRAGPromptBuilder` 独立构建 RepoContext section。
+- [x] 新增 XML 感知投影器，保证投影后 XML 合法并记录统计。
+- [x] RepoContext 不使用 `evidenceTokenBudget`、topK、child cap 或 chunk hard cap。
+- [x] RepoContext 仍服从模型总上下文窗口和输出保留预算。
+- [x] 补齐模型、Planner、Prompt、预算和 XML 投影单元测试。
 
 ## 3. Provider、Service 与执行状态机
 
-- [ ] `AppDependencies` 提升并复用统一 `RepoAIContextProvider`。
-- [ ] `KnowledgeRAGService` 注入 RepoContext Provider。
-- [ ] 新增 `runRepoContextPhase`，顺序位于本地检索之后、联网之前。
-- [ ] 单项目约束在 Service 边界再次校验。
-- [ ] Provider cache hit / generated / degraded / cancellation 语义保持正确。
-- [ ] 成功非空 RepoContext 可单独通过证据门禁。
-- [ ] 普通失败允许其他证据继续生成；取消终止整轮问答。
-- [ ] 新增 `RAGRepoContextSnapshot` 审计元数据，不复制 XML 到会话正文。
+- [x] `AppDependencies` 提升并复用统一 `RepoAIContextProvider`。
+- [x] `KnowledgeRAGService` 注入 RepoContext Provider。
+- [x] 新增 `runRepoContextPhase`，顺序位于本地检索之后、联网之前。
+- [x] 单项目约束在 Service 边界再次校验。
+- [x] Provider cache hit / generated / degraded / cancellation 语义保持正确。
+- [x] 成功非空 RepoContext 可单独通过证据门禁。
+- [x] 普通失败允许其他证据继续生成；取消终止整轮问答。
+- [x] 新增 `RAGRepoContextSnapshot` 审计元数据，不复制 XML 到会话正文。
 - [ ] 补齐 Service 执行、证据门禁、降级和取消测试。
 
 ## 4. Composer 与草稿持久化
 
-- [ ] 新增 icon-only `brain` 深度思考按钮。
-- [ ] Composer 控件顺序符合“附件 → 联网 → 深度思考 → 发送”。
-- [ ] 只有恰好一个显式项目时按钮可开启。
-- [ ] 附件数量不影响按钮可用性。
-- [ ] 已开启后 repo scope 变成 0 个或多个时自动关闭。
-- [ ] 发送快照冻结本轮开关和唯一目标，不受流式期间 UI 操作影响。
-- [ ] 深度思考按会话保存、切换和重开恢复，语义与联网开关一致。
-- [ ] 非单项目草稿恢复时强制关闭。
-- [ ] 按钮具备 tooltip、accessibility label、hover 和 focus 契约。
+- [x] 新增 icon-only `brain` 深度思考按钮。
+- [x] Composer 控件顺序符合“附件 → 联网 → 深度思考 → 发送”。
+- [x] 只有恰好一个显式项目时按钮可开启。
+- [x] 附件数量不影响按钮可用性。
+- [x] 已开启后 repo scope 变成 0 个或多个时自动关闭。
+- [x] 发送快照冻结本轮开关和唯一目标，不受流式期间 UI 操作影响。
+- [x] 深度思考按会话保存、切换和重开恢复，语义与联网开关一致。
+- [x] 非单项目草稿恢复时强制关闭。
+- [x] 按钮具备 tooltip、accessibility label、hover 和 focus 契约。
 - [ ] 补齐 Composer 状态与草稿持久化测试。
 
 ## 5. 时间线与 Debug Trace
 
-- [ ] 新增 `RAGExecutionStepKind.repoContext`。
-- [ ] 新增 prepared / progress / completed RepoContext 执行事件。
-- [ ] 时间线显示“深度思考”及缓存、下载、生成、投影真实子状态。
-- [ ] 运行中默认展开、完成后自动折叠、失败显示降级摘要。
-- [ ] 新增 `repoContextRequest` Debug stage。
-- [ ] 新增 `repoContextResponse` Debug stage。
-- [ ] 新增 `repoContextProjection` Debug stage。
-- [ ] ViewModel 事件转换、持久化、导出和字节统计完整保留结构化 payload。
-- [ ] Debug 摘要不重复保存 XML；最终 prompt stage 保留实际发送内容。
-- [ ] Debug 帮助说明完整 Prompt 可能含代码 XML 的本地隐私边界。
+- [x] 新增 `RAGExecutionStepKind.repoContext`。
+- [x] 新增 prepared / progress / completed RepoContext 执行事件。
+- [x] 时间线显示“深度思考”及缓存、下载、生成、投影真实子状态。
+- [x] 运行中默认展开、完成后自动折叠、失败显示降级摘要。
+- [x] 新增 `repoContextRequest` Debug stage。
+- [x] 新增 `repoContextResponse` Debug stage。
+- [x] 新增 `repoContextProjection` Debug stage。
+- [x] ViewModel 事件转换、持久化、导出和字节统计完整保留结构化 payload。
+- [x] Debug 摘要不重复保存 XML；最终 prompt stage 保留实际发送内容。
+- [x] Debug 帮助说明完整 Prompt 可能含代码 XML 的本地隐私边界。
 - [ ] 补齐执行 reducer、历史解码和 Debug payload 测试。
 
 ## 6. Plan、引用与 Evidence Inspector
 
-- [ ] Plan 展示启用状态、目标、理由、配置预算和执行结果。
-- [ ] Plan 展示 commit、cache、原始/发送 token 和投影状态。
-- [ ] 新增独立 citation source `repoContext`，不污染 `RAGChunkSource`。
-- [ ] RepoContext citation 使用 `chunkID = nil` 且不显示“分片已删除”。
-- [ ] Prompt marker、回答引用解析和持久化 citation 一致。
-- [ ] Evidence 新增“项目代码上下文”独立区，不计入普通分片。
-- [ ] 即使回答未引用，只要成功注入也展示 RepoContext 区。
-- [ ] 展示 repo、commit、hash、cache/generated、token 与投影状态。
-- [ ] 展示实际发送 XML 的 5 行预览、完整 popover 与复制反馈。
-- [ ] 点击正文 RepoContext 引用可切换 Evidence、展开并定位。
-- [ ] 历史仅在 repo + commit + hash 匹配时重载 XML；不匹配时明确不可回放。
+- [x] Plan 展示启用状态、目标、理由、配置预算和执行结果。
+- [x] Plan 展示 commit、cache、原始/发送 token 和投影状态。
+- [x] 新增独立 citation source `repoContext`，不污染 `RAGChunkSource`。
+- [x] RepoContext citation 使用 `chunkID = nil` 且不显示“分片已删除”。
+- [x] Prompt marker、回答引用解析和持久化 citation 一致。
+- [x] Evidence 新增“项目代码上下文”独立区，不计入普通分片。
+- [x] 即使回答未引用，只要成功注入也展示 RepoContext 区。
+- [x] 展示 repo、commit、hash、cache/generated、token 与投影状态。
+- [x] 展示实际发送 XML 的 5 行预览、完整 popover 与复制反馈。
+- [x] 点击正文 RepoContext 引用可切换 Evidence、展开并定位。
+- [x] 历史仅在 repo + commit + hash 匹配时重载 XML；不匹配时明确不可回放。
 - [ ] 补齐 citation、Inspector read model 和历史回放测试。
 
 ## 7. i18n、文档与隐私
 
-- [ ] 所有新增固定文案进入 `Localizable.xcstrings`，en / zh-Hans 完整。
-- [ ] `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
-- [ ] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md` 的正式运行链路。
-- [ ] 更新 `docs/1-立项/开发前问题清单.md`，记录 RepoContext 产品与隐私决策。
-- [ ] 更新 `知识库RAG专项进度.md`，但不伪造人工验收完成。
-- [ ] 不修改 `docs/功能实现总览.md`；另列拟同步条目等待 dong4j 明确确认。
-- [ ] RepoContext XML 不写 `rag_chunks`、notes、普通消息正文或 CloudKit。
-- [ ] 私有仓库 identity / XML 不进入 External Search query。
-- [ ] Debug 本地文件隐私说明和清理边界与实现一致。
+- [x] 所有新增固定文案进入 `Localizable.xcstrings`，en / zh-Hans 完整。
+- [x] `jq empty Starcat/Resources/Localizable.xcstrings` 通过。
+- [x] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md` 的正式运行链路。
+- [x] 更新 `docs/1-立项/开发前问题清单.md`，记录 RepoContext 产品与隐私决策。
+- [x] 更新 `知识库RAG专项进度.md`，但不伪造人工验收完成。
+- [x] 不修改 `docs/功能实现总览.md`；另列拟同步条目等待 dong4j 明确确认。
+- [x] RepoContext XML 不写 `rag_chunks`、notes、普通消息正文或 CloudKit。
+- [x] 私有仓库 identity / XML 不进入 External Search query。
+- [x] Debug 本地文件隐私说明和清理边界与实现一致。
 
 ## 8. 自动化验证
 
