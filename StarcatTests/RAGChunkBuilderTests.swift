@@ -5,6 +5,7 @@
 //  验证 README 结构切分、稳定 key、代码块 / 表格保护及多来源输入。
 //
 
+import Foundation
 import Testing
 @testable import Starcat
 
@@ -142,6 +143,53 @@ struct RAGChunkBuilderTests {
         #expect(content.contains("Homepage: https://example.com/demo"))
         #expect(content.contains("Tags: database, swift"))
         #expect(!content.contains("Unknown"))
+    }
+
+    @Test("metadata 按固定顺序追加有效 Wiki 链接")
+    func metadataIncludesWikiLinksInStableOrder() throws {
+        let repo = fixtureRepo(stars: 1)
+        let links = RepoWikiMenuState.make(items: [
+            WikiStatusItem(
+                source: .codeWiki,
+                status: .indexed,
+                url: try #require(URL(string: "https://codewiki.example/octo/demo")),
+                probeMethod: nil,
+                httpStatus: 200,
+                matchedSignals: nil
+            ),
+            WikiStatusItem(
+                source: .deepWiki,
+                status: .indexed,
+                url: try #require(URL(string: "https://deepwiki.com/octo/demo")),
+                probeMethod: nil,
+                httpStatus: 200,
+                matchedSignals: nil
+            ),
+            WikiStatusItem(
+                source: .zread,
+                status: .notIndexed,
+                url: try #require(URL(string: "https://zread.ai/octo/demo")),
+                probeMethod: nil,
+                httpStatus: 404,
+                matchedSignals: nil
+            )
+        ])
+        let content = try #require(RAGChunkBuilder().buildMetadata(
+            repo: repo,
+            note: nil,
+            tags: [],
+            snapshot: RAGMetadataSnapshot(
+                latestRelease: nil,
+                health: nil,
+                openSSF: nil,
+                wikiLinks: links
+            )
+        ).first?.content)
+
+        let deepWikiRange = try #require(content.range(of: "Wiki DeepWiki: https://deepwiki.com/octo/demo"))
+        let codeWikiRange = try #require(content.range(of: "Wiki CodeWiki: https://codewiki.example/octo/demo"))
+        #expect(deepWikiRange.lowerBound < codeWikiRange.lowerBound)
+        #expect(!content.contains("Wiki ZRead"))
     }
 
     @Test("重复 heading 使用 occurrence 消歧稳定 key")

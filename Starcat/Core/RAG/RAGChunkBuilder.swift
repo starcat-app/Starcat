@@ -34,11 +34,12 @@ struct RAGChunkBuildInput: Sendable {
 
 /// 单项目 Metadata 分片需要的本地事实快照。
 ///
-/// Release、Health 和 OpenSSF 都是本地缓存；这里不持有 API，也不允许构建 Metadata 时触发网络。
+/// Release、Health、OpenSSF 和 Wiki 都是本地缓存；这里不持有 API，也不允许构建 Metadata 时触发网络。
 struct RAGMetadataSnapshot: Sendable {
     var latestRelease: ReleaseRecord?
     var health: RepoHealthSnapshot?
     var openSSF: OpenSSFScoreRecord?
+    var wikiLinks: [WikiLink] = []
 }
 
 struct RAGChunkBuildOutput: Equatable, Sendable {
@@ -251,6 +252,17 @@ struct RAGChunkBuilder: Sendable {
             append("OpenSSF score", openSSF.aggregateScore)
             append("OpenSSF score date", openSSF.scoreDate)
             append("OpenSSF fetched at", openSSF.fetchedAt)
+        }
+        // 固定 provider 顺序来自 RepoWikiMenuState；未知 source 和非 http(s) URL 已在缓存派生层过滤。
+        for link in snapshot?.wikiLinks ?? [] {
+            let label: String
+            switch link.source {
+            case .deepWiki: label = "Wiki DeepWiki"
+            case .zread: label = "Wiki ZRead"
+            case .codeWiki: label = "Wiki CodeWiki"
+            case .unknown: continue
+            }
+            append(label, link.url.absoluteString)
         }
         let content = lines.joined(separator: "\n")
         return [RAGChunkDraft(

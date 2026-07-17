@@ -915,6 +915,8 @@ final class AppDependencies {
         let metadataReleaseRepo = GRDBReleaseRepository(database: db)
         let metadataHealthRepo = GRDBRepoHealthRepository(database: db)
         let metadataOpenSSFRepo = GRDBOpenSSFScoreRepository(database: db)
+        // Wiki cache 必须在 RAG builder 之前装配；builder 只获得只读缓存，不获得网络 API。
+        self.diskWikiCache = .shared
         self.knowledgeRAGIndexBuilder = KnowledgeRAGIndexBuilder(
             chunkRepository: ragChunkRepo,
             repoRepository: repo,
@@ -926,6 +928,7 @@ final class AppDependencies {
             releaseRepository: metadataReleaseRepo,
             healthRepository: metadataHealthRepo,
             openSSFRepository: metadataOpenSSFRepo,
+            wikiCache: self.diskWikiCache,
             settings: self.settings,
             entitlementGate: self.entitlementGate
         )
@@ -1056,9 +1059,8 @@ final class AppDependencies {
         // disk cache（只读 / 无网络）→ SWR service（依赖 cache + WikiAPI）。
         // shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
         // 与对话 VM 共享同一份 `itemCount` / `totalBytes` observable 派生量。
-        self.diskWikiCache = .shared
         self.wikiContextService = WikiContextService(
-            cache: .shared,
+            cache: self.diskWikiCache,
             fetcher: wikiAPIInstance
         )
         self.wikiKnowledgeBackfillCoordinator = WikiKnowledgeBackfillCoordinator(
