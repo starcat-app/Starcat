@@ -485,6 +485,8 @@ enum RAGRetrievalProgress: Sendable {
 struct RAGQueryPlan: Codable, Equatable, Sendable {
     var mode: RAGQueryMode
     var semanticQuery: String
+    /// 供关键词 Provider 使用的高信息量字面查询；与面向 embedding 的自然语言查询分离。
+    var keywordQueries: [String]
     var filters: RAGRepoFilter
     var sort: RAGRepoSort?
     var candidateLimit: Int?
@@ -502,7 +504,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     var analytics: KnowledgeBaseAnalyticsPlan?
 
     enum CodingKeys: String, CodingKey {
-        case mode, semanticQuery, filters, sort, candidateLimit, remoteContextRequests
+        case mode, semanticQuery, keywordQueries, filters, sort, candidateLimit, remoteContextRequests
         case webSearchRequests, repoContextRequest, requiresLiveEvidence, analytics
         case confidence, clarificationQuestion, fallbackQuestions, userVisiblePlan
     }
@@ -510,6 +512,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     init(
         mode: RAGQueryMode,
         semanticQuery: String,
+        keywordQueries: [String] = [],
         filters: RAGRepoFilter = .init(),
         sort: RAGRepoSort? = nil,
         candidateLimit: Int? = nil,
@@ -525,6 +528,7 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
     ) {
         self.mode = mode
         self.semanticQuery = semanticQuery
+        self.keywordQueries = keywordQueries
         self.filters = filters
         self.sort = sort
         self.candidateLimit = candidateLimit
@@ -543,6 +547,8 @@ struct RAGQueryPlan: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mode = try container.decode(RAGQueryMode.self, forKey: .mode)
         semanticQuery = try container.decodeIfPresent(String.self, forKey: .semanticQuery) ?? ""
+        // 旧会话和旧自定义 Planner Prompt 没有该字段；空数组交给 Retriever 的本地 OR 兜底。
+        keywordQueries = try container.decodeIfPresent([String].self, forKey: .keywordQueries) ?? []
         filters = try container.decodeIfPresent(RAGRepoFilter.self, forKey: .filters) ?? .init()
         sort = try container.decodeIfPresent(RAGRepoSort.self, forKey: .sort)
         candidateLimit = try container.decodeIfPresent(Int.self, forKey: .candidateLimit)

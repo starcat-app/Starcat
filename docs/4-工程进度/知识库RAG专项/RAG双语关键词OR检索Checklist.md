@@ -28,13 +28,13 @@
 
 ## 2. Query Plan 与 Planner
 
-- [ ] `RAGQueryPlan` 新增兼容的 `keywordQueries` 字段。
-- [ ] 旧 JSON 缺少字段时解码为 `[]`，不破坏历史回放。
-- [ ] 默认 Planner Prompt 增加双语关键词输出协议。
-- [ ] Planner 校验 trim、稳定去重、数量和长度上限。
-- [ ] Planner 拒绝低信息词并避免自动加入显式 repo identity。
-- [ ] 旧自定义 Prompt 不覆盖，缺失关键词时允许执行层降级。
-- [ ] 补齐 Query Plan 与 Planner 单元测试。
+- [x] `RAGQueryPlan` 新增兼容的 `keywordQueries` 字段。
+- [x] 旧 JSON 缺少字段时解码为 `[]`，不破坏历史回放。
+- [x] 默认 Planner Prompt 增加双语关键词输出协议。
+- [x] Planner 校验 trim、稳定去重、数量和长度上限。
+- [x] Planner 拒绝低信息词并避免自动加入显式 repo identity。
+- [x] 旧自定义 Prompt 不覆盖，缺失关键词时允许执行层降级。
+- [x] 补齐 Query Plan 与 Planner 单元测试。
 
 ## 3. RAG 专用 FTS5 OR 查询
 

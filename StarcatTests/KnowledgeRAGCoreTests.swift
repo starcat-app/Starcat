@@ -730,6 +730,7 @@ struct KnowledgeRAGCoreTests {
             {
               "mode":"semantic_only",
               "semanticQuery":"适合本地 RAG 的 Swift 项目",
+              "keywordQueries":["本地 RAG","Swift","swift","repository","owner/sample","sample","向量检索","README","SQLite","额外词"],
               "filters":{},
               "sort":null,
               "candidateLimit":null,
@@ -738,9 +739,28 @@ struct KnowledgeRAGCoreTests {
               "clarificationQuestion":null,
               "userVisiblePlan":{"scope":"知识库","chips":[],"semantic":"适合本地 RAG 的 Swift 项目"}
             }
-            """, fallbackQuestion: "原问题")
+            """,
+            fallbackQuestion: "原问题",
+            excludedKeywordTerms: ["owner/sample", "sample"]
+        )
         #expect(plan.mode == .semanticOnly)
         #expect(!plan.filters.hasEffectiveConditions)
+        #expect(plan.keywordQueries == ["本地 RAG", "Swift", "向量检索", "README", "SQLite", "额外词"])
+    }
+
+    @Test("Planner: 旧计划缺少关键词字段时保持兼容")
+    func plannerLegacyPlanDefaultsToNoKeywords() throws {
+        let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""
+            {
+              "mode":"semantic_only",
+              "semanticQuery":"vector database",
+              "filters":{},
+              "remoteContextRequests":[],
+              "confidence":"high",
+              "userVisiblePlan":{"scope":"Knowledge Base","chips":[],"semantic":"vector database"}
+            }
+            """, fallbackQuestion: "原问题")
+        #expect(plan.keywordQueries.isEmpty)
     }
 
     @Test("Planner: 用户可见查询规划会被保留并限制长度")

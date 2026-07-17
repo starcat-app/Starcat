@@ -463,6 +463,15 @@ struct AppSettingsTests {
         #expect(upgraded.ragPromptSettings.generator.systemPrompt.contains("canonical full name"))
         #expect(upgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("webSearchRequests"))
+        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("keywordQueries"))
+
+        let previousDefaults = makeIsolatedDefaults()
+        let previousSettings = AppSettings(defaults: previousDefaults)
+        previousSettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: RAGDefaultPrompts.plannerBeforeKeywordQueries
+        )
+        #expect(AppSettings(defaults: previousDefaults).ragPromptSettings.planner == RAGDefaultPrompts.planner)
 
         let oldestDefaults = makeIsolatedDefaults()
         let oldestSettings = AppSettings(defaults: oldestDefaults)

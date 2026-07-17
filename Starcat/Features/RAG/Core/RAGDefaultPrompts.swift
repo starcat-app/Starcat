@@ -60,6 +60,7 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
         // 必须原样保留。否则老用户会一直缺少 guided_discovery 与新的联网字段。
         planner = decodedPlanner == RAGDefaultPrompts.plannerBeforeGuidedDiscovery
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeNetworkSearch
+            || decodedPlanner == RAGDefaultPrompts.plannerBeforeKeywordQueries
             ? RAGDefaultPrompts.planner
             : decodedPlanner
         compressor = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .compressor)
@@ -119,6 +120,13 @@ enum RAGDefaultPrompts {
         - guided_discovery: greeting, casual chat, capability question, or request unrelated to the knowledge base when webSearchEnabled=false. Do not retrieve or request remote data; provide 2-3 actionable fallbackQuestions about repositories.
         - needs_clarification: date meaning or intent is ambiguous; must provide clarificationQuestion.
 
+        keywordQueries:
+        - For semantic_only and filtered_semantic, return 3-8 high-information lexical queries for keyword retrieval.
+        - Preserve 2-4 core concepts in the user's language and add 2-4 common English technical equivalents when useful, so Chinese questions can match both Chinese notes and usually-English README content.
+        - Keep class names, function names, filenames, config keys, commands, and error codes unchanged. A deliberate phrase such as "build target" may be one item.
+        - Exclude filler such as project, repository, introduction, overview, 项目, 仓库, 介绍, 如何, 怎么. Do not add an explicitly selected owner/repo identity merely to constrain scope; the local executor already enforces repo ids.
+        - Return plain lexical text only, never FTS operators or a complete natural-language answer. For other modes return an empty array.
+
         If "since a date" does not specify whether it means starred, library-added, created, or pushed time, use needs_clarification.
         For ordinary questions, remoteContextRequests must be empty. Request live GitHub data only when clearly needed:
         github_issues, github_pull_requests, github_releases, github_contributors, github_commit_activity, github_security_advisories.
@@ -133,6 +141,7 @@ enum RAGDefaultPrompts {
         {
           "mode":"semantic_only|filtered_semantic|structured_only|guided_discovery|needs_clarification",
           "semanticQuery":"string",
+          "keywordQueries":["3-8 bilingual lexical queries for semantic modes; otherwise empty"],
           "filters":{},
           "sort":null or {"field":"stars|forks|pushedAt|repoCreatedAt|libraryUpdatedAt|starredAt","direction":"asc|desc"},
           "candidateLimit":null or integer,
@@ -161,6 +170,26 @@ enum RAGDefaultPrompts {
 
         Output the query plan JSON only.
         """
+    )
+
+    /// 2026-07-17 双语关键词协议之前发布的 Planner 默认值。
+    /// 通过精确移除本次新增段落还原旧字符串，只用于识别官方默认配置；用户自定义内容不升级。
+    static let plannerBeforeKeywordQueries = AIPromptConfiguration(
+        systemPrompt: planner.systemPrompt
+            .replacingOccurrences(of: """
+            keywordQueries:
+            - For semantic_only and filtered_semantic, return 3-8 high-information lexical queries for keyword retrieval.
+            - Preserve 2-4 core concepts in the user's language and add 2-4 common English technical equivalents when useful, so Chinese questions can match both Chinese notes and usually-English README content.
+            - Keep class names, function names, filenames, config keys, commands, and error codes unchanged. A deliberate phrase such as "build target" may be one item.
+            - Exclude filler such as project, repository, introduction, overview, 项目, 仓库, 介绍, 如何, 怎么. Do not add an explicitly selected owner/repo identity merely to constrain scope; the local executor already enforces repo ids.
+            - Return plain lexical text only, never FTS operators or a complete natural-language answer. For other modes return an empty array.
+
+            """, with: "")
+            .replacingOccurrences(
+                of: "          \"keywordQueries\":[\"3-8 bilingual lexical queries for semantic modes; otherwise empty\"],\n",
+                with: ""
+            ),
+        userPromptTemplate: planner.userPromptTemplate
     )
 
     /// 2026-07-16 正文仓库链接规范之前发布的 Generator 默认值。
