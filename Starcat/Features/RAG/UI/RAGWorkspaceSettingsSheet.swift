@@ -220,6 +220,9 @@ struct RAGWorkspaceSettingsSheet: View {
     /// 左栏只负责稳定导航；后续增加联网、模型等配置时不必重做布局。
     private var settingsSidebar: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
+            sidebarHeader
+                .padding(.bottom, interfaceScale.scaled(4))
+
             ForEach(RAGSettingsSection.allCases) { item in
                 Button {
                     section = item
@@ -250,6 +253,29 @@ struct RAGWorkspaceSettingsSheet: View {
         .padding(interfaceScale.scaled(14))
         .frame(width: interfaceScale.scaled(RAGSettingsSheetMetrics.sidebarWidth), alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
+    }
+
+    /// Sheet 功能身份固定在左上角；右侧标题继续只描述当前选中的配置分类。
+    private var sidebarHeader: some View {
+        HStack(spacing: interfaceScale.scaled(10)) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.tint.opacity(0.12))
+                Image(systemName: "gearshape.2")
+                    .font(interfaceScale.font(size: 15, weight: .semibold))
+                    .foregroundStyle(.tint)
+            }
+            .frame(
+                width: interfaceScale.scaled(30),
+                height: interfaceScale.scaled(30)
+            )
+            .accessibilityHidden(true)
+
+            Text("rag.workspace.settings.title")
+                .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.primary)
     }
 
     private var settingsDetail: some View {
