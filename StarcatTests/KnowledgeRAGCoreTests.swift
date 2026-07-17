@@ -3083,6 +3083,9 @@ struct KnowledgeRAGCoreTests {
         )
         let first = RAGChildHit(chunk: fixtureChunk(id: 1, repoID: 1, source: .readme), score: 0.9, kind: .hybrid)
         let second = RAGChildHit(chunk: fixtureChunk(id: 2, repoID: 1, source: .readme), score: 0.8, kind: .hybrid)
+        let metadata = "Repository: octo/demo"
+        let firstContent = String(repeating: "first ", count: 20)
+        let secondContent = String(repeating: "second ", count: 20)
         let bundle = RepoContextBundle(
             candidate: candidate,
             score: 0.9,
@@ -3092,21 +3095,33 @@ struct KnowledgeRAGCoreTests {
                     repoId: 1,
                     parentKey: "first",
                     title: "First",
-                    content: String(repeating: "first ", count: 20),
+                    content: firstContent,
                     childChunkIDs: [1]
                 ),
                 RAGSectionParent(
                     repoId: 1,
                     parentKey: "second",
                     title: "Second",
-                    content: String(repeating: "second ", count: 20),
+                    content: secondContent,
                     childChunkIDs: [2]
                 )
-            ]
+            ],
+            metadataContent: metadata
         )
-        // 完整/精简 Metadata 现在也计入 evidence；预算需先容纳 Metadata 和第一段，
-        // 再验证第二段被优先裁掉。
-        let prompt = KnowledgeRAGPromptBuilder(maxEvidenceTokens: 80).build(
+        let firstOnlyEvidence = """
+
+
+            Local knowledge-base evidence:
+            \(metadata)
+
+            [S1] First
+            \(firstContent)
+            """
+        // 用与生产一致的 estimator 精确给“Metadata + 第一段”预算，避免 fixture 字段变化
+        // 让硬编码阈值把第一段也裁掉。
+        let prompt = KnowledgeRAGPromptBuilder(
+            maxEvidenceTokens: TokenEstimator.estimate(text: firstOnlyEvidence)
+        ).build(
             question: "compare",
             plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "compare"),
             retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [bundle], childHits: [first, second]),

@@ -300,7 +300,20 @@ struct RAGChunkRepositoryTests {
             )
         }
         let excluded = try #require(try await repository.fetchKnowledgeChunks(repoId: 45).first?.id)
-        try await repository.setKnowledgeChunkExcluded(id: excluded, isExcluded: true)
+        // 模拟功能上线前已存在的 Metadata exclusion；生产 API 现在会拒绝新写入，
+        // 但读取层仍需把历史 exclusion 当成缺失并走精简 fallback。
+        try await repository.saveKnowledgeChunkOverride(
+            id: excluded,
+            title: "Metadata",
+            sectionPath: "Metadata",
+            content: "Repository: octo/repo-45"
+        )
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE rag_chunk_overrides SET is_excluded = 1 WHERE chunk_id = ?",
+                arguments: [excluded]
+            )
+        }
 
         let metadata = try await repository.fetchActiveMetadata(repoIDs: [44, 45])
         #expect(metadata.map(\.repoId) == [44])
