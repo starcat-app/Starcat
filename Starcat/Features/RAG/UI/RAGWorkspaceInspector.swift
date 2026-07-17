@@ -64,6 +64,7 @@ struct RAGWorkspaceInspector: View {
     @State private var isClearDebugTracesConfirmationPresented = false
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
+    @State private var hoveredIndexBuildStageID: String?
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isKnowledgeMetadataRowHovered = false
     @State private var hoveredDebugTraceID: UUID?
@@ -255,7 +256,9 @@ struct RAGWorkspaceInspector: View {
     }
 
     var evidenceInspector: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // 引用可能跨多轮持续累积；根栈必须按视口懒挂载，避免切回证据 tab 时同步创建
+        // 全部头像、hover 与 overlay 视图，阻塞主线程首帧。
+        LazyVStack(alignment: .leading, spacing: 10) {
             knowledgeBaseMetadataPanel
 
             // 元数据是知识库范围快照；下方只展示回答实际保留 marker 的引用。
@@ -281,6 +284,11 @@ struct RAGWorkspaceInspector: View {
                             .font(ragFont(.callout, weight: .semibold))
                             .foregroundStyle(.primary)
                         Spacer(minLength: 8)
+                        // 与「元数据」右侧时间同构：折叠态也能一眼看到本轮引用条数。
+                        Text(localizedInteger(allCitations.count))
+                            .font(ragFont(.caption2))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                         Image(systemName: "chevron.right")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -405,6 +413,14 @@ struct RAGWorkspaceInspector: View {
                             .font(ragFont(.callout, weight: .semibold))
                             .foregroundStyle(.primary)
                         Spacer(minLength: 8)
+                        // 本轮 live + 历史审计合计；折叠态先看到总量，再决定是否展开核对。
+                        Text(localizedInteger(
+                            viewModel.remoteBlocks.count
+                                + viewModel.historicalRemoteContextAudits.count
+                        ))
+                            .font(ragFont(.caption2))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                         Image(systemName: "chevron.right")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -2340,29 +2356,34 @@ struct RAGWorkspaceInspector: View {
     }
 
     var indexInspector: some View {
-        // 行内已含上下 padding；外层 spacing 收紧，避免蓝条加高后相邻行空隙过大。
-        VStack(alignment: .leading, spacing: 6) {
-            knowledgeRepositoryRow
-            coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexStatus.readyChunks)", color: .green)
-            indexIssueRow(.pending, value: "\(viewModel.indexStatus.pendingChunks)", color: .orange)
-            indexIssueRow(.failed, value: "\(viewModel.indexStatus.failedChunks)", color: .red)
-            indexIssueRow(.stale, value: "\(viewModel.indexStatus.staleChunks)", color: .purple)
-            embeddingCoverageProgress
-            Divider()
-            VStack(alignment: .trailing, spacing: 13) {
-                indexProgressLabel
-                // icon-only：统一走 SyncIconButton，文案保留为 tooltip / accessibility。
-                SyncIconButton(
-                    isRefreshing: viewModel.isIndexing,
-                    disabled: viewModel.isIndexing,
-                    font: .caption,
-                    frameSize: 18,
-                    tooltip: String.l10n("rag.workspace.index.rebuild")
-                ) {
-                    viewModel.rebuildIndex()
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            indexHealthSummary
+
+            VStack(alignment: .leading, spacing: 2) {
+                knowledgeRepositoryRow
+                indexIssueRow(
+                    .pending,
+                    count: viewModel.indexStatus.pendingChunks,
+                    color: .orange,
+                    rowIndex: 1
+                )
+                indexIssueRow(
+                    .failed,
+                    count: viewModel.indexStatus.failedChunks,
+                    color: .red,
+                    rowIndex: 2
+                )
+                indexIssueRow(
+                    .stale,
+                    count: viewModel.indexStatus.staleChunks,
+                    color: .purple,
+                    rowIndex: 3
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+
+            Divider()
+
+            indexBuildSection
         }
         .padding(Self.inspectorContentInset)
     }
@@ -3351,14 +3372,76 @@ struct RAGWorkspaceInspector: View {
         String(format: "%.\(precision)f", locale: locale, value)
     }
 
+    /// 索引页主摘要只保留一份全库向量覆盖，避免“可用分片 / 已向量化 / 向量化阶段”
+    /// 三处重复同一数字。标题沿用其他 Tab 的 callout semibold，数值与键值行保持 caption。
+    var indexHealthSummary: some View {
+        let status = viewModel.indexStatus
+        let readyChunks = min(max(status.readyChunks, 0), max(status.totalChunks, 0))
+        let totalChunks = max(status.totalChunks, 0)
+        let fraction = totalChunks > 0 ? Double(readyChunks) / Double(totalChunks) : 0
+        let hasFailure = status.failedChunks > 0
+        let hasIssue = status.pendingChunks > 0 || status.staleChunks > 0
+        let isHealthy = totalChunks > 0
+            && readyChunks == totalChunks
+            && !hasFailure
+            && !hasIssue
+        let tint: Color = hasFailure
+            ? .red
+            : (hasIssue ? .orange : (isHealthy ? .green : Color.accentColor))
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: isHealthy ? "checkmark.shield.fill" : "chart.bar.doc.horizontal")
+                    .font(iconFont(size: 13, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text("rag.workspace.index.health")
+                    .font(ragFont(.callout, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(
+                    fraction.formatted(
+                        .percent
+                            .precision(.fractionLength(0))
+                            .locale(locale)
+                    )
+                )
+                .font(ragFont(.caption, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("rag.workspace.status.readyChunks")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text("\(readyChunks.formatted()) / \(totalChunks.formatted())")
+                    .font(ragFont(.caption, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+            }
+
+            ProgressView(value: Double(readyChunks), total: Double(max(totalChunks, 1)))
+                .progressViewStyle(.linear)
+                .controlSize(.mini)
+                .tint(tint)
+                .scaleEffect(x: 1, y: 0.5, anchor: .center)
+                .frame(maxWidth: .infinity)
+                .frame(height: 7)
+                .animation(.easeInOut(duration: 0.18), value: readyChunks)
+        }
+    }
+
     var knowledgeRepositoryRow: some View {
         Button {
             viewModel.showKnowledgeBrowser(presentingWindow: NSApp.keyWindow)
         } label: {
-            HStack(spacing: 9) {
-                Circle().fill(Color.blue).frame(width: 8, height: 8)
-                // 索引统计行用 caption，与证据 tab 的 inspector 密度对齐，避免 callout 抢主阅读层级。
-                Text("rag.workspace.status.repos").font(ragFont(.caption))
+            HStack(spacing: 8) {
+                Text("rag.browser.overview.repositoryCoverage")
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.primary)
                 Spacer()
                 indexRowValue("\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)")
                 indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
@@ -3368,7 +3451,7 @@ struct RAGWorkspaceInspector: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
-                isKnowledgeRepositoryRowHovered ? Color.accentColor.opacity(0.08) : .clear,
+                isKnowledgeRepositoryRowHovered ? Color.accentColor.opacity(0.08) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
         }
@@ -3379,21 +3462,12 @@ struct RAGWorkspaceInspector: View {
         .onHover { isKnowledgeRepositoryRowHovered = $0 }
     }
 
-    func coverageRow(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
-        // 与可点击索引行共用同一内边距，保证「可用分片」和两侧 hover 行左右对齐。
-        HStack(spacing: 9) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(label).font(ragFont(.caption))
-            Spacer()
-            indexRowValue(value)
-            indexRowTrailingAffordance()
-        }
-        .padding(.horizontal, Self.indexRowHorizontalPadding)
-        .padding(.vertical, Self.indexRowVerticalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    func indexIssueRow(_ kind: RAGIndexIssueKind, value: String, color: Color) -> some View {
+    func indexIssueRow(
+        _ kind: RAGIndexIssueKind,
+        count: Int,
+        color: Color,
+        rowIndex: Int
+    ) -> some View {
         let isExpanded = expandedIndexIssueKind == kind
         return VStack(alignment: .leading, spacing: 7) {
             Button {
@@ -3404,11 +3478,12 @@ struct RAGWorkspaceInspector: View {
                     Task { await viewModel.loadIndexIssueChunks(kind) }
                 }
             } label: {
-                HStack(spacing: 9) {
-                    Circle().fill(color).frame(width: 8, height: 8)
-                    Text(indexIssueTitle(kind)).font(ragFont(.caption))
+                HStack(spacing: 8) {
+                    Text(indexIssueTitle(kind))
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.primary)
                     Spacer()
-                    indexRowValue(value)
+                    indexRowValue("\(count)", color: count > 0 ? color : .secondary)
                     indexRowTrailingAffordance(systemImage: isExpanded ? "chevron.down" : "chevron.right")
                 }
                 .padding(.horizontal, Self.indexRowHorizontalPadding)
@@ -3416,7 +3491,9 @@ struct RAGWorkspaceInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(
-                    hoveredIndexIssueKind == kind ? Color.accentColor.opacity(0.08) : .clear,
+                    hoveredIndexIssueKind == kind
+                        ? Color.accentColor.opacity(0.08)
+                        : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
             }
@@ -3431,9 +3508,10 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
-    func indexRowValue(_ value: String) -> some View {
+    func indexRowValue(_ value: String, color: Color = .primary) -> some View {
         Text(value)
             .font(ragFont(.caption, weight: .semibold, design: .monospaced))
+            .foregroundStyle(color)
             .frame(minWidth: 44, alignment: .trailing)
     }
 
@@ -3521,44 +3599,136 @@ struct RAGWorkspaceInspector: View {
         source.titleKey
     }
 
-    @ViewBuilder
-    var indexProgressLabel: some View {
-        if let summary = viewModel.indexRefreshSummary {
-            VStack(alignment: .leading, spacing: 13) {
-                if let completedAt = summary.completedAt {
-                    indexProgressLine(
-                        "rag.workspace.index.lastCompleted",
-                        value: completedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)),
-                        color: .green
+    /// 最近构建与健康摘要分区：摘要回答“现在能否检索”，这里回答“最近一轮跑到哪一步”。
+    /// 刷新入口固定在标题右侧，避免旧版按钮悬空在面板底部。
+    var indexBuildSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("rag.workspace.index.recentBuild")
+                    .font(ragFont(.callout, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                if let completedAt = viewModel.indexRefreshSummary?.completedAt {
+                    Text(
+                        completedAt.formatted(
+                            Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)
+                        )
                     )
-                } else {
-                    // 首次刷新尚无成功记录也保留整行，避免阶段统计在开始后突然下移。
-                    indexProgressLine(
-                        "rag.workspace.index.lastCompleted",
-                        value: "—",
-                        color: .secondary
+                    .font(ragFont(.caption2))
+                    .foregroundStyle(.secondary)
+                }
+                SyncIconButton(
+                    isRefreshing: viewModel.isIndexing,
+                    disabled: viewModel.isIndexing,
+                    font: ragFont(.caption),
+                    frameSize: 18,
+                    tooltip: String.l10n("rag.workspace.index.rebuild")
+                ) {
+                    viewModel.rebuildIndex()
+                }
+            }
+
+            if let summary = viewModel.indexRefreshSummary {
+                let activeStageID: String? = switch viewModel.indexingStatus {
+                case .fetchingReadmes: "readme"
+                case .building: "source"
+                case .embedding: "embedding"
+                case .idle, .completed, .failed: nil
+                }
+                let readmeComplete = summary.totalRepos > 0
+                    && summary.readmesProcessed >= summary.totalRepos
+                let sourceBuildComplete = summary.totalRepos > 0
+                    && summary.sourceReposProcessed >= summary.totalRepos
+                let embeddingComplete = summary.completedAt != nil
+                    || (
+                        summary.totalChunksAtEmbedding > 0
+                        && summary.embeddingReadyChunks >= summary.totalChunksAtEmbedding
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    indexBuildStageRow(
+                        id: "readme",
+                        "rag.workspace.index.readmeShort",
+                        value: "\(summary.readmesProcessed)/\(summary.totalRepos)",
+                        rowIndex: 0,
+                        isComplete: readmeComplete,
+                        isActive: activeStageID == "readme"
+                    )
+                    indexBuildStageRow(
+                        id: "source",
+                        "rag.workspace.index.sourceBuild",
+                        value: "\(summary.sourceReposProcessed)/\(summary.totalRepos)",
+                        rowIndex: 1,
+                        isComplete: sourceBuildComplete,
+                        isActive: activeStageID == "source"
+                    )
+                    indexBuildStageRow(
+                        id: "embedding",
+                        "rag.workspace.index.embedding",
+                        value: embeddingProgressValue(for: summary),
+                        rowIndex: 2,
+                        isComplete: embeddingComplete,
+                        isActive: activeStageID == "embedding"
                     )
                 }
-                indexProgressLine("rag.workspace.index.readmeShort", value: "\(summary.readmesProcessed)/\(summary.totalRepos)", color: .blue)
-                indexProgressLine("rag.workspace.index.sourceBuild", value: "\(summary.sourceReposProcessed)/\(summary.totalRepos)", color: .orange)
-                indexProgressLine("rag.workspace.index.embedding", value: embeddingProgressValue(for: summary), color: .green)
             }
-            .font(ragFont(.caption2))
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            EmptyView()
         }
     }
 
-    /// 刷新历史改为纵向阶段清单，避免仓库数与分片数并排时被误读为同一口径。
-    func indexProgressLine(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
-        HStack(spacing: 5) {
+    /// 阶段标题 / 数字与计划 Tab 的键值行同为 caption；callout 只留给分组标题。
+    func indexBuildStageRow(
+        id: String,
+        _ label: LocalizedStringKey,
+        value: String,
+        rowIndex: Int,
+        isComplete: Bool,
+        isActive: Bool
+    ) -> some View {
+        let tint: Color = isComplete ? .green : (isActive ? Color.accentColor : .secondary)
+        let systemImage = isComplete
+            ? "checkmark.circle.fill"
+            : (isActive ? "circle.dotted" : "circle")
+
+        return HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .font(iconFont(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 13)
+                .accessibilityHidden(true)
             Text(label)
-                .foregroundStyle(.secondary)
+                .font(ragFont(.caption))
+                .foregroundStyle(.primary)
             Spacer(minLength: 8)
             Text(value)
+                .font(ragFont(.caption, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(color)
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, Self.indexRowHorizontalPadding)
+        .padding(.vertical, Self.indexRowVerticalPadding)
+        .background(
+            hoveredIndexBuildStageID == id
+                ? Color.accentColor.opacity(0.08)
+                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+        )
+        .onHover { isHovered in
+            if reduceMotion {
+                hoveredIndexBuildStageID = isHovered
+                    ? id
+                    : (hoveredIndexBuildStageID == id ? nil : hoveredIndexBuildStageID)
+            } else {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    hoveredIndexBuildStageID = isHovered
+                        ? id
+                        : (hoveredIndexBuildStageID == id ? nil : hoveredIndexBuildStageID)
+                }
+            }
+        }
+        .onDisappear {
+            if hoveredIndexBuildStageID == id {
+                hoveredIndexBuildStageID = nil
+            }
         }
     }
 
@@ -3570,46 +3740,6 @@ struct RAGWorkspaceInspector: View {
         return "\(summary.embeddingReadyChunks)/\(summary.totalChunksAtEmbedding)"
     }
 
-    /// 常显的整体向量覆盖率。embedding 过程中使用 builder 的批次快照即时推进，完成后回到数据库聚合的真实覆盖率。
-    var embeddingCoverageProgress: some View {
-        let liveProgress = viewModel.indexEmbeddingProgress
-        let progress = liveProgress.map {
-            (readyChunks: $0.processedChunks, totalChunks: $0.totalChunks)
-        } ?? displayedEmbeddingCoverage
-        let title: LocalizedStringKey = liveProgress == nil
-            ? "rag.workspace.index.embeddingCoverage"
-            : "rag.workspace.index.embeddingCurrent"
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(ragFont(.caption2))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(progress.readyChunks.formatted()) · \(progress.totalChunks.formatted())")
-                    .font(ragFont(.caption2))
-                    .monospacedDigit()
-                    .foregroundStyle(liveProgress == nil ? Color.green : Color.accentColor)
-                    .contentTransition(.numericText())
-            }
-            ProgressView(
-                value: Double(progress.readyChunks),
-                total: Double(max(progress.totalChunks, 1))
-            )
-            .progressViewStyle(.linear)
-            .controlSize(.mini)
-            .tint(liveProgress == nil ? .green : Color.accentColor)
-            // 保持原有整行长度，只压缩视觉高度，避免用宽度改变索引区的既有布局。
-            .scaleEffect(x: 1, y: 0.5, anchor: .center)
-            .frame(maxWidth: .infinity)
-            .frame(height: 7)
-            .animation(.easeInOut(duration: 0.18), value: progress.readyChunks)
-        }
-    }
-
-    /// 非 embedding 阶段只表达全库健康度；进入 embedding 后由上方本轮进度覆盖，避免混淆两种口径。
-    var displayedEmbeddingCoverage: (readyChunks: Int, totalChunks: Int) {
-        (viewModel.indexStatus.readyChunks, viewModel.indexStatus.totalChunks)
-    }
     func localizedTimestamp(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
     }

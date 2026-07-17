@@ -527,6 +527,7 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
         isMissing: Bool,
         screenPoint: NSPoint,
         interfaceScale: InterfaceScale,
+        settings: AppSettings,
         onDismiss: @escaping () -> Void
     ) {
         closeWithoutNotifying()
@@ -536,7 +537,8 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
             citation: citation,
             chunk: chunk,
             isMissing: isMissing,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            settings: settings
         )
         let hosting = NSHostingController(rootView: root)
         hosting.view.frame = NSRect(
@@ -580,14 +582,16 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
         citation: RAGCitation,
         chunk: RAGChunk?,
         isMissing: Bool,
-        interfaceScale: InterfaceScale
+        interfaceScale: InterfaceScale,
+        settings: AppSettings
     ) {
         guard popover?.isShown == true else { return }
         let root = Self.rootView(
             citation: citation,
             chunk: chunk,
             isMissing: isMissing,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            settings: settings
         )
         hostingController?.rootView = root
     }
@@ -629,23 +633,30 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
         citation: RAGCitation,
         chunk: RAGChunk?,
         isMissing: Bool,
-        interfaceScale: InterfaceScale
+        interfaceScale: InterfaceScale,
+        settings: AppSettings
     ) -> AnyView {
         if let chunk {
             return AnyView(
                 RAGCitationChunkPopoverContent(citation: citation, chunk: chunk)
                     .environment(\.starcatInterfaceScale, interfaceScale)
+                    .starcatAnimationOverride()
+                    .environment(settings)
             )
         }
         if isMissing {
             return AnyView(
                 RAGCitationChunkMissingPopoverContent(citation: citation)
                     .environment(\.starcatInterfaceScale, interfaceScale)
+                    .starcatAnimationOverride()
+                    .environment(settings)
             )
         }
         return AnyView(
             RAGCitationChunkLoadingPopoverContent(citation: citation)
                 .environment(\.starcatInterfaceScale, interfaceScale)
+                .starcatAnimationOverride()
+                .environment(settings)
         )
     }
 }

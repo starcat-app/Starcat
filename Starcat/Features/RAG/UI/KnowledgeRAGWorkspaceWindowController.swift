@@ -208,11 +208,14 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
         let window = NSWindow(contentViewController: NSHostingController(rootView: content))
         window.title = ""
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 980, height: 660))
+        // 400pt 左栏约占窗口三分之一，与知识库宽屏布局截图的栏宽比例一致；
+        // 右栏保留约 880pt，分片标题、状态和行内操作不再互相挤压。
+        window.setContentSize(NSSize(width: 1_280, height: 800))
         window.contentMinSize = NSSize(width: 760, height: 500)
         window.minSize = window.contentMinSize
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("KnowledgeRAGBrowserWindow")
+        // v2 让旧版 980×660 的已保存 frame 不覆盖新默认值；用户之后的手动尺寸仍会正常记忆。
+        window.setFrameAutosaveName("KnowledgeRAGBrowserWindow.v2")
         super.init(window: window)
         window.delegate = self
     }
@@ -2194,7 +2197,8 @@ private struct KnowledgeRAGBrowserView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(chunk.source.tintColor)
                             .accessibilityHidden(true)
-                        Text(sourceKey(chunk.source)).font(.caption.weight(.semibold))
+                        Text(sourceKey(chunk.source))
+                            .font(interfaceScale.font(.body, weight: .semibold))
                         Text(verbatim: String(format: String.l10n("rag.browser.chunks.tokenCountFormat"), chunk.tokenCount))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
@@ -2265,7 +2269,7 @@ private struct KnowledgeRAGBrowserView: View {
                             .foregroundStyle(.purple)
                             .accessibilityHidden(true)
                         Text("rag.browser.repoContext.title")
-                            .font(.caption.weight(.semibold))
+                            .font(interfaceScale.font(.body, weight: .semibold))
                         Text(verbatim: String(
                             format: String.l10n("rag.browser.chunks.tokenCountFormat"),
                             document.metadata.stats.actualTokens

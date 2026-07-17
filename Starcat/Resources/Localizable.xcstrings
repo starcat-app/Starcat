@@ -21260,50 +21260,34 @@
         }
       }
     },
-    "rag.workspace.index.embeddingCoverage": {
+    "rag.workspace.index.health": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Embedded"
+            "value": "Index health"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已向量化"
+            "value": "索引健康"
           }
         }
       }
     },
-    "rag.workspace.index.embeddingCurrent": {
+    "rag.workspace.index.recentBuild": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Embedding this refresh"
+            "value": "Latest build"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本轮向量化"
-          }
-        }
-      }
-    },
-    "rag.workspace.index.lastCompleted": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Completed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上次完成"
+            "value": "最近一次构建"
           }
         }
       }

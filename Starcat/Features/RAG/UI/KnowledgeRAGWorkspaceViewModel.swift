@@ -561,10 +561,6 @@ final class KnowledgeRAGWorkspaceViewModel {
     var isIndexing = false
     /// 直接透出 builder 的状态，让工作台显示真实构建阶段与数字进度。
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
-    /// 自动入库与手动刷新共用 builder status，Inspector 因而能展示真实的本轮 embedding 进度。
-    var indexEmbeddingProgress: (processedChunks: Int, totalChunks: Int)? {
-        dependencies.knowledgeRAGIndexBuilder.status.embeddingProgress
-    }
     /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
     var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
@@ -2352,7 +2348,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                     citation: citation,
                     chunk: chunk,
                     isMissing: chunk == nil,
-                    interfaceScale: dependencies.settings.interfaceScale
+                    interfaceScale: dependencies.settings.interfaceScale,
+                    settings: dependencies.settings
                 )
             }
         }
@@ -2382,6 +2379,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             isMissing: isMissing,
             screenPoint: clickPoint,
             interfaceScale: scale,
+            settings: dependencies.settings,
             onDismiss: { [weak self] in
                 guard let self,
                       self.citationChunkPopoverGate.isCurrent(requestGeneration) else { return }
@@ -2400,7 +2398,8 @@ final class KnowledgeRAGWorkspaceViewModel {
                 citation: citation,
                 chunk: chunk,
                 isMissing: chunk == nil,
-                interfaceScale: dependencies.settings.interfaceScale
+                interfaceScale: dependencies.settings.interfaceScale,
+                settings: dependencies.settings
             )
         }
     }
