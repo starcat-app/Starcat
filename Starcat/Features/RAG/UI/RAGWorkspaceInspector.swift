@@ -1041,41 +1041,45 @@ struct RAGWorkspaceInspector: View {
                 }
             }
             citationField("rag.workspace.inspector.location", value: citation.sectionTitle)
-            citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
-            retrievalScoreValue(citation)
-            if let vectorSimilarity = citation.vectorSimilarity {
-                citationField(
-                    "rag.workspace.inspector.vectorSimilarity",
-                    value: String(format: "%.3f", locale: locale, vectorSimilarity)
-                )
-            }
-            if let chunk = viewModel.selectedCitationChunk, viewModel.selectedCitation?.id == citation.id {
-                if let createdAtLabel = chunkCreatedAtLabel(chunk) {
-                    citationField("rag.workspace.inspector.chunkCreatedAt", value: createdAtLabel)
+            if citation.source == .repoContext {
+                repoContextCitationDetail
+            } else {
+                citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
+                retrievalScoreValue(citation)
+                if let vectorSimilarity = citation.vectorSimilarity {
+                    citationField(
+                        "rag.workspace.inspector.vectorSimilarity",
+                        value: String(format: "%.3f", locale: locale, vectorSimilarity)
+                    )
                 }
-                // 与综合检索分一致：info.circle 标明可点开 popover 看全文。
-                Button {
-                    isCitationChunkPopoverPresented = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("rag.workspace.inspector.chunkPreview")
-                        Image(systemName: "info.circle")
-                            .font(iconFont(size: 11, weight: .medium))
+                if let chunk = viewModel.selectedCitationChunk, viewModel.selectedCitation?.id == citation.id {
+                    if let createdAtLabel = chunkCreatedAtLabel(chunk) {
+                        citationField("rag.workspace.inspector.chunkCreatedAt", value: createdAtLabel)
                     }
-                    .font(ragFont(.caption, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    // 与综合检索分一致：info.circle 标明可点开 popover 看全文。
+                    Button {
+                        isCitationChunkPopoverPresented = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("rag.workspace.inspector.chunkPreview")
+                            Image(systemName: "info.circle")
+                                .font(iconFont(size: 11, weight: .medium))
+                        }
+                        .font(ragFont(.caption, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.workspace.inspector.chunkPreview.expand")
+                    citationChunkPreview(citation, chunk: chunk)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("rag.workspace.inspector.chunkPreview.expand")
-                citationChunkPreview(citation, chunk: chunk)
-            }
-            if citation.chunkID == nil {
-                Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.orange)
+                if citation.chunkID == nil {
+                    Label("rag.workspace.inspector.chunkMissing", systemImage: "exclamationmark.triangle.fill")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.orange)
+                }
             }
             HStack(spacing: 8) {
                 Spacer()
@@ -1111,6 +1115,62 @@ struct RAGWorkspaceInspector: View {
             }
         }
         .padding(.top, 2)
+    }
+
+    /// RepoContext 以仓库级 `context.xml` 证据展示，不伪装成 `rag_chunks` 数据库分片。
+    /// 历史 XML 只有在 commit/hash 与当轮快照一致时才会由 ViewModel 恢复。
+    @ViewBuilder
+    private var repoContextCitationDetail: some View {
+        if let snapshot = viewModel.displayedRepoContextSnapshot {
+            citationField("rag.workspace.repoContext.commit", value: snapshot.commitSHA ?? "-")
+            citationField("rag.workspace.repoContext.hash", value: snapshot.contentHash ?? "-")
+            citationField(
+                "rag.workspace.repoContext.tokens",
+                value: "\(snapshot.sentTokens) / \(snapshot.originalTokens)"
+            )
+            citationField(
+                "rag.workspace.repoContext.cache",
+                value: snapshot.cacheHit
+                    ? String.l10n("rag.workspace.repoContext.cache.hit")
+                    : String.l10n("rag.workspace.repoContext.cache.generated")
+            )
+        }
+
+        if let document = viewModel.repoContextDocument {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Label("rag.workspace.repoContext.xml", systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(ragFont(.caption, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    CopyFeedbackButton(
+                        providesContent: { document.xml },
+                        tooltip: "rag.workspace.repoContext.copy"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(iconFont(size: 10, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                    }
+                }
+                ScrollView(.horizontal) {
+                    Text(document.xml)
+                        .font(ragFont(.caption2, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .frame(maxHeight: 260)
+                .padding(8)
+                .background(
+                    Color(nsColor: .textBackgroundColor).opacity(0.72),
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+            }
+        } else {
+            Label("rag.workspace.repoContext.historyUnavailable", systemImage: "clock.badge.exclamationmark")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+        }
     }
 
     /// 最多 5 行预览；点击用 popover 看全文，避免点选文本时「字突然变多」。

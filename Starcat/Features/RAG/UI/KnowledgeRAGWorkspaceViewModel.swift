@@ -10,6 +10,7 @@
 //
 
 import AppKit
+import CryptoKit
 import Foundation
 import Observation
 import UniformTypeIdentifiers
@@ -339,6 +340,8 @@ struct RAGConversationRuntimeState {
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
     var contextUsage: RAGContextUsage?
+    /// XML 只属于当前运行态，不进入 SQLite；历史会话通过 execution snapshot 校验磁盘缓存后重建。
+    var repoContextDocument: RAGRepoContextDocument?
     var remoteBlocks: [RAGRemoteContextBlock] = []
     var executionSteps: [RAGExecutionStep] = []
     var elapsedDuration: TimeInterval?
@@ -411,6 +414,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 运行中的 Debug Trace 按会话隔离；切换后事件仍写原会话，并在切回时与磁盘历史合并。
     @ObservationIgnored private var liveDebugTracesByConversation: [UUID: [RAGDebugTrace]] = [:]
     @ObservationIgnored private var linkDetectionTask: Task<Void, Never>?
+    /// 历史 XML 读取必须跟随会话选择取消；commit/hash 不匹配时保持 nil，绝不展示后来版本。
+    @ObservationIgnored private var repoContextHistoryLoadTask: Task<Void, Never>?
 
     var conversations: [RAGConversationSummary] = []
     var conversationGroups: [RAGConversationGroup] = []
@@ -447,6 +452,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var editingUserDraft = ""
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
+    /// 当前轮实际进入 Prompt 的 XML 投影；只保存在内存，供引用详情作为独立证据展示。
+    private(set) var repoContextDocument: RAGRepoContextDocument?
     /// 当前轮默认可见的执行轨迹；完成后随 assistant message 持久化，Debug payload 不进入这里。
     var executionSteps: [RAGExecutionStep] = []
     var remoteBlocks: [RAGRemoteContextBlock] = []
@@ -690,6 +697,16 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         return latestHistoricalExecutionTrace?.reversed()
             .first(where: { $0.contextUsageSnapshot != nil })?.contextUsageSnapshot?.usage
+    }
+
+    /// 当前运行轮优先；历史回放从最后一条 assistant 的脱敏 execution trace 读取。
+    var displayedRepoContextSnapshot: RAGRepoContextSnapshot? {
+        if queryPlan != nil || messages.last?.role == .user {
+            return repoContextDocument?.snapshot
+                ?? executionSteps.reversed().first(where: { $0.repoContextSnapshot != nil })?.repoContextSnapshot
+        }
+        return latestHistoricalExecutionTrace?.reversed()
+            .first(where: { $0.repoContextSnapshot != nil })?.repoContextSnapshot
     }
 
     /// 计划快照与最近一轮问答绑定；原始问题从用户消息恢复，无需在 execution trace 再复制。
@@ -1031,6 +1048,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         resetTurnState()
         restoreComposerDraft(for: detail.summary.id)
         restoreActiveAnswerPresentation(for: detail.summary.id)
+        scheduleHistoricalRepoContextLoad(for: detail.summary.id)
         isConversationLoading = false
     }
 
@@ -1058,9 +1076,56 @@ final class KnowledgeRAGWorkspaceViewModel {
         queryPlan = runtime.queryPlan
         retrieval = runtime.retrieval
         lastContextUsage = runtime.contextUsage
+        repoContextDocument = runtime.repoContextDocument
         remoteBlocks = runtime.remoteBlocks
         executionSteps = runtime.executionSteps
         restoreRemoteContextState(for: conversationID)
+    }
+
+    /// 历史消息只持久化 RepoContext 的 commit/hash/token 快照。这里从共享缓存读取 XML，
+    /// 先核验“同一 commit + 同一原文 hash”，再按当时 sentTokens 重建投影；任何一项不符
+    /// 都保持只展示审计元数据，避免把后来生成的新代码上下文冒充旧回答证据。
+    private func scheduleHistoricalRepoContextLoad(for conversationID: UUID) {
+        repoContextHistoryLoadTask?.cancel()
+        guard conversationRuntimeStates[conversationID]?.repoContextDocument == nil,
+              let snapshot = displayedRepoContextSnapshot,
+              snapshot.outcome == .success,
+              snapshot.sentTokens > 0,
+              let expectedCommitSHA = snapshot.commitSHA,
+              let expectedHash = snapshot.contentHash else {
+            return
+        }
+        let nameParts = snapshot.repoFullName.split(separator: "/", maxSplits: 1).map(String.init)
+        guard nameParts.count == 2 else { return }
+
+        repoContextHistoryLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            let storage = RepoContextStorage.shared
+            guard let stored = try? storage.existingProject(owner: nameParts[0], repo: nameParts[1]),
+                  stored.metadata.commitSha == expectedCommitSHA,
+                  let xml = try? storage.loadContextXml(owner: nameParts[0], repo: nameParts[1]) else { return }
+            let actualHash = SHA256.hash(data: Data(xml.utf8))
+                .map { String(format: "%02x", $0) }
+                .joined()
+            guard actualHash == expectedHash,
+                  let projection = try? RAGRepoContextXMLProjector().project(
+                    xml,
+                    tokenBudget: snapshot.sentTokens
+                  ),
+                  !Task.isCancelled,
+                  selectedConversationID == conversationID else { return }
+            var restoredSnapshot = snapshot
+            restoredSnapshot.originalTokens = projection.originalTokens
+            restoredSnapshot.sentTokens = projection.projectedTokens
+            restoredSnapshot.wasProjected = projection.wasProjected
+            restoredSnapshot.projectionReason = projection.reason
+            repoContextDocument = RAGRepoContextDocument(
+                snapshot: restoredSnapshot,
+                xml: projection.xml
+            )
+        }
     }
 
     /// Swift Dictionary 的 value 是值类型；集中 read-modify-write 才能保证同一会话的字段
@@ -2283,6 +2348,12 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 回答正文蓝色 `[S1]`：只在点击位置弹出命中分片，不选中右侧证据、不 bump `citationFocusSequence`。
     /// 底部芯片走 `selectCitation`，负责右侧自动导航。
     func presentCitationChunk(_ citation: RAGCitation) {
+        // RepoContext 不是数据库分片，没有 chunkID。正文 marker 应定位右侧独立 XML 证据卡，
+        // 不能复用“分片缺失”popover，否则会把正常的仓库级证据误报成索引损坏。
+        if citation.source == .repoContext {
+            selectCitation(citation)
+            return
+        }
         let clickPoint = NSEvent.mouseLocation
         citationChunkPopoverCitationID = citation.id
         let scale = dependencies.settings.interfaceScale
@@ -2552,6 +2623,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             runtime.queryPlan = nil
             runtime.retrieval = nil
             runtime.contextUsage = nil
+            runtime.repoContextDocument = nil
             runtime.remoteBlocks = []
         }
         if selectedConversationID == conversationID {
@@ -2562,6 +2634,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             queryPlan = nil
             retrieval = nil
             lastContextUsage = nil
+            repoContextDocument = nil
             executionSteps = []
             remoteBlocks = []
             pendingRemoteWorkItems = []
@@ -2745,10 +2818,11 @@ final class KnowledgeRAGWorkspaceViewModel {
                     if selectedConversationID == conversationID {
                         retrieval = result
                     }
-                case .repoContext:
-                    // XML 正文只在本轮内存中流转。后续由 Inspector 接住同一份投影结果，
-                    // 这里先消费事件，避免误把正文写进通用历史状态。
-                    break
+                case .repoContext(let document):
+                    updateRuntimeState(for: conversationID) { $0.repoContextDocument = document }
+                    if selectedConversationID == conversationID {
+                        repoContextDocument = document
+                    }
                 case .remoteContextConfirmation(let workItems):
                     pendingRemoteWorkItemsByConversation[conversationID] = workItems
                     approvedRemoteWorkItemIDsByConversation[conversationID] = Set(workItems.map(\.id))
@@ -3881,6 +3955,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         editingUserDraft = ""
         queryPlan = nil
         retrieval = nil
+        repoContextDocument = nil
         lastContextUsage = nil
         remoteBlocks = []
         pendingRemoteWorkItems = []

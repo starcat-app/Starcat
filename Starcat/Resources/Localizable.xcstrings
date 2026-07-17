@@ -20332,6 +20332,78 @@
         }
       }
     },
+    "rag.workspace.repoContext.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repository context XML" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文 XML" } }
+      }
+    },
+    "rag.workspace.repoContext.planReason": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking was enabled for the selected project" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已为选中的单项目开启深度思考" } }
+      }
+    },
+    "rag.workspace.repoContext.planNote": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Build and inject the selected project's RepoContext XML before web search" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在联网搜索前生成并注入选中项目的 RepoContext XML" } }
+      }
+    },
+    "rag.workspace.repoContext.commit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Commit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Commit" } }
+      }
+    },
+    "rag.workspace.repoContext.hash": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Content hash" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "内容哈希" } }
+      }
+    },
+    "rag.workspace.repoContext.tokens": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sent / original tokens" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "发送 / 原始 tokens" } }
+      }
+    },
+    "rag.workspace.repoContext.cache": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Preparation" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生成方式" } }
+      }
+    },
+    "rag.workspace.repoContext.cache.hit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reused cache" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复用缓存" } }
+      }
+    },
+    "rag.workspace.repoContext.cache.generated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Generated this turn" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮生成" } }
+      }
+    },
+    "rag.workspace.repoContext.xml": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "context.xml sent this turn" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮发送的 context.xml" } }
+      }
+    },
+    "rag.workspace.repoContext.copy": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy context.xml" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 context.xml" } }
+      }
+    },
+    "rag.workspace.repoContext.historyUnavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The historical XML is unavailable or no longer matches this commit and hash." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "历史 XML 不可用，或已不再匹配本轮 commit 与内容哈希。" } }
+      }
+    },
     "rag.workspace.composer.clearContext": {
       "localizations": {
         "en": {
