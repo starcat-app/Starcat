@@ -264,6 +264,9 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
             return "COALESCE(r.starred_at, n.library_updated_at, r.cached_at) DESC, r.id DESC"
         case .starredAtAsc:
             return "r.starred_at IS NULL ASC, r.starred_at ASC, r.id ASC"
+        case .libraryUpdatedAtDesc:
+            // 知识库列表 / mention 默认：最近一次入库（或重新入库）在前。
+            return "n.library_updated_at DESC, r.id DESC"
         case .nameAsc:
             return "LOWER(r.full_name) ASC, r.id ASC"
         case .nameDesc:
@@ -386,7 +389,7 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
         query: String = "",
         limit: Int,
         offset: Int,
-        sort: RepoSortOption = .starsDesc,
+        sort: RepoSortOption = RAGComposerMentionSort.default,
         filters: RAGComposerMentionFilters = .empty
     ) async throws -> RAGRepoCandidatePage {
         precondition(limit > 0 && offset >= 0)

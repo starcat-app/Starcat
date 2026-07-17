@@ -42,6 +42,9 @@ final class HomeViewModel {
             Self.selectionChangeStartedAt = Date()
             AppLog.ui.notice("[switch-cat] T0 selection didSet \(String(describing: oldValue), privacy: .public) → \(String(describing: self.selection), privacy: .public)")
             #endif
+            // 知识库与 All Stars 共用 sortOption：进出知识库时在「默认/最近星标」与
+            // 「最近加入知识库」之间对调，避免污染用户在知识库里主动选的其它排序。
+            reconcileSortOptionForKnowledgeLibraryTransition(from: oldValue, to: selection)
             if case .userSmartCollection = selection {
                 // 规则会在 reloadItems 里随 collection 重新读取。
             } else {
@@ -2137,6 +2140,31 @@ final class HomeViewModel {
     func selectSidebar(_ item: SidebarItem) {
         guard selection != item else { return }
         selection = item  // didSet 会处理 selectedRepoID = nil 和 searchQuery = ""
+    }
+
+    /// 主窗口知识库入口：侧栏「知识库」与系统集合 `.library`。
+    private func isKnowledgeLibrarySelection(_ item: SidebarItem) -> Bool {
+        switch item {
+        case .library, .smartCollection(.library):
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// 进出知识库时对调默认排序；用户在知识库里选的 stars/name 等保持不动。
+    private func reconcileSortOptionForKnowledgeLibraryTransition(
+        from oldSelection: SidebarItem,
+        to newSelection: SidebarItem
+    ) {
+        let wasLibrary = isKnowledgeLibrarySelection(oldSelection)
+        let isLibrary = isKnowledgeLibrarySelection(newSelection)
+        guard wasLibrary != isLibrary else { return }
+        if isLibrary, sortOption == .starredAtDesc {
+            sortOption = .libraryUpdatedAtDesc
+        } else if !isLibrary, sortOption == .libraryUpdatedAtDesc {
+            sortOption = .starredAtDesc
+        }
     }
 
     // MARK: - W4-4 D2：filter + sort 透视层

@@ -45331,6 +45331,22 @@
         }
       }
     },
+    "settings.sort.libraryUpdatedAtDesc": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added to Library"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近加入知识库"
+          }
+        }
+      }
+    },
     "settings.sort.starsAsc": {
       "extractionState": "stale",
       "localizations": {

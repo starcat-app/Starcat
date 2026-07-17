@@ -79,10 +79,12 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 /// 设计：把"字段 + 方向"合并成枚举 case，UI 用单层 Picker 就能列全，无需嵌套 Menu。
 /// 默认 `.starredAtDesc` — 最近 star 的在最前，与之前隐式行为一致。
 enum RepoSortOption: String, CaseIterable, Identifiable {
-    /// 默认：最近 star 在前。
+    /// 默认：最近 star 在前（All Stars / 星标列表）。
     case starredAtDesc
     /// 最早 star 在前。
     case starredAtAsc
+    /// 最近加入知识库在前（`repo_notes.library_updated_at`；在库列表默认）。
+    case libraryUpdatedAtDesc
     /// 名称 A→Z。
     case nameAsc
     /// 名称 Z→A。
@@ -108,10 +110,11 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 
     /// Manage 列表实际展示的排序项。
     ///
-    /// `starredAtDesc` 继续作为"默认"内部语义：星标列表默认按最近 star 排序，但不再把
-    /// "最近星标/最早星标"暴露成独立产品概念。特有排序统一放在通用排序之后。
+    /// `starredAtDesc` 继续作为星标列表"默认"：按最近 star 排序，但不再把
+    /// "最近星标/最早星标"暴露成独立产品概念。知识库相关排序紧随其后。
     static let manageOptions: [RepoSortOption] = [
         .starredAtDesc,
+        .libraryUpdatedAtDesc,
         .starsDesc,
         .starsAsc,
         .updatedDesc,
@@ -133,6 +136,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         switch self {
         case .starredAtDesc: return String.l10n("settings.sort.starredAtDesc")
         case .starredAtAsc:  return String.l10n("settings.sort.starredAtAsc")
+        case .libraryUpdatedAtDesc: return String.l10n("settings.sort.libraryUpdatedAtDesc")
         case .nameAsc:       return String.l10n("settings.sort.nameAsc")
         case .nameDesc:      return String.l10n("settings.sort.nameDesc")
         case .starsDesc:     return String.l10n("settings.sort.starsDesc")
@@ -151,6 +155,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         switch self {
         case .starredAtDesc: return "settings.sort.starredAtDesc"
         case .starredAtAsc:  return "settings.sort.starredAtAsc"
+        case .libraryUpdatedAtDesc: return "settings.sort.libraryUpdatedAtDesc"
         case .nameAsc:       return "settings.sort.nameAsc"
         case .nameDesc:      return "settings.sort.nameDesc"
         case .starsDesc:     return "settings.sort.starsDesc"
@@ -169,6 +174,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         switch self {
         case .starredAtDesc:                return "sparkles"
         case .starredAtAsc:                 return "star"
+        case .libraryUpdatedAtDesc:         return "books.vertical"
         case .nameAsc:                      return "a.square"
         case .nameDesc:                     return "z.square"
         case .starsDesc:                    return "star.fill"
@@ -198,6 +204,10 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
             let av = a.starredAt ?? "\u{FFFD}"
             let bv = b.starredAt ?? "\u{FFFD}"
             return av < bv
+        case .libraryUpdatedAtDesc:
+            // 入库时间在 repo_notes，纯 Repo comparator 拿不到；知识库列表走 SQL。
+            // 内存路径给稳定 fallback，避免搜索/缓存路径崩溃。
+            return RepoSortOption.starredAtDesc.comparator(a, b)
         case .nameAsc:
             return a.fullName.localizedCaseInsensitiveCompare(b.fullName) == .orderedAscending
         case .nameDesc:

@@ -296,7 +296,7 @@ struct GRDBRepoRepository {
                 FROM repos r
                 JOIN repo_notes rn ON rn.repo_id = r.id
                 WHERE rn.library_state = 'in_library'
-                ORDER BY COALESCE(r.starred_at, rn.library_updated_at, r.cached_at) DESC, r.id DESC
+                ORDER BY rn.library_updated_at DESC, r.id DESC
                 """)
         }
     }
@@ -467,7 +467,7 @@ struct GRDBRepoRepository {
                 ) m ON r.id = m.repo_id
                 WHERE rn.library_state = 'in_library'
                 ORDER BY m.best_score ASC,
-                         COALESCE(r.starred_at, rn.library_updated_at, r.cached_at) DESC,
+                         rn.library_updated_at DESC,
                          r.id DESC
                 """, arguments: [ftsQuery, ftsQuery])
         }
@@ -760,18 +760,24 @@ struct GRDBRepoRepository {
             joins.append("LEFT JOIN repo_health_snapshots h_sort ON h_sort.repo_id = r.id")
         } else if sort == .openSSFScoreDesc {
             joins.append("LEFT JOIN open_ssf_scores ossf_sort ON ossf_sort.repo_id = r.id AND ossf_sort.fetch_status = 'success'")
+        } else if sort == .libraryUpdatedAtDesc, scope != .library {
+            // 知识库 scope 已 JOIN rn_scope；其它 scope 单独左连，避免未入库仓库丢行。
+            joins.append("LEFT JOIN repo_notes rn_library_sort ON rn_library_sort.repo_id = r.id")
         }
 
         let orderBy: String
         switch sort {
         case .starredAtDesc:
-            if scope == .library {
-                orderBy = "COALESCE(r.starred_at, rn_scope.library_updated_at, r.cached_at) DESC, r.id DESC"
-            } else {
-                orderBy = "r.starred_at DESC, r.id DESC"
-            }
+            // 「默认」始终表示最近 star；知识库默认改走 libraryUpdatedAtDesc。
+            orderBy = "r.starred_at DESC, r.id DESC"
         case .starredAtAsc:
             orderBy = "r.starred_at IS NULL ASC, r.starred_at ASC, r.id ASC"
+        case .libraryUpdatedAtDesc:
+            if scope == .library {
+                orderBy = "rn_scope.library_updated_at DESC, r.id DESC"
+            } else {
+                orderBy = "rn_library_sort.library_updated_at IS NULL ASC, rn_library_sort.library_updated_at DESC, r.id DESC"
+            }
         case .nameAsc:
             orderBy = "LOWER(r.full_name) ASC, r.id ASC"
         case .nameDesc:

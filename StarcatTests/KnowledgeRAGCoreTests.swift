@@ -1273,6 +1273,7 @@ struct KnowledgeRAGCoreTests {
             }
         }
         let repository = GRDBRAGRepoCandidateRepository(database: database)
+        // 分页哨兵用稳定 stars 排序断言页边界；默认「最近入库」另有专用用例。
         let first = try await repository.fetchKnowledgeBrowserPage(
             query: "",
             limit: 20,
@@ -1297,6 +1298,26 @@ struct KnowledgeRAGCoreTests {
 
         let overlap = Set(first.candidates.map(\.repo.id)).intersection(second.candidates.map(\.repo.id))
         #expect(overlap.isEmpty)
+    }
+
+    @Test("知识库浏览器默认按 library_updated_at 倒序")
+    func knowledgeBrowserDefaultsToLibraryUpdatedAtDesc() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in 1...3 {
+            try await database.insertRepoFixture(id: Int64(id))
+            try await notes.updateLibraryState(repoId: Int64(id), state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE repo_notes SET library_updated_at = ? WHERE repo_id = ?",
+                    arguments: ["2026-07-0\(id)T12:00:00Z", id]
+                )
+            }
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let page = try await repository.fetchKnowledgeBrowserPage(limit: 10, offset: 0)
+        #expect(page.candidates.map(\.repo.id) == [3, 2, 1])
+        #expect(RAGComposerMentionSort.default == .libraryUpdatedAtDesc)
     }
 
     @Test("知识库浏览器列表支持关键词、语言筛选与名称排序")
@@ -1503,7 +1524,7 @@ struct KnowledgeRAGCoreTests {
         #expect(filtered.candidates.map(\.id) == [1])
         #expect(filters.isActive)
         #expect(RAGComposerMentionFilters.empty.isActive == false)
-        #expect(RAGComposerMentionSort.default == .starredAtDesc)
+        #expect(RAGComposerMentionSort.default == .libraryUpdatedAtDesc)
     }
 
     @Test("混合融合合并命中并限制每个 repo 的 child 数")

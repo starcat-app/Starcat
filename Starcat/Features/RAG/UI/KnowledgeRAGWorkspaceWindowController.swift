@@ -243,8 +243,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoadingMoreChunks = false
     var isLoadingMoreRepositories = false
     var isIndexing = false
-    /// 浏览器独立于 Composer「+」面板；默认保持历史 stars 降序，打开时列表顺序不变。
-    var repositorySortOption: RepoSortOption = .starsDesc {
+    /// 浏览器独立于 Composer「+」面板；默认最近加入知识库倒序。
+    var repositorySortOption: RepoSortOption = RAGComposerMentionSort.default {
         didSet {
             guard oldValue != repositorySortOption else { return }
             scheduleRepositoryReload(force: true)

@@ -45,7 +45,7 @@ struct RAGComposerMentionFilters: Equatable, Codable, Sendable {
     }
 }
 
-/// 面板默认排序：与 Manage「默认」一致（最近 star / sparkles）。
+/// 知识库仓库列表默认排序：最近加入知识库（`library_updated_at` 倒序）。
 enum RAGComposerMentionSort {
-    static let `default`: RepoSortOption = .starredAtDesc
+    static let `default`: RepoSortOption = .libraryUpdatedAtDesc
 }
