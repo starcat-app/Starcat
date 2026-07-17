@@ -901,12 +901,12 @@ struct SearchCenterView: View {
                 .foregroundStyle(tint)
                 .frame(width: 12, height: 12)
                 .padding(4)
-                // 提高来源图标底座的可见度，避免 GitHub 的动态 primary 色在浅色背景上
-                // 显得比相邻操作图标更小；仍使用语义 tint，明暗主题会自动切换。
-                .background(tint.opacity(0.18), in: Circle())
+                // GitHub 来源使用独立金色底座，避免 primary 同色底在浅色主题下层级不清；
+                // 图标本身仍走动态 primary，确保明暗主题都有足够对比度。
+                .background(backgroundStyle, in: Circle())
                 .overlay {
                     Circle()
-                        .stroke(tint.opacity(0.18), lineWidth: 0.5)
+                        .stroke(borderStyle, lineWidth: 0.5)
                 }
                 .help(helpText)
                 .accessibilityLabel(helpText)
@@ -928,6 +928,20 @@ struct SearchCenterView: View {
                     .font(.system(size: 11, weight: .semibold))
             case .externalProvider(let provider):
                 ExternalSearchProviderIcon(provider: provider, size: 12)
+            }
+        }
+
+        private var backgroundStyle: Color {
+            switch source {
+            case .github: return Color.orange.opacity(0.24)
+            default: return tint.opacity(0.18)
+            }
+        }
+
+        private var borderStyle: Color {
+            switch source {
+            case .github: return Color.orange.opacity(0.40)
+            default: return tint.opacity(0.18)
             }
         }
 
