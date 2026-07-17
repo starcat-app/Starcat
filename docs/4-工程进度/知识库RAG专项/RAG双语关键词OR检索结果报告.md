@@ -94,24 +94,20 @@ repo 名出现在 README/笔记/摘要分片中。
 - 真实中英混合问答质量评测仍是 RAG 专项的持续评测项，没有用合成单测冒充真实数据结论。
 - 自动化审查没有伪造真实 Provider + 本地知识库的人工 UI 点选；建议合并后做一次实际体验验收。
 
-## 7. `docs/功能实现总览.md` 待确认内容
+## 7. `docs/功能实现总览.md` 已同步内容
 
-本次没有修改受保护总览。dong4j 后续明确允许后，可写入：
+经 dong4j 明确授权，已在 2026-07-17 23:32 同步以下内容：
 
 ```markdown
 - [x] **RAG 双语关键词 OR 检索** — Planner 拆分语义查询与双语关键词，RAG FTS5 使用安全 OR，并补齐检索漏斗三态 — `KnowledgeRAGQueryPlanner.swift`、`RAGSearchProviders.swift`、`RAGWorkspaceInspector.swift` — 2026-07-17
 > 实现：普通搜索继续 AND；RAG 关键词经本地去重、限长和转义后 OR 召回，repo 范围仅由 id 强制限定；Trace/Snapshot 不复制分片正文或原始外部错误。
 ```
 
-§10 变更日志草稿：
-
-```markdown
-- 2026-07-17 HH:MM: 完成 RAG 双语关键词 OR 检索与检索漏斗可解释性整改
-```
+同时更新进度仪表盘：P2 从 15/40 更新为 16/41（39%），总计从 117/151 更新为 118/152（78%），并在变更日志顶部登记本次完成项。
 
 ## 8. 交付状态
 
 - worktree：`/Users/dong4j/orca/workspaces/Starcat/rag-bilingual-keyword-or`
 - 分支没有 upstream，未 push。
 - 未执行打包、发布、上传或部署。
-- 除待 dong4j 人工体验与单独确认总览写入外，本次约定工作已全部完成。
+- 除 dong4j 人工体验验收外，本次约定工作已全部完成，功能总览已同步。
