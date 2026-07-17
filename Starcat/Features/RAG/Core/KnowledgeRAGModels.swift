@@ -927,6 +927,29 @@ struct RAGRetrievalDiagnostics: Codable, Equatable, Sendable {
     }
 }
 
+/// 检索漏斗单分支的纯值状态。把判断从 SwiftUI View 中抽离，既能直接回归测试，
+/// 也保证当前轮与历史快照使用同一套“0 命中 / 失败 / 跳过”语义。
+enum RAGRetrievalBranchStatus: Equatable, Sendable {
+    case completed(raw: Int, accepted: Int)
+    case failed(String)
+    case skipped
+
+    static func resolve(
+        raw: Int,
+        accepted: Int,
+        errorDescription: String?,
+        outcome: RAGRetrievalDiagnostics.Outcome?
+    ) -> Self {
+        if let errorDescription, !errorDescription.isEmpty {
+            return .failed(errorDescription)
+        }
+        if outcome == .sourcesDisabled || outcome == .skippedStructured {
+            return .skipped
+        }
+        return .completed(raw: raw, accepted: accepted)
+    }
+}
+
 /// “计划”面板可回放的检索结果摘要。
 ///
 /// `RAGRetrievalDiagnostics` 仍是当前轮 Debug 事实，可能包含 provider 错误；

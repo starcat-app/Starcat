@@ -4108,6 +4108,34 @@ struct KnowledgeRAGCoreTests {
         #expect(trace.keywordQuery == nil)
     }
 
+    @Test("检索分支读模型区分零命中、失败与跳过")
+    func retrievalBranchStatusDistinguishesZeroFailureAndSkipped() {
+        #expect(RAGRetrievalBranchStatus.resolve(
+            raw: 0,
+            accepted: 0,
+            errorDescription: nil,
+            outcome: .noEvidence
+        ) == .completed(raw: 0, accepted: 0))
+        #expect(RAGRetrievalBranchStatus.resolve(
+            raw: 0,
+            accepted: 0,
+            errorDescription: "provider unavailable",
+            outcome: .noEvidence
+        ) == .failed("provider unavailable"))
+        #expect(RAGRetrievalBranchStatus.resolve(
+            raw: 0,
+            accepted: 0,
+            errorDescription: nil,
+            outcome: .sourcesDisabled
+        ) == .skipped)
+        #expect(RAGRetrievalBranchStatus.resolve(
+            raw: 0,
+            accepted: 0,
+            errorDescription: nil,
+            outcome: .skippedStructured
+        ) == .skipped)
+    }
+
     @Test("推荐问题随 assistant message 持久化仓库范围")
     func suggestedActionsPersistWithRepositoryScope() async throws {
         let database = try InMemoryDatabaseManager()

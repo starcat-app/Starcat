@@ -2127,17 +2127,23 @@ struct RAGWorkspaceInspector: View {
         errorDescription: String?,
         outcome: RAGRetrievalDiagnostics.Outcome?
     ) -> String {
-        if let errorDescription, !errorDescription.isEmpty {
+        switch RAGRetrievalBranchStatus.resolve(
+            raw: raw,
+            accepted: accepted,
+            errorDescription: errorDescription,
+            outcome: outcome
+        ) {
+        case .completed(let raw, let accepted):
+            return localizedFunnelCount(raw: raw, accepted: accepted)
+        case .failed(let errorDescription):
             let conciseError = String(errorDescription.prefix(80))
             return String(
                 format: String.l10n("rag.workspace.inspector.plan.retrieval.branch.failedFormat"),
                 conciseError
             )
-        }
-        if outcome == .sourcesDisabled || outcome == .skippedStructured {
+        case .skipped:
             return String.l10n("rag.workspace.inspector.plan.retrieval.branch.skipped")
         }
-        return localizedFunnelCount(raw: raw, accepted: accepted)
     }
 
     /// 新计划直接展示 Planner 关键词；旧自定义 Prompt 没有该字段时，回退到 Retriever
