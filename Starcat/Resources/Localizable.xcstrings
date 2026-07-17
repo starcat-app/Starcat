@@ -8019,50 +8019,50 @@
         }
       }
     },
-    "authV2.alternative.deviceFlow" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in with Device Code"
+    "authV2.alternative.deviceFlow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with Device Code"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用设备码登录"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用设备码登录"
           }
         }
       }
     },
-    "authV2.alternative.divider" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "or use another method"
+    "authV2.alternative.divider": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "or use another method"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "或选择其他方式"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或选择其他方式"
           }
         }
       }
     },
-    "authV2.alternative.pat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in with Token"
+    "authV2.alternative.pat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with Token"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用 Token 登录"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Token 登录"
           }
         }
       }
@@ -20289,13 +20289,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable deep thinking with repository context"
+            "value": "Enable deep thinking with project code"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启深度思考并读取项目上下文"
+            "value": "开启深度思考并读取项目代码"
           }
         }
       }
@@ -20334,104 +20334,274 @@
     },
     "rag.workspace.repoContext.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repository context XML" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文 XML" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码 XML"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.planReason": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking was enabled for the selected project" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已为选中的单项目开启深度思考" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep thinking was enabled for the selected project"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已为选中的单项目开启深度思考"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.planNote": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Build and inject the selected project's RepoContext XML before web search" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在联网搜索前生成并注入选中项目的 RepoContext XML" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build and inject the selected project's code XML before web search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在联网搜索前生成并注入选中项目的代码 XML"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.commit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Commit" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Commit" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commit"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.hash": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Content hash" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "内容哈希" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content hash"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容哈希"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.tokens": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Sent / original tokens" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "发送 / 原始 tokens" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.cache": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Preparation" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生成方式" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成方式"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.cache.hit": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Reused cache" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复用缓存" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reused cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复用缓存"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.cache.generated": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Generated this turn" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮生成" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generated this turn"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮生成"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.xml": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "context.xml sent this turn" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本轮发送的 context.xml" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "context.xml sent this turn"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮发送的 context.xml"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.xml.expand": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Open the complete context.xml" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开完整 context.xml" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the complete context.xml"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开完整 context.xml"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.projection": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "XML projection" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "XML 投影" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window fit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口适配"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.projection.projected": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Projected to the available model window" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已按模型可用窗口投影" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trimmed to fit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已裁剪装入"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.projection.original": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Original XML fit without projection" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "原始 XML 可直接容纳" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full XML fit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整装入"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.projectionReason": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Projection reason" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "投影原因" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window fit reason"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适配原因"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.copy": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Copy context.xml" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 context.xml" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy context.xml"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制 context.xml"
+          }
+        }
       }
     },
     "rag.workspace.repoContext.historyUnavailable": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The historical XML is unavailable or no longer matches this commit and hash." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "历史 XML 不可用，或已不再匹配本轮 commit 与内容哈希。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The historical XML is unavailable or no longer matches this commit and hash."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史 XML 不可用，或已不再匹配本轮 commit 与内容哈希。"
+          }
+        }
       }
     },
     "rag.workspace.composer.clearContext": {
@@ -25340,104 +25510,274 @@
     },
     "rag.workspace.execution.repoContext.resolvingBranch": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Resolving the repository branch" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在解析项目分支" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolving the repository branch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在解析项目分支"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking: build project context" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深度思考：构建项目上下文" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.checkingCache": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Checking the matching RepoContext cache" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在检查匹配的项目上下文缓存" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking the matching project-code cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查匹配的项目代码缓存"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.tokenDetailPrefix": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Sent " } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已发送 " } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens："
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.downloadingArchive": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Downloading the source archive" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在下载源码归档" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading the source archive"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载源码归档"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.packingContext": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Packing repository context XML" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在生成项目上下文 XML" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packing project-code XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在生成项目代码 XML"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.xmlPreparedFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Generated repository context XML (%lld tokens)" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已生成项目上下文 XML（%lld tokens）" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generated project-code XML (%lld tokens)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已生成项目代码 XML（%lld tokens）"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.projecting": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Projecting XML against the model context window" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在按模型总上下文窗口投影 XML" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fitting XML to the model context window"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在按模型窗口做窗口适配"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.tokensFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Sent %1$lld / %2$lld tokens" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已发送 %1$lld / %2$lld tokens" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens：%lld"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.repoContext": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking context" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深度思考上下文" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.repoContext.enabled": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深度思考" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep thinking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深度思考"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.repoContext.project": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Project" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.repoContext.budget": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RepoContext token budget" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RepoContext token 预算" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token budget"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token 预算"
+          }
+        }
       }
     },
     "rag.workspace.inspector.plan.repoContext.status": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Status" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "状态" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.completed": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repository context is ready" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文已就绪" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code is ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码已就绪"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.disabled": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repository context is disabled in Settings" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "设置中已关闭项目上下文" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code is disabled in Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置中已关闭项目代码"
+          }
+        }
       }
     },
     "rag.workspace.execution.repoContext.degraded": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Repository context was unavailable; continued without it" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文不可用，已降级继续" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code was unavailable; continued without it"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码不可用，已降级继续"
+          }
+        }
       }
     },
     "rag.workspace.execution.planning.fallbackFormat": {
@@ -26565,13 +26905,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Repository context"
+            "value": "Project code"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仓库上下文"
+            "value": "项目代码"
           }
         }
       }
@@ -27799,13 +28139,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Debug traces are stored locally. The final Prompt stage may contain the complete repository context XML; clearing this conversation's traces deletes that local debug copy."
+            "value": "Debug traces are stored locally. The final Prompt stage may contain the complete project-code XML; clearing this conversation's traces deletes that local debug copy."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调试记录保存在本地；最终 Prompt 阶段可能包含完整项目上下文 XML。清空当前会话调试记录会删除这份本地调试副本。"
+            "value": "调试记录保存在本地；最终 Prompt 阶段可能包含完整项目代码 XML。清空当前会话调试记录会删除这份本地调试副本。"
           }
         }
       }
@@ -29060,20 +29400,50 @@
     },
     "rag.workspace.debug.stage.repoContextRequest": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RepoContext request" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文请求" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码请求"
+          }
+        }
       }
     },
     "rag.workspace.debug.stage.repoContextResponse": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RepoContext result" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文结果" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code result"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码结果"
+          }
+        }
       }
     },
     "rag.workspace.debug.stage.repoContextProjection": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RepoContext projection" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文投影" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code window fit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码窗口适配"
+          }
+        }
       }
     },
     "rag.workspace.demo.answer.intro": {
@@ -59262,13 +59632,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The selected project's RepoContext XML with commit, hash, and citation marker. It has an independent budget from indexed evidence and is empty unless deep thinking is enabled for exactly one project."
+            "value": "The selected project's code XML with commit, hash, and citation marker. It has an independent budget from indexed evidence and is empty unless deep thinking is enabled for exactly one project."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选中单项目的 RepoContext XML，包含 commit、内容哈希与引用标记；预算独立于索引分片证据，只有在单项目开启深度思考时才有内容。"
+            "value": "选中单项目的代码 XML，包含 commit、内容哈希与引用标记；预算独立于索引分片证据，只有在单项目开启深度思考时才有内容。"
           }
         }
       }
@@ -61443,6 +61813,438 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在加载会话"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about project code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解项目代码"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.definition.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is project code?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码是什么？"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.definition.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used only when Composer enables Deep Thinking with exactly one selected project. Starcat analyzes that repository's source tree, builds a context.xml, and injects it into the Generator prompt as {repoContextSection}. It does not run when Deep Thinking is off or when zero/multiple projects are selected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在 Composer 开启「深度思考」且恰好选中 1 个项目时使用。Starcat 会分析该仓库源码树，生成 context.xml，并作为 {repoContextSection} 注入 Generator Prompt。未开启深度思考，或未选 / 多选项目时不会走这条链路。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.steps.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How context.xml is built"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "context.xml 生成步骤"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.resolveBranch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. Resolve the repository branch via GitHub."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. 通过 GitHub 解析仓库分支。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.checkCache": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. Check the project-code cache (commit, token budget, and tier rules)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. 检查项目代码缓存（commit、token 预算与 tier 规则）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.downloadArchive": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3. Download the source archive when the cache misses."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3. 缓存未命中时下载源码归档。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.packXML": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4. Pack files with RepoContextPacker into context.xml."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4. 用 RepoContextPacker 遍历文件并写出 context.xml。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.validate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5. Validate non-empty XML with a <repository> root."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5. 校验 XML 非空且根节点为 <repository>。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.windowFit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6. Fit the XML into the remaining model context window (window fit)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6. 按模型剩余上下文窗口做窗口适配。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.step.injectPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7. Inject the result into this turn's Generator prompt."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7. 将结果注入本轮 Generator Prompt。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.fields.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields in this section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本节字段含义"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.project": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project: the single repository targeted for deep thinking."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目：深度思考目标仓库（本轮唯一显式选中项）。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.budget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token budget: the packer budget from Settings used when building XML."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token 预算：设置中的打包预算，用于生成 XML。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: ready, disabled in Settings, or degraded after execution."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态：已就绪、设置中已关闭，或执行后降级。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.commit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commit: the source commit used for the XML."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commit：生成 XML 所基于的源码 commit。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.cache": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparation: reused an existing cache or generated XML this turn."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成方式：复用已有缓存，或本轮重新生成 XML。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.tokens": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens: tokens actually sent in the prompt after window fit."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens：窗口适配后实际进入 Prompt 的 token 数。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.field.windowFit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window fit: whether the XML had to be trimmed to fit the remaining model window."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口适配：XML 是否因模型剩余窗口不足而被裁剪。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.windowFit.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is window fit?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口适配是什么？"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.windowFit.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packer first builds context.xml under the configured Token budget. When the full prompt is assembled, the remaining model window may be smaller. Starcat then trims complete XML nodes—fileList, then keyFiles, then entryPoints, and finally directory-tree text—so the result stays valid <repository> XML instead of a hard-cut fragment."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packer 会先按设置的 Token 预算生成完整 context.xml。拼进整轮 Prompt 时，模型剩余窗口可能更小。此时 Starcat 会按完整 XML 节点裁剪：先 fileList，再 keyFiles，再 entryPoints，最后缩短目录树文本，保证结果仍是合法的 <repository> XML，而不是硬截断的半截标签。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.windowFit.cases.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Possible outcomes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能出现的结果"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.windowFit.case.full": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full XML fit: the original XML fits the remaining window; nothing is removed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整装入：原始 XML 装得进剩余窗口，未做裁剪。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.windowFit.case.trimmed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trimmed to fit: files or directory text were removed so a valid XML still fits."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已裁剪装入：删除了部分文件节点或缩短了目录树文本，使合法 XML 仍能装入。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.help.repoContext.windowFit.case.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed: window fit cannot produce valid XML within budget; the step degrades and the answer continues without project code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败：无法在预算内产出合法 XML；本步降级，回答继续进行但不带项目代码。"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.retrieval.detail.hitKind.repoContext": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目代码"
           }
         }
       }

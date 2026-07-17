@@ -15,6 +15,7 @@ enum RAGPlanSectionHelpTopic: String, Identifiable {
     case networkPlan
     case retrievalFunnel
     case contextBudget
+    case repoContext
 
     var id: String { rawValue }
 
@@ -25,6 +26,7 @@ enum RAGPlanSectionHelpTopic: String, Identifiable {
         case .networkPlan: return "network"
         case .retrievalFunnel: return "line.3.horizontal.decrease.circle.fill"
         case .contextBudget: return "gauge.with.dots.needle.33percent"
+        case .repoContext: return "brain.head.profile"
         }
     }
 
@@ -35,6 +37,7 @@ enum RAGPlanSectionHelpTopic: String, Identifiable {
         case .networkPlan: return .cyan
         case .retrievalFunnel: return .orange
         case .contextBudget: return .green
+        case .repoContext: return .indigo
         }
     }
 
@@ -83,7 +86,41 @@ enum RAGPlanSectionHelpTopic: String, Identifiable {
                 "rag.workspace.inspector.plan.help.contextBudget.field.reservedOutput",
                 "rag.workspace.inspector.plan.help.contextBudget.field.window",
             ]
+        case .repoContext:
+            return [
+                "rag.workspace.inspector.plan.help.repoContext.field.project",
+                "rag.workspace.inspector.plan.help.repoContext.field.budget",
+                "rag.workspace.inspector.plan.help.repoContext.field.status",
+                "rag.workspace.inspector.plan.help.repoContext.field.commit",
+                "rag.workspace.inspector.plan.help.repoContext.field.cache",
+                "rag.workspace.inspector.plan.help.repoContext.field.tokens",
+                "rag.workspace.inspector.plan.help.repoContext.field.windowFit",
+            ]
         }
+    }
+
+    /// RepoContext XML 生成步骤；仅深度思考分组展示。
+    var stepKeys: [String] {
+        guard self == .repoContext else { return [] }
+        return [
+            "rag.workspace.inspector.plan.help.repoContext.step.resolveBranch",
+            "rag.workspace.inspector.plan.help.repoContext.step.checkCache",
+            "rag.workspace.inspector.plan.help.repoContext.step.downloadArchive",
+            "rag.workspace.inspector.plan.help.repoContext.step.packXML",
+            "rag.workspace.inspector.plan.help.repoContext.step.validate",
+            "rag.workspace.inspector.plan.help.repoContext.step.windowFit",
+            "rag.workspace.inspector.plan.help.repoContext.step.injectPrompt",
+        ]
+    }
+
+    /// 窗口适配三种结果说明；仅深度思考分组展示。
+    var windowFitCaseKeys: [String] {
+        guard self == .repoContext else { return [] }
+        return [
+            "rag.workspace.inspector.plan.help.repoContext.windowFit.case.full",
+            "rag.workspace.inspector.plan.help.repoContext.windowFit.case.trimmed",
+            "rag.workspace.inspector.plan.help.repoContext.windowFit.case.failed",
+        ]
     }
 }
 
@@ -112,7 +149,8 @@ struct RAGPlanSectionInfoButton: View {
     }
 }
 
-/// 结构化说明：定义 → 本节字段 →（上下文预算额外附与 Composer 占用的对比）。
+/// 结构化说明：定义 → 本节字段 →（上下文预算额外附与 Composer 占用的对比；
+/// 深度思考额外附 XML 生成步骤与窗口适配说明）。
 struct RAGPlanSectionHelpPopover: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -123,10 +161,19 @@ struct RAGPlanSectionHelpPopover: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 definitionBlock
+                if topic == .repoContext {
+                    keyedBulletBlock(
+                        titleKey: "rag.workspace.inspector.plan.help.repoContext.steps.title",
+                        keys: topic.stepKeys
+                    )
+                }
                 fieldsBlock
                 if topic == .contextBudget {
                     contextBudgetCompareSection
                     footnote("rag.workspace.context.budget.help.footnote")
+                }
+                if topic == .repoContext {
+                    repoContextWindowFitSection
                 }
             }
             .padding(16)
@@ -159,12 +206,17 @@ struct RAGPlanSectionHelpPopover: View {
     }
 
     private var fieldsBlock: some View {
+        keyedBulletBlock(titleKey: topic.fieldsTitleKey, keys: topic.fieldKeys)
+    }
+
+    /// 带标题的圆点列表；生成步骤与字段说明共用，避免两套间距/背景分叉。
+    private func keyedBulletBlock(titleKey: String, keys: [String]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(LocalizedStringKey(topic.fieldsTitleKey))
+            Text(LocalizedStringKey(titleKey))
                 .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(.primary)
             VStack(alignment: .leading, spacing: 7) {
-                ForEach(topic.fieldKeys, id: \.self) { key in
+                ForEach(keys, id: \.self) { key in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "circle.fill")
                             .font(.system(size: 5))
@@ -180,6 +232,23 @@ struct RAGPlanSectionHelpPopover: View {
             }
             .padding(10)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    /// 窗口适配：先解释为什么要裁 XML，再列出完整装入 / 已裁剪 / 失败降级三种结果。
+    private var repoContextWindowFitSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("rag.workspace.inspector.plan.help.repoContext.windowFit.title")
+                .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text("rag.workspace.inspector.plan.help.repoContext.windowFit.body")
+                .font(ragFont(.caption, scale: interfaceScale))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            keyedBulletBlock(
+                titleKey: "rag.workspace.inspector.plan.help.repoContext.windowFit.cases.title",
+                keys: topic.windowFitCaseKeys
+            )
         }
     }
 

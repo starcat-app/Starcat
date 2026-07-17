@@ -2422,14 +2422,13 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.lastChatRequest?.userPrompt.contains("附件事实") == true)
     }
 
-    @MainActor
-    @Test("RepoContext 独立证据区只接受成功快照")
-    func repoContextEvidenceVisibilityRejectsDegradedSnapshots() {
-        let success = RAGRepoContextSnapshot(
+    @Test("RepoContext 引用使用稳定的短哈希")
+    func repoContextCitationUsesShortHashes() {
+        let snapshot = RAGRepoContextSnapshot(
             repoID: 21,
             repoFullName: "octo/demo-21",
             commitSHA: "0123456789abcdef0123456789abcdef01234567",
-            contentHash: "hash",
+            contentHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
             configuredTokenBudget: 8_000,
             originalTokens: 1_000,
             sentTokens: 900,
@@ -2440,14 +2439,9 @@ struct KnowledgeRAGCoreTests {
             citationMarker: "S1",
             preparedAt: .now
         )
-        var degraded = success
-        degraded.outcome = .degraded
-        degraded.sentTokens = 0
-        degraded.degradationReason = "pack_failure"
 
-        #expect(KnowledgeRAGWorkspaceViewModel.shouldDisplayRepoContextEvidence(for: success))
-        #expect(!KnowledgeRAGWorkspaceViewModel.shouldDisplayRepoContextEvidence(for: degraded))
-        #expect(!KnowledgeRAGWorkspaceViewModel.shouldDisplayRepoContextEvidence(for: nil))
+        #expect(snapshot.shortCommitSHA == "0123456")
+        #expect(snapshot.shortContentHash == "abcdef012345")
     }
 
     @Test("深度思考在多项目范围下不会调用 RepoContext Provider")

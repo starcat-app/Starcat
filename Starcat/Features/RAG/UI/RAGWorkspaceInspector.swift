@@ -68,11 +68,11 @@ struct RAGWorkspaceInspector: View {
     @State private var isRetrievalScoreExplanationPresented = false
     @State private var isCitationChunkPopoverPresented = false
     @State private var isRepoContextXMLPopoverPresented = false
+    /// 大型 XML 创建 popover 内容会有短暂延迟；打开完成前锁住入口，避免双击被系统解释为随即关闭。
+    @State private var isRepoContextXMLPopoverOpening = false
     @State private var retrievalDetailTarget: RAGRetrievalDetailTarget?
     /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
     @State private var isKnowledgeMetadataExpanded = false
-    /// RepoContext 是本轮显式开启的高价值证据；默认展开，让未被回答引用的 XML 仍可核对。
-    @State private var isRepoContextExpanded = true
     /// Star Top10 是次级排行，默认折叠在元数据展开内容内部。
     @State private var isStarLeadersExpanded = false
 
@@ -184,6 +184,8 @@ struct RAGWorkspaceInspector: View {
         .onChange(of: viewModel.selectedCitation?.id) { _, _ in
             // 换引用时关掉旧全文，避免 popover 挂在错误分片上。
             isCitationChunkPopoverPresented = false
+            isRepoContextXMLPopoverPresented = false
+            isRepoContextXMLPopoverOpening = false
         }
         #if DEBUG
         .alert("rag.workspace.debug.clear.confirm.title", isPresented: $isClearDebugTracesConfirmationPresented) {
@@ -237,12 +239,7 @@ struct RAGWorkspaceInspector: View {
         VStack(alignment: .leading, spacing: 10) {
             knowledgeBaseMetadataPanel
 
-            if viewModel.shouldDisplayRepoContextEvidence {
-                Divider().padding(.vertical, 2)
-                repoContextEvidencePanel
-            }
-
-            // 元数据/RepoContext 是本轮上下文，引用是回答实际保留的 marker；分割线明确两者不能互相替代。
+            // 元数据是知识库范围快照；下方只展示回答实际保留 marker 的引用。
             Divider().padding(.vertical, 2)
 
             if allCitations.isEmpty {
@@ -406,48 +403,6 @@ struct RAGWorkspaceInspector: View {
         .padding(Self.inspectorContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: viewModel.selectedCitation?.id)
-    }
-
-    /// RepoContext 不依赖回答是否保留 `[S<n>]` marker：只要本轮成功准备过，就作为独立
-    /// 仓库级证据展示。它不进入普通 citation/chunk 数量，也不会伪装成 metadata source。
-    private var repoContextEvidencePanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    isRepoContextExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "brain.head.profile")
-                        .font(iconFont(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.indigo)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("rag.workspace.repoContext.title")
-                            .font(ragFont(.caption, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        if let snapshot = viewModel.displayedRepoContextSnapshot {
-                            Text(snapshot.repoFullName)
-                                .font(ragFont(.caption2))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: isRepoContextExpanded ? "chevron.down" : "chevron.right")
-                        .font(iconFont(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-
-            if isRepoContextExpanded {
-                repoContextCitationDetail
-                    .padding(.leading, 18)
-            }
-        }
     }
 
     @ViewBuilder
@@ -1092,7 +1047,7 @@ struct RAGWorkspaceInspector: View {
             }
             citationField("rag.workspace.inspector.location", value: citation.sectionTitle)
             if citation.source == .repoContext {
-                repoContextCitationDetail
+                repoContextCitationDetail(citation)
             } else {
                 citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
                 retrievalScoreValue(citation)
@@ -1170,13 +1125,13 @@ struct RAGWorkspaceInspector: View {
     /// RepoContext 以仓库级 `context.xml` 证据展示，不伪装成 `rag_chunks` 数据库分片。
     /// 历史 XML 只有在 commit/hash 与当轮快照一致时才会由 ViewModel 恢复。
     @ViewBuilder
-    private var repoContextCitationDetail: some View {
+    private func repoContextCitationDetail(_ citation: RAGCitation) -> some View {
         if let snapshot = viewModel.displayedRepoContextSnapshot {
-            citationField("rag.workspace.repoContext.commit", value: snapshot.commitSHA ?? "-")
-            citationField("rag.workspace.repoContext.hash", value: snapshot.contentHash ?? "-")
+            citationField("rag.workspace.repoContext.commit", value: snapshot.shortCommitSHA)
+            citationField("rag.workspace.repoContext.hash", value: snapshot.shortContentHash)
             citationField(
                 "rag.workspace.repoContext.tokens",
-                value: "\(snapshot.sentTokens) / \(snapshot.originalTokens)"
+                value: snapshot.sentTokens.formatted()
             )
             citationField(
                 "rag.workspace.repoContext.cache",
@@ -1212,6 +1167,9 @@ struct RAGWorkspaceInspector: View {
                     }
                 }
                 Button {
+                    guard !isRepoContextXMLPopoverOpening,
+                          !isRepoContextXMLPopoverPresented else { return }
+                    isRepoContextXMLPopoverOpening = true
                     isRepoContextXMLPopoverPresented = true
                 } label: {
                     Text(document.xml)
@@ -1225,6 +1183,7 @@ struct RAGWorkspaceInspector: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .disabled(isRepoContextXMLPopoverOpening || isRepoContextXMLPopoverPresented)
                 .help("rag.workspace.repoContext.xml.expand")
                 .padding(8)
                 .background(
@@ -1232,15 +1191,16 @@ struct RAGWorkspaceInspector: View {
                     in: RoundedRectangle(cornerRadius: 6)
                 )
                 .popover(isPresented: $isRepoContextXMLPopoverPresented, arrowEdge: .leading) {
-                    ScrollView([.horizontal, .vertical]) {
-                        Text(document.xml)
-                            .font(ragFont(.caption2, design: .monospaced))
-                            .foregroundStyle(.primary)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: true, vertical: true)
-                            .padding(14)
+                    RAGRepoContextXMLPopoverContent(citation: citation, document: document)
+                        .onAppear {
+                            // 内容真正挂载后才解除 opening 锁；presented 仍让入口保持禁用直到关闭。
+                            isRepoContextXMLPopoverOpening = false
+                        }
+                }
+                .onChange(of: isRepoContextXMLPopoverPresented) { _, isPresented in
+                    if !isPresented {
+                        isRepoContextXMLPopoverOpening = false
                     }
-                    .frame(minWidth: 680, idealWidth: 760, minHeight: 420, idealHeight: 520)
                 }
             }
         } else {
@@ -1378,10 +1338,12 @@ struct RAGWorkspaceInspector: View {
                     if let repoContextRequest = plan.repoContextRequest {
                         // RepoContext 是独立于分片检索和联网的本地执行步骤，必须在计划中
                         // 单列；把它塞进“联网计划”会错误暗示 XML 会发送给搜索 Provider。
+                        // 不展示 planReason：本节出现本身即表示已开启深度思考，与「状态」重复。
                         planSection(
                             "rag.workspace.inspector.plan.repoContext",
                             systemImage: "brain.head.profile",
-                            tint: .indigo
+                            tint: .indigo,
+                            helpTopic: .repoContext
                         ) {
                             planMetricRow(
                                 "rag.workspace.inspector.plan.repoContext.project",
@@ -1391,10 +1353,6 @@ struct RAGWorkspaceInspector: View {
                                 "rag.workspace.inspector.plan.repoContext.budget",
                                 value: repoContextRequest.configuredTokenBudget.formatted()
                             )
-                            Text(repoContextRequest.reason)
-                                .font(ragFont(.caption))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
                             if let snapshot = viewModel.displayedRepoContextSnapshot {
                                 planMetricRow(
                                     "rag.workspace.inspector.plan.repoContext.status",
@@ -1412,9 +1370,10 @@ struct RAGWorkspaceInspector: View {
                                         ? String.l10n("rag.workspace.repoContext.cache.hit")
                                         : String.l10n("rag.workspace.repoContext.cache.generated")
                                 )
+                                // 只展示实际进入 Prompt 的 sentTokens；裁剪与否由「窗口适配」行表达。
                                 planMetricRow(
                                     "rag.workspace.repoContext.tokens",
-                                    value: "\(snapshot.sentTokens) / \(snapshot.originalTokens)"
+                                    value: snapshot.sentTokens.formatted()
                                 )
                                 planMetricRow(
                                     "rag.workspace.repoContext.projection",
@@ -2366,13 +2325,26 @@ struct RAGWorkspaceInspector: View {
                         if isExpanded {
                             // 子 stage 相对父行轻缩进即可，过大空白会浪费窄侧栏。
                             let stepDurations = debugEventStepDurations(for: trace.events)
+                            let repoContextEvents = trace.events.filter { isRepoContextDebugStage($0.stage) }
                             VStack(alignment: .leading, spacing: 6) {
                                 ForEach(Array(trace.events.enumerated()), id: \.element.id) { eventIndex, event in
-                                    debugEventRow(
-                                        event,
-                                        rowIndex: eventIndex,
-                                        stepDurationSeconds: stepDurations[event.id] ?? event.elapsedSeconds
-                                    )
+                                    if isRepoContextDebugStage(event.stage) {
+                                        // 三个 RepoContext stage 共享一个操作入口；仅在首个事件的位置渲染，
+                                        // 避免请求、结果、投影继续表现成三个同级组。
+                                        if event.id == repoContextEvents.first?.id {
+                                            debugRepoContextGroup(
+                                                repoContextEvents,
+                                                rowIndex: eventIndex,
+                                                stepDurations: stepDurations
+                                            )
+                                        }
+                                    } else {
+                                        debugEventRow(
+                                            event,
+                                            rowIndex: eventIndex,
+                                            stepDurationSeconds: stepDurations[event.id] ?? event.elapsedSeconds
+                                        )
+                                    }
                                 }
                             }
                             .padding(.leading, 8)
@@ -2503,6 +2475,136 @@ struct RAGWorkspaceInspector: View {
         )
     }
 
+    /// RepoContext 的请求、结果、窗口投影属于同一条上下文准备链路。外层只保留一套
+    /// 耗时、复制和折叠操作，展开后再按原始事件顺序展示三个只读区块。
+    func debugRepoContextGroup(
+        _ events: [RAGDebugEvent],
+        rowIndex: Int,
+        stepDurations: [UUID: TimeInterval]
+    ) -> some View {
+        let groupID = events.first?.id
+        let isExpanded = groupID.map { expandedDebugEventIDs.contains($0) } ?? false
+        let totalDuration = events.reduce(0) { result, event in
+            result + (stepDurations[event.id] ?? 0)
+        }
+
+        return VStack(alignment: .leading, spacing: 7) {
+            Button {
+                toggleRepoContextDebugGroupExpansion(events)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain.head.profile")
+                        .font(iconFont(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14)
+                        .accessibilityHidden(true)
+                    Text("rag.workspace.context.repoContext")
+                        .font(ragFont(.caption, weight: .semibold))
+                    Spacer(minLength: 4)
+                    Text(String(format: String.l10n("rag.workspace.debug.elapsedFormat"), locale: locale, totalDuration))
+                        .font(ragFont(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .help("rag.workspace.debug.stepDuration.help")
+                    // 给复制留位，保证 chevron 与普通 stage 行保持同一列。
+                    Color.clear
+                        .frame(width: 10)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(ragFont(.caption2, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .overlay(alignment: .trailing) {
+                CopyFeedbackButton(
+                    providesContent: {
+                        events.map { event in
+                            "[\(event.stage.rawValue)]\n\(event.renderedPayload())"
+                        }
+                        .joined(separator: "\n\n")
+                    },
+                    tooltip: "rag.workspace.debug.copy"
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(iconFont(size: 9, weight: .regular))
+                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                        .frame(width: 10, height: 10)
+                        .fixedSize()
+                }
+                .padding(.trailing, 18)
+            }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(events.enumerated()), id: \.element.id) { blockIndex, event in
+                        if blockIndex > 0 {
+                            Divider()
+                        }
+                        debugRepoContextBlock(event)
+                    }
+                }
+                .padding(.horizontal, 6)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(
+                    groupID == hoveredDebugEventID
+                        ? Color.accentColor.opacity(0.08)
+                        : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
+                )
+        )
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+        .onHover { isHovering in
+            guard let groupID else { return }
+            hoveredDebugEventID = isHovering
+                ? groupID
+                : (hoveredDebugEventID == groupID ? nil : hoveredDebugEventID)
+        }
+        .onDisappear {
+            if hoveredDebugEventID == groupID {
+                hoveredDebugEventID = nil
+            }
+        }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.15),
+            value: hoveredDebugEventID == groupID
+        )
+    }
+
+    /// 组内区块只承担阶段辨识与 payload 展示，不再重复复制、耗时和折叠控件。
+    private func debugRepoContextBlock(_ event: RAGDebugEvent) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: debugStageIcon(event.stage))
+                    .font(iconFont(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+                    .accessibilityHidden(true)
+                Text(debugStageKey(event.stage))
+                    .font(ragFont(.caption2, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            debugPayloadText(for: event)
+                .font(ragFont(.caption2, design: .monospaced))
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func isRepoContextDebugStage(_ stage: RAGDebugEvent.Stage) -> Bool {
+        switch stage {
+        case .repoContextRequest, .repoContextResponse, .repoContextProjection:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// 仅检索诊断拥有稳定的结构化指标；Prompt、模型响应等自由文本可能含端口、模型版本或参数，
     /// 不应因其中出现数字而被误标为检索关键信息。
     private func debugPayloadText(for event: RAGDebugEvent) -> Text {
@@ -2553,6 +2655,22 @@ struct RAGWorkspaceInspector: View {
             cursor = range.upperBound
         }
         return result + Text(String(payload[cursor...]))
+    }
+
+    /// 项目上下文组使用首个事件 ID 保存展开态；收起时清理组内所有旧事件状态，
+    /// 避免热更新或历史视图状态让已合并的子阶段残留为独立展开项。
+    private func toggleRepoContextDebugGroupExpansion(_ events: [RAGDebugEvent]) {
+        guard let groupID = events.first?.id else { return }
+        let isExpanded = expandedDebugEventIDs.contains(groupID)
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+            if isExpanded {
+                expandedDebugEventIDs.subtract(events.map(\.id))
+                pendingExpandDebugEventIDs.subtract(events.map(\.id))
+            } else {
+                expandedDebugEventIDs.insert(groupID)
+            }
+            ()
+        }
     }
 
     /// 由累计 `elapsedSeconds` 差分得到本步耗时；首条相对 ask 起点。
