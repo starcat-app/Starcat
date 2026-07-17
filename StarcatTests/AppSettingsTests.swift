@@ -366,6 +366,7 @@ struct AppSettingsTests {
         #expect(s.smartSearchMode == .keyword)
         #expect(s.ragPromptSettings.generator.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{questionSection}"))
+        #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{repoContextSection}"))
         #expect(s.ragPromptSettings.planner.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.planner.userPromptTemplate.contains("{question}"))
         #expect(s.ragPromptSettings.compressor.systemPrompt.contains("{outputLanguage}"))
@@ -383,7 +384,7 @@ struct AppSettingsTests {
         s1.ragPromptSettings = RAGPromptSettings(
             generator: AIPromptConfiguration(
                 systemPrompt: "GEN_SYS {outputLanguage}",
-                userPromptTemplate: "GEN_USER {questionSection}"
+                userPromptTemplate: "GEN_USER {questionSection}{repoContextSection}"
             ),
             planner: AIPromptConfiguration(
                 systemPrompt: "PLAN_SYS {outputLanguage}",
@@ -401,7 +402,7 @@ struct AppSettingsTests {
 
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.ragPromptSettings.generator.systemPrompt == "GEN_SYS {outputLanguage}")
-        #expect(s2.ragPromptSettings.generator.userPromptTemplate == "GEN_USER {questionSection}")
+        #expect(s2.ragPromptSettings.generator.userPromptTemplate == "GEN_USER {questionSection}{repoContextSection}")
         #expect(s2.ragPromptSettings.planner.systemPrompt == "PLAN_SYS {outputLanguage}")
         #expect(s2.ragPromptSettings.planner.userPromptTemplate == "PLAN_USER {question}")
         #expect(s2.ragPromptSettings.compressor.systemPrompt == "COMP_SYS {outputLanguage}")
@@ -430,7 +431,7 @@ struct AppSettingsTests {
         #expect(restored.enabledSources == [.notes])
     }
 
-    @Test("RAG: 旧版只有 Generator/Planner 的提示词 JSON 升级后应补齐默认压缩与标题")
+    @Test("RAG: 旧 Generator 缺少 RepoContext 占位符时恢复默认协议")
     func ragPromptSettingsDecodeLegacyTwoPromptJSON() throws {
         let defaults = makeIsolatedDefaults()
         let legacy = """
@@ -442,7 +443,7 @@ struct AppSettingsTests {
         defaults.set(legacy, forKey: "settings.rag.prompts.v1")
 
         let settings = AppSettings(defaults: defaults)
-        #expect(settings.ragPromptSettings.generator.systemPrompt == "OLD_GEN")
+        #expect(settings.ragPromptSettings.generator == RAGDefaultPrompts.generator)
         #expect(settings.ragPromptSettings.planner.systemPrompt == "OLD_PLAN")
         #expect(settings.ragPromptSettings.compressor == RAGDefaultPrompts.compressor)
         #expect(settings.ragPromptSettings.title == RAGDefaultPrompts.title)
