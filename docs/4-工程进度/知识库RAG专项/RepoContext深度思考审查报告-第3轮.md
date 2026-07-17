@@ -2,7 +2,7 @@
 
 > 日期：2026-07-17
 > 范围：方案、代码、测试、i18n、专项进度、Checklist、提交粒度与最终工程门禁
-> 结论：静态一致性检查发现 1 个 P1、1 个 P2；本报告先落档，修复后再执行完整工程门禁并回填。
+> 结论：发现的 1 个 P1、1 个 P2 及全量测试暴露的 2 类断言/时序问题均已修复，最终工程门禁通过。
 
 ## 1. 审查方法
 
@@ -51,4 +51,21 @@ Service 降级/取消、草稿、历史 citation round-trip、Inspector read mod
 
 ## 5. 最终门禁与修复回填
 
-> 待 P1/P2 修复、完整工程门禁和结果报告完成后回填 commit、测试矩阵与最终结论。
+- P1 修复：`455c9945 RAG：统一校验 RepoContext XML 根节点契约`。projector 和 Service 无论是否投影都验证 `<repository>`，测试 fixture 与正式 Packer schema 对齐。
+- P2 修复：`0c2a42ff 文档：回填 RepoContext 三轮审查与自动化门禁`。已按实际报告、测试和构建证据更新 Checklist 与专项进度。
+- 全量测试发现缺少 `{repoContextSection}` 的旧断言仍假定自定义 Generator 可保留，已用 `e9177d65 测试：同步 RepoContext 提示词持久化契约` 对齐本需求“不保留旧模板兼容”的明确决策。
+- 全量测试同时稳定复现 3 个 Home 列表测试在 sidebar 切换后又并发手动 reload，后创建的排序任务会取消测试查询；`3d2e8a1f 测试：稳定知识库列表切换异步门禁` 改为等待 ViewModel 自己派发的分页重载。该修复不改变生产代码。
+- 覆盖补强：`96fad56d 测试：补齐深度思考门禁与调试阶段覆盖`，新增 0/1/2 项目门禁和 RepoContext request/response/projection Debug stage 脱敏断言。
+
+最终验证矩阵：
+
+- `xcodegen generate`：通过，生成后 `Starcat.xcodeproj` 无差异。
+- `jq empty Starcat/Resources/Localizable.xcstrings`、`git diff --check`、禁用本地化 API 扫描：通过。
+- `Starcat build-for-testing`：通过。
+- `KnowledgeRAGCoreTests`、`RAGChunkBuilderTests`、`RAGChunkRepositoryTests`、`RAGConversationHistoryWindowTests`、`RAGLocalizationTests`：通过。
+- 全量 `Starcat test`：修复断言/时序后连续两次功能性执行通过。其中一次额外重跑在测试尚未启动前遭 test host signal kill，未生成崩溃报告；再次执行 35.563 秒通过，判定为 testmanager 基础设施瞬态而非测试失败。
+- `Starcat` Debug build：通过。
+- `StarcatDirect` Debug build：通过。
+- warning：没有新增产品代码 warning；`KnowledgeRAGCoreTests` 第 924～930 行仍有此前已有的 MainActor 测试 warning，已在前两轮报告记录。
+
+最终结论：本轮所有发现均已清零，方案、代码、测试、i18n、专项进度和 Checklist 已一致，可以进行只读清洁复审。
