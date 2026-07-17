@@ -225,6 +225,44 @@ struct WikiContextServiceTests {
         #expect(service.cachedSnapshot(owner: "old", repo: "repo") == nil)
     }
 
+    @Test("仓库新加入知识库后通过通知进入统一补齐队列")
+    func testKnowledgeBackfillEnqueuesNewLibraryRepository() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let items = [makeItem(
+            source: .deepWiki,
+            status: .indexed,
+            url: "https://deepwiki.com/new/repo"
+        )]
+        let fetcher = StubWikiFetcher(items: items, delay: 0.01)
+        let service = WikiContextService(cache: cache, fetcher: fetcher)
+        let repo = makeRepo(id: 77, owner: "new", name: "repo")
+        let coordinator = WikiKnowledgeBackfillCoordinator(
+            wikiContextService: service,
+            fetchKnowledgeRepos: { [] },
+            findRepo: { id in id == repo.id ? repo : nil }
+        )
+
+        coordinator.start()
+        // 先让 AsyncSequence 完成 observer 注册，避免测试把通知发在监听任务启动之前。
+        await Task.yield()
+        try await Task.sleep(for: .milliseconds(20))
+        NotificationCenter.default.post(
+            name: .repoLibraryStateDidChange,
+            object: nil,
+            userInfo: [
+                "repoId": repo.id,
+                "libraryState": LibraryState.inLibrary.rawValue
+            ]
+        )
+
+        try await pollUntil(timeoutMs: 2000) {
+            service.cachedSnapshot(owner: repo.owner, repo: repo.name) != nil
+        }
+        #expect(fetcher.callCount == 1)
+        await coordinator.suspendForUserDatabaseChange()
+    }
+
     // MARK: - refresh 同步路径
 
     @Test("refresh 调 fetcher + 写盘 + 返回 indexedLinks")

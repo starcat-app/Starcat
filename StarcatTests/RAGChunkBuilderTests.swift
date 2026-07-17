@@ -207,6 +207,39 @@ struct RAGChunkBuilderTests {
         #expect(chunks.contains { $0.parentKey == "readme:setup-2" })
     }
 
+    @Test("Wiki cache change 只路由通知中的单个仓库 identity")
+    func wikiCacheChangeRoutesOneRepository() {
+        let notification = Notification(
+            name: .wikiCacheDidChange,
+            userInfo: ["owner": "octo", "repo": "demo"]
+        )
+
+        #expect(
+            RAGWikiMetadataRefreshRoute.changedRepository(from: notification)
+                == WikiRepoKey(owner: "octo", repo: "demo")
+        )
+    }
+
+    @Test("Wiki cache reset 保留全部受影响仓库并忽略非法 payload")
+    func wikiCacheResetRoutesAffectedRepositories() {
+        let keys = [
+            WikiRepoKey(owner: "octo", repo: "one"),
+            WikiRepoKey(owner: "swiftlang", repo: "two")
+        ]
+        let reset = Notification(
+            name: .wikiCacheDidReset,
+            userInfo: ["repositoryKeys": keys]
+        )
+
+        #expect(RAGWikiMetadataRefreshRoute.resetRepositories(from: reset) == keys)
+        #expect(RAGWikiMetadataRefreshRoute.resetRepositories(
+            from: Notification(name: .wikiCacheDidReset, userInfo: ["repositoryKeys": "invalid"])
+        ).isEmpty)
+        #expect(RAGWikiMetadataRefreshRoute.changedRepository(
+            from: Notification(name: .wikiCacheDidChange, userInfo: ["owner": "octo"])
+        ) == nil)
+    }
+
     @Test("超长单行按字符预算截断到 hard max")
     func veryLongSingleLineIsHardTruncated() throws {
         let chunks = RAGChunkBuilder().buildReadme(

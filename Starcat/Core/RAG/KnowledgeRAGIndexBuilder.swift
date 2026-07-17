@@ -12,6 +12,22 @@
 import Foundation
 import Observation
 
+/// Wiki cache 通知到 Metadata 刷新 identity 的唯一解析入口。
+///
+/// DiskWikiCache、前台 UI 与索引器共享同一 payload 契约；把解析保持为纯函数，才能用
+/// 单元测试防止字段名变化后索引器静默停止增量重建。
+enum RAGWikiMetadataRefreshRoute {
+    static func changedRepository(from notification: Notification) -> WikiRepoKey? {
+        guard let owner = notification.userInfo?["owner"] as? String,
+              let repo = notification.userInfo?["repo"] as? String else { return nil }
+        return WikiRepoKey(owner: owner, repo: repo)
+    }
+
+    static func resetRepositories(from notification: Notification) -> [WikiRepoKey] {
+        notification.userInfo?["repositoryKeys"] as? [WikiRepoKey] ?? []
+    }
+}
+
 enum RAGIndexingStatus: Equatable, Sendable {
     case idle
     case fetchingReadmes(processedRepos: Int, totalRepos: Int)
@@ -327,9 +343,8 @@ final class KnowledgeRAGIndexBuilder {
         observationTasks.append(Task { [weak self] in
             let stream = NotificationCenter.default.notifications(named: .wikiCacheDidChange)
             for await notification in stream {
-                guard let owner = notification.userInfo?["owner"] as? String,
-                      let name = notification.userInfo?["repo"] as? String,
-                      let repo = try? await self?.repoRepository.findByOwnerName(owner: owner, name: name)
+                guard let key = RAGWikiMetadataRefreshRoute.changedRepository(from: notification),
+                      let repo = try? await self?.repoRepository.findByOwnerName(owner: key.owner, name: key.repo)
                 else { continue }
                 await self?.refresh(repo: repo, sources: [.metadata])
             }
@@ -337,9 +352,8 @@ final class KnowledgeRAGIndexBuilder {
         observationTasks.append(Task { [weak self] in
             let stream = NotificationCenter.default.notifications(named: .wikiCacheDidReset)
             for await notification in stream {
-                guard let self,
-                      let keys = notification.userInfo?["repositoryKeys"] as? [WikiRepoKey]
-                else { continue }
+                guard let self else { continue }
+                let keys = RAGWikiMetadataRefreshRoute.resetRepositories(from: notification)
                 for key in keys {
                     // 清空缓存可能涉及大量仓库；builder 停止或切库后必须立刻退出，
                     // 不能吞掉 CancellationError 后继续访问已经切换的 repository。
