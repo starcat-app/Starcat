@@ -2,7 +2,7 @@
 
 > 日期：2026-07-17
 > 范围：Composer 顺序与门禁、按会话草稿、执行时间线、Plan、Evidence、引用定位、历史 XML、Debug Trace 与无障碍
-> 结论：发现 1 个 P1、1 个 P2；本报告先落档，随后按问题修复并回填。
+> 结论：发现的 1 个 P1、1 个 P2 均已修复，UI、草稿持久化与可观测性审查通过。
 
 ## 1. 审查方法
 
@@ -47,4 +47,9 @@ Evidence 区目前只判断 `displayedRepoContextSnapshot != nil`。Provider 禁
 
 ## 5. 修复回填
 
-> 待第 2 轮问题修复提交完成后回填 commit、测试与最终结论。
+- 修复提交：`88a167b6 RAG：修正项目上下文投影时间线与证据状态`。
+- P1：新增 `repoContextPrepared` 与 `repoContextProjectionStarted` 事件；Provider 成功只标记 XML 已准备，最终投影成功或失败后才完成步骤。失败统一写入 `total_context_projection_unavailable` degraded snapshot。
+- P2：新增统一 Evidence 可见性判断，只有 `outcome == .success` 才展示独立 XML 证据；degraded 仍可在 Plan、时间线核对。
+- 定向测试锁定事件顺序 `prepared → projecting → completed`，并覆盖 success/degraded/nil 三种 Evidence 可见性。
+- 修复后验证：`jq empty Starcat/Resources/Localizable.xcstrings`、`git diff --check` 与 `KnowledgeRAGCoreTests` 均通过；仅保留该 Suite 既有 MainActor warning。
+- 最终结论：本轮问题已清零，可以进入第 3 轮测试、文档、工程进度和 checklist 一致性审查。
