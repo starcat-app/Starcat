@@ -1651,6 +1651,53 @@ struct KnowledgeRAGCoreTests {
         #expect(result.childHits.first?.kind == .keyword)
     }
 
+    @Test("keyword provider 失败时保留 vector 检索结果")
+    func keywordFailureKeepsVectorResults() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunk = fixtureChunk(id: 810, repoID: 1, source: .readme)
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: [],
+                shouldThrow: true
+            ),
+            vectorProvider: StubRAGVectorProvider(
+                backendName: "SQLite",
+                hits: [RAGChildHit(
+                    chunk: chunk,
+                    score: 0.92,
+                    kind: .vector,
+                    vectorSimilarity: 0.92
+                )],
+                shouldThrow: false
+            ),
+            embeddingClient: SpyRAGAIClient(),
+            embeddingModel: "embed"
+        )
+
+        let result = try await retriever.retrieve(
+            semanticQuery: "database",
+            keywordQueries: ["数据库", "database"],
+            candidates: [RAGRepoCandidate(
+                repo: fixtureRepo(id: 1, isPrivate: false),
+                status: .using,
+                libraryUpdatedAt: nil,
+                tagNames: []
+            )],
+            explicitMode: .only,
+            explicitRepoIDs: []
+        )
+
+        #expect(result.childHits.map(\.kind) == [.vector])
+        let diagnostics = try #require(result.diagnostics)
+        #expect(diagnostics.keywordErrorDescription != nil)
+        #expect(diagnostics.vectorErrorDescription == nil)
+        let snapshot = RAGRetrievalSnapshot(result: result)
+        #expect(snapshot.keywordFailure == .providerError)
+        #expect(snapshot.vectorFailure == nil)
+    }
+
     @Test("检索设置仅过滤向量阈值，并尊重分片来源开关")
     func retrievalSettingsFilterVectorAndSources() async throws {
         let database = try InMemoryDatabaseManager()
