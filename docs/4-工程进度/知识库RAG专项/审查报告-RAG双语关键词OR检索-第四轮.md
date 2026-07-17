@@ -4,6 +4,7 @@
 > 审查范围：旧会话兼容证据、提交完整性、受保护文档与收口条件
 > 审查基线：`099f7cd`
 > 结论：实现与工程门禁无新缺陷；发现 1 项兼容测试证据缺口，先记录后补齐
+> 修复回填：兼容测试证据已补齐，`KnowledgeRAGCoreTests` 通过
 
 ## 1. 已核验证据
 
@@ -40,3 +41,9 @@ Swift optional 合成解码理论上可行，仍不足以支撑 Checklist 中“
 - 新增旧 Snapshot / Diagnostics JSON 兼容测试并运行 `KnowledgeRAGCoreTests`。
 - 再跑 `git diff --check` 与工作树状态检查。
 - 增加最终无问题审查报告；只有该轮无遗留后才生成结果报告并全部勾选 Checklist。
+
+## 5. 修复回填
+
+`c712086` 新增 `legacyRetrievalSnapshotAndDiagnosticsDecodeWithoutNewFields`：先编码包含
+`keywordQuery` 与两路 failure 的当前对象，再移除新增 key，按旧 JSON 解码并断言原有候选与
+命中计数不变、新字段为 nil。`KnowledgeRAGCoreTests` 重跑通过，R4-1 已关闭。
