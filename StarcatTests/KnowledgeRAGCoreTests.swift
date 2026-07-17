@@ -1599,6 +1599,70 @@ struct KnowledgeRAGCoreTests {
         #expect(result.childHits.first?.kind == .keyword)
     }
 
+    @Test("Retriever 为 Metadata 命中仓库附加完整 Metadata 且不生成空 parent")
+    func retrieverAttachesFullMetadataForMetadataHit() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 1, state: .inLibrary)
+        let repository = GRDBRAGChunkRepository(database: database)
+        _ = try await repository.replaceSource(
+            repoId: 1,
+            source: .metadata,
+            drafts: [RAGChunkDraft(
+                repoId: 1,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "octo/demo",
+                content: "Repository: octo/demo\nWiki DeepWiki: https://deepwiki.com/octo/demo",
+                tokenCount: 18,
+                isTruncated: false
+            )]
+        )
+        let metadataChunk = try #require(try await repository.fetchActiveMetadata(repoIDs: [1]).first)
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: repository,
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: [RAGChildHit(chunk: metadataChunk, score: 1, kind: .keyword)],
+                shouldThrow: false
+            ),
+            vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            embeddingClient: SpyRAGAIClient(failEmbedding: true),
+            embeddingModel: "embed"
+        )
+
+        let result = try await retriever.retrieve(
+            semanticQuery: "deepwiki",
+            candidates: [RAGRepoCandidate(
+                repo: fixtureRepo(id: 1, isPrivate: false),
+                status: .using,
+                libraryUpdatedAt: nil,
+                tagNames: []
+            )],
+            explicitMode: .only,
+            explicitRepoIDs: [1]
+        )
+
+        let bundle = try #require(result.bundles.first)
+        #expect(bundle.metadataContent == metadataChunk.content)
+        #expect(bundle.sectionParents.isEmpty)
+        let prompt = KnowledgeRAGPromptBuilder().build(
+            question: "Where is its wiki?",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "deepwiki"),
+            retrieval: result,
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+        #expect(prompt.userPrompt.components(separatedBy: "Wiki DeepWiki:").count == 2)
+        #expect(prompt.citationsByMarker.isEmpty)
+    }
+
     @Test("检索设置仅过滤向量阈值，并尊重分片来源开关")
     func retrievalSettingsFilterVectorAndSources() async throws {
         let database = try InMemoryDatabaseManager()
