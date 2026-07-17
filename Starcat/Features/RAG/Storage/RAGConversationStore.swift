@@ -607,11 +607,13 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         guard !messageIDs.isEmpty else { return [:] }
         let placeholders = Array(repeating: "?", count: messageIDs.count).joined(separator: ",")
         let rows = try Row.fetchAll(db, sql: """
-            SELECT id, message_id, chunk_id, repo_id, repo_full_name, marker, source, section_title,
-                   rank, score, hit_kind, vector_similarity, score_breakdown_json, source_url
-            FROM rag_message_citations
-            WHERE message_id IN (\(placeholders))
-            ORDER BY message_id ASC, rank ASC
+            SELECT c.id, c.message_id, c.chunk_id, c.repo_id, c.repo_full_name, c.marker,
+                   c.source, c.section_title, c.rank, c.score, c.hit_kind, c.vector_similarity,
+                   c.score_breakdown_json, c.source_url, r.language AS repo_language
+            FROM rag_message_citations c
+            LEFT JOIN repos r ON r.id = c.repo_id
+            WHERE c.message_id IN (\(placeholders))
+            ORDER BY c.message_id ASC, c.rank ASC
             """, arguments: StatementArguments(messageIDs.map(\.uuidString)))
         var grouped: [UUID: [RAGCitation]] = [:]
         for row in rows {
@@ -631,6 +633,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 chunkID: row["chunk_id"],
                 repoID: row["repo_id"],
                 repoFullName: row["repo_full_name"],
+                repoLanguage: row["repo_language"],
                 source: source,
                 sectionTitle: row["section_title"],
                 score: row["score"],

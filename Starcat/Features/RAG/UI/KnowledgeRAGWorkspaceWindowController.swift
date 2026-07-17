@@ -243,6 +243,11 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoadingMoreChunks = false
     var isLoadingMoreRepositories = false
     var isIndexing = false
+    var isLibraryOperationInFlight = false
+    var isConfirmingUsingLibraryRemoval = false
+    /// 用户主动移出仓库后保持右栏空态；索引异步刷新不得把选择跳回第一条。
+    private var preservesEmptySelection = false
+    private var pendingUsingLibraryRemovalRepoID: Int64?
     /// 浏览器独立于 Composer「+」面板；默认最近加入知识库倒序。
     var repositorySortOption: RepoSortOption = RAGComposerMentionSort.default {
         didSet {
@@ -334,8 +339,55 @@ private final class KnowledgeRAGBrowserViewModel {
     func selectRepository(_ id: Int64) async {
         guard selectedRepoID != id else { return }
         let requestGeneration = repositorySelectionGate.begin()
+        preservesEmptySelection = false
         selectedRepoID = id
         await loadChunks(selectionGeneration: requestGeneration)
+    }
+
+    /// 复用主详情页的知识库移出规则；正在使用的仓库需要先由用户确认状态降级。
+    func requestSelectedRepositoryRemoval() async {
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        guard !isLibraryOperationInFlight, let repoID = selectedRepoID else { return }
+
+        isLibraryOperationInFlight = true
+        defer { isLibraryOperationInFlight = false }
+
+        do {
+            let state = try await dependencies.repoNoteRepository.fetchLibraryState(repoId: repoID)
+            guard selectedRepoID == repoID else { return }
+            guard state == .inLibrary else {
+                clearRemovedRepository(repoID: repoID)
+                return
+            }
+            let status = try await dependencies.repoNoteRepository.find(repoId: repoID)
+                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repoID)
+            guard status != .using else {
+                pendingUsingLibraryRemovalRepoID = repoID
+                isConfirmingUsingLibraryRemoval = true
+                return
+            }
+            await removeRepositoryFromLibrary(repoID: repoID, downgradeUsingStatus: false)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func confirmUsingRepositoryRemoval() async {
+        guard !isLibraryOperationInFlight,
+              let repoID = pendingUsingLibraryRemovalRepoID else { return }
+        pendingUsingLibraryRemovalRepoID = nil
+        isConfirmingUsingLibraryRemoval = false
+        isLibraryOperationInFlight = true
+        defer { isLibraryOperationInFlight = false }
+        await removeRepositoryFromLibrary(repoID: repoID, downgradeUsingStatus: true)
+    }
+
+    func cancelUsingRepositoryRemoval() {
+        pendingUsingLibraryRemovalRepoID = nil
+        isConfirmingUsingLibraryRemoval = false
     }
 
     func loadMoreChunks() async {
@@ -572,7 +624,11 @@ private final class KnowledgeRAGBrowserViewModel {
                 candidates.append(contentsOf: page.candidates.filter { !existingIDs.contains($0.repo.id) })
             } else {
                 candidates = page.candidates
-                if selectedRepoID == nil || !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
+                if selectedRepoID == nil {
+                    if !preservesEmptySelection {
+                        selectedRepoID = candidates.first?.repo.id
+                    }
+                } else if !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
                     selectedRepoID = candidates.first?.repo.id
                 }
             }
@@ -584,6 +640,40 @@ private final class KnowledgeRAGBrowserViewModel {
                 hasMoreRepositories = false
             }
         }
+    }
+
+    private func removeRepositoryFromLibrary(repoID: Int64, downgradeUsingStatus: Bool) async {
+        do {
+            try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .outsideLibrary)
+            if downgradeUsingStatus {
+                try await dependencies.repoNoteRepository.updateStatus(repoId: repoID, status: .read)
+            }
+
+            // 数据库写入成功后再清空 UI，失败时保留当前详情供用户重试。
+            homeViewModel.applyLibraryStateChange(repoId: repoID, state: .outsideLibrary)
+            clearRemovedRepository(repoID: repoID)
+            await homeViewModel.refreshSidebar()
+            await homeViewModel.reloadItems(forceRefresh: true)
+            try? await refreshIndexStatistics()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func clearRemovedRepository(repoID: Int64) {
+        guard selectedRepoID == repoID else {
+            candidates.removeAll { $0.repo.id == repoID }
+            indexes.removeValue(forKey: repoID)
+            return
+        }
+        // 让仍在执行的分片读取失效，避免移出后旧请求把右栏内容重新写回来。
+        _ = repositorySelectionGate.begin()
+        preservesEmptySelection = true
+        selectedRepoID = nil
+        chunks = []
+        hasMoreChunks = false
+        candidates.removeAll { $0.repo.id == repoID }
+        indexes.removeValue(forKey: repoID)
     }
 
     private func loadChunks(selectionGeneration: Int? = nil) async {
@@ -641,7 +731,6 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var editingChunk: RAGManagedChunk?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
-    @State private var hoveredRepositoryID: Int64?
     @State private var hoveredChunkID: Int64?
     @State private var isKnowledgeOverviewExpanded = false
     @State private var isRetrievalTestExpanded = false
@@ -739,6 +828,19 @@ private struct KnowledgeRAGBrowserView: View {
         } message: {
             Text("rag.browser.chunk.permanentDelete.message")
         }
+        .alert(
+            "library.removeUsing.confirmTitle",
+            isPresented: $viewModel.isConfirmingUsingLibraryRemoval
+        ) {
+            Button("library.removeUsing.confirmAction", role: .destructive) {
+                Task { await viewModel.confirmUsingRepositoryRemoval() }
+            }
+            Button("general.cancel", role: .cancel) {
+                viewModel.cancelUsingRepositoryRemoval()
+            }
+        } message: {
+            Text("library.removeUsing.confirmMessage")
+        }
     }
 
     private var repositoryList: some View {
@@ -767,9 +869,9 @@ private struct KnowledgeRAGBrowserView: View {
                     repositoryListControls
                         .padding(.horizontal, 10)
                         .padding(.bottom, 8)
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(viewModel.candidates.enumerated()), id: \.element.repo.id) { rowIndex, candidate in
-                            repositoryRow(candidate, rowIndex: rowIndex)
+                            repositoryRow(candidate)
                                 .onAppear {
                                     // 距尾部 8 行即续载，避免贴底才请求造成停顿。
                                     Task { await viewModel.loadMoreRepositoriesIfNeeded(rowIndex: rowIndex) }
@@ -784,6 +886,7 @@ private struct KnowledgeRAGBrowserView: View {
                             .padding(.vertical, 10)
                         }
                     }
+                    .padding(.horizontal, 8)
                     .padding(.bottom, 12)
                 }
                 // 约束内容宽度等于侧栏，避免固有宽度撑破后被 HSplitView 从左侧裁切。
@@ -895,12 +998,16 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private var detail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let candidate = viewModel.selectedCandidate { repositoryDetail(candidate) }
-                else { ContentUnavailableView("rag.browser.empty", systemImage: "books.vertical").frame(maxWidth: .infinity, minHeight: 280) }
+        ZStack {
+            if let candidate = viewModel.selectedCandidate {
+                ScrollView {
+                    repositoryDetail(candidate)
+                        .padding(20)
+                }
+            } else {
+                // 与主窗口详情列共享同一套响应式示意图，窗口缩放时不引入独立图片资产。
+                RepoDetailNoSelectionPlaceholder()
             }
-            .padding(20)
         }
         .overlay { if viewModel.isLoading { ProgressView().controlSize(.small) } }
     }
@@ -1380,82 +1487,35 @@ private struct KnowledgeRAGBrowserView: View {
         }
     }
 
-    private func repositoryRow(_ candidate: RAGRepoCandidate, rowIndex: Int) -> some View {
+    private func repositoryRow(_ candidate: RAGRepoCandidate) -> some View {
         let selected = candidate.repo.id == viewModel.selectedRepoID
-        let isHovered = hoveredRepositoryID == candidate.repo.id
         let index = viewModel.indexes[candidate.repo.id]
+        let indexMetadata = index.map {
+            RepoCardInlineMetadata(
+                systemImage: "square.stack.3d.up",
+                text: "\($0.readyChunks)/\($0.totalChunks)",
+                tint: $0.totalChunks > 0 && $0.readyChunks == $0.totalChunks ? .green : .secondary
+            )
+        }
         return Button { Task { await viewModel.selectRepository(candidate.repo.id) } } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                RepoIdentityLabel(
-                    fullName: candidate.repo.fullName,
-                    ownerAvatarURL: candidate.repo.ownerAvatar,
-                    avatarSize: 18,
-                    // 列表标题 / 描述使用同一倍率下的 15pt / 13pt 基准，避免系统
-                    // body 在较大动态字号档位反超 subheadline，破坏主次层级。
-                    font: interfaceScale.font(size: 15, weight: selected ? .semibold : .regular),
-                    spacing: 6,
-                    showAvatarBorder: false
-                )
-                Text(candidate.repo.description ?? String.l10n("rag.browser.noDescription"))
-                    .font(interfaceScale.font(size: 13))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                // 元数据行：Devicon 语言图标 + 金色星标 + 索引进度；与主列表 / mention 候选同源组件。
-                HStack(spacing: 8) {
-                    if let language = candidate.repo.language?.trimmingCharacters(in: .whitespacesAndNewlines),
-                       !language.isEmpty {
-                        HStack(spacing: 4) {
-                            LanguageIconView(language: language, size: 12)
-                            Text(LanguageDisplayName.shortened(for: language))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .fixedSize(horizontal: true, vertical: false)
-                    }
-                    StarsBadge(count: candidate.repo.starsCount, style: .compact)
-                    if let index {
-                        Text("\(index.readyChunks)/\(index.totalChunks)")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-            }
-            // 侧栏行必须占满可用宽度，并声明整行 hit-test；否则右侧空白点不到、无悬停光标。
-            // contentShape 放在 padding 之后，与 RAGAddToLibrarySheet 行点击面一致。
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(repositoryRowBackground(rowIndex: rowIndex, selected: selected, isHovered: isHovered))
-            .overlay {
-                if selected || isHovered {
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(repositoryRowBorderColor(selected: selected, isHovered: isHovered))
-                }
-            }
+            // 浏览器只负责注入 RAG 索引进度；头像、描述、语言、Stars、Forks 和
+            // 选中 / hover 视觉全部复用主窗口完整 Repo Row。当前列表本身即知识库，
+            // 因此隐藏每行重复的知识库角标，但保留真实的 isInLibrary 数据语义。
+            UnifiedRepoRow(
+                card: candidate.repo.asCardData(
+                    footerMetadata: indexMetadata,
+                    readStatus: candidate.status,
+                    isInLibrary: true
+                ),
+                isSelected: selected,
+                showLibraryBadge: false,
+                showReadStatusBadge: false
+            )
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pointerStyle(.link)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-        .onHover { isHovering in
-            hoveredRepositoryID = isHovering ? candidate.repo.id : nil
-        }
-    }
-
-    /// 选中和悬停优先于底纹，确保当前操作对象仍是列表里的最强视觉信号。
-    private func repositoryRowBackground(rowIndex: Int, selected: Bool, isHovered: Bool) -> Color {
-        if selected { return Color.accentColor.opacity(0.12) }
-        if isHovered { return Color.accentColor.opacity(0.07) }
-        return zebraStripeBackground(rowIndex: rowIndex)
-    }
-
-    private func repositoryRowBorderColor(selected: Bool, isHovered: Bool) -> Color {
-        if selected { return Color.accentColor.opacity(0.35) }
-        if isHovered { return Color.accentColor.opacity(0.55) }
-        return .clear
     }
 
     private func repositoryDetail(_ candidate: RAGRepoCandidate) -> some View {
@@ -1510,6 +1570,13 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                 }
                 Spacer()
+                // 知识库详情只呈现“移出”态；操作成功后当前候选会从左栏立即消失。
+                LibraryToggleButton(
+                    isSaved: true,
+                    isWorking: viewModel.isLibraryOperationInFlight
+                ) {
+                    Task { await viewModel.requestSelectedRepositoryRemoval() }
+                }
                 // logo-only：打开 Starcat 独立详情窗；文案留给 help / accessibility。
                 Button {
                     viewModel.openSelectedRepository()

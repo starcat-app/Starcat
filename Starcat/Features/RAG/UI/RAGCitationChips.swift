@@ -60,7 +60,10 @@ struct RAGCitationChipsRow: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
-                        RAGCitationChipPalette.background(for: citation.repoFullName),
+                        RAGCitationChipPalette.background(
+                            for: citation.repoLanguage,
+                            fallbackRepoFullName: citation.repoFullName
+                        ),
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                     )
                 }
@@ -106,7 +109,7 @@ struct RAGCitationChipsRow: View {
     }
 }
 
-/// 按 `owner/repo` 稳定映射到低饱和色盘；用动态 NSColor 适配浅色/深色窗口。
+/// 引用 chip 优先复用仓库主语言色；语言缺失时按 `owner/repo` 回退稳定低饱和色盘。
 enum RAGCitationChipPalette {
     private static let swatches: [(hue: CGFloat, satLight: CGFloat, briLight: CGFloat, satDark: CGFloat, briDark: CGFloat)] = [
         (210, 0.26, 0.94, 0.28, 0.30), // soft blue
@@ -119,7 +122,13 @@ enum RAGCitationChipPalette {
         (48, 0.26, 0.95, 0.28, 0.31),  // soft gold
     ]
 
-    static func background(for repoFullName: String) -> Color {
+    static func background(for language: String?, fallbackRepoFullName repoFullName: String) -> Color {
+        if let language = language?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !language.isEmpty {
+            // 与 RepoRowSurface 使用同一个 LanguageColor 单一来源；低透明度只承担
+            // 项目辨识，不把引用 chip 提升成选中态或状态色。
+            return LanguageColor.color(for: language).opacity(0.14)
+        }
         let swatch = swatches[stableIndex(for: repoFullName)]
         return Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua

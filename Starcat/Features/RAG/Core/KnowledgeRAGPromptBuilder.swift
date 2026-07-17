@@ -90,6 +90,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                         chunkID: hit.chunk.id,
                         repoID: bundle.candidate.repo.id,
                         repoFullName: bundle.candidate.repo.fullName,
+                        repoLanguage: bundle.candidate.repo.language,
                         source: hit.chunk.source,
                         sectionTitle: parent.title,
                         score: hit.score,

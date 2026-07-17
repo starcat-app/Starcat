@@ -123,6 +123,14 @@ struct UnifiedRepoRow: View {
     /// `card.isStarred` 仍由调用方派生(Manage 读 self,Trending/Weekly 走 registry)。
     let showStarredCheckmark: Bool
 
+    /// 是否在头像左上角显示“已加入知识库”角标。
+    /// 知识库自身列表会关闭该标记，避免所有行重复同一个无区分度信号。
+    let showLibraryBadge: Bool
+
+    /// 是否显示阅读状态标记。知识库浏览器负责索引与分片浏览，不承担阅读进度管理，
+    /// 因此会关闭该标记；主窗口等原有场景继续使用默认值。
+    let showReadStatusBadge: Bool
+
     /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
     let trailingReservedWidth: CGFloat
@@ -133,12 +141,16 @@ struct UnifiedRepoRow: View {
         isSelected: Bool = false,
         semanticHit: SemanticSearchHit? = nil,
         showStarredCheckmark: Bool = false,
+        showLibraryBadge: Bool = true,
+        showReadStatusBadge: Bool = true,
         trailingReservedWidth: CGFloat = 0
     ) {
         self.card = card
         self.isSelected = isSelected
         self.semanticHit = semanticHit
         self.showStarredCheckmark = showStarredCheckmark
+        self.showLibraryBadge = showLibraryBadge
+        self.showReadStatusBadge = showReadStatusBadge
         self.trailingReservedWidth = trailingReservedWidth
     }
 
@@ -243,11 +255,13 @@ struct UnifiedRepoRow: View {
                         }
                         sceneBadgeChip
                         // 阅读状态角标（v2，2026-06-12）。
-                        // 渲染条件 = isStarred && readStatus 已注入 && status != .read
+                        // 渲染条件 = 场景允许 && isStarred && readStatus 已注入 && status != .read
+                        // - showReadStatusBadge=false → 当前场景不承担阅读进度展示，直接跳过
                         // - 仅 starred row 显（ephemeral trending/weekly 行 isStarred=false 跳过）
                         // - readStatus == nil → 调用方没注入状态信号（trending/weekly/activity 默认走这）→ 跳过
                         // - .read 默认态不显，避免列表"整页角标"视觉污染
-                        if card.isStarred,
+                        if showReadStatusBadge,
+                           card.isStarred,
                            let readStatus = card.readStatus,
                            readStatus != .read {
                             RepoStatusChip(status: readStatus)
@@ -296,7 +310,7 @@ struct UnifiedRepoRow: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if card.isInLibrary {
+            if showLibraryBadge && card.isInLibrary {
                 Image(systemName: "heart.fill")
                     .font(interfaceScale.font(.captionSmall, weight: .bold))
                     .foregroundStyle(Color.fromHex6(0xE11D48))
