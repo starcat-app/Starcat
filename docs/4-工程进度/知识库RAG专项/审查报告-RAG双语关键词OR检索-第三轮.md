@@ -4,6 +4,7 @@
 > 审查范围：正式设计、专项进度、Checklist、提交历史与最终工程门禁准备
 > 审查基线：`1a2cd1c`
 > 结论：发现 2 项文档一致性问题和 1 项 worktree 构建问题；先记录后逐项修复
+> 修复回填：3 项均已修复；全量测试与双 Debug target build 通过
 
 ## 1. 已核验证据
 
@@ -67,3 +68,41 @@ Prompt 要求模型生成 3～8 个关键词，但本地校验只执行去空、
 - 执行 RAG 定向 Suite、全量 test、`Starcat` 与 `StarcatDirect` Debug build。
 - 审查完整提交列表、分支 upstream 与 worktree clean 状态。
 - 若工程门禁发现新问题，先提交门禁结果，再按小功能修复；之后增加最终无问题审查轮。
+
+## 5. 修复回填
+
+| 问题 | 修复证据 | 状态 |
+|---|---|---|
+| R3-1 | `42bee00` 将 §8.1 收敛为真实 Retriever、Provider、ChildHit、Bundle 与 Result 类型 | 已关闭 |
+| R3-2 | `86cb951` 统一“Prompt 目标 3～8、本地硬上限 8、过滤后可少于 3” | 已关闭 |
+| R3-3 | `e6742f0` 为 Direct Debug 增加干净 worktree changelog 回退，Release 保持严格阻断 | 已关闭 |
+
+## 6. 最终工程门禁结果
+
+| 门禁 | 结果 |
+|---|---|
+| 全量测试 | 1547 项：1538 通过、8 跳过、1 预期失败、0 失败 |
+| `Starcat` Debug build | 通过 |
+| `StarcatDirect` Debug build | 首次复现 R3-3；修复并重新 `xcodegen generate` 后通过 |
+| xcstrings JSON | `rtk jq empty` 通过 |
+| i18n 静态检查 | `String(localized:)` / `NSLocalizedString` 仅命中既有注释 |
+| UI 颜色差异检查 | 本需求 Swift diff 未新增 `.tertiary` |
+| Git whitespace | `rtk git diff --check` 通过 |
+
+Direct Debug 在独立 `starcat-pro` 仓库缺失时输出一条预期资源回退 warning；没有新增 Swift
+compiler warning。Release 不执行回退，缺少正式双语 changelog 时仍会失败，发布边界未放宽。
+
+## 7. `docs/功能实现总览.md` 待确认草稿
+
+本任务未修改受保护总览。若 dong4j 后续明确说“可以写总览”，建议在 RAG 对应章节补充：
+
+```markdown
+- [x] **RAG 双语关键词 OR 检索** — Planner 拆分语义查询与双语关键词，RAG FTS5 使用安全 OR，并补齐检索漏斗三态 — `KnowledgeRAGQueryPlanner.swift`、`RAGSearchProviders.swift`、`RAGWorkspaceInspector.swift` — 2026-07-17
+> 实现：普通搜索继续 AND；RAG 关键词经本地去重、限长和转义后 OR 召回，repo 范围仅由 id 强制限定；Trace/Snapshot 不复制分片正文或原始外部错误。
+```
+
+建议 §10 变更日志草稿：
+
+```markdown
+- 2026-07-17 HH:MM: 完成 RAG 双语关键词 OR 检索与检索漏斗可解释性整改
+```

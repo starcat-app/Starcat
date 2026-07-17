@@ -83,10 +83,10 @@
 - [x] Query Plan、Planner、FTS5、Retriever 与 Inspector 定向测试通过。
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build-for-testing` 通过。
 - [x] RAG 相关定向 Suite 通过。
-- [ ] 全量 `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test` 通过。
-- [ ] `Starcat` Debug target build 通过。
-- [ ] `StarcatDirect` Debug target build 通过。
-- [ ] 无本需求新增 warning 或 error。
+- [x] 全量 `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test` 通过。
+- [x] `Starcat` Debug target build 通过。
+- [x] `StarcatDirect` Debug target build 通过。
+- [x] 无新增 Swift 编译 warning 或 error；Direct Debug 缺少独立 changelog 时有一条预期资源回退 warning。
 
 ## 8. 第一轮审查：协议、兼容与范围
 
@@ -109,13 +109,13 @@
 
 ## 10. 第三轮审查：文档、工程进度与最终门禁
 
-- [ ] 先新增并提交第三轮审查报告。
-- [ ] 对照代码、测试、正式设计文档、专项进度和本 Checklist 逐项核验。
-- [ ] 只读核对 `docs/功能实现总览.md`，起草待 dong4j 确认的同步内容。
-- [ ] 核对所有小功能和审查修复均有独立中文 commit。
-- [ ] 执行最终定向、全量、双 target build 与静态检查。
-- [ ] 报告发现的问题逐项修复并按小功能提交。
-- [ ] 修复后再次执行最终门禁并回填报告。
+- [x] 先新增并提交第三轮审查报告。
+- [x] 对照代码、测试、正式设计文档、专项进度和本 Checklist 逐项核验。
+- [x] 只读核对 `docs/功能实现总览.md`，起草待 dong4j 确认的同步内容。
+- [x] 核对所有小功能和审查修复均有独立中文 commit。
+- [x] 执行最终定向、全量、双 target build 与静态检查。
+- [x] 报告发现的问题逐项修复并按小功能提交。
+- [x] 修复后再次执行最终门禁并回填报告。
 
 ## 11. 最终收口
 
