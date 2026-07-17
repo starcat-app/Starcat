@@ -2334,6 +2334,116 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.lastChatRequest?.userPrompt.contains("这是本轮附件事实") == true)
     }
 
+    @Test("深度思考在唯一项目下生成 RepoContext，且不受附件数量限制")
+    func deepThinkingBuildsRepoContextForSingleProjectWithMultipleAttachments() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "源码与附件结论 [S1]")
+        let repoContextProvider = FixedRepoContextProvider()
+        let attachments = (0..<3).map { index in
+            RAGComposerAttachment(
+                id: UUID(),
+                filename: "attachment-\(index).md",
+                contentType: "text/markdown",
+                sizeInBytes: 10,
+                localURL: URL(fileURLWithPath: "/tmp/attachment-\(index).md"),
+                handling: .textContext
+            )
+        }
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "分析实现")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            attachmentProcessor: FixedAttachmentProcessor(contexts: attachments.map {
+                RAGAttachmentContext(attachmentID: $0.id, filename: $0.filename, content: "附件事实")
+            }),
+            repoContextProvider: repoContextProvider,
+            repoContextTokenBudget: 8_000,
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var repoContextDocument: RAGRepoContextDocument?
+        var citations: [RAGCitation] = []
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "结合源码和附件分析实现",
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "octo/demo-21")],
+                attachments: attachments,
+                deepThinkingEnabled: true
+            ),
+            conversationID: nil
+        )) {
+            if case .repoContext(let document) = event { repoContextDocument = document }
+            if case .completed(_, _, let usedCitations, _) = event { citations = usedCitations }
+        }
+
+        #expect(repoContextProvider.callCount == 1)
+        #expect(repoContextDocument?.snapshot.repoFullName == "octo/demo-21")
+        #expect(repoContextDocument?.xml.contains("DemoService") == true)
+        #expect(citations.map(\.source) == [.repoContext])
+        #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("附件事实") == true)
+    }
+
+    @Test("深度思考在多项目范围下不会调用 RepoContext Provider")
+    func deepThinkingRejectsMultipleProjectScope() async throws {
+        let database = try InMemoryDatabaseManager()
+        for repoID in [Int64(21), 22] {
+            try await database.insertRepoFixture(id: repoID)
+            try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: repoID, state: .inLibrary)
+        }
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "附件降级回答")
+        let repoContextProvider = FixedRepoContextProvider()
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "比较实现")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            attachmentProcessor: FixedAttachmentProcessor(contexts: [
+                RAGAttachmentContext(attachmentID: UUID(), filename: "fallback.md", content: "附件事实")
+            ]),
+            repoContextProvider: repoContextProvider,
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var didEmitRepoContext = false
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "比较两个项目",
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21, 22],
+                explicitRepoReferences: [
+                    .init(id: 21, fullName: "octo/demo-21"),
+                    .init(id: 22, fullName: "octo/demo-22")
+                ],
+                deepThinkingEnabled: true
+            ),
+            conversationID: nil
+        )) {
+            if case .repoContext = event { didEmitRepoContext = true }
+        }
+
+        #expect(repoContextProvider.callCount == 0)
+        #expect(!didEmitRepoContext)
+        #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == false)
+    }
+
     @Test("Planner 漏报时执行层仍用显式仓库的 GitHub 实时证据回答")
     func remoteOnlyEvidenceCanGenerateAnswer() async throws {
         let database = try InMemoryDatabaseManager()
@@ -4615,6 +4725,62 @@ private struct FixedAttachmentProcessor: RAGAttachmentProcessing {
     func process(_ attachments: [RAGComposerAttachment]) async throws -> [RAGAttachmentContext] {
         contexts
     }
+}
+
+/// Service 测试只关心 RepoContext 的边界与事件，不访问 GitHub、ZIP 或用户磁盘缓存。
+private final class FixedRepoContextProvider: @unchecked Sendable, RepoAIContextProviding {
+    private(set) var callCount = 0
+
+    func contextOutcome(
+        for repo: Repo,
+        onProgress: RepoAIContextProgressCallback?
+    ) async throws -> RepoAIContextOutcome {
+        callCount += 1
+        await onProgress?(.resolvingBranch)
+        await onProgress?(.packingContext)
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <repoContext>
+          <repository>\(repo.fullName)</repository>
+          <fileList><file path="Sources/DemoService.swift" /></fileList>
+          <files><file path="Sources/DemoService.swift"><![CDATA[struct DemoService {}]]></file></files>
+        </repoContext>
+        """
+        let stats = PackStats(
+            totalFiles: 1,
+            tier0Count: 1,
+            tier1Count: 0,
+            tier2Count: 0,
+            estimatedTokens: TokenEstimator.estimate(text: xml),
+            actualTokens: TokenEstimator.estimate(text: xml),
+            contextXmlBytes: xml.utf8.count
+        )
+        let metadata = PackMetadata(
+            schemaVersion: 1,
+            tierRulesVersion: TierRules.tierRulesVersion,
+            tokenEstimatorVersion: TierRules.tokenEstimatorVersion,
+            owner: repo.owner,
+            repo: repo.name,
+            ref: "main",
+            commitSha: "0123456789abcdef0123456789abcdef01234567",
+            generatedAt: .now,
+            tokenBudget: 8_000,
+            stats: stats,
+            skippedFiles: [],
+            warnings: [],
+            tier1MaxLines: 80,
+            lastAccessedAt: .now,
+            generationCount: 1
+        )
+        return .success(RepoAIContextResult(
+            url: URL(fileURLWithPath: "/tmp/context.xml"),
+            xml: xml,
+            metadata: metadata,
+            cacheHit: false
+        ))
+    }
+
+    func cleanupTemporaryContextPreparation(for repo: Repo) {}
 }
 
 private struct FixedRemoteContextProvider: KnowledgeRAGRemoteContextProviding {
