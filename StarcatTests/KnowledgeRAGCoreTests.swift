@@ -1288,6 +1288,38 @@ struct KnowledgeRAGCoreTests {
         #expect(candidates.map(\.repo.id) == [11])
     }
 
+    @Test("显式多仓库、prefer 与 exclude 由候选层强制限定")
+    func explicitRepoModesKeepDeterministicScope() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in Int64(10)...12 {
+            try await database.insertRepoFixture(id: id)
+            try await notes.updateLibraryState(repoId: id, state: .inLibrary)
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let plan = RAGQueryPlan(mode: .semanticOnly, semanticQuery: "compare")
+
+        let only = try await repository.fetchCandidates(
+            plan: plan,
+            explicitRepoIDs: [10, 12],
+            explicitMode: .only
+        )
+        let prefer = try await repository.fetchCandidates(
+            plan: plan,
+            explicitRepoIDs: [11],
+            explicitMode: .prefer
+        )
+        let exclude = try await repository.fetchCandidates(
+            plan: plan,
+            explicitRepoIDs: [11],
+            explicitMode: .exclude
+        )
+
+        #expect(Set(only.map(\.repo.id)) == [10, 12])
+        #expect(Set(prefer.map(\.repo.id)) == [10, 11, 12])
+        #expect(Set(exclude.map(\.repo.id)) == [10, 12])
+    }
+
     @Test("知识库浏览器仓库列表按页返回并正确标记 hasMore")
     func knowledgeBrowserRepositoryPaging() async throws {
         let database = try InMemoryDatabaseManager()
@@ -2258,6 +2290,48 @@ struct KnowledgeRAGCoreTests {
         let privateIDs = await privateRecorder.recordedRepoIDs()
         #expect(Set(publicIDs) == [1])
         #expect(Set(privateIDs) == [2])
+    }
+
+    @Test("双语 OR 查询只传入多仓库候选 id，不使用 repo 名扩展范围")
+    func bilingualORUsesOnlyCandidateRepoIDs() async throws {
+        let database = try InMemoryDatabaseManager()
+        let keywordRecorder = RAGRepoIDRecorder()
+        let vectorRecorder = RAGRepoIDRecorder()
+        let queryRecorder = RAGKeywordQueryRecorder()
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: RecordingRAGKeywordProvider(
+                backendName: "SQLite",
+                recorder: keywordRecorder,
+                queryRecorder: queryRecorder
+            ),
+            vectorProvider: RecordingRAGVectorProvider(backendName: "SQLite", recorder: vectorRecorder),
+            embeddingClient: SpyRAGAIClient(),
+            embeddingModel: "embed"
+        )
+        let candidates = [21, 22].map { id in
+            RAGRepoCandidate(
+                repo: fixtureRepo(id: Int64(id), isPrivate: false),
+                status: .using,
+                libraryUpdatedAt: nil,
+                tagNames: []
+            )
+        }
+
+        _ = try await retriever.retrieve(
+            semanticQuery: "How to configure the database?",
+            keywordQueries: ["配置", "database"],
+            candidates: candidates,
+            explicitMode: .only,
+            explicitRepoIDs: [21, 22]
+        )
+
+        #expect(Set(await keywordRecorder.recordedRepoIDs()) == [21, 22])
+        #expect(Set(await vectorRecorder.recordedRepoIDs()) == [21, 22])
+        let query = try #require(await queryRecorder.latestQuery())
+        #expect(query.terms == ["配置", "database"])
+        #expect(!query.terms.contains("octo/demo-21"))
+        #expect(!query.terms.contains("octo/demo-22"))
     }
 
     @Test("Service 将 Planner 的双语关键词原样交给 Retriever")
