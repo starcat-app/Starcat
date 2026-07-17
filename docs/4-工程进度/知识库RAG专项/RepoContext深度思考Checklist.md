@@ -1,6 +1,6 @@
 # RepoContext 深度思考 Checklist
 
-> 状态：实施中
+> 状态：核心实现与三轮问题审查已完成，等待清洁复审和结果报告
 > 日期：2026-07-17
 > 方案：`RepoContext深度思考实施方案.md`
 > 约束：每个小功能独立使用中文 commit message 提交；不 push；先写每轮审查报告，再修复报告发现的问题。
@@ -47,7 +47,7 @@
 - [x] 成功非空 RepoContext 可单独通过证据门禁。
 - [x] 普通失败允许其他证据继续生成；取消终止整轮问答。
 - [x] 新增 `RAGRepoContextSnapshot` 审计元数据，不复制 XML 到会话正文。
-- [ ] 补齐 Service 执行、证据门禁、降级和取消测试。
+- [x] 补齐 Service 执行、证据门禁、降级和取消测试。
 
 ## 4. Composer 与草稿持久化
 
@@ -60,7 +60,7 @@
 - [x] 深度思考按会话保存、切换和重开恢复，语义与联网开关一致。
 - [x] 非单项目草稿恢复时强制关闭。
 - [x] 按钮具备 tooltip、accessibility label、hover 和 focus 契约。
-- [ ] 补齐 Composer 状态与草稿持久化测试。
+- [x] 补齐 Composer 状态与草稿持久化测试。
 
 ## 5. 时间线与 Debug Trace
 
@@ -74,7 +74,7 @@
 - [x] ViewModel 事件转换、持久化、导出和字节统计完整保留结构化 payload。
 - [x] Debug 摘要不重复保存 XML；最终 prompt stage 保留实际发送内容。
 - [x] Debug 帮助说明完整 Prompt 可能含代码 XML 的本地隐私边界。
-- [ ] 补齐执行 reducer、历史解码和 Debug payload 测试。
+- [x] 补齐执行 reducer、历史解码和 Debug payload 测试。
 
 ## 6. Plan、引用与 Evidence Inspector
 
@@ -89,7 +89,7 @@
 - [x] 展示实际发送 XML 的 5 行预览、完整 popover 与复制反馈。
 - [x] 点击正文 RepoContext 引用可切换 Evidence、展开并定位。
 - [x] 历史仅在 repo + commit + hash 匹配时重载 XML；不匹配时明确不可回放。
-- [ ] 补齐 citation、Inspector read model 和历史回放测试。
+- [x] 补齐 citation、Inspector read model 和历史回放测试。
 
 ## 7. i18n、文档与隐私
 
@@ -105,47 +105,47 @@
 
 ## 8. 自动化验证
 
-- [ ] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
-- [ ] 定向测试覆盖本 Checklist 的核心行为。
-- [ ] `git diff --check` 通过。
-- [ ] 固定文案 i18n key 覆盖检查通过。
-- [ ] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build-for-testing` 通过。
-- [ ] RAG 相关定向 Suite 通过。
-- [ ] 全量 `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test` 通过。
-- [ ] `Starcat` Debug target build 通过。
-- [ ] `StarcatDirect` Debug target build 通过。
-- [ ] 无新增 warning / error；若存在既有问题，提供可复现边界证据。
+- [x] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
+- [x] 定向测试覆盖本 Checklist 的核心行为。
+- [x] `git diff --check` 通过。
+- [x] 固定文案 i18n key 覆盖检查通过。
+- [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build-for-testing` 通过。
+- [x] RAG 相关定向 Suite 通过。
+- [x] 全量 `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test` 通过。
+- [x] `Starcat` Debug target build 通过。
+- [x] `StarcatDirect` Debug target build 通过。
+- [x] 无新增 warning / error；既有 `KnowledgeRAGCoreTests` MainActor warning 与一次 test host 启动前 signal kill 瞬态已记录，重跑全量通过。
 
 ## 9. 第一轮审查：架构、预算与数据边界
 
-- [ ] 先新增并提交第一轮审查报告。
-- [ ] 核对 Provider 是否复用，是否存在重复下载/缓存实现。
-- [ ] 核对 RepoContext 是否独立于 chunk budget 且没有突破总窗口。
-- [ ] 核对 XML 投影合法性、证据门禁、降级与取消。
-- [ ] 核对数据库、历史、Debug、CloudKit 与私有仓库边界。
-- [ ] 报告发现的问题逐个修复并按小功能提交。
-- [ ] 修复后重新执行相关定向测试并回填报告。
+- [x] 先新增并提交第一轮审查报告。
+- [x] 核对 Provider 是否复用，是否存在重复下载/缓存实现。
+- [x] 核对 RepoContext 是否独立于 chunk budget 且没有突破总窗口。
+- [x] 核对 XML 投影合法性、证据门禁、降级与取消。
+- [x] 核对数据库、历史、Debug、CloudKit 与私有仓库边界。
+- [x] 报告发现的问题逐个修复并按小功能提交。
+- [x] 修复后重新执行相关定向测试并回填报告。
 
 ## 10. 第二轮审查：UI、持久化与可观测性
 
-- [ ] 先新增并提交第二轮审查报告。
-- [ ] 核对 Composer 顺序、单项目限制、附件无关性与可访问性。
-- [ ] 核对按会话草稿保存、切换、重开与非法恢复。
-- [ ] 核对时间线真实步骤、自动折叠和错误状态。
-- [ ] 核对 Plan、Evidence、引用定位、XML 预览与历史准确性。
-- [ ] 核对 Debug stage UI、payload、导出和历史解码。
-- [ ] 报告发现的问题逐个修复并按小功能提交。
-- [ ] 修复后重新执行相关定向测试并回填报告。
+- [x] 先新增并提交第二轮审查报告。
+- [x] 核对 Composer 顺序、单项目限制、附件无关性与可访问性。
+- [x] 核对按会话草稿保存、切换、重开与非法恢复。
+- [x] 核对时间线真实步骤、自动折叠和错误状态。
+- [x] 核对 Plan、Evidence、引用定位、XML 预览与历史准确性。
+- [x] 核对 Debug stage UI、payload、导出和历史解码。
+- [x] 报告发现的问题逐个修复并按小功能提交。
+- [x] 修复后重新执行相关定向测试并回填报告。
 
 ## 11. 第三轮审查：测试、文档与工程进度一致性
 
-- [ ] 先新增并提交第三轮审查报告。
-- [ ] 对照方案、代码、测试、i18n、专项进度和 Checklist 逐项检查。
-- [ ] 核对 `docs/功能实现总览.md` 只读现状并起草待确认同步内容。
-- [ ] 核对所有小功能与审查修复均有独立中文 commit。
-- [ ] 执行最终定向测试、全量测试、双 target build 与静态检查。
-- [ ] 报告发现的问题逐个修复并按小功能提交。
-- [ ] 修复后再次执行最终门禁并回填报告。
+- [x] 先新增并提交第三轮审查报告。
+- [x] 对照方案、代码、测试、i18n、专项进度和 Checklist 逐项检查。
+- [x] 核对 `docs/功能实现总览.md` 只读现状并起草待确认同步内容。
+- [x] 核对所有小功能与审查修复均有独立中文 commit。
+- [x] 执行最终定向测试、全量测试、双 target build 与静态检查。
+- [x] 报告发现的问题逐个修复并按小功能提交。
+- [x] 修复后再次执行最终门禁并回填报告。
 
 ## 12. 最终收口
 
