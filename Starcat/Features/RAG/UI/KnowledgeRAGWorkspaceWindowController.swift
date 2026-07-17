@@ -220,6 +220,37 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     func windowWillClose(_ notification: Notification) { Self.shared = nil }
 }
 
+/// 知识库详情的联合展示项。RepoContext 只存在于这个展示模型，绝不伪造成数据库分片。
+enum KnowledgeRAGBrowserManagedItem: Identifiable {
+    case chunk(RAGManagedChunk)
+    case repoContext(RepoContextDocument)
+
+    var id: String {
+        switch self {
+        case .chunk(let managed): return "chunk:\(managed.id)"
+        case .repoContext(let document): return "repo-context:\(document.id)"
+        }
+    }
+
+    /// RepoContext 固定跟在 metadata 后；旧数据缺 metadata 时放在首项，避免制造一个
+    /// 没有语义锚点的“第二项”空位。
+    static func merge(
+        chunks: [RAGManagedChunk],
+        repoContext: RepoContextDocument?
+    ) -> [KnowledgeRAGBrowserManagedItem] {
+        var items = chunks.map(Self.chunk)
+        guard let repoContext else { return items }
+        let insertionIndex = repoContextInsertionIndex(in: chunks.map(\.chunk.source))
+        items.insert(.repoContext(repoContext), at: insertionIndex)
+        return items
+    }
+
+    static func repoContextInsertionIndex(in sources: [RAGChunkSource]) -> Int {
+        guard let metadataIndex = sources.firstIndex(of: .metadata) else { return 0 }
+        return min(metadataIndex + 1, sources.count)
+    }
+}
+
 /// 浏览器的只读状态协调器。仓库列表与聚合状态必须来自同一次刷新，避免索引重建中出现
 /// “仓库已显示但统计仍属于旧模型”的错配。
 @MainActor
@@ -237,6 +268,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var indexes: [Int64: RAGKnowledgeRepositoryIndex] = [:]
     var selectedRepoID: Int64?
     var chunks: [RAGManagedChunk] = []
+    /// RepoContext 是文件系统产物，不进入 `rag_chunks`；浏览器只在展示层把它合并为特殊项。
+    var repoContextDocument: RepoContextDocument?
     var hasMoreChunks = false
     var hasMoreRepositories = false
     var isLoading = false
@@ -294,6 +327,9 @@ private final class KnowledgeRAGBrowserViewModel {
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
     var selectedCandidate: RAGRepoCandidate? { candidates.first(where: { $0.repo.id == selectedRepoID }) }
     var selectedIndex: RAGKnowledgeRepositoryIndex? { selectedRepoID.flatMap { indexes[$0] } }
+    var managedItems: [KnowledgeRAGBrowserManagedItem] {
+        KnowledgeRAGBrowserManagedItem.merge(chunks: chunks, repoContext: repoContextDocument)
+    }
 
     func bootstrap() async { await refresh(showsLoading: true) }
 
@@ -341,6 +377,8 @@ private final class KnowledgeRAGBrowserViewModel {
         let requestGeneration = repositorySelectionGate.begin()
         preservesEmptySelection = false
         selectedRepoID = id
+        // 先清掉旧仓库 XML，避免磁盘读取完成前短暂展示上一项目的第二行。
+        repoContextDocument = nil
         await loadChunks(selectionGeneration: requestGeneration)
     }
 
@@ -492,8 +530,8 @@ private final class KnowledgeRAGBrowserViewModel {
         candidates.first(where: { $0.repo.id == id })?.repo.ownerAvatar
     }
 
-    func saveChunk(_ managed: RAGManagedChunk, title: String, sectionPath: String, content: String) async {
-        guard let id = managed.chunk.id else { return }
+    func saveChunk(_ managed: RAGManagedChunk, title: String, sectionPath: String, content: String) async -> String? {
+        guard let id = managed.chunk.id else { return nil }
         do {
             try await dependencies.ragChunkRepository.saveKnowledgeChunkOverride(id: id, title: title, sectionPath: sectionPath, content: content)
             await refresh()
@@ -509,7 +547,36 @@ private final class KnowledgeRAGBrowserViewModel {
                     errorMessage = error.localizedDescription
                 }
             }
-        } catch { errorMessage = error.localizedDescription }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// 编辑的是 RepoContext 文件真源；成功后直接替换当前展示快照，不触发普通 RAG 重建。
+    func saveRepoContextXML(_ xml: String) -> String? {
+        guard let repo = selectedCandidate?.repo else { return String.l10n("rag.browser.repoContext.error.noRepository") }
+        do {
+            repoContextDocument = try dependencies.repoContextStorage.saveEditedContextXML(
+                xml,
+                owner: repo.owner,
+                repo: repo.name
+            )
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// RepoContext 删除不写 tombstone；它不是索引分片，用户以后可以重新生成。
+    func deleteRepoContext() {
+        guard let repo = selectedCandidate?.repo else { return }
+        do {
+            try dependencies.repoContextStorage.deleteProject(owner: repo.owner, repo: repo.name)
+            repoContextDocument = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     /// 首次删除仅下架：仍显示在管理列表且可编辑，但 SQL 召回会立即排除它。
@@ -671,6 +738,7 @@ private final class KnowledgeRAGBrowserViewModel {
         preservesEmptySelection = true
         selectedRepoID = nil
         chunks = []
+        repoContextDocument = nil
         hasMoreChunks = false
         candidates.removeAll { $0.repo.id == repoID }
         indexes.removeValue(forKey: repoID)
@@ -687,12 +755,20 @@ private final class KnowledgeRAGBrowserViewModel {
     private func loadChunks(limit: Int, append: Bool, selectionGeneration: Int? = nil) async {
         guard let selectedRepoID else {
             chunks = []
+            repoContextDocument = nil
             hasMoreChunks = false
             return
         }
         let requestedRepoID = selectedRepoID
         let requestedOffset = append ? chunks.count : 0
         do {
+            let loadedRepoContext: RepoContextDocument? = if append {
+                repoContextDocument
+            } else if let repo = candidates.first(where: { $0.repo.id == requestedRepoID })?.repo {
+                try dependencies.repoContextStorage.loadDocument(owner: repo.owner, repo: repo.name)
+            } else {
+                nil
+            }
             let page = try await dependencies.ragChunkRepository.fetchManagedKnowledgeChunks(
                 repoId: requestedRepoID,
                 limit: limit,
@@ -706,6 +782,7 @@ private final class KnowledgeRAGBrowserViewModel {
                 chunks.append(contentsOf: page.chunks)
             } else {
                 chunks = page.chunks
+                repoContextDocument = loadedRepoContext
             }
             hasMoreChunks = page.hasMore
         }
@@ -729,9 +806,11 @@ private struct KnowledgeRAGBrowserView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @State private var editingChunk: RAGManagedChunk?
+    @State private var editingRepoContext: RepoContextDocument?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
     @State private var hoveredChunkID: Int64?
+    @State private var hoveredRepoContextID: String?
     @State private var isKnowledgeOverviewExpanded = false
     @State private var isRetrievalTestExpanded = false
     @State private var isKnowledgeOverviewHovered = false
@@ -739,6 +818,7 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var isRetrievalTestSettingsExpanded = false
     @State private var knowledgeHeroCollapseProgress: CGFloat = 0
     @State private var permanentlyDeletingChunk: RAGManagedChunk?
+    @State private var isConfirmingRepoContextDeletion = false
     /// 召回测试「恢复已保存」短暂成功态；1.5s 后回到箭头，避免绿勾卡住。
     @State private var didRestoreRetrievalTestSettings = false
     @State private var restoreRetrievalTestFeedbackTask: Task<Void, Never>?
@@ -803,6 +883,12 @@ private struct KnowledgeRAGBrowserView: View {
             }
             .appLocaleEnvironment()
         }
+        .sheet(item: $editingRepoContext) { document in
+            KnowledgeRAGChunkEditor(repoContext: document) { content in
+                viewModel.saveRepoContextXML(content)
+            }
+            .appLocaleEnvironment()
+        }
         .sheet(item: $inspectingHit) { hit in
             KnowledgeRAGChunkEditor(hit: hit) {
                 let managed = viewModel.chunks.first(where: { $0.chunk.id == hit.hit.chunk.id })
@@ -831,6 +917,14 @@ private struct KnowledgeRAGBrowserView: View {
             }
         } message: {
             Text("rag.browser.chunk.permanentDelete.message")
+        }
+        .alert("rag.browser.repoContext.delete.title", isPresented: $isConfirmingRepoContextDeletion) {
+            Button("common.cancel", role: .cancel) {}
+            Button("rag.browser.repoContext.delete.action", role: .destructive) {
+                viewModel.deleteRepoContext()
+            }
+        } message: {
+            Text("rag.browser.repoContext.delete.message")
         }
         .alert(
             "library.removeUsing.confirmTitle",
@@ -1626,6 +1720,11 @@ private struct KnowledgeRAGBrowserView: View {
                     stat("rag.workspace.status.pendingChunks", value: "\(index.pendingChunks)", color: .orange)
                     stat("rag.workspace.status.failedChunks", value: "\(index.failedChunks)", color: .red)
                     stat("rag.workspace.status.staleChunks", value: "\(index.staleChunks)", color: .purple)
+                    stat(
+                        "rag.browser.repoContext.stat",
+                        value: viewModel.repoContextDocument == nil ? "0 / 1" : "1 / 1",
+                        color: .purple
+                    )
                 }
             }
             HStack(spacing: 6) {
@@ -1650,13 +1749,18 @@ private struct KnowledgeRAGBrowserView: View {
                     viewModel.rebuildIndex()
                 }
             }
-            if viewModel.chunks.isEmpty {
+            if viewModel.managedItems.isEmpty {
                 ContentUnavailableView("rag.browser.noChunks", systemImage: "doc.text").frame(maxWidth: .infinity, minHeight: 180)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(viewModel.chunks.enumerated()), id: \.element.id) { index, chunk in
+                    ForEach(Array(viewModel.managedItems.enumerated()), id: \.element.id) { index, item in
                         if index > 0 { Divider() }
-                        chunkRow(chunk, rowIndex: index)
+                        switch item {
+                        case .chunk(let chunk):
+                            chunkRow(chunk, rowIndex: index)
+                        case .repoContext(let document):
+                            repoContextRow(document, rowIndex: index)
+                        }
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -1757,6 +1861,69 @@ private struct KnowledgeRAGBrowserView: View {
         .background(chunkRowBackground(managed, isHovered: isHovered, rowIndex: rowIndex))
         .contentShape(Rectangle())
         .onHover { hoveredChunkID = $0 ? managed.id : nil }
+    }
+
+    /// 仓库级 XML 复用普通分片的密度和操作位置，但状态、token 与删除语义保持独立。
+    private func repoContextRow(_ document: RepoContextDocument, rowIndex: Int) -> some View {
+        let isHovered = hoveredRepoContextID == document.id
+        return HStack(alignment: .top, spacing: 8) {
+            Button { editingRepoContext = document } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.purple)
+                            .accessibilityHidden(true)
+                        Text("rag.browser.repoContext.title")
+                            .font(.caption.weight(.semibold))
+                        Text(verbatim: String(
+                            format: String.l10n("rag.browser.chunks.tokenCountFormat"),
+                            document.metadata.stats.actualTokens
+                        ))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        Text(verbatim: "context.xml")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    Text(document.xml)
+                        .font(.body.monospaced())
+                        .lineLimit(3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+
+            HStack(alignment: .center, spacing: 8) {
+                Label("rag.browser.repoContext.available", systemImage: "checkmark.circle.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .symbolRenderingMode(.hierarchical)
+                Button(role: .destructive) {
+                    isConfirmingRepoContextDeletion = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.subheadline)
+                        .frame(width: 28, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+                .foregroundStyle(.red)
+                .help("rag.browser.repoContext.delete.action")
+            }
+            .frame(minHeight: 18)
+        }
+        .padding(12)
+        .background(isHovered ? Color.accentColor.opacity(0.10) : zebraStripeBackground(rowIndex: rowIndex))
+        .contentShape(Rectangle())
+        .onHover { hoveredRepoContextID = $0 ? document.id : nil }
     }
 
     private func chunkRowBackground(_ managed: RAGManagedChunk, isHovered: Bool, rowIndex: Int) -> Color {
@@ -1877,18 +2044,30 @@ private struct RAGRetrievalHitInspection: Identifiable {
 private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    let chunk: RAGChunk
+    let source: RAGChunkSource?
+    let sourceSystemImageName: String
+    let sourceTintColor: Color
+    let editorTitleKey: LocalizedStringKey
+    let locksMetadataFields: Bool
+    let usesMonospacedEditor: Bool
     let isExcluded: Bool?
     let retrievalMetadata: (repositoryName: String, ownerAvatarURL: String?, kind: String, score: Double, vectorSimilarity: Double?)?
-    let onSave: ((String, String, String) async -> Void)?
+    let onSave: ((String, String, String) async -> String?)?
     /// 只读命中详情右上角：切到同款编辑 sheet（左侧列表点进的那个）。
     let onEdit: (() -> Void)?
     @State private var title: String
     @State private var sectionPath: String
     @State private var content: String
+    @State private var saveErrorMessage: String?
+    @State private var isSaving = false
 
-    init(chunk: RAGManagedChunk, onSave: @escaping (String, String, String) async -> Void) {
-        self.chunk = chunk.chunk
+    init(chunk: RAGManagedChunk, onSave: @escaping (String, String, String) async -> String?) {
+        source = chunk.chunk.source
+        sourceSystemImageName = chunk.chunk.source.systemImageName
+        sourceTintColor = chunk.chunk.source.tintColor
+        editorTitleKey = "rag.browser.chunk.edit"
+        locksMetadataFields = false
+        usesMonospacedEditor = false
         isExcluded = chunk.isExcluded
         retrievalMetadata = nil
         self.onSave = onSave
@@ -1898,8 +2077,29 @@ private struct KnowledgeRAGChunkEditor: View {
         _content = State(initialValue: chunk.chunk.content)
     }
 
+    init(repoContext: RepoContextDocument, onSave: @escaping (String) async -> String?) {
+        source = nil
+        sourceSystemImageName = "chevron.left.forwardslash.chevron.right"
+        sourceTintColor = .purple
+        editorTitleKey = "rag.browser.repoContext.title"
+        locksMetadataFields = true
+        usesMonospacedEditor = true
+        isExcluded = nil
+        retrievalMetadata = nil
+        self.onSave = { _, _, content in await onSave(content) }
+        onEdit = nil
+        _title = State(initialValue: String.l10n("rag.browser.repoContext.title"))
+        _sectionPath = State(initialValue: "context.xml")
+        _content = State(initialValue: repoContext.xml)
+    }
+
     init(hit: RAGRetrievalHitInspection, onEdit: @escaping () -> Void) {
-        chunk = hit.hit.chunk
+        source = hit.hit.chunk.source
+        sourceSystemImageName = hit.hit.chunk.source.systemImageName
+        sourceTintColor = hit.hit.chunk.source.tintColor
+        editorTitleKey = "rag.browser.retrieval.detail"
+        locksMetadataFields = false
+        usesMonospacedEditor = false
         isExcluded = nil
         retrievalMetadata = (
             hit.repositoryName,
@@ -1921,15 +2121,11 @@ private struct KnowledgeRAGChunkEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 // 窗口标题要比下方仓库身份行更大一档（title3 vs callout）。
-                Image(systemName: chunk.source.systemImageName)
+                Image(systemName: sourceSystemImageName)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(chunk.source.tintColor)
+                    .foregroundStyle(sourceTintColor)
                     .accessibilityHidden(true)
-                if isReadOnly {
-                    Text("rag.browser.retrieval.detail").font(.title3.weight(.semibold))
-                } else {
-                    Text("rag.browser.chunk.edit").font(.title3.weight(.semibold))
-                }
+                Text(editorTitleKey).font(.title3.weight(.semibold))
                 Spacer()
                 if let onEdit {
                     Button {
@@ -1957,7 +2153,9 @@ private struct KnowledgeRAGChunkEditor: View {
                         spacing: 6,
                         showAvatarBorder: false
                     )
-                    Text(chunk.source.rawValue).font(.caption).foregroundStyle(.secondary)
+                    if let source {
+                        Text(source.rawValue).font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Text(retrievalMetadata.kind).font(.caption).foregroundStyle(.secondary)
                     Text("rag.browser.retrieval.rankScore").font(.caption).foregroundStyle(.secondary)
@@ -1971,12 +2169,12 @@ private struct KnowledgeRAGChunkEditor: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("rag.browser.chunk.titleLabel").font(.caption).foregroundStyle(.secondary)
                 TextField("rag.browser.chunk.title", text: $title)
-                    .disabled(isReadOnly)
+                    .disabled(isReadOnly || locksMetadataFields)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("rag.browser.chunk.sectionLabel").font(.caption).foregroundStyle(.secondary)
                 TextField("rag.browser.chunk.section", text: $sectionPath)
-                    .disabled(isReadOnly)
+                    .disabled(isReadOnly || locksMetadataFields)
             }
             // 正文区吃掉标题/路径字段之外的剩余高度；否则 ScrollView 会按内容理想高度撑开，
             // 再被外层 540 固定窗裁切，长分片就滚不动。
@@ -2006,7 +2204,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     })
                 } else {
                     TextEditor(text: $content)
-                        .font(.body)
+                        .font(usesMonospacedEditor ? .body.monospaced() : .body)
                         .scrollContentBackground(.hidden)
                         .padding(8)
                         .frame(maxWidth: .infinity, minHeight: 250, maxHeight: .infinity)
@@ -2018,21 +2216,36 @@ private struct KnowledgeRAGChunkEditor: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            if let onSave, let isExcluded {
+            if let saveErrorMessage {
+                Text(saveErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
+            if let onSave {
                 HStack(alignment: .center, spacing: 12) {
-                    // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
-                    RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let isExcluded {
+                        // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
+                        RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Spacer()
+                    }
 
                     Button("common.cancel") { dismiss() }
                     Button("rag.browser.chunk.save") {
                         Task {
-                            await onSave(title, sectionPath, content)
-                            dismiss()
+                            isSaving = true
+                            defer { isSaving = false }
+                            if let error = await onSave(title, sectionPath, content) {
+                                saveErrorMessage = error
+                            } else {
+                                dismiss()
+                            }
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSaving || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }

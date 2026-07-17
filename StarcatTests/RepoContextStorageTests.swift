@@ -12,6 +12,13 @@ import Testing
 @Suite("RepoContextStorage")
 @MainActor
 struct RepoContextStorageTests {
+    @Test("RepoContext 固定插入 metadata 后且缺 metadata 时置顶")
+    func ordersRepoContextAfterMetadata() {
+        #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.metadata, .readme]) == 1)
+        #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.readme, .metadata, .notes]) == 2)
+        #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.readme, .notes]) == 0)
+    }
+
     @Test("合法编辑原子更新 XML 与 metadata，但不增加生成次数")
     func savesEditedDocumentAndDerivedMetadata() throws {
         let fixture = try makeFixture()

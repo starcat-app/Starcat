@@ -79,7 +79,7 @@ struct RepoContextStoredProject: Identifiable, Equatable, Sendable {
 ///
 /// UI 不持有 security-scoped URL，避免在授权 scope 已关闭后自行读文件；所有正文 IO
 /// 仍由 `RepoContextStorage` 在 `withOutputRoot` 内完成。
-struct RepoContextDocument: Sendable {
+struct RepoContextDocument: Identifiable, Sendable {
     let xml: String
     let metadata: PackMetadata
 

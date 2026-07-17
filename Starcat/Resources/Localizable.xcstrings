@@ -28870,6 +28870,125 @@
         }
       }
     },
+    "rag.browser.repoContext.available": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.delete.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 XML"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.delete.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This removes context.xml and its metadata. You can generate them again later."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此操作会删除 context.xml 及其元数据，之后仍可重新生成。"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.delete.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete RepoContext XML?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 RepoContext XML？"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.error.noRepository": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected repository is no longer available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前选中的仓库已不可用。"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.stat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext"
+          }
+        }
+      }
+    },
+    "rag.browser.repoContext.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext XML"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContext XML"
+          }
+        }
+      }
+    },
     "rag.browser.retrieval.hint": {
       "localizations": {
         "en": {

@@ -34,13 +34,13 @@
 
 ## 3. 第二项展示与分片管理 UI
 
-- [ ] 有效 XML 作为特殊托管分片展示，不新增 `RAGChunkSource` 或数据库行。
-- [ ] RepoContext 固定插入元数据分片之后，成为第二项。
-- [ ] 普通分片排序、分页、embedding 与统计口径不变。
-- [ ] 详情页增加独立 RepoContext `0 / 1` 状态。
-- [ ] 点击 RepoContext 行复用 `KnowledgeRAGChunkEditor` sheet，不使用 popover。
-- [ ] 编辑器固定标题和路径，正文使用等宽字体。
-- [ ] 保存失败时 sheet 不关闭并展示校验/写入错误。
+- [x] 有效 XML 作为特殊托管分片展示，不新增 `RAGChunkSource` 或数据库行。
+- [x] RepoContext 固定插入元数据分片之后，成为第二项。
+- [x] 普通分片排序、分页、embedding 与统计口径不变。
+- [x] 详情页增加独立 RepoContext `0 / 1` 状态。
+- [x] 点击 RepoContext 行复用 `KnowledgeRAGChunkEditor` sheet，不使用 popover。
+- [x] 编辑器固定标题和路径，正文使用等宽字体。
+- [x] 保存失败时 sheet 不关闭并展示校验/写入错误。
 - [ ] 行尾删除提供破坏性确认，生成期间禁用编辑和删除。
 - [ ] 补齐展示顺序、独立统计与交互 read model 测试。
 

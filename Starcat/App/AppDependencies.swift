@@ -139,6 +139,8 @@ final class AppDependencies {
     let repoAIInsightService: RepoAIInsightService
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
     let repoAIContextProvider: RepoAIContextProvider
+    /// RepoContext 文件系统真源。知识库浏览器只通过该对象读写 XML，不跨 security scope 持有 URL。
+    let repoContextStorage: RepoContextStorage
     /// AI 对话历史磁盘存储。由依赖容器显式装配，避免 ViewModel 默认参数读取 MainActor 单例。
     let diskChatHistoryStore: DiskChatHistoryStore
 
@@ -811,6 +813,7 @@ final class AppDependencies {
         // 测试（init 加默认参数 nil 让旧测试无需改动）。
         let snapshotService = SharedSnapshotService()
         let repoContextStorage = RepoContextStorage.shared
+        self.repoContextStorage = repoContextStorage
         let repoAIContextProvider = RepoAIContextProvider(
             snapshotService: snapshotService,
             storage: repoContextStorage,
