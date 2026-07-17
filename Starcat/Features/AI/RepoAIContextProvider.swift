@@ -91,6 +91,8 @@ enum RepoAIContextOutcome: Sendable {
 enum RepoAIContextProgress: Sendable, Equatable {
     /// 即将调 `SharedSnapshotService.resolveBranch`（GitHub `/branches/:name` API）。
     case resolvingBranch
+    /// 已拿到 commit SHA，正在核对 RepoContextStorage 的 commit / budget / rules 缓存键。
+    case checkingCache
     /// 即将调 `SharedSnapshotService.archiveIfNeeded`（命中本地 ZIP 缓存时**不**发此事件）。
     case downloadingArchive
     /// 即将调 `RepoContextPacker.pack`（解压 + 全仓文件遍历 + 写 context.xml）。
@@ -267,6 +269,7 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         let branch = try await snapshotService.resolveBranch(repo: repo, name: defaultBranchName)
 
         // ③ 缓存命中判定四件套：用入口处快照的 settings 值
+        await onProgress?(.checkingCache)
         let tokenBudget = snapshot.tokenBudget
         let tier1MaxLines = snapshot.tier1MaxLines
         let currentTierRulesVersion = TierRules.tierRulesVersion

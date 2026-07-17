@@ -25316,8 +25316,14 @@
     },
     "rag.workspace.execution.repoContext.title": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Build project context" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "构建项目上下文" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking: build project context" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深度思考：构建项目上下文" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.checkingCache": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Checking the matching RepoContext cache" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在检查匹配的项目上下文缓存" } }
       }
     },
     "rag.workspace.execution.repoContext.tokenDetailPrefix": {
@@ -27726,6 +27732,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "RAG 调试模式"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.privacy.repoContext": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug traces are stored locally. The final Prompt stage may contain the complete repository context XML; clearing this conversation's traces deletes that local debug copy."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调试记录保存在本地；最终 Prompt 阶段可能包含完整项目上下文 XML。清空当前会话调试记录会删除这份本地调试副本。"
           }
         }
       }

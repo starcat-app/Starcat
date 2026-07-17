@@ -248,6 +248,9 @@ final class RepoAIInsightViewModel {
     private static func mapStep(_ progress: RepoAIContextProgress) -> PrepStep {
         switch progress {
         case .resolvingBranch: return .resolvingBranch
+        // 单仓 AI 面板保持原有三段视觉模型；缓存核对仍归入“解析项目”阶段，
+        // 知识库 RAG 时间线则会单独展示这条更细粒度事件。
+        case .checkingCache: return .resolvingBranch
         case .downloadingArchive: return .downloadingArchive
         case .packingContext: return .packingContext
         }

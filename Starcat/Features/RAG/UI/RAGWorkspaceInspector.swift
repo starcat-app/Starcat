@@ -2157,6 +2157,10 @@ struct RAGWorkspaceInspector: View {
     /// 「调试」tab 内容：开关已在 header，这里只展示已开启后的 trace 列表。
     var debugInspector: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Label("rag.workspace.debug.privacy.repoContext", systemImage: "lock.doc")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Spacer()
                 // 单条导出走行内按钮；顶部只保留清空整条会话 Debug。

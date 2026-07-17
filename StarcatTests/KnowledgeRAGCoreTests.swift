@@ -4737,6 +4737,7 @@ private final class FixedRepoContextProvider: @unchecked Sendable, RepoAIContext
     ) async throws -> RepoAIContextOutcome {
         callCount += 1
         await onProgress?(.resolvingBranch)
+        await onProgress?(.checkingCache)
         await onProgress?(.packingContext)
         let xml = """
         <?xml version="1.0" encoding="UTF-8"?>

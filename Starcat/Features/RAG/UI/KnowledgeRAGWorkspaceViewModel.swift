@@ -3634,6 +3634,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
                 let key = switch progress {
                 case .resolvingBranch: "rag.workspace.execution.repoContext.resolvingBranch"
+                case .checkingCache: "rag.workspace.execution.repoContext.checkingCache"
                 case .downloadingArchive: "rag.workspace.execution.repoContext.downloadingArchive"
                 case .packingContext: "rag.workspace.execution.repoContext.packingContext"
                 }
