@@ -370,9 +370,18 @@
         .fade-in { opacity: 0; transform: translateY(32px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }
         .fade-in.visible { opacity: 1; transform: translateY(0); }
 
-        /* App Store badge */
-        .appstore-badge { display: inline-block; height: 40px; }
-        .appstore-badge img { height: 100%; width: auto; }
+        /* Apple 官方徽章保持原始比例，仅补充页面交互反馈，不改写徽章视觉。 */
+        .appstore-badge {
+            display: inline-flex;
+            height: 56px;
+            transition: opacity var(--duration-fast) var(--ease-out),
+                        transform var(--duration-fast) var(--ease-out);
+        }
+        .appstore-badge img { display: block; height: 100%; width: auto; }
+        .appstore-badge:active { transform: scale(0.96); }
+        @media (hover: hover) {
+            .appstore-badge:hover { opacity: 0.86; transform: translateY(-1px); }
+        }
     </style>
 </head>
 <body class="is-loading">
@@ -404,10 +413,21 @@
                 Available on the Mac App Store.
             </p>
             <div class="hero-actions">
-                <button class="btn-primary" disabled title="Coming soon on the Mac App Store">
-                    <span class="icon-18"><i data-lucide="download"></i></span>
-                    Download on the Mac App Store
-                </button>
+                <a
+                    class="appstore-badge"
+                    href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"
+                    data-appstore-deeplink="macappstore://itunes.apple.com/app/id6788809803?mt=12"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Download Starcat for GitHub on the Mac App Store"
+                >
+                    <img
+                        src="https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83"
+                        alt="Download on the Mac App Store"
+                        width="156"
+                        height="40"
+                    >
+                </a>
             </div>
             <div class="hero-banner fade-in">
                 <img src="/starcat/sc-banner.webp" alt="Starcat main interface screenshot" width="3428" height="2170">
@@ -974,6 +994,46 @@
                 });
             }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
             document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+        })();
+
+        // App Store badge: 先尝试唤起本机 Mac App Store（macappstore://），
+        // 若深链未被系统处理（页面仍停留在前台），再回退到 App Store 网页。
+        // 关键约束：
+        //  - <a> 的 href 始终指向网页版，保证禁用 JS、右键/中键新标签、爬虫都能用。
+        //  - 修饰键 / 非左键点击不拦截，交还浏览器默认行为（用户想在新标签打开网页）。
+        //  - 深链成功时浏览器会切到后台（visibilitychange / blur / pagehide 触发），
+        //    以此判定是否已跳转，避免 App Store 打开后又多弹一个网页标签。
+        (function () {
+            const badge = document.querySelector('[data-appstore-deeplink]');
+            if (!badge) return;
+            const webURL = badge.getAttribute('href');
+            const deepLink = badge.getAttribute('data-appstore-deeplink');
+            if (!webURL || !deepLink) return;
+
+            badge.addEventListener('click', (event) => {
+                if (event.defaultPrevented) return;
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+                event.preventDefault();
+
+                let switchedAway = false;
+                const markSwitched = () => { switchedAway = true; };
+                document.addEventListener('visibilitychange', markSwitched, { once: true });
+                window.addEventListener('blur', markSwitched, { once: true });
+                window.addEventListener('pagehide', markSwitched, { once: true });
+
+                // 尝试唤起本机 Mac App Store。
+                window.location.href = deepLink;
+
+                window.setTimeout(() => {
+                    document.removeEventListener('visibilitychange', markSwitched);
+                    window.removeEventListener('blur', markSwitched);
+                    window.removeEventListener('pagehide', markSwitched);
+                    if (!switchedAway && !document.hidden) {
+                        window.open(webURL, '_blank', 'noopener,noreferrer');
+                    }
+                }, 1200);
+            });
         })();
 
         // Lucide icons
