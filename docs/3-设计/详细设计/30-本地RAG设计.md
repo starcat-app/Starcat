@@ -1341,66 +1341,50 @@ protocol RAGVectorSearchProvider {
     func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
 }
 
-protocol RAGHybridFusionEngine {
-    func fuse(keywordHits: [RAGRetrievalHit], vectorHits: [RAGRetrievalHit]) -> [RAGRetrievalHit]
+struct KnowledgeRAGRetriever {
+    func retrieve(
+        semanticQuery: String,
+        keywordQueries: [String],
+        candidates: [RAGRepoCandidate],
+        explicitMode: RAGExplicitRepoMode,
+        explicitRepoIDs: [Int64]
+    ) async throws -> RAGRetrievalResult
 }
 
-struct RAGRepoCandidateSet {
-    var repoIDs: Set<Int64>
-    var sourceTypes: Set<RAGChunkSource>
-    var paths: Set<String>
-    var languages: Set<String>
-    var updatedAfter: Date?
+struct RAGHybridFusionEngine {
+    func fuse(
+        keywordHits: [RAGChildHit],
+        vectorHits: [RAGChildHit],
+        preferredRepoIDs: Set<Int64>
+    ) -> [RAGChildHit]
 }
 
-struct RAGRetrievalHit {
+struct RAGChildHit {
     var chunk: RAGChunk
-    var repo: Repo
     var score: Double
-    var displayScore: Double
-    var reason: RAGRetrievalReason
+    var kind: RAGHitKind
+    var vectorSimilarity: Double?
+    var scoreBreakdown: RAGScoreBreakdown?
 }
 
 struct RepoContextBundle {
-    var repo: Repo
-    var repoScore: Double
-    var matchedChildren: [RAGRetrievalHit]
+    var candidate: RAGRepoCandidate
+    var score: Double
+    var matchedChildren: [RAGChildHit]
     var sectionParents: [RAGSectionParent]
-    var notesChunk: RAGChunk?
-    var summaryChunk: RAGChunk?
-    var metadataChunk: RAGChunk?
-    var tokenBudget: Int
 }
 
-struct RAGRemoteContextBlock {
-    var repoID: Int64
-    var resource: RAGRemoteContextResource
-    var title: String
-    var content: String
-    var sourceURL: URL?
-    var fetchedAt: Date
-    var isEphemeral: Bool
-    var degradation: RAGRemoteContextDegradation?
-}
-
-enum RAGRemoteContextDegradation: Sendable {
-    case unauthenticated
-    case forbidden
-    case rateLimited(resetAt: Date?)
-    case timeout
-    case networkError(String)
-    case unsupported
-}
-
-struct RAGSectionParent {
-    var parentKey: String
-    var title: String
-    var chunks: [RAGChunk]
-    var matchedChunkIDs: Set<Int64>
+struct RAGRetrievalResult {
+    var candidates: [RAGRepoCandidate]
+    var bundles: [RepoContextBundle]
+    var childHits: [RAGChildHit]
+    var diagnostics: RAGRetrievalDiagnostics?
+    var trace: RAGRetrievalTrace?
 }
 ```
 
-`RAGScope` 第一版只有 `.knowledge`。保留 enum 是为了避免后续调试范围把字符串散落到 UI。
+知识库范围不使用可被调用方随意设置的 `RAGScope` 字符串；候选仓储固定要求
+`library_state = in_library`，Retriever 再把确定的 candidate repo ids 传给两路 Provider。
 
 ### 8.2 候选过滤
 
