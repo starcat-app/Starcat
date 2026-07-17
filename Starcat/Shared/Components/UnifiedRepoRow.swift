@@ -225,57 +225,31 @@ struct UnifiedRepoRow: View {
                             .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    // chip 行
+                    // chip 行：宽栏完整展示；窄栏 ViewThatFits 只对左簇降级
+                    // （依次丢掉 Forks → footer 仅图标），避免 fixedSize chip 撑破卡片。
+                    // Spacer / SemanticScoreBadge 放在 ViewThatFits 外，否则 Spacer 会干扰 ideal 测宽。
                     //
                     // 布局分区（v2.1，2026-06-13 dong4j 反馈）：
                     // - **左簇**：Language / Stars / Forks / Archived / sceneBadge / RepoStatusChip
-                    //   —— 仓库自身的属性元数据，自然左对齐紧贴起始边；
-                    // - `Spacer(minLength: 8)` 居中分隔，至少 8pt 间距避免左簇与右侧贴边；
-                    // - **右簇**：SemanticScoreBadge —— 这是查询期临时派生的"匹配信号"
-                    //   而非仓库自身属性，与左侧静态属性的语义层级不同。靠右独立成区
-                    //   让用户在浏览搜索结果时，眼睛只需在卡片右缘"扫一列百分比"即可
-                    //   横向比较多张卡片的命中强度，比之前夹在 chip 中间需要 saccade
-                    //   逐张定位更高效。
+                    // - `Spacer(minLength: 8)` 分隔
+                    // - **右簇**：SemanticScoreBadge
                     HStack(spacing: 8) {
-                        if let language = card.language, !language.isEmpty {
-                            LanguageBadge(language: language, style: .full)
+                        ViewThatFits(in: .horizontal) {
+                            metadataChipCluster(includeForks: true, footerIconOnly: false)
+                            metadataChipCluster(includeForks: false, footerIconOnly: false)
+                            metadataChipCluster(includeForks: false, footerIconOnly: true)
                         }
-                        StarsBadge(count: card.starsCount, style: .full)
-                        MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: .secondary)
-                        if let metadata = card.footerMetadata {
-                            RepoCardInlineMetadataBadge(metadata: metadata)
-                        }
-                        if card.isArchived {
-                            // 卡片走 iconOnly：4+ chip 同行（Language + Stars + Forks + Archived
-                            // + sceneBadge）下 "Archived" 文字会挤换行。详情页 / 活动详情面板
-                            // 仍走默认 ArchivedBadge() 保留文字，详见 RepoRowComponents.swift。
-                            ArchivedBadge(iconOnly: true)
-                        }
-                        sceneBadgeChip
-                        // 阅读状态角标（v2，2026-06-12）。
-                        // 渲染条件 = 场景允许 && isStarred && readStatus 已注入 && status != .read
-                        // - showReadStatusBadge=false → 当前场景不承担阅读进度展示，直接跳过
-                        // - 仅 starred row 显（ephemeral trending/weekly 行 isStarred=false 跳过）
-                        // - readStatus == nil → 调用方没注入状态信号（trending/weekly/activity 默认走这）→ 跳过
-                        // - .read 默认态不显，避免列表"整页角标"视觉污染
-                        if showReadStatusBadge,
-                           card.isStarred,
-                           let readStatus = card.readStatus,
-                           readStatus != .read {
-                            RepoStatusChip(status: readStatus)
-                        }
-                        // 把 SemanticScoreBadge 推到行末右对齐。
-                        // 无 semanticHit 时（非语义搜索场景）Spacer 仅吃掉剩余空间，
-                        // 左簇仍贴左渲染，行为与改造前一致 —— 不影响 Trending / Weekly /
-                        // Activity / Manage 非搜索态的视觉。
                         Spacer(minLength: 8)
                         if let semanticHit {
                             SemanticScoreBadge(hit: semanticHit)
                         }
                     }
                 }
+                // minWidth: 0 允许 HStack 内文字区压缩到可用宽度；否则 chip 固有宽度会撑破卡片。
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, trailingReservedWidth)
 
                 Spacer(minLength: 0)
@@ -320,6 +294,38 @@ struct UnifiedRepoRow: View {
                     .offset(x: -2, y: -2)
                     .accessibilityLabel(Text("repo.card.inLibrary"))
                     .help(Text("repo.card.inLibrary"))
+            }
+        }
+    }
+
+    /// chip 左簇变体：供 `ViewThatFits` 在窄栏依次降级（无 Spacer，保证 ideal 测宽可信）。
+    /// - `includeForks == false`：去掉 Forks 计数，先省约 40–50pt
+    /// - `footerIconOnly == true`：footer 元数据（如 RAG 索引 pill）只留图标，完整文案走 tooltip
+    @ViewBuilder
+    private func metadataChipCluster(includeForks: Bool, footerIconOnly: Bool) -> some View {
+        HStack(spacing: 8) {
+            if let language = card.language, !language.isEmpty {
+                LanguageBadge(language: language, style: .full)
+            }
+            StarsBadge(count: card.starsCount, style: .full)
+            if includeForks {
+                MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: .secondary)
+            }
+            if let metadata = card.footerMetadata {
+                RepoCardInlineMetadataBadge(metadata: metadata, iconOnly: footerIconOnly)
+            }
+            if card.isArchived {
+                // 卡片走 iconOnly：4+ chip 同行下 "Archived" 文字会挤换行。
+                // 详情页仍走默认 ArchivedBadge() 保留文字，详见 RepoRowComponents.swift。
+                ArchivedBadge(iconOnly: true)
+            }
+            sceneBadgeChip
+            // 阅读状态：场景允许 && isStarred && 已注入 && 非 .read 默认态
+            if showReadStatusBadge,
+               card.isStarred,
+               let readStatus = card.readStatus,
+               readStatus != .read {
+                RepoStatusChip(status: readStatus)
             }
         }
     }
@@ -426,26 +432,32 @@ private struct WeeklySourceInlineBadge: View {
 
 private struct RepoCardInlineMetadataBadge: View {
     let metadata: RepoCardInlineMetadata
+    /// 窄栏降级：只显示图标，完整 `metadata.text` 走 help / VoiceOver。
+    var iconOnly: Bool = false
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: metadata.systemImage)
                 .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            Text(verbatim: metadata.text)
-                .font(interfaceScale.font(.code, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if !iconOnly {
+                Text(verbatim: metadata.text)
+                    .font(interfaceScale.font(.code, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 5)
+        .padding(.horizontal, iconOnly ? 4 : 5)
         .padding(.vertical, 2)
         .background {
             Capsule(style: .continuous)
                 .fill(tint.opacity(0.10))
         }
-        .frame(maxWidth: 96, alignment: .leading)
+        .frame(maxWidth: iconOnly ? nil : 96, alignment: .leading)
+        .fixedSize(horizontal: iconOnly, vertical: false)
         .help(metadata.text)
+        .accessibilityLabel(Text(verbatim: metadata.text))
     }
 
     private var tint: Color {

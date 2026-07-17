@@ -3099,6 +3099,29 @@ struct KnowledgeRAGCoreTests {
         #expect(ungrouped[0].id != grouped[0].id)
     }
 
+    @Test("RAG 三栏恢复宽度钳制在可拖拽范围内")
+    func workspaceColumnWidthsClampToLayoutBounds() {
+        #expect(
+            RAGWorkspaceLayoutMetrics.clampedLeftWidth(100)
+                == RAGWorkspaceLayoutMetrics.leftMinimumWidth
+        )
+        #expect(
+            RAGWorkspaceLayoutMetrics.clampedLeftWidth(9_999)
+                == RAGWorkspaceLayoutMetrics.leftMaximumWidth
+        )
+        #expect(RAGWorkspaceLayoutMetrics.clampedLeftWidth(333) == 333)
+
+        #expect(
+            RAGWorkspaceLayoutMetrics.clampedRightWidth(100)
+                == RAGWorkspaceLayoutMetrics.rightMinimumWidth
+        )
+        #expect(
+            RAGWorkspaceLayoutMetrics.clampedRightWidth(9_999)
+                == RAGWorkspaceLayoutMetrics.rightMaximumWidth
+        )
+        #expect(RAGWorkspaceLayoutMetrics.clampedRightWidth(456) == 456)
+    }
+
     @Test("会话语义摘要持久化，并只替代 recent window 外的历史")
     func conversationContextSummaryPersistsAndBuildsHistory() async throws {
         let database = try InMemoryDatabaseManager()

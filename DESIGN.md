@@ -249,9 +249,9 @@ Agent 工作台遵循覆盖式 run layout：
 
 知识库 RAG 工作台遵循问答证据 layout：
 
-- Conversation rail：约 318pt，展示最近问答、知识库状态、范围、索引就绪度和新会话入口。
-- Answer Surface：主问答阅读区，最大内容宽度受控，问题、答案、追问保持清晰节奏。
-- Citation Inspector：约 390-460pt，展示引用仓库、证据片段、README/笔记/摘要来源和可信度，不展示普通用户无法理解的内部调试字段。
+- Conversation rail：默认 318pt，可在 250-380pt 内拖拽并跨窗口重开恢复，展示最近问答、知识库状态、范围、索引就绪度和新会话入口。
+- Answer Surface：主问答阅读区，至少保留 480pt 可用宽度，最大内容宽度受控，问题、答案、追问保持清晰节奏。
+- Citation Inspector：默认 420pt，可在 320-520pt 内拖拽并跨窗口重开恢复，展示引用仓库、证据片段、README/笔记/摘要来源和可信度，不展示普通用户无法理解的内部调试字段。
 
 所有固定结构都要给稳定宽度、`minWidth` / `idealWidth` 或明确 frame，避免 hover、标签、计数、加载态导致布局跳动。
 

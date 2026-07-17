@@ -7,6 +7,50 @@
 
 import SwiftUI
 
+/// RAG 工作台三栏尺寸约束与持久化键。
+///
+/// 左右栏允许用户拖拽，但必须给中栏保留稳定的问答阅读空间；持久化值也要在读取时钳制，
+/// 避免旧版本、手工修改 defaults 或未来范围调整后恢复出不可用布局。
+enum RAGWorkspaceLayoutMetrics {
+    static let leftMinimumWidth: CGFloat = 250
+    static let leftIdealWidth: CGFloat = 318
+    static let leftMaximumWidth: CGFloat = 380
+
+    static let answerMinimumWidth: CGFloat = 480
+
+    static let rightMinimumWidth: CGFloat = 320
+    static let rightIdealWidth: CGFloat = 420
+    static let rightMaximumWidth: CGFloat = 520
+
+    static let leftWidthDefaultsKey = "RAGWorkspace.LeftColumnWidth"
+    static let rightWidthDefaultsKey = "RAGWorkspace.RightColumnWidth"
+
+    static func clampedLeftWidth(_ width: Double) -> CGFloat {
+        min(max(CGFloat(width), leftMinimumWidth), leftMaximumWidth)
+    }
+
+    static func clampedRightWidth(_ width: Double) -> CGFloat {
+        min(max(CGFloat(width), rightMinimumWidth), rightMaximumWidth)
+    }
+}
+
+/// 只测量 `HSplitView` 最终分配的实际栏宽；默认值 0 代表该栏当前未挂载或已折叠。
+private struct RAGWorkspaceLeftWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct RAGWorkspaceRightWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
@@ -14,21 +58,63 @@ struct KnowledgeRAGWorkspaceView: View {
     @Bindable var chromeState: WorkspaceChromeState
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
 
+    @AppStorage(RAGWorkspaceLayoutMetrics.leftWidthDefaultsKey)
+    private var persistedLeftColumnWidth = Double(RAGWorkspaceLayoutMetrics.leftIdealWidth)
+    @AppStorage(RAGWorkspaceLayoutMetrics.rightWidthDefaultsKey)
+    private var persistedRightColumnWidth = Double(RAGWorkspaceLayoutMetrics.rightIdealWidth)
+
+    /// 拖动期间只更新布局测量值，停止变化后再落盘，避免每个 mouse-drag 事件都写 UserDefaults。
+    @State private var lastMeasuredLeftColumnWidth: CGFloat?
+    @State private var lastMeasuredRightColumnWidth: CGFloat?
+    @State private var leftWidthPersistenceTask: Task<Void, Never>?
+    @State private var rightWidthPersistenceTask: Task<Void, Never>?
+
+    private var restoredLeftColumnWidth: CGFloat {
+        RAGWorkspaceLayoutMetrics.clampedLeftWidth(persistedLeftColumnWidth)
+    }
+
+    private var restoredRightColumnWidth: CGFloat {
+        RAGWorkspaceLayoutMetrics.clampedRightWidth(persistedRightColumnWidth)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
+        HSplitView {
             if !chromeState.isLeftColumnCollapsed {
                 RAGWorkspaceConversationRail(viewModel: viewModel)
-                    .frame(width: 286)
-                Divider()
+                    .frame(
+                        minWidth: RAGWorkspaceLayoutMetrics.leftMinimumWidth,
+                        idealWidth: restoredLeftColumnWidth,
+                        maxWidth: RAGWorkspaceLayoutMetrics.leftMaximumWidth
+                    )
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: RAGWorkspaceLeftWidthPreferenceKey.self,
+                                value: proxy.size.width
+                            )
+                        }
+                    }
             }
 
             RAGWorkspaceAnswerSurface(viewModel: viewModel)
+                .frame(minWidth: RAGWorkspaceLayoutMetrics.answerMinimumWidth)
                 .layoutPriority(1)
 
             if !chromeState.isRightColumnCollapsed {
-                Divider()
                 RAGWorkspaceInspector(viewModel: viewModel)
-                    .frame(minWidth: 320, idealWidth: 356, maxWidth: 400)
+                    .frame(
+                        minWidth: RAGWorkspaceLayoutMetrics.rightMinimumWidth,
+                        idealWidth: restoredRightColumnWidth,
+                        maxWidth: RAGWorkspaceLayoutMetrics.rightMaximumWidth
+                    )
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: RAGWorkspaceRightWidthPreferenceKey.self,
+                                value: proxy.size.width
+                            )
+                        }
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,6 +127,18 @@ struct KnowledgeRAGWorkspaceView: View {
         .task { await viewModel.bootstrap() }
         .task { await viewModel.observeKnowledgeBoundaryChanges() }
         .task { await viewModel.observeIndexChanges() }
+        .onPreferenceChange(RAGWorkspaceLeftWidthPreferenceKey.self) { width in
+            scheduleLeftWidthPersistence(width)
+        }
+        .onPreferenceChange(RAGWorkspaceRightWidthPreferenceKey.self) { width in
+            scheduleRightWidthPersistence(width)
+        }
+        .onDisappear {
+            // 用户可能拖完立即关闭窗口；同步提交最后测量值，不能依赖 debounce 任务来得及执行。
+            persistLastMeasuredWidths()
+            leftWidthPersistenceTask?.cancel()
+            rightWidthPersistenceTask?.cancel()
+        }
         .environment(\.openURL, OpenURLAction { url in
             if viewModel.openCitationLink(url) { return .handled }
             viewModel.handleLink(url)
@@ -66,5 +164,53 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
+    }
+
+    /// `HSplitView` 会在拖拽和窗口缩放时连续报告尺寸；静止 250ms 后才把最终值保存为下次窗口默认值。
+    private func scheduleLeftWidthPersistence(_ measuredWidth: CGFloat) {
+        guard !chromeState.isLeftColumnCollapsed,
+              measuredWidth >= RAGWorkspaceLayoutMetrics.leftMinimumWidth else { return }
+
+        let width = RAGWorkspaceLayoutMetrics.clampedLeftWidth(Double(measuredWidth))
+        lastMeasuredLeftColumnWidth = width
+        guard abs(CGFloat(persistedLeftColumnWidth) - width) > 0.5 else { return }
+
+        leftWidthPersistenceTask?.cancel()
+        leftWidthPersistenceTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
+            persistedLeftColumnWidth = Double(width)
+        }
+    }
+
+    private func scheduleRightWidthPersistence(_ measuredWidth: CGFloat) {
+        guard !chromeState.isRightColumnCollapsed,
+              measuredWidth >= RAGWorkspaceLayoutMetrics.rightMinimumWidth else { return }
+
+        let width = RAGWorkspaceLayoutMetrics.clampedRightWidth(Double(measuredWidth))
+        lastMeasuredRightColumnWidth = width
+        guard abs(CGFloat(persistedRightColumnWidth) - width) > 0.5 else { return }
+
+        rightWidthPersistenceTask?.cancel()
+        rightWidthPersistenceTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
+            persistedRightColumnWidth = Double(width)
+        }
+    }
+
+    private func persistLastMeasuredWidths() {
+        if let width = lastMeasuredLeftColumnWidth {
+            persistedLeftColumnWidth = Double(width)
+        }
+        if let width = lastMeasuredRightColumnWidth {
+            persistedRightColumnWidth = Double(width)
+        }
     }
 }

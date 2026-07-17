@@ -61,6 +61,8 @@ struct RAGWorkspaceInspector: View {
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isKnowledgeMetadataRowHovered = false
     @State private var hoveredDebugTraceID: UUID?
+    /// 光标悬停的 Debug stage；与父 trace 行共用轻量 accent hover 反馈。
+    @State private var hoveredDebugEventID: UUID?
     /// 光标悬停的引用行；用于给列表加 hover 高亮，展开态优先级更高。
     @State private var hoveredCitationID: UUID?
     @State private var isRetrievalScoreExplanationPresented = false
@@ -2270,13 +2272,30 @@ struct RAGWorkspaceInspector: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        // 斑马纹：奇数 stage 叠一层极淡 primary（与外层 trace / 元数据同 0.045 约定），
-        // 叠在 controlBackground 浅底之上，长列表相邻步骤更好扫描。
+        // hover 优先于斑马纹；颜色与父 trace 行一致，且不改变尺寸，避免列表抖动。
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
+                .fill(
+                    hoveredDebugEventID == event.id
+                        ? Color.accentColor.opacity(0.08)
+                        : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
+                )
         )
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+        .onHover { isHovering in
+            hoveredDebugEventID = isHovering
+                ? event.id
+                : (hoveredDebugEventID == event.id ? nil : hoveredDebugEventID)
+        }
+        .onDisappear {
+            if hoveredDebugEventID == event.id {
+                hoveredDebugEventID = nil
+            }
+        }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.15),
+            value: hoveredDebugEventID == event.id
+        )
     }
 
     /// 仅检索诊断拥有稳定的结构化指标；Prompt、模型响应等自由文本可能含端口、模型版本或参数，

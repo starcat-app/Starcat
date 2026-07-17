@@ -772,8 +772,10 @@ private struct KnowledgeRAGBrowserView: View {
     var body: some View {
         HSplitView {
             // 召回测试展开后：双列数字框 + 来源勾选至少要 ~280pt 内容区；
-            // 再加 hero padding，240 会被固有宽度撑破，HSplitView 会从左侧裁切整栏。
-            repositoryList.frame(minWidth: 300, idealWidth: 320, maxWidth: 400)
+            // UnifiedRepoRow 底排 chip（含索引 pill）+ 排序菜单固有宽度约需 320+；
+            // 再加 list/surface padding，300 仍会在极限窄栏被 `.clipped()` 右裁。
+            // 340 作安全垫；更窄时依赖 chip ViewThatFits 与搜索栏压缩兜底。
+            repositoryList.frame(minWidth: 340, idealWidth: 400, maxWidth: 400)
             detail
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -908,6 +910,9 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     /// 复用 Composer 筛选控件；`includeSignalFilters: false` 只保留 SQL 可下推项。
+    ///
+    /// 窄侧栏约束：`UnifiedSortMenu` 自带 `.fixedSize()`，排序/筛选优先占位；
+    /// 搜索框 `minWidth: 0` 吸收剩余宽度，避免整行固有宽度撑破后被外层 `.clipped()` 右裁。
     private var repositoryListControls: some View {
         HStack(spacing: 8) {
             RAGContextPickerFilterControls(
@@ -918,6 +923,7 @@ private struct KnowledgeRAGBrowserView: View {
                 includeSignalFilters: false,
                 onReset: { viewModel.resetRepositoryFilters() }
             )
+            .layoutPriority(1)
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -927,6 +933,8 @@ private struct KnowledgeRAGBrowserView: View {
                 TextField("rag.workspace.mention.searchPlaceholder", text: $viewModel.repositorySearchQuery)
                     .textFieldStyle(.plain)
                     .font(interfaceScale.font(size: 13))
+                    // 允许低于 placeholder 固有宽度收缩，否则窄栏会把整行撑破。
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 if !viewModel.repositorySearchQuery.isEmpty {
                     Button {
                         viewModel.clearRepositorySearch()
@@ -942,8 +950,10 @@ private struct KnowledgeRAGBrowserView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
+            .frame(minWidth: 56, maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var knowledgeHero: some View {
@@ -1175,7 +1185,8 @@ private struct KnowledgeRAGBrowserView: View {
                         let canRun = !viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         Button { viewModel.runRetrievalTest() } label: {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(interfaceScale.font(size: 22, weight: .semibold))
+                                // 输入框内只承担发送语义，尺寸收敛到与 loading 占位一致。
+                                .font(interfaceScale.font(size: 18, weight: .semibold))
                                 .foregroundStyle(canRun ? Color.accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
@@ -1284,16 +1295,9 @@ private struct KnowledgeRAGBrowserView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("rag.workspace.retrieval.sources.title")
                             .font(.caption.weight(.medium))
-                        // 单行 4 个 fixedSize Toggle 在英文 locale 下固有宽度常超 300pt，
-                        // 会把整侧栏撑破并触发 HSplitView 左侧裁切；改为 2×2 网格。
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(minimum: 0), spacing: 8, alignment: .leading),
-                                GridItem(.flexible(minimum: 0), spacing: 8, alignment: .leading),
-                            ],
-                            alignment: .leading,
-                            spacing: 6
-                        ) {
+                        // 侧栏默认宽度已提升至 400pt，四个来源可在同一行完整呈现。
+                        // 保留文字缩放兜底，用户手动拖到 340pt 时仍尽量避免裁切。
+                        HStack(spacing: 12) {
                             ForEach(RAGChunkSource.allCases, id: \.self) { source in
                                 Toggle(isOn: retrievalTestSourceBinding(source)) {
                                     Text(source.titleKey)
@@ -1302,7 +1306,6 @@ private struct KnowledgeRAGBrowserView: View {
                                 }
                                 .font(.caption)
                                 .toggleStyle(.checkbox)
-                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
@@ -1327,9 +1330,9 @@ private struct KnowledgeRAGBrowserView: View {
                             }
                         } label: {
                             Image(systemName: didRestoreRetrievalTestSettings ? "checkmark.circle.fill" : "arrow.counterclockwise.circle")
-                                .font(.caption.weight(.semibold))
+                                .font(interfaceScale.font(size: 15, weight: .semibold))
                                 .foregroundStyle(didRestoreRetrievalTestSettings ? Color.green : Color.primary)
-                                .frame(width: 14, height: 14)
+                                .frame(width: 18, height: 18)
                                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                         }
                         .buttonStyle(.bordered)
@@ -1342,8 +1345,8 @@ private struct KnowledgeRAGBrowserView: View {
                             viewModel.saveRetrievalTestSettings()
                         } label: {
                             Image(systemName: "square.and.arrow.down")
-                                .font(.caption.weight(.semibold))
-                                .frame(width: 14, height: 14)
+                                .font(interfaceScale.font(size: 15, weight: .semibold))
+                                .frame(width: 18, height: 18)
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
