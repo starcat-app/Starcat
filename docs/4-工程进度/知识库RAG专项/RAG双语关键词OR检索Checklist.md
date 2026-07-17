@@ -19,7 +19,7 @@
 ## 1. 方案与清单
 
 - [x] 固化 `semanticQuery` 与 `keywordQueries` 的职责边界。
-- [x] 固化中英双语关键词生成规则和 3～8 项上限。
+- [x] 固化 Prompt 目标 3～8 项、本地硬上限 8 项与过滤后可少于 3 项。
 - [x] 固化普通搜索继续 AND、RAG 专用 FTS5 使用 OR。
 - [x] 固化单仓库、多仓库、prefer、exclude 的 repo id scope。
 - [x] 固化旧计划、旧 Prompt 和旧 Debug 数据兼容策略。

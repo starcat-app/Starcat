@@ -642,7 +642,7 @@ RAG 入口前需要一个小型 AI Query Planner。它不回答用户问题,只�
 
 1. 判断用户问题是否包含 repo-level 结构化筛选。
 2. 把用户问题改写成更适合 embedding 检索的 `semanticQuery`。
-3. 同时生成 3～8 个面向字面召回的双语 `keywordQueries`。
+3. Prompt 目标生成 3～8 个面向字面召回的双语 `keywordQueries`。
 4. 区分语义问答、结构化列表、筛选后语义问答和需要追问。
 5. 给 UI 输出可解释的 plan chips,让用户知道系统查了什么。
 
@@ -864,6 +864,7 @@ vector 和 Rerank；后者只用于 SQLite FTS5 / Meilisearch 关键词召回。
 2～4 个中文核心概念，并补充 2～4 个 README 中常见的英文技术表达；类名、函数名、文件名、
 配置项和错误码保持原文。执行层 trim、忽略大小写去重、限制每项 80 字符且最多 8 项，删除
 精确低信息词，并排除显式 repo 的 `owner/name` 与短名称。
+过滤后允许少于 3 项，执行层不为满足 Prompt 的目标数量补造关键词。
 
 `keywordQueries` 缺失时解码为 `[]`，兼容旧计划与旧会话。官方默认 Planner Prompt 只从
 上一版官方默认值升级；自定义 Prompt 原样保留，执行层对空数组使用 `semanticQuery` 的有界
