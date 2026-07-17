@@ -25314,6 +25314,18 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在解析项目分支" } }
       }
     },
+    "rag.workspace.execution.repoContext.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Build project context" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "构建项目上下文" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.tokenDetailPrefix": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sent " } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已发送 " } }
+      }
+    },
     "rag.workspace.execution.repoContext.downloadingArchive": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Downloading the source archive" } },
@@ -25328,8 +25340,38 @@
     },
     "rag.workspace.execution.repoContext.tokensFormat": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "%1$lld / %2$lld tokens sent" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Sent %1$lld / %2$lld tokens" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "已发送 %1$lld / %2$lld tokens" } }
+      }
+    },
+    "rag.workspace.inspector.plan.repoContext": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking context" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深度思考上下文" } }
+      }
+    },
+    "rag.workspace.inspector.plan.repoContext.enabled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Deep thinking" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深度思考" } }
+      }
+    },
+    "rag.workspace.inspector.plan.repoContext.project": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Project" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目" } }
+      }
+    },
+    "rag.workspace.inspector.plan.repoContext.budget": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RepoContext token budget" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "RepoContext token 预算" } }
+      }
+    },
+    "rag.workspace.inspector.plan.repoContext.status": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Status" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "状态" } }
       }
     },
     "rag.workspace.execution.repoContext.completed": {

@@ -1298,6 +1298,35 @@ struct RAGWorkspaceInspector: View {
                         }
                     }
 
+                    if let repoContextRequest = plan.repoContextRequest {
+                        // RepoContext 是独立于分片检索和联网的本地执行步骤，必须在计划中
+                        // 单列；把它塞进“联网计划”会错误暗示 XML 会发送给搜索 Provider。
+                        planSection(
+                            "rag.workspace.inspector.plan.repoContext",
+                            systemImage: "brain.head.profile",
+                            tint: .indigo
+                        ) {
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.repoContext.project",
+                                value: repoContextRequest.repoFullName
+                            )
+                            planMetricRow(
+                                "rag.workspace.inspector.plan.repoContext.budget",
+                                value: repoContextRequest.configuredTokenBudget.formatted()
+                            )
+                            Text(repoContextRequest.reason)
+                                .font(ragFont(.caption))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let snapshot = viewModel.displayedRepoContextSnapshot {
+                                planMetricRow(
+                                    "rag.workspace.inspector.plan.repoContext.status",
+                                    value: localizedRepoContextOutcome(snapshot.outcome)
+                                )
+                            }
+                        }
+                    }
+
                     planSection(
                         "rag.workspace.inspector.plan.networkPlan",
                         systemImage: "network",
@@ -1516,6 +1545,17 @@ struct RAGWorkspaceInspector: View {
             if plan.requiresLiveEvidence {
                 planChip(String.l10n("rag.workspace.inspector.plan.liveEvidence.required"))
             }
+            if plan.repoContextRequest != nil {
+                planChip(String.l10n("rag.workspace.inspector.plan.repoContext.enabled"))
+            }
+        }
+    }
+
+    private func localizedRepoContextOutcome(_ outcome: RAGRepoContextOutcome) -> String {
+        switch outcome {
+        case .success: return String.l10n("rag.workspace.execution.repoContext.completed")
+        case .featureDisabled: return String.l10n("rag.workspace.execution.repoContext.disabled")
+        case .degraded: return String.l10n("rag.workspace.execution.repoContext.degraded")
         }
     }
 

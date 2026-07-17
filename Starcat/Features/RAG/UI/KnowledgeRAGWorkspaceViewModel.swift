@@ -3646,6 +3646,9 @@ final class KnowledgeRAGWorkspaceViewModel {
         case .repoContextCompleted(let snapshot):
             updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
                 step.repoContextSnapshot = snapshot
+                step.details.removeAll {
+                    $0.hasPrefix(String.l10n("rag.workspace.execution.repoContext.tokenDetailPrefix"))
+                }
                 step.details.append(String(
                     format: String.l10n("rag.workspace.execution.repoContext.tokensFormat"),
                     snapshot.sentTokens,
