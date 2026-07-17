@@ -3040,7 +3040,9 @@ struct KnowledgeRAGCoreTests {
                 )
             ]
         )
-        let prompt = KnowledgeRAGPromptBuilder(maxEvidenceTokens: 35).build(
+        // 完整/精简 Metadata 现在也计入 evidence；预算需先容纳 Metadata 和第一段，
+        // 再验证第二段被优先裁掉。
+        let prompt = KnowledgeRAGPromptBuilder(maxEvidenceTokens: 80).build(
             question: "compare",
             plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "compare"),
             retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [bundle], childHits: [first, second]),
@@ -3095,6 +3097,78 @@ struct KnowledgeRAGCoreTests {
         #expect(trace.finalEvidence[0].disposition == .retained)
         #expect(trace.finalEvidence[1].disposition == .evidenceTokenLimit)
         #expect(trace.finalEvidence[2].disposition == .parentContextTokenLimit)
+    }
+
+    @Test("Prompt 优先使用完整 Metadata 且不重复精简元数据")
+    func promptUsesFullRepositoryMetadataWithoutCompactDuplicate() {
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 1, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let hit = RAGChildHit(
+            chunk: fixtureChunk(id: 1, repoID: 1, source: .readme),
+            score: 0.9,
+            kind: .hybrid
+        )
+        let fullMetadata = """
+            Repository: octo/demo
+            GitHub URL: https://github.com/octo/demo
+            Wiki DeepWiki: https://deepwiki.com/octo/demo
+            """
+        let bundle = RepoContextBundle(
+            candidate: candidate,
+            score: 0.9,
+            matchedChildren: [hit],
+            sectionParents: [RAGSectionParent(
+                repoId: 1,
+                parentKey: "readme",
+                title: "README",
+                content: "Full README evidence",
+                childChunkIDs: [1]
+            )],
+            metadataContent: fullMetadata
+        )
+
+        let result = KnowledgeRAGPromptBuilder().build(
+            question: "What is this?",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "what"),
+            retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [bundle], childHits: [hit]),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(result.userPrompt.contains(fullMetadata))
+        #expect(result.userPrompt.contains("Wiki DeepWiki: https://deepwiki.com/octo/demo"))
+        #expect(!result.userPrompt.contains("Repo: octo/demo"))
+        #expect(result.citationsByMarker.count == 1)
+    }
+
+    @Test("Prompt 在完整 Metadata 缺失时保留精简兜底")
+    func promptFallsBackToCompactRepositoryMetadata() {
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 1, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let bundle = RepoContextBundle(
+            candidate: candidate,
+            score: 0.5,
+            matchedChildren: [],
+            sectionParents: []
+        )
+        let result = KnowledgeRAGPromptBuilder().build(
+            question: "What is this?",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "what"),
+            retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [bundle], childHits: []),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(result.userPrompt.contains("Repo: octo/demo"))
+        #expect(result.citationsByMarker.isEmpty)
     }
 
     @Test("可配置 Generator 模板会渲染占位符并尊重自定义文案")

@@ -19,6 +19,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunkIdentities(repoId: Int64) async throws -> [RAGDeletedChunkIdentity]
     func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
     func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
+    /// 为最终仓库 bundle 批量读取系统 Metadata。Metadata 是 keyword_only，不得复用只查 ready 向量的 parent API。
+    func fetchActiveMetadata(repoIDs: [Int64]) async throws -> [RAGChunk]
     /// 只统计知识库边界内待向量化分片，不读取正文或 embedding BLOB。
     func countChunksNeedingEmbedding() async throws -> Int
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
@@ -351,6 +353,31 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.repo_id, c.parent_key, c.chunk_index
                 """, arguments: StatementArguments(arguments))
+        }
+    }
+
+    func fetchActiveMetadata(repoIDs: [Int64]) async throws -> [RAGChunk] {
+        guard !repoIDs.isEmpty else { return [] }
+        return try await database.writer.read { db in
+            var result: [RAGChunk] = []
+            for batch in Self.idBatches(repoIDs) {
+                let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+                result += try RAGChunk.fetchAll(db, sql: """
+                    SELECT c.*
+                    FROM rag_chunks c
+                    JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                    WHERE c.repo_id IN (\(placeholders))
+                      AND c.source = 'metadata'
+                      AND c.chunk_key = 'metadata:0'
+                      AND c.embedding_status = 'keyword_only'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o
+                          WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                      )
+                    ORDER BY c.repo_id
+                    """, arguments: StatementArguments(batch))
+            }
+            return result
         }
     }
 

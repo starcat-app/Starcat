@@ -383,7 +383,12 @@ struct KnowledgeRAGRetriever: Sendable {
     private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> RAGBundleBuildResult {
         let candidateByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.repo.id, $0) })
         let grouped = Dictionary(grouping: hits, by: { $0.chunk.repoId })
-        let parentKeys = Set(hits.map { RAGChunkParentKey(repoID: $0.chunk.repoId, parentKey: $0.chunk.parentKey) })
+        // Metadata 不是普通 parent：它以 keyword_only 形式由专用批量查询附加到最终 repo bundle，
+        // 不能走只接受 ready+model 的 parent 扩展，否则 Metadata 命中会得到空正文。
+        let parentKeys = Set(hits.compactMap { hit -> RAGChunkParentKey? in
+            guard hit.chunk.source != .metadata else { return nil }
+            return RAGChunkParentKey(repoID: hit.chunk.repoId, parentKey: hit.chunk.parentKey)
+        })
         // 命中的 parent 一次性加载，避免每个 child hit 都触发一次 SQLite read。
         // 随后按完整 parent 身份分组，维持原有 repo/section 隔离和 chunk 顺序。
         let siblingsByParent = Dictionary(grouping: try await chunkRepository.fetchChunks(
@@ -397,7 +402,7 @@ struct KnowledgeRAGRetriever: Sendable {
             guard let candidate = candidateByID[repoID] else { continue }
             var parents: [RAGSectionParent] = []
             var seenParents = Set<String>()
-            for hit in repoHits where seenParents.insert(hit.chunk.parentKey).inserted {
+            for hit in repoHits where hit.chunk.source != .metadata && seenParents.insert(hit.chunk.parentKey).inserted {
                 let siblings = siblingsByParent[
                     RAGChunkParentKey(repoID: repoID, parentKey: hit.chunk.parentKey)
                 ] ?? []
@@ -430,8 +435,17 @@ struct KnowledgeRAGRetriever: Sendable {
                 sectionParents: parents
             ))
         }
+        var limitedBundles = bundles.sorted { $0.score > $1.score }.prefix(repoLimit).map { $0 }
+        let metadataByRepoID = Dictionary(
+            uniqueKeysWithValues: try await chunkRepository.fetchActiveMetadata(
+                repoIDs: limitedBundles.map { $0.candidate.repo.id }
+            ).map { ($0.repoId, $0.content) }
+        )
+        for index in limitedBundles.indices {
+            limitedBundles[index].metadataContent = metadataByRepoID[limitedBundles[index].candidate.repo.id]
+        }
         return RAGBundleBuildResult(
-            bundles: bundles.sorted { $0.score > $1.score }.prefix(repoLimit).map { $0 },
+            bundles: limitedBundles,
             parentTokenLimitedChunkIDs: parentTokenLimitedChunkIDs
         )
     }

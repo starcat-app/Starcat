@@ -69,7 +69,16 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             ? retrieval.candidates.prefix(structuredRowLimit).map { structuredBundle($0) }
             : retrieval.bundles
         for bundle in bundles {
-            var lines = [metadataLine(bundle.candidate)]
+            // 普通检索 bundle 优先使用仓库完整 Metadata；缺失/被排除时才退回精简头。
+            // structured_only 的 bundle 没有加载系统分片，继续使用精简事实，避免全库读取。
+            let repositoryMetadata = bundle.metadataContent ?? metadataLine(bundle.candidate)
+            let metadataTokens = TokenEstimator.estimate(text: repositoryMetadata)
+            guard usedTokens + metadataTokens <= maxEvidenceTokens else {
+                evidenceTokenLimitedChunkIDs.formUnion(bundle.matchedChildren.compactMap { $0.chunk.id })
+                continue
+            }
+            var lines = [repositoryMetadata]
+            usedTokens += metadataTokens
             for (parentIndex, parent) in bundle.sectionParents.enumerated() {
                 let tokens = TokenEstimator.estimate(text: parent.content)
                 let parentHits = bundle.matchedChildren.filter { parent.childChunkIDs.contains($0.chunk.id ?? -1) }

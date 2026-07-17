@@ -715,6 +715,8 @@ struct RepoContextBundle: Equatable, Sendable {
     var score: Double
     var matchedChildren: [RAGChildHit]
     var sectionParents: [RAGSectionParent]
+    /// 最终仓库固定携带的完整 metadata:0；它不是额外 hit，也不产生 citation。
+    var metadataContent: String? = nil
 }
 
 struct RAGRetrievalResult: Equatable, Sendable {

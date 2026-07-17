@@ -270,6 +270,43 @@ struct RAGChunkRepositoryTests {
         #expect(vectorHits.isEmpty)
     }
 
+    @Test("最终仓库可批量读取未排除的 keyword-only Metadata")
+    func activeMetadataBatchRespectsLibraryAndExclusion() async throws {
+        let (database, repository) = try makeRepository()
+        for repoID in [44, 45] {
+            try await database.insertRepoFixture(id: Int64(repoID))
+            try await GRDBRepoNoteRepository(database: database).updateLibraryState(
+                repoId: Int64(repoID),
+                state: .inLibrary
+            )
+            _ = try await repository.replaceSource(
+                repoId: Int64(repoID),
+                source: .metadata,
+                drafts: [RAGChunkDraft(
+                    repoId: Int64(repoID),
+                    source: .metadata,
+                    sourceId: "",
+                    parentType: .metadata,
+                    parentKey: "metadata",
+                    parentTitle: "Repository metadata",
+                    chunkKey: "metadata:0",
+                    chunkIndex: 0,
+                    sectionPath: "Metadata",
+                    title: "Metadata",
+                    content: "Repository: octo/repo-\(repoID)",
+                    tokenCount: 8,
+                    isTruncated: false
+                )]
+            )
+        }
+        let excluded = try #require(try await repository.fetchKnowledgeChunks(repoId: 45).first?.id)
+        try await repository.setKnowledgeChunkExcluded(id: excluded, isExcluded: true)
+
+        let metadata = try await repository.fetchActiveMetadata(repoIDs: [44, 45])
+        #expect(metadata.map(\.repoId) == [44])
+        #expect(metadata.first?.embeddingStatus == .keywordOnly)
+    }
+
     @Test("Embedding 队列总数独立统计且正文只按 limit 读取")
     func embeddingQueueCountsWithoutLoadingAllContent() async throws {
         let (database, repository) = try makeRepository()
