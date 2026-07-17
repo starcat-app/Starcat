@@ -255,9 +255,21 @@ targets:
           set -euo pipefail
 
           # Direct 包继续使用公开 starcat-pro 更新日志，保留 Direct-only 分发与更新说明。
+          CHANGELOG_SOURCE_ROOT="${SRCROOT}/supports/starcat-pro"
+          if [[ ! -f "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" || ! -f "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" ]]; then
+            # `supports/starcat-pro` 是独立仓库，不会随主仓库 worktree 自动出现。Debug 构建
+            # 只验证代码与资源链路，可回退主仓库日志；Release 必须继续阻断，避免发布错误内容。
+            if [[ "${CONFIGURATION}" == "Debug" ]]; then
+              echo "warning: supports/starcat-pro is unavailable; using root changelog for Debug build"
+              CHANGELOG_SOURCE_ROOT="${SRCROOT}"
+            else
+              echo "error: Direct Release requires supports/starcat-pro/CHANGELOG.md and CHANGELOG-ZH.md" >&2
+              exit 1
+            fi
+          fi
           mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${SRCROOT}/supports/starcat-pro/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
+          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
