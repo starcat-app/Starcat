@@ -179,6 +179,7 @@ struct KnowledgeRAGRetriever: Sendable {
         let bundleBuild = try await buildBundles(hits: hits, candidates: candidates)
         let bundles = bundleBuild.bundles
         let trace = RAGRetrievalTrace(
+            keywordQuery: RAGKeywordQueryTrace(query: keywordQuery),
             candidates: candidateTrace(candidates),
             keywordHits: hitTrace(
                 keyword.hits,
@@ -213,6 +214,7 @@ struct KnowledgeRAGRetriever: Sendable {
         let diagnostics = RAGRetrievalDiagnostics(
             settings: retrievalSettings,
             candidateRepoCount: candidates.count,
+            keywordQuery: RAGKeywordQueryTrace(query: keywordQuery),
             keywordRawCount: keyword.hits.count,
             keywordSourceFilteredCount: keyword.hits.count - eligibleKeywordHits.count,
             keywordErrorDescription: keyword.error?.localizedDescription,

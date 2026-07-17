@@ -2260,6 +2260,72 @@ struct KnowledgeRAGCoreTests {
         #expect(Set(privateIDs) == [2])
     }
 
+    @Test("Service 将 Planner 的双语关键词原样交给 Retriever")
+    func serviceForwardsPlannedKeywordQueries() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        // metadata 分片天然是 keyword-only ready，足以让 Service 进入真实 Retriever 路径，
+        // 测试无需伪造 embedding 状态或依赖后台索引任务。
+        _ = try await chunks.replaceSource(repoId: 21, source: .metadata, drafts: [
+            RAGChunkDraft(
+                repoId: 21,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "Metadata",
+                content: "Database 数据库",
+                tokenCount: 2,
+                isTruncated: false
+            )
+        ])
+        let queryRecorder = RAGKeywordQueryRecorder()
+        let spy = SpyRAGAIClient()
+        let plan = RAGQueryPlan(
+            mode: .semanticOnly,
+            semanticQuery: "How does the database work?",
+            keywordQueries: ["数据库", "database"]
+        )
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: plan),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: RecordingRAGKeywordProvider(
+                    backendName: "SQLite",
+                    recorder: RAGRepoIDRecorder(),
+                    queryRecorder: queryRecorder
+                ),
+                vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+
+        for try await _ in service.ask(request: RAGServiceRequest(
+            rawQuestion: "数据库是怎么工作的？",
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "octo/demo-21")]
+            ),
+            conversationID: nil
+        )) {}
+
+        let recorded = try #require(await queryRecorder.latestQuery())
+        #expect(recorded.terms == ["数据库", "database"])
+        #expect(recorded.sqliteFTS5Expression == #""数据库"* OR "database"*"#)
+        #expect(recorded.usedSemanticFallback == false)
+    }
+
     @Test("无候选时不调用 embedding 或 Generator")
     func noCandidatesStopsBeforeAI() async throws {
         let database = try InMemoryDatabaseManager()
@@ -3730,6 +3796,7 @@ struct KnowledgeRAGCoreTests {
         let plan = RAGQueryPlan(
             mode: .filteredSemantic,
             semanticQuery: "Swift database architecture",
+            keywordQueries: ["Swift 数据库", "database architecture"],
             filters: RAGRepoFilter(languages: ["Swift"], minStars: 500),
             candidateLimit: 24,
             webSearchRequests: [RAGWebSearchRequest(
@@ -3751,8 +3818,14 @@ struct KnowledgeRAGCoreTests {
         )
         diagnostics.keywordRawCount = 18
         diagnostics.keywordSourceFilteredCount = 2
+        diagnostics.keywordQuery = RAGKeywordQueryTrace(query: RAGKeywordQueryBuilder.build(
+            keywordQueries: plan.keywordQueries,
+            semanticQuery: plan.semanticQuery
+        ))
+        diagnostics.keywordErrorDescription = "keyword degraded"
         diagnostics.vectorRawCount = 20
         diagnostics.vectorSimilarityFilteredCount = 5
+        diagnostics.vectorErrorDescription = "vector degraded"
         diagnostics.fusion.uniqueCount = 24
         diagnostics.minimumEvidenceScoreFilteredCount = 4
         diagnostics.rerank = RAGRerankDiagnostics(
@@ -3763,6 +3836,7 @@ struct KnowledgeRAGCoreTests {
         diagnostics.finalChildHitCount = 6
         diagnostics.bundleCount = 2
         let retrievalTrace = RAGRetrievalTrace(
+            keywordQuery: diagnostics.keywordQuery,
             candidates: [.init(repoID: 21, fullName: "octo/demo-21", language: "Swift", stars: 12_345)],
             semanticHits: [.init(
                 chunkID: 101,
@@ -3892,9 +3966,12 @@ struct KnowledgeRAGCoreTests {
             detail.messages.last?.executionTrace.first(where: { $0.kind == .retrieval })?.retrievalSnapshot
         )
         #expect(restoredRetrieval.keywordAcceptedCount == 16)
+        #expect(restoredRetrieval.keywordErrorDescription == "keyword degraded")
         #expect(restoredRetrieval.vectorAcceptedCount == 15)
+        #expect(restoredRetrieval.vectorErrorDescription == "vector degraded")
         #expect(restoredRetrieval.rerankedCount == 6)
         #expect(restoredRetrieval.trace == retrievalTrace)
+        #expect(restoredRetrieval.trace?.keywordQuery?.terms == plan.keywordQueries)
         #expect(restoredRetrieval.trace?.candidates.first?.language == "Swift")
         #expect(restoredRetrieval.trace?.candidates.first?.stars == 12_345)
         let restoredRepoContext = try #require(
@@ -3938,6 +4015,23 @@ struct KnowledgeRAGCoreTests {
         let trace = try JSONDecoder().decode(RAGRetrievalCandidateTrace.self, from: data)
         #expect(trace.language == nil)
         #expect(trace.stars == nil)
+    }
+
+    @Test("旧检索轨迹缺少关键词查询时仍可解码")
+    func legacyRetrievalTraceDecodesWithoutKeywordQuery() throws {
+        let data = try #require("""
+        {
+          "candidates": [],
+          "keywordHits": [],
+          "semanticHits": [],
+          "fusionHits": [],
+          "finalEvidence": [],
+          "rerank": null
+        }
+        """.data(using: .utf8))
+
+        let trace = try JSONDecoder().decode(RAGRetrievalTrace.self, from: data)
+        #expect(trace.keywordQuery == nil)
     }
 
     @Test("推荐问题随 assistant message 持久化仓库范围")
@@ -4807,12 +4901,36 @@ private actor RAGRepoIDRecorder {
     }
 }
 
+private actor RAGKeywordQueryRecorder {
+    private var query: RAGKeywordSearchQuery?
+
+    func record(_ value: RAGKeywordSearchQuery) {
+        query = value
+    }
+
+    func latestQuery() -> RAGKeywordSearchQuery? {
+        query
+    }
+}
+
 private struct RecordingRAGKeywordProvider: RAGKeywordSearchProvider {
     let backendName: String
     let recorder: RAGRepoIDRecorder
+    let queryRecorder: RAGKeywordQueryRecorder?
+
+    init(
+        backendName: String,
+        recorder: RAGRepoIDRecorder,
+        queryRecorder: RAGKeywordQueryRecorder? = nil
+    ) {
+        self.backendName = backendName
+        self.recorder = recorder
+        self.queryRecorder = queryRecorder
+    }
 
     func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         await recorder.record(repoIDs)
+        await queryRecorder?.record(query)
         return []
     }
 }

@@ -958,6 +958,7 @@ struct KnowledgeRAGService: Sendable {
         } else if try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) {
             retrieval = try await retriever.retrieve(
                 semanticQuery: plan.semanticQuery,
+                keywordQueries: plan.keywordQueries,
                 candidates: candidates,
                 explicitMode: request.composerContext.explicitRepoMode,
                 explicitRepoIDs: request.composerContext.explicitRepoIDs,
