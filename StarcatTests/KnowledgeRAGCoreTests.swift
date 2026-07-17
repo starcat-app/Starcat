@@ -4126,6 +4126,18 @@ struct KnowledgeRAGCoreTests {
             raw: 0,
             accepted: 0,
             errorDescription: nil,
+            outcome: .noCandidates
+        ) == .skipped)
+        #expect(RAGRetrievalBranchStatus.resolve(
+            raw: 0,
+            accepted: 0,
+            errorDescription: nil,
+            outcome: .noReadyChunks
+        ) == .skipped)
+        #expect(RAGRetrievalBranchStatus.resolve(
+            raw: 0,
+            accepted: 0,
+            errorDescription: nil,
             outcome: .sourcesDisabled
         ) == .skipped)
         #expect(RAGRetrievalBranchStatus.resolve(

@@ -943,7 +943,10 @@ enum RAGRetrievalBranchStatus: Equatable, Sendable {
         if let errorDescription, !errorDescription.isEmpty {
             return .failed(errorDescription)
         }
-        if outcome == .sourcesDisabled || outcome == .skippedStructured {
+        if outcome == .noCandidates
+            || outcome == .noReadyChunks
+            || outcome == .sourcesDisabled
+            || outcome == .skippedStructured {
             return .skipped
         }
         return .completed(raw: raw, accepted: accepted)
