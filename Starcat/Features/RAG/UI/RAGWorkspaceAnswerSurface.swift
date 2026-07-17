@@ -737,6 +737,29 @@ struct RAGWorkspaceAnswerSurface: View {
                           ? "rag.workspace.composer.webSearch.on"
                           : "rag.workspace.composer.webSearch.off")
 
+                    // 深度思考严格位于联网之后、发送之前。它只读取唯一显式项目的
+                    // RepoContext；附件数量不参与门禁，避免把材料数量误当成项目范围。
+                    Button {
+                        viewModel.deepThinkingEnabled.toggle()
+                    } label: {
+                        Image(systemName: "brain.head.profile")
+                            .font(iconFont(size: 13, weight: .medium))
+                            .foregroundStyle(viewModel.deepThinkingEnabled ? Color.accentColor : .secondary)
+                            .frame(width: 24, height: 24)
+                            .background(
+                                viewModel.deepThinkingEnabled ? Color.accentColor.opacity(0.14) : Color.clear,
+                                in: Circle()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .disabled(viewModel.isAnswering || !viewModel.canEnableDeepThinking)
+                    .help(!viewModel.canEnableDeepThinking
+                          ? "rag.workspace.composer.deepThinking.singleRepoRequired"
+                          : (viewModel.deepThinkingEnabled
+                             ? "rag.workspace.composer.deepThinking.on"
+                             : "rag.workspace.composer.deepThinking.off"))
+
                     if viewModel.isAnswering {
                         Button { viewModel.cancelAnswer() } label: {
                             Image(systemName: "stop.circle.fill")

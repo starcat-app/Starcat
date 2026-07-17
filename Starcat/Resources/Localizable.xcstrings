@@ -20284,6 +20284,54 @@
         }
       }
     },
+    "rag.workspace.composer.deepThinking.off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable deep thinking with repository context"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启深度思考并读取项目上下文"
+          }
+        }
+      }
+    },
+    "rag.workspace.composer.deepThinking.on": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disable deep thinking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭深度思考"
+          }
+        }
+      }
+    },
+    "rag.workspace.composer.deepThinking.singleRepoRequired": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep thinking requires exactly one selected project"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深度思考只能在选中单个项目时开启"
+          }
+        }
+      }
+    },
     "rag.workspace.composer.clearContext": {
       "localizations": {
         "en": {
@@ -25188,6 +25236,48 @@
         }
       }
     },
+    "rag.workspace.execution.repoContext.resolvingBranch": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resolving the repository branch" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在解析项目分支" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.downloadingArchive": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Downloading the source archive" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在下载源码归档" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.packingContext": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Packing repository context XML" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在生成项目上下文 XML" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.tokensFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$lld / %2$lld tokens sent" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已发送 %1$lld / %2$lld tokens" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.completed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repository context is ready" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文已就绪" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.disabled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repository context is disabled in Settings" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "设置中已关闭项目上下文" } }
+      }
+    },
+    "rag.workspace.execution.repoContext.degraded": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repository context was unavailable; continued without it" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文不可用，已降级继续" } }
+      }
+    },
     "rag.workspace.execution.planning.fallbackFormat": {
       "localizations": {
         "en": {
@@ -28772,6 +28862,24 @@
             "value": "检索结果"
           }
         }
+      }
+    },
+    "rag.workspace.debug.stage.repoContextRequest": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RepoContext request" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文请求" } }
+      }
+    },
+    "rag.workspace.debug.stage.repoContextResponse": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RepoContext result" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文结果" } }
+      }
+    },
+    "rag.workspace.debug.stage.repoContextProjection": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RepoContext projection" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目上下文投影" } }
       }
     },
     "rag.workspace.demo.answer.intro": {

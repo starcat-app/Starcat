@@ -625,7 +625,8 @@ struct KnowledgeRAGCoreTests {
                 attachments: [firstAttachment],
                 githubLinkContexts: [],
                 explicitRepoMode: .prefer,
-                webSearchEnabled: true
+                webSearchEnabled: true,
+                deepThinkingEnabled: true
             ),
             for: firstID
         )
@@ -647,9 +648,11 @@ struct KnowledgeRAGCoreTests {
         #expect(restoredFirst?.attachments.map(\.filename) == ["notes.md"])
         #expect(restoredFirst?.explicitRepoMode == .prefer)
         #expect(restoredFirst?.webSearchEnabled == true)
+        #expect(restoredFirst?.deepThinkingEnabled == true)
         #expect(restoredSecond?.draftQuestion == "other question")
         #expect(restoredSecond?.attachments.isEmpty == true)
         #expect(restoredSecond?.webSearchEnabled == false)
+        #expect(restoredSecond?.deepThinkingEnabled == false)
 
         store.update(firstID) { draft in
             draft.draftQuestion = ""

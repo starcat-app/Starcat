@@ -277,7 +277,7 @@ struct RAGConversationPresentationCache {
 
 /// 切换会话或关闭 RAG 工作台时暂存的 Composer 草稿。
 ///
-/// 只活在 App 进程内存里：未发送的 `@repo` / 附件 / 输入文案 / 联网开关在工作台关闭重开后仍可恢复，
+/// 只活在 App 进程内存里：未发送的 `@repo` / 附件 / 输入文案 / 联网与深度思考开关在工作台关闭重开后仍可恢复，
 /// 但不能写成第二套持久化真源；App 退出或切换用户库后丢弃。
 struct RAGComposerDraftSnapshot: Equatable {
     var draftQuestion: String = ""
@@ -286,6 +286,7 @@ struct RAGComposerDraftSnapshot: Equatable {
     var githubLinkContexts: [RAGGitHubLinkReference] = []
     var explicitRepoMode: RAGExplicitRepoMode = .only
     var webSearchEnabled = false
+    var deepThinkingEnabled = false
     /// 上下文面板排序；只影响面板候选，不改主窗口列表。
     var mentionSortOption: RepoSortOption = RAGComposerMentionSort.default
     /// 上下文面板筛选；不含知识库分组。
@@ -458,7 +459,15 @@ final class KnowledgeRAGWorkspaceViewModel {
     private(set) var citationFocusSequence: Int = 0
     /// 正文蓝色 S1 的「命中的分片」popover；nil 表示关闭。底部芯片不打开此弹层。
     private(set) var citationChunkPopoverCitationID: UUID?
-    var selectedRepoContexts: [Repo] = []
+    var selectedRepoContexts: [Repo] = [] {
+        didSet {
+            // RepoContext 只能绑定唯一明确项目。用户把范围扩成多项目或清空时立即关掉，
+            // 不能只在发送瞬间静默忽略，否则蓝色开关会给出错误授权反馈。
+            if selectedRepoContexts.count != 1, deepThinkingEnabled {
+                deepThinkingEnabled = false
+            }
+        }
+    }
     /// 明确上下文仓库上限（见 `RAGMentionPickerLogic.maxSelectedRepoContexts`）。
     static var maxSelectedRepoContexts: Int { RAGMentionPickerLogic.maxSelectedRepoContexts }
     var explicitRepoMode: RAGExplicitRepoMode = .only
@@ -467,6 +476,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 用户在 Composer 主动授权本轮联网。按会话暂存，连续追问无需重复开启；关闭后
     /// Planner 产生的普通 Web 请求会在执行层被清除，GitHub 实时请求仍需逐项确认。
     var webSearchEnabled = false
+    /// 与联网开关同属按会话 Composer 草稿；附件数量不参与可用性判断。
+    var deepThinkingEnabled = false
+    var canEnableDeepThinking: Bool { selectedRepoContexts.count == 1 }
     /// 切换模型时立刻写入 AppSettings，关闭窗口后再开可恢复。
     var selectedModelID: String? {
         didSet {
@@ -1568,6 +1580,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 previousUserQuestion: nil,
                 previousReferencedRepos: [],
                 webSearchEnabled: webSearchEnabled,
+                deepThinkingEnabled: deepThinkingEnabled && canEnableDeepThinking,
                 disabledRemoteResources: []
             ),
             modelID: selectedModelID,
@@ -2641,6 +2654,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                     previousUserQuestion: previousUserQuestion,
                     previousReferencedRepos: previousReferencedRepos,
                     webSearchEnabled: requestSnapshot.composerContext.webSearchEnabled,
+                    deepThinkingEnabled: requestSnapshot.composerContext.deepThinkingEnabled,
                     disabledRemoteResources: requestSnapshot.composerContext.disabledRemoteResources
                 ),
                 conversationID: conversationID,
@@ -3871,7 +3885,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         remoteBlocks = []
         pendingRemoteWorkItems = []
         approvedRemoteWorkItemIDs = []
-        // Composer 草稿（输入文案 / @repo / 附件 / 联网开关）由 save/restoreComposerDraft 按会话处理，
+        // Composer 草稿（输入文案 / @repo / 附件 / 联网与深度思考开关）由 save/restoreComposerDraft 按会话处理，
         // 这里绝不能无条件清空，否则切回原会话会丢失未发送上下文。
         errorMessage = nil
         selectedCitation = nil
@@ -3890,6 +3904,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 githubLinkContexts: githubLinkContexts,
                 explicitRepoMode: explicitRepoMode,
                 webSearchEnabled: webSearchEnabled,
+                deepThinkingEnabled: deepThinkingEnabled,
                 mentionSortOption: mentionSortOption,
                 mentionFilters: mentionFilters
             ),
@@ -3907,6 +3922,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         githubLinkContexts = draft.githubLinkContexts
         explicitRepoMode = draft.explicitRepoMode
         webSearchEnabled = draft.webSearchEnabled
+        deepThinkingEnabled = draft.deepThinkingEnabled && selectedRepoContexts.count == 1
         mentionSortOption = draft.mentionSortOption
         mentionFilters = draft.mentionFilters
         isRestoringComposerDraft = false
