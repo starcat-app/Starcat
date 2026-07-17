@@ -2574,6 +2574,37 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.callCount == 0)
     }
 
+    @Test("显式仓库不能用全库私人笔记统计推断仓库事实")
+    func explicitRepositoryPrivateNoteAnalyticsFallsBackToRetrieval() {
+        let question = "这个项目有私人笔记吗"
+        let resolved = RAGExplicitRepositoryPlanGuard.resolve(
+            question: question,
+            plan: RAGQueryPlan(
+                mode: .structuredOnly,
+                semanticQuery: "",
+                userVisiblePlan: RAGUserVisiblePlan(
+                    semantic: "知识库没有私人笔记",
+                    planningNotes: ["因此该项目没有私人笔记"]
+                ),
+                analytics: KnowledgeBaseAnalyticsPlan(
+                    measure: .repositoriesWithPrivateNotes,
+                    limit: 1
+                )
+            ),
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [1],
+                explicitRepoReferences: [.init(id: 1, fullName: "octo/demo")],
+                explicitRepoMode: .only
+            )
+        )
+
+        #expect(resolved.mode == .semanticOnly)
+        #expect(resolved.semanticQuery == question)
+        #expect(resolved.analytics == nil)
+        #expect(resolved.keywordQueries == [question, "metadata"])
+        #expect(resolved.userVisiblePlan.planningNotes.isEmpty)
+    }
+
     @Test("显式仓库 Wiki 问题被误判为引导时仍检索 Metadata 并进入 Generator")
     func explicitRepositoryWikiQuestionRestoresMetadataRetrieval() async throws {
         let database = try InMemoryDatabaseManager()
@@ -3660,6 +3691,56 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.userPrompt.contains("User question:"))
         #expect(prompt.userPrompt.contains("hello"))
         #expect(!prompt.userPrompt.contains("{questionSection}"))
+    }
+
+    @Test("当前私人笔记证据覆盖历史中的旧否定回答")
+    func currentPrivateNoteEvidenceOverridesStaleHistory() {
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 1, isPrivate: false),
+            status: .read,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let hit = RAGChildHit(
+            chunk: fixtureChunk(id: 1, repoID: 1, source: .notes),
+            score: 0.9,
+            kind: .hybrid
+        )
+        let bundle = RepoContextBundle(
+            candidate: candidate,
+            score: 0.9,
+            matchedChildren: [hit],
+            sectionParents: [RAGSectionParent(
+                repoId: 1,
+                parentKey: "notes",
+                title: "Private note (user-authored in Starcat)",
+                content: "这个项目可以作为开发个人 IDE 来使用",
+                childChunkIDs: [1]
+            )]
+        )
+
+        let prompt = KnowledgeRAGPromptBuilder().build(
+            question: "这个项目有私人笔记吗",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "私人笔记"),
+            retrieval: RAGRetrievalResult(
+                candidates: [candidate],
+                bundles: [bundle],
+                childHits: [hit]
+            ),
+            remoteBlocks: [],
+            attachmentContexts: [],
+            history: [AIChatMessage(
+                role: .assistant,
+                content: "权威统计为 [all: 0]，该项目没有私人笔记。"
+            )]
+        )
+
+        #expect(prompt.history.first?.content.contains("[all: 0]") == true)
+        #expect(prompt.userPrompt.contains("[S1] Private note (user-authored in Starcat)"))
+        #expect(prompt.userPrompt.contains("这个项目可以作为开发个人 IDE 来使用"))
+        #expect(prompt.systemPrompt.contains("Prior assistant answers, counts, citations, and absence claims are not evidence"))
+        #expect(prompt.systemPrompt.contains("always override conflicting history"))
+        #expect(prompt.systemPrompt.contains("Treat the presence of such an evidence block as proof"))
     }
 
     @Test("RepoContext 使用独立占位符与预算分段且不受 evidence budget 限制")

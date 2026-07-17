@@ -145,6 +145,25 @@ struct RAGChunkBuilderTests {
         #expect(!content.contains("Unknown"))
     }
 
+    @Test("私人笔记分片向 Generator 暴露明确的来源语义")
+    func privateNoteUsesUnambiguousParentTitle() throws {
+        let chunks = RAGChunkBuilder().buildNotes(
+            repoId: 1,
+            note: RepoNote(
+                repoId: 1,
+                content: "这个项目可以作为开发个人 IDE 来使用",
+                status: RepoStatus.read.rawValue,
+                isAIGenerated: false,
+                editedAt: "2026-07-18T00:59:04Z"
+            )
+        )
+
+        let chunk = try #require(chunks.first)
+        #expect(chunk.source == .notes)
+        #expect(chunk.parentTitle == "Private note (user-authored in Starcat)")
+        #expect(chunk.content == "这个项目可以作为开发个人 IDE 来使用")
+    }
+
     @Test("metadata 按固定顺序追加有效 Wiki 链接")
     func metadataIncludesWikiLinksInStableOrder() throws {
         let repo = fixtureRepo(stars: 1)

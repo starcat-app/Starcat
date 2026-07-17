@@ -250,16 +250,19 @@ struct TrendingView: View {
                 }
             }
         } label: {
+            // 与 UnifiedSortMenu 一致：按钮只显示当前选中项（今日/本周/本月），
+            // 不用「周期」作固定标题——否则菜单打开后仍看不出当前范围。
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
                     .foregroundStyle(.secondary)
-                Text("trending.period.title")
-                Text(verbatim: viewModel.selectedPeriod.localizedDisplayName)
+                Text(viewModel.selectedPeriod.displayName)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityLabel("trending.period.title")
+            .accessibilityValue(viewModel.selectedPeriod.displayName)
         }
         .fixedSize()
     }

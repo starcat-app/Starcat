@@ -148,7 +148,9 @@ struct RAGChunkBuilder: Sendable {
             sourceId: "",
             parentType: .notes,
             parentKey: "notes",
-            parentTitle: "Notes",
+            // Prompt 实际展示 parentTitle；必须直接声明这是用户在 Starcat 中填写的私人笔记，
+            // 避免模型把含义宽泛的 Notes 误解为仓库公开字段。
+            parentTitle: "Private note (user-authored in Starcat)",
             title: "Private notes",
             content: content
         )

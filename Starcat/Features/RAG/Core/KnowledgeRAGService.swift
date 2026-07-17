@@ -1655,7 +1655,7 @@ struct KnowledgeRAGService: Sendable {
 
 /// 显式限定仓库后，Planner 只能决定“怎么检索”，不能在尚未检索时断言仓库没有证据。
 /// 纯寒暄已在进入 Planner 前由 `RAGQueryGuidance.pureSocialResponse` 终止，因此这里仅恢复
-/// 被模型误判为 guided_discovery 的仓库事实问题，避免 Metadata 永远没有机会进入 Generator。
+/// 修正显式仓库范围内无法落到真实仓库证据的计划，避免模型用全库事实替代仓库事实。
 enum RAGExplicitRepositoryPlanGuard {
     static func resolve(
         question: String,
@@ -1664,14 +1664,17 @@ enum RAGExplicitRepositoryPlanGuard {
     ) -> RAGQueryPlan {
         var plan = initialPlan
         let query = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard plan.mode == .guidedDiscovery,
-              composerContext.explicitRepoMode == .only,
+        guard composerContext.explicitRepoMode == .only,
               !composerContext.explicitRepoIDs.isEmpty,
-              !query.isEmpty
+              !query.isEmpty,
+              plan.mode == .guidedDiscovery || plan.analytics != nil
         else { return plan }
 
         plan.mode = .semanticOnly
         plan.semanticQuery = query
+        // Analytics DSL 当前只表达全知识库聚合，不能回答某个显式仓库是否拥有笔记等事实。
+        // 清空后交给受 explicitRepoIDs 限定的检索链，从该仓库的真实分片得出结论。
+        plan.analytics = nil
         // Metadata 是 keyword-only 分片；加入稳定的英文兜底可保证中文仓库事实问题仍会
         // 进入 Metadata FTS，同时候选范围已由 explicitRepoIDs 强制约束，不会扩大数据边界。
         plan.keywordQueries = [query, "metadata"]
