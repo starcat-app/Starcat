@@ -412,17 +412,31 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             repositories.isEmpty ? "" : prefix + repositories.joined(separator: "\n\n---\n\n")
         }
 
+        // 第一阶段只放各仓库 Metadata。不能在这里夹入任何普通分片，否则高分仓库的
+        // 长正文会先吃完预算，让已经进入最终 bundle 的后续仓库失去 Metadata。
+        var includedDrafts: [RAGEvidenceRepositoryDraft] = []
+        var renderedParts: [[String]] = []
         for draft in drafts {
-            var parts = [draft.metadata]
-            let metadataCandidate = rendered(renderedRepositories + [parts.joined(separator: "\n\n")])
+            let parts = [draft.metadata]
+            let metadataCandidate = rendered(
+                renderedParts.map { $0.joined(separator: "\n\n") }
+                    + [parts.joined(separator: "\n\n")]
+            )
             guard TokenEstimator.estimate(text: metadataCandidate) <= tokenLimit else {
                 limitedChunkIDs.formUnion(draft.allMatchedChunkIDs)
                 continue
             }
+            includedDrafts.append(draft)
+            renderedParts.append(parts)
+        }
 
+        // 第二阶段才按仓库顺序加入普通证据。某仓库后续块放不下时，不影响已保留的
+        // Metadata，也允许继续尝试下一仓库更短的证据块。
+        for (repositoryIndex, draft) in includedDrafts.enumerated() {
             for (index, block) in draft.blocks.enumerated() {
-                let candidateParts = parts + [block.text]
-                let candidate = rendered(renderedRepositories + [candidateParts.joined(separator: "\n\n")])
+                var candidateParts = renderedParts
+                candidateParts[repositoryIndex].append(block.text)
+                let candidate = rendered(candidateParts.map { $0.joined(separator: "\n\n") })
                 guard TokenEstimator.estimate(text: candidate) <= tokenLimit else {
                     limitedChunkIDs.formUnion(
                         draft.blocks.dropFirst(index).reduce(into: Set<Int64>()) {
@@ -431,10 +445,10 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                     )
                     break
                 }
-                parts = candidateParts
+                renderedParts = candidateParts
             }
-            renderedRepositories.append(parts.joined(separator: "\n\n"))
         }
+        renderedRepositories = renderedParts.map { $0.joined(separator: "\n\n") }
         return RAGEvidenceAssembly(text: rendered(renderedRepositories), limitedChunkIDs: limitedChunkIDs)
     }
 

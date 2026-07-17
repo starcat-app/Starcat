@@ -3220,7 +3220,7 @@ struct KnowledgeRAGCoreTests {
 
         #expect(result.userPrompt.contains(fullMetadata))
         #expect(result.userPrompt.contains("Wiki DeepWiki: https://deepwiki.com/octo/demo"))
-        #expect(!result.userPrompt.contains("Repo: octo/demo"))
+        #expect(!result.userPrompt.contains("Repo: octo/demo-1"))
         #expect(result.citationsByMarker.count == 1)
     }
 
@@ -3246,7 +3246,107 @@ struct KnowledgeRAGCoreTests {
             attachmentContexts: []
         )
 
-        #expect(result.userPrompt.contains("Repo: octo/demo"))
+        #expect(result.userPrompt.contains("Repo: octo/demo-1"))
+        #expect(result.citationsByMarker.isEmpty)
+    }
+
+    @Test("structured-only 只使用候选仓库精简元数据且不生成 citation")
+    func structuredOnlyKeepsCompactRepositoryMetadata() {
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 1, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: ["database"]
+        )
+        let result = KnowledgeRAGPromptBuilder().build(
+            question: "列出 Swift 仓库",
+            plan: RAGQueryPlan(mode: .structuredOnly, semanticQuery: ""),
+            retrieval: RAGRetrievalResult(candidates: [candidate], bundles: [], childHits: []),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(result.userPrompt.contains("Repo: octo/demo-1"))
+        #expect(result.userPrompt.contains("Tags: database"))
+        #expect(result.citationsByMarker.isEmpty)
+    }
+
+    @Test("多仓库预算先保留全部可容纳 Metadata，再考虑普通分片")
+    func promptPrioritizesAllRepositoryMetadataBeforeEvidenceBlocks() {
+        let firstCandidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 1, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let secondCandidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 2, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let firstHit = RAGChildHit(
+            chunk: fixtureChunk(id: 1, repoID: 1, source: .readme),
+            score: 0.9,
+            kind: .hybrid
+        )
+        let secondHit = RAGChildHit(
+            chunk: fixtureChunk(id: 2, repoID: 2, source: .readme),
+            score: 0.8,
+            kind: .hybrid
+        )
+        let firstMetadata = "Repository: octo/demo-1\nWiki DeepWiki: https://deepwiki.com/octo/demo-1"
+        let secondMetadata = "Repository: octo/demo-2\nWiki ZRead: https://zread.ai/octo/demo-2"
+        let longFirstBody = String(repeating: "first-body ", count: 80)
+        let longSecondBody = String(repeating: "second-body ", count: 80)
+        let bundles = [
+            RepoContextBundle(
+                candidate: firstCandidate,
+                score: 0.9,
+                matchedChildren: [firstHit],
+                sectionParents: [RAGSectionParent(
+                    repoId: 1,
+                    parentKey: "first",
+                    title: "First",
+                    content: longFirstBody,
+                    childChunkIDs: [1]
+                )],
+                metadataContent: firstMetadata
+            ),
+            RepoContextBundle(
+                candidate: secondCandidate,
+                score: 0.8,
+                matchedChildren: [secondHit],
+                sectionParents: [RAGSectionParent(
+                    repoId: 2,
+                    parentKey: "second",
+                    title: "Second",
+                    content: longSecondBody,
+                    childChunkIDs: [2]
+                )],
+                metadataContent: secondMetadata
+            )
+        ]
+        let metadataOnlyEvidence = "\n\nLocal knowledge-base evidence:\n\(firstMetadata)\n\n---\n\n\(secondMetadata)"
+        let result = KnowledgeRAGPromptBuilder(
+            maxEvidenceTokens: TokenEstimator.estimate(text: metadataOnlyEvidence)
+        ).build(
+            question: "compare",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "compare"),
+            retrieval: RAGRetrievalResult(
+                candidates: [firstCandidate, secondCandidate],
+                bundles: bundles,
+                childHits: [firstHit, secondHit]
+            ),
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(result.userPrompt.contains(firstMetadata))
+        #expect(result.userPrompt.contains(secondMetadata))
+        #expect(!result.userPrompt.contains(longFirstBody))
+        #expect(!result.userPrompt.contains(longSecondBody))
+        #expect(result.evidenceTokenLimitedChunkIDs == Set([1, 2]))
         #expect(result.citationsByMarker.isEmpty)
     }
 
