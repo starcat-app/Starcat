@@ -671,6 +671,13 @@ struct KnowledgeRAGCoreTests {
         #expect(store.draft(for: firstID) == nil)
     }
 
+    @Test("深度思考门禁只接受恰好一个项目")
+    func deepThinkingGateRequiresExactlyOneRepository() {
+        #expect(!KnowledgeRAGWorkspaceViewModel.canEnableDeepThinking(repoCount: 0))
+        #expect(KnowledgeRAGWorkspaceViewModel.canEnableDeepThinking(repoCount: 1))
+        #expect(!KnowledgeRAGWorkspaceViewModel.canEnableDeepThinking(repoCount: 2))
+    }
+
     @MainActor
     @Test("RAG Markdown 固定正则缓存不改变引用链接与段落格式")
     func ragMarkdownRegexCachePreservesDisplayFormatting() {
@@ -2374,6 +2381,7 @@ struct KnowledgeRAGCoreTests {
         var repoContextDocument: RAGRepoContextDocument?
         var citations: [RAGCitation] = []
         var repoContextPhases: [String] = []
+        var repoContextDebugEvents: [RAGDebugEvent] = []
         for try await event in service.ask(request: RAGServiceRequest(
             rawQuestion: "结合源码和附件分析实现",
             composerContext: RAGComposerContext(
@@ -2382,7 +2390,8 @@ struct KnowledgeRAGCoreTests {
                 attachments: attachments,
                 deepThinkingEnabled: true
             ),
-            conversationID: nil
+            conversationID: nil,
+            isDebugEnabled: true
         )) {
             if case .repoContext(let document) = event { repoContextDocument = document }
             if case .completed(_, _, let usedCitations, _) = event { citations = usedCitations }
@@ -2394,6 +2403,10 @@ struct KnowledgeRAGCoreTests {
                 default: break
                 }
             }
+            if case .debug(let debug) = event,
+               [.repoContextRequest, .repoContextResponse, .repoContextProjection].contains(debug.stage) {
+                repoContextDebugEvents.append(debug)
+            }
         }
 
         #expect(repoContextProvider.callCount == 1)
@@ -2401,6 +2414,10 @@ struct KnowledgeRAGCoreTests {
         #expect(repoContextDocument?.xml.contains("DemoService") == true)
         #expect(citations.map(\.source) == [.repoContext])
         #expect(repoContextPhases == ["prepared", "projecting", "completed"])
+        #expect(Set(repoContextDebugEvents.map(\.stage)) == [
+            .repoContextRequest, .repoContextResponse, .repoContextProjection
+        ])
+        #expect(repoContextDebugEvents.allSatisfy { !$0.payload.contains("<repository") })
         #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == true)
         #expect(spy.lastChatRequest?.userPrompt.contains("附件事实") == true)
     }

@@ -470,7 +470,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         didSet {
             // RepoContext 只能绑定唯一明确项目。用户把范围扩成多项目或清空时立即关掉，
             // 不能只在发送瞬间静默忽略，否则蓝色开关会给出错误授权反馈。
-            if selectedRepoContexts.count != 1, deepThinkingEnabled {
+            if !Self.canEnableDeepThinking(repoCount: selectedRepoContexts.count), deepThinkingEnabled {
                 deepThinkingEnabled = false
             }
         }
@@ -485,7 +485,15 @@ final class KnowledgeRAGWorkspaceViewModel {
     var webSearchEnabled = false
     /// 与联网开关同属按会话 Composer 草稿；附件数量不参与可用性判断。
     var deepThinkingEnabled = false
-    var canEnableDeepThinking: Bool { selectedRepoContexts.count == 1 }
+    var canEnableDeepThinking: Bool {
+        Self.canEnableDeepThinking(repoCount: selectedRepoContexts.count)
+    }
+
+    /// 单项目门禁只看显式项目数量。保持纯函数后，草稿恢复和 UI 状态可以共享并直接回归，
+    /// 不会误把附件数量、联网状态或当前输入内容混入授权判断。
+    nonisolated static func canEnableDeepThinking(repoCount: Int) -> Bool {
+        repoCount == 1
+    }
     /// 切换模型时立刻写入 AppSettings，关闭窗口后再开可恢复。
     var selectedModelID: String? {
         didSet {
@@ -4028,7 +4036,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         githubLinkContexts = draft.githubLinkContexts
         explicitRepoMode = draft.explicitRepoMode
         webSearchEnabled = draft.webSearchEnabled
-        deepThinkingEnabled = draft.deepThinkingEnabled && selectedRepoContexts.count == 1
+        deepThinkingEnabled = draft.deepThinkingEnabled
+            && Self.canEnableDeepThinking(repoCount: selectedRepoContexts.count)
         mentionSortOption = draft.mentionSortOption
         mentionFilters = draft.mentionFilters
         isRestoringComposerDraft = false
