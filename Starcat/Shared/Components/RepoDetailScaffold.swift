@@ -284,6 +284,12 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .task(id: wikiLookupKey(for: repo)) {
             await loadWikiLinks(for: repo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidChange)) { notification in
+            reloadWikiLinksIfChanged(notification, for: repo)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidReset)) { notification in
+            reloadWikiLinksIfReset(notification, for: repo)
+        }
         .task(id: repo.id) {
             await recommendationVM.loadInitial(
                 repoID: repo.id,
@@ -746,5 +752,24 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         )
         guard !Task.isCancelled, wikiRepoKey == key else { return }
         wikiLinks = links
+    }
+
+    /// cache miss 的网络补齐完成后原地刷新当前详情；identity 过滤避免旧 repo 的异步事件
+    /// 覆盖已经切换的新详情。这里仅读缓存，不会再次入队或发网络请求。
+    @MainActor
+    private func reloadWikiLinksIfChanged(_ notification: Notification, for repo: Repo) {
+        guard notification.userInfo?["owner"] as? String == repo.owner,
+              notification.userInfo?["repo"] as? String == repo.name,
+              wikiRepoKey == wikiLookupKey(for: repo) else { return }
+        wikiLinks = dependencies.wikiContextService.cachedLinks(owner: repo.owner, repo: repo.name)
+    }
+
+    /// 设置页清空缓存时同步移除仍在屏幕上的旧链接；只响应清空前确实受影响的仓库。
+    @MainActor
+    private func reloadWikiLinksIfReset(_ notification: Notification, for repo: Repo) {
+        guard let keys = notification.userInfo?["repositoryKeys"] as? [WikiRepoKey],
+              keys.contains(WikiRepoKey(owner: repo.owner, repo: repo.name)),
+              wikiRepoKey == wikiLookupKey(for: repo) else { return }
+        wikiLinks = []
     }
 }

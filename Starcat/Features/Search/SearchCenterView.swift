@@ -2495,6 +2495,12 @@ private struct SearchRemoteRepoDetailView: View {
         .task(id: candidate.identity) {
             await loadWikiLinks(repo: repo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidChange)) { notification in
+            reloadWikiLinksIfChanged(notification, repo: repo)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidReset)) { notification in
+            reloadWikiLinksIfReset(notification, repo: repo)
+        }
     }
 
     private var emptyState: some View {
@@ -2879,6 +2885,20 @@ private struct SearchRemoteRepoDetailView: View {
         )
         guard !Task.isCancelled else { return }
         wikiLinks = links
+    }
+
+    /// 冷缓存探测完成后原地展示当前搜索仓库的 Wiki；只读缓存，避免事件触发二次请求。
+    private func reloadWikiLinksIfChanged(_ notification: Notification, repo: Repo) {
+        guard notification.userInfo?["owner"] as? String == repo.owner,
+              notification.userInfo?["repo"] as? String == repo.name else { return }
+        wikiLinks = dependencies.wikiContextService.cachedLinks(owner: repo.owner, repo: repo.name)
+    }
+
+    /// 清空缓存后移除当前卡片上的旧 Wiki 链接。
+    private func reloadWikiLinksIfReset(_ notification: Notification, repo: Repo) {
+        guard let keys = notification.userInfo?["repositoryKeys"] as? [WikiRepoKey],
+              keys.contains(WikiRepoKey(owner: repo.owner, repo: repo.name)) else { return }
+        wikiLinks = []
     }
 
     // MARK: - Action row
