@@ -2,7 +2,7 @@
 
 > 审查日期：2026-07-17  
 > 审查范围：测试矩阵、i18n、实施方案、详细设计、专项进度、Checklist、提交与工程门禁  
-> 审查结论：发现 1 个 P1、1 个 P2；修复后执行全量测试与双 target build
+> 审查结论：发现 2 个 P1、1 个 P2；修复后执行全量测试与双 target build
 
 ## 已核对
 
@@ -32,12 +32,19 @@
 
 修复要求：同步实施方案、详细设计和专项进度，明确两阶段全局优先级与前台 save/reset 事件行为。
 
+### P1：独立 worktree 缺少 StarcatDirect 的本地 `starcat-pro` 构建依赖
+
+全量测试与 `Starcat` Debug build 通过后，`StarcatDirect` Debug build 在 Copy Changelog 阶段失败：`supports/starcat-pro/CHANGELOG.md` 不存在。该目录被主仓库 `.gitignore` 排除，本机主目录中的 `supports/starcat-pro` 是独立 Git repository，因此新建 Starcat worktree 不会自动带入它。这是 worktree 构建环境缺口，不是本需求 Swift 编译错误。
+
+修复要求：从本机现有 `starcat-pro` repository 的当前 `dev` commit 创建依赖 worktree 到任务 worktree的 `supports/starcat-pro`，不复制、不提交、不 push；随后重跑 `StarcatDirect` Debug build。
+
 ## 工程门禁现状
 
 - Wiki / RAG 六组定向测试：通过。
 - `KnowledgeRAGCoreTests` + `RAGChunkRepositoryTests`：第二轮修复后通过。
 - `Starcat` Debug build：通过。
-- 全量 test、`StarcatDirect` Debug build：本轮修复后执行。
+- 全量 test：通过。
+- `StarcatDirect` Debug build：首次执行因任务 worktree 缺少被忽略的 `supports/starcat-pro` 依赖而失败，补齐本地依赖 worktree 后重跑。
 - 已知非本需求 warning：`KnowledgeRAGCoreTests` 中既有 `@MainActor shouldOfferExternalSearchSettings` 测试诊断；不在本专项扩大修改。
 
 ## 本轮后续动作
