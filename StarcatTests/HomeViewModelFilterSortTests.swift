@@ -274,7 +274,9 @@ struct HomeViewModelFilterSortTests {
         try await noteRepo.updateLibraryState(repoId: 2, state: .inLibrary)
 
         vm.selection = .library
-        await vm.reloadItems(forceRefresh: true)
+        // 进入知识库会同步切换默认排序，并派发一次数据库分页重载；必须等待该动作，
+        // 不能再并发手动 reload，否则后创建的排序任务会取消测试自己的查询。
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(Set(vm.items.map(\.id)) == [1, 2])
         #expect(vm.visibleRepoTotalCount == 2)
@@ -396,7 +398,7 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [1, 2], "Manage 默认仍是 starred 管理视图")
 
         vm.selectSidebar(.smartCollection(.library))
-        await vm.reloadItems(forceRefresh: true)
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(Set(vm.items.map(\.id)) == [1, 3])
         #expect(vm.items.map(\.id).contains(2) == false)
@@ -465,6 +467,7 @@ struct HomeViewModelFilterSortTests {
         try await noteRepo.updateLibraryState(repoId: 2, state: .inLibrary)
 
         vm.selectSidebar(.smartCollection(.library))
+        await vm.awaitPendingListReloadForTesting()
         vm.submitSearch("knowledge")
         await vm.reloadItems(forceRefresh: true)
 
