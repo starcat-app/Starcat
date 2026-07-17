@@ -59,6 +59,8 @@ struct RAGWorkspaceInspector: View {
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
     @State private var isKnowledgeRepositoryRowHovered = false
+    @State private var isKnowledgeMetadataRowHovered = false
+    @State private var hoveredDebugTraceID: UUID?
     /// 光标悬停的引用行；用于给列表加 hover 高亮，展开态优先级更高。
     @State private var hoveredCitationID: UUID?
     @State private var isRetrievalScoreExplanationPresented = false
@@ -71,6 +73,10 @@ struct RAGWorkspaceInspector: View {
 
     private static let inspectorContentInset: CGFloat = 14
     private static let indexRowTrailingAffordanceWidth: CGFloat = 16
+    /// 索引统计行内边距：hover 蓝条必须盖住完整点击区，不能只贴文字基线显得过扁。
+    /// 目标单行约 30–34pt（DESIGN Sidebar / Rail Row），与 caption 行高 + 上下 6pt 对齐。
+    private static let indexRowHorizontalPadding: CGFloat = 8
+    private static let indexRowVerticalPadding: CGFloat = 6
     /// Matched chunk 预览行数；超出尾部省略，全文进 popover。
     private static let citationChunkPreviewLineLimit = 5
 
@@ -430,10 +436,22 @@ struct RAGWorkspaceInspector: View {
                             .rotationEffect(.degrees(isKnowledgeMetadataExpanded ? 90 : 0))
                     }
                     .contentShape(Rectangle())
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 8)
+                    .background(
+                        isKnowledgeMetadataRowHovered ? Color.accentColor.opacity(0.08) : .clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .pointerStyle(.link)
+                .onHover { isKnowledgeMetadataRowHovered = $0 }
+                .onDisappear { isKnowledgeMetadataRowHovered = false }
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.15),
+                    value: isKnowledgeMetadataRowHovered
+                )
 
                 if isKnowledgeMetadataExpanded {
                     // 组间距压到接近贴合：分组靠标题图标区分，不再靠大空隙撑开。
@@ -2004,7 +2022,8 @@ struct RAGWorkspaceInspector: View {
     }
 
     var indexInspector: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        // 行内已含上下 padding；外层 spacing 收紧，避免蓝条加高后相邻行空隙过大。
+        VStack(alignment: .leading, spacing: 6) {
             knowledgeRepositoryRow
             coverageRow("rag.workspace.status.readyChunks", value: "\(viewModel.indexStatus.readyChunks)", color: .green)
             indexIssueRow(.pending, value: "\(viewModel.indexStatus.pendingChunks)", color: .orange)
@@ -2120,6 +2139,22 @@ struct RAGWorkspaceInspector: View {
                         .padding(.horizontal, 10)
                         .padding(.top, 10)
                         .padding(.bottom, isExpanded ? 0 : 10)
+                        .background(
+                            hoveredDebugTraceID == trace.id ? Color.accentColor.opacity(0.08) : .clear,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        )
+                        .onHover { isHovering in
+                            hoveredDebugTraceID = isHovering ? trace.id : (hoveredDebugTraceID == trace.id ? nil : hoveredDebugTraceID)
+                        }
+                        .onDisappear {
+                            if hoveredDebugTraceID == trace.id {
+                                hoveredDebugTraceID = nil
+                            }
+                        }
+                        .animation(
+                            reduceMotion ? nil : .easeOut(duration: 0.15),
+                            value: hoveredDebugTraceID == trace.id
+                        )
 
                         if isExpanded {
                             // 子 stage 相对父行轻缩进即可，过大空白会浪费窄侧栏。
@@ -2656,10 +2691,13 @@ struct RAGWorkspaceInspector: View {
                 indexRowValue("\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)")
                 indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
             }
+            .padding(.horizontal, Self.indexRowHorizontalPadding)
+            .padding(.vertical, Self.indexRowVerticalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
                 isKnowledgeRepositoryRowHovered ? Color.accentColor.opacity(0.08) : .clear,
-                in: RoundedRectangle(cornerRadius: 6)
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
         }
         .buttonStyle(.plain)
@@ -2670,6 +2708,7 @@ struct RAGWorkspaceInspector: View {
     }
 
     func coverageRow(_ label: LocalizedStringKey, value: String, color: Color) -> some View {
+        // 与可点击索引行共用同一内边距，保证「可用分片」和两侧 hover 行左右对齐。
         HStack(spacing: 9) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label).font(ragFont(.caption))
@@ -2677,6 +2716,9 @@ struct RAGWorkspaceInspector: View {
             indexRowValue(value)
             indexRowTrailingAffordance()
         }
+        .padding(.horizontal, Self.indexRowHorizontalPadding)
+        .padding(.vertical, Self.indexRowVerticalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     func indexIssueRow(_ kind: RAGIndexIssueKind, value: String, color: Color) -> some View {
@@ -2697,10 +2739,13 @@ struct RAGWorkspaceInspector: View {
                     indexRowValue(value)
                     indexRowTrailingAffordance(systemImage: isExpanded ? "chevron.down" : "chevron.right")
                 }
+                .padding(.horizontal, Self.indexRowHorizontalPadding)
+                .padding(.vertical, Self.indexRowVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(
                     hoveredIndexIssueKind == kind ? Color.accentColor.opacity(0.08) : .clear,
-                    in: RoundedRectangle(cornerRadius: 6)
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
             }
             .buttonStyle(.plain)

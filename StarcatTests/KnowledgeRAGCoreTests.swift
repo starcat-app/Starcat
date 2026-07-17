@@ -1999,7 +1999,8 @@ struct KnowledgeRAGCoreTests {
         #expect(event.renderedPayload().contains(String.l10n("rag.workspace.debug.rerank.request.title")))
         #expect(event.renderedPayload().contains(trace.query))
         #expect(event.renderedPayload().contains(trace.inputCandidates[0].repositoryName))
-        #expect(event.renderedPayload().contains(String.l10n("rag.workspace.debug.rerank.response.title")))
+        #expect(!event.renderedPayload().contains("Rerank Response"))
+        #expect(!event.renderedPayload().contains("Rerank 返回"))
         #expect(event.renderedPayload().contains(String.l10n("rag.workspace.debug.rerank.applied.title")))
         #expect(!retrievalDiagnostics.debugPayload().contains(rerank.debugPayload()))
     }
@@ -2044,8 +2045,17 @@ struct KnowledgeRAGCoreTests {
 
         let rendered = payload.renderedText()
         let notes = payload.renderedAppliedNotes()
-        #expect(rendered.contains("0.842000"))
-        #expect(!rendered.contains("Rerank score 0.000000"))
+        let expectedAppliedLine = String(
+            format: String.l10n("rag.workspace.debug.rerank.appliedResultFormat"),
+            1,
+            0,
+            0.842
+        )
+        #expect(rendered.contains("- \(expectedAppliedLine)"))
+        #expect(rendered.contains("0.8420"))
+        #expect(!rendered.contains("0.842000"))
+        #expect(!rendered.contains("Rerank Response"))
+        #expect(!rendered.contains("Rerank 返回"))
         #expect(notes.count == 2)
         #expect(notes.allSatisfy { rendered.contains($0) })
         #expect(notes.contains(String(

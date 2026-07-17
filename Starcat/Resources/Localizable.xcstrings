@@ -27017,13 +27017,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "#%1$lld: input [%2$lld], Rerank score %3$.6f"
+            "value": "#%1$lld: input [%2$lld], Rerank score %3$.4f"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "第 %1$lld 位：输入 [%2$lld]，Rerank 分 %3$.6f"
+            "value": "#%1$lld：输入 [%2$lld]，Rerank 分 %3$.4f"
           }
         }
       }
@@ -27152,54 +27152,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rerank 请求"
-          }
-        }
-      }
-    },
-    "rag.workspace.debug.rerank.response.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rerank Response"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rerank 返回"
-          }
-        }
-      }
-    },
-    "rag.workspace.debug.rerank.responseCountFormat": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Returned results: %lld"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "返回结果：%lld 条"
-          }
-        }
-      }
-    },
-    "rag.workspace.debug.rerank.responseResultFormat": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Input [%lld], Rerank score: %.6f"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "输入 [%lld]，Rerank 分：%.6f"
           }
         }
       }

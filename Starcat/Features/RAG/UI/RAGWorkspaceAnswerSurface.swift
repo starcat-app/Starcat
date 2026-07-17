@@ -33,7 +33,6 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var isConversationSkeletonHandoffVisible = false
 
     private static let messageNearBottomThreshold: CGFloat = 64
-    private static let conversationSkeletonHandoffDelay: Duration = .milliseconds(50)
     private static let conversationSkeletonFadeDuration: TimeInterval = 0.16
 
     private func ragFont(_ role: RAGFontRole, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
@@ -120,8 +119,8 @@ struct RAGWorkspaceAnswerSurface: View {
         }
     }
 
-    /// `Task.yield()` 只让出执行权，不保证 AppKit 已提交显示帧；额外等待一个很短的显示窗口，
-    /// 让正文首帧真正落到骨架下方后再淡出。Reduce Motion 下仍保留两阶段挂载，但不播放淡出。
+    /// 正文完成首次挂载后再淡出骨架。shimmer 已由 Core Animation 驱动，因此 Markdown
+    /// 首帧布局期间不会停住；Reduce Motion 下仍保留两阶段挂载，但不播放淡出。
     @MainActor
     private func updateConversationSkeletonHandoff(isLoading: Bool) async {
         if isLoading {
@@ -135,7 +134,6 @@ struct RAGWorkspaceAnswerSurface: View {
 
         guard isConversationSkeletonHandoffVisible else { return }
         await Task.yield()
-        try? await Task.sleep(for: Self.conversationSkeletonHandoffDelay)
         guard !Task.isCancelled, !viewModel.isConversationLoading else { return }
 
         if reduceMotion {

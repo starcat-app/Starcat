@@ -153,11 +153,6 @@ struct RAGRerankDebugPayload: Codable, Sendable {
             String(format: String.l10n("rag.workspace.debug.rerank.inputCandidateFormat"), candidate.inputIndex, candidate.repositoryName, sourceTitle(candidate.source), candidate.section, candidate.preRerankScore)
         }
 
-        let responseLines = [
-            String(format: String.l10n("rag.workspace.debug.rerank.responseCountFormat"), trace.responseResults.count)
-        ] + trace.responseResults.map { result in
-            String(format: String.l10n("rag.workspace.debug.rerank.responseResultFormat"), result.inputIndex, result.rerankScore)
-        }
         let appliedLines = trace.appliedOrder.compactMap { item -> String? in
             guard let inputIndex = item.inputIndex, let rerankScore = item.rerankScore else { return nil }
             return String(
@@ -179,8 +174,6 @@ struct RAGRerankDebugPayload: Codable, Sendable {
             diagnostics.debugPayload(),
             String.l10n("rag.workspace.debug.rerank.request.title"),
             requestLines.map { "- \($0)" }.joined(separator: "\n"),
-            String.l10n("rag.workspace.debug.rerank.response.title"),
-            responseLines.map { "- \($0)" }.joined(separator: "\n"),
             String.l10n("rag.workspace.debug.rerank.applied.title"),
             appliedDetails
         ].joined(separator: "\n\n")

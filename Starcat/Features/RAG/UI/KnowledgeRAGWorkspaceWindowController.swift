@@ -734,6 +734,8 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var hoveredChunkID: Int64?
     @State private var isKnowledgeOverviewExpanded = false
     @State private var isRetrievalTestExpanded = false
+    @State private var isKnowledgeOverviewHovered = false
+    @State private var isRetrievalTestHovered = false
     @State private var isRetrievalTestSettingsExpanded = false
     @State private var knowledgeHeroCollapseProgress: CGFloat = 0
     @State private var permanentlyDeletingChunk: RAGManagedChunk?
@@ -1034,10 +1036,20 @@ private struct KnowledgeRAGBrowserView: View {
                 }
                 .contentShape(Rectangle())
                 .padding(12)
+                .background(
+                    isKnowledgeOverviewHovered ? Color.accentColor.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .pointerStyle(.link)
+            .onHover { isKnowledgeOverviewHovered = $0 }
+            .onDisappear { isKnowledgeOverviewHovered = false }
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.15),
+                value: isKnowledgeOverviewHovered
+            )
 
             if isKnowledgeOverviewExpanded {
                 Divider()
@@ -1108,10 +1120,20 @@ private struct KnowledgeRAGBrowserView: View {
                 }
                 .contentShape(Rectangle())
                 .padding(12)
+                .background(
+                    isRetrievalTestHovered ? Color.accentColor.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .pointerStyle(.link)
+            .onHover { isRetrievalTestHovered = $0 }
+            .onDisappear { isRetrievalTestHovered = false }
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.15),
+                value: isRetrievalTestHovered
+            )
 
             if isRetrievalTestExpanded {
                 Divider()
