@@ -2408,3 +2408,34 @@ Settings -> Storage 建议增加:
 - RepoContext XML 不写 `rag_chunks`、notes、普通消息正文或 CloudKit，也不进入 External Search query。
 - 私有仓库 identity 继续受 External Search 授权边界约束；RepoContext 只发送给用户已选择的 BYOK chat Provider。
 - Debug 的最终 Prompt stage 可能包含完整代码 XML，并按现有 Debug 本地文件机制落盘；RepoContext 专用 stage 只保存摘要，避免重复保存 XML。清理当前会话 Debug 时一并删除。
+
+## 20. 知识库 RepoContext 特殊分片管理
+
+> RepoContext 分片管理只投影文件系统中的既有 `context.xml`，不改变 v7 RAG schema。实施与审查清单见 `docs/4-工程进度/知识库RAG专项/RepoContext分片管理实施方案.md`。
+
+### 20.1 展示与统计边界
+
+- `context.xml` 存在且 metadata 可读取时，知识库详情把它投影为特殊托管项，固定插在 metadata 分片之后；旧数据缺 metadata 时置顶，不制造空占位。
+- 特殊项不新增 `RAGChunkSource`，不写 `rag_chunks`，不参与普通分片分页、embedding、召回与覆盖率统计；详情单独显示 RepoContext `0 / 1`。
+- XML 行复用普通分片的密度与 `KnowledgeRAGChunkEditor` sheet。标题和 `context.xml` 路径固定，正文等宽展示；不使用 popover。
+
+### 20.2 编辑、删除与下载
+
+- 编辑保存回文件真源：UTF-8 原子写入前必须解析 XML，且根节点必须为 `<repository>`；失败保持 sheet 与原文件不变。
+- 手工编辑只更新正文派生 token、字节数和最近访问时间，保留生成时间与生成次数，避免把编辑误记为重新生成。
+- 删除使用破坏性确认并移除该项目的完整 RepoContext 产物，不写 tombstone；用户可再次主动生成。
+- 编辑器 header 可通过 `NSSavePanel` 下载当前草稿，包含未保存修改；取消静默返回，下载不改变缓存或脏状态。
+
+### 20.3 主动生成、进度与取消
+
+- 详情页提供“生成 / 重新生成 RepoContext XML”，复用 `AppDependencies.repoAIContextProvider` 的分支解析、缓存、下载与打包流水线，不维护第二套实现。
+- UI 只展示 provider 确认的 resolving、downloading、packing 离散阶段，不伪造百分比；当前 spinner 在 hover 或键盘 focus 时切换为 `stop.circle.fill`。
+- 停止会取消 Task 并调用既有临时文件窄清理，只删除下载 `.tmp`，保留正式 ZIP 与旧有效 XML；`CancellationError` 不转成失败提示。
+- repo 切换、移出知识库和窗口关闭均取消旧任务。生成使用 repo id 与 UUID 双重身份校验，过期结果不得回写新选择。
+- 生成期间阻止重复生成以及 RepoContext 编辑、删除；成功立即替换第二项，失败保留重试入口。
+- `aiRepoContextEnabled` 关闭时不擅自改设置，只提示用户前往 AI 设置开启。
+
+### 20.4 持久化与隐私
+
+- RepoContext 文件继续由 `RepoContextStorage` 管理，不写普通消息、notes、CloudKit 或 External Search query。
+- 主动生成沿用现有 BYOK 和私有仓库边界；知识库管理页不会额外上传 XML。

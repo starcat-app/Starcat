@@ -371,3 +371,18 @@
 - [x] 定向测试覆盖单项目 + 多附件、多项目拒绝、独立预算、模板占位符、合法 XML 投影与 citation。
 - [ ] 完成至少三轮专项审查、全量测试、双 target build 与结果报告。
 - [ ] 人工验证按钮交互、真实 GitHub 下载/缓存/降级、Inspector XML 滚动/复制和 Debug 隐私提示。
+
+## 17. RepoContext 分片管理
+
+> 状态: 核心实现与定向测试完成，正在执行多轮审查和最终门禁；人工 UI 验收未执行且不会伪造。
+
+- [x] 已有 `context.xml` 作为特殊托管项固定展示在 metadata 之后，独立显示 RepoContext `0 / 1`，不污染 `rag_chunks`、embedding、分页或普通统计。
+- [x] RepoContext 行复用现有分片编辑 sheet，支持 XML 根节点校验、UTF-8 原子保存、metadata 派生值同步和破坏性删除确认。
+- [x] 编辑 sheet 支持下载当前 XML 草稿，用户取消不报错，下载不改变缓存或编辑脏状态。
+- [x] 知识库详情支持主动生成与重新生成，复用 `RepoAIContextProvider`，展示解析、下载、打包真实阶段。
+- [x] 当前进度支持 hover / focus 停止；取消、repo 切换与窗口关闭只清理 `.tmp`，保留正式 ZIP 和旧有效 XML。
+- [x] 全局代码上下文开关关闭时只引导前往 AI 设置，不静默修改用户设置。
+- [x] 生成期间阻止重复生成、RepoContext 编辑和删除；成功立即刷新第二项，失败保留重试入口。
+- [x] RepoContext 存储与浏览器定向测试覆盖读取、顺序、编辑校验、metadata、删除、下载草稿与生成状态映射。
+- [ ] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
+- [ ] 人工验证真实大仓下载耗时、阶段切换、停止响应、编辑删除和下载 sheet；该项只记录，不以自动化代替。

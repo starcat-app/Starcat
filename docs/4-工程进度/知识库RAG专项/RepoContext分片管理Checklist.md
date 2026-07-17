@@ -74,10 +74,10 @@
 - [x] sheet 根视图挂 `.appLocaleEnvironment()`。
 - [x] 所有 `.buttonStyle(.plain)` 按钮补 `.focusEffectDisabled()`。
 - [x] 颜色只使用 `.primary` / `.secondary` 与明确状态色。
-- [ ] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md` 的 RepoContext 管理边界。
-- [ ] 更新知识库 RAG 专项进度，但不伪造人工验收。
-- [ ] 不修改 `docs/功能实现总览.md`；仅在报告中给出待确认同步草案。
-- [ ] XML 不写 `rag_chunks`、embedding、CloudKit 或普通消息。
+- [x] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md` 的 RepoContext 管理边界。
+- [x] 更新知识库 RAG 专项进度，但不伪造人工验收。
+- [x] 不修改 `docs/功能实现总览.md`；仅在报告中给出待确认同步草案。
+- [x] XML 不写 `rag_chunks`、embedding、CloudKit 或普通消息。
 
 ## 7. 自动化验证
 
