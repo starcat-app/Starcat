@@ -453,9 +453,10 @@ final class KnowledgeRAGWorkspaceViewModel {
     var approvedRemoteWorkItemIDs: Set<String> = []
     var selectedCitation: RAGCitation?
     var selectedCitationChunk: RAGChunk?
-    /// 每次主动聚焦引用时递增；同 id 再点也会变，驱动右侧切回「证据」tab。
+    /// 底部引用芯片（及证据列表点选）主动聚焦时递增；同 id 再点也会变，驱动右侧切回「引用」tab。
+    /// 正文蓝色 S1 只弹窗，不 bump 本序列。
     private(set) var citationFocusSequence: Int = 0
-    /// 回答内 S1 / 底部芯片要展开的「命中的分片」popover；nil 表示关闭。
+    /// 正文蓝色 S1 的「命中的分片」popover；nil 表示关闭。底部芯片不打开此弹层。
     private(set) var citationChunkPopoverCitationID: UUID?
     var selectedRepoContexts: [Repo] = []
     /// 明确上下文仓库上限（见 `RAGMentionPickerLogic.maxSelectedRepoContexts`）。
@@ -2266,12 +2267,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 回答正文蓝色 `[S1]`：在点击位置弹出与 Inspector 同尺寸的命中分片，并同步右侧证据。
-    /// 底部芯片不走这里。
+    /// 回答正文蓝色 `[S1]`：只在点击位置弹出命中分片，不选中右侧证据、不 bump `citationFocusSequence`。
+    /// 底部芯片走 `selectCitation`，负责右侧自动导航。
     func presentCitationChunk(_ citation: RAGCitation) {
         let clickPoint = NSEvent.mouseLocation
         citationChunkPopoverCitationID = citation.id
-        selectCitation(citation)
         let scale = dependencies.settings.interfaceScale
         let isMissing = citation.chunkID == nil
         RAGCitationChunkNSPopoverPresenter.shared.present(
@@ -2284,6 +2284,19 @@ final class KnowledgeRAGWorkspaceViewModel {
                 self?.citationChunkPopoverCitationID = nil
             }
         )
+        // 弹层先以 loading 出现；正文路径不碰 selectedCitation，避免 Inspector 跳转。
+        guard let chunkID = citation.chunkID else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let chunk = try? await dependencies.ragChunkRepository.fetchChunks(ids: [chunkID]).first
+            guard citationChunkPopoverCitationID == citation.id else { return }
+            RAGCitationChunkNSPopoverPresenter.shared.update(
+                citation: citation,
+                chunk: chunk,
+                isMissing: chunk == nil,
+                interfaceScale: dependencies.settings.interfaceScale
+            )
+        }
     }
 
     func dismissCitationChunkPopover() {
@@ -2320,8 +2333,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 回答正文里的 `starcat-rag://citation/<uuid>`：弹出命中分片，并同步右侧证据选中。
-    /// 底部引用芯片不走此路径（芯片只 `selectCitation`）。
+    /// 回答正文里的 `starcat-rag://citation/<uuid>`：只弹出命中分片。
+    /// 底部引用芯片不走此路径（芯片只 `selectCitation` → 右侧导航）。
     /// - Returns: 是否已处理（调用方不应再走通用 `handleLink`）。
     @discardableResult
     func openCitationLink(_ url: URL) -> Bool {

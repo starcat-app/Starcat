@@ -35,7 +35,7 @@ struct ProSettingsTab: View {
     @State private var directLicenseKey: String = ""
     /// 已激活时默认收起「更换授权码」，避免输入框常驻显得多余。
     @State private var isReplacingLicense = false
-    /// 「校验」成功后短暂切换为绿色 fill 图标；连续点击会重置 1.5s 计时。
+    /// 「校验」成功后短暂切换为绿色勾；连续点击会重置 1.5s 计时。
     @State private var didValidateSucceed = false
     @State private var validateFeedbackTask: Task<Void, Never>?
 
@@ -337,7 +337,7 @@ struct ProSettingsTab: View {
             Label {
                 Text("settings.pro.direct.button.validate")
             } icon: {
-                Image(systemName: didValidateSucceed ? "checkmark.shield.fill" : "checkmark.shield")
+                Image(systemName: didValidateSucceed ? "checkmark.circle.fill" : "checkmark.shield")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(didValidateSucceed ? Color.green : Color.primary)
                     .contentTransition(.symbolEffect(.replace))
@@ -636,7 +636,7 @@ struct ProSettingsTab: View {
         showActivationSuccess()
     }
 
-    /// 校验成功图标反馈：1.5 秒后恢复 outline，与复制按钮反馈节奏一致。
+    /// 校验成功图标反馈：绿色勾保持 1.5 秒后恢复 shield，与复制按钮反馈节奏一致。
     private func flashValidateSuccess() {
         validateFeedbackTask?.cancel()
         didValidateSucceed = true

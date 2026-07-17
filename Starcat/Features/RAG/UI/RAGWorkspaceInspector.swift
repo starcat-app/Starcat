@@ -197,8 +197,9 @@ struct RAGWorkspaceInspector: View {
         #endif
     }
 
-    /// 正文引用先驱动展开状态，再等 SwiftUI 提交引用 tab 的布局后定位目标行。
+    /// 底部芯片 / 证据列表点选驱动展开；先切到引用 tab，再等布局提交后定位目标行。
     /// 直接同步 `scrollTo` 时，目标可能仍在计划/索引 tab 中尚未挂载，滚动请求会被静默丢弃。
+    /// 正文蓝色 S1 只弹窗，不走本路径。
     private func focusSelectedCitation(using proxy: ScrollViewProxy) {
         guard let citationID = viewModel.selectedCitation?.id else { return }
         inspectorTab = .evidence
