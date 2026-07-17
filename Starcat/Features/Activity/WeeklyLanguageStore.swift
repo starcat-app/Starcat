@@ -2,7 +2,7 @@
 //  WeeklyLanguageStore.swift
 //  Starcat
 //
-//  Activity / Weekly 三源聚合语言列表状态容器。
+//  Activity / Weekly 多来源聚合语言列表状态容器。
 //
 //  设计约束：
 //  - 语言列表来自 weekly 后端 `/api/v1/repos/languages`，与列表数据同源；

@@ -616,6 +616,70 @@
       flex: 1 1 260px;
     }
 
+    .weekly-ops {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .weekly-ops-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .weekly-ops-title {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .weekly-source-row,
+    .weekly-pin-row,
+    .weekly-search-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) repeat(4, minmax(68px, auto));
+      gap: 8px;
+      align-items: center;
+      min-height: 38px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .weekly-source-row:last-child,
+    .weekly-pin-row:last-child,
+    .weekly-search-row:last-child {
+      border-bottom: 0;
+    }
+
+    .weekly-ops-controls {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .weekly-ops-controls .param-field {
+      min-width: 130px;
+      flex: 1 1 130px;
+    }
+
+    .weekly-ops-note {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .weekly-pin-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
     .log {
       margin-top: 18px;
       border: 1px solid var(--border);
@@ -687,6 +751,12 @@
       .api-request-row,
       .api-param-grid,
       .fly-env-row {
+        grid-template-columns: 1fr;
+      }
+
+      .weekly-source-row,
+      .weekly-pin-row,
+      .weekly-search-row {
         grid-template-columns: 1fr;
       }
 
@@ -779,16 +849,17 @@
       },
       weekly: {
         fallbackLabel: "Weekly",
-        description: "周刊 / zread / 聚合数据服务",
+        description: "Weekly 多来源采集、异步补全与聚合数据服务",
         checks: ["health", "ping"],
         stats: [
           { label: "Repos", type: "count", path: "/api/v1/repos?page=1&page_size=1", pick: "meta.total", help: "来自 GET /api/v1/repos?page=1&page_size=1 的 meta.total；表示 weekly 聚合库中可用 repo 总量，不受 page_size=1 影响。" },
           { label: "Languages", type: "count", path: "/api/v1/repos/languages", pick: "meta.total", help: "来自 GET /api/v1/repos/languages 的 meta.total；表示聚合 repo 当前可筛选语言数量。" },
-          { label: "zread items", type: "count", path: "/api/v1/repos?page=1&page_size=1&source=zread", pick: "meta.total", help: "来自 GET /api/v1/repos?page=1&page_size=1&source=zread 的 meta.total；zread 已合并进聚合 repo 列表，后端没有 /api/v1/zread 独立读取接口。" }
+          { label: "HelloGitHub", type: "count", path: "/api/v1/repos?page=1&page_size=1&source=hellogithub", pick: "meta.total", help: "HelloGitHub 月刊与 featured API 统一聚合后的可用仓库数。" },
+          { label: "AI 情报", type: "count", path: "/api/v1/repos?page=1&page_size=1&source=ai_intelligence", pick: "meta.total", help: "经 Skill 核验并通过批量 API 录入的 AI 情报仓库数。" }
         ],
         actions: [
-          { label: "同步 weekly", path: "/internal/sync/weekly", auth: "apiKey", confirm: false },
-          { label: "同步 zread", path: "/internal/sync/zread", auth: "apiKey", confirm: false },
+          { label: "同步 weekly", path: "/internal/sync/weekly", auth: "adminKey", confirm: false },
+          { label: "同步 zread", path: "/internal/sync/zread", auth: "adminKey", confirm: false },
           { label: "重建聚合", path: "/internal/rebuild-aggregates", auth: "adminKey", confirm: true }
         ]
       },
@@ -877,8 +948,8 @@
         { method: "POST", path: "/internal/enrich/force", description: "强制重置并重新 enrich，属于破坏性运维操作。", auth: "apiKey" }
       ],
       weekly: [
-        { method: "GET", path: "/api/v1/repos", description: "查询 weekly 聚合 repo 列表；source 可筛选 weekly/zread/discovery。", auth: "apiKey", params: [
-          { name: "source", in: "query", default: "zread", options: ["", "weekly", "zread", "discovery"] },
+        { method: "GET", path: "/api/v1/repos", description: "查询 Weekly 聚合 repo 列表；source 使用固定来源 code。", auth: "apiKey", params: [
+          { name: "source", in: "query", default: "hellogithub", options: ["", "weekly", "zread", "discovery", "hellogithub", "ai_intelligence"] },
           { name: "page", in: "query", default: "1" },
           { name: "page_size", in: "query", default: "10" },
           { name: "lang", in: "query", default: "" },
@@ -887,8 +958,26 @@
         ] },
         { method: "GET", path: "/api/v1/repos/languages", description: "查询 weekly 聚合 repo 的语言 facet。", auth: "apiKey" },
         { method: "GET", path: "/api/v1/repos/bulk", description: "Starcat weekly 客户端全量快照接口。", auth: "apiKey" },
-        { method: "POST", path: "/internal/sync/weekly", description: "手动同步阮一峰周刊。", auth: "apiKey" },
-        { method: "POST", path: "/internal/sync/zread", description: "手动同步 zread 周 trending。", auth: "apiKey" },
+        { method: "POST", path: "/internal/sync/weekly", description: "手动同步阮一峰周刊。", auth: "adminKey" },
+        { method: "POST", path: "/internal/sync/zread", description: "手动同步 zread 周 trending。", auth: "adminKey" },
+        { method: "GET", path: "/internal/sources", description: "读取固定来源目录、队列与最近批次状态。", auth: "adminKey" },
+        { method: "POST", path: "/internal/sources/hellogithub/sync", description: "触发 HelloGitHub featured / reconcile / backfill。", auth: "adminKey", bodyTemplate: { mode: "incremental" } },
+        { method: "POST", path: "/internal/imports", description: "批量持久化人工来源仓库；GitHub 补全由异步 Worker 执行。", auth: "adminKey", bodyTemplate: {
+          source_code: "ai_intelligence",
+          idempotency_key: "local-admin-example",
+          repositories: [{ owner: "owner", repo: "repo", title: "AI 情报项目", source_url: "https://example.com/news" }]
+        } },
+        { method: "GET", path: "/internal/imports/{batch_id}", description: "查询人工录入批次及单项处理状态。", auth: "adminKey", params: [
+          { name: "batch_id", in: "path", default: "" }
+        ] },
+        { method: "GET", path: "/internal/ingest-batches/{batch_id}", description: "查询异步采集或回填批次状态。", auth: "adminKey", params: [
+          { name: "batch_id", in: "path", default: "" }
+        ] },
+        { method: "GET", path: "/internal/repos/search", description: "搜索可置顶的 Weekly 仓库。", auth: "adminKey", params: [
+          { name: "q", in: "query", default: "swift" }, { name: "limit", in: "query", default: "20" }
+        ] },
+        { method: "GET", path: "/internal/pins", description: "读取当前有序置顶列表。", auth: "adminKey" },
+        { method: "POST", path: "/internal/pins", description: "原子替换完整有序置顶列表。", auth: "adminKey", bodyTemplate: { gh_repo_ids: [] } },
         { method: "POST", path: "/internal/rebuild-aggregates", description: "重建 weekly 聚合表。", auth: "adminKey" }
       ],
       wiki: [
@@ -947,6 +1036,19 @@
     let apiConsoleDrafts = new Map(Object.keys(API_ENDPOINTS).map((key) => [key, makeConsoleDraft(key, 0)]));
     let flyEnvDrafts = new Map(Object.keys(SERVICES).map((key) => [key, makeFlyEnvDraft(key)]));
     let lastSharingURL = "";
+    const weeklyOps = {
+      sources: [],
+      pins: [],
+      searchResults: [],
+      searchQuery: "",
+      fromVolume: "1",
+      toVolume: "",
+      batch: null,
+      status: "等待刷新"
+    };
+    let weeklyBatchPollTimer = null;
+    let weeklyBatchPollID = "";
+    let weeklySourceTaskPollTimer = null;
 
     function config() {
       return window.STARCAT_ADMIN_CONFIG || { services: {} };
@@ -1210,8 +1312,75 @@
     }
 
     function renderServiceExtra(key) {
-      if (API_ENDPOINTS[key]) return `${renderApiConsole(key)}${renderFlyEnvPanel(key)}`;
+      if (API_ENDPOINTS[key]) {
+        const weeklyPanel = key === "weekly" ? renderWeeklyOperations() : "";
+        return `${weeklyPanel}${renderApiConsole(key)}${renderFlyEnvPanel(key)}`;
+      }
       return "";
+    }
+
+    function renderWeeklyOperations() {
+      const sources = weeklyOps.sources.map((source) => {
+        const latest = source.latest_batch || {};
+        const activeBackfill = source.active_backfill || {};
+        const progressBatch = activeBackfill.batch_id ? activeBackfill : latest;
+        const cursor = progressBatch.cursor || {};
+        const progress = cursor.controller
+          ? `${progressBatch.success || 0}/${progressBatch.total || "?"} · volume ${cursor.next_volume || "-"}`
+          : (latest.status || "-");
+        return `<div class="weekly-source-row">
+          <span><strong>${escapeHTML(source.display_name_zh || source.code)}</strong><br>
+            <span class="weekly-ops-note">成功 ${escapeHTML(source.last_success_at || "-")} · 失败 ${escapeHTML(source.last_failure_at || "-")}</span>
+          </span>
+          <span>${escapeHTML(String(source.count || 0))} repos</span>
+          <span>${escapeHTML(String(source.pending || 0))} pending · ${escapeHTML(String(source.processing || 0))} processing</span>
+          <span>${escapeHTML(String(source.retrying || 0))} retry · ${escapeHTML(String(source.discarded || 0))} discarded</span>
+          <span title="${escapeHTML(cursor.last_error || "")}">${escapeHTML(progress)}</span>
+        </div>`;
+      }).join("");
+      const searchRows = weeklyOps.searchResults.map((repo) => `<div class="weekly-search-row">
+        <span class="weekly-pin-name"><strong>${escapeHTML(repo.full_name)}</strong><br>${escapeHTML(String(repo.stars || 0))} stars</span>
+        <span>${escapeHTML((repo.source_types || []).join(" / "))}</span>
+        <button class="button" type="button" data-weekly-action="pin-add" data-repo-id="${repo.gh_repo_id}">加入置顶</button>
+      </div>`).join("");
+      const pinRows = weeklyOps.pins.map((repo, index) => `<div class="weekly-pin-row">
+        <span class="weekly-pin-name"><strong>${index + 1}. ${escapeHTML(repo.full_name)}</strong></span>
+        <span>${escapeHTML(String(repo.stars || 0))} stars</span>
+        <button class="button" type="button" data-weekly-action="pin-up" data-pin-index="${index}" ${index === 0 ? "disabled" : ""}>上移</button>
+        <button class="button" type="button" data-weekly-action="pin-down" data-pin-index="${index}" ${index === weeklyOps.pins.length - 1 ? "disabled" : ""}>下移</button>
+        <button class="button danger" type="button" data-weekly-action="pin-remove" data-pin-index="${index}">移除</button>
+      </div>`).join("");
+      const batchJSON = weeklyOps.batch ? JSON.stringify(weeklyOps.batch, null, 2) : "尚未启动或查询批次。";
+      return `<div class="weekly-ops">
+        <section class="weekly-ops-panel">
+          <div class="api-console-head"><p class="weekly-ops-title">来源状态 · ${escapeHTML(weeklyOps.status)}</p><button class="button" type="button" data-weekly-action="refresh">刷新来源</button></div>
+          ${sources || `<p class="weekly-ops-note">暂无来源状态，请确认 adminKey 后刷新。</p>`}
+        </section>
+        <section class="weekly-ops-panel">
+          <p class="weekly-ops-title">HelloGitHub 同步</p>
+          <div class="weekly-ops-controls">
+            <button class="button" type="button" data-weekly-action="hello-incremental">增量 featured</button>
+            <button class="button" type="button" data-weekly-action="hello-reconcile">对账最新月刊</button>
+            <div class="param-field"><label>起始 volume</label><input type="number" min="1" data-weekly-input="from-volume" value="${escapeHTML(weeklyOps.fromVolume)}"></div>
+            <div class="param-field"><label>结束 volume（空=自动）</label><input type="number" min="1" data-weekly-input="to-volume" value="${escapeHTML(weeklyOps.toVolume)}"></div>
+            <button class="button danger" type="button" data-weekly-action="hello-backfill">启动历史回填</button>
+          </div>
+          <p class="weekly-ops-note">回填请求只创建持久化控制批次；页面会轮询 batch，GitHub enrich 由后台 Worker 异步处理。</p>
+          <pre class="json-output">${escapeHTML(batchJSON)}</pre>
+        </section>
+        <section class="weekly-ops-panel">
+          <p class="weekly-ops-title">Weekly 多项目置顶</p>
+          <div class="weekly-ops-controls">
+            <div class="param-field"><label>搜索 full_name</label><input data-weekly-input="pin-search" value="${escapeHTML(weeklyOps.searchQuery)}" placeholder="owner/repo"></div>
+            <button class="button" type="button" data-weekly-action="pin-search">搜索</button>
+            <button class="button primary" type="button" data-weekly-action="pin-save">保存顺序</button>
+            <button class="button danger" type="button" data-weekly-action="pin-clear">清空</button>
+          </div>
+          ${searchRows}
+          <div class="weekly-ops-note">当前置顶 ${weeklyOps.pins.length} 项；上移/下移只修改草稿，点击“保存顺序”后一次性原子提交。</div>
+          ${pinRows || `<p class="weekly-ops-note">暂无置顶项目。</p>`}
+        </section>
+      </div>`;
     }
 
     function renderFlyEnvPanel(key) {
@@ -1558,11 +1727,199 @@
       }
     }
 
+    async function refreshWeeklyOperations(shouldRender = true) {
+      const cfg = serviceConfig("weekly");
+      if (!cfg.baseURL || !cfg.adminKey) {
+        weeklyOps.status = "缺少 Weekly baseURL 或 adminKey";
+        if (shouldRender) render();
+        return;
+      }
+      weeklyOps.status = "刷新中";
+      if (shouldRender) render();
+      try {
+        const [sources, pins] = await Promise.all([
+          requestJSON("weekly", "/internal/sources", "adminKey"),
+          requestJSON("weekly", "/internal/pins", "adminKey")
+        ]);
+        weeklyOps.sources = Array.isArray(sources.data) ? sources.data : [];
+        weeklyOps.pins = Array.isArray(pins.data) ? pins.data : [];
+        weeklyOps.status = `已刷新 ${new Date().toLocaleTimeString()}`;
+        // 页面刷新或服务重启后，从持久化来源状态恢复活动批次，而不是依赖旧页面内存。
+        const helloGitHub = weeklyOps.sources.find((source) => source.code === "hellogithub");
+        const activeBatch = helloGitHub && (helloGitHub.active_backfill || helloGitHub.latest_batch);
+        if (!weeklyOps.batch && activeBatch && ["pending", "processing"].includes(activeBatch.status)) {
+          weeklyOps.batch = { schema_version: 1, data: activeBatch };
+          if (activeBatch.batch_id && weeklyBatchPollID !== activeBatch.batch_id) {
+            pollWeeklyBatch(activeBatch.batch_id);
+          }
+        }
+      } catch (error) {
+        weeklyOps.status = `刷新失败: ${error.message}`;
+        log(`Weekly 运营状态刷新失败: ${error.message}`, "error");
+      }
+      if (shouldRender) render();
+    }
+
+    async function startHelloGitHubSync(mode) {
+      if (mode === "backfill" && !window.confirm("确认启动 HelloGitHub 历史回填？任务会持久化并在后台逐期处理。")) return;
+      const previousBatchID = weeklyOps.sources.find((source) => source.code === "hellogithub")?.latest_batch?.batch_id || "";
+      if (weeklySourceTaskPollTimer) window.clearTimeout(weeklySourceTaskPollTimer);
+      const body = { mode };
+      if (mode === "backfill") {
+        const from = Number.parseInt(weeklyOps.fromVolume, 10);
+        const to = weeklyOps.toVolume === "" ? null : Number.parseInt(weeklyOps.toVolume, 10);
+        if (!Number.isInteger(from) || from < 1 || (to != null && (!Number.isInteger(to) || to < from))) {
+          log("HelloGitHub 回填 volume 范围无效", "error");
+          return;
+        }
+        body.from_volume = from;
+        body.to_volume = to;
+        body.idempotency_key = `local-admin:hellogithub:${from}:${to == null ? "latest" : to}:${crypto.randomUUID()}`;
+      }
+      try {
+        const result = await requestJSON("weekly", "/internal/sources/hellogithub/sync", "adminKey", {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+        weeklyOps.batch = result;
+        const batchID = readPath(result, "data.batch_id");
+        log(`HelloGitHub ${mode} 已接受${batchID ? `，batch=${batchID}` : ""}`);
+        render();
+        if (batchID) pollWeeklyBatch(batchID);
+        await refreshWeeklyOperations();
+        if (!batchID) pollHelloGitHubLatestBatch(previousBatchID);
+      } catch (error) {
+        log(`HelloGitHub ${mode} 启动失败: ${error.message}`, "error");
+      }
+    }
+
+    // featured/reconcile 的 POST 只启动异步 Collector，实际 ingest batch 要等来源抓取
+    // 完成后才会持久化。短期轮询来源目录，发现新的 latest_batch 后再切到批次轮询。
+    function pollHelloGitHubLatestBatch(previousBatchID) {
+      let attempts = 0;
+      const poll = async () => {
+        attempts += 1;
+        try {
+          const result = await requestJSON("weekly", "/internal/sources", "adminKey");
+          weeklyOps.sources = Array.isArray(result.data) ? result.data : [];
+          const helloGitHub = weeklyOps.sources.find((source) => source.code === "hellogithub");
+          const latest = helloGitHub && helloGitHub.latest_batch;
+          render();
+          if (latest?.batch_id && latest.batch_id !== previousBatchID) {
+            weeklyOps.batch = { schema_version: 1, data: latest };
+            log(`HelloGitHub Collector 已创建 batch=${latest.batch_id}`);
+            pollWeeklyBatch(latest.batch_id);
+            return;
+          }
+        } catch (error) {
+          log(`HelloGitHub Collector 状态查询失败: ${error.message}`, "warn");
+        }
+        if (attempts >= 30) {
+          log("HelloGitHub Collector 60 秒内未产生新批次；可稍后刷新来源状态。", "warn");
+          return;
+        }
+        weeklySourceTaskPollTimer = window.setTimeout(poll, 2000);
+      };
+      poll();
+    }
+
+    function pollWeeklyBatch(batchID) {
+      if (weeklyBatchPollTimer) window.clearTimeout(weeklyBatchPollTimer);
+      weeklyBatchPollID = batchID;
+      const poll = async () => {
+        try {
+          const result = await requestJSON("weekly", `/internal/ingest-batches/${encodeURIComponent(batchID)}`, "adminKey");
+          weeklyOps.batch = result;
+          render();
+          const status = readPath(result, "data.status");
+          if (["success", "partial_success", "failed"].includes(status)) {
+            weeklyBatchPollID = "";
+            log(`Weekly batch ${batchID} 进入终态: ${status}`);
+            await refreshWeeklyOperations();
+            return;
+          }
+          weeklyBatchPollTimer = window.setTimeout(poll, 5000);
+        } catch (error) {
+          log(`Weekly batch ${batchID} 轮询失败: ${error.message}`, "warn");
+          weeklyBatchPollTimer = window.setTimeout(poll, 15000);
+        }
+      };
+      poll();
+    }
+
+    async function searchWeeklyPins() {
+      const query = weeklyOps.searchQuery.trim();
+      if (!query) {
+        weeklyOps.searchResults = [];
+        render();
+        return;
+      }
+      try {
+        const result = await requestJSON("weekly", `/internal/repos/search?q=${encodeURIComponent(query)}&limit=20`, "adminKey");
+        weeklyOps.searchResults = Array.isArray(result.data) ? result.data : [];
+        render();
+      } catch (error) {
+        log(`Weekly 置顶搜索失败: ${error.message}`, "error");
+      }
+    }
+
+    function addWeeklyPin(repoID) {
+      const candidate = weeklyOps.searchResults.find((item) => String(item.gh_repo_id) === String(repoID));
+      if (!candidate || weeklyOps.pins.some((item) => String(item.gh_repo_id) === String(repoID))) return;
+      weeklyOps.pins.push({ ...candidate, position: weeklyOps.pins.length + 1 });
+      render();
+    }
+
+    function moveWeeklyPin(index, offset) {
+      const target = index + offset;
+      if (index < 0 || target < 0 || index >= weeklyOps.pins.length || target >= weeklyOps.pins.length) return;
+      [weeklyOps.pins[index], weeklyOps.pins[target]] = [weeklyOps.pins[target], weeklyOps.pins[index]];
+      render();
+    }
+
+    async function saveWeeklyPins() {
+      try {
+        const result = await requestJSON("weekly", "/internal/pins", "adminKey", {
+          method: "POST",
+          body: JSON.stringify({ gh_repo_ids: weeklyOps.pins.map((item) => item.gh_repo_id) })
+        });
+        weeklyOps.pins = Array.isArray(result.data) ? result.data : [];
+        log(`Weekly 已保存 ${weeklyOps.pins.length} 个置顶项目`);
+        render();
+      } catch (error) {
+        log(`Weekly 置顶保存失败: ${error.message}`, "error");
+      }
+    }
+
+    async function clearWeeklyPins() {
+      if (!window.confirm("确认取消全部 Weekly 置顶？")) return;
+      weeklyOps.pins = [];
+      await saveWeeklyPins();
+    }
+
+    function handleWeeklyAction(action, target) {
+      if (action === "refresh") refreshWeeklyOperations();
+      if (action === "hello-incremental") startHelloGitHubSync("incremental");
+      if (action === "hello-reconcile") startHelloGitHubSync("reconcile");
+      if (action === "hello-backfill") startHelloGitHubSync("backfill");
+      if (action === "pin-search") searchWeeklyPins();
+      if (action === "pin-add") addWeeklyPin(target.getAttribute("data-repo-id"));
+      if (action === "pin-up") moveWeeklyPin(Number(target.getAttribute("data-pin-index")), -1);
+      if (action === "pin-down") moveWeeklyPin(Number(target.getAttribute("data-pin-index")), 1);
+      if (action === "pin-remove") {
+        weeklyOps.pins.splice(Number(target.getAttribute("data-pin-index")), 1);
+        render();
+      }
+      if (action === "pin-save") saveWeeklyPins();
+      if (action === "pin-clear") clearWeeklyPins();
+    }
+
     async function refreshAll() {
       const button = document.getElementById("refreshAllButton");
       button.disabled = true;
       try {
         await Promise.all(Object.keys(SERVICES).map(refreshService));
+        await refreshWeeklyOperations();
         document.getElementById("lastRefresh").textContent = new Date().toLocaleTimeString();
       } finally {
         button.disabled = false;
@@ -1588,6 +1945,11 @@
         log(`配置服务: ${serviceNames.length ? serviceNames.join(", ") : "未加载 config.js"}`);
       });
       servicesGrid.addEventListener("click", (event) => {
+        const weeklyAction = event.target.getAttribute("data-weekly-action");
+        if (weeklyAction) {
+          handleWeeklyAction(weeklyAction, event.target);
+          return;
+        }
         const apiConsoleAction = event.target.getAttribute("data-api-console-action");
         const apiConsoleService = event.target.getAttribute("data-api-console-service");
         if (apiConsoleAction && apiConsoleService) {
@@ -1640,6 +2002,10 @@
         }
       });
       servicesGrid.addEventListener("input", (event) => {
+        const weeklyInput = event.target.getAttribute("data-weekly-input");
+        if (weeklyInput === "from-volume") weeklyOps.fromVolume = event.target.value;
+        if (weeklyInput === "to-volume") weeklyOps.toVolume = event.target.value;
+        if (weeklyInput === "pin-search") weeklyOps.searchQuery = event.target.value;
         const apiConsoleService = event.target.getAttribute("data-api-console-service");
         const apiConsoleParam = event.target.getAttribute("data-api-console-param");
         const apiConsoleField = event.target.getAttribute("data-api-console-field");

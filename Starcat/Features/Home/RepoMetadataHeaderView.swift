@@ -394,25 +394,24 @@ private struct RepoDetailHeaderSourceBadgeView: View {
         if let help = badge.help, !help.isEmpty {
             return help
         }
-        return badge.sources.map(\.displayName).joined(separator: " / ")
+        return badge.sources.map(\.presentation.displayName).joined(separator: " / ")
     }
 
     @ViewBuilder
     private func sourceIcon(_ source: WeeklySource) -> some View {
-        switch source {
-        case .unknown:
-            Image(systemName: source.assetName)
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-                .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
-                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
-        default:
-            Image(source.assetName)
+        if let assetName = source.presentation.assetName {
+            Image(assetName)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 18, height: 18)
                 .clipShape(Circle())
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        } else {
+            Image(systemName: source.presentation.systemImage)
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
                 .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
         }
     }

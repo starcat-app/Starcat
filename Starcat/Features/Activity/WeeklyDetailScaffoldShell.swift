@@ -96,6 +96,8 @@ struct WeeklyDetailScaffoldShell: View {
     ///    (`id=0`, `isStarred=false`)替换 fallback,`isLocalHit = false`;失败保持
     ///    fallback 不变(hero 不白屏)。
     @State private var displayRepo: Repo?
+    /// 详情接口返回的通用来源历史；切 repo 时必须与 displayRepo 同步清空，避免旧事件残留。
+    @State private var sourceEvents: [WeeklySourceEvent] = []
     /// 当前 displayRepo 是否来自本地（保留供后续扩展使用,view body 当前不读取此字段）。
     @State private var isLocalHit: Bool = false
 
@@ -152,6 +154,7 @@ struct WeeklyDetailScaffoldShell: View {
             body: { onScrollReport in
                 WeeklyDetailContent(
                     repo: repo,
+                    sourceEvents: sourceEvents,
                     onScrollReport: onScrollReport,
                     readmeVM: readmeVM
                 )
@@ -175,6 +178,9 @@ struct WeeklyDetailScaffoldShell: View {
     }
 
     private func sourceURL(for item: WeeklyFeedItem) -> URL? {
+        if let url = item.sourceEntries.first(where: { $0.sourceURL != nil })?.sourceURL {
+            return url
+        }
         if let url = item.weekly?.issueURL {
             return url
         }
@@ -220,6 +226,7 @@ struct WeeklyDetailScaffoldShell: View {
         // D-27 时代的 `displayRepo?.fullName != project.fullName` 守卫。
         if displayRepo?.id != item.ghRepoId {
             displayRepo = makeFallbackRepo(from: item)
+            sourceEvents = []
             isLocalHit = false
         }
         loadReadme(for: item)
@@ -234,6 +241,7 @@ struct WeeklyDetailScaffoldShell: View {
             let detail = try await dependencies.weeklyAPI.fetchDetail(repoID: item.ghRepoId)
             guard detail.repo.card.ghRepoId == item.ghRepoId else { return }
             displayRepo = detail.repo.card.toEphemeralRepo()
+            sourceEvents = detail.events
             isLocalHit = false
         } catch {
             AppLog.network.warning("weekly: detail load failed for \(item.ghRepoId, privacy: .public): \(error.localizedDescription, privacy: .public)")

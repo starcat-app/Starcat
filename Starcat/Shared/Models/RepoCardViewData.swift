@@ -91,10 +91,10 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     /// 场景独有徽章（trending +N / weekly 第 N 期 / activity kind icon）。
     let badge: CardBadge?
 
-    /// Weekly 三源标识。仅 Weekly feed 传入；其它场景保持空数组。
+    /// Weekly 多来源标识。仅 Weekly feed 传入；其它场景保持空数组。
     let weeklySources: [WeeklySource]
 
-    /// Weekly 三源短标签：ruanyf 显示期号、ZRead 显示周、HN 显示短日期。
+    /// Weekly 来源短标签：已知来源显示期号/周/日期，其他来源回退排名或事件日期。
     let weeklySourceLabel: String?
 
     /// fullName 同行右侧的轻量元信息。Release 聚合卡片用它展示最新发布时间；
@@ -380,7 +380,7 @@ extension WeeklyFeedItem {
     ///
     /// - Parameters:
     ///   - registry: 全局已 star 集合（决定 ✓ 标记）
-    ///   - badge: 三源聚合列表默认不挂 badge，来源图标与短标签单独渲染。
+    ///   - badge: 多来源聚合列表默认不挂 badge，来源图标与短标签单独渲染。
     /// - Returns: 视图数据
     @MainActor
     func asCardData(
@@ -408,7 +408,12 @@ extension WeeklyFeedItem {
             badge: badge,
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,
-            inlineMetadata: nil,
+            inlineMetadata: isPinned
+                ? RepoCardInlineMetadata(
+                    systemImage: "pin.fill",
+                    text: String.l10n("weekly.pin.badge")
+                )
+                : nil,
             footerMetadata: nil,
             readStatus: nil,
             openSSFScore: openSSFScore,

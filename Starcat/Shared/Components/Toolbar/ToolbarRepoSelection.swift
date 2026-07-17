@@ -100,7 +100,7 @@ struct ToolbarRepoSelection: Equatable {
         )
     }
 
-    /// 从 Weekly 三源聚合 feed 项构造。
+    /// 从 Weekly 多来源聚合 feed 项构造。
     static func from(weekly: WeeklyFeedItem, isStarred: Bool) -> ToolbarRepoSelection {
         ToolbarRepoSelection(
             owner: weekly.owner,

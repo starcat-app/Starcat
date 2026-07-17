@@ -46240,13 +46240,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Parses GitHub projects recommended in Ruanyf Weekly, powering the Activity → Weekly view."
+            "value": "Aggregates GitHub projects from Weekly, ZRead, Show HN, HelloGitHub, and approved intelligence sources."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "解析推荐周刊的 GitHub 项目，为 活动 → 周刊 视图提供数据。"
+            "value": "聚合周刊、ZRead、Show HN、HelloGitHub 与受控情报来源中的 GitHub 项目。"
           }
         }
       }
@@ -58964,6 +58964,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "周刊"
+          }
+        }
+      }
+    },
+    "weekly.sourceEvents.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source history"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源记录"
+          }
+        }
+      }
+    },
+    "weekly.source.aiIntelligence": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Intelligence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 情报"
+          }
+        }
+      }
+    },
+    "weekly.pin.badge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "置顶"
           }
         }
       }

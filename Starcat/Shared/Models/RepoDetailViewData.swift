@@ -80,7 +80,7 @@ struct RepoDetailHero: Sendable {
 
 /// 详情页 repo name 行右侧的轻量 inline 标识。
 ///
-/// Weekly 三源聚合用 `sources` 展示来源小圆图标 + 短时间/期号标签；发行版聚合详情
+/// Weekly 多来源聚合用 `sources` 展示来源小圆图标 + 短时间/期号标签；发行版聚合详情
 /// 用 `systemImage + label` 展示最新发布时间。它刻意保持在 full_name 同行，
 /// 不单独占据详情页纵向空间，也不 fork 顶部 header 组件。
 struct RepoDetailHeaderSourceBadge: Sendable, Equatable {
@@ -289,7 +289,7 @@ struct RepoDetailViewData {
     /// 仅 Trending / Weekly 详情会传非 nil（Manage 详情来自本地 SQLite，不需要 hint）。
     let backendHint: StarcatRepoCardDTO?
 
-    /// repo full_name 同行右侧的来源标识。Weekly 用于展示三源图标和时间短标签。
+    /// repo full_name 同行右侧的来源标识。Weekly 用于展示来源图标和时间短标签。
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
 
     init(

@@ -203,7 +203,7 @@ final class AppDependencies {
 
     // MARK: - MUL-176 Weekly（阮一峰周刊）
 
-    /// 阮一峰周刊后端 API 客户端。
+    /// Weekly 多来源后端 API 客户端。
     /// 独立 actor，无需 GitHub OAuth；Explore 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
 
@@ -217,7 +217,7 @@ final class AppDependencies {
     /// Sidebar 装饰动画与 Activity 切分类的协调（仅头像 tint；草坪不参与）。
     let sidebarAnimationCoordinator: SidebarAnimationCoordinator
 
-    /// Weekly 三源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
+    /// Weekly 多来源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
     let weeklyLanguageStore: WeeklyLanguageStore
 
     /// R-06.4 客户端 bulk 缓存仓库：一次性拉全量 weekly 聚合数据 + 落 SQLite，让
@@ -1018,7 +1018,7 @@ final class AppDependencies {
         self.discoveryRepository = discoveryRepo
         self.exploreCatalogStore = ExploreCatalogStore(repository: discoveryRepo)
 
-        // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
+        // MUL-176：Weekly 多来源 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
         let weeklyAPIInstance = WeeklyAPI(

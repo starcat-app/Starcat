@@ -1,7 +1,7 @@
 # Weekly 多来源扩展、AI 情报采集与置顶运营正式方案
 
 > 日期：2026-07-15  
-> 状态：最终方案，待按实施顺序开发  
+> 状态：已实现，三轮专项审查通过  
 > 单一信任源：本文  
 > 范围：`supports/starcat-weekly-api`、Starcat「探索 → 周刊」、`pages/_local-admin`、repo-local `starcat-weekly-import` skill
 
@@ -136,15 +136,16 @@ flowchart LR
 supports/starcat-weekly-api/internal/
 ├── source/
 │   ├── catalog.go          # 固定来源目录与能力校验
-│   ├── collector.go        # Collector 接口
-│   └── hellogithub.go      # HelloGitHub 增量 + 历史回填
+│   ├── hellogithub.go      # HelloGitHub API/页面访问与基础解析
+│   ├── hellogithub_collector.go # featured 增量与月刊对账 Collector
+│   └── hellogithub_backfill.go  # 持久化历史回填 controller
 ├── ingest/
 │   ├── service.go          # 批次/候选入队
 │   ├── worker.go           # claim/enrich/retry/discard
 │   └── wake.go             # 容量 1 的非阻塞唤醒信号
 ├── handler/
-│   ├── imports.go          # 人工批量录入与批次状态
-│   ├── sources.go          # 来源目录、同步与状态
+│   ├── imports.go          # 人工批量录入、批次与来源状态
+│   ├── hellogithub.go      # HelloGitHub 来源同步入口
 │   └── pins.go             # 搜索与置顶管理
 └── store/
     ├── migrations.go       # weekly-api schema 版本迁移
@@ -833,4 +834,4 @@ let pinPosition: Int?
 
 ---
 
-*最终方案确认后，实施以本文为单一信任源；`21-weekly-api-后端3源聚合改造.md`、`22-weekly-客户端3源聚合对接.md` 和 `25-Show-HN发现源设计.md` 仅保留历史背景。*
+*本方案已完成实施；实现清单、三轮审查与结果报告统一位于 `docs/4-工程进度/Weekly多来源采集专项/`。`21-weekly-api-后端3源聚合改造.md`、`22-weekly-客户端3源聚合对接.md` 和 `25-Show-HN发现源设计.md` 仅保留历史背景。*

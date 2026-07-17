@@ -2,7 +2,7 @@
 //  WeeklyAPI.swift
 //  Starcat
 //
-//  阮一峰周刊后端 API 客户端。
+//  Weekly 多来源聚合后端 API 客户端。
 //
 //  数据源：starcat-weekly-api（独立 Go 服务）
 //  契约：见 https://github.com/dong4j/starcat-weekly-api 的 README，与
@@ -37,7 +37,7 @@ enum WeeklyAPIError: Error, LocalizedError {
     }
 }
 
-/// 三源聚合 Weekly feed 后端 API 客户端。
+/// 多来源聚合 Weekly feed 后端 API 客户端。
 ///
 /// 用 `actor` 隔离 URLSession + JSONDecoder 的并发访问；公共方法是 async，
 /// 与 TrendingAPI 完全一致，方便 ViewModel 同一种 await 风格调用。
@@ -51,6 +51,10 @@ actor WeeklyAPI {
 
     /// 默认每页大小，与 R-05 设计默认请求保持一致。
     static let defaultPageSize: Int = 30
+
+    /// 只有 Weekly bulk 已升级到 schema v2；不能提高全局 envelope 上限，否则会把
+    /// 其他自建服务尚未适配的 v2 响应误判为完全支持。
+    private static let supportedBulkSchemaVersion = 2
 
     // MARK: - Properties
 
@@ -117,7 +121,7 @@ actor WeeklyAPI {
         self.apiKey = key
     }
 
-    /// 拉取三源聚合 repo feed。
+    /// 拉取多来源聚合 repo feed。
     ///
     /// 后端负责聚合、排序和去重；客户端可发送 `source` 过滤，但 identity 仍只消费
     /// `gh_repo_id`，不再用 owner/name 推导同一项目。
@@ -231,9 +235,9 @@ actor WeeklyAPI {
 
         do {
             let envelope = try decoder.decode(StarcatEnvelope<WeeklyBulkDataDTO>.self, from: data)
-            if !envelope.isSupported {
+            if envelope.schemaVersion > Self.supportedBulkSchemaVersion {
                 AppLog.network.warning(
-                    "weekly bulk envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public); 部分新字段可能未识别，建议升级 Starcat"
+                    "weekly bulk envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(Self.supportedBulkSchemaVersion, privacy: .public); 部分新字段可能未识别，建议升级 Starcat"
                 )
             }
             let items = envelope.data.repos.map(WeeklyFeedItem.init(dto:))
@@ -241,6 +245,7 @@ actor WeeklyAPI {
             let etag = http.value(forHTTPHeaderField: "ETag")
             let generatedAt = envelope.meta?.generatedAt
             return WeeklyBulkResult(
+                sources: envelope.data.sources,
                 items: items,
                 languages: envelope.data.languages,
                 etag: etag,
@@ -254,7 +259,7 @@ actor WeeklyAPI {
         }
     }
 
-    /// 获取三源聚合语言列表，用于 Weekly 语言筛选。
+    /// 获取多来源聚合语言列表，用于 Weekly 语言筛选。
     func fetchLanguages() async throws -> [TrendingLanguageAggregateDTO] {
         let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.languages, to: baseURL)
         let (data, response) = try await performRequestWithResponse(url: endpoint)
@@ -343,8 +348,22 @@ struct WeeklyFeedListResult: Equatable {
 /// R-06.4：内部 DTO，仅供 `WeeklyAPI.fetchBulkRepos` 解码后映射到 `WeeklyBulkResult` 后销毁，
 /// 不在 ViewModel / Repository 之间传递。
 struct WeeklyBulkDataDTO: Decodable, Equatable, Sendable {
+    let sources: [WeeklySourceDescriptor]
     let repos: [WeeklyFeedRepoDTO]
     let languages: [TrendingLanguageAggregateDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case sources
+        case repos
+        case languages
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sources = try container.decodeIfPresent([WeeklySourceDescriptor].self, forKey: .sources) ?? []
+        repos = try container.decode([WeeklyFeedRepoDTO].self, forKey: .repos)
+        languages = try container.decode([TrendingLanguageAggregateDTO].self, forKey: .languages)
+    }
 }
 
 /// bulk endpoint 领域返回：DTO 已转 `WeeklyFeedItem`，languages 透传，meta 字段保留供
@@ -353,6 +372,7 @@ struct WeeklyBulkDataDTO: Decodable, Equatable, Sendable {
 /// R-06.4（2026-06-15）：与 `WeeklyFeedListResult` 并列，区别是 bulk 无分页字段 +
 /// 多了 etag / generatedAt 两个 cache meta。
 struct WeeklyBulkResult: Equatable, Sendable {
+    let sources: [WeeklySourceDescriptor]
     let items: [WeeklyFeedItem]
     let languages: [TrendingLanguageAggregateDTO]
     /// 服务端响应 `ETag` header（如 `W/"abc123de"`）。当前不做 conditional GET 304，但
