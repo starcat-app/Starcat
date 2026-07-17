@@ -2444,6 +2444,128 @@ struct KnowledgeRAGCoreTests {
         #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == false)
     }
 
+    @Test("RepoContext 空或非法 XML 降级，不产生成功文档")
+    func invalidRepoContextXMLDegradesBeforePrompt() async throws {
+        for invalidXML in ["", "<repoContext><broken></repoContext>"] {
+            let database = try InMemoryDatabaseManager()
+            try await database.insertRepoFixture(id: 21)
+            try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+            let chunks = GRDBRAGChunkRepository(database: database)
+            let spy = SpyRAGAIClient(chatResponse: "附件降级回答")
+            let provider = FixedRepoContextProvider(mode: .success(xmlOverride: invalidXML))
+            let service = KnowledgeRAGService(
+                planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "分析实现")),
+                candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+                retriever: KnowledgeRAGRetriever(
+                    chunkRepository: chunks,
+                    keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                    vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                    embeddingClient: spy,
+                    embeddingModel: "embed"
+                ),
+                attachmentProcessor: FixedAttachmentProcessor(contexts: [
+                    RAGAttachmentContext(attachmentID: UUID(), filename: "fallback.md", content: "附件事实")
+                ]),
+                repoContextProvider: provider,
+                generatorClient: spy,
+                generatorModel: "chat",
+                generatorParameters: .summaryDefault
+            )
+            var snapshot: RAGRepoContextSnapshot?
+            var didEmitDocument = false
+            for try await event in service.ask(request: singleRepoDeepThinkingRequest()) {
+                if case .execution(.repoContextCompleted(let value)) = event { snapshot = value }
+                if case .repoContext = event { didEmitDocument = true }
+            }
+
+            #expect(snapshot?.outcome == .degraded)
+            #expect(snapshot?.degradationReason == "invalid_or_empty_repo_context_xml")
+            #expect(!didEmitDocument)
+            #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == false)
+        }
+    }
+
+    @Test("RepoContext Provider 降级时保留附件证据继续生成")
+    func degradedRepoContextKeepsOtherEvidence() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient(chatResponse: "附件仍可回答")
+        let provider = FixedRepoContextProvider(mode: .degraded)
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "分析实现")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            attachmentProcessor: FixedAttachmentProcessor(contexts: [
+                RAGAttachmentContext(attachmentID: UUID(), filename: "fallback.md", content: "附件事实")
+            ]),
+            repoContextProvider: provider,
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var answer: String?
+        for try await event in service.ask(request: singleRepoDeepThinkingRequest()) {
+            if case .completed(let value, _, _, _) = event { answer = value }
+        }
+
+        #expect(answer == "附件仍可回答")
+        #expect(spy.lastChatRequest?.userPrompt.contains("附件事实") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("Project code context") == false)
+    }
+
+    @Test("RepoContext Provider 取消会终止整轮并清理临时准备")
+    func cancelledRepoContextStopsTurnAndCleansUp() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient()
+        let provider = FixedRepoContextProvider(mode: .cancelled)
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "分析实现")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            repoContextProvider: provider,
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var states: [RAGAnswerState] = []
+        for try await event in service.ask(request: singleRepoDeepThinkingRequest()) {
+            if case .state(let state) = event { states.append(state) }
+        }
+
+        #expect(states.contains(.cancelled))
+        #expect(provider.cleanupCount == 1)
+        #expect(spy.callCount == 0)
+    }
+
+    private func singleRepoDeepThinkingRequest() -> RAGServiceRequest {
+        RAGServiceRequest(
+            rawQuestion: "分析实现",
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "octo/demo-21")],
+                deepThinkingEnabled: true
+            ),
+            conversationID: nil
+        )
+    }
+
     @Test("Planner 漏报时执行层仍用显式仓库的 GitHub 实时证据回答")
     func remoteOnlyEvidenceCanGenerateAnswer() async throws {
         let database = try InMemoryDatabaseManager()
@@ -3526,6 +3648,7 @@ struct KnowledgeRAGCoreTests {
     @Test("会话历史保存用户可见执行轨迹，不保存 Debug payload")
     func executionTracePersistsWithAssistantMessage() async throws {
         let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
         let store = GRDBRAGConversationStore(database: database)
         let conversation = try await store.createConversation()
         let plan = RAGQueryPlan(
@@ -3592,6 +3715,21 @@ struct KnowledgeRAGCoreTests {
             tokensBySegment: [.question: 120, .evidence: 2_400, .reservedOutput: 4_096],
             promptPreview: "不得写入历史的原始 Prompt"
         ))
+        let repoContextSnapshot = RAGRepoContextSnapshot(
+            repoID: 21,
+            repoFullName: "octo/demo-21",
+            commitSHA: "0123456789abcdef0123456789abcdef01234567",
+            contentHash: "aabbccdd",
+            configuredTokenBudget: 8_000,
+            originalTokens: 7_600,
+            sentTokens: 7_200,
+            cacheHit: true,
+            outcome: .success,
+            wasProjected: true,
+            projectionReason: "total_context_window",
+            citationMarker: "S1",
+            preparedAt: Date(timeIntervalSince1970: 200)
+        )
         let trace = [
             RAGExecutionStep(
                 kind: .planning,
@@ -3600,6 +3738,13 @@ struct KnowledgeRAGCoreTests {
                 summary: "已规划检索",
                 queryPlan: plan,
                 contextUsageSnapshot: contextSnapshot
+            ),
+            RAGExecutionStep(
+                kind: .repoContext,
+                state: .completed,
+                details: ["已准备单项目代码上下文。"],
+                summary: "已注入 RepoContext",
+                repoContextSnapshot: repoContextSnapshot
             ),
             RAGExecutionStep(
                 kind: .retrieval,
@@ -3635,13 +3780,27 @@ struct KnowledgeRAGCoreTests {
                 summary: "回答已生成，使用 2 条引用"
             )
         ]
+        let repoContextCitation = RAGCitation(
+            id: UUID(),
+            marker: "S1",
+            chunkID: nil,
+            repoID: 21,
+            repoFullName: "octo/demo-21",
+            repoLanguage: "Swift",
+            source: .repoContext,
+            sectionTitle: "context.xml · 0123456",
+            score: 1,
+            hitKind: .repoContext,
+            vectorSimilarity: nil,
+            sourceURL: URL(string: "https://github.com/octo/demo-21/tree/0123456789abcdef0123456789abcdef01234567")
+        )
 
         try await store.appendTurn(
             conversationID: conversation.id,
             question: "帮我比较两个项目",
             answer: "比较结果",
             model: "test-model",
-            citations: [],
+            citations: [repoContextCitation],
             executionTrace: trace,
             processingDuration: 12.4
         )
@@ -3662,6 +3821,15 @@ struct KnowledgeRAGCoreTests {
         #expect(restoredRetrieval.trace == retrievalTrace)
         #expect(restoredRetrieval.trace?.candidates.first?.language == "Swift")
         #expect(restoredRetrieval.trace?.candidates.first?.stars == 12_345)
+        let restoredRepoContext = try #require(
+            detail.messages.last?.executionTrace.first(where: { $0.kind == .repoContext })?.repoContextSnapshot
+        )
+        #expect(restoredRepoContext == repoContextSnapshot)
+        let restoredRepoContextCitation = try #require(detail.messages.last?.citations.first)
+        #expect(restoredRepoContextCitation.source == .repoContext)
+        #expect(restoredRepoContextCitation.chunkID == nil)
+        #expect(restoredRepoContextCitation.hitKind == .repoContext)
+        #expect(restoredRepoContextCitation.marker == "S1")
     }
 
     @Test("旧执行轨迹缺少计划快照字段时仍可解码")
@@ -3679,6 +3847,7 @@ struct KnowledgeRAGCoreTests {
         #expect(step.queryPlan == nil)
         #expect(step.retrievalSnapshot == nil)
         #expect(step.contextUsageSnapshot == nil)
+        #expect(step.repoContextSnapshot == nil)
     }
 
     @Test("旧候选仓库轨迹缺少语言与 Star 字段时仍可解码")
@@ -4729,17 +4898,37 @@ private struct FixedAttachmentProcessor: RAGAttachmentProcessing {
 
 /// Service 测试只关心 RepoContext 的边界与事件，不访问 GitHub、ZIP 或用户磁盘缓存。
 private final class FixedRepoContextProvider: @unchecked Sendable, RepoAIContextProviding {
+    enum Mode {
+        case success(xmlOverride: String? = nil)
+        case degraded
+        case cancelled
+    }
+
+    private let mode: Mode
     private(set) var callCount = 0
+    private(set) var cleanupCount = 0
+
+    init(mode: Mode = .success()) {
+        self.mode = mode
+    }
 
     func contextOutcome(
         for repo: Repo,
         onProgress: RepoAIContextProgressCallback?
     ) async throws -> RepoAIContextOutcome {
         callCount += 1
+        switch mode {
+        case .degraded:
+            return .degraded(.packFailure)
+        case .cancelled:
+            throw CancellationError()
+        case .success:
+            break
+        }
         await onProgress?(.resolvingBranch)
         await onProgress?(.checkingCache)
         await onProgress?(.packingContext)
-        let xml = """
+        let defaultXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <repoContext>
           <repository>\(repo.fullName)</repository>
@@ -4747,6 +4936,10 @@ private final class FixedRepoContextProvider: @unchecked Sendable, RepoAIContext
           <files><file path="Sources/DemoService.swift"><![CDATA[struct DemoService {}]]></file></files>
         </repoContext>
         """
+        let xml = switch mode {
+        case .success(let xmlOverride): xmlOverride ?? defaultXML
+        case .degraded, .cancelled: defaultXML
+        }
         let stats = PackStats(
             totalFiles: 1,
             tier0Count: 1,
@@ -4781,7 +4974,9 @@ private final class FixedRepoContextProvider: @unchecked Sendable, RepoAIContext
         ))
     }
 
-    func cleanupTemporaryContextPreparation(for repo: Repo) {}
+    func cleanupTemporaryContextPreparation(for repo: Repo) {
+        cleanupCount += 1
+    }
 }
 
 private struct FixedRemoteContextProvider: KnowledgeRAGRemoteContextProviding {

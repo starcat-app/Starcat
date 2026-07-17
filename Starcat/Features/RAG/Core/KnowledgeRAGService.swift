@@ -754,6 +754,22 @@ struct KnowledgeRAGService: Sendable {
             }
             switch outcome {
             case .success(let result):
+                let trimmedXML = result.xml.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedXML.isEmpty,
+                      let parsedXML = try? XMLDocument(xmlString: trimmedXML),
+                      parsedXML.rootElement() != nil else {
+                    let snapshot = degradedRepoContextSnapshot(
+                        request: repoRequest,
+                        outcome: .degraded,
+                        reason: "invalid_or_empty_repo_context_xml"
+                    )
+                    sink.yield(.execution(.repoContextCompleted(snapshot)))
+                    sink.debug(
+                        .repoContextResponse,
+                        "outcome: degraded\nreason: invalid_or_empty_repo_context_xml"
+                    )
+                    return RAGRepoContextPhaseOutput(document: nil, snapshot: snapshot)
+                }
                 let hash = SHA256.hash(data: Data(result.xml.utf8)).map { String(format: "%02x", $0) }.joined()
                 let snapshot = RAGRepoContextSnapshot(
                     repoID: repo.id,
