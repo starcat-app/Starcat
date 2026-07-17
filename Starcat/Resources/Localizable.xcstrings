@@ -59177,6 +59177,22 @@
         }
       }
     },
+    "rag.workspace.prompt.placeholder.repoContextSection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected project's RepoContext XML with commit, hash, and citation marker. It has an independent budget from indexed evidence and is empty unless deep thinking is enabled for exactly one project."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选中单项目的 RepoContext XML，包含 commit、内容哈希与引用标记；预算独立于索引分片证据，只有在单项目开启深度思考时才有内容。"
+          }
+        }
+      }
+    },
     "rag.workspace.prompt.placeholder.remoteSection": {
       "extractionState": "manual",
       "localizations": {
