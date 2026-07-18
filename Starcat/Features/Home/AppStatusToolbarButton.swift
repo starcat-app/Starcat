@@ -5,7 +5,7 @@
 //  主窗口 toolbar 的全局状态入口。
 //
 //  设计约束：
-//  - 只展示“同步 / 后台任务 / 服务可用性 / MCP / 诊断问题”的轻量概览；
+//  - 只展示“同步 / 后台任务 / 服务可用性 / MCP / 浏览器插件 / 诊断问题”的轻量概览；
 //  - 诊断问题从本机 JSONL 摘要读取，避免把状态面板变成新的错误来源；
 //  - 服务可用性走四个自建 API 的 `/healthz`，打开面板时实时刷新，后台每 10 分钟巡检；
 //  - 跳转复用 SettingsView 已有的 Notification 路由，不新增主窗口路由状态。
@@ -27,6 +27,8 @@ struct AppStatusToolbarButton: View {
 
     @State private var isPresented = false
     @State private var diagnosticSummary: DiagnosticLogSummary = .empty
+    /// Toolbar 与设置页必须观察同一个配置实例，端口冲突才能即时反映到全局状态。
+    @State private var pluginConfiguration = CompanionConfiguration.shared
 
     var body: some View {
         Button {
@@ -71,6 +73,9 @@ struct AppStatusToolbarButton: View {
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
                 mcpEndpointURL: dependencies.mcpService.endpointURL,
+                browserPluginState: pluginConfiguration.serverStatus,
+                browserPluginEnabled: pluginConfiguration.isEnabled,
+                browserPluginEndpointURL: "http://127.0.0.1:\(pluginConfiguration.port)",
                 serviceSummary: dependencies.serviceAvailabilityMonitor.summary,
                 diagnosticSummary: diagnosticSummary,
                 relativePastDate: relativePastDate,
@@ -81,6 +86,7 @@ struct AppStatusToolbarButton: View {
                 },
                 onOpenServices: { openSettings(tab: "services") },
                 onOpenMCP: { openSettings(tab: "mcp") },
+                onOpenBrowserPlugin: { openSettings(tab: "integrations.browserPlugin") },
                 onShowBatchAIPanel: onShowBatchAIPanel
             )
             .frame(width: 340)
@@ -136,12 +142,18 @@ struct AppStatusToolbarButton: View {
     private var hasIssue: Bool {
         diagnosticSummary.issueCount > 0
             || isMCPFailed
+            || isBrowserPluginFailed
             || dependencies.serviceAvailabilityMonitor.summary.hasIssue
             || dependencies.initialWarmupCoordinator.job?.phase == .paused
     }
 
     private var isMCPFailed: Bool {
         if case .failed = dependencies.mcpService.state { return true }
+        return false
+    }
+
+    private var isBrowserPluginFailed: Bool {
+        if case .failed = pluginConfiguration.serverStatus { return true }
         return false
     }
 
@@ -205,6 +217,9 @@ private struct AppStatusPanel: View {
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
     let mcpEndpointURL: String
+    let browserPluginState: CompanionConfiguration.ServerStatus
+    let browserPluginEnabled: Bool
+    let browserPluginEndpointURL: String
     let serviceSummary: ServiceAvailabilitySummary
     let diagnosticSummary: DiagnosticLogSummary
     let relativePastDate: (Date) -> String
@@ -213,6 +228,7 @@ private struct AppStatusPanel: View {
     let onClearDiagnostics: () -> Void
     let onOpenServices: () -> Void
     let onOpenMCP: () -> Void
+    let onOpenBrowserPlugin: () -> Void
     let onShowBatchAIPanel: (() -> Void)?
 
     @State private var isTaskCancelHovered = false
@@ -257,6 +273,19 @@ private struct AppStatusPanel: View {
                 accessory: {
                     Button("toolbar.status.mcp.open") {
                         onOpenMCP()
+                    }
+                    .controlSize(.small)
+                    .focusEffectDisabled()
+                }
+            )
+            statusRow(
+                icon: browserPluginIcon,
+                tint: browserPluginTint,
+                title: "toolbar.status.browserPlugin.title",
+                subtitle: browserPluginSubtitle,
+                accessory: {
+                    Button("toolbar.status.browserPlugin.open") {
+                        onOpenBrowserPlugin()
                     }
                     .controlSize(.small)
                     .focusEffectDisabled()
@@ -731,6 +760,36 @@ private struct AppStatusPanel: View {
             statusText = mcpEnabled ? String.l10n("toolbar.status.mcp.stopped") : String.l10n("toolbar.status.mcp.disabled")
         }
         return "\(statusText) · \(mcpEndpointURL)"
+    }
+
+    private var browserPluginIcon: String {
+        if case .failed = browserPluginState { return "exclamationmark.triangle.fill" }
+        if case .running = browserPluginState { return "puzzlepiece.extension.fill" }
+        return "puzzlepiece.extension"
+    }
+
+    private var browserPluginTint: Color {
+        if case .failed = browserPluginState { return .orange }
+        if case .running = browserPluginState { return .green }
+        if case .starting = browserPluginState { return .accentColor }
+        return .secondary
+    }
+
+    private var browserPluginSubtitle: String {
+        let statusText: String
+        switch browserPluginState {
+        case .running:
+            statusText = String.l10n("settings.integration.browserPlugin.status.running")
+        case .starting:
+            statusText = String.l10n("settings.integration.browserPlugin.status.starting")
+        case .failed(let failure):
+            statusText = failure.localizedDescription
+        case .stopped:
+            statusText = browserPluginEnabled
+                ? String.l10n("settings.integration.browserPlugin.status.stopped")
+                : String.l10n("toolbar.status.browserPlugin.disabled")
+        }
+        return "\(statusText) · \(browserPluginEndpointURL)"
     }
 
     private var diagnosticIcon: String {

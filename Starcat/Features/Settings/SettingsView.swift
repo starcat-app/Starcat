@@ -142,7 +142,7 @@ struct SettingsView: View {
             case "ai":           selectedTab = .ai
             case "mcp":          selectedTab = .mcp
             case "services":     selectedTab = .services
-            case "integrations", "integrations.localAPIKey", "integrations.externalSearch":
+            case "integrations", "integrations.localAPIKey", "integrations.browserPlugin", "integrations.externalSearch":
                 selectedTab = .integrations
             case "storage":      selectedTab = .storage
             case "diagnostics":  selectedTab = .diagnostics

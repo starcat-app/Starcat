@@ -6,12 +6,23 @@
 //
 
 import Foundation
+import Network
 import Testing
 @testable import Starcat
 
 @Suite("CompanionLocalServer")
 @MainActor
 struct CompanionLocalServerTests {
+    @Test("端口占用错误映射为用户可处理的冲突状态")
+    func portInUseErrorIsStructured() {
+        let failure = CompanionLocalServer.serverFailure(
+            for: .posix(.EADDRINUSE),
+            port: 5051
+        )
+
+        #expect(failure == .portInUse(5051))
+    }
+
     private func makeServer() throws -> CompanionLocalServer {
         let keychain = InMemoryKeychain()
         try keychain.storeServiceAPIKey("test-token", forService: "local_api")

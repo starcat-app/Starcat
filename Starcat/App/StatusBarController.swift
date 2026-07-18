@@ -216,8 +216,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return String.l10n("settings.integration.browserPlugin.status.starting")
         case .running:
             return String.l10n("settings.integration.browserPlugin.status.running")
-        case .failed:
-            return String.l10n("settings.integration.browserPlugin.status.failed")
+        case .failed(let failure):
+            return failure.localizedDescription
         }
     }
 

@@ -75,7 +75,7 @@ final class CompanionLocalServer {
     private func bind(port: UInt16) {
         guard CompanionConfiguration.allowedPortRange.contains(Int(port)),
               let nwPort = NWEndpoint.Port(rawValue: port) else {
-            configuration.updateServerStatus(.failed)
+            configuration.updateServerStatus(.failed(.invalidPort(port)))
             return
         }
 
@@ -91,16 +91,21 @@ final class CompanionLocalServer {
                     guard let self else { return }
                     switch state {
                     case .ready:
+                        guard self.listener === listener else { return }
                         self.listener = listener
-                        self.configuration.updateBoundPort(port)
                         self.configuration.updateServerStatus(.running)
-                    case .failed:
+                        AppLog.network.info(
+                            "Browser Plugin Service started on 127.0.0.1:\(port, privacy: .public)"
+                        )
+                    case .failed(let error):
+                        guard self.listener === listener else { return }
                         listener?.cancel()
-                        if port < UInt16(CompanionConfiguration.allowedPortRange.upperBound) {
-                            self.bind(port: port + 1)
-                        } else {
-                            self.configuration.updateServerStatus(.failed)
-                        }
+                        self.listener = nil
+                        let failure = Self.serverFailure(for: error, port: port)
+                        self.configuration.updateServerStatus(.failed(failure))
+                        AppLog.network.error(
+                            "Browser Plugin Service failed on 127.0.0.1:\(port, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        )
                     case .cancelled:
                         if self.listener === listener { self.listener = nil }
                     default:
@@ -111,12 +116,29 @@ final class CompanionLocalServer {
             self.listener = listener
             listener.start(queue: queue)
         } catch {
-            if port < UInt16(CompanionConfiguration.allowedPortRange.upperBound) {
-                bind(port: port + 1)
+            let failure: CompanionConfiguration.ServerFailure
+            if let networkError = error as? NWError {
+                failure = Self.serverFailure(for: networkError, port: port)
             } else {
-                configuration.updateServerStatus(.failed)
+                failure = .listener(error.localizedDescription)
             }
+            listener = nil
+            configuration.updateServerStatus(.failed(failure))
+            AppLog.network.error(
+                "Browser Plugin Service failed on 127.0.0.1:\(port, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
+    }
+
+    /// 端口冲突是用户可以直接处理的配置问题，必须从普通 listener 错误中单独识别。
+    static func serverFailure(
+        for error: NWError,
+        port: UInt16
+    ) -> CompanionConfiguration.ServerFailure {
+        if case .posix(.EADDRINUSE) = error {
+            return .portInUse(port)
+        }
+        return .listener(error.localizedDescription)
     }
 
     nonisolated private func receive(_ connection: NWConnection) {
