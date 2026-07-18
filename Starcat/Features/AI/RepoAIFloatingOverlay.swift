@@ -8,8 +8,8 @@
 //  - 不替换旧的独立 AI 窗口入口；这是详情页里的新增入口，用于验证“贴着 README 问 AI”
 //    的交互是否更自然。
 //  - 浮层只在右侧详情页区域内展开 / 最大化，避免跨列覆盖 repo 列表或 sidebar。
-//  - 展开态按详情区比例缩放（宽 55% / 高 85%，并设硬顶），主窗口放大时浮层跟着变大；
-//    最大化态铺满详情区。两档仍用右上角按钮切换。
+//  - 展开态宽度按详情区 70% 比例缩放（硬顶 720），高度铺满 README 可用区：hero 折叠 /
+//    主窗口变高时浮层跟着长高，避免顶部留白。最大化态再铺满宽度。
 //  - 点击外部不自动关闭；AI 流式输出时误关会打断阅读，所以关闭必须是显式动作。
 //
 
@@ -46,11 +46,9 @@ struct RepoAIFloatingOverlay: View {
         static let collapsedHandleHeight: CGFloat = 4
         static let collapsedHandleWidth: CGFloat = 78
         /// 展开态相对详情区可用宽的比例；主窗口放大时浮层跟着变宽。
-        static let expandedWidthRatio: CGFloat = 0.55
+        static let expandedWidthRatio: CGFloat = 0.70
         /// 展开态宽度硬顶，避免超宽详情区把对话面板拉得过散。
         static let expandedMaxWidth: CGFloat = 720
-        /// 展开态相对详情区可用高的比例；仍低于最大化态的铺满效果。
-        static let expandedHeightRatio: CGFloat = 0.85
         static let maximizedInset: CGFloat = 16
         static let cornerRadius: CGFloat = 18
         static let panelMinWidth: CGFloat = 320
@@ -151,6 +149,9 @@ struct RepoAIFloatingOverlay: View {
     }
 
     private func panelHeight(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
+        // Overlay 挂在 README body 上：可用高 = 详情区减去 hero / metadata 后的剩余高度。
+        // hero 随滚动折叠时 GeometryReader 变高，浮层必须跟着铺满，不能再乘比例留顶空白。
+        // 展开 vs 最大化的差异主要在宽度；高度两侧都吃满可用区。
         let usableHeight = max(
             Metrics.panelMinHeight,
             availableSize.height - Metrics.panelBottomInset - Metrics.maximizedInset
@@ -158,9 +159,7 @@ struct RepoAIFloatingOverlay: View {
         if isMaximized {
             return max(Metrics.maximizedMinHeight, usableHeight)
         }
-        // 展开态随详情区变高，但故意低于最大化，方便对照 README。
-        let proportionalHeight = usableHeight * Metrics.expandedHeightRatio
-        return min(usableHeight, max(Metrics.panelMinHeight, proportionalHeight))
+        return max(Metrics.panelMinHeight, usableHeight)
     }
 
     private var bottomInset: CGFloat {

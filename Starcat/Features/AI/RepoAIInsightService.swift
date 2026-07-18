@@ -329,7 +329,7 @@ final class RepoAIInsightService {
         allowExternalContext: Bool = true,
         codeContextRequest: RepoAICodeContextRequest? = nil,
         onContextProgress: RepoAIContextProgressCallback? = nil,
-        onContextResolved: (@MainActor () -> Void)? = nil,
+        onContextResolved: (@MainActor () async -> Void)? = nil,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         try enforceGenerationEntitlement(includeSummary: includeSummary, includeTags: includeTags)
@@ -338,7 +338,8 @@ final class RepoAIInsightService {
             codeContextRequest: codeContextRequest,
             onContextProgress: onContextProgress
         )
-        onContextResolved?()
+        // 允许 UI 在进入 LLM 前补完最短步骤展示；跳过时回调应立刻返回。
+        await onContextResolved?()
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
         // Y9.3（2026-06-14 dong4j 反馈）：捕获 anysearch 降级原因，让 UI 给出具体反馈

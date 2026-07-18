@@ -127,6 +127,18 @@ final class RepoAIInsightViewModel {
     ///     错误不持久化避免误导用户）。
     private(set) var externalContextDegradationReason: ExternalContextDegradationReason?
 
+    /// 本次摘要生成期间已经在 UI 上展示过的 prep 步骤。
+    /// 缓存命中时 provider 不会发 downloading / packing，收尾时用它补播缺失步骤。
+    private var prepStepsSeenThisGeneration: Set<PrepStep> = []
+
+    /// 当前步骤开始展示的时刻；用于最短停留，避免步骤条「闪一下就没了」。
+    private var prepStepDisplayedAt: ContinuousClock.Instant?
+
+    /// 每个可见步骤至少停留这么久，让用户来得及读文案并点「跳过」。
+    /// 真实 IO 仍并行推进；这里只约束 UI 切换，不拖慢 ZIP 下载本身。
+    // 缓存命中时真实工作几乎瞬时结束；约 900ms/步才能看清步骤并点到「跳过」。
+    private static let prepStepMinimumDwell: Duration = .milliseconds(900)
+
     private let service: RepoAIInsightService
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
@@ -219,7 +231,13 @@ final class RepoAIInsightViewModel {
                     // 通过 MainActor.run 包一层保险（@Observable 必须主线程写）。
                     MainActor.assumeIsolated {
                         guard let self, self.prepRunID == runID else { return }
-                        self.prepProgress = .preparing(step: Self.mapStep(step))
+                        let mapped = Self.mapStep(step)
+                        // 生成中同步记入「已见步骤」，避免收尾补播把真实慢路径再演一遍。
+                        if self.isGenerating {
+                            self.publishPrepStep(mapped)
+                        } else {
+                            self.prepProgress = .preparing(step: mapped)
+                        }
                     }
                 }
             } catch is CancellationError {
@@ -353,6 +371,59 @@ final class RepoAIInsightViewModel {
         }
     }
 
+    /// 立刻刷新步骤条，并记录「本步开始展示」时刻。
+    private func publishPrepStep(_ step: PrepStep) {
+        prepProgress = .preparing(step: step)
+        prepStepsSeenThisGeneration.insert(step)
+        prepStepDisplayedAt = .now
+    }
+
+    /// 缓存命中 / 极速完成时，把没播过的步骤按最短停留补完。
+    ///
+    /// 真实 ZIP/XML 工作已经结束；这里只是 UI 节拍，避免用户看不到步骤、来不及点跳过。
+    /// 若下载/打包已经真实展示过，只保证最后一步最短停留，不再重演。
+    /// `skipCodeContextForCurrentGeneration` 会把 `isSkipped` 置位，sleep 切片循环会立刻退出。
+    private func revealMissingPrepStepsIfNeeded(request: RepoAICodeContextRequest) async {
+        guard !request.isSkipped else { return }
+
+        let sawHeavyWork = prepStepsSeenThisGeneration.contains(.downloadingArchive)
+            || prepStepsSeenThisGeneration.contains(.packingContext)
+
+        if !sawHeavyWork {
+            let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
+            for step in order where !prepStepsSeenThisGeneration.contains(step) {
+                guard !request.isSkipped else { return }
+                await dwellOnCurrentPrepStepIfNeeded(request: request)
+                guard !request.isSkipped else { return }
+                publishPrepStep(step)
+            }
+        }
+
+        await dwellOnCurrentPrepStepIfNeeded(request: request)
+    }
+
+    /// 当前步骤若展示不足最短停留，则切片 sleep；跳过时立即返回。
+    private func dwellOnCurrentPrepStepIfNeeded(request: RepoAICodeContextRequest) async {
+        guard !request.isSkipped else { return }
+        guard let started = prepStepDisplayedAt else { return }
+        let elapsed = ContinuousClock.now - started
+        let remaining = Self.prepStepMinimumDwell - elapsed
+        guard remaining > .zero else { return }
+        await sleepUnlessSkipped(remaining, request: request)
+    }
+
+    /// 可被「跳过」打断的短睡眠；50ms 切片兼顾响应速度与 CPU。
+    private func sleepUnlessSkipped(_ duration: Duration, request: RepoAICodeContextRequest) async {
+        let deadline = ContinuousClock.now + duration
+        while ContinuousClock.now < deadline {
+            guard !request.isSkipped else { return }
+            let remaining = deadline - ContinuousClock.now
+            let slice = min(remaining, .milliseconds(50))
+            guard slice > .zero else { return }
+            try? await Task.sleep(for: slice)
+        }
+    }
+
     /// 触发生成 AI 摘要（含可选的标签推荐）。
     ///
     /// R-01 §3.2.7 Step 8：`includeTags` 由调用方根据「窗口打开瞬间冻结的 star 状态」决定。
@@ -364,12 +435,19 @@ final class RepoAIInsightViewModel {
         currentCodeContextRequest = codeContextRequest
         didSkipCodeContextForCurrentGeneration = false
         isGenerating = true
+        // 重新点「生成摘要」时立刻藏掉上次失败条，避免与「正在准备…」叠显。
+        errorMessage = nil
+        tagErrorMessage = nil
         streamingSummaryText = ""
         phase = .preparingContext
+        prepStepsSeenThisGeneration = []
+        prepStepDisplayedAt = nil
         // 重新生成 / 后台 prep 已结束时，旧的 `.ready` 会让步骤条全亮绿勾，
         // `.idle` 则全是空心圆。这里先种一个进行中步骤，后续 onContextProgress 再覆盖。
         if prepTask == nil {
-            prepProgress = .preparing(step: .resolvingBranch)
+            publishPrepStep(.resolvingBranch)
+        } else if case let .preparing(step) = prepProgress {
+            publishPrepStep(step)
         }
         defer {
             isGenerating = false
@@ -377,6 +455,7 @@ final class RepoAIInsightViewModel {
             phase = nil
             // 只丢掉本次 generate 的请求句柄；不要 cancel 仍在跑的后台 prep。
             currentCodeContextRequest = nil
+            prepStepDisplayedAt = nil
             // 生成期为了刷新步骤条种下的 `.preparing`，若没有活着的后台 prep，
             // 结束后收回，避免失败回空态时残留假进度。
             if prepTask == nil, case .preparing = prepProgress {
@@ -393,7 +472,7 @@ final class RepoAIInsightViewModel {
         // 等待结束后若已就绪，芯片会变成全 ✓；makeSource 仍可能再跑一次 cache 核对，
         // 重新标成 resolving，避免“文案还在准备、步骤却全完成”的错觉。
         if !codeContextRequest.isSkipped, case .ready = prepProgress {
-            prepProgress = .preparing(step: .resolvingBranch)
+            publishPrepStep(.resolvingBranch)
         }
 
         do {
@@ -416,14 +495,19 @@ final class RepoAIInsightViewModel {
                 codeContextRequest: codeContextRequest,
                 onContextProgress: { [weak self] progress in
                     guard let self, !codeContextRequest.isSkipped else { return }
-                    self.prepProgress = .preparing(step: Self.mapStep(progress))
+                    self.publishPrepStep(Self.mapStep(progress))
                 },
                 onContextResolved: { [weak self] in
                     guard let self else { return }
-                    self.phase = .requestingSummary
-                    if !codeContextRequest.isSkipped {
-                        self.prepProgress = .ready
+                    // 缓存命中时 provider 会跳过 downloading / packing 事件；这里补播缺失
+                    // 步骤并保证最短停留，让用户有时间点「跳过」。已跳过则立刻放行。
+                    await self.revealMissingPrepStepsIfNeeded(request: codeContextRequest)
+                    guard !codeContextRequest.isSkipped else {
+                        self.phase = .requestingSummary
+                        return
                     }
+                    self.phase = .requestingSummary
+                    self.prepProgress = .ready
                 }
             ) { [weak self] partial in
                 self?.streamingSummaryText = partial
