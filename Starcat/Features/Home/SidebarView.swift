@@ -47,6 +47,7 @@ struct SidebarView: View {
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
@@ -1329,11 +1330,17 @@ struct SidebarView: View {
         count: Int?,
         @ViewBuilder title: @escaping () -> Title
     ) -> some View {
-        HStack(spacing: 8) {
+        // List 选中条在明亮主题是实心蓝底，文字会自动变白；但显式写入的语义色
+        // （尤其 cyan / green）不会跟着反色，蓝底上几乎看不见。暗色主题同色更亮，
+        // 对比度足够，只在 light + selected 时强制白色，与标题选中态对齐。
+        let isSelected = exploreSidebarSelectionBinding.wrappedValue == selection
+        let resolvedIconColor: Color = (isSelected && colorScheme == .light) ? .white : iconColor
+
+        return HStack(spacing: 8) {
             if let icon {
                 Image(systemName: icon)
                     .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(resolvedIconColor)
                     .frame(width: 16)
             }
 
