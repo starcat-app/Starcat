@@ -389,7 +389,9 @@ struct RAGWorkspaceSettingsSheet: View {
     private var promptSettingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-                settingsGroup(
+                // 与检索「预设」同款容器：带描边的卡片 + 等宽 tab，避免 settingsGroup
+                // 半透明底把 EqualWidthSegmentedControl 轨道衬底吃掉、看起来像裸文字+蓝 pill。
+                retrievalSettingsGroup(
                     titleKey: "rag.workspace.prompt.type.title",
                     systemImage: "text.quote"
                 ) {
@@ -699,7 +701,8 @@ struct RAGWorkspaceSettingsSheet: View {
         }
     }
 
-    /// 检索设置采用更清晰的容器边界；提示词编辑器仍保留其更适合长文本的原有密度。
+    /// 带描边的设置卡片：检索各分组 + 提示词「类型」tab 共用，保证分段控件轨道衬底不被半透明底吃掉。
+    /// System / User 长文本编辑仍走 `settingsGroup` 的更轻密度。
     private func retrievalSettingsGroup<Content: View>(
         titleKey: LocalizedStringKey,
         systemImage: String,

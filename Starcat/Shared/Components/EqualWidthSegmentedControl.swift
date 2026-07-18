@@ -9,11 +9,13 @@
 //    同一套设置会出现「中文半行短条 / 英文近整行」两套布局。
 //  - 即便 `.frame(maxWidth: .infinity)`，macOS 仍常把多余宽度留在轨道右侧空白，
 //    段本身不拉伸。
-//  - 本控件用 GeometryReader 按父宽均分每段，中英文观感一致，轨道与选中块都占满行。
+//  - 本控件按父宽均分每段，中英文观感一致，轨道与选中块都占满行。
 //
 //  关键约束：
 //  - 禁止多个子项各自 `.frame(maxWidth: .infinity)` 反向协商 HStack 宽度
-//    （macOS 26 上曾导致主线程自旋）；宽度必须由外层 GeometryReader 一次算清。
+//    （macOS 26 上曾导致主线程自旋）；宽度必须由外层一次算清。
+//  - Form / DisclosureGroup 里裸 GeometryReader 常只拿到 intrinsic 窄宽：先用
+//    `Color.clear` 撑满父宽，再 overlay 测量，才能真正等分整行。
 //  - 每个 segment 是 `.buttonStyle(.plain)` + `.focusEffectDisabled()`（项目铁律）。
 //  - 选中态用 `Color.accentColor` + 白字，贴近系统 segmented 的蓝底块。
 //
@@ -24,6 +26,14 @@
 //
 
 import SwiftUI
+
+/// 等宽 segmented 的几何常量（独立于泛型 View，避免 generic type 不能放 static stored）。
+private enum EqualWidthSegmentedMetrics {
+    static let horizontalInset: CGFloat = 3
+    static let dividerWidth: CGFloat = 1
+    static let cornerRadius: CGFloat = 6
+    static let trackCornerRadius: CGFloat = 8
+}
 
 /// 等宽铺满横向分段切换器。
 ///
@@ -42,49 +52,52 @@ struct EqualWidthSegmentedControl<Item: Hashable>: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    private static let horizontalInset: CGFloat = 3
-    private static let dividerWidth: CGFloat = 1
-    private static let cornerRadius: CGFloat = 6
-    private static let trackCornerRadius: CGFloat = 8
-
     var body: some View {
-        GeometryReader { proxy in
-            // 由确定的父宽度一次性分配每段宽度，避免多个 `.infinity` 子项反向参与
-            // HStack 的尺寸协商；后者在 macOS 26 的 SwiftUI 布局引擎中会造成主线程自旋。
-            let dividerCount = max(items.count - 1, 0)
-            let contentWidth = max(
-                0,
-                proxy.size.width
-                    - Self.horizontalInset * 2
-                    - CGFloat(dividerCount) * Self.dividerWidth
-            )
-            let tabWidth = items.isEmpty ? 0 : contentWidth / CGFloat(items.count)
-            let segmentHeight = controlHeight - Self.horizontalInset * 2
-
-            HStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element) { index, item in
-                    segmentButton(
-                        for: item,
-                        width: tabWidth,
-                        height: segmentHeight
+        // Form / DisclosureGroup 里裸 GeometryReader 常只拿到 intrinsic 窄宽；
+        // 先用 clear 撑满父宽，再 overlay 测量，才能真正等分整行。
+        Color.clear
+            .frame(height: controlHeight)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                GeometryReader { proxy in
+                    let dividerCount = max(items.count - 1, 0)
+                    let contentWidth = max(
+                        0,
+                        proxy.size.width
+                            - EqualWidthSegmentedMetrics.horizontalInset * 2
+                            - CGFloat(dividerCount) * EqualWidthSegmentedMetrics.dividerWidth
                     )
+                    let tabWidth = items.isEmpty ? 0 : contentWidth / CGFloat(items.count)
+                    let segmentHeight = controlHeight - EqualWidthSegmentedMetrics.horizontalInset * 2
 
-                    if index < items.count - 1 {
-                        Rectangle()
-                            .fill(showsDivider(before: index + 1) ? Color.primary.opacity(0.18) : .clear)
-                            .frame(width: Self.dividerWidth, height: 14)
+                    HStack(spacing: 0) {
+                        ForEach(Array(items.enumerated()), id: \.element) { index, item in
+                            segmentButton(
+                                for: item,
+                                width: tabWidth,
+                                height: segmentHeight
+                            )
+
+                            if index < items.count - 1 {
+                                Rectangle()
+                                    .fill(showsDivider(before: index + 1) ? Color.primary.opacity(0.18) : .clear)
+                                    .frame(width: EqualWidthSegmentedMetrics.dividerWidth, height: 14)
+                            }
+                        }
                     }
+                    .padding(EqualWidthSegmentedMetrics.horizontalInset)
                 }
             }
-            .padding(Self.horizontalInset)
-        }
-        .frame(height: controlHeight)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: Self.trackCornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: selection)
+            .background(
+                RoundedRectangle(cornerRadius: EqualWidthSegmentedMetrics.trackCornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            // 细描边：轨道在半透明卡片上仍能看出边界，避免只剩「裸文字 + 蓝 pill」。
+            .overlay {
+                RoundedRectangle(cornerRadius: EqualWidthSegmentedMetrics.trackCornerRadius, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.16), lineWidth: 0.5)
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: selection)
     }
 
     // MARK: - Segment
@@ -100,7 +113,7 @@ struct EqualWidthSegmentedControl<Item: Hashable>: View {
                 .frame(width: width, height: height)
                 .foregroundStyle(selection == item ? Color.white : Color.primary)
                 .background(
-                    RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: EqualWidthSegmentedMetrics.cornerRadius, style: .continuous)
                         .fill(selection == item ? Color.accentColor : Color.clear)
                 )
                 .contentShape(Rectangle())

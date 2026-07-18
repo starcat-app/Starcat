@@ -63,6 +63,14 @@ struct ExploreView: View {
                 clearTrendingSelection()
             }
         }
+        // `selectedMode` 来自 Sidebar 的 List(selection:)；系统选中事务可能携带动画。
+        // 若不在 Explore 边界截断，Discovery / Trending / Weekly 根视图替换会继承该
+        // transaction，AppKit 在动画周期内反复 layout 整个中栏。这里只拦分类变化，
+        // Skeleton 的 TimelineView、列表内独立交互动画仍使用各自事务。
+        .transaction(value: selectedMode) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 
     private var discoveryContent: some View {

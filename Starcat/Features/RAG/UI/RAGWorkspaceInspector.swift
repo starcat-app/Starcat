@@ -3962,66 +3962,13 @@ private struct RAGInspectorTabBar: View {
     @Binding var selection: RAGInspectorTab
     let font: Font
 
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    private static let horizontalInset: CGFloat = 3
-    private static let dividerWidth: CGFloat = 1
-    private static let controlHeight: CGFloat = 32
-
     var body: some View {
-        GeometryReader { proxy in
-            // 由确定的父宽度一次性分配每段宽度，避免多个 `.infinity` 子项反向参与
-            // HStack 的尺寸协商；后者在 macOS 26 的 SwiftUI 布局引擎中会造成主线程自旋。
-            let dividerCount = max(tabs.count - 1, 0)
-            let contentWidth = max(
-                0,
-                proxy.size.width
-                    - Self.horizontalInset * 2
-                    - CGFloat(dividerCount) * Self.dividerWidth
-            )
-            let tabWidth = tabs.isEmpty ? 0 : contentWidth / CGFloat(tabs.count)
-
-            HStack(spacing: 0) {
-                ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                    Button {
-                        selection = tab
-                    } label: {
-                        Text(tab.titleKey)
-                            .font(font)
-                            .lineLimit(1)
-                            .frame(width: tabWidth, height: Self.controlHeight - Self.horizontalInset * 2)
-                            .foregroundStyle(selection == tab ? Color.white : Color.primary)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(selection == tab ? Color.accentColor : Color.clear)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .accessibilityAddTraits(selection == tab ? .isSelected : [])
-
-                    if index < tabs.count - 1 {
-                        Rectangle()
-                            .fill(showsDivider(before: index + 1) ? Color.primary.opacity(0.18) : .clear)
-                            .frame(width: Self.dividerWidth, height: 14)
-                    }
-                }
-            }
-            .padding(Self.horizontalInset)
-        }
-        .frame(height: Self.controlHeight)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+        EqualWidthSegmentedControl(
+            items: tabs,
+            selection: $selection,
+            title: \.titleKey,
+            font: font,
+            controlHeight: 32
         )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: selection)
-    }
-
-    /// 仅在相邻两个未选中段之间画竖线，与系统 segmented 分隔习惯一致。
-    private func showsDivider(before index: Int) -> Bool {
-        guard index > 0 else { return false }
-        return selection != tabs[index - 1] && selection != tabs[index]
     }
 }

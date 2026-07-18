@@ -516,6 +516,14 @@ struct SidebarView: View {
                 exploreSidebarContent
             }
             .listStyle(.sidebar)
+            // 分类行自身挂有折叠/展开 transition；切 Explore mode 时不能复用
+            // List(selection:) 的系统选中动画，否则旧筛选 section 退场与新 section
+            // 入场会连续触发整窗 layout。手动点 header 的 disclosureSpring 是另一笔
+            // transaction，不受这里影响。
+            .transaction(value: selectedExploreMode) { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         case .activity:
             List(selection: $selectedActivityCategory) {
                 activitySidebarContent

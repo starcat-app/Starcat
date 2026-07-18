@@ -570,34 +570,27 @@ struct AISettingsTab: View {
     }
 
     private func taskModelRow(_ task: AIModelTask) -> some View {
-        // HOM-68 follow-up v3：模型下拉只列**当前选中 provider** 的模型，
-        // 消除跨 provider 同名模型同时勾选的 bug；provider 切换由
-        // `taskProviderBinding` setter 自动把 modelID 重置为新 provider 的第一个
-        // 匹配能力的模型。
-        //
-        // HOM-68 follow-up v8：删行首 `Text(task.displayName)`——外层 segmented
-        // tab 已经在显示当前任务名，再写一次是冗余。
-        //
-        // HOM-68 follow-up v13 (dong4j 反馈 2026-06-06 00:43)：
-        // 1. Provider picker 加 `.labelsHidden()` 去掉行首"Provider"文字。该
-        //    标签冗余——外层 tab 已说明这是哪个任务的配置，第一个 picker 是
-        //    Provider 不言自明。保留"模型"label，作为两个 picker 之间的视觉
-        //    分隔标识（用户明确只点名"Provider"要删，模型不动）；
-        // 2. "自定义" 改 `.fixedSize()` 只占 intrinsic 宽度，并放在 HStack 末尾
-        //    （无 trailing Spacer），自然右对齐——为 Provider / 模型 两个下拉
-        //    腾出最大水平空间，避免长 Provider/模型名被截断成"De..." / "deeps..."。
+        // 方案 B（2026-07-18）：标签列 + 控件列，与上方服务商配置同款扫读路径。
+        // - 提供商 / 模型 分两行，避免三个控件挤一行导致中间大空白；
+        // - 「使用自定义模型名」独立第三行；勾选后模型行控件位替换为 TextField，
+        //   不再额外蹦出一行输入框。
+        let labelWidth: CGFloat = 88
+        let columnSpacing: CGFloat = 14
         let currentProviderID = taskConfig(task).providerID
+        let useCustom = taskConfig(task).useCustomModel
         let availableModels = enabledModels(
             providerID: currentProviderID,
             capability: task.requiredCapability
         )
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                // HOM-AIPROVIDERS-2026-06-06：任务 → provider picker 同样给每一项
-                // 挂上 provider logo，使用户在切换"摘要走哪个服务"、"翻译走哪个服务"
-                // 时不需要靠 displayName 区分（部分 profile 名是用户自定义的，可能与
-                // 实际底层服务商不一致，logo 比文字更可靠）。
-                Picker("Provider", selection: taskProviderBinding(task)) {
+
+        return VStack(alignment: .leading, spacing: 0) {
+            taskModelLabeledRow(
+                label: "settings.ai.task.providerLabel",
+                labelWidth: labelWidth,
+                columnSpacing: columnSpacing
+            ) {
+                // HOM-AIPROVIDERS-2026-06-06：挂 provider logo，自定义 profile 名时仍能辨认服务商。
+                Picker("settings.ai.task.providerLabel", selection: taskProviderBinding(task)) {
                     ForEach(verifiedProfiles) { profile in
                         Label {
                             Text(profile.displayName)
@@ -609,32 +602,69 @@ struct AISettingsTab: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .frame(maxWidth: .infinity)
+            }
 
-                Picker("settings.ai.task.modelLabel", selection: taskModelBinding(task)) {
-                    if availableModels.isEmpty {
-                        Text("settings.ai.task.noAvailableModel")
-                            .tag("")
-                    } else {
-                        ForEach(availableModels) { model in
-                            Text(model.name).tag(model.name)
+            Divider()
+
+            taskModelLabeledRow(
+                label: "settings.ai.task.modelLabel",
+                labelWidth: labelWidth,
+                columnSpacing: columnSpacing
+            ) {
+                if useCustom {
+                    TextField(
+                        "settings.ai.task.customModelPlaceholder",
+                        text: taskCustomModelBinding(task)
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .disableAutocorrection(true)
+                } else {
+                    Picker("settings.ai.task.modelLabel", selection: taskModelBinding(task)) {
+                        if availableModels.isEmpty {
+                            Text("settings.ai.task.noAvailableModel")
+                                .tag("")
+                        } else {
+                            ForEach(availableModels) { model in
+                                Text(model.name).tag(model.name)
+                            }
                         }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
                 }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
+            }
 
+            Divider()
+
+            // 勾选行：标签列留空，与上方控件列左缘对齐，语义挂在 checkbox 文案上。
+            HStack(alignment: .center, spacing: columnSpacing) {
+                Color.clear
+                    .frame(width: labelWidth)
                 Toggle("settings.ai.task.customToggle", isOn: taskCustomEnabledBinding(task))
                     .toggleStyle(.checkbox)
                     .fixedSize()
+                Spacer(minLength: 0)
             }
-
-            if taskConfig(task).useCustomModel {
-                TextField("settings.ai.task.customModelPlaceholder", text: taskCustomModelBinding(task))
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
-            }
+            .padding(.vertical, 8)
         }
+    }
+
+    /// 模型配置表格式单行：固定左标签列 + 右侧吃满剩余宽度的控件。
+    private func taskModelLabeledRow<Content: View>(
+        label: LocalizedStringKey,
+        labelWidth: CGFloat,
+        columnSpacing: CGFloat,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: .center, spacing: columnSpacing) {
+            Text(label)
+                .frame(width: labelWidth, alignment: .leading)
+                .lineLimit(1)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Parameters (已迁移到 AIModelListView 的齿轮 popover)
@@ -2453,7 +2483,15 @@ struct AISettingsTab: View {
     private func taskCustomEnabledBinding(_ task: AIModelTask) -> Binding<Bool> {
         Binding(
             get: { taskConfig(task).useCustomModel },
-            set: { enabled in updateTask(task) { $0.useCustomModel = enabled } }
+            set: { enabled in
+                updateTask(task) { config in
+                    config.useCustomModel = enabled
+                    // 勾选自定义时若尚未填过名字，用当前列表选中模型预填，避免空输入框。
+                    if enabled, config.customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        config.customModelName = config.modelID
+                    }
+                }
+            }
         )
     }
 
