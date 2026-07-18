@@ -32,6 +32,8 @@ struct ExploreView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @State private var discoveryViewModel = ExploreDiscoveryViewModel()
+    @State private var trendingViewModel: TrendingViewModel? = nil
+    @State private var weeklyViewModel: WeeklyContentViewModel? = nil
 
     var body: some View {
         Group {
@@ -39,7 +41,14 @@ struct ExploreView: View {
             case .trending:
                 trendingContent
             case .weekly:
-                WeeklyContentView(selectedLanguage: $selectedWeeklyLanguage)
+                if let weeklyViewModel {
+                    WeeklyContentView(
+                        viewModel: weeklyViewModel,
+                        selectedLanguage: $selectedWeeklyLanguage
+                    )
+                } else {
+                    RepoSkeletonListView(rowCount: 10)
+                }
             case .discover, .popular, .newReleases:
                 ExploreDiscoveryListView(
                     viewModel: discoveryViewModel,
@@ -52,6 +61,9 @@ struct ExploreView: View {
                     onRepoCountChange: onRepoCountChange
                 )
             }
+        }
+        .task {
+            ensurePersistentChildViewModels()
         }
         .onChange(of: selectedMode) { _, mode in
             switch mode {
@@ -68,10 +80,9 @@ struct ExploreView: View {
 
     @ViewBuilder
     private var trendingContent: some View {
-        if let trendingRepository, let githubAPIClient {
+        if let trendingViewModel {
             TrendingView(
-                repository: trendingRepository,
-                githubAPIClient: githubAPIClient,
+                viewModel: trendingViewModel,
                 selectedLanguage: $selectedTrendingLanguage,
                 selectedRepoID: $selectedTrendingRepoID,
                 selectedTrendingRepo: $selectedTrendingRepo,
@@ -82,6 +93,27 @@ struct ExploreView: View {
                 systemImage: "chart.line.uptrend.xyaxis",
                 titleKey: "empty.trendingUnavailable",
                 subtitleKey: "empty.trendingComingSoon"
+            )
+        }
+    }
+
+    /// Explore 子分类用条件分支渲染，但数据模型应由父容器持有；否则每次切回 Trending / Weekly
+    /// 都会重新构造 ViewModel、重新读缓存并启动任务，形成可见的二次等待。
+    private func ensurePersistentChildViewModels() {
+        if trendingViewModel == nil,
+           let trendingRepository,
+           let githubAPIClient {
+            trendingViewModel = TrendingViewModel(
+                repository: trendingRepository,
+                githubAPIClient: githubAPIClient
+            )
+        }
+        if weeklyViewModel == nil {
+            weeklyViewModel = WeeklyContentViewModel(
+                api: dependencies.weeklyAPI,
+                selectionService: dependencies.weeklySelectionService,
+                languageStore: dependencies.weeklyLanguageStore,
+                bulkRepository: dependencies.weeklyBulkRepository
             )
         }
     }
@@ -114,6 +146,7 @@ private struct ExploreDiscoveryListView: View {
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -129,7 +162,10 @@ private struct ExploreDiscoveryListView: View {
             restoreSortPreferenceIfNeeded()
             selectedRepoID = nil
             selectedRepo = nil
-            await reloadLibraryStateMap()
+            async let libraryLoad: Void = reloadLibraryStateMap()
+            if settings.libraryFilter != .all {
+                await libraryLoad
+            }
             viewModel.sortOption = currentSort
             await viewModel.reload(
                 repository: dependencies.discoveryRepository,
@@ -142,12 +178,22 @@ private struct ExploreDiscoveryListView: View {
             guard !Task.isCancelled,
                   viewModel.publishedQueryIdentity == requestedIdentity
             else { return }
+            if settings.libraryFilter == .all {
+                await libraryLoad
+            }
+            guard !Task.isCancelled,
+                  viewModel.publishedQueryIdentity == requestedIdentity
+            else { return }
             publishLatestSummary()
+            await Task.yield()
             applySelectionPolicy()
             reportRepoCount()
         }
         .task {
             await observeLibraryStateChanges()
+        }
+        .task(id: settings.wikiAvailabilityFilter.rawValue) {
+            await reloadWikiAvailabilityMap(for: viewModel.repos)
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
             guard hasPublishedCurrentQuery else { return }
@@ -376,8 +422,13 @@ private struct ExploreDiscoveryListView: View {
         }
         .task(id: viewModel.reposRevision) {
             let repoIDs = viewModel.repos.map(\.repoID)
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.repos)
+            _ = await (openSSF, health, wiki)
+            guard !Task.isCancelled else { return }
+            applySelectionPolicy()
+            reportRepoCount()
         }
     }
 
@@ -456,8 +507,6 @@ private struct ExploreDiscoveryListView: View {
         repos.filter { repo in
             matchesGlobalFilters(
                 repoId: repo.repoID,
-                owner: repo.owner,
-                name: repo.name,
                 language: repo.language,
                 isArchived: repo.isArchived,
                 isFork: repo.isFork
@@ -467,8 +516,6 @@ private struct ExploreDiscoveryListView: View {
 
     private func matchesGlobalFilters(
         repoId: Int64,
-        owner: String,
-        name: String,
         language: String?,
         isArchived: Bool,
         isFork: Bool
@@ -493,7 +540,7 @@ private struct ExploreDiscoveryListView: View {
         case .outsideLibrary:
             guard libraryStateMap[repoId] != .inLibrary else { return false }
         }
-        if !matchesWikiFilter(owner: owner, name: name) { return false }
+        if !matchesWikiFilter(repoId: repoId) { return false }
         if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
             return false
         }
@@ -503,12 +550,10 @@ private struct ExploreDiscoveryListView: View {
         return true
     }
 
-    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+    private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
-            return false
-        }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
+        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -525,6 +570,19 @@ private struct ExploreDiscoveryListView: View {
 
     private func reloadLibraryStateMap() async {
         libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func reloadWikiAvailabilityMap(for repos: [DiscoveryRepoDTO]) async {
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
+        }
+        let requests = repos.map {
+            WikiAvailabilityRequest(id: $0.repoID, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
     }
 
     private func observeLibraryStateChanges() async {

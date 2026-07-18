@@ -133,7 +133,14 @@ struct RepoListView: View {
         // ⏱️ 切分类性能诊断：body 重算是性能瓶颈的重灾区，记录每次重算的时机和距 T0 的 elapsed。
         // body 是 computed property，print 会在每次 SwiftUI 决定调用 body 时打一次。
         // 用 .notice 保证 Xcode console 实时可见（.debug / .info 在 macOS 上会被吞）。
-        let _ = AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (items=\(self.viewModel.items.count), itemsRev=\(self.viewModel.itemsRevision), state=\(self.contentStateKey, privacy: .public))  +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
+        let _ = {
+            if selectedPage == .manage {
+                AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (items=\(self.viewModel.items.count), itemsRev=\(self.viewModel.itemsRevision), state=\(self.contentStateKey, privacy: .public)) +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
+            } else {
+                // 非 Manage 模块不读取 Manage items/revision，避免调试日志本身建立跨模块观察依赖。
+                AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (state=\(self.contentStateKey, privacy: .public)) +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
+            }
+        }()
         #endif
 
         ZStack(alignment: .top) {
@@ -1463,20 +1470,14 @@ struct RepoListView: View {
                             selection.wrappedValue = repo.id
                         }
                     } label: {
-                        // 读取 viewModel.statusMap（@Observable 字段）让 SwiftUI 订阅 dict 变更：
-                        // 详情页改 status → NotificationCenter post → HomeViewModel 局部
-                        // 更新 statusMap → 本 row 重新渲染（角标即时刷新），无需 reloadItems。
-                        UnifiedRepoRow(
-                            card: repo.asCardData(
-                                readStatus: viewModel.readStatus(for: repo.id),
-                                isInLibrary: viewModel.libraryState(for: repo.id) == .inLibrary,
-                                openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
-                                healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
-                            ),
+                        // 行级状态 / badge 由独立子 View 观察，避免任意 Health/OpenSSF 快照更新
+                        // 都让包含 toolbar、tint 与整棵 List 的 RepoListView 重新计算 body。
+                        ManageRepoRowContent(
+                            repo: repo,
+                            viewModel: viewModel,
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
-                                : (selection.wrappedValue == repo.id),
-                            semanticHit: viewModel.semanticHit(for: repo.id)
+                                : (selection.wrappedValue == repo.id)
                         )
                         .background {
                             if item.index == 0 {
@@ -1514,7 +1515,7 @@ struct RepoListView: View {
                     }
                 }
             }
-            .id(viewModel.itemsRevision)
+            .id(viewModel.listSnapshotIdentity)
             .listStyle(.inset)
             // 透出底层 `DetailHeroTintBackground`；系统 List 默认实色底会盖住顶栏光晕。
             .scrollContentBackground(.hidden)
@@ -1587,13 +1588,12 @@ struct RepoListView: View {
             // 触发"Modifying state during view update"警告。loadMoreIfNeeded 内部 guard hasMore
             // 天然幂等,多次触发不会引发 currentPage 失控。
             //
-            // 副作用（可接受）：首屏 page 1 写入触发 firstPageWrittenAt → reloadItems 让 hasMore
-            // 从 false → true 时也会命中本分支,首屏 items 从 20 → 40 条。首屏视口只显示 ~10 行,
-            // 用户视觉无感；R-07 既有 .append 分支不重建已有行,亦无入场动画干扰。
+            // 2026-07-18 性能专项：首次首页的 false→true 不再自动追加第二页。只有 ViewModel
+            // 明确认定“刷新前用户已深滚动到末尾”时才消费恢复意图，避免一次点击连续发布两批数据。
             .onChange(of: viewModel.hasMore) { wasMore, hasMore in
                 guard !wasMore, hasMore else { return }
                 Task { @MainActor in
-                    viewModel.loadMoreIfNeeded()
+                    viewModel.recoverPaginationAfterRefreshIfNeeded()
                 }
             }
         }
@@ -1609,8 +1609,15 @@ struct RepoListView: View {
     @MainActor
     private func reloadBadgeCaches(for repoIDs: [Int64], forceReload: Bool) async {
         guard !repoIDs.isEmpty else { return }
-        await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs, forceReload: forceReload)
-        await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs, forceReload: forceReload)
+        async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(
+            for: repoIDs,
+            forceReload: forceReload
+        )
+        async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(
+            for: repoIDs,
+            forceReload: forceReload
+        )
+        _ = await (openSSF, health)
     }
 
     @MainActor
@@ -2316,6 +2323,31 @@ struct RepoListView: View {
             openCodebaseMemory(for: request.repo)
         }
         dependencies.companionActionDispatcher.pendingRequest = nil
+    }
+}
+
+/// Manage 行的最小观察边界。
+///
+/// `HomeViewModel` 的 status/library/semantic map 与两个 badge store 都只在本行 body 内读取；
+/// 对应状态变化时 SwiftUI 可以只重算受影响的 row，而不是重新执行巨型 RepoListView body。
+private struct ManageRepoRowContent: View {
+    let repo: Repo
+    let viewModel: HomeViewModel
+    let isSelected: Bool
+
+    @Environment(AppDependencies.self) private var dependencies
+
+    var body: some View {
+        UnifiedRepoRow(
+            card: repo.asCardData(
+                readStatus: viewModel.readStatus(for: repo.id),
+                isInLibrary: viewModel.libraryState(for: repo.id) == .inLibrary,
+                openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
+                healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
+            ),
+            isSelected: isSelected,
+            semanticHit: viewModel.semanticHit(for: repo.id)
+        )
     }
 }
 

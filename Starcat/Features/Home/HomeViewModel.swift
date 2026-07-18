@@ -20,6 +20,21 @@
 import Foundation
 import Observation
 
+/// Manage 列表重载来源。
+///
+/// 只记录固定枚举，不记录搜索词、repo 名称等用户数据；用于把 Instruments 区间和本地日志
+/// 对齐到真实交互入口，排查一次点击是否派发了多次查询。
+enum ManageReloadReason: String, Sendable {
+    case selection
+    case search
+    case sync
+    case firstPage
+    case filterOrSort
+    case externalMutation
+    case bootstrap
+    case unspecified
+}
+
 @MainActor
 @Observable
 final class HomeViewModel {
@@ -40,11 +55,14 @@ final class HomeViewModel {
             // 注意：用 .notice 而非 .info —— macOS os.Logger.info 默认只进 in-memory ring buffer，
             // Xcode console 实时输出会丢；.notice 是 always-on 级别，保证实时可见。
             Self.selectionChangeStartedAt = Date()
-            AppLog.ui.notice("[switch-cat] T0 selection didSet \(String(describing: oldValue), privacy: .public) → \(String(describing: self.selection), privacy: .public)")
+            AppLog.ui.notice("[switch-cat] T0 selection changed old=\(String(describing: oldValue), privacy: .private(mask: .hash)) new=\(String(describing: self.selection), privacy: .private(mask: .hash))")
             #endif
             // 知识库与 All Stars 共用 sortOption：进出知识库时在「默认/最近星标」与
             // 「最近加入知识库」之间对调，避免污染用户在知识库里主动选的其它排序。
             reconcileSortOptionForKnowledgeLibraryTransition(from: oldValue, to: selection)
+            // selection 已经变化，旧 generation 从这一刻起就失去发布资格；不能等新的 `.task(id:)`
+            // 真正进入 reloadItems 后才取消，否则 SwiftUI 调度间隙仍可能让旧分类结果上屏。
+            reloadCoordinator.cancelAll()
             if case .userSmartCollection = selection {
                 // 规则会在 reloadItems 里随 collection 重新读取。
             } else {
@@ -81,7 +99,8 @@ final class HomeViewModel {
                 isGitHubStarListSwitchLoading = false
             }
 
-            if let cached = listCache[selection], !cached.isExpired {
+            if effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown,
+               let cached = listCache[selection], !cached.isExpired {
                 if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 self.rawItems = cached.rawItems
                 self.statusMap = cached.statusMap
@@ -96,8 +115,7 @@ final class HomeViewModel {
             } else if isKnownEmptyGitHubStarListSelection {
                 if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 // Sidebar 计数已经确认目标分组为空时，立即进入空态，避免先渲染上一组 repo。
-                currentReloadTask?.cancel()
-                currentReloadTask = nil
+                reloadCoordinator.cancelAll()
                 rawItems = []
                 filteredSorted = []
                 visibleRepoTotalCount = 0
@@ -204,6 +222,12 @@ final class HomeViewModel {
     /// `RepoListView` 根据这个值决定是否 attach `.onAppear` 触发 `loadMoreIfNeeded()`。
     private(set) var hasMore: Bool = false
 
+    /// 同步刷新扩张了一个用户已经滚到底的列表时，视图需要主动补一页。
+    ///
+    /// 这里必须区分“真实的深滚动恢复”和“首次首页从无数据变成有下一页”：后者如果也自动
+    /// load more，就会出现 40 条先上屏、紧接着 80 条再次发布的“双刷新”体感。
+    private(set) var shouldRecoverPaginationAfterRefresh = false
+
     /// R-07：客户端分页页大小。
     ///
     /// R-07.5：Manage 已改成 DB `OFFSET + append` 后，单页查询和状态读取成本稳定；
@@ -219,6 +243,12 @@ final class HomeViewModel {
     /// - `filteredSorted` 仅镜像已加载 rows，避免现有详情/行渲染读到旧全集；
     /// - Cmd+A 这类全集语义改走轻量 projection（见 `selectionSnapshotsForCurrentQuery`）。
     private var isDatabasePagingActive = false
+
+    /// DB 分页已经把 UI 快照限制在几十行，不再需要通过 `.id(itemsRevision)` 强制销毁整棵 List。
+    /// 复杂智能集合仍保留旧 identity 策略，避免全量内存排序时产生大量 row move diff。
+    var listSnapshotIdentity: Int {
+        isDatabasePagingActive ? 0 : itemsRevision
+    }
 
     /// DB 分页追加中的轻量互斥。
     ///
@@ -301,6 +331,7 @@ final class HomeViewModel {
     /// 派生：给定 selection 是否有可用（未过期）缓存。
     var hasCachedItems: Bool {
         guard !isSearching else { return false }
+        guard effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown else { return false }
         return listCache[selection] != nil && !listCache[selection]!.isExpired
     }
 
@@ -425,6 +456,10 @@ final class HomeViewModel {
     /// - 切 Languages / 勾 / 取消标签时不发起 DB 查询，UI 即时响应
     /// - 与现有 `statusMap` 走的"全表加载到字典 + applyView 过滤"路径完全一致
     private var repoTagsMap: [Int64: Set<String>] = [:]
+
+    /// Wiki availability 的批量只读快照。缺失 key 明确表示“尚未探测”，不能当成 missing。
+    /// 文件 IO / JSON decode 由 `WikiAvailabilitySnapshotLoader` 在主线程外完成。
+    private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
     /// Health 排序 / 筛选用的本地快照缓存，只在用户启用相关控制时读取。
     /// 普通列表仍走既有路径，避免每次切分类都额外查 repo_health_snapshots。
@@ -843,6 +878,10 @@ final class HomeViewModel {
     private let openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)?
     private let smartCollectionRepository: (any SmartCollectionRepositoryProtocol)?
 
+    /// 仅用于并发回归测试，在 DB query 真正启动前制造可控挂起点。
+    /// 生产构造始终使用默认 nil，不改变运行时路径。
+    private let beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)?
+
     /// 当前用户智能集合的规则快照。进入非用户集合时清空，避免旧规则污染普通列表。
     private var activeUserSmartCollectionRule: SmartCollectionRule?
 
@@ -858,19 +897,116 @@ final class HomeViewModel {
     /// W6 AI：语义搜索服务。测试可传 nil，生产由 AppDependencies 注入。
     private let semanticSearchService: SemanticSearchService?
 
-    /// D-05：当前 in-flight 的 reloadItems 任务，新调用进来先 cancel 旧的，
-    /// 防止"快速切 sidebar 时旧查询结果覆盖新结果"的 race。
-    /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
-    private var currentReloadTask: Task<Void, Never>?
+    /// 一次 Manage 查询的稳定身份。
+    ///
+    /// 搜索词参与等值判断，但不会写入日志；日志只输出无用户数据的 selection kind、generation
+    /// 和固定 ReloadReason。这样既能准确合并同一查询，也不会把用户输入泄露到诊断日志。
+    private struct ReloadIdentity: Equatable {
+        let selection: SidebarItem
+        let filters: RepoListFilters
+        let sortOption: RepoSortOption
+        let forceRefresh: Bool
+        let searchQuery: String
+        let searchMode: SmartSearchMode
+        let pageIntent: PageIntent
+
+        enum PageIntent: Equatable {
+            case initial
+            case append
+        }
+
+        var safeSelectionKind: String {
+            switch selection {
+            case .allStars: return "all-stars"
+            case .allLanguages: return "all-languages"
+            case .untagged: return "untagged"
+            case .library: return "library"
+            case .trending: return "trending"
+            case .smartCollectionsHome: return "smart-collections-home"
+            case .smartCollection: return "smart-collection"
+            case .userSmartCollection: return "user-smart-collection"
+            case .language: return "language"
+            case .tag: return "tag"
+            case .githubStarList: return "github-star-list"
+            case .githubStarListUngrouped: return "github-star-list-ungrouped"
+            }
+        }
+    }
+
+    /// Manage 列表所有异步动作的单一协调器。
+    ///
+    /// queryTask 负责真正的数据查询，actionTask 负责同步 didSet / 滚动事件派发。二者共享同一
+    /// generation；新动作会同时取消旧 query 与旧 action，发布点只接受当前 generation。
+    /// 这取代散落字段互相覆盖的隐式约定，把取消、合并和发布资格收敛到一个地方。
+    @MainActor
+    private final class ReloadCoordinator {
+        private(set) var generation: UInt64 = 0
+        private(set) var activeIdentity: ReloadIdentity?
+        var queryTask: Task<Void, Never>?
+        var actionTask: Task<Void, Never>?
+
+        func coalescedTask(for identity: ReloadIdentity) -> Task<Void, Never>? {
+            guard activeIdentity == identity else { return nil }
+            return queryTask
+        }
+
+        func beginQuery(identity: ReloadIdentity) -> UInt64 {
+            queryTask?.cancel()
+            generation &+= 1
+            activeIdentity = identity
+            return generation
+        }
+
+        func beginAction() -> UInt64 {
+            actionTask?.cancel()
+            queryTask?.cancel()
+            generation &+= 1
+            activeIdentity = nil
+            return generation
+        }
+
+        func installQueryTask(_ task: Task<Void, Never>, generation expectedGeneration: UInt64) {
+            guard generation == expectedGeneration else {
+                task.cancel()
+                return
+            }
+            queryTask = task
+        }
+
+        func installActionTask(_ task: Task<Void, Never>, generation expectedGeneration: UInt64) {
+            guard generation == expectedGeneration else {
+                task.cancel()
+                return
+            }
+            actionTask = task
+        }
+
+        func isCurrent(generation expectedGeneration: UInt64, identity: ReloadIdentity? = nil) -> Bool {
+            guard generation == expectedGeneration else { return false }
+            guard let identity else { return true }
+            return activeIdentity == identity
+        }
+
+        func finishQuery(generation expectedGeneration: UInt64, identity: ReloadIdentity) {
+            guard isCurrent(generation: expectedGeneration, identity: identity) else { return }
+            queryTask = nil
+            activeIdentity = nil
+        }
+
+        func cancelAll() {
+            actionTask?.cancel()
+            queryTask?.cancel()
+            actionTask = nil
+            queryTask = nil
+            activeIdentity = nil
+            generation &+= 1
+        }
+    }
+
+    private let reloadCoordinator = ReloadCoordinator()
 
     /// 预取任务：hover 触发，提前加载相邻分类数据。
     private var prefetchTask: Task<Void, Never>?
-
-    /// 从同步入口派发出的列表动作。
-    ///
-    /// `sortOption` / filter didSet 与 `loadMoreIfNeeded()` 都是同步方法，但数据库分页
-    /// 必须异步执行。单独保存这层 Task，测试才能等待“动作本身已进入 reload”这段时间窗。
-    private var currentListActionTask: Task<Void, Never>?
 
     init(
         repository: any RepoRepositoryProtocol,
@@ -883,7 +1019,8 @@ final class HomeViewModel {
         releaseSubscriptionRepository: (any ReleaseSubscriptionRepositoryProtocol)? = nil,
         openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
-        semanticSearchService: SemanticSearchService? = nil
+        semanticSearchService: SemanticSearchService? = nil,
+        beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)? = nil
     ) {
         self.repository = repository
         self.tagRepository = tagRepository
@@ -896,6 +1033,7 @@ final class HomeViewModel {
         self.openSSFScoreRepository = openSSFScoreRepository
         self.smartCollectionRepository = smartCollectionRepository
         self.semanticSearchService = semanticSearchService
+        self.beforeDatabasePageFetchForTesting = beforeDatabasePageFetchForTesting
     }
 
     // MARK: - 公开 action
@@ -936,7 +1074,7 @@ final class HomeViewModel {
     /// 1. 必须在 `HomeView` 切 `viewModel.selection` **之前**调，否则 selection 的
     ///    didSet 会先用旧 listCache 做 eager cache load（见上方 selection 字段
     ///    didSet line 66-75）→ 旧数据先闪一帧再被覆盖。
-    /// 2. `currentReloadTask` / `prefetchTask` 必须 `.cancel()` —— 旧账号 DB pool
+    /// 2. reload coordinator / `prefetchTask` 必须 `.cancel()` —— 旧账号 DB pool
     ///    虽然已被 D-30 切走，但旧 task 内的 `try await database.writer.read` 在
     ///    切换瞬间可能正持有旧 pool 的 read transaction（GRDB 内部读连接池）。
     ///    cancel 后旧 task 的 `Repo` 结果即便回来也由 `applyView()` 的 race 防护
@@ -948,10 +1086,7 @@ final class HomeViewModel {
     /// 4. `isLoading = true` 强制开骨架屏 —— 防止"selection 不变 + listCache 清空"
     ///    的 corner case 下 UI 闪现一帧空列表（详见 HomeView 那边的注释）。
     func resetAllStateForUserSwitch() {
-        currentReloadTask?.cancel()
-        currentReloadTask = nil
-        currentListActionTask?.cancel()
-        currentListActionTask = nil
+        reloadCoordinator.cancelAll()
         prefetchTask?.cancel()
         prefetchTask = nil
 
@@ -960,6 +1095,7 @@ final class HomeViewModel {
         statusMap = [:]
         libraryStateMap = [:]
         repoTagsMap = [:]
+        wikiAvailabilityMap = [:]
         semanticHitMap = [:]
         temporaryGlobalFilterSession = nil
         selectedTagIds = []
@@ -1008,8 +1144,13 @@ final class HomeViewModel {
     /// 普通 Manage 分类的筛选/排序会异步走数据库分页；测试需要一个明确同步点，
     /// 避免在 didSet 刚派发 Task 后立即断言旧 items。
     func awaitPendingListReloadForTesting() async {
-        await currentListActionTask?.value
-        await currentReloadTask?.value
+        await reloadCoordinator.actionTask?.value
+        await reloadCoordinator.queryTask?.value
+    }
+
+    /// 测试专用：核对相同 identity 是否复用了同一 generation。
+    var reloadGenerationForTesting: UInt64 {
+        reloadCoordinator.generation
     }
 
     /// Manage 筛选/排序状态变化后的刷新入口。
@@ -1018,23 +1159,32 @@ final class HomeViewModel {
     /// 不能得到“全量排序后的第一页”。因此这里按模式分流：普通列表重查第一页，
     /// 智能集合/语义搜索等复杂路径仍走旧的内存派生。
     private func reloadOrApplyCurrentManageView() {
-        guard let scope = currentRepoListScopeForDatabasePaging(), !isSearching else {
-            currentListActionTask?.cancel()
+        let actionGeneration = reloadCoordinator.beginAction()
+        guard currentRepoListScopeForDatabasePaging() != nil, !isSearching else {
             let task = Task { [weak self] in
                 guard let self else { return }
-                await self.refreshHealthSortSnapshotsIfNeeded(for: self.rawItems)
-                await self.refreshOpenSSFSortScoresIfNeeded(for: self.rawItems)
-                guard !Task.isCancelled else { return }
-                self.applyView()
+                if self.effectiveGlobalFilterState.wikiAvailabilityFilter != .unknown {
+                    await self.reloadItems(forceRefresh: true, reason: .filterOrSort)
+                    return
+                }
+                async let health: Void = self.refreshHealthSortSnapshotsIfNeeded(for: self.rawItems)
+                async let openSSF: Void = self.refreshOpenSSFSortScoresIfNeeded(for: self.rawItems)
+                _ = await (health, openSSF)
+                guard !Task.isCancelled,
+                      self.reloadCoordinator.isCurrent(generation: actionGeneration)
+                else { return }
+                PerformanceTracer.shared.trace(.manageDerive) {
+                    self.applyView()
+                }
             }
-            currentListActionTask = task
+            reloadCoordinator.installActionTask(task, generation: actionGeneration)
             return
         }
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.reloadDatabasePagedItems(scope: scope, reason: .reset)
+            await self.reloadItems(forceRefresh: true, reason: .filterOrSort)
         }
-        currentListActionTask = task
+        reloadCoordinator.installActionTask(task, generation: actionGeneration)
     }
 
     /// 刷新 Sidebar 数据（counts + language stats）。
@@ -1532,19 +1682,59 @@ final class HomeViewModel {
     ///
     /// 为什么不靠 SwiftUI `.task(id:)` 自动取消？
     /// SwiftUI 的 task cancel 只能终止外层 await `reloadItems()`，无法穿透到 reloadItems
-    /// 内部 await `repository.fetch...()`。已进入 GRDB 查询的旧调用仍会跑完并写入 state，
-    /// 引发"先 A → 切 B → A 覆盖 B → B 再覆盖"的可见闪烁。本函数自管 currentReloadTask 才能根治。
-    func reloadItems(forceRefresh: Bool = false) async {
-        #if DEBUG
-        AppLog.ui.notice("[switch-cat] T1 reloadItems entered  +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
-        #endif
-        currentReloadTask?.cancel()
+    /// 内部 await `repository.fetch...()`。已进入 GRDB 查询的旧调用仍会跑完；统一 coordinator
+    /// 用 cancel + generation / identity 双校验阻止旧结果发布，根治"A → B → A 覆盖 B"闪烁。
+    private func makeReloadIdentity(
+        forceRefresh: Bool,
+        pageIntent: ReloadIdentity.PageIntent = .initial
+    ) -> ReloadIdentity {
+        ReloadIdentity(
+            selection: selection,
+            filters: currentRepoListFiltersForDatabasePaging(),
+            sortOption: sortOption,
+            forceRefresh: forceRefresh,
+            searchQuery: searchQuery,
+            searchMode: smartSearchMode,
+            pageIntent: pageIntent
+        )
+    }
 
-        if let scope = currentRepoListScopeForDatabasePaging(), !isSearching {
+    func reloadItems(
+        forceRefresh: Bool = false,
+        reason reloadReason: ManageReloadReason = .unspecified
+    ) async {
+        let identity = makeReloadIdentity(forceRefresh: forceRefresh)
+        #if DEBUG
+        AppLog.ui.notice("[switch-cat] T1 reloadItems entered reason=\(reloadReason.rawValue, privacy: .public) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
+        #endif
+
+        if let coalescedTask = reloadCoordinator.coalescedTask(for: identity) {
+            #if DEBUG
+            AppLog.ui.notice("[switch-cat] coalesced duplicate reload generation=\(self.reloadCoordinator.generation) reason=\(reloadReason.rawValue, privacy: .public) scope=\(identity.safeSelectionKind, privacy: .public)")
+            #endif
+            await coalescedTask.value
+            return
+        }
+
+        let generation = reloadCoordinator.beginQuery(identity: identity)
+        defer { reloadCoordinator.finishQuery(generation: generation, identity: identity) }
+        #if DEBUG
+        AppLog.ui.notice("[switch-cat] reload begin generation=\(generation) reason=\(reloadReason.rawValue, privacy: .public) scope=\(identity.safeSelectionKind, privacy: .public)")
+        #endif
+
+        let databaseScope = PerformanceTracer.shared.trace(.manageRoute) {
+            currentRepoListScopeForDatabasePaging()
+        }
+        if let scope = databaseScope, !isSearching {
             let reason: DatabasePageReloadReason = (forceRefresh && isDatabasePagingActive)
                 ? .refreshPreservingPage
                 : .reset
-            await reloadDatabasePagedItems(scope: scope, reason: reason)
+            await reloadDatabasePagedItems(
+                scope: scope,
+                reason: reason,
+                generation: generation,
+                identity: identity
+            )
             return
         }
 
@@ -1569,7 +1759,9 @@ final class HomeViewModel {
             if case .userSmartCollection = selection { return true }
             return false
         }()
-        let shouldUseListCache = !isSearching && !isUserSmartCollectionSelection
+        let shouldUseListCache = !isSearching &&
+            !isUserSmartCollectionSelection &&
+            effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown
         let cached = shouldUseListCache ? listCache[selection] : nil
         let hasStaleCache = cached != nil
 
@@ -1583,7 +1775,10 @@ final class HomeViewModel {
             } else if sortOption == .openSSFScoreDesc {
                 await refreshOpenSSFSortScoresIfNeeded(for: cached!.rawItems)
             }
-            loadFromCache(cached!)
+            guard reloadCoordinator.isCurrent(generation: generation, identity: identity) else { return }
+            PerformanceTracer.shared.trace(.manageCache) {
+                loadFromCache(cached!)
+            }
             if !forceRefresh && !cached!.isExpired {
                 // 普通 Manage 分类切换的事实源就是内存缓存。这里直接返回，避免马上再跑一次
                 // 700ms 级别的 DB 重查，并在结束时因为 isRefreshing=false 触发第二次整栏 body 重算。
@@ -1617,6 +1812,7 @@ final class HomeViewModel {
             let outcome: Result<(repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]), Error>
             let fetchedStatusMap: [Int64: RepoStatus]
             let fetchedLibraryStateMap: [Int64: LibraryState]
+            let fetchedWikiAvailabilityMap: [Int64: Bool]
 
             do {
                 // HOM-46 性能优化（2026-06-02）：把 repo fetch 和 status map fetch 真正并行。
@@ -1737,19 +1933,45 @@ final class HomeViewModel {
                 async let statusMapAsync: [Int64: RepoStatus] = self.repoNoteRepository.fetchAllStatusMap()
                 async let libraryStateMapAsync: [Int64: LibraryState] = self.repoNoteRepository.fetchAllLibraryStateMap()
 
-                let fetched = try await fetchedTask()
+                let fetched: (repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit])
+                if self.isSearching {
+                    let interval = PerformanceTracer.shared.begin(.searchQuery)
+                    do {
+                        fetched = try await fetchedTask()
+                        PerformanceTracer.shared.end(interval)
+                    } catch {
+                        PerformanceTracer.shared.end(interval)
+                        throw error
+                    }
+                } else if isUserSmartCollectionSelection {
+                    let interval = PerformanceTracer.shared.begin(.smartCollectionBaseline)
+                    do {
+                        fetched = try await fetchedTask()
+                        PerformanceTracer.shared.end(interval)
+                    } catch {
+                        PerformanceTracer.shared.end(interval)
+                        throw error
+                    }
+                } else {
+                    fetched = try await fetchedTask()
+                }
+                async let wikiAvailabilityAsync = self.loadWikiAvailabilityIfNeeded(for: fetched.repos)
                 fetchedStatusMap = (try? await statusMapAsync) ?? [:]
                 fetchedLibraryStateMap = (try? await libraryStateMapAsync) ?? [:]
+                fetchedWikiAvailabilityMap = await wikiAvailabilityAsync
 
                 outcome = .success(fetched)
             } catch {
                 fetchedStatusMap = [:]
                 fetchedLibraryStateMap = [:]
+                fetchedWikiAvailabilityMap = [:]
                 outcome = .failure(error)
             }
 
             // race 防护：被新一轮 reloadItems 取消的旧 task 直接丢弃结果
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  self.reloadCoordinator.isCurrent(generation: generation, identity: identity)
+            else { return }
 
             #if DEBUG
             AppLog.ui.notice("[switch-cat] T5 bg fetch done +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
@@ -1762,8 +1984,12 @@ final class HomeViewModel {
             case .success(let result):
                 let fetched = result.repos
                 self.semanticHitMap = result.semanticHitMap
-                await self.refreshHealthSortSnapshotsIfNeeded(for: fetched)
-                await self.refreshOpenSSFSortScoresIfNeeded(for: fetched)
+                async let health: Void = self.refreshHealthSortSnapshotsIfNeeded(for: fetched)
+                async let openSSF: Void = self.refreshOpenSSFSortScoresIfNeeded(for: fetched)
+                _ = await (health, openSSF)
+                guard !Task.isCancelled,
+                      self.reloadCoordinator.isCurrent(generation: generation, identity: identity)
+                else { return }
                 // 更新缓存（无论 UI 是否需要重渲染，都用最新数据替换 cache entry，
                 // 让下次切回这个分类时拿到 freshest 数据）
                 if shouldUseListCache {
@@ -1782,7 +2008,7 @@ final class HomeViewModel {
                 // 为什么这样做：
                 // - applyView 会无条件 `itemsRevision += 1`，这会触发：
                 //   ① `RepoListView.contentAnimationID` 变化 → 外层 `.transition` 重跑 0.22s 动画
-                //   ② 内层 `List.id(itemsRevision)` → 完整重建 1800+ 行 View tree（~100ms）
+                //   ② 旧实现的 `List.id(itemsRevision)` → 完整重建 1800+ 行 View tree（~100ms）
                 //   ③ 每行 `listRowReveal` 重新走 0.22s stagger 入场动画
                 // - 用户感受：缓存命中分类后 ~140ms 看到数据，然后 ~735ms（bg fetch 完成）又跑一遍同样
                 //   的动画，叠加感受 ~1s 卡顿，但其实数据没变。
@@ -1798,16 +2024,18 @@ final class HomeViewModel {
                                    zip(fetched, self.rawItems).allSatisfy { $0.id == $1.id }
                 let statusIdentical = fetchedStatusMap == self.statusMap
                 let libraryIdentical = fetchedLibraryStateMap == self.libraryStateMap
+                let wikiIdentical = fetchedWikiAvailabilityMap == self.wikiAvailabilityMap
                 // 用户智能集合：rawItems ID 序列可能与 All Stars 相同，但 filter context / 规则不同，
                 // 不能走静默跳过，否则 items 仍停留在上一分类的 filteredSorted（常见表现：空列表）。
                 let mustReapplyView = isUserSmartCollectionSelection
 
-                if idsIdentical && statusIdentical && libraryIdentical && !mustReapplyView {
+                if idsIdentical && statusIdentical && libraryIdentical && wikiIdentical && !mustReapplyView {
                     // 静默更新底层引用（rawItems / statusMap 是 private 属性，不参与视图重建）。
                     // 不动 items / itemsRevision → 不触发 SwiftUI re-render，避免第二波动画。
                     self.rawItems = fetched
                     self.statusMap = fetchedStatusMap
                     self.libraryStateMap = fetchedLibraryStateMap
+                    self.wikiAvailabilityMap = fetchedWikiAvailabilityMap
                     #if DEBUG
                     AppLog.ui.notice("[switch-cat] T6' bg fetch identical, skipped applyView +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                     #endif
@@ -1818,7 +2046,10 @@ final class HomeViewModel {
                     self.rawItems = fetched
                     self.statusMap = fetchedStatusMap
                     self.libraryStateMap = fetchedLibraryStateMap
-                    self.applyView(resetPage: false)
+                    self.wikiAvailabilityMap = fetchedWikiAvailabilityMap
+                    PerformanceTracer.shared.trace(.manageDerive) {
+                        self.applyView(resetPage: false)
+                    }
                     #if DEBUG
                     AppLog.ui.notice("[switch-cat] T6 applyView done after bg fetch +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                     #endif
@@ -1840,11 +2071,11 @@ final class HomeViewModel {
             }
         }
 
-        currentReloadTask = task
+        reloadCoordinator.installQueryTask(task, generation: generation)
         #if DEBUG
         AppLog.ui.info("[switch-cat] T4 bg task started, await begins +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
-        await task.value
+        await PerformanceTracer.shared.trace(.manageInitialLoad, task: task)
     }
 
     /// 数据库分页加载意图。
@@ -1864,9 +2095,20 @@ final class HomeViewModel {
     /// 核心约束：触底追加必须是真正的 `OFFSET + LIMIT`，不能重新查询并替换
     /// “已加载累计前缀”。否则数据量越大，SwiftUI 每次滚到底要 diff 的数组越长，
     /// 1800+ 条时就会出现滚动不顺滑甚至跳回顶部。
-    private func reloadDatabasePagedItems(scope: RepoListScope, reason: DatabasePageReloadReason) async {
-        currentReloadTask?.cancel()
+    private func reloadDatabasePagedItems(
+        scope: RepoListScope,
+        reason: DatabasePageReloadReason,
+        generation: UInt64,
+        identity: ReloadIdentity
+    ) async {
         isDatabasePagingActive = true
+
+        let wasDeepScrolledToEnd = reason == .refreshPreservingPage &&
+            !hasMore && items.count > Self.pageSize
+
+        if reason != .refreshPreservingPage {
+            shouldRecoverPaginationAfterRefresh = false
+        }
 
         if reason == .reset {
             currentPage = 1
@@ -1904,22 +2146,38 @@ final class HomeViewModel {
             let result: Result<([Repo], [Int64: RepoStatus], [Int64: LibraryState]), Error>
             let countResult: Result<Int, Error>
             do {
+                if let beforeDatabasePageFetchForTesting = self.beforeDatabasePageFetchForTesting {
+                    await beforeDatabasePageFetchForTesting()
+                    guard !Task.isCancelled,
+                          self.reloadCoordinator.isCurrent(generation: generation, identity: identity)
+                    else { return }
+                }
                 async let reposTask = self.repository.fetchListPage(
                     scope: scope,
                     filters: filters,
-                    sort: self.sortOption,
+                    sort: identity.sortOption,
                     limit: queryLimit,
                     offset: queryOffset
                 )
                 async let countTask = self.repository.fetchListCount(scope: scope, filters: filters)
-                let rowsWithSentinel = try await reposTask
+                let databaseInterval = PerformanceTracer.shared.begin(.manageDatabaseQuery)
+                let rowsWithSentinel: [Repo]
+                do {
+                    rowsWithSentinel = try await reposTask
+                    PerformanceTracer.shared.end(databaseInterval)
+                } catch {
+                    PerformanceTracer.shared.end(databaseInterval)
+                    throw error
+                }
                 let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
                 // R-07.4：DB 分页路径只读取当前落到 UI 的 rows 的状态。
                 // `fetchAllStatusMap()` 曾适合“全量 repos 已在内存”的旧路径；真实分页后每次 append
                 // 都全表扫 repo_notes 会把滚动成本重新绑回用户数据总量。
                 let visibleStatusIDs = pageRows.map(\.id)
-                let pageStatusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: visibleStatusIDs)) ?? [:]
-                let pageLibraryStateMap = (try? await self.repoNoteRepository.fetchLibraryStateMap(repoIds: visibleStatusIDs)) ?? [:]
+                async let statusMapTask = self.repoNoteRepository.fetchStatusMap(repoIds: visibleStatusIDs)
+                async let libraryStateMapTask = self.repoNoteRepository.fetchLibraryStateMap(repoIds: visibleStatusIDs)
+                let pageStatusMap = (try? await statusMapTask) ?? [:]
+                let pageLibraryStateMap = (try? await libraryStateMapTask) ?? [:]
                 result = .success((rowsWithSentinel, pageStatusMap, pageLibraryStateMap))
                 countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
             } catch {
@@ -1927,7 +2185,9 @@ final class HomeViewModel {
                 countResult = .success(self.visibleRepoTotalCount)
             }
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  self.reloadCoordinator.isCurrent(generation: generation, identity: identity)
+            else { return }
             self.isLoading = false
             self.isRefreshing = false
             if self.isGitHubStarListSwitchLoading {
@@ -1940,40 +2200,44 @@ final class HomeViewModel {
                 let nextHasMore = rowsWithSentinel.count > requestedLimit
                 let queryTotalCount = (try? countResult.get()) ?? self.visibleRepoTotalCount
 
-                if isAppend {
-                    guard !pageRows.isEmpty else {
-                        self.hasMore = false
+                PerformanceTracer.shared.trace(.managePublish) {
+                    if isAppend {
+                        guard !pageRows.isEmpty else {
+                            self.hasMore = false
+                            self.visibleRepoTotalCount = queryTotalCount
+                            return
+                        }
+                        self.items.append(contentsOf: pageRows)
+                        self.rawItems = self.items
+                        self.filteredSorted = self.items
                         self.visibleRepoTotalCount = queryTotalCount
-                        return
+                        self.hasMore = nextHasMore
+                        self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
+                        self.statusMap.merge(pageStatusMap) { _, new in new }
+                        self.libraryStateMap.merge(pageLibraryStateMap) { _, new in new }
+                    } else {
+                        let visibleRows = pageRows
+                        let idsIdentical = visibleRows.count == self.items.count &&
+                                           zip(visibleRows, self.items).allSatisfy { $0.id == $1.id }
+                        self.rawItems = visibleRows
+                        self.filteredSorted = visibleRows
+                        self.visibleRepoTotalCount = queryTotalCount
+                        self.items = visibleRows
+                        self.hasMore = nextHasMore
+                        self.shouldRecoverPaginationAfterRefresh = wasDeepScrolledToEnd && nextHasMore
+                        self.currentPage = max(1, Int(ceil(Double(visibleRows.count) / Double(Self.pageSize))))
+                        if !idsIdentical {
+                            self.itemsRevision &+= 1
+                        }
+                        self.statusMap = pageStatusMap
+                        self.libraryStateMap = pageLibraryStateMap
                     }
-                    self.items.append(contentsOf: pageRows)
-                    self.rawItems = self.items
-                    self.filteredSorted = self.items
-                    self.visibleRepoTotalCount = queryTotalCount
-                    self.hasMore = nextHasMore
-                    self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
-                    self.statusMap.merge(pageStatusMap) { _, new in new }
-                    self.libraryStateMap.merge(pageLibraryStateMap) { _, new in new }
-                } else {
-                    let visibleRows = pageRows
-                    let idsIdentical = visibleRows.count == self.items.count &&
-                                       zip(visibleRows, self.items).allSatisfy { $0.id == $1.id }
-                    self.rawItems = visibleRows
-                    self.filteredSorted = visibleRows
-                    self.visibleRepoTotalCount = queryTotalCount
-                    self.items = visibleRows
-                    self.hasMore = nextHasMore
-                    self.currentPage = max(1, Int(ceil(Double(visibleRows.count) / Double(Self.pageSize))))
-                    if !idsIdentical {
-                        self.itemsRevision &+= 1
-                    }
-                    self.statusMap = pageStatusMap
-                    self.libraryStateMap = pageLibraryStateMap
-                }
-                self.listCache.removeValue(forKey: self.selection)
+                    self.listCache.removeValue(forKey: identity.selection)
 
-                if let id = self.selectedRepoID, !self.filteredSorted.contains(where: { $0.id == id }) {
-                    self.selectedRepoID = nil
+                    if let id = self.selectedRepoID,
+                       !self.filteredSorted.contains(where: { $0.id == id }) {
+                        self.selectedRepoID = nil
+                    }
                 }
             case .failure(let error):
                 let friendly = UserFacingError.map(
@@ -1993,8 +2257,9 @@ final class HomeViewModel {
             }
         }
 
-        currentReloadTask = task
-        await task.value
+        reloadCoordinator.installQueryTask(task, generation: generation)
+        let span: PerformanceSpan = isAppend ? .manageLoadMore : .manageInitialLoad
+        await PerformanceTracer.shared.trace(span, task: task)
     }
 
     func semanticHit(for repoID: Int64) -> SemanticSearchHit? {
@@ -2185,7 +2450,7 @@ final class HomeViewModel {
     ///
     /// HOM-46 性能补丁 #2（2026-06-02）：no-op 短路
     /// - 算出的 view 与当前 items 的 id 序列完全一致 → 不写 items / 不动 itemsRevision，
-    ///   避免触发 SwiftUI 的 `List.id(itemsRevision)` 重建 + `listRowReveal` 入场动画。
+    ///   避免触发 SwiftUI 的列表 diff + `listRowReveal` 入场动画。
     /// - 典型受益场景：selection didSet 已经急切加载过缓存，紧跟着 reloadItems 又调了一遍
     ///   loadFromCache → applyView，数据完全相同，本来是一次浪费的 list rebuild。
     /// - 仍然执行 selectedRepoID 清理（不依赖 items 是否变化）。
@@ -2196,6 +2461,7 @@ final class HomeViewModel {
     /// 把 currentPage 重置回 1（典型场景：切分类 / 排序 / 过滤），false 时保留
     /// （典型场景：SWR / forceRefresh 数据变化，preserveScrollPosition）。
     private func applyView(resetPage: Bool = true) {
+        let wasDeepScrolledToEnd = !resetPage && !hasMore && items.count > Self.pageSize
         let newFilteredSorted = computeFilteredSorted()
         visibleRepoTotalCount = newFilteredSorted.count
 
@@ -2223,6 +2489,7 @@ final class HomeViewModel {
         }
 
         sliceToCurrentPage(reason: .recompute)
+        shouldRecoverPaginationAfterRefresh = wasDeepScrolledToEnd && hasMore
 
         // selection 清理始终要做：即便 items 没换，statusFilter / hideArchived 改了也可能让选中行隐身
         if let id = selectedRepoID, !filteredSorted.contains(where: { $0.id == id }) {
@@ -2356,10 +2623,18 @@ final class HomeViewModel {
     }
 
     private func matchesWikiAvailability(_ repo: Repo, filter: RepoSignalAvailabilityFilter) -> Bool {
-        guard let snapshot = DiskWikiCache.shared.load(owner: repo.owner, repo: repo.name) else {
-            return filter == .unknown
+        guard filter != .unknown else { return true }
+        guard let available = wikiAvailabilityMap[repo.id] else { return false }
+        return matchesAvailability(available, filter: filter)
+    }
+
+    /// Wiki 筛选关闭时不触盘；开启时把 repo identity 转成 Sendable 请求，批量移到后台读盘。
+    private func loadWikiAvailabilityIfNeeded(for repos: [Repo]) async -> [Int64: Bool] {
+        guard effectiveGlobalFilterState.wikiAvailabilityFilter != .unknown else { return [:] }
+        let requests = repos.map {
+            WikiAvailabilityRequest(id: $0.id, owner: $0.owner, repo: $0.name)
         }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: filter)
+        return await WikiAvailabilitySnapshotLoader.load(requests: requests)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -2490,15 +2765,38 @@ final class HomeViewModel {
         if let scope = currentRepoListScopeForDatabasePaging(), isDatabasePagingActive, !isSearching {
             guard !isDatabasePageAppendInFlight else { return }
             isDatabasePageAppendInFlight = true
+            let identity = makeReloadIdentity(forceRefresh: false, pageIntent: .append)
+            let actionGeneration = reloadCoordinator.beginAction()
             let task = Task { [weak self] in
                 guard let self else { return }
-                await self.reloadDatabasePagedItems(scope: scope, reason: .append)
+                defer { self.isDatabasePageAppendInFlight = false }
+                guard self.reloadCoordinator.isCurrent(generation: actionGeneration) else { return }
+                let generation = self.reloadCoordinator.beginQuery(identity: identity)
+                defer {
+                    self.reloadCoordinator.finishQuery(generation: generation, identity: identity)
+                }
+                await self.reloadDatabasePagedItems(
+                    scope: scope,
+                    reason: .append,
+                    generation: generation,
+                    identity: identity
+                )
             }
-            currentListActionTask = task
+            reloadCoordinator.installActionTask(task, generation: actionGeneration)
         } else {
             currentPage += 1
             sliceToCurrentPage(reason: .append)
         }
+    }
+
+    /// 只消费一次“刷新后恢复深滚动”的加载意图。
+    ///
+    /// `RepoListView` 仍监听 `hasMore` 的 false→true 边沿，但是否真的追加由 ViewModel 的
+    /// 刷新上下文决定。这样既保留同步期间滚到底后的恢复能力，也消除首次首页的自动第二页。
+    func recoverPaginationAfterRefreshIfNeeded() {
+        guard shouldRecoverPaginationAfterRefresh else { return }
+        shouldRecoverPaginationAfterRefresh = false
+        loadMoreIfNeeded()
     }
 
     /// R-07：外部跳转（SearchCenter / 详情页"上一篇/下一篇" / unhandled 跳转）

@@ -114,6 +114,57 @@ struct DiskWikiCacheTests {
         #expect(links[1].source == .zread)
     }
 
+    @Test("批量 availability 在后台读取，并保留 available / missing / unknown 三态")
+    func batchAvailabilityKeepsUnknownDistinct() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let threadRecorder = WikiReadThreadRecorder()
+
+        try cache.save(snapshot: makeSnapshot(owner: "foo", repo: "available"))
+        try cache.save(snapshot: makeSnapshot(
+            owner: "foo",
+            repo: "missing",
+            items: [makeItem(source: .deepWiki, status: .notIndexed)]
+        ))
+
+        let result = await WikiAvailabilitySnapshotLoader.load(
+            requests: [
+                WikiAvailabilityRequest(id: 1, owner: "foo", repo: "available"),
+                WikiAvailabilityRequest(id: 2, owner: "foo", repo: "missing"),
+                WikiAvailabilityRequest(id: 3, owner: "foo", repo: "never-probed")
+            ],
+            rootOverride: root,
+            readObserverForTesting: { isMainThread in
+                threadRecorder.record(isMainThread: isMainThread)
+            }
+        )
+
+        #expect(result[1] == true)
+        #expect(result[2] == false)
+        #expect(result[3] == nil, "没有缓存必须保持 unknown，不能误归类为 missing")
+        #expect(threadRecorder.observations == [false, false, false],
+                "每个 JSON 文件检查都必须在 MainActor / 主线程之外执行")
+    }
+
+    @Test("批量 availability 遇到损坏文件只返回 unknown，不在后台线程改缓存统计")
+    func batchAvailabilityTreatsCorruptionAsUnknownWithoutMutation() async throws {
+        let (_, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let directory = root.appendingPathComponent("foo", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let corrupted = directory.appendingPathComponent("broken.json")
+        try Data("broken".utf8).write(to: corrupted)
+
+        let result = await WikiAvailabilitySnapshotLoader.load(
+            requests: [WikiAvailabilityRequest(id: 9, owner: "foo", repo: "broken")],
+            rootOverride: root
+        )
+
+        #expect(result[9] == nil)
+        #expect(FileManager.default.fileExists(atPath: corrupted.path),
+                "批量只读加载器不能越过 DiskWikiCache 的 @MainActor CRUD 边界删文件")
+    }
+
     // MARK: - miss / 损坏兜底
 
     @Test("load 未命中返回 nil")
@@ -309,6 +360,22 @@ struct DiskWikiCacheTests {
             WikiRepoKey(owner: "octo", repo: "one"),
             WikiRepoKey(owner: "swiftlang", repo: "two")
         ]))
+    }
+}
+
+/// Sendable 测试记录器：只记录读盘线程，不参与生产路径。
+private final class WikiReadThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Bool] = []
+
+    var observations: [Bool] {
+        lock.withLock { values }
+    }
+
+    func record(isMainThread: Bool) {
+        lock.withLock {
+            values.append(isMainThread)
+        }
     }
 }
 

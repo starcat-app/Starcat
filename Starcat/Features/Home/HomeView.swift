@@ -919,7 +919,7 @@ struct HomeView: View {
         viewModel.selection = .allStars
         viewModel.submitSearch("")
         Task {
-            await viewModel.reloadItems(forceRefresh: true)
+            await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
             viewModel.shouldScrollSelectedRepoIntoView = true
             viewModel.selectedRepoID = repo.id
             guard generateSummary else { return }
@@ -1223,7 +1223,7 @@ struct HomeView: View {
         guard newValue != nil, authSession.state.isAuthenticated else { return }
         Task { @MainActor in
             await viewModel.refreshSidebar()
-            await viewModel.reloadItems(forceRefresh: true)
+            await viewModel.reloadItems(forceRefresh: true, reason: .firstPage)
             applyManageDetailSelectionPolicy()
         }
     }
@@ -1483,6 +1483,8 @@ struct HomeView: View {
     /// SwiftUI 的整条 body modifier 链开始触发 type-check 超时。抽成普通 async 方法后，
     /// 业务顺序不变，但编译器不需要在巨型 View 表达式里推断整段启动流程。
     private func bootstrapHome() async {
+        PerformanceTracer.shared.startMainThreadStallMonitoringIfNeeded()
+
         // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
         // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。
         columnVisibility = .all
@@ -1677,14 +1679,16 @@ struct HomeView: View {
         guard selectedSidebarPage == .manage,
               !viewModel.hasCachedItems,
               !viewModel.isKnownEmptyGitHubStarListSelection else { return }
-        await viewModel.reloadItems()
+        await viewModel.reloadItems(reason: .selection)
+        await Task.yield()
         applyManageDetailSelectionPolicy()
     }
 
     private func reloadManageSearchIfNeeded() async {
         // Trending / Activity 有自己的数据模型；这里不应触发 Manage reload。
         guard selectedSidebarPage == .manage else { return }
-        await viewModel.reloadItems()
+        await viewModel.reloadItems(reason: .search)
+        await Task.yield()
         applyManageDetailSelectionPolicy()
     }
 
@@ -1714,7 +1718,8 @@ struct HomeView: View {
         }
         guard syncManager.lastRunWroteRepos else { return }
         // GitHub Stars List 已在上方随 stars 同步完成刷新；这里只处理 repo 数据写入后的列表重载。
-        await viewModel.reloadItems(forceRefresh: true)
+        await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+        await Task.yield()
         applyManageDetailSelectionPolicy()
     }
 

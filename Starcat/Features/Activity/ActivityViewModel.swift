@@ -1431,13 +1431,15 @@ final class ActivityViewModel {
         category: ActivityCategory,
         timeSort: ActivityTimeSort
     ) -> [ActivityItem] {
-        let filtered: [ActivityItem]
-        if category == .all {
-            filtered = deduplicateForAllView(source)
-        } else {
-            filtered = source.filter { $0.category == category }
+        PerformanceTracer.shared.trace(.activityLocalFilter) {
+            let filtered: [ActivityItem]
+            if category == .all {
+                filtered = deduplicateForAllView(source)
+            } else {
+                filtered = source.filter { $0.category == category }
+            }
+            return sortFilteredItems(filtered, timeSort: timeSort)
         }
-        return sortFilteredItems(filtered, timeSort: timeSort)
     }
 
     private func filter(_ source: [ActivityItem], by category: ActivityCategory) -> [ActivityItem] {

@@ -69,6 +69,7 @@ struct ActivityView: View {
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
     init(
         selectedCategory: Binding<ActivityCategory>,
@@ -105,8 +106,16 @@ struct ActivityView: View {
         .task {
             // 首次进入 Activity：全量 ensureLoaded。Weekly 已迁移到 Explore,Activity 只处理本地聚合分类。
             let model = ensureViewModel()
-            await reloadLibraryStateMap()
+            async let libraryLoad: Void = reloadLibraryStateMap()
+            if settings.libraryFilter != .all {
+                await libraryLoad
+            }
             await model.ensureLoaded(category: selectedCategory)
+            if settings.libraryFilter == .all {
+                await libraryLoad
+            }
+            guard !Task.isCancelled else { return }
+            await Task.yield()
             applySelectionPolicy(from: model.items)
             reportItemCount(model)
         }
@@ -234,9 +243,15 @@ struct ActivityView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .task(id: viewModel.itemsRevision) {
-            let repoIds = viewModel.items.compactMap { $0.repo?.id }
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIds)
+            let repos = viewModel.items.compactMap(\.repo)
+            let repoIds = repos.map(\.id)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIds)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: repos)
+            _ = await (openSSF, health, wiki)
+        }
+        .task(id: settings.wikiAvailabilityFilter.rawValue) {
+            await reloadWikiAvailabilityMap(for: viewModel.items.compactMap(\.repo))
         }
     }
 
@@ -281,7 +296,7 @@ struct ActivityView: View {
         case .outsideLibrary:
             guard libraryStateMap[repo.id] != .inLibrary else { return false }
         }
-        if !matchesWikiFilter(owner: repo.owner, name: repo.name) { return false }
+        if !matchesWikiFilter(repoId: repo.id) { return false }
         if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repo.id) != nil, filter: settings.healthAvailabilityFilter) {
             return false
         }
@@ -291,12 +306,10 @@ struct ActivityView: View {
         return true
     }
 
-    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+    private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
-            return false
-        }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
+        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -498,6 +511,19 @@ struct ActivityView: View {
 
     private func reloadLibraryStateMap() async {
         libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func reloadWikiAvailabilityMap(for repos: [Repo]) async {
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
+        }
+        let requests = repos.map {
+            WikiAvailabilityRequest(id: $0.id, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
     }
 
     private func observeLibraryStateChanges() async {

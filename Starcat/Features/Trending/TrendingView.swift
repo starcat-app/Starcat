@@ -44,6 +44,7 @@ struct TrendingView: View {
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
     @Binding private var selectedLanguage: TrendingLanguage
 
     /// 当前选中的 Trending repo ID（驱动 README 加载）。
@@ -73,6 +74,21 @@ struct TrendingView: View {
         self.onRepoCountChange = onRepoCountChange
     }
 
+    /// Explore 父容器持有 ViewModel 的入口，切换子分类时保留缓存、分页和请求代际。
+    init(
+        viewModel: TrendingViewModel,
+        selectedLanguage: Binding<TrendingLanguage>,
+        selectedRepoID: Binding<String?> = .constant(nil),
+        selectedTrendingRepo: Binding<TrendingRepo?> = .constant(nil),
+        onRepoCountChange: @escaping (Int) -> Void = { _ in }
+    ) {
+        _viewModel = State(initialValue: viewModel)
+        _selectedLanguage = selectedLanguage
+        _selectedRepoID = selectedRepoID
+        _selectedTrendingRepo = selectedTrendingRepo
+        self.onRepoCountChange = onRepoCountChange
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 顶部工具栏
@@ -95,7 +111,10 @@ struct TrendingView: View {
         }
         .task {
             reportRepoCount()
-            await reloadLibraryStateMap()
+            async let libraryLoad: Void = reloadLibraryStateMap()
+            if settings.libraryFilter != .all {
+                await libraryLoad
+            }
             viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
             if viewModel.selectedLanguage != selectedLanguage {
                 viewModel.selectedLanguage = selectedLanguage
@@ -109,11 +128,19 @@ struct TrendingView: View {
             // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
             restoreSortPreferenceIfNeeded()
             await viewModel.reload(cachePolicy: .respectTTL)
+            if settings.libraryFilter == .all {
+                await libraryLoad
+            }
+            guard !Task.isCancelled else { return }
+            await Task.yield()
             applyTrendingDetailSelectionPolicy()
             reportRepoCount()
         }
         .task {
             await observeLibraryStateChanges()
+        }
+        .task(id: settings.wikiAvailabilityFilter.rawValue) {
+            await reloadWikiAvailabilityMap(for: viewModel.displayedRepos)
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
@@ -404,8 +431,6 @@ struct TrendingView: View {
         repos.filter { repo in
             matchesGlobalFilters(
                 repoId: repo.ghRepoId,
-                owner: repo.owner,
-                name: repo.name,
                 language: repo.language,
                 isArchived: repo.isArchived ?? false,
                 isFork: repo.isFork ?? false
@@ -415,8 +440,6 @@ struct TrendingView: View {
 
     private func matchesGlobalFilters(
         repoId: Int64,
-        owner: String,
-        name: String,
         language: String?,
         isArchived: Bool,
         isFork: Bool
@@ -441,7 +464,7 @@ struct TrendingView: View {
         case .outsideLibrary:
             guard libraryStateMap[repoId] != .inLibrary else { return false }
         }
-        if !matchesWikiFilter(owner: owner, name: name) { return false }
+        if !matchesWikiFilter(repoId: repoId) { return false }
         if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
             return false
         }
@@ -451,12 +474,23 @@ struct TrendingView: View {
         return true
     }
 
-    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+    private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
-            return false
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
+        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
+    }
+
+    private func reloadWikiAvailabilityMap(for repos: [TrendingRepo]) async {
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
         }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+        let requests = repos.map {
+            WikiAvailabilityRequest(id: $0.ghRepoId, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -549,8 +583,12 @@ struct TrendingView: View {
         }
         .task(id: viewModel.reposRevision) {
             let repoIDs = viewModel.repos.map(\.ghRepoId)
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.displayedRepos)
+            _ = await (openSSF, health, wiki)
+            guard !Task.isCancelled else { return }
+            applyTrendingDetailSelectionPolicy()
         }
         // W12 PR-5：Cmd+A 全选当前可见 trending repo（仅 multi-select active 时生效）。
         // 4 场景同款机制：隐藏按钮 + keyboardShortcut。

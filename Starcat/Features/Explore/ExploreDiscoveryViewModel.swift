@@ -230,48 +230,50 @@ final class ExploreDiscoveryViewModel {
         sort: ExploreSortOption,
         bumpRevision: Bool
     ) {
-        var filtered = bulkAllRepos
+        PerformanceTracer.shared.trace(.discoveryLocalFilter) {
+            var filtered = bulkAllRepos
 
-        switch mode {
-        case .discover:
-            if let topic = normalizedFilter(topic) {
-                filtered = filtered.filter { $0.topics.contains(topic) }
-            }
-            if let platform = normalizedFilter(platform) {
-                filtered = filtered.filter { $0.platforms.contains(platform) }
-            }
-        case .popular:
-            filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
-            if let language = normalizedFilter(language) {
-                filtered = filtered.filter { repo in
-                    if language == TrendingLanguage.uncategorizedKey {
-                        return (repo.language ?? "").isEmpty
-                    }
-                    return repo.language?.caseInsensitiveCompare(language) == .orderedSame
+            switch mode {
+            case .discover:
+                if let topic = normalizedFilter(topic) {
+                    filtered = filtered.filter { $0.topics.contains(topic) }
                 }
-            }
-        case .newReleases:
-            filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
-            if let language = normalizedFilter(language) {
-                filtered = filtered.filter { repo in
-                    if language == TrendingLanguage.uncategorizedKey {
-                        return (repo.language ?? "").isEmpty
-                    }
-                    return repo.language?.caseInsensitiveCompare(language) == .orderedSame
+                if let platform = normalizedFilter(platform) {
+                    filtered = filtered.filter { $0.platforms.contains(platform) }
                 }
+            case .popular:
+                filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
+                if let language = normalizedFilter(language) {
+                    filtered = filtered.filter { repo in
+                        if language == TrendingLanguage.uncategorizedKey {
+                            return (repo.language ?? "").isEmpty
+                        }
+                        return repo.language?.caseInsensitiveCompare(language) == .orderedSame
+                    }
+                }
+            case .newReleases:
+                filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
+                if let language = normalizedFilter(language) {
+                    filtered = filtered.filter { repo in
+                        if language == TrendingLanguage.uncategorizedKey {
+                            return (repo.language ?? "").isEmpty
+                        }
+                        return repo.language?.caseInsensitiveCompare(language) == .orderedSame
+                    }
+                }
+            case .trending, .weekly:
+                break
             }
-        case .trending, .weekly:
-            break
-        }
 
-        filtered.sort(by: Self.makeLocalSorter(sort.normalized(for: mode), mode: mode))
-        filteredLocalRepos = filtered
-        total = filtered.count
-        page = 1
-        repos = Array(filtered.prefix(Self.pageSize))
-        nextPage = filtered.count > repos.count ? 2 : nil
-        if bumpRevision {
-            reposRevision += 1
+            filtered.sort(by: Self.makeLocalSorter(sort.normalized(for: mode), mode: mode))
+            filteredLocalRepos = filtered
+            total = filtered.count
+            page = 1
+            repos = Array(filtered.prefix(Self.pageSize))
+            nextPage = filtered.count > repos.count ? 2 : nil
+            if bumpRevision {
+                reposRevision += 1
+            }
         }
     }
 

@@ -45,8 +45,11 @@ private struct ListRowRevealModifier: ViewModifier {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isVisible = false
 
-    /// 是否跳过动画。reduceMotion(无障碍)与 skipAnimation(缓存命中)任意一个为真即跳过。
-    private var bypassAnimation: Bool { reduceMotion || skipAnimation }
+    /// 是否跳过动画。
+    ///
+    /// 首屏前 12 行足以表达渐进入场；List 预创建的屏外 rows 如果继续持有 delay/animation
+    /// 状态，会在分类切换时放大主线程事务。屏外行直接显示，滚动体验也更稳定。
+    private var bypassAnimation: Bool { reduceMotion || skipAnimation || index >= 12 }
 
     func body(content: Content) -> some View {
         content

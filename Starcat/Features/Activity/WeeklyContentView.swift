@@ -64,6 +64,14 @@ struct WeeklyContentView: View {
     @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
     @State private var isFilterPopoverPresented = false
 
+    init(
+        viewModel: WeeklyContentViewModel? = nil,
+        selectedLanguage: Binding<String?>
+    ) {
+        _viewModel = State(initialValue: viewModel)
+        _selectedLanguage = selectedLanguage
+    }
+
     // R-01 §3.1.4 Step 7.3：refreshAngle / reduceMotion 已无外层用途，统一由 SyncIconButton 内部处理。
     // WeeklyProjectRow 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
@@ -80,8 +88,11 @@ struct WeeklyContentView: View {
             let model = ensureViewModel()
             restoreSortPreferenceIfNeeded(model)
             syncExternalLanguage(to: model)
-            Task { await reloadLibraryStateMap() }
+            async let libraryLoad: Void = reloadLibraryStateMap()
             await model.loadInitialIfNeeded()
+            await libraryLoad
+            guard !Task.isCancelled else { return }
+            await Task.yield()
             applyWeeklyDetailSelectionPolicy(from: model.items)
         }
         .task {
@@ -541,10 +552,10 @@ struct WeeklyContentView: View {
         }
         .task(id: viewModel.itemsRevision) {
             let repoIDs = viewModel.items.map(\.ghRepoId)
-            await reloadWikiAvailabilityMap(for: viewModel.items)
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.items)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            _ = await (wiki, openSSF, health)
         }
     }
 
@@ -652,9 +663,7 @@ struct WeeklyContentView: View {
 
     private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let available = wikiAvailabilityMap[repoId] else {
-            return settings.wikiAvailabilityFilter == .missing
-        }
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
         return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
@@ -671,13 +680,16 @@ struct WeeklyContentView: View {
     }
 
     private func reloadWikiAvailabilityMap(for items: [WeeklyFeedItem]) async {
-        guard settings.wikiAvailabilityFilter != .unknown else { return }
-        var next = wikiAvailabilityMap
-        for item in items where next[item.ghRepoId] == nil {
-            let snapshot = DiskWikiCache.shared.load(owner: item.owner, repo: item.name)
-            next[item.ghRepoId] = !(snapshot?.indexedLinks.isEmpty ?? true)
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
         }
-        wikiAvailabilityMap = next
+        let requests = items.map {
+            WikiAvailabilityRequest(id: $0.ghRepoId, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
     }
 
     private func observeLibraryStateChanges() async {
