@@ -5573,6 +5573,23 @@
         }
       }
     },
+    "ai.assistant.prep.skipCurrent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过"
+          }
+        }
+      }
+    },
     "ai.assistant.prep.skipCurrent.accessibility" : {
       "extractionState" : "manual",
       "localizations" : {

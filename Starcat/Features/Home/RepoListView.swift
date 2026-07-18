@@ -218,13 +218,19 @@ struct RepoListView: View {
             // `safeAreaInset` / List 默认底色会在上层盖住 background 修饰器（2026-06-23 回归）。
             DetailHeroTintBackground(tint: listColumnTintColor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // tint 变化只需要补间背景光晕。动画挂在整列根节点时，同一帧发生的
+                // List 数据发布也会继承 0.45s transaction，AppKit 会反复布局 row，
+                // 分类切换期间因此连骨架 / Sidebar 动画都会一起掉帧。
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 0.45),
+                    value: listColumnTintColor
+                )
                 .allowsHitTesting(false)
 
             listColumnChrome
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
             GitHubStarListOAuthRestrictionSheet()

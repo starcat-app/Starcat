@@ -1490,8 +1490,9 @@ struct HomeView: View {
         columnVisibility = .all
 
         // HOM-52：批量整理服务挂接 Sidebar 刷新回调。
-        // 每应用一批标签就 refreshSidebar，让 Sidebar Tags 段计数实时跟随；
-        // 不在 viewModel.reloadItems()——避免大批次每个 repo 都全量重拉列表。
+        // BatchAIQueueService 会把本轮标签写入合并成一次回调；Sidebar 在整轮退出时
+        // 刷新一次，避免自动整理每完成一个 repo 都发起十余条查询并重绘整棵侧栏。
+        // 不在 viewModel.reloadItems()——当前列表由数据库观察与既有筛选路径各自收敛。
         dependencies.batchAIQueueService.onTagsChanged = {
             Task { @MainActor in
                 await viewModel.refreshSidebar()

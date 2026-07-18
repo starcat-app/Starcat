@@ -859,26 +859,35 @@ struct RepoAIWindowContentView: View {
     ///   - streaming：用户已经看到 LLM 在吐字了 → caption 提示"摘要正在生成"
     ///   - preparingContext：没有任何文字输出，但后台 packer 正在工作 → caption 提示
     ///     "正在分析仓库代码结构"，避免用户以为 App 卡死
+    ///
+    /// 跳过入口常显 stop 图标 +「跳过」文案：AI 浮层上纯 hover 换图标不够稳，
+    /// 用户容易以为没有取消能力。整行仍可点。
     private func preparingContextPlaceholder(vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 vm.skipCodeContextForCurrentGeneration(repo: repo)
             } label: {
-                HStack(spacing: 6) {
-                    Group {
-                        if isPreparingContextRowHovered || isPreparingContextStopFocused {
-                            Image(systemName: "stop.circle.fill")
+                HStack(spacing: 8) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(interfaceScale.font(.iconSmall))
+                        .foregroundStyle(isPreparingContextRowHovered || isPreparingContextStopFocused ? Color.primary : Color.secondary)
+                        .frame(width: 16, height: 16)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ai.assistant.summary.preparingContext")
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.primary)
+                        if let step = currentPreparingStep(vm: vm) {
+                            Text(step.displayKey)
+                                .font(interfaceScale.font(.captionSmall))
                                 .foregroundStyle(.secondary)
-                        } else {
-                            ProgressView()
-                                .controlSize(.small)
                         }
                     }
-                    // spinner 与 stop 图标共用固定尺寸，hover 时正文不发生水平位移。
-                    .frame(width: 16, height: 16)
 
-                    Text("ai.assistant.summary.preparingContext")
-                        .font(interfaceScale.font(.caption))
+                    Spacer(minLength: 8)
+
+                    Text("ai.assistant.prep.skipCurrent")
+                        .font(interfaceScale.font(.captionSmall, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
@@ -898,6 +907,14 @@ struct RepoAIWindowContentView: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// 生成中准备态的当前步骤；`.ready` / `.failed` / `.idle` 时不额外显示副标题。
+    private func currentPreparingStep(vm: RepoAIInsightViewModel) -> PrepStep? {
+        if case let .preparing(step) = vm.prepProgress {
+            return step
+        }
+        return nil
     }
 
     /// 代码上下文已经完成或被主动跳过后，等待外部材料与 LLM 首个 token 的过渡态。

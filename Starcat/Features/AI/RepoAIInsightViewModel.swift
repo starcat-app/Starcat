@@ -226,13 +226,34 @@ final class RepoAIInsightViewModel {
                 // 用户主动停止 / repo 切换 cancel 都不应降级成失败态；调用方已经把
                 // prepProgress 收回 idle，旧 task 直接退出，避免异步回写污染新 UI。
                 await MainActor.run {
-                    self?.resumePrepWaiter()
+                    guard let self else { return }
+                    // 若取消来自非 skip/cancel 入口，避免 `.preparing` 残留导致
+                    // 下一次 generate 误判仍有活着的 prep 而挂死 continuation。
+                    if self.prepRunID == runID {
+                        self.prepRunID = nil
+                        self.prepTask = nil
+                        if case .preparing = self.prepProgress {
+                            self.prepProgress = .idle
+                        }
+                    }
+                    self.resumePrepWaiter()
                 }
                 return
             } catch {
                 outcome = .degraded(.networkUnavailable)
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                await MainActor.run {
+                    guard let self, self.prepRunID == runID else { return }
+                    self.prepRunID = nil
+                    self.prepTask = nil
+                    if case .preparing = self.prepProgress {
+                        self.prepProgress = .idle
+                    }
+                    self.resumePrepWaiter()
+                }
+                return
+            }
             await MainActor.run {
                 guard let self, self.prepRunID == runID else { return }
                 switch outcome {
@@ -294,12 +315,19 @@ final class RepoAIInsightViewModel {
     ///
     /// 不能直接 `await prepTask.value`：ZIPFoundation 的某些同步区段只能在步骤边界响应
     /// cancellation，UI 虽已显示“已跳过”，摘要却会继续等待，造成状态与真实执行脱节。
+    ///
+    /// 关键约束：必须同时存在活着的 `prepTask`。只有 `.preparing` 标志、没有 task 时
+    /// 继续 wait 会永远等不到 resume（曾导致点击生成后卡在准备态）。
     private func waitForBackgroundPrepUnlessSkipped(
         request: RepoAICodeContextRequest
     ) async {
-        guard case .preparing = prepProgress, !request.isSkipped else { return }
+        guard prepTask != nil,
+              case .preparing = prepProgress,
+              !request.isSkipped else { return }
         await withCheckedContinuation { continuation in
-            guard case .preparing = prepProgress, !request.isSkipped else {
+            guard prepTask != nil,
+                  case .preparing = prepProgress,
+                  !request.isSkipped else {
                 continuation.resume()
                 return
             }
@@ -338,12 +366,22 @@ final class RepoAIInsightViewModel {
         isGenerating = true
         streamingSummaryText = ""
         phase = .preparingContext
+        // 重新生成 / 后台 prep 已结束时，旧的 `.ready` 会让步骤条全亮绿勾，
+        // `.idle` 则全是空心圆。这里先种一个进行中步骤，后续 onContextProgress 再覆盖。
+        if prepTask == nil {
+            prepProgress = .preparing(step: .resolvingBranch)
+        }
         defer {
             isGenerating = false
             streamingSummaryText = nil
             phase = nil
-            prepTask = nil
+            // 只丢掉本次 generate 的请求句柄；不要 cancel 仍在跑的后台 prep。
             currentCodeContextRequest = nil
+            // 生成期为了刷新步骤条种下的 `.preparing`，若没有活着的后台 prep，
+            // 结束后收回，避免失败回空态时残留假进度。
+            if prepTask == nil, case .preparing = prepProgress {
+                prepProgress = .idle
+            }
         }
 
         // W4：如果后台 prep 还在跑（用户秒点「生成摘要」），先等 prep 完成再进入
@@ -351,6 +389,12 @@ final class RepoAIInsightViewModel {
         // 请求。现在 `isGenerating` / phase 已在 await 前写入，因此正文会展示真实 step，
         // 用户也可以在等待期间点击“跳过代码上下文并继续生成”。
         await waitForBackgroundPrepUnlessSkipped(request: codeContextRequest)
+
+        // 等待结束后若已就绪，芯片会变成全 ✓；makeSource 仍可能再跑一次 cache 核对，
+        // 重新标成 resolving，避免“文案还在准备、步骤却全完成”的错觉。
+        if !codeContextRequest.isSkipped, case .ready = prepProgress {
+            prepProgress = .preparing(step: .resolvingBranch)
+        }
 
         do {
             // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →
@@ -377,6 +421,9 @@ final class RepoAIInsightViewModel {
                 onContextResolved: { [weak self] in
                     guard let self else { return }
                     self.phase = .requestingSummary
+                    if !codeContextRequest.isSkipped {
+                        self.prepProgress = .ready
+                    }
                 }
             ) { [weak self] partial in
                 self?.streamingSummaryText = partial

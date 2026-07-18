@@ -312,14 +312,13 @@ struct IntegrationSettingsTab: View {
                 )
             )
 
-            VStack(alignment: .leading, spacing: 8) {
-                pluginInfoRow(
-                    titleKey: "settings.integration.browserPlugin.status",
-                    value: pluginStatusText
-                )
-                pluginEndpointRow
-                localAPIKeyReferenceRow
-            }
+            // 拆成 Section 直接子视图，让 Form 自动画行分隔线（别捆在一个 VStack 里）。
+            pluginInfoRow(
+                titleKey: "settings.integration.browserPlugin.status",
+                value: pluginStatusText
+            )
+            pluginEndpointRow
+            localAPIKeyReferenceRow
 
             LabeledContent {
                 HStack(spacing: 10) {
@@ -631,21 +630,26 @@ struct IntegrationSettingsTab: View {
 
     private func externalSearchProviderGroup(_ provider: ExternalSearchProviderID) -> some View {
         let isExpanded = expandedExternalSearchProviders.contains(provider)
-        return VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             externalSearchProviderHeader(provider)
                 .frame(height: 54)
 
             if isExpanded {
+                Divider()
                 Toggle(isOn: providerEnabledBinding(provider)) {
                     Text("settings.externalSearch.provider.enable")
                 }
                 .disabled(!canToggleProviderOn(provider))
+                .padding(.vertical, 8)
 
                 if provider == .anySearch {
+                    Divider()
                     Toggle("settings.externalSearch.anonymous", isOn: providerAnonymousBinding(provider))
                         .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
+                        .padding(.vertical, 8)
                 }
 
+                Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("settings.externalSearch.apiKey")
@@ -700,7 +704,7 @@ struct IntegrationSettingsTab: View {
 
                     externalSearchAPIKeyTestFeedback(provider)
                 }
-                .padding(.bottom, 10)
+                .padding(.vertical, 8)
             }
         }
     }

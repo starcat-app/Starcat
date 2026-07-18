@@ -43,12 +43,17 @@ struct AIModelListView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             header
+                .padding(.vertical, 8)
+            Divider()
             searchField
+                .padding(.vertical, 8)
+            Divider()
             modelScroll
+                .padding(.top, 8)
         }
-        .padding(.vertical, 4)
+        .padding(.top, 4)
     }
 
     private var header: some View {

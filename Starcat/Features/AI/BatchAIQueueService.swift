@@ -65,6 +65,9 @@ final class BatchAIQueueService {
     /// 用户主动取消标志位：在 processNext 循环开始处轮询，命中即跳出。
     private var cancelRequested: Bool = false
 
+    /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
+    private var hasPendingTagsChangedNotification: Bool = false
+
     // MARK: - 依赖（按 AppDependencies 装配顺序注入）
 
     private let insightService: RepoAIInsightService
@@ -74,7 +77,11 @@ final class BatchAIQueueService {
     private let entitlementGate: EntitlementGate?
     private let notificationService: ReleaseNotificationService?
 
-    /// 标签应用后通知外部刷新 Sidebar 计数 / 当前列表。
+    /// 一批任务内确实应用过标签后，通知外部刷新 Sidebar 计数 / 当前列表。
+    ///
+    /// 回调只在本轮退出时合并触发一次，不能每完成一个 repo 都做一次全量 Sidebar
+    /// 查询。后者会让自动整理期间持续发布十余组 Observable 状态，刚好与分类切换的
+    /// SwiftUI diff 叠加，形成整窗动画停顿。
     /// 设计上用闭包而非 NotificationCenter，避免跨模块字符串通知名飘移。
     var onTagsChanged: (() -> Void)?
 
@@ -169,6 +176,7 @@ final class BatchAIQueueService {
         self.isPaused = false
         self.isRunning = true
         self.cancelRequested = false
+        self.hasPendingTagsChangedNotification = false
         self.startedAt = Date()
         self.currentJobId = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
@@ -228,6 +236,7 @@ final class BatchAIQueueService {
         currentJobId = nil
         cancelRequested = false
         silent = false
+        hasPendingTagsChangedNotification = false
     }
 
     /// 重试单个失败的 job。
@@ -322,6 +331,7 @@ final class BatchAIQueueService {
             }
             isRunning = false
             currentJobId = nil
+            notifyTagsChangedIfNeeded()
             if isFinished {
                 AppLog.ai.notice("[batch-ai] finished: completed=\(self.completedCount, privacy: .public), ignored=\(self.ignoredCount, privacy: .public), failed=\(self.failedCount, privacy: .public)")
                 // HOM-126：仅在自然 finished（不是 cancel）时通知订阅方写回结果，
@@ -430,13 +440,21 @@ final class BatchAIQueueService {
             jobs[idx2].finishedAt = Date()
             jobs[idx2].status = .completed
             if !appliedNames.isEmpty {
-                onTagsChanged?()
+                hasPendingTagsChangedNotification = true
             }
         } else {
             jobs[idx].didGenerateSummary = didSummary
             jobs[idx].finishedAt = Date()
             jobs[idx].status = .completed
         }
+    }
+
+    /// 合并发布标签变更。自然完成与取消都会走这里：取消前已经落库的标签也必须最终
+    /// 刷新一次，但暂停仍保留 pending，等恢复后的同一轮真正退出再发布。
+    private func notifyTagsChangedIfNeeded() {
+        guard hasPendingTagsChangedNotification else { return }
+        hasPendingTagsChangedNotification = false
+        onTagsChanged?()
     }
 
     /// 把通过阈值过滤的建议落库为 repo_tags 关联。

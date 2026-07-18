@@ -510,13 +510,15 @@ struct AISettingsTab: View {
         // 上下内边距与「模型配置」/「Prompt」一致——折叠组展开后视觉对齐。
         Section {
             DisclosureGroup(isExpanded: $isDiscoveredModelsExpanded) {
-                VStack(spacing: 14) {
+                // 折叠标题与列表之间留一点间距；列表内部已有行分隔。
+                Group {
                     if let profile = selectedProfile {
                         if profile.models.isEmpty {
                             Text("settings.ai.discoveredModels.empty")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
                         } else {
                             AIModelListView(
                                 profile: profile,
@@ -527,6 +529,7 @@ struct AISettingsTab: View {
                         }
                     }
                 }
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.ai.discoveredModels.title", systemImage: "list.bullet.rectangle", isExpanded: $isDiscoveredModelsExpanded)
             }
@@ -539,24 +542,27 @@ struct AISettingsTab: View {
         // HOM-68 follow-up v7：tab 样式（segmented Picker + 单行 Provider/模型/自定义），
         // 与"模型参数" / "Prompt" 一致；DisclosureGroup 默认折叠。
         // HOM-68 follow-up v8：标题从"默认设置"改成"模型配置"。
-        // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：tab 与下面的
-        // Provider/模型/自定义 行原本只隔默认 VStack 间距（≈ 4pt），视觉黏连。
-        // 用 VStack(spacing: 14) 显式给开 14pt，与 Prompt 区"任务行 → System
-        // Prompt 标签"的呼吸感对齐，让 tab 切换后"现在配的是哪个任务"边界清晰。
+        // 2026-07-18：对齐通用设置页——DisclosureGroup 内容用横线分割 + 统一行距，
+        // 避免「折叠标题 / tab / 配置行」黏成一块。
         Section {
             DisclosureGroup(isExpanded: $isTaskModelsExpanded) {
-                VStack(spacing: 14) {
-                    Picker("settings.ai.task.pickerLabel", selection: $taskModelTask) {
-                        ForEach(AIModelTask.allCases) { task in
-                            Text(task.displayName).tag(task)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
+                // 等宽铺满：系统 segmented 按文案 intrinsic 定宽，中文短/英文长会两套布局；
+                // EqualWidthSegmentedControl 按父宽均分，中英文同一套整行样式。
+                VStack(alignment: .leading, spacing: 0) {
+                    EqualWidthSegmentedControl(
+                        items: Array(AIModelTask.allCases),
+                        selection: $taskModelTask,
+                        title: { LocalizedStringKey($0.displayNameKey) }
+                    )
+                    .accessibilityLabel("settings.ai.task.pickerLabel")
+                    .padding(.vertical, 10)
+
+                    Divider()
 
                     taskModelRow(taskModelTask)
+                        .padding(.vertical, 10)
                 }
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.ai.taskModels.title", systemImage: "slider.horizontal.3", isExpanded: $isTaskModelsExpanded)
             }
@@ -766,79 +772,91 @@ struct AISettingsTab: View {
 
     @ViewBuilder
     private var autoTidyContent: some View {
-        // 总开关
-        //
-        // HOM-126 follow-up v2 (dong4j 反馈 2026-06-07，截图仍显示开关 thumb 被裁)：
-        // v1 用 `LabeledContent { Toggle().labelsHidden() } label: { VStack { title + description } }`，
-        // 两行 VStack label 把 row 撑高、把横向空间吃宽，macOS Form 仍把 trailing Toggle 挤到
-        // Section 右内边距，`.switch` 的 thumb 圆点贴边被裁。dong4j 提示"往下移动一点"——
-        // 真正的修法是：让 toggle 行只承载单行标题（让 toggle 有充足右侧空间），description
-        // 独立作为下一行普通 Text 显示。这样开关就和「触发时机」下面那几个单行 toggle 一样
-        // 自然右对齐、thumb 完整。
-        Toggle("settings.autoTidy.enabled.title", isOn: autoTidyBinding(\.enabled))
-            .toggleStyle(.switch)
-        Text("settings.autoTidy.enabled.description")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 4)
+        // 2026-07-18：DisclosureGroup 内不会自动出现 Form 行分隔线，
+        // 改用 VStack(spacing: 0) + Divider + 统一行 padding，对齐通用设置页节奏。
+        VStack(spacing: 0) {
+            // 总开关：标题行与说明分两行，避免 LabeledContent 把 Toggle thumb 挤出裁切。
+            Toggle("settings.autoTidy.enabled.title", isOn: autoTidyBinding(\.enabled))
+                .toggleStyle(.switch)
+                .padding(.vertical, 8)
 
-        // 子项总开关：用 group `.disabled(!enabled)` 一刀切，省去每个 Toggle 单独写
-        Group {
-            triggerGroup
-            rangeGroup
-            actionsGroup
-            statusGroup
+            Text("settings.autoTidy.enabled.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
+
+            Group {
+                triggerGroup
+                rangeGroup
+                actionsGroup
+                statusGroup
+            }
+            .disabled(!settings.autoTidySettings.enabled)
+            .opacity(settings.autoTidySettings.enabled ? 1.0 : 0.5)
         }
-        .disabled(!settings.autoTidySettings.enabled)
-        // disabled 后整体淡化，给用户"这一段被锁住"的视觉信号
-        .opacity(settings.autoTidySettings.enabled ? 1.0 : 0.5)
+        .padding(.top, 4)
     }
 
-    /// HOM-126 follow-up (dong4j 反馈 2026-06-07，截图："间距拥挤、不一致")：
-    /// 共用的子分组标题样式 helper，统一垂直 padding（上 14 / 下 4）让 section header
-    /// 与上下 row 之间有一致呼吸感。原本各 group 用 `Divider() + Text` 的写法让 Divider
-    /// 自己占一行，反而让间距更不一致——SwiftUI Form 内 Divider 高度小、Toggle 行高度
-    /// 大，混在一起视觉节奏跳。删 Divider 改用 `Text` + padding，所有分组间距统一。
+    /// 子分组标题：横线上方的次要标签，上下留白与配置行一致。
     private func autoTidySectionHeader(_ key: LocalizedStringKey) -> some View {
         Text(key)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+    }
+
+    /// 配置行统一竖向 padding，避免 Toggle / LabeledContent / Picker 行高不一致。
+    private func autoTidyRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.vertical, 8)
     }
 
     /// 触发时机：启动后一次 / 同步后增量 / 定期（可配间隔）。
     @ViewBuilder
     private var triggerGroup: some View {
+        Divider()
         autoTidySectionHeader("settings.autoTidy.triggers.label")
 
-        Toggle("settings.autoTidy.trigger.onLaunch", isOn: autoTidyBinding(\.triggerOnLaunch))
-        Toggle("settings.autoTidy.trigger.onSync", isOn: autoTidyBinding(\.triggerOnSync))
-        Toggle("settings.autoTidy.trigger.scheduled", isOn: autoTidyBinding(\.triggerScheduled))
+        autoTidyRow {
+            Toggle("settings.autoTidy.trigger.onLaunch", isOn: autoTidyBinding(\.triggerOnLaunch))
+        }
+        Divider()
+        autoTidyRow {
+            Toggle("settings.autoTidy.trigger.onSync", isOn: autoTidyBinding(\.triggerOnSync))
+        }
+        Divider()
+        autoTidyRow {
+            Toggle("settings.autoTidy.trigger.scheduled", isOn: autoTidyBinding(\.triggerScheduled))
+        }
+        Divider()
 
         // 间隔仅在「定期开启」打开时有意义；关掉时淡化 + disable，保留上次填写值。
-        LabeledContent {
-            TextField(
-                "",
-                value: scheduledIntervalHoursBinding,
-                format: .number.grouping(.never)
-            )
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .frame(width: 80)
-            .help("1 - 24")
-        } label: {
-            Text("settings.autoTidy.trigger.scheduledInterval")
+        autoTidyRow {
+            LabeledContent {
+                TextField(
+                    "",
+                    value: scheduledIntervalHoursBinding,
+                    format: .number.grouping(.never)
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .help("1 - 24")
+            } label: {
+                Text("settings.autoTidy.trigger.scheduledInterval")
+            }
+            .disabled(!settings.autoTidySettings.triggerScheduled)
+            .opacity(settings.autoTidySettings.triggerScheduled ? 1.0 : 0.5)
         }
-        .disabled(!settings.autoTidySettings.triggerScheduled)
-        .opacity(settings.autoTidySettings.triggerScheduled ? 1.0 : 0.5)
     }
 
     /// 处理范围：最多一次处理多少个 + 排序口径。
     @ViewBuilder
     private var rangeGroup: some View {
+        Divider()
         autoTidySectionHeader("settings.autoTidy.range.label")
 
         // HOM-126 follow-up (dong4j 反馈 2026-06-07)：Stepper → TextField + 数字校验。
@@ -846,45 +864,57 @@ struct AISettingsTab: View {
         // setter 在 `maxPerRunBinding` 内已 clamp 到 5...500，超范围 / 失焦后 binding 把值约束回区间。
         // 用 `IntegerFormatStyle.number.grouping(.never)` 关掉千位分隔符，避免显示 "1,000"。
         // 输入框右对齐 + 80pt 固定宽度，与其他「数字配置项」视觉对齐。
-        LabeledContent {
-            TextField(
-                "",
-                value: maxPerRunBinding,
-                format: .number.grouping(.never)
-            )
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .frame(width: 80)
-            .help("5 - 500")
-        } label: {
-            Text("settings.autoTidy.range.maxPerRun")
-        }
-
-        Picker("settings.autoTidy.range.sortOrder", selection: autoTidyBinding(\.sortOrder)) {
-            ForEach(AutoTidySortOrder.allCases) { order in
-                Text(order.displayNameKey).tag(order)
+        autoTidyRow {
+            LabeledContent {
+                TextField(
+                    "",
+                    value: maxPerRunBinding,
+                    format: .number.grouping(.never)
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .help("5 - 500")
+            } label: {
+                Text("settings.autoTidy.range.maxPerRun")
             }
         }
-        .pickerStyle(.menu)
+        Divider()
+        autoTidyRow {
+            Picker("settings.autoTidy.range.sortOrder", selection: autoTidyBinding(\.sortOrder)) {
+                ForEach(AutoTidySortOrder.allCases) { order in
+                    Text(order.displayNameKey).tag(order)
+                }
+            }
+            .pickerStyle(.menu)
+        }
     }
 
     /// 执行操作：摘要 / 标签 + 置信度阈值。
     @ViewBuilder
     private var actionsGroup: some View {
+        Divider()
         autoTidySectionHeader("settings.autoTidy.actions.label")
 
-        Toggle("settings.autoTidy.actions.generateTags", isOn: autoTidyBinding(\.generateTags))
-        Toggle("settings.autoTidy.actions.generateSummary", isOn: autoTidyBinding(\.generateSummary))
+        autoTidyRow {
+            Toggle("settings.autoTidy.actions.generateTags", isOn: autoTidyBinding(\.generateTags))
+        }
+        Divider()
+        autoTidyRow {
+            Toggle("settings.autoTidy.actions.generateSummary", isOn: autoTidyBinding(\.generateSummary))
+        }
+        Divider()
 
         // HOM-126 follow-up (dong4j 反馈 2026-06-07，截图：阈值 label 没有独立开关)：
         // 阈值区两层 disable：
         //   - 外层（整组）：`generateTags = false` → 阈值 Toggle 和滑块全 disable（标签都关了阈值无意义）；
         //   - 内层（仅滑块）：`useConfidenceThreshold = false` → 阈值 Toggle 行还能点开，但滑块 disable，
         //     `makeBatchOptions` 把下游阈值降级为 0（不过滤，所有标签都自动应用）。
-        // 用 `Group { ... }` 收住 Toggle + 滑块两个子视图，让外层 `.disabled(!generateTags)` 能同时作用于两者。
         Group {
-            Toggle("settings.autoTidy.threshold.enabled", isOn: autoTidyBinding(\.useConfidenceThreshold))
-
+            autoTidyRow {
+                Toggle("settings.autoTidy.threshold.enabled", isOn: autoTidyBinding(\.useConfidenceThreshold))
+            }
+            Divider()
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("settings.autoTidy.threshold.label")
@@ -900,6 +930,7 @@ struct AISettingsTab: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            .padding(.vertical, 8)
             .disabled(!settings.autoTidySettings.useConfidenceThreshold)
             .opacity(settings.autoTidySettings.useConfidenceThreshold ? 1.0 : 0.5)
         }
@@ -920,16 +951,15 @@ struct AISettingsTab: View {
     /// 的视觉一致。
     @ViewBuilder
     private var statusGroup: some View {
-        // 状态分组的 header 走右对齐而不是 left（与下面"上次自动跑/按钮"右对齐保持一致），
-        // 所以不复用 autoTidySectionHeader（那个是 left + bottom padding 4）。
+        Divider()
         HStack {
             Spacer()
             Text("settings.autoTidy.status.label")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
         }
-        .padding(.top, 14)
-        .padding(.bottom, 4)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
 
         // 上次运行时间 + 计数（贴右对齐）
         HStack(spacing: 6) {
@@ -940,6 +970,9 @@ struct AISettingsTab: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 8)
+
+        Divider()
 
         // 手动触发按钮 + 当前是否在跑的轻量提示（按钮贴右对齐）
         HStack(spacing: 8) {
@@ -962,6 +995,7 @@ struct AISettingsTab: View {
             // 已经在跑就 disable，避免重复触发；调度器内部也有 `batchService.isRunning` 检查兜底
             .disabled(autoTidyScheduler.isAutoTidyRunning || !settings.autoTidySettings.hasAnyAction)
         }
+        .padding(.vertical, 8)
     }
 
     /// 「上次自动跑：X 分钟前 · 应用 12 / 忽略 3 / 失败 1」。
@@ -1035,22 +1069,19 @@ struct AISettingsTab: View {
     ///   TextEditor 在 macOS 上内置垂直滚动，超出高度自动出现滚动条，不再让长
     ///   prompt 撑大整个设置面板。
     private var promptSection: some View {
-        // HOM-126 follow-up (dong4j 反馈 2026-06-07，"Prompt/模型配置/已发现模型 面板间距")：
-        // 用 `VStack(spacing: 14)` 显式给开 14pt（与 `taskModelsSection` 同款），
-        // 避免 Form 默认让 Text(header) → TextEditor → Text(header) → TextEditor 之间
-        // 黏连。System/User Prompt 两组之间 14pt 是正合适的呼吸感（更大会显得空）。
+        // 2026-07-18：与模型配置同款——DisclosureGroup 内用横线分割配置块，
+        // tab 行与 System/User Prompt 之间拉开，贴近通用设置页 Form 行分隔节奏。
         Section {
             DisclosureGroup(isExpanded: $isPromptExpanded) {
-                VStack(spacing: 14) {
+                // 与模型配置同款：等宽铺满剩余宽度；重置按钮固定在右侧。
+                VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 12) {
-                        Picker("settings.ai.prompt.task.pickerLabel", selection: $promptTask) {
-                            ForEach([AIModelTask.summary, .tags, .chat, .embedding, .translation]) { task in
-                                Text(task.displayName).tag(task)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
+                        EqualWidthSegmentedControl(
+                            items: [AIModelTask.summary, .tags, .chat, .embedding, .translation],
+                            selection: $promptTask,
+                            title: { LocalizedStringKey($0.displayNameKey) }
+                        )
+                        .accessibilityLabel("settings.ai.prompt.task.pickerLabel")
 
                         // HOM-126 follow-up (dong4j 反馈 2026-06-07)：「恢复默认」按钮去掉文字只保留 icon
                         // （扫一眼就懂 = 旋转箭头），节省横向空间让左侧 segmented picker 不被挤；语义留在 tooltip。
@@ -1058,6 +1089,9 @@ struct AISettingsTab: View {
                             restoreDefaultPrompt(promptTask)
                         }
                     }
+                    .padding(.vertical, 10)
+
+                    Divider()
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("settings.ai.prompt.system")
@@ -1071,6 +1105,9 @@ struct AISettingsTab: View {
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
                     }
+                    .padding(.vertical, 10)
+
+                    Divider()
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("settings.ai.prompt.user")
@@ -1084,12 +1121,17 @@ struct AISettingsTab: View {
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
                     }
+                    .padding(.vertical, 10)
+
+                    Divider()
 
                     Text(promptPlaceholderHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 10)
                 }
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.ai.prompt.title", systemImage: "text.quote", isExpanded: $isPromptExpanded)
             }
@@ -1119,21 +1161,31 @@ struct AISettingsTab: View {
     private var aiIndexSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isAIIndexExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
+                // HOM-197（2026-06-13 dong4j）：截断长度与过滤阈值同属语义搜索流水线旋钮。
+                // 2026-07-18：DisclosureGroup 内显式 Divider + 统一行距，对齐通用设置页。
+                VStack(alignment: .leading, spacing: 0) {
                     truncateLengthRow
-                    // HOM-197（2026-06-13 dong4j）：紧贴截断长度下方插入「搜索结果过滤
-                    // 阈值」。两者都属于"AI 语义搜索流水线"维度的偏好——截断长度控制
-                    // 喂给 embedding 的文本量，阈值控制召回结果的展示门槛，放在一起
-                    // 让用户一眼读出"输入→输出"两端的旋钮。
+                        .padding(.vertical, 8)
+                    Divider()
                     scoreThresholdRow
+                        .padding(.vertical, 8)
+                    Divider()
                     presetRow
+                        .padding(.vertical, 8)
+                    Divider()
                     advancedDisclosure
+                        .padding(.vertical, 8)
                     Divider()
                     Toggle("settings.aiIndex.autoPrefetch", isOn: autoPrefetchBinding)
+                        .padding(.vertical, 8)
+                    Divider()
                     builderControlsRow
+                        .padding(.vertical, 8)
+                    Divider()
                     rebuildAllRow
+                        .padding(.vertical, 8)
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.aiIndex.section", systemImage: "brain.head.profile", isExpanded: $isAIIndexExpanded)
             }
@@ -1147,24 +1199,35 @@ struct AISettingsTab: View {
     private var ragBackendSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isRAGBackendsExpanded) {
-                VStack(alignment: .leading, spacing: 14) {
+                // 条件字段出现时也要横线分隔，避免 Meilisearch/Qdrant 展开后糊成一团。
+                VStack(alignment: .leading, spacing: 0) {
                     ragIndexControlRow
+                        .padding(.vertical, 8)
                     Divider()
                     Picker("settings.rag.backends.keyword", selection: ragKeywordBackendBinding) {
                         Text("SQLite FTS5").tag(RAGKeywordBackend.sqliteFTS5)
                         Text("Meilisearch").tag(RAGKeywordBackend.meilisearch)
                     }
                     .pickerStyle(.menu)
+                    .padding(.vertical, 8)
 
                     if settings.ragBackendConfiguration.keywordBackend == .meilisearch {
+                        Divider()
                         ragField("settings.rag.backends.endpoint", text: ragMeilisearchEndpointBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragField("settings.rag.backends.index", text: ragMeilisearchIndexBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         SecureField("settings.rag.backends.apiKey", text: $meilisearchAPIKey)
                             .textFieldStyle(.roundedBorder)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragBackendActionRow(
                             id: "meilisearch",
                             label: "settings.rag.backends.testAndSave"
                         ) { await testMeilisearch() }
+                        .padding(.vertical, 8)
                     }
 
                     Divider()
@@ -1174,29 +1237,44 @@ struct AISettingsTab: View {
                         Text("Qdrant").tag(RAGVectorBackend.qdrant)
                     }
                     .pickerStyle(.menu)
+                    .padding(.vertical, 8)
 
                     if settings.ragBackendConfiguration.vectorBackend == .qdrant {
+                        Divider()
                         ragField("settings.rag.backends.endpoint", text: ragQdrantEndpointBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragField("settings.rag.backends.collection", text: ragQdrantCollectionBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragField("settings.rag.backends.vectorName", text: ragQdrantVectorNameBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         SecureField("settings.rag.backends.apiKey", text: $qdrantAPIKey)
                             .textFieldStyle(.roundedBorder)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragBackendActionRow(
                             id: "qdrant",
                             label: "settings.rag.backends.testAndSave"
                         ) { await testQdrant() }
+                        .padding(.vertical, 8)
                     }
 
+                    Divider()
                     Toggle("settings.rag.backends.fallback", isOn: ragFallbackBinding)
+                        .padding(.vertical, 8)
 
                     if let ragBackendStatusMessage {
+                        Divider()
                         Text(ragBackendStatusMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.vertical, 8)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.rag.backends.section", systemImage: "magnifyingglass", isExpanded: $isRAGBackendsExpanded)
             }
@@ -1431,13 +1509,11 @@ struct AISettingsTab: View {
                     .font(.callout)
                 Spacer()
             }
-            Picker("", selection: presetBinding) {
-                ForEach(AIIndexPreset.allCases) { preset in
-                    Text(LocalizedStringKey(preset.displayNameKey)).tag(preset)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            EqualWidthSegmentedControl(
+                items: Array(AIIndexPreset.allCases),
+                selection: presetBinding,
+                title: { LocalizedStringKey($0.displayNameKey) }
+            )
         }
     }
 
@@ -1447,24 +1523,29 @@ struct AISettingsTab: View {
     private var advancedDisclosure: some View {
         let isCustom = settings.aiIndexPreset == .custom
         DisclosureGroup(isExpanded: $isAIIndexAdvancedExpanded) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 ratioRow(
                     titleKey: "settings.aiIndex.bodyThreshold",
                     value: bodyRatioBinding,
                     enabled: isCustom
                 )
+                .padding(.vertical, 8)
+                Divider()
                 ratioRow(
                     titleKey: "settings.aiIndex.notesThreshold",
                     value: notesRatioBinding,
                     enabled: isCustom
                 )
+                .padding(.vertical, 8)
                 if !isCustom {
+                    Divider()
                     Text("settings.aiIndex.advanced.lockedHint")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.top, 4)
         } label: {
             disclosureLabel("settings.aiIndex.advanced", systemImage: "slider.horizontal.3", isExpanded: $isAIIndexAdvancedExpanded)
         }
@@ -1687,15 +1768,20 @@ struct AISettingsTab: View {
     private var aiRepoContextSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isRepoContextExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
                     repoContextEnableRow
+                        .padding(.vertical, 8)
                     Divider()
                     repoContextTokenBudgetRow
+                        .padding(.vertical, 8)
+                    Divider()
                     repoContextTier1MaxLinesRow
+                        .padding(.vertical, 8)
                     Divider()
                     repoContextManageStorageRow
+                        .padding(.vertical, 8)
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("ai.context.settings.title", systemImage: "shippingbox.fill", isExpanded: $isRepoContextExpanded)
             }
@@ -1789,7 +1875,7 @@ struct AISettingsTab: View {
     /// AI 代码上下文产物管理面板。
     @ViewBuilder
     private var repoContextManageStorageRow: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Label("ai.context.storage.outputDirectory", systemImage: "doc.text.magnifyingglass")
                     .font(.callout.weight(.medium))
@@ -1797,6 +1883,9 @@ struct AISettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(.vertical, 8)
+
+            Divider()
 
             HStack(spacing: 8) {
                 Text(aiContextStorage.outputDirectoryDisplayPath)
@@ -1831,6 +1920,9 @@ struct AISettingsTab: View {
                 .disabled(!aiContextStorage.hasCustomOutputDirectory)
                 .fixedSize()
             }
+            .padding(.vertical, 8)
+
+            Divider()
 
             HStack(spacing: 18) {
                 aiContextStat(titleKey: "ai.context.storage.statRepos",
@@ -1846,18 +1938,23 @@ struct AISettingsTab: View {
                 }
                 Spacer()
             }
+            .padding(.vertical, 8)
 
             // storage 内部抛错（bookmark 失效 / 目录权限丢失等）反映到 lastErrorMessage,
             // 持续显示直到下次 reload 成功。actionError（按钮触发的失败）走顶部 alert,
             // 两者职责分明：actionError = 短暂弹窗，lastErrorMessage = 持续状态。
             if let message = aiContextStorage.lastErrorMessage {
+                Divider()
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .padding(.vertical, 8)
             } else if aiContextStorage.projectCount == 0 {
+                Divider()
                 Text("ai.context.storage.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
             }
         }
         .disabled(!settings.aiRepoContextEnabled)

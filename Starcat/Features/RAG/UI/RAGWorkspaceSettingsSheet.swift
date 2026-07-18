@@ -393,15 +393,14 @@ struct RAGWorkspaceSettingsSheet: View {
                     titleKey: "rag.workspace.prompt.type.title",
                     systemImage: "text.quote"
                 ) {
+                    // 等宽铺满（重置除外）：中英文不再因文案长短变成半行短条。
                     HStack(spacing: interfaceScale.scaled(12)) {
-                        Picker("rag.workspace.prompt.title", selection: $tab) {
-                            ForEach(RAGPromptEditorTab.allCases) { item in
-                                Text(item.titleKey).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
+                        EqualWidthSegmentedControl(
+                            items: Array(RAGPromptEditorTab.allCases),
+                            selection: $tab,
+                            title: \.titleKey
+                        )
+                        .accessibilityLabel("rag.workspace.prompt.title")
 
                         ResetIconButton(
                             help: Text("rag.workspace.prompt.restoreHelp")
@@ -483,17 +482,15 @@ struct RAGWorkspaceSettingsSheet: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// 与提示词页同款：预设 segmented + 右侧重置；点击恢复平衡档草稿（未点保存不落盘）。
+    /// 与提示词页同款：等宽预设 tab + 右侧重置；点击恢复平衡档草稿（未点保存不落盘）。
     private var presetPicker: some View {
         HStack(spacing: interfaceScale.scaled(12)) {
-            Picker("rag.workspace.retrieval.preset.title", selection: retrievalPresetBinding) {
-                ForEach(RAGRetrievalPreset.allCases) { preset in
-                    Text(preset.titleKey).tag(preset)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: .infinity)
+            EqualWidthSegmentedControl(
+                items: Array(RAGRetrievalPreset.allCases),
+                selection: retrievalPresetBinding,
+                title: \.titleKey
+            )
+            .accessibilityLabel("rag.workspace.retrieval.preset.title")
 
             ResetIconButton(
                 help: Text("rag.workspace.retrieval.restoreDefaults")
@@ -504,7 +501,8 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     private var retrievalCommonSection: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
+        // 自定义卡片没有 Form 自动分隔线；行间显式 Divider + 统一竖向 padding。
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
                 settingRow(
                     titleKey: "rag.workspace.retrieval.minimumSimilarity",
@@ -516,53 +514,68 @@ struct RAGWorkspaceSettingsSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(.vertical, interfaceScale.scaled(8))
+
             Divider()
             settingTextFieldRow(
                 titleKey: "rag.workspace.retrieval.perRepositoryLimit",
                 hintKey: "rag.workspace.retrieval.perRepositoryLimit.hint",
                 text: perRepositoryEvidenceLimitBinding
             )
+            .padding(.vertical, interfaceScale.scaled(8))
+
             Divider()
             settingTextFieldRow(
                 titleKey: "rag.workspace.retrieval.finalChunkLimit",
                 hintKey: "rag.workspace.retrieval.finalChunkLimit.hint",
                 text: finalEvidenceChunkLimitBinding
             )
+            .padding(.vertical, interfaceScale.scaled(8))
         }
     }
 
     private var retrievalAdvancedSection: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
+        VStack(alignment: .leading, spacing: 0) {
             settingTextFieldRow(
                 titleKey: "rag.workspace.retrieval.tokenBudget",
                 hintKey: "rag.workspace.retrieval.tokenBudget.hint",
                 text: evidenceTokenBudgetBinding
             )
+            .padding(.vertical, interfaceScale.scaled(8))
         }
     }
 
     /// Rerank 服务由用户自行配置；关闭时保留协议、地址和模型，方便临时停用后再次启用。
     private var rerankSection: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
+        VStack(alignment: .leading, spacing: 0) {
             Toggle("rag.workspace.rerank.enabled", isOn: $rerankEnabled)
                 .font(ragFont(.body, scale: interfaceScale))
+                .padding(.vertical, interfaceScale.scaled(8))
             Text("rag.workspace.rerank.enabled.hint")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .padding(.bottom, interfaceScale.scaled(8))
             if rerankEnabled {
                 Divider()
-                Picker("rag.workspace.rerank.provider", selection: $rerankProvider) {
-                    Text("rag.workspace.rerank.provider.tei").tag(RAGRerankProvider.huggingFaceTEI)
-                    Text("rag.workspace.rerank.provider.cohere").tag(RAGRerankProvider.cohereCompatible)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                // 与提示词 / 预设同款：等宽铺满，中英文布局一致。
+                EqualWidthSegmentedControl(
+                    items: [RAGRerankProvider.huggingFaceTEI, .cohereCompatible],
+                    selection: $rerankProvider,
+                    title: { provider in
+                        switch provider {
+                        case .huggingFaceTEI: return "rag.workspace.rerank.provider.tei"
+                        case .cohereCompatible: return "rag.workspace.rerank.provider.cohere"
+                        }
+                    }
+                )
+                .accessibilityLabel("rag.workspace.rerank.provider")
                 .onChange(of: rerankProvider) { previous, current in
                     // 仅在用户未改过默认地址时切换，手动填写的自托管地址不能被静默覆盖。
                     if rerankEndpoint == previous.defaultEndpoint {
                         rerankEndpoint = current.defaultEndpoint
                     }
                 }
+                .padding(.vertical, interfaceScale.scaled(10))
                 Divider()
                 // URL 往往很长：输入框吃满标题右侧到容器右缘，溢出只水平滚动不换行。
                 settingTextFieldRow(
@@ -571,6 +584,7 @@ struct RAGWorkspaceSettingsSheet: View {
                     text: $rerankEndpoint,
                     expandsToTrailingEdge: true
                 )
+                .padding(.vertical, interfaceScale.scaled(8))
                 if rerankProvider == .cohereCompatible {
                     Divider()
                     settingTextFieldRow(
@@ -579,6 +593,7 @@ struct RAGWorkspaceSettingsSheet: View {
                         text: $rerankModel,
                         expandsToTrailingEdge: true
                     )
+                    .padding(.vertical, interfaceScale.scaled(8))
                 }
                 Divider()
                 settingTextFieldRow(
@@ -588,16 +603,20 @@ struct RAGWorkspaceSettingsSheet: View {
                     expandsToTrailingEdge: true,
                     isSecure: true
                 )
+                .padding(.vertical, interfaceScale.scaled(8))
                 Divider()
                 settingTextFieldRow(
                     titleKey: "rag.workspace.rerank.candidateLimit",
                     hintKey: "rag.workspace.rerank.candidateLimit.hint",
                     text: rerankCandidateLimitBinding
                 )
+                .padding(.vertical, interfaceScale.scaled(8))
                 if let rerankCredentialError {
+                    Divider()
                     Text(rerankCredentialError)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .padding(.vertical, interfaceScale.scaled(8))
                 }
             }
         }
@@ -605,32 +624,38 @@ struct RAGWorkspaceSettingsSheet: View {
 
     /// 四个来源各占一行，英文长标签不会被挤成省略号。
     private var retrievalSourcesSection: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(10)) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("rag.workspace.retrieval.sources.hint")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
-                sourceToggle(
-                    source: .readme,
-                    titleKey: "rag.workspace.retrieval.source.readme",
-                    isOn: includesReadmeBinding
-                )
-                sourceToggle(
-                    source: .notes,
-                    titleKey: "rag.workspace.retrieval.source.notes",
-                    isOn: includesNotesBinding
-                )
-                sourceToggle(
-                    source: .summary,
-                    titleKey: "rag.workspace.retrieval.source.summary",
-                    isOn: includesSummaryBinding
-                )
-                sourceToggle(
-                    source: .metadata,
-                    titleKey: "rag.workspace.retrieval.source.metadata",
-                    isOn: includesMetadataBinding
-                )
-            }
+                .padding(.bottom, interfaceScale.scaled(8))
+            sourceToggle(
+                source: .readme,
+                titleKey: "rag.workspace.retrieval.source.readme",
+                isOn: includesReadmeBinding
+            )
+            .padding(.vertical, interfaceScale.scaled(8))
+            Divider()
+            sourceToggle(
+                source: .notes,
+                titleKey: "rag.workspace.retrieval.source.notes",
+                isOn: includesNotesBinding
+            )
+            .padding(.vertical, interfaceScale.scaled(8))
+            Divider()
+            sourceToggle(
+                source: .summary,
+                titleKey: "rag.workspace.retrieval.source.summary",
+                isOn: includesSummaryBinding
+            )
+            .padding(.vertical, interfaceScale.scaled(8))
+            Divider()
+            sourceToggle(
+                source: .metadata,
+                titleKey: "rag.workspace.retrieval.source.metadata",
+                isOn: includesMetadataBinding
+            )
+            .padding(.vertical, interfaceScale.scaled(8))
         }
     }
 
@@ -660,7 +685,8 @@ struct RAGWorkspaceSettingsSheet: View {
         systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+        // 分组标题与卡片内容拉开到 12pt，避免「标题贴着 tab」的拥挤感。
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
             // 双栏工作台不改成 Form；此处等效采用设置页 Section header 的字号、图标和间距契约。
             sectionTitle(titleKey, systemImage: systemImage)
             content()
@@ -679,7 +705,7 @@ struct RAGWorkspaceSettingsSheet: View {
         systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
             sectionTitle(titleKey, systemImage: systemImage)
             retrievalSettingsCard(content: content)
         }
@@ -692,7 +718,7 @@ struct RAGWorkspaceSettingsSheet: View {
         isExpanded: Binding<Bool>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
             Button {
                 toggleRetrievalDisclosure(isExpanded)
             } label: {

@@ -294,14 +294,16 @@ struct ProSettingsTab: View {
                 }
 
                 DisclosureGroup(isExpanded: $isReplacingLicense) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 0) {
                         SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
                             .textFieldStyle(.roundedBorder)
-
+                            .padding(.vertical, 8)
+                        Divider()
                         HStack {
                             Spacer()
                             directActivateButton
                         }
+                        .padding(.vertical, 8)
                     }
                     .padding(.top, 4)
                 } label: {

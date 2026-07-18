@@ -37,29 +37,16 @@ struct ExploreView: View {
 
     var body: some View {
         Group {
+            // 同一时刻只让一个 List 进入 AppKit 布局树。用 opacity 隐藏的 List 仍会参与
+            // layout / display-list 提交，三个常驻列表会把一次分类切换放大成整窗重排。
+            // ViewModel 继续由 ExploreView 的 @State 持有，因此切换分类不会丢缓存。
             switch selectedMode {
             case .trending:
                 trendingContent
             case .weekly:
-                if let weeklyViewModel {
-                    WeeklyContentView(
-                        viewModel: weeklyViewModel,
-                        selectedLanguage: $selectedWeeklyLanguage
-                    )
-                } else {
-                    RepoSkeletonListView(rowCount: 10)
-                }
+                weeklyContent
             case .discover, .popular, .newReleases:
-                ExploreDiscoveryListView(
-                    viewModel: discoveryViewModel,
-                    mode: selectedMode,
-                    selectedLanguage: $selectedDiscoveryLanguage,
-                    selectedTopic: $selectedDiscoveryTopic,
-                    selectedPlatform: $selectedDiscoveryPlatform,
-                    selectedRepoID: $selectedDiscoveryRepoID,
-                    selectedRepo: $selectedDiscoveryRepo,
-                    onRepoCountChange: onRepoCountChange
-                )
+                discoveryContent
             }
         }
         .task {
@@ -75,6 +62,31 @@ struct ExploreView: View {
             case .discover, .popular, .newReleases:
                 clearTrendingSelection()
             }
+        }
+    }
+
+    private var discoveryContent: some View {
+        ExploreDiscoveryListView(
+            viewModel: discoveryViewModel,
+            mode: selectedMode,
+            selectedLanguage: $selectedDiscoveryLanguage,
+            selectedTopic: $selectedDiscoveryTopic,
+            selectedPlatform: $selectedDiscoveryPlatform,
+            selectedRepoID: $selectedDiscoveryRepoID,
+            selectedRepo: $selectedDiscoveryRepo,
+            onRepoCountChange: onRepoCountChange
+        )
+    }
+
+    @ViewBuilder
+    private var weeklyContent: some View {
+        if let weeklyViewModel {
+            WeeklyContentView(
+                viewModel: weeklyViewModel,
+                selectedLanguage: $selectedWeeklyLanguage
+            )
+        } else {
+            RepoSkeletonListView(rowCount: 10)
         }
     }
 
