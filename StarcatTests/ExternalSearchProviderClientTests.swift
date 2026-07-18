@@ -24,6 +24,8 @@ struct ExternalSearchProviderClientTests {
             #expect(body["query"] as? String == "who is dong4j")
             #expect(body["max_results"] as? Int == 1)
             #expect(body["include_raw_content"] as? Bool == true)
+            #expect(body["include_domains"] as? [String] == ["example.com"])
+            #expect(body["time_range"] as? String == "week")
             return (
                 HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
                 Data("""
@@ -50,7 +52,13 @@ struct ExternalSearchProviderClientTests {
             baseURL: URL(string: "https://api.test.invalid")!,
             session: URLProtocolStub.ephemeralSession()
         )
-        let response = try await provider.search(ExternalSearchRequest(query: "who is dong4j", purpose: .credentialTest, maxResults: 1))
+        let response = try await provider.search(ExternalSearchRequest(
+            query: "who is dong4j",
+            purpose: .credentialTest,
+            maxResults: 1,
+            freshness: "week",
+            includeDomains: ["example.com"]
+        ))
 
         #expect(response.metadata.provider == .tavily)
         #expect(response.metadata.requestID == "tvly-1")
@@ -68,6 +76,8 @@ struct ExternalSearchProviderClientTests {
             let body = try #require(request.httpBodyJSON)
             #expect(body["query"] as? String == "swift search")
             #expect(body["num_results"] as? Int == 2)
+            #expect(body["include_domains"] as? [String] == ["swift.org"])
+            #expect(body["start_published_date"] as? String != nil)
             let contents = try #require(body["contents"] as? [String: Any])
             #expect(contents["text"] as? Bool == true)
             #expect(contents["highlights"] as? Bool == true)
@@ -100,7 +110,13 @@ struct ExternalSearchProviderClientTests {
             baseURL: URL(string: "https://api.test.invalid")!,
             session: URLProtocolStub.ephemeralSession()
         )
-        let response = try await provider.search(ExternalSearchRequest(query: "swift search", purpose: .globalSearch, maxResults: 2))
+        let response = try await provider.search(ExternalSearchRequest(
+            query: "swift search",
+            purpose: .globalSearch,
+            maxResults: 2,
+            freshness: "month",
+            includeDomains: ["swift.org"]
+        ))
 
         #expect(response.metadata.provider == .exa)
         #expect(response.metadata.requestID == "exa-1")
@@ -117,8 +133,9 @@ struct ExternalSearchProviderClientTests {
             #expect(request.url?.path == "/res/v1/llm/context")
             #expect(request.value(forHTTPHeaderField: "X-Subscription-Token") == "brave-key")
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-            #expect(components?.queryItems?.first(where: { $0.name == "q" })?.value == "llm context")
+            #expect(components?.queryItems?.first(where: { $0.name == "q" })?.value == "llm context (site:swift.org OR site:github.com)")
             #expect(components?.queryItems?.first(where: { $0.name == "count" })?.value == "3")
+            #expect(components?.queryItems?.first(where: { $0.name == "freshness" })?.value == "pd")
             return (
                 HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
                 Data("""
@@ -153,7 +170,13 @@ struct ExternalSearchProviderClientTests {
             baseURL: URL(string: "https://api.test.invalid/res/v1/llm/context")!,
             session: URLProtocolStub.ephemeralSession()
         )
-        let response = try await provider.search(ExternalSearchRequest(query: "llm context", purpose: .aiContext, maxResults: 3))
+        let response = try await provider.search(ExternalSearchRequest(
+            query: "llm context",
+            purpose: .aiContext,
+            maxResults: 3,
+            freshness: "day",
+            includeDomains: ["swift.org", "github.com"]
+        ))
 
         #expect(response.metadata.provider == .braveLLMContext)
         #expect(response.hits.first?.title == "Context result")

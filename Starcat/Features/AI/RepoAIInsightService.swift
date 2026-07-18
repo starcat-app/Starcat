@@ -534,6 +534,8 @@ final class RepoAIInsightService {
             case .delta(let delta):
                 accumulated += delta
                 onDelta?(delta)
+            case .toolCallDelta, .usage:
+                continue
             case .completed(let response):
                 return response.content
             }
@@ -704,11 +706,11 @@ final class RepoAIInsightService {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
                 switch event {
-                case .reasoningDelta, .reasoningCompleted:
-                    break
                 case .delta(let delta):
                     accumulated += delta
                     onDelta?(accumulated)
+                case .reasoningDelta, .reasoningCompleted, .toolCallDelta, .usage:
+                    continue
                 case .completed(let response):
                     return response.content
                 }

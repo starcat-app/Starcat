@@ -57,7 +57,7 @@ struct OpenAIClient: AIClientProtocol {
             userPromptLength: request.userPrompt.count
         )
         #endif
-        let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
+        let query = try Self.makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
 
         let result = try await client.chats(query: query)
         #if DEBUG
@@ -65,19 +65,27 @@ struct OpenAIClient: AIClientProtocol {
             AIDebugLogger.dumpDecodedChatResult(result, reason: "chat-success")
         }
         #endif
-        guard let content = result.choices.first?.message.content?.nilIfBlank else {
+        guard let choice = result.choices.first else {
+            throw AIClientError.emptyResponse
+        }
+        let toolCalls = Self.toolCalls(from: choice.message.toolCalls)
+        let content = choice.message.content ?? ""
+        guard content.nilIfBlank != nil || !toolCalls.isEmpty else {
             #if DEBUG
             AIDebugLogger.dumpDecodedChatResult(result, reason: "empty-message-content")
             #endif
             throw AIClientError.emptyResponse
         }
-        if result.choices.first?.finishReason == ChatResult.Choice.FinishReason.length.rawValue {
+        if choice.finishReason == ChatResult.Choice.FinishReason.length.rawValue {
             throw AIClientError.responseTruncated
         }
         return AIChatResponse(
             content: content,
+            reasoningContent: choice.message.reasoning,
+            toolCalls: toolCalls,
+            usage: Self.usage(from: result.usage),
             model: result.model,
-            finishReason: result.choices.first?.finishReason
+            finishReason: choice.finishReason
         )
     }
 
@@ -94,20 +102,48 @@ struct OpenAIClient: AIClientProtocol {
                         userPromptLength: request.userPrompt.count
                     )
                     #endif
-                    let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
+                    let query = try Self.makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
                     var content = ""
+                    var reasoningContent = ""
                     var finishReason: String?
                     var reasoningNormalizer = AIStreamReasoningNormalizer()
+                    var toolCallAccumulator = AIChatToolCallAccumulator()
+                    var finalUsage: AIChatUsage?
+                    var responseModel = resolvedModel
                     for try await chunk in client.chatsStream(query: query) {
+                        responseModel = chunk.model
+                        if let usage = Self.usage(from: chunk.usage) {
+                            finalUsage = usage
+                            continuation.yield(.usage(usage))
+                        }
                         for choice in chunk.choices {
+                            // Starcat 不请求多候选结果。若兼容 Provider 仍返回多个 choice，
+                            // 只消费主 choice，避免把不同候选的文本和工具调用混成一次执行。
+                            guard choice.index == 0 else { continue }
                             for event in reasoningNormalizer.ingest(
                                 content: choice.delta.content,
                                 nativeReasoning: choice.delta.reasoning
                             ) {
-                                if case .delta(let delta) = event {
+                                switch event {
+                                case .delta(let delta):
                                     content += delta
+                                case .reasoningDelta(let delta):
+                                    reasoningContent += delta
+                                case .reasoningCompleted, .toolCallDelta, .usage, .completed:
+                                    break
                                 }
                                 continuation.yield(event)
+                            }
+                            for call in choice.delta.toolCalls ?? [] {
+                                let delta = AIChatToolCallDelta(
+                                    choiceIndex: choice.index,
+                                    index: call.index,
+                                    id: call.id,
+                                    name: call.function?.name,
+                                    argumentsFragment: call.function?.arguments
+                                )
+                                toolCallAccumulator.append(delta)
+                                continuation.yield(.toolCallDelta(delta))
                             }
                             if let reason = choice.finishReason {
                                 finishReason = reason.rawValue
@@ -115,12 +151,18 @@ struct OpenAIClient: AIClientProtocol {
                         }
                     }
                     for event in reasoningNormalizer.finish() {
-                        if case .delta(let delta) = event {
+                        switch event {
+                        case .delta(let delta):
                             content += delta
+                        case .reasoningDelta(let delta):
+                            reasoningContent += delta
+                        case .reasoningCompleted, .toolCallDelta, .usage, .completed:
+                            break
                         }
                         continuation.yield(event)
                     }
-                    guard let final = content.nilIfBlank else {
+                    let toolCalls = toolCallAccumulator.completedCalls()
+                    guard content.nilIfBlank != nil || !toolCalls.isEmpty else {
                         continuation.finish(throwing: AIClientError.emptyResponse)
                         return
                     }
@@ -129,8 +171,11 @@ struct OpenAIClient: AIClientProtocol {
                         return
                     }
                     continuation.yield(.completed(AIChatResponse(
-                        content: final,
-                        model: resolvedModel,
+                        content: content,
+                        reasoningContent: reasoningContent.nilIfBlank,
+                        toolCalls: toolCalls,
+                        usage: finalUsage,
+                        model: responseModel,
                         finishReason: finishReason
                     )))
                     continuation.finish()
@@ -215,11 +260,11 @@ struct OpenAIClient: AIClientProtocol {
         _ = try await listModels()
     }
 
-    private func makeChatQuery(
+    static func makeChatQuery(
         request: AIChatRequest,
         resolvedModel: String,
         stream: Bool
-    ) -> ChatQuery {
+    ) throws -> ChatQuery {
         // 顺序：system → [history...] → user。
         //
         // 历史里的 .user / .assistant 各自映射到 MacPaw 的对应 case。
@@ -235,15 +280,36 @@ struct OpenAIClient: AIClientProtocol {
             case .user:
                 messages.append(.user(.init(content: .string(message.content))))
             case .assistant:
-                messages.append(.assistant(.init(content: .textContent(message.content))))
+                let toolCalls = message.toolCalls.map { call in
+                    ChatQuery.ChatCompletionMessageParam.AssistantMessageParam.ToolCallParam(
+                        id: call.id,
+                        function: .init(arguments: call.arguments, name: call.name)
+                    )
+                }
+                messages.append(.assistant(.init(
+                    content: message.content.isEmpty ? nil : .textContent(message.content),
+                    reasoningContent: message.reasoningContent,
+                    toolCalls: toolCalls.isEmpty ? nil : toolCalls
+                )))
+            case .tool:
+                guard let toolCallID = message.toolCallID?.nilIfBlank else {
+                    throw AIClientError.invalidChatHistory("tool message is missing tool_call_id")
+                }
+                messages.append(.tool(.init(
+                    content: .textContent(message.content),
+                    toolCallId: toolCallID
+                )))
             }
         }
         if request.images.isEmpty {
-            messages.append(.user(.init(content: .string(request.userPrompt))))
+            if let userPrompt = request.userPrompt.nilIfBlank {
+                messages.append(.user(.init(content: .string(userPrompt))))
+            }
         } else {
-            var parts: [ChatQuery.ChatCompletionMessageParam.UserMessageParam.Content.ContentPart] = [
-                .text(.init(text: request.userPrompt))
-            ]
+            var parts: [ChatQuery.ChatCompletionMessageParam.UserMessageParam.Content.ContentPart] = []
+            if let userPrompt = request.userPrompt.nilIfBlank {
+                parts.append(.text(.init(text: userPrompt)))
+            }
             for image in request.images {
                 let dataURL = "data:\(image.contentType);base64,\(image.data.base64EncodedString())"
                 parts.append(.image(.init(imageUrl: .init(url: dataURL, detail: .auto))))
@@ -251,14 +317,69 @@ struct OpenAIClient: AIClientProtocol {
             messages.append(.user(.init(content: .contentParts(parts))))
         }
 
+        let tools = try request.tools.map { tool in
+            ChatQuery.ChatCompletionToolParam(function: .init(
+                name: tool.name,
+                description: tool.description,
+                parameters: try sdkSchema(from: tool.inputSchema),
+                strict: tool.strict
+            ))
+        }
+
         return ChatQuery(
             messages: messages,
             model: resolvedModel,
             maxCompletionTokens: request.parameters.maxCompletionTokens > 0 ? request.parameters.maxCompletionTokens : nil,
+            metadata: request.metadata.isEmpty ? nil : request.metadata,
+            parallelToolCalls: tools.isEmpty ? nil : request.parallelToolCalls,
             responseFormat: request.responseFormat == .jsonObject ? .jsonObject : nil,
             temperature: request.parameters.temperature,
+            toolChoice: tools.isEmpty ? nil : sdkToolChoice(request.toolChoice),
+            tools: tools.isEmpty ? nil : tools,
             topP: request.parameters.topP,
-            stream: stream
+            stream: stream,
+            streamOptions: stream && request.includeUsage ? .init(includeUsage: true) : nil
+        )
+    }
+
+    private static func sdkSchema(from schema: AgentJSONSchema) throws -> JSONSchema {
+        let data = try JSONEncoder().encode(schema)
+        return try JSONDecoder().decode(JSONSchema.self, from: data)
+    }
+
+    private static func sdkToolChoice(_ choice: AIChatToolChoice) -> ChatQuery.ChatCompletionFunctionCallOptionParam {
+        switch choice {
+        case .none:
+            return .none
+        case .auto:
+            return .auto
+        case .required:
+            return .required
+        case .tool(let name):
+            return .function(name)
+        }
+    }
+
+    private static func toolCalls(
+        from calls: [ChatQuery.ChatCompletionMessageParam.AssistantMessageParam.ToolCallParam]?
+    ) -> [AIChatToolCall] {
+        (calls ?? []).map { call in
+            AIChatToolCall(
+                id: call.id.nilIfBlank ?? UUID().uuidString,
+                name: call.function.name,
+                arguments: call.function.arguments.nilIfBlank ?? "{}"
+            )
+        }
+    }
+
+    private static func usage(from usage: ChatResult.CompletionUsage?) -> AIChatUsage? {
+        guard let usage else { return nil }
+        return AIChatUsage(
+            inputTokens: usage.promptTokens,
+            outputTokens: usage.completionTokens,
+            cachedTokens: usage.promptTokensDetails?.cachedTokens ?? 0,
+            reasoningTokens: usage.completionTokensDetails?.reasoningTokens ?? 0,
+            totalTokens: usage.totalTokens
         )
     }
 

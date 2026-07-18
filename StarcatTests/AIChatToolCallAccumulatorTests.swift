@@ -1,0 +1,100 @@
+//
+//  AIChatToolCallAccumulatorTests.swift
+//  StarcatTests
+//
+//  验证流式 function tool-call 的交错聚合和缺失 id 兜底。
+//
+
+import Testing
+@testable import Starcat
+
+@Suite("AIChatToolCallAccumulator")
+struct AIChatToolCallAccumulatorTests {
+    @Test("按 index 聚合交错的参数增量")
+    func assemblesInterleavedDeltasByIndex() {
+        var accumulator = AIChatToolCallAccumulator()
+        accumulator.append(.init(index: 1, id: "call-2", name: "external_", argumentsFragment: "{\"q\":"))
+        accumulator.append(.init(index: 0, id: "call-1", name: "repo_", argumentsFragment: "{\"id\":"))
+        accumulator.append(.init(index: 1, name: "search", argumentsFragment: "\"swift\"}"))
+        accumulator.append(.init(index: 0, name: "detail", argumentsFragment: "42}"))
+
+        #expect(accumulator.completedCalls() == [
+            AIChatToolCall(id: "call-1", name: "repo_detail", arguments: "{\"id\":42}"),
+            AIChatToolCall(id: "call-2", name: "external_search", arguments: "{\"q\":\"swift\"}")
+        ])
+    }
+
+    @Test("缺失 id 和参数时生成可关联的宿主调用")
+    func suppliesMissingIDAndEmptyArguments() {
+        var accumulator = AIChatToolCallAccumulator()
+        accumulator.append(.init(index: 0, name: "repo_detail"))
+
+        let calls = accumulator.completedCalls(idFactory: { "host-call-id" })
+
+        #expect(calls == [AIChatToolCall(id: "host-call-id", name: "repo_detail", arguments: "{}")])
+    }
+
+    @Test("相同 tool index 的不同 choice 不会互相拼接")
+    func isolatesCallsByChoiceAndIndex() {
+        var accumulator = AIChatToolCallAccumulator()
+        accumulator.append(.init(
+            choiceIndex: 1,
+            index: 0,
+            id: "alternative-call",
+            name: "external_search",
+            argumentsFragment: "{\"query\":\"alternative\"}"
+        ))
+        accumulator.append(.init(
+            choiceIndex: 0,
+            index: 0,
+            id: "primary-call",
+            name: "context_resolve_repos",
+            argumentsFragment: "{\"limit\":5}"
+        ))
+
+        #expect(accumulator.completedCalls() == [
+            AIChatToolCall(
+                id: "primary-call",
+                name: "context_resolve_repos",
+                arguments: "{\"limit\":5}"
+            )
+        ])
+        #expect(accumulator.completedCalls(choiceIndex: 1) == [
+            AIChatToolCall(
+                id: "alternative-call",
+                name: "external_search",
+                arguments: "{\"query\":\"alternative\"}"
+            )
+        ])
+    }
+
+    @Test("Provider 复用 choice/index 但更换 callID 时重置旧参数")
+    func resetsReusedSlotWhenCallIDChanges() {
+        var accumulator = AIChatToolCallAccumulator()
+        accumulator.append(.init(
+            index: 0,
+            id: "old-call",
+            name: "context_",
+            argumentsFragment: "{\"limit\":"
+        ))
+        accumulator.append(.init(
+            index: 0,
+            id: "new-call",
+            name: "external_",
+            argumentsFragment: "{\"query\":"
+        ))
+        accumulator.append(.init(
+            index: 0,
+            name: "search",
+            argumentsFragment: "\"Swift\"}"
+        ))
+
+        #expect(accumulator.completedCalls() == [
+            AIChatToolCall(
+                id: "new-call",
+                name: "external_search",
+                arguments: "{\"query\":\"Swift\"}"
+            )
+        ])
+    }
+}

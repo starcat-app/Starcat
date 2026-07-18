@@ -1354,6 +1354,8 @@ struct KnowledgeRAGService: Sendable {
                 guard hasAnswerReasoning, !answerReasoningCompleted else { continue }
                 answerReasoningCompleted = true
                 sink.yield(.execution(.reasoningCompleted(.answerReasoning)))
+            case .toolCallDelta, .usage:
+                break
             case .delta(let text):
                 answer += text
                 sink.yield(.delta(text))

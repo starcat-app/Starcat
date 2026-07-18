@@ -51,13 +51,47 @@ final class ExternalSearchContextProvider {
         guard let providerID = selectedSingleProvider(registry: registry) else { return nil }
         let hits = try await collectHits(
             providerID: providerID,
-            queries: queries,
+            requests: queries.map {
+                ExternalSearchRequest(query: $0, purpose: .aiContext, maxResults: 5)
+            },
             fingerprint: fingerprint,
             registry: registry,
-            repoID: repo.id,
-            perQueryMaxResults: 5
+            cacheScopeID: repo.id
         )
         return makeAIContext(providerID: providerID, hits: Array(Self.deduplicated(hits).prefix(6)), aggregate: false)
+    }
+
+    /// 执行由 Agent 模型产生的结构化搜索请求。
+    ///
+    /// 此入口只负责 Provider 编排和缓存；私有仓库是否允许进入查询由调用方在拥有完整
+    /// `AgentRunContext` 时判定，避免底层 Provider 猜测业务上下文。
+    func collect(request: ExternalSearchRequest, cacheScopeID: Int64 = 0) async throws -> AIExternalContext? {
+        guard settings.externalContextEnabled else { return nil }
+
+        let fingerprint = Self.queryFingerprint(for: request)
+        let registry = makeRegistry()
+        if settings.aggregateExternalContextSearchEnabled, settings.isProUser {
+            return try await collectAggregate(
+                request: request,
+                fingerprint: fingerprint,
+                registry: registry,
+                cacheScopeID: cacheScopeID
+            )
+        }
+
+        guard let providerID = selectedSingleProvider(registry: registry) else { return nil }
+        let hits = try await collectHits(
+            providerID: providerID,
+            requests: [request],
+            fingerprint: fingerprint,
+            registry: registry,
+            cacheScopeID: cacheScopeID
+        )
+        return makeAIContext(
+            providerID: providerID,
+            hits: Array(Self.deduplicated(hits).prefix(request.maxResults)),
+            aggregate: false
+        )
     }
 
     nonisolated static func queries(for repo: Repo) -> [String] {
@@ -87,6 +121,16 @@ final class ExternalSearchContextProvider {
             .joined(separator: "|")
     }
 
+    nonisolated static func queryFingerprint(for request: ExternalSearchRequest) -> String {
+        [
+            request.query.lowercased(),
+            "max=\(request.maxResults)",
+            "freshness=\(request.freshness ?? "")",
+            "include=\(request.includeDomains.map { $0.lowercased() }.sorted().joined(separator: ","))",
+            "exclude=\(request.excludeDomains.map { $0.lowercased() }.sorted().joined(separator: ","))"
+        ].joined(separator: "|")
+    }
+
     private func collectAggregate(
         repo: Repo,
         queries: [String],
@@ -104,11 +148,12 @@ final class ExternalSearchContextProvider {
                     do {
                         let hits = try await self.collectHits(
                             providerID: providerID,
-                            queries: queries,
+                            requests: queries.map {
+                                ExternalSearchRequest(query: $0, purpose: .aiContext, maxResults: 3)
+                            },
                             fingerprint: fingerprint,
                             registry: registry,
-                            repoID: repo.id,
-                            perQueryMaxResults: 3
+                            cacheScopeID: repo.id
                         )
                         return ProviderHitsOutcome(providerID: providerID, result: .success(hits))
                     } catch {
@@ -133,26 +178,67 @@ final class ExternalSearchContextProvider {
         return makeAIContext(providerID: nil, hits: Array(sorted.prefix(8)), aggregate: true)
     }
 
-    private func collectHits(
-        providerID: ExternalSearchProviderID,
-        queries: [String],
+    private func collectAggregate(
+        request: ExternalSearchRequest,
         fingerprint: String,
         registry: ExternalSearchRegistry,
-        repoID: Int64,
-        perQueryMaxResults: Int
+        cacheScopeID: Int64
+    ) async throws -> AIExternalContext? {
+        let usable = registry.usableProviderIDs()
+        let providerIDs = ExternalSearchProviderID.automaticContextPriority.filter(usable.contains)
+        guard !providerIDs.isEmpty else { return nil }
+
+        let outcomes = await withTaskGroup(of: ProviderHitsOutcome.self) { group in
+            for providerID in providerIDs {
+                group.addTask {
+                    do {
+                        let hits = try await self.collectHits(
+                            providerID: providerID,
+                            requests: [request],
+                            fingerprint: fingerprint,
+                            registry: registry,
+                            cacheScopeID: cacheScopeID
+                        )
+                        return ProviderHitsOutcome(providerID: providerID, result: .success(hits))
+                    } catch {
+                        return ProviderHitsOutcome(providerID: providerID, result: .failure(error))
+                    }
+                }
+            }
+
+            var collected: [ProviderHitsOutcome] = []
+            for await outcome in group {
+                collected.append(outcome)
+            }
+            return collected
+        }
+
+        let hits = outcomes.flatMap { (try? $0.result.get()) ?? [] }
+        let sorted = Self.deduplicated(hits).sorted {
+            providerPriority($0.providerID) < providerPriority($1.providerID)
+        }
+        return makeAIContext(providerID: nil, hits: Array(sorted.prefix(request.maxResults)), aggregate: true)
+    }
+
+    private func collectHits(
+        providerID: ExternalSearchProviderID,
+        requests: [ExternalSearchRequest],
+        fingerprint: String,
+        registry: ExternalSearchRegistry,
+        cacheScopeID: Int64
     ) async throws -> [ExternalSearchContextHit] {
-        if let cached = try? await diskCache?.loadAIContext(provider: providerID, repoID: repoID, queryFingerprint: fingerprint) {
+        if let cached = try? await diskCache?.loadAIContext(
+            provider: providerID,
+            repoID: cacheScopeID,
+            queryFingerprint: fingerprint
+        ) {
             return cached.hits.map { ExternalSearchContextHit(providerID: providerID, hit: $0) }
         }
 
         let provider = providerFactory?(providerID) ?? registry.provider(for: providerID)
         var hits: [ExternalSearchHit] = []
-        for query in queries {
-            let response = try await provider.search(ExternalSearchRequest(
-                query: query,
-                purpose: .aiContext,
-                maxResults: perQueryMaxResults
-            ))
+        for request in requests {
+            let response = try await provider.search(request)
             hits.append(contentsOf: response.hits)
         }
         let response = ExternalSearchResponse(
@@ -160,7 +246,12 @@ final class ExternalSearchContextProvider {
             metadata: ExternalSearchMetadata(provider: providerID, totalResults: hits.count)
         )
         if !hits.isEmpty {
-            try? await diskCache?.saveAIContext(provider: providerID, repoID: repoID, queryFingerprint: fingerprint, response: response)
+            try? await diskCache?.saveAIContext(
+                provider: providerID,
+                repoID: cacheScopeID,
+                queryFingerprint: fingerprint,
+                response: response
+            )
         }
         return hits.map { ExternalSearchContextHit(providerID: providerID, hit: $0) }
     }

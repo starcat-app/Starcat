@@ -148,7 +148,7 @@ struct AnySearchExternalSearchProvider: ExternalSearchProvider {
         return AnySearchRequest(
             query: request.query,
             maxResults: request.maxResults,
-            domain: filters?.domain,
+            domain: filters?.domain ?? request.includeDomains.first,
             contentTypes: filters?.contentTypes.isEmpty == false ? Array(filters!.contentTypes).sorted() : nil,
             zone: filters?.zone?.rawValue,
             language: Locale.current.language.languageCode?.identifier
@@ -286,18 +286,40 @@ struct BraveLLMContextSearchProvider: ExternalSearchProvider {
         guard isEnabled else { throw ExternalSearchError.disabled(provider: id) }
         guard let apiKey, !apiKey.isEmpty else { throw ExternalSearchError.missingAPIKey(provider: id) }
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "q", value: request.query),
+        var queryItems = [
+            URLQueryItem(name: "q", value: Self.domainScopedQuery(for: request)),
             URLQueryItem(name: "count", value: "\(min(max(request.maxResults, 1), 50))"),
             URLQueryItem(name: "maximum_number_of_urls", value: "\(min(max(request.maxResults, 1), 50))"),
             URLQueryItem(name: "enable_source_metadata", value: "true")
         ]
+        if let freshness = Self.braveFreshness(request.freshness) {
+            queryItems.append(URLQueryItem(name: "freshness", value: freshness))
+        }
+        components.queryItems = queryItems
         var urlRequest = URLRequest(url: components.url!)
         urlRequest.httpMethod = "GET"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
         urlRequest.setValue(apiKey, forHTTPHeaderField: "X-Subscription-Token")
         let response: BraveLLMContextResponse = try await http.perform(urlRequest, provider: id)
         return response.externalSearchResponse(provider: id)
+    }
+
+    /// Brave LLM Context 不提供独立 domain allowlist 参数；将 allowlist 收窄为标准
+    /// `site:` 查询，保证 Agent 声明的来源边界不会被静默忽略。
+    private static func domainScopedQuery(for request: ExternalSearchRequest) -> String {
+        guard !request.includeDomains.isEmpty else { return request.query }
+        let domains = request.includeDomains.map { "site:\($0)" }.joined(separator: " OR ")
+        return "\(request.query) (\(domains))"
+    }
+
+    private static func braveFreshness(_ freshness: String?) -> String? {
+        switch freshness {
+        case "day": return "pd"
+        case "week": return "pw"
+        case "month": return "pm"
+        case "year": return "py"
+        default: return nil
+        }
     }
 }
 
@@ -310,14 +332,16 @@ private struct TavilyRequest: Encodable {
     let includeRawContent: Bool
     let includeDomains: [String]?
     let excludeDomains: [String]?
+    let timeRange: String?
 
     init(from request: ExternalSearchRequest) {
         self.query = request.query
         self.searchDepth = "basic"
-        self.maxResults = request.maxResults
+        self.maxResults = min(request.maxResults, 20)
         self.includeRawContent = true
         self.includeDomains = request.includeDomains.isEmpty ? nil : request.includeDomains
         self.excludeDomains = request.excludeDomains.isEmpty ? nil : request.excludeDomains
+        self.timeRange = request.freshness
     }
 }
 
@@ -368,6 +392,7 @@ private struct ExaRequest: Encodable {
     let numResults: Int
     let includeDomains: [String]?
     let excludeDomains: [String]?
+    let startPublishedDate: String?
     let contents: Contents
 
     init(from request: ExternalSearchRequest) {
@@ -375,7 +400,25 @@ private struct ExaRequest: Encodable {
         self.numResults = request.maxResults
         self.includeDomains = request.includeDomains.isEmpty ? nil : request.includeDomains
         self.excludeDomains = request.excludeDomains.isEmpty ? nil : request.excludeDomains
+        self.startPublishedDate = Self.startDate(for: request.freshness)
         self.contents = Contents(text: true, highlights: true, summary: true)
+    }
+
+    /// Exa 使用绝对 ISO 8601 时间，而 Agent 暴露相对时间窗口；转换在 Provider DTO
+    /// 内完成，避免把 Exa 字段泄漏进统一请求模型。
+    private static func startDate(for freshness: String?) -> String? {
+        let days: Int
+        switch freshness {
+        case "day": days = 1
+        case "week": days = 7
+        case "month": days = 31
+        case "year": days = 365
+        default: return nil
+        }
+        guard let date = Calendar(identifier: .gregorian).date(byAdding: .day, value: -days, to: Date()) else {
+            return nil
+        }
+        return ISO8601DateFormatter.shared.string(from: date)
     }
 }
 

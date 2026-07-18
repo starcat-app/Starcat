@@ -237,6 +237,8 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
                 onReasoningDelta(delta)
             case .reasoningCompleted:
                 break
+            case .toolCallDelta, .usage:
+                break
             case .delta(let delta):
                 content += delta
             case .completed(let response):

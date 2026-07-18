@@ -23,9 +23,9 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let capabilityLabels: [String]
     let defaultPrompt: String
     let isEnabled: Bool
+    /// 模型在当前 Agent 中可见的工具 allowlist；数组顺序不代表执行顺序。
     let toolIDs: [String]
     let artifactTypes: [AgentArtifactType]
-    let executionStrategy: AgentExecutionStrategy
 
     init(
         id: String,
@@ -36,8 +36,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         defaultPrompt: String,
         isEnabled: Bool,
         toolIDs: [String] = [],
-        artifactTypes: [AgentArtifactType] = [],
-        executionStrategy: AgentExecutionStrategy = .linearToolSequence
+        artifactTypes: [AgentArtifactType] = []
     ) {
         self.id = id
         self.title = title
@@ -48,23 +47,15 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.isEnabled = isEnabled
         self.toolIDs = toolIDs
         self.artifactTypes = artifactTypes
-        self.executionStrategy = executionStrategy
     }
 }
 
-/// Agent Runtime 如何解释 `toolIDs`。
-///
-/// v1 先只支持线性工具序列,保证执行顺序和审计输出稳定。后续接模型 tool-calling loop
-/// 时可以增加新策略,但不能破坏当前顺序可审计的契约。
-enum AgentExecutionStrategy: String, Hashable, Sendable {
-    case linearToolSequence
-}
-
 /// 一次 Agent run 的状态。
-enum AgentRunStatus: String, Sendable {
+enum AgentRunStatus: String, Codable, Hashable, Sendable {
     case idle
     case planning
     case running
+    case waitingForConfirmation
     case completed
     case failed
     case cancelled
@@ -80,7 +71,7 @@ enum AgentStepStatus: String, Sendable {
 }
 
 /// Agent 产出物类型。
-enum AgentArtifactType: String, Sendable {
+enum AgentArtifactType: String, Codable, Hashable, Sendable {
     case markdown
     case log
 
@@ -91,46 +82,6 @@ enum AgentArtifactType: String, Sendable {
         case .log:
             return String.l10n("agent.artifact.type.log")
         }
-    }
-}
-
-/// Runtime 生成的执行计划步骤。
-///
-/// 计划步骤和时间线步骤分开保存：计划是 Agent 准备怎么做，时间线是实际做到了哪一步。
-/// 后续接入真实 tool-calling 后，计划可来自模型 structured output，而时间线来自工具执行事件。
-struct AgentPlanStep: Identifiable, Hashable, Sendable {
-    let id: UUID
-    var title: String
-    var detail: String
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        detail: String
-    ) {
-        self.id = id
-        self.title = title
-        self.detail = detail
-    }
-}
-
-/// Agent 时间线中的一个步骤。
-struct AgentRunStep: Identifiable, Hashable, Sendable {
-    let id: UUID
-    var title: String
-    var detail: String
-    var status: AgentStepStatus
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        detail: String,
-        status: AgentStepStatus = .pending
-    ) {
-        self.id = id
-        self.title = title
-        self.detail = detail
-        self.status = status
     }
 }
 
@@ -166,38 +117,15 @@ struct AgentToolOutput: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Agent 请求用户确认的动作。
-///
-/// 当前只负责展示和审计,不执行写入。后续接 tag / note / status / star 写操作时,
-/// 必须先生成这个动作,用户确认后再调用对应写工具。
-struct AgentConfirmationAction: Identifiable, Hashable, Sendable {
-    let id: UUID
-    var title: String
-    var detail: String
-    var toolName: String
-    var input: String
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        detail: String,
-        toolName: String,
-        input: String
-    ) {
-        self.id = id
-        self.title = title
-        self.detail = detail
-        self.toolName = toolName
-        self.input = input
-    }
-}
-
 /// Agent 产出物。
 struct AgentArtifact: Identifiable, Hashable, Sendable {
     let id: UUID
     let type: AgentArtifactType
     var title: String
     var content: String
+    var toolCallID: String?
+    var messageID: UUID?
+    var sequence: Int
     var createdAt: Date
 
     init(
@@ -205,12 +133,18 @@ struct AgentArtifact: Identifiable, Hashable, Sendable {
         type: AgentArtifactType,
         title: String,
         content: String,
+        toolCallID: String? = nil,
+        messageID: UUID? = nil,
+        sequence: Int = 0,
         createdAt: Date = Date()
     ) {
         self.id = id
         self.type = type
         self.title = title
         self.content = content
+        self.toolCallID = toolCallID
+        self.messageID = messageID
+        self.sequence = sequence
         self.createdAt = createdAt
     }
 }
@@ -219,29 +153,53 @@ struct AgentArtifact: Identifiable, Hashable, Sendable {
 ///
 /// run 开始时冻结上下文，而不是让 Runtime 持有列表的 live binding。这样用户在 Agent
 /// 执行过程中切换筛选、刷新列表或打开别的窗口，都不会污染当前 run 的审计记录。
-struct AgentRunContext: Hashable, Sendable {
+struct AgentRunContext: Codable, Hashable, Sendable {
     var sourceDescription: String
     var generatedAt: Date
     var repos: [AgentRepoSnapshot]
+    var attachments: [AgentPromptAttachment]
+    var failureReason: String?
 
     init(
         sourceDescription: String,
         generatedAt: Date = Date(),
-        repos: [AgentRepoSnapshot] = []
+        repos: [AgentRepoSnapshot] = [],
+        attachments: [AgentPromptAttachment] = [],
+        failureReason: String? = nil
     ) {
         self.sourceDescription = sourceDescription
         self.generatedAt = generatedAt
         self.repos = repos
+        self.attachments = attachments
+        self.failureReason = failureReason
     }
 
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
+}
+
+/// 用户显式附加到一次 run 的 UTF-8 文本快照。
+///
+/// 只保存文件名和内容，不保存本地绝对路径；历史审计可以回放输入，但不会把用户目录
+/// 结构泄露给模型或写入数据库。
+struct AgentPromptAttachment: Codable, Identifiable, Hashable, Sendable {
+    var id: UUID
+    var name: String
+    var content: String
+
+    init(id: UUID = UUID(), name: String, content: String) {
+        self.id = id
+        self.name = name
+        self.content = content
+    }
+
+    var byteCount: Int { content.utf8.count }
 }
 
 /// Agent 可消费的仓库快照。
 ///
 /// 这里只保留生成周刊需要的稳定字段，避免把完整 `Repo` 行直接塞进 Runtime。后续要补
 /// README / note / tag 时，也应继续通过快照字段扩展，而不是让工具层读取 UI 状态。
-struct AgentRepoSnapshot: Identifiable, Hashable, Sendable {
+struct AgentRepoSnapshot: Codable, Identifiable, Hashable, Sendable {
     let id: Int64
     var owner: String
     var name: String
@@ -250,6 +208,7 @@ struct AgentRepoSnapshot: Identifiable, Hashable, Sendable {
     var language: String?
     var starsCount: Int
     var topics: [String]
+    var isPrivate: Bool
     var isStarred: Bool
     var starredAt: String?
     var htmlUrl: String
@@ -311,12 +270,10 @@ struct AgentTraceSpan: Identifiable, Hashable, Sendable {
 /// 替换成模型 tool-calling runtime 或 AgentRunKit runtime 时，Workspace 不需要重写。
 enum AgentRunEvent: Sendable {
     case runStarted(title: String)
-    case planCreated([AgentPlanStep])
-    case stepStarted(id: UUID)
-    case stepUpdated(AgentRunStep)
-    case toolOutput(AgentToolOutput)
-    case trace(AgentTraceSpan)
-    case confirmationRequested(AgentConfirmationAction)
+    case approvalUpdated(AgentApprovalRequest)
+    case messageAppended(AgentMessage)
+    case usageUpdated(AgentUsage)
+    case assistantReasoningDelta(String)
     case assistantDelta(String)
     case artifactCreated(AgentArtifact)
     case runCompleted

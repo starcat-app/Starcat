@@ -6,7 +6,7 @@
 //
 //  这些测试不验证 SwiftUI 布局,只锁住 ViewModel 对 AgentRunEvent 的状态投影。
 //  这样后续 runtime 从本地只读工具切换到模型 tool-calling 时,工作台仍能依赖
-//  同一组 plan / step / tool output / artifact 状态。
+//  同一组 message / approval / artifact 事实状态。
 //
 
 import Foundation
@@ -19,23 +19,15 @@ struct AgentWorkspaceViewModelTests {
 
     @Test("run 会把 runtime 事件投影成工作台状态")
     func runProjectsRuntimeEventsIntoWorkspaceState() async throws {
-        let step = AgentRunStep(title: "生成周刊", detail: "生成 Markdown", status: .completed)
+        let runID = UUID()
         let artifact = AgentArtifact(type: .markdown, title: "周刊", content: "# 周刊")
         let logArtifact = AgentArtifact(type: .log, title: "日志", content: "# Log")
-        let traceSpan = AgentTraceSpan(
-            kind: "Tool",
-            title: "report.generate",
-            summary: "ok",
-            input: #"{"prompt":"生成周刊"}"#,
-            output: #"{"artifact":"markdown"}"#,
-            log: "latency=1ms"
-        )
+        let user = AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("生成周刊")])
+        let assistant = AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.text("开始整理")])
         let runtime = EventReplayAgentRuntime(events: [
             .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
-            .planCreated([AgentPlanStep(title: "计划", detail: "确认输出")]),
-            .stepUpdated(step),
-            .toolOutput(AgentToolOutput(toolName: "report.generate", summary: "ok", detail: "done")),
-            .trace(traceSpan),
+            .messageAppended(user),
+            .messageAppended(assistant),
             .artifactCreated(artifact),
             .artifactCreated(logArtifact),
             .runCompleted
@@ -50,13 +42,51 @@ struct AgentWorkspaceViewModelTests {
         try await waitUntil { viewModel.status == .completed }
 
         #expect(viewModel.runTitle == BuiltInAgents.githubWeeklyReport.title)
-        #expect(viewModel.planSteps.count == 1)
-        #expect(viewModel.steps == [step])
-        #expect(viewModel.toolOutputs.count == 1)
-        #expect(viewModel.traceSpans == [traceSpan])
+        #expect(viewModel.messages.map(\.role) == [.user, .assistant])
         #expect(viewModel.artifacts.count == 2)
         #expect(viewModel.selectedArtifact?.content == "# 周刊")
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test("selectedArtifactID 会联动 Inspector 当前产出物")
+    func artifactSelectionUsesRealArtifactState() async throws {
+        let first = AgentArtifact(type: .markdown, title: "周刊", content: "# Weekly")
+        let second = AgentArtifact(type: .log, title: "日志", content: "run log")
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .artifactCreated(first),
+            .artifactCreated(second),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+        viewModel.selectedArtifactID = second.id
+
+        #expect(viewModel.selectedArtifact?.id == second.id)
+        #expect(viewModel.selectedArtifact?.content == "run log")
+    }
+
+    @Test("通用 Inspector 按 Agent 类型生成正确导出文件名")
+    func artifactExportFilenameUsesSelectedAgent() {
+        let viewModel = AgentWorkspaceViewModel(agents: [
+            BuiltInAgents.githubWeeklyReport,
+            BuiltInAgents.repoInsight
+        ])
+        let markdown = AgentArtifact(type: .markdown, title: "Report", content: "# Report")
+        let log = AgentArtifact(type: .log, title: "Log", content: "run log")
+
+        #expect(viewModel.suggestedFilename(for: markdown) == "starcat-weekly-report.md")
+        viewModel.selectedAgentID = BuiltInAgents.repoInsight.id
+        #expect(viewModel.suggestedFilename(for: markdown) == "starcat-repo-insight.md")
+        #expect(viewModel.suggestedFilename(for: log) == "starcat-agent-run.txt")
+        viewModel.selectedAgentID = "future-agent"
+        #expect(viewModel.suggestedFilename(for: markdown) == "starcat-agent-artifact.md")
     }
 
     @Test("cancel 会立即进入取消状态")
@@ -74,17 +104,19 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
-    @Test("confirmationRequested 会保存待确认动作")
-    func confirmationRequestedStoresPendingAction() async throws {
-        let action = AgentConfirmationAction(
-            title: "建议创建 tag: database",
-            detail: "确认后才写入 repo tag。",
-            toolName: "tag.propose",
-            input: #"{"tag":"database"}"#
+    @Test("approvalUpdated 会保存待审批事实")
+    func approvalUpdatedStoresPendingApproval() async throws {
+        let approval = AgentApprovalRequest(
+            runID: UUID(),
+            toolCallID: "call-tag",
+            toolName: "tag_propose",
+            input: .object(["tag": .string("database")]),
+            permission: .requiresConfirmation,
+            sequence: 1
         )
         let runtime = EventReplayAgentRuntime(events: [
             .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
-            .confirmationRequested(action),
+            .approvalUpdated(approval),
             .runCompleted
         ])
         let viewModel = AgentWorkspaceViewModel(
@@ -96,7 +128,96 @@ struct AgentWorkspaceViewModelTests {
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
 
-        #expect(viewModel.pendingConfirmations == [action])
+        #expect(viewModel.approvals == [approval])
+    }
+
+    @Test("reasoning 与正文增量会分别投影到流式缓冲")
+    func projectsReasoningAndTextDeltasSeparately() async throws {
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+            .assistantReasoningDelta("先检查本地上下文"),
+            .assistantDelta("正在生成周刊"),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.assistantReasoningOutput == "先检查本地上下文")
+        #expect(viewModel.assistantOutput == "正在生成周刊")
+    }
+
+    @Test("assistant 消息落库后会清空临时流式缓冲")
+    func persistedAssistantMessageClearsStreamingBuffers() async throws {
+        let message = AgentMessage(
+            runID: UUID(),
+            role: .assistant,
+            turn: 0,
+            sequence: 1,
+            parts: [.reasoning("已完成分析"), .text("最终正文")]
+        )
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .assistantReasoningDelta("分析中"),
+            .assistantDelta("生成中"),
+            .messageAppended(message),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.assistantReasoningOutput.isEmpty)
+        #expect(viewModel.assistantOutput.isEmpty)
+        #expect(viewModel.messages == [message])
+    }
+
+    @Test("批准操作会向 Runtime 发送精确关联命令")
+    func approveSendsCorrelatedRuntimeCommand() async throws {
+        let approval = AgentApprovalRequest(
+            runID: UUID(),
+            toolCallID: "call-write",
+            toolName: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            permission: .requiresConfirmation,
+            sequence: 1
+        )
+        let recorder = AgentCommandRecorder()
+        let runtime = CommandRecordingAgentRuntime(
+            events: [.runStarted(title: "Run"), .approvalUpdated(approval)],
+            recorder: recorder
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        viewModel.prompt = "写入标签"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .waitingForConfirmation }
+        viewModel.approve(approval)
+        try await waitUntil { await recorder.commandCount() == 1 }
+        let commands = await recorder.commands()
+        let command = try #require(commands.first)
+
+        guard case .decideApproval(let runID, let approvalID, let toolCallID, let decision) = command else {
+            Issue.record("Expected decideApproval command")
+            return
+        }
+        #expect(runID == approval.runID)
+        #expect(approvalID == approval.id)
+        #expect(toolCallID == approval.toolCallID)
+        #expect(decision == .approved)
     }
 
     @Test("run 会先冻结 context 再交给 runtime")
@@ -113,6 +234,7 @@ struct AgentWorkspaceViewModelTests {
                     language: "Swift",
                     starsCount: 7800,
                     topics: ["sqlite"],
+                    isPrivate: false,
                     isStarred: true,
                     starredAt: "2026-07-07T00:00:00Z",
                     htmlUrl: "https://github.com/groue/GRDB.swift"
@@ -126,12 +248,15 @@ struct AgentWorkspaceViewModelTests {
             contextProvider: StaticAgentRunContextProvider(context: context)
         )
         viewModel.prompt = "生成本周 GitHub 热门项目周刊"
+        viewModel.attachments = [AgentPromptAttachment(name: "brief.md", content: "重点关注本地 AI 工具")]
 
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
 
         #expect(viewModel.selectedArtifact?.content.contains("Unit Snapshot: 1 repo") == true)
         #expect(viewModel.selectedArtifact?.content.contains("groue/GRDB.swift") == true)
+        #expect(viewModel.selectedArtifact?.content.contains("brief.md: 重点关注本地 AI 工具") == true)
+        #expect(viewModel.attachments.isEmpty)
     }
 
     @Test("空 prompt 不会自动使用默认 Agent 指令运行")
@@ -176,37 +301,6 @@ struct AgentWorkspaceViewModelTests {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBAgentRunRepository(database: database)
         let runID = UUID(uuidString: "00000000-0000-0000-0000-000000001010")!
-        let step = AgentRunStep(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001011")!,
-            title: "历史步骤",
-            detail: "已完成",
-            status: .completed
-        )
-        let trace = AgentTraceSpan(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001012")!,
-            kind: "Tool",
-            title: "history.tool",
-            summary: "ok",
-            input: "input",
-            output: "output",
-            log: "log"
-        )
-        let toolOutput = AgentToolOutput(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001014")!,
-            toolName: "history.tool",
-            summary: "ok",
-            detail: "done",
-            input: "input",
-            output: "output",
-            log: "log"
-        )
-        let artifact = AgentArtifact(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000001013")!,
-            type: .markdown,
-            title: "历史产物",
-            content: "# 历史",
-            createdAt: Date(timeIntervalSince1970: 1_788_000_120)
-        )
         let run = try await repository.createRun(
             id: runID,
             definition: BuiltInAgents.githubWeeklyReport,
@@ -214,14 +308,64 @@ struct AgentWorkspaceViewModelTests {
             context: AgentRunContext(sourceDescription: "Unit"),
             createdAt: Date(timeIntervalSince1970: 1_788_000_000)
         )
-        try await repository.upsertStep(step, runID: runID, index: 0, updatedAt: Date())
-        try await repository.appendToolOutput(toolOutput, runID: runID, index: 0, createdAt: Date())
-        try await repository.appendTrace(trace, runID: runID, index: 0, createdAt: Date())
-        try await repository.appendArtifact(artifact, runID: runID, index: 0)
+        let call = AgentToolCall(
+            id: "history-call",
+            name: "history_tool",
+            input: .object(["input": .string("input")]),
+            sequence: 1
+        )
+        let assistant = AgentMessage(
+            runID: runID,
+            role: .assistant,
+            turn: 0,
+            sequence: 1,
+            parts: [.toolCall(call)]
+        )
+        let result = AgentToolResultMessage(
+            toolCallID: call.id,
+            toolName: call.name,
+            output: .object(["value": .string("output")]),
+            isError: false,
+            status: .completed,
+            sequence: 2
+        )
+        let toolMessage = AgentMessage(
+            runID: runID,
+            role: .tool,
+            turn: 0,
+            sequence: 2,
+            parts: [.toolResult(result)]
+        )
+        let final = AgentMessage(
+            runID: runID,
+            role: .assistant,
+            turn: 1,
+            sequence: 3,
+            parts: [.text("# 历史")]
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("打开历史")]),
+            runStatus: .running
+        )
+        try await repository.appendMessage(assistant, runStatus: .running)
+        try await repository.appendMessage(toolMessage, runStatus: .running)
+        try await repository.appendMessage(final, runStatus: .running)
+        let artifact = AgentArtifact(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001013")!,
+            type: .markdown,
+            title: "历史产物",
+            content: "# 历史",
+            toolCallID: call.id,
+            messageID: toolMessage.id,
+            sequence: toolMessage.sequence,
+            createdAt: Date(timeIntervalSince1970: 1_788_000_120)
+        )
+        try await repository.appendArtifact(artifact, runID: runID)
         try await repository.updateRunStatus(
             runID: runID,
             status: .completed,
-            assistantOutput: "# 历史",
+            model: "test-model",
+            usage: .zero,
             errorMessage: nil,
             finishedAt: Date()
         )
@@ -236,19 +380,69 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.selectedHistoryRunID == run.id)
         #expect(viewModel.prompt == "打开历史")
         #expect(viewModel.status == .completed)
-        #expect(viewModel.steps.map(\.title) == ["历史步骤"])
-        #expect(viewModel.toolOutputs.map(\.toolName) == ["history.tool"])
-        #expect(viewModel.traceSpans.map(\.title) == ["history.tool"])
+        #expect(viewModel.messages.map(\.role) == [.user, .assistant, .tool, .assistant])
         #expect(viewModel.selectedArtifact?.content == "# 历史")
-        #expect(viewModel.assistantOutput == "# 历史")
+        #expect(viewModel.assistantOutput.isEmpty)
+    }
+
+    @Test("重启后打开 pending approval 只恢复等待态且不会自动决策")
+    func openPendingApprovalRestoresWaitingStateWithoutAutoDecision() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID(uuidString: "00000000-0000-0000-0000-000000001020")!
+        let run = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "等待审批",
+            context: AgentRunContext(sourceDescription: "Unit"),
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        let call = AgentToolCall(
+            id: "pending-call",
+            name: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            sequence: 1
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("等待审批")]),
+            runStatus: .running
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.toolCall(call)]),
+            runStatus: .running
+        )
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: .requiresConfirmation,
+            sequence: call.sequence
+        )
+        try await repository.saveApproval(approval, runStatus: .waitingForConfirmation)
+        let recorder = RestartApprovalRecorder()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: RestartApprovalRuntime(approval: approval, recorder: recorder)
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.openHistoryRun(run)
+        try await waitUntil {
+            let resumeCount = await recorder.resumeCount()
+            return viewModel.status == .waitingForConfirmation && resumeCount == 1
+        }
+
+        #expect(viewModel.approvals == [approval])
+        #expect(await recorder.commands().isEmpty)
+        #expect(viewModel.messages.map(\.sequence) == [0, 1])
     }
 
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 500_000_000,
-        _ predicate: @escaping @MainActor () -> Bool
+        _ predicate: @escaping @MainActor () async -> Bool
     ) async throws {
         let start = ContinuousClock.now
-        while !predicate() {
+        while !(await predicate()) {
             if start.duration(to: ContinuousClock.now) > .nanoseconds(Int64(timeoutNanoseconds)) {
                 Issue.record("Timed out waiting for AgentWorkspaceViewModel state")
                 return
@@ -287,6 +481,77 @@ private struct NeverFinishingAgentRuntime: AgentRuntime {
     }
 }
 
+private struct CommandRecordingAgentRuntime: AgentRuntime {
+    let events: [AgentRunEvent]
+    let recorder: AgentCommandRecorder
+
+    func run(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
+    }
+
+    func send(_ command: AgentRunCommand) async {
+        await recorder.record(command)
+    }
+}
+
+private struct RestartApprovalRuntime: AgentRuntime {
+    let approval: AgentApprovalRequest
+    let recorder: RestartApprovalRecorder
+
+    func run(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func resumePendingRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            Task {
+                await recorder.recordResume()
+                continuation.yield(.approvalUpdated(approval))
+                continuation.finish()
+            }
+        }
+    }
+
+    func send(_ command: AgentRunCommand) async {
+        await recorder.record(command)
+    }
+}
+
+private actor RestartApprovalRecorder {
+    private var resumes = 0
+    private var recordedCommands: [AgentRunCommand] = []
+
+    func recordResume() { resumes += 1 }
+    func record(_ command: AgentRunCommand) { recordedCommands.append(command) }
+    func resumeCount() -> Int { resumes }
+    func commands() -> [AgentRunCommand] { recordedCommands }
+}
+
+private actor AgentCommandRecorder {
+    private var recordedCommands: [AgentRunCommand] = []
+
+    func record(_ command: AgentRunCommand) {
+        recordedCommands.append(command)
+    }
+
+    func commandCount() -> Int { recordedCommands.count }
+    func commands() -> [AgentRunCommand] { recordedCommands }
+}
+
 private struct StaticAgentRunContextProvider: AgentRunContextProviding {
     let context: AgentRunContext
 
@@ -306,11 +571,12 @@ private struct ContextEchoAgentRuntime: AgentRuntime {
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
             let repoNames = context.repos.map(\.fullName).joined(separator: ", ")
+            let attachmentText = context.attachments.map { "\($0.name): \($0.content)" }.joined(separator: "\n")
             continuation.yield(.runStarted(title: definition.title))
             continuation.yield(.artifactCreated(AgentArtifact(
                 type: .markdown,
                 title: "Context Echo",
-                content: "\(context.sourceDescription)\n\(repoNames)"
+                content: "\(context.sourceDescription)\n\(repoNames)\n\(attachmentText)"
             )))
             continuation.yield(.runCompleted)
             continuation.finish()

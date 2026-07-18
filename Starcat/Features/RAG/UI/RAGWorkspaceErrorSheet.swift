@@ -102,7 +102,7 @@ struct RAGWorkspaceError: Identifiable {
         if let error = error as? AIClientError {
             switch error {
             case .missingAPIKey, .invalidBaseURL: return .configuration
-            case .emptyResponse, .responseTruncated: return .generation
+            case .invalidChatHistory, .emptyResponse, .responseTruncated: return .generation
             case .modelListRequestFailed: return .network
             }
         }

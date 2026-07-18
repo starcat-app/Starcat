@@ -2,6 +2,15 @@
 
 > 日期: 2026-07-07
 > 目的: 先把 Cline 的 Agent 实现拆清楚,再明确 Starcat 应该参考什么、不能照搬什么、以及后续如何落地真正的 LLM tool-calling loop。
+> 落地状态: 2026-07-11 已完成 Cline-style loop、消息契约、工具 schema、Approval、持久化恢复和 Workspace 审计界面;下文的“当前 Starcat”对比保留为改造前基线。
+
+### 最终落地决策(2026-07-11)
+
+- 旧 `LinearAgentRuntime` 已直接删除,不保留 fallback、facade 或兼容路径;`LoopAgentRuntime` 是唯一正式运行时。
+- 工具 ID 统一使用 snake_case,当前正式链路为 `context_resolve_repos`、`external_search`、`repo_cluster_topics`、`artifact_build_weekly_report`。
+- 网络读取并入 `readOnly` 权限分类,是否执行由现有 External Search 设置控制;关闭时返回结构化 skipped 结果,不新增第二套 Provider 或搜索设置。
+- Artifact 由 `artifact_build_weekly_report` 终止工具提交,不再增加额外的 `run_submit` 工具。
+- Starcat 只吸收 Cline 的 loop、消息事实源、工具契约和审批恢复模型,不引入 shell、任意文件编辑、浏览器自动化或 subagent 能力。
 
 ## 1. 结论先行
 
@@ -606,11 +615,7 @@ while iteration < maxIterations:
   continue
 ```
 
-这个 loop 是 Cline 的核心。Starcat 可以保留现有 `AgentWorkspaceViewModel` 和 UI,但底层 `DefaultAgentRuntime` 必须拆分:
-
-- `LinearAgentRuntime` 或旧实现用于短期 fallback / 测试迁移。
-- `LoopAgentRuntime` 作为新主路径。
-- `AgentRuntime` facade 负责选择实现,避免一次性重写 UI。
+这个 loop 是 Cline 的核心。最终落地没有保留旧实现作为 fallback:项目尚未上线,不存在需要兼容的线上 run 或 schema,因此直接删除 `LinearAgentRuntime`,由 `LoopAgentRuntime` 作为唯一正式运行时,Workspace 直接消费统一事件和持久化消息事实。
 
 ### 5.5 第五阶段: 权限和确认闭环
 
@@ -619,7 +624,7 @@ Starcat 的权限建议分四类:
 | 权限 | 是否自动执行 | 示例 |
 | --- | --- | --- |
 | `readOnly` | 是 | resolve repos、repo inspect、本地检索 |
-| `externalRead` | 根据设置页网络搜索开关 | external.search |
+| `readOnly` | 根据设置页网络搜索开关返回执行或 skipped 结果 | external_search |
 | `highCost` | 可配置,默认确认 | 大量网页读取、多 repo 深度分析 |
 | `requiresConfirmation` | 必须确认 | tag 写入、note 写入、status 变更、unstar |
 
