@@ -57,6 +57,39 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.fetchPageCount() == 0)
     }
 
+    @Test("bulk 刷新发布同快照 summary 供 Sidebar 更新计数")
+    func bulkReloadPublishesSummaryForSidebar() async throws {
+        let repository = FakeDiscoveryRepository()
+        let summary = DiscoverySummaryDTO(
+            modes: [
+                DiscoveryModeSummaryDTO(mode: "discover", total: 386, topics: nil, platforms: nil, languages: nil),
+                DiscoveryModeSummaryDTO(mode: "popular", total: 351, topics: nil, platforms: nil, languages: nil),
+                DiscoveryModeSummaryDTO(mode: "new_releases", total: 110, topics: nil, platforms: nil, languages: nil),
+            ],
+            generatedAt: "2026-07-18T08:00:00Z"
+        )
+        await repository.enqueueBulk(Self.makeBulkResult(
+            repos: [Self.makeRepo(repoID: 150, owner: "fresh", name: "repo")],
+            summary: summary
+        ))
+        let viewModel = ExploreDiscoveryViewModel()
+        let catalogStore = ExploreCatalogStore(repository: repository)
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .discover,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .recommended
+        )
+        catalogStore.apply(try #require(viewModel.latestSummary))
+
+        #expect(catalogStore.total(for: .discover) == 386)
+        #expect(catalogStore.total(for: .popular) == 351)
+        #expect(catalogStore.total(for: .newReleases) == 110)
+    }
+
     @Test("本地分页 meta 驱动 loadMore 追加下一页")
     func loadMoreAppendsNextLocalPage() async throws {
         let repository = FakeDiscoveryRepository()
@@ -200,10 +233,16 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.lastIgnoresCacheValue() == true)
     }
 
-    private nonisolated static func makeBulkResult(repos: [DiscoveryRepoDTO]) -> DiscoveryBulkResult {
+    private nonisolated static func makeBulkResult(
+        repos: [DiscoveryRepoDTO],
+        summary: DiscoverySummaryDTO = DiscoverySummaryDTO(
+            modes: [],
+            generatedAt: "2026-06-30T10:00:00Z"
+        )
+    ) -> DiscoveryBulkResult {
         DiscoveryBulkResult(
             repos: repos,
-            summary: DiscoverySummaryDTO(modes: [], generatedAt: "2026-06-30T10:00:00Z"),
+            summary: summary,
             etag: "W/test",
             generatedAt: "2026-06-30T10:00:00Z",
             total: repos.count

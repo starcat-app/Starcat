@@ -30,6 +30,7 @@ final class ExploreDiscoveryViewModel {
     private(set) var cacheWarning: String?
     private(set) var reposRevision: Int = 0
     private(set) var lastRefreshedAt: Date?
+    private(set) var latestSummary: DiscoverySummaryDTO?
 
     var sortOption: ExploreSortOption = .recommended
 
@@ -138,6 +139,7 @@ final class ExploreDiscoveryViewModel {
         bumpRevision: Bool
     ) {
         bulkAllRepos = snapshot.repos
+        latestSummary = snapshot.summary
         lastRefreshedAt = snapshot.lastFetchedAt
         applyFiltersLocally(
             mode: mode,
@@ -158,6 +160,7 @@ final class ExploreDiscoveryViewModel {
         sort: ExploreSortOption
     ) {
         bulkAllRepos = result.repos
+        latestSummary = result.summary
         lastRefreshedAt = Date()
         applyFiltersLocally(
             mode: mode,

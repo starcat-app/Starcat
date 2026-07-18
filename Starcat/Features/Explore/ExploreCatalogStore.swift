@@ -47,6 +47,8 @@ final class ExploreCatalogStore {
 
             do {
                 if let cached = await self.repository.cachedSummary() {
+                    // repository 的异步实现未必会因 Task.cancel() 自动停止，回到主 actor 后必须再次校验。
+                    guard !Task.isCancelled else { return }
                     self.summary = cached
                     self.hasLoaded = true
                     self.loadState = .success
@@ -61,6 +63,7 @@ final class ExploreCatalogStore {
             } catch {
                 guard !Task.isCancelled else { return }
                 if let cached = await self.repository.cachedSummary() {
+                    guard !Task.isCancelled else { return }
                     self.summary = cached
                     self.hasLoaded = true
                     self.loadState = .success
@@ -76,6 +79,18 @@ final class ExploreCatalogStore {
 
     func invalidate() {
         hasLoaded = false
+    }
+
+    /// 接收列表 bulk 已携带的 summary，让 Sidebar 与中栏共享同一份远端快照。
+    ///
+    /// bulk 成功后不应再发一次 summary 请求：额外请求既浪费网络，也可能在两次请求之间
+    /// 遇到后台同步，重新制造“列表与计数不一致”。取消旧任务可防止启动期较早的请求覆盖新快照。
+    func apply(_ summary: DiscoverySummaryDTO) {
+        currentLoadTask?.cancel()
+        currentLoadTask = nil
+        self.summary = summary
+        hasLoaded = true
+        loadState = .success
     }
 
     var displayTopics: [DiscoveryTopicDTO] {

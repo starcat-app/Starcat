@@ -138,6 +138,7 @@ private struct ExploreDiscoveryListView: View {
                 platform: mode == .discover ? selectedPlatform : nil,
                 sort: currentSort
             )
+            publishLatestSummary()
             applySelectionPolicy()
             reportRepoCount()
         }
@@ -189,6 +190,7 @@ private struct ExploreDiscoveryListView: View {
                         sort: currentSort,
                         showsRefreshIndicator: true
                     )
+                    publishLatestSummary()
                     applySelectionPolicy()
                     reportRepoCount()
                 }
@@ -344,6 +346,7 @@ private struct ExploreDiscoveryListView: View {
                 sort: currentSort,
                 showsRefreshIndicator: true
             )
+            publishLatestSummary()
             applySelectionPolicy()
             reportRepoCount()
         }
@@ -583,6 +586,12 @@ private struct ExploreDiscoveryListView: View {
 
     private func reportRepoCount() {
         onRepoCountChange(viewModel.total)
+    }
+
+    /// bulk 与 Sidebar 必须发布同一份 summary，避免应用长时间运行后根分类计数停在启动值。
+    private func publishLatestSummary() {
+        guard let summary = viewModel.latestSummary else { return }
+        dependencies.exploreCatalogStore.apply(summary)
     }
 }
 
