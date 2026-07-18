@@ -31,6 +31,11 @@ final class ExploreDiscoveryViewModel {
     private(set) var reposRevision: Int = 0
     private(set) var lastRefreshedAt: Date?
     private(set) var latestSummary: DiscoverySummaryDTO?
+    /// 当前 `repos` 对应的完整查询身份。
+    ///
+    /// 发现 / 热门 / 新发布共享同一个 ViewModel。分类刚切换而新查询尚未完成时，
+    /// View 通过这个身份隐藏上一分类的结果，避免把旧列表短暂渲染到新分类下。
+    private(set) var publishedQueryIdentity: String?
 
     var sortOption: ExploreSortOption = .recommended
 
@@ -48,6 +53,13 @@ final class ExploreDiscoveryViewModel {
         sort: ExploreSortOption,
         showsRefreshIndicator: Bool = false
     ) async {
+        let queryIdentity = Self.queryIdentity(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort
+        )
         let requestID = UUID()
         inFlightRequestID = requestID
         isLoading = !showsRefreshIndicator
@@ -55,10 +67,20 @@ final class ExploreDiscoveryViewModel {
         loadError = nil
         cacheWarning = nil
 
-        var didShowCachedBulk = false
-        if !showsRefreshIndicator,
-           let cached = await repository.cachedBulk() {
-            guard inFlightRequestID == requestID else { return }
+        let cached = showsRefreshIndicator ? nil : await repository.cachedBulk()
+        guard !shouldStop(requestID: requestID) else {
+            finish(requestID: requestID)
+            return
+        }
+
+        if let cached,
+           isCacheFresh(at: cached.lastFetchedAt),
+           Self.isCachedBulkUsable(cached, for: mode),
+           !(await isSummaryNewerThanBulk(cached, repository: repository)) {
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
             apply(
                 snapshot: cached,
                 mode: mode,
@@ -66,21 +88,19 @@ final class ExploreDiscoveryViewModel {
                 topic: topic,
                 platform: platform,
                 sort: sort,
-                bumpRevision: false
+                bumpRevision: true
             )
-            didShowCachedBulk = true
-            isLoading = false
-            if isCacheFresh(at: cached.lastFetchedAt),
-               Self.isCachedBulkUsable(cached, for: mode),
-               !(await isSummaryNewerThanBulk(cached, repository: repository)) {
-                isRefreshing = false
-                return
-            }
+            publishedQueryIdentity = queryIdentity
+            finish(requestID: requestID)
+            return
         }
 
         do {
             let fetchResult = try await repository.fetchBulk(ignoresCache: showsRefreshIndicator)
-            guard inFlightRequestID == requestID else { return }
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
             apply(
                 result: fetchResult.result,
                 mode: mode,
@@ -89,24 +109,27 @@ final class ExploreDiscoveryViewModel {
                 platform: platform,
                 sort: sort
             )
+            publishedQueryIdentity = queryIdentity
             if case .cachedFallback = fetchResult.source {
                 cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
             }
+        } catch is CancellationError {
+            finish(requestID: requestID)
+            return
         } catch {
-            guard inFlightRequestID == requestID else { return }
-            loadError = error.localizedDescription
-            if !didShowCachedBulk {
-                repos = []
-                total = 0
-                nextPage = nil
-                reposRevision += 1
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
             }
+            loadError = error.localizedDescription
+            repos = []
+            total = 0
+            nextPage = nil
+            publishedQueryIdentity = queryIdentity
+            reposRevision += 1
         }
 
-        if inFlightRequestID == requestID {
-            isLoading = false
-            isRefreshing = false
-        }
+        finish(requestID: requestID)
     }
 
     func loadMoreIfNeeded(
@@ -118,6 +141,14 @@ final class ExploreDiscoveryViewModel {
         platform: String?,
         sort: ExploreSortOption
     ) async {
+        let queryIdentity = Self.queryIdentity(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort
+        )
+        guard publishedQueryIdentity == queryIdentity else { return }
         guard let nextPage else { return }
         guard !isLoading, !isRefreshing else { return }
         guard repos.suffix(4).contains(currentRepo) else { return }
@@ -127,6 +158,23 @@ final class ExploreDiscoveryViewModel {
         repos = Array(filteredLocalRepos.prefix(upperBound))
         self.nextPage = upperBound < filteredLocalRepos.count ? page + 1 : nil
         reposRevision += 1
+    }
+
+    /// 生成 View 与 ViewModel 共用的查询身份，防止两边各自拼字符串后产生漂移。
+    static func queryIdentity(
+        mode: ExploreMode,
+        language: String?,
+        topic: String?,
+        platform: String?,
+        sort: ExploreSortOption
+    ) -> String {
+        [
+            mode.id,
+            mode == .discover ? "__language_unused__" : (language ?? "__all__"),
+            mode == .discover ? (topic ?? "__all__") : "__topic_unused__",
+            mode == .discover ? (platform ?? "__all__") : "__platform_unused__",
+            sort.normalized(for: mode).id,
+        ].joined(separator: "|")
     }
 
     private func apply(
@@ -345,6 +393,18 @@ final class ExploreDiscoveryViewModel {
 
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    private func shouldStop(requestID: UUID) -> Bool {
+        Task.isCancelled || inFlightRequestID != requestID
+    }
+
+    /// 只有仍持有当前 request ID 的 reload 才能收口 loading 状态，避免旧任务
+    /// 被取消后把新任务刚设置的 loading / refreshing 状态提前关掉。
+    private func finish(requestID: UUID) {
+        guard inFlightRequestID == requestID else { return }
+        isLoading = false
+        isRefreshing = false
     }
 
     private func isSummaryNewerThanBulk(

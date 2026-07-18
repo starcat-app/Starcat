@@ -125,6 +125,7 @@ private struct ExploreDiscoveryListView: View {
                 .animation(contentAnimation, value: contentStateID)
         }
         .task(id: queryIdentity) {
+            let requestedIdentity = queryIdentity
             restoreSortPreferenceIfNeeded()
             selectedRepoID = nil
             selectedRepo = nil
@@ -138,6 +139,9 @@ private struct ExploreDiscoveryListView: View {
                 platform: mode == .discover ? selectedPlatform : nil,
                 sort: currentSort
             )
+            guard !Task.isCancelled,
+                  viewModel.publishedQueryIdentity == requestedIdentity
+            else { return }
             publishLatestSummary()
             applySelectionPolicy()
             reportRepoCount()
@@ -146,6 +150,7 @@ private struct ExploreDiscoveryListView: View {
             await observeLibraryStateChanges()
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
+            guard hasPublishedCurrentQuery else { return }
             applySelectionPolicy()
             reportRepoCount()
         }
@@ -180,6 +185,7 @@ private struct ExploreDiscoveryListView: View {
                 disabled: viewModel.isRefreshing || viewModel.isLoading,
                 tooltip: String.l10n("explore.refresh.tooltip")
             ) {
+                let requestedIdentity = queryIdentity
                 Task {
                     await viewModel.reload(
                         repository: dependencies.discoveryRepository,
@@ -190,6 +196,7 @@ private struct ExploreDiscoveryListView: View {
                         sort: currentSort,
                         showsRefreshIndicator: true
                     )
+                    guard viewModel.publishedQueryIdentity == requestedIdentity else { return }
                     publishLatestSummary()
                     applySelectionPolicy()
                     reportRepoCount()
@@ -240,7 +247,7 @@ private struct ExploreDiscoveryListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.isLoading && viewModel.repos.isEmpty {
+        if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
             RepoSkeletonListView(rowCount: 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
@@ -337,6 +344,7 @@ private struct ExploreDiscoveryListView: View {
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
         .refreshable {
+            let requestedIdentity = queryIdentity
             await viewModel.reload(
                 repository: dependencies.discoveryRepository,
                 mode: mode,
@@ -346,6 +354,7 @@ private struct ExploreDiscoveryListView: View {
                 sort: currentSort,
                 showsRefreshIndicator: true
             )
+            guard viewModel.publishedQueryIdentity == requestedIdentity else { return }
             publishLatestSummary()
             applySelectionPolicy()
             reportRepoCount()
@@ -529,17 +538,21 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private var queryIdentity: String {
-        [
-            mode.id,
-            mode == .discover ? "__language_unused__" : (selectedLanguage ?? "__all__"),
-            mode == .discover ? (selectedTopic ?? "__all__") : "__topic_unused__",
-            mode == .discover ? (selectedPlatform ?? "__all__") : "__platform_unused__",
-            currentSort.id
-        ].joined(separator: "|")
+        ExploreDiscoveryViewModel.queryIdentity(
+            mode: mode,
+            language: mode == .discover ? nil : selectedLanguage,
+            topic: mode == .discover ? selectedTopic : nil,
+            platform: mode == .discover ? selectedPlatform : nil,
+            sort: currentSort
+        )
+    }
+
+    private var hasPublishedCurrentQuery: Bool {
+        viewModel.publishedQueryIdentity == queryIdentity
     }
 
     private var contentStateID: String {
-        if viewModel.isLoading && viewModel.repos.isEmpty {
+        if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
             return "explore-loading"
         }
         if let error = viewModel.loadError, viewModel.repos.isEmpty {

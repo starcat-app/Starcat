@@ -6,6 +6,7 @@
 //
 //  覆盖目标：
 //  - ViewModel 使用 bulk 快照在本地完成筛选和排序；
+//  - 分类切换时旧 query 不再冒充新 query，上屏前只发布选定的数据源；
 //  - 分页追加只增长本地切片，不再走远端分页接口；
 //  - 无 bulk 缓存且远端失败时清空列表，避免展示不匹配结果。
 //
@@ -55,6 +56,156 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.loadError == nil)
         #expect(await repository.fetchBulkCount() == 1)
         #expect(await repository.fetchPageCount() == 0)
+    }
+
+    @Test("新鲜缓存直接发布且不重复请求远端")
+    func freshCachePublishesWithoutRemoteFetch() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.seedCached(
+            Self.makeBulkResult(repos: [
+                Self.makeRepo(repoID: 120, owner: "cached", name: "popular", categoryRanks: ["popular": 1])
+            ]),
+            lastFetchedAt: Date()
+        )
+        let viewModel = ExploreDiscoveryViewModel()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .popular,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+
+        let popularIdentity = ExploreDiscoveryViewModel.queryIdentity(
+            mode: .popular,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+        let newReleasesIdentity = ExploreDiscoveryViewModel.queryIdentity(
+            mode: .newReleases,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .release
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["cached/popular"])
+        #expect(viewModel.publishedQueryIdentity == popularIdentity)
+        // View 切到新发布后会立刻发现 identity 不匹配，因此不会继续渲染热门列表。
+        #expect(viewModel.publishedQueryIdentity != newReleasesIdentity)
+        #expect(viewModel.reposRevision == 1)
+        #expect(await repository.fetchBulkCount() == 0)
+    }
+
+    @Test("过期缓存等待远端完成后只发布远端快照")
+    func staleCacheWaitsForRemoteBeforePublishing() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.seedCached(
+            Self.makeBulkResult(repos: [
+                Self.makeRepo(repoID: 130, owner: "stale", name: "repo", categoryRanks: ["popular": 1])
+            ]),
+            lastFetchedAt: Date().addingTimeInterval(-31 * 60)
+        )
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(repoID: 131, owner: "remote", name: "repo", categoryRanks: ["popular": 1])
+        ]))
+        await repository.pauseNextBulkFetch()
+        let viewModel = ExploreDiscoveryViewModel()
+
+        let reloadTask = Task {
+            await viewModel.reload(
+                repository: repository,
+                mode: .popular,
+                language: nil,
+                topic: nil,
+                platform: nil,
+                sort: .popular
+            )
+        }
+        await repository.waitForBulkFetchToStart()
+
+        // 远端尚未返回时，过期缓存只作为失败兜底，不能先发布造成二次换榜。
+        #expect(viewModel.repos.isEmpty)
+        #expect(viewModel.publishedQueryIdentity == nil)
+        #expect(viewModel.reposRevision == 0)
+
+        await repository.resumeBulkFetch()
+        await reloadTask.value
+
+        #expect(viewModel.repos.map(\.fullName) == ["remote/repo"])
+        #expect(viewModel.publishedQueryIdentity != nil)
+        #expect(viewModel.reposRevision == 1)
+        #expect(await repository.fetchBulkCount() == 1)
+    }
+
+    @Test("过期缓存仅在远端失败后作为单次兜底发布")
+    func staleCachePublishesOnceAfterRemoteFailure() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.seedCached(
+            Self.makeBulkResult(repos: [
+                Self.makeRepo(repoID: 135, owner: "fallback", name: "repo", categoryRanks: ["popular": 1])
+            ]),
+            lastFetchedAt: Date().addingTimeInterval(-31 * 60)
+        )
+        await repository.setFetchError(FakeDiscoveryError.unavailable)
+        let viewModel = ExploreDiscoveryViewModel()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .popular,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["fallback/repo"])
+        #expect(viewModel.publishedQueryIdentity != nil)
+        #expect(viewModel.reposRevision == 1)
+        #expect(viewModel.loadError == nil)
+        #expect(viewModel.cacheWarning?.isEmpty == false)
+        #expect(await repository.fetchBulkCount() == 1)
+    }
+
+    @Test("取消的分类请求不会发布结果或遗留 loading")
+    func cancelledReloadDoesNotPublish() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.seedCached(
+            Self.makeBulkResult(repos: [
+                Self.makeRepo(repoID: 140, owner: "stale", name: "repo", categoryRanks: ["popular": 1])
+            ]),
+            lastFetchedAt: Date().addingTimeInterval(-31 * 60)
+        )
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(repoID: 141, owner: "cancelled", name: "repo", categoryRanks: ["popular": 1])
+        ]))
+        await repository.pauseNextBulkFetch()
+        let viewModel = ExploreDiscoveryViewModel()
+
+        let reloadTask = Task {
+            await viewModel.reload(
+                repository: repository,
+                mode: .popular,
+                language: nil,
+                topic: nil,
+                platform: nil,
+                sort: .popular
+            )
+        }
+        await repository.waitForBulkFetchToStart()
+        reloadTask.cancel()
+        await repository.resumeBulkFetch()
+        await reloadTask.value
+
+        #expect(viewModel.repos.isEmpty)
+        #expect(viewModel.publishedQueryIdentity == nil)
+        #expect(viewModel.reposRevision == 0)
+        #expect(!viewModel.isLoading)
+        #expect(!viewModel.isRefreshing)
     }
 
     @Test("bulk 刷新发布同快照 summary 供 Sidebar 更新计数")
@@ -320,6 +471,10 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     private var fetchError: Error?
     private var bulkFetches = 0
     private var pageFetches = 0
+    private var shouldPauseNextBulkFetch = false
+    private var bulkFetchHasStarted = false
+    private var bulkFetchStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var bulkFetchResumeContinuation: CheckedContinuation<Void, Never>?
 
     func cachedPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async -> DiscoveryCachedPage? {
         nil
@@ -337,6 +492,16 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     func fetchBulk(ignoresCache: Bool) async throws -> DiscoveryBulkFetchResult {
         bulkFetches += 1
         lastIgnoresCache = ignoresCache
+        if shouldPauseNextBulkFetch {
+            shouldPauseNextBulkFetch = false
+            bulkFetchHasStarted = true
+            let waiters = bulkFetchStartWaiters
+            bulkFetchStartWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            await withCheckedContinuation { continuation in
+                bulkFetchResumeContinuation = continuation
+            }
+        }
         if let fetchError {
             if let cached {
                 let result = DiscoveryBulkResult(
@@ -387,6 +552,35 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
 
     func enqueueBulk(_ result: DiscoveryBulkResult) {
         fetchQueue.append(result)
+    }
+
+    func seedCached(_ result: DiscoveryBulkResult, lastFetchedAt: Date) {
+        cached = DiscoveryBulkCachedSnapshot(
+            repos: result.repos,
+            summary: result.summary,
+            etag: result.etag,
+            lastFetchedAt: lastFetchedAt,
+            generatedAt: result.generatedAt,
+            total: result.total
+        )
+    }
+
+    /// 测试门闩：让断言有机会观察“缓存已判定过期、远端尚未返回”的中间状态。
+    func pauseNextBulkFetch() {
+        shouldPauseNextBulkFetch = true
+        bulkFetchHasStarted = false
+    }
+
+    func waitForBulkFetchToStart() async {
+        if bulkFetchHasStarted { return }
+        await withCheckedContinuation { continuation in
+            bulkFetchStartWaiters.append(continuation)
+        }
+    }
+
+    func resumeBulkFetch() {
+        bulkFetchResumeContinuation?.resume()
+        bulkFetchResumeContinuation = nil
     }
 
     func setFetchError(_ error: Error?) {

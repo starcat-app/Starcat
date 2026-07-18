@@ -137,6 +137,9 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
                 )
             }
         } catch {
+            // SwiftUI `.task(id:)` 在快速切换分类时会主动取消旧任务；取消不是缓存故障，
+            // 不能记录成网络 warning，也不能继续触发一次无意义的远端请求。
+            if error is CancellationError || Task.isCancelled { return nil }
             AppLog.network.warning("Discovery cachedBulk read failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
@@ -152,6 +155,11 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
                 fallbackErrorDescription: nil
             )
         } catch {
+            // 取消必须原样向 ViewModel 传播。若把取消当成网络失败走 cached fallback，
+            // 已离开的分类仍可能继续读库并发布旧快照。
+            if error is CancellationError || Task.isCancelled {
+                throw CancellationError()
+            }
             if let cached = await cachedBulk(), !cached.repos.isEmpty {
                 AppLog.network.warning("Discovery bulk network failed, falling back to cache (\(cached.repos.count) repos): \(error.localizedDescription, privacy: .public)")
                 let result = DiscoveryBulkResult(
@@ -177,6 +185,7 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
                 try Self.readSummary(db: db)
             }
         } catch {
+            if error is CancellationError || Task.isCancelled { return nil }
             AppLog.network.warning("Discovery cachedSummary read failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
