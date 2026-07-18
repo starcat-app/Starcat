@@ -30,10 +30,13 @@ import Observation
 ///
 /// 两阶段区分点：
 ///   - `preparingContext`：从 `generate(repo:)` 入口开始，直到收到第一个 streaming delta。
-///     语义上覆盖：makeSource（含 RepoContextPacker pack）+ LLM 请求建立连接。
+///     语义上只覆盖 makeSource 的代码上下文阶段，可展示精确步骤并允许本次跳过。
+///   - `requestingSummary`：代码上下文已经完成或被用户跳过，正在收集其它材料并建立
+///     LLM 请求；此时不能再取消代码上下文，避免“按钮点了但 XML 已经注入”的假反馈。
 ///   - `streamingSummary`：收到第一个 streaming delta 之后切换；语义 = LLM 输出阶段。
-enum SummaryPhase: Sendable {
+enum SummaryPhase: Sendable, Equatable {
     case preparingContext
+    case requestingSummary
     case streamingSummary
 }
 
@@ -90,6 +93,9 @@ final class RepoAIInsightViewModel {
     /// `nil` 表示当前不在生成中。
     private(set) var phase: SummaryPhase?
 
+    /// 本次生成是否由用户主动跳过代码上下文。只用于生成中的即时反馈，不写全局设置。
+    private(set) var didSkipCodeContextForCurrentGeneration = false
+
     /// W4：后台 prep 代码上下文的进度状态。`idle` 表示当前没有 prep 在跑或已 ready。
     /// UI（`emptySummaryState`）根据此状态在按钮上方显示 step chip 行。
     private(set) var prepProgress: PrepProgress = .idle
@@ -97,6 +103,10 @@ final class RepoAIInsightViewModel {
     /// W4：当前进行中的后台 prep task。仅在 `prepProgress == .preparing(step:)` 期间非 nil。
     /// 用户点「生成摘要」时 `generate(repo:)` 会先 `await prepTask?.value` 等其完成。
     private var prepTask: Task<Void, Never>?
+
+    /// 本次摘要生成的请求级控制器。与后台 `prepTask` 分开：
+    /// 前者阻止 `makeSource` 取消后重启 provider，后者只负责面板打开后的预热任务。
+    private var currentCodeContextRequest: RepoAICodeContextRequest?
 
     /// Y4：本次摘要生成时代码上下文的降级原因（nil = 成功 或 用户主动关）。
     /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
@@ -243,6 +253,23 @@ final class RepoAIInsightViewModel {
         service.cleanupTemporaryContextPreparation(for: repo)
     }
 
+    /// 用户在摘要生成中的“准备代码上下文”行点击停止。
+    ///
+    /// 这不是取消摘要：只取消当前 provider 子任务，并把本次 request 标记为跳过。
+    /// `makeSource` 随后以空 `{codeContext}` 继续组装 metadata + README 等现有上下文；
+    /// 下一次生成会创建全新的 request，因此自动恢复正常代码上下文策略。
+    func skipCodeContextForCurrentGeneration(repo: Repo) {
+        guard isGenerating, phase == .preparingContext else { return }
+
+        didSkipCodeContextForCurrentGeneration = true
+        currentCodeContextRequest?.skip()
+        prepTask?.cancel()
+        prepTask = nil
+        prepProgress = .idle
+        phase = .requestingSummary
+        service.cleanupTemporaryContextPreparation(for: repo)
+    }
+
     /// W4：把 provider 给的 `RepoAIContextProgress` 映射成 ViewModel 自己的 `PrepStep`。
     /// 抽取成纯函数便于测试 + 强制 exhaustive switch（漏 case 编译失败）。
     private static func mapStep(_ progress: RepoAIContextProgress) -> PrepStep {
@@ -263,29 +290,28 @@ final class RepoAIInsightViewModel {
     /// - 未 star（`includeTags == false`）：仅摘要，**不发**标签生成请求
     ///   （未 star 的 repo 没有"绑定标签"语义，强行让 AI 生成无意义且浪费 token）
     func generate(repo: Repo, includeTags: Bool = true) async {
-        // W4：如果后台 prep 还在跑（用户秒点「生成摘要」），先等 prep 完成再进入
-        // generate 主流程——LLM 必须拿到最新 context，不能在 ZIP 下载到一半时就发
-        // 请求。prep 已 ready / idle / failed 都直接跳过 await。
-        // 关键约束：await 期间 UI 仍能看到 `isGenerating == true`（下面赋值），
-        // 按钮会显示 ProgressView（现有 `emptySummaryState` 行为），用户体感是
-        // 「点击后看到加载 → 等了一会 → 开始流式」。
-        if let task = prepTask {
-            _ = await task.value
-        }
-
+        let codeContextRequest = RepoAICodeContextRequest()
+        currentCodeContextRequest = codeContextRequest
+        didSkipCodeContextForCurrentGeneration = false
         isGenerating = true
         streamingSummaryText = ""
-        // Y1：入口先设 preparingContext，让 UI 在 makeSource（含 RepoContextPacker）期间
-        // 显示"准备代码上下文…"文案。首个 streaming delta 到来时再切到 streamingSummary。
         phase = .preparingContext
         defer {
             isGenerating = false
             streamingSummaryText = nil
             phase = nil
-            // W4：清掉 prepTask 引用，让下一次 `load(repo:)` 重新判断要不要启动新 prep。
-            // prepProgress 保留 .ready/.failed 不清零，避免用户在 generate 期间看到
-            // chip 行"抖回去"。
+            prepTask = nil
+            currentCodeContextRequest = nil
         }
+
+        // W4：如果后台 prep 还在跑（用户秒点「生成摘要」），先等 prep 完成再进入
+        // generate 主流程——LLM 必须拿到最新 context，不能在 ZIP 下载到一半时就发
+        // 请求。现在 `isGenerating` / phase 已在 await 前写入，因此正文会展示真实 step，
+        // 用户也可以在等待期间点击“跳过代码上下文并继续生成”。
+        if let task = prepTask {
+            _ = await task.value
+        }
+
         do {
             // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →
             // 容易生成「向量搜索 / Vector Search / 向量检索」这种同义不同名标签。
@@ -302,7 +328,16 @@ final class RepoAIInsightViewModel {
             let result = try await service.generateInsight(
                 for: repo,
                 existingTagHints: hints,
-                includeTags: includeTags
+                includeTags: includeTags,
+                codeContextRequest: codeContextRequest,
+                onContextProgress: { [weak self] progress in
+                    guard let self, !codeContextRequest.isSkipped else { return }
+                    self.prepProgress = .preparing(step: Self.mapStep(progress))
+                },
+                onContextResolved: { [weak self] in
+                    guard let self else { return }
+                    self.phase = .requestingSummary
+                }
             ) { [weak self] partial in
                 self?.streamingSummaryText = partial
                 // 第一次 delta 时切阶段——之后所有 delta 都已经是 streamingSummary，

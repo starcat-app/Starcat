@@ -1,6 +1,6 @@
 # Repo List 切换性能优化 Checklist
 
-> 状态：实施中（27 / 35 项完成）
+> 状态：实施中（42 / 43 项完成）
 >
 > 范围：优化 Starred / Manage、Explore（趋势、周刊、发现、热门、新发布）与 Activity 的模块切换、分类切换和首屏 Repo List 上屏链路；不改变列表业务语义，不在首轮引入 AppKit 列表容器或数据库 schema 变更。
 
@@ -47,23 +47,34 @@
 - [x] Manage 数据库分页只对首批 40 条走稳定 identity diff，不因普通分类切换强制销毁整个 List。
 - [x] 全量 Smart Collection 排序与分页场景保留独立快照策略，避免几千行 move diff 回归。
 - [x] row reveal 只覆盖首屏有限行，并且同一用户切换最多执行一次。
-- [ ] 将 Repo List、toolbar、详情 tint 与附属 badge 的观察范围拆到最小消费者。
+- [x] 将 Repo List、toolbar、详情 tint 与附属 badge 的观察范围拆到最小消费者。
 
 ## 第五阶段：模块生命周期与数据路径
 
 - [x] Explore 父层持有 Trending 与 Weekly 的持久 ViewModel，模块回切不重新创建事实源。
 - [x] 发现 / 热门 / 新发布只在 query identity 真实变化时重跑本地 filter / sort。
 - [x] Activity 保持聚合缓存 + 本地 refilter 快路径，不把其他模块的重建策略反向套入。
-- [ ] Smart Collections、用户智能集合和搜索分别建立性能基线，不用普通 Manage SQL 分页指标代替。
+- [x] Smart Collections、用户智能集合和搜索分别建立性能基线，不用普通 Manage SQL 分页指标代替。
 
-## 第六阶段：测试与验收
+## 第六阶段：主线程预算与稳定视图树
 
-- [ ] 单测锁定同一 query identity 只发布一个有效 generation。
+- [x] Trending 按 query identity 保留进程内快照；相同分类回切不清空列表、不重读缓存、不重新展示骨架。
+- [x] Trending 周期 / 语言变化统一走单一查询协调入口，移除 property observer 与 View task 的重复 reload。
+- [x] Trending 的排序、筛选、评分和 identity 派生移出 MainActor，主线程只提交不可变首屏快照。
+- [x] Trending SwiftUI 首屏只构造 20 条，后续页面仅由真实滚动追加，不再同帧构建完整榜单。
+- [x] Trending loading 改为稳定 List surface 内局部覆盖，加载态与内容态切换不销毁整个列表宿主。
+- [x] Explore 分类切换默认跳过 row reveal，并把详情选择、Wiki、Health、OpenSSF 延后到首个列表帧之后。
+- [x] Discovery 全量候选的本地 filter / sort 移出 MainActor，只向 UI 发布当前查询的首批 20 条稳定快照。
+- [x] 拆分 Home / RepoList / Explore 的观察边界，避免 list、toolbar、tint、detail 与根层 AnyView 因单个列表状态共同重算。
+
+## 第七阶段：测试与验收
+
+- [x] 单测锁定同一 query identity 只发布一个有效 generation。
 - [x] 单测锁定首屏 `hasMore=true` 不会自动追加第二页。
-- [ ] 单测锁定被取消的旧分类查询不能覆盖新分类。
-- [ ] 单测锁定 Wiki availability 批量读取不在 MainActor 执行同步文件 I/O。
-- [ ] 运行 Manage / Explore / Weekly / Activity 相关定向 Suite。
-- [ ] 关闭 Xcode 后运行全量测试，或记录无法执行的明确外部阻塞。
+- [x] 单测锁定被取消的旧分类查询不能覆盖新分类。
+- [x] 单测锁定 Wiki availability 批量读取不在 MainActor 执行同步文件 I/O。
+- [x] 运行 Manage / Explore / Weekly / Activity 相关定向 Suite。
+- [x] 关闭 Xcode 后运行全量测试，或记录无法执行的明确外部阻塞。
 - [x] 编译 `Starcat` 与 `StarcatDirect`，执行相关文件 `git diff --check`。
 - [ ] 按固定切换脚本完成 Instruments 与人工 UI 验收，记录 p50 / p95 与最大主线程 stall。
 
@@ -81,8 +92,15 @@
 - `xcodegen generate`：通过，新文件已进入工程。
 - `Starcat` / `StarcatDirect`：使用独立 DerivedData 与既有 SPM checkout 编译通过。
 - `build-for-testing`：通过；仅出现既有 `KnowledgeRAGCoreTests` actor isolation warning。
+- Trending 同 query 合并、旧 generation 防覆盖、首屏分页与 Discovery bulk 复用测试已新增并通过。
+- 系统 / 用户 Smart Collection、关键字 / 语义搜索已建立四条完整刷新 signpost；Trending 排序、全局筛选、评分、推荐与 identity 已统一由后台 actor 派生。
+- Trending 定向 Suite 25 个测试通过，新增全局筛选组合与 Wiki unknown 语义回归测试。
+- `DiskWikiCacheTests.batchAvailabilityKeepsUnknownDistinct` 使用线程观察器锁定每次 JSON 检查均不在主线程执行。
+- Explore / Activity 的动态计数改由局部 Observation modifier 消费；计数发布不再使 RepoList 根层、toolbar、tint 与 List 宿主共同失效。
+- Manage / Explore / Weekly / Activity 等 8 个定向 Suite 共 140 个测试通过；同时修复进入知识库时新查询被 `cancelAll()` 误取消的任务顺序问题。
+- Xcode 关闭后全量测试通过：180 个 Suite、1565 个测试，保留 1 个既有 known issue，无新增失败。
 - `git diff --check`：通过。
-- 定向 / 全量测试：当前 Xcode IDE 仍在运行（PID 61723），按仓库约束未与 IDE 抢占 `testmanagerd`；保持待执行，不伪造完成。
+- Instruments 与人工 UI 验收继续保持未完成，不以自动测试代替。
 
 ## 明确不在首轮范围
 

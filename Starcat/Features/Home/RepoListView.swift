@@ -17,7 +17,78 @@
 
 import SwiftUI
 import AppKit
+import Observation
 import TipKit
+
+/// 中栏导航副标题的轻量计数状态。
+///
+/// Trending / Activity 的列表数据由各自子 ViewModel 发布；如果把计数继续存成
+/// `RepoListView.@State`，每次列表发布都会让包含 tint、toolbar、List 与所有 sheet 的
+/// 父视图重新计算。独立成引用状态后，只有下面的副标题 modifier 观察它。
+@MainActor
+@Observable
+private final class RepoListNavigationMetrics {
+    private(set) var trendingRepoCount = 0
+    private(set) var activityItemCount = 0
+
+    func applyTrendingRepoCount(_ count: Int) {
+        guard trendingRepoCount != count else { return }
+        trendingRepoCount = count
+    }
+
+    func applyActivityItemCount(_ count: Int) {
+        guard activityItemCount != count else { return }
+        activityItemCount = count
+    }
+}
+
+/// 只观察导航计数的局部 modifier。
+///
+/// 关键约束：调用方传入 Manage 的静态副标题，但不读取 `metrics`；因此 Trending / Activity
+/// 回写数量时，SwiftUI 只会重算这个 modifier，不会重新求值 `RepoListView.body`。
+private struct RepoListNavigationSubtitleModifier: ViewModifier {
+    let selectedPage: SidebarRootPage
+    let selectedExploreMode: ExploreMode
+    let selectedActivityCategory: ActivityCategory
+    let manageSubtitle: String
+    let metrics: RepoListNavigationMetrics
+    let weeklySelectionService: WeeklySelectionService
+    let activityCategoryCountService: ActivityCategoryCountService
+
+    func body(content: Content) -> some View {
+        content.navigationSubtitle(navigationSubtitle)
+    }
+
+    private var navigationSubtitle: String {
+        switch selectedPage {
+        case .manage:
+            return manageSubtitle
+        case .trending:
+            let count = selectedExploreMode == .weekly
+                ? (weeklySelectionService.total ?? 0)
+                : metrics.trendingRepoCount
+            return repoCountSubtitle(count)
+        case .activity:
+            let count = selectedActivityCategory == .undoStar
+                ? (activityCategoryCountService.count(for: .undoStar) ?? 0)
+                : metrics.activityItemCount
+            if selectedActivityCategory.usesRepositoryCountSubtitle {
+                return repoCountSubtitle(count)
+            }
+            return String(
+                format: String.l10n("activity.itemCountFormat"),
+                count
+            )
+        }
+    }
+
+    private func repoCountSubtitle(_ count: Int) -> String {
+        String(
+            format: String.l10n("list.repoCountFormat"),
+            count
+        )
+    }
+}
 
 /// 规则编辑器 Sheet 载荷（`sheet(item:)` 避免首帧空白 sheet）。
 private struct SmartCollectionRuleEditorItem: Identifiable {
@@ -118,9 +189,8 @@ struct RepoListView: View {
     @State private var showGitHubStarListOAuthRestrictionSheet = false
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
-    /// Trending / Activity 的计数来自各自子视图内部筛选结果，父视图只负责把它显示到导航副标题。
-    @State private var trendingRepoCount = 0
-    @State private var activityItemCount = 0
+    /// 列表计数由独立观察对象承载，避免计数发布让整个 RepoListView 根层重算。
+    @State private var navigationMetrics = RepoListNavigationMetrics()
     @State private var smartSearchExpandToken = 0
     @State private var toolbarSearchHistory: [SearchHistory] = []
     @State private var showingInterestedLanguagePicker = false
@@ -317,11 +387,22 @@ struct RepoListView: View {
     /// 中栏前景层：navigation / inset / toolbar / 列表内容（叠在 `DetailHeroTintBackground` 上）。
     @ViewBuilder
     private var listColumnChrome: some View {
+        // 非 Manage 页面不能求值 `manageNavigationSubtitle`，否则会把 HomeViewModel 的
+        // items / collection 计数重新带入 Explore 与 Activity 的观察图。
+        let manageSubtitle = selectedPage == .manage ? manageNavigationSubtitle : ""
         contentBody
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(.clear)
             .navigationTitle(navigationTitle)
-            .navigationSubtitle(navigationSubtitle)
+            .modifier(RepoListNavigationSubtitleModifier(
+                selectedPage: selectedPage,
+                selectedExploreMode: selectedExploreMode,
+                selectedActivityCategory: selectedActivityCategory,
+                manageSubtitle: manageSubtitle,
+                metrics: navigationMetrics,
+                weeklySelectionService: dependencies.weeklySelectionService,
+                activityCategoryCountService: dependencies.activityCategoryCountService
+            ))
             // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
             // W12 PR-5：统一 BatchActionBar(context:)，星标 / 探索共用同一组件。
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1107,14 +1188,14 @@ struct RepoListView: View {
                     selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
                     selectedDiscoveryRepo: $selectedDiscoveryRepo,
                     selectedWeeklyLanguage: $selectedWeeklyLanguage,
-                    onRepoCountChange: { trendingRepoCount = $0 }
+                    onRepoCountChange: { navigationMetrics.applyTrendingRepoCount($0) }
                 )
             } else if selectedPage == .activity {
                 ActivityView(
                     selectedCategory: $selectedActivityCategory,
                     selectedItem: $selectedActivityItem,
                     undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-                    onItemCountChange: { activityItemCount = $0 },
+                    onItemCountChange: { navigationMetrics.applyActivityItemCount($0) },
                     onSelectUndoStarRepo: { repo in
                         if let repo {
                             viewModel.selectedRepoID = repo.id
@@ -1776,16 +1857,7 @@ struct RepoListView: View {
             || message.contains("third-parties is limited")
     }
 
-    private var navigationSubtitle: String {
-        if selectedPage == .trending {
-            if selectedExploreMode == .weekly {
-                return repoCountSubtitle(dependencies.weeklySelectionService.total ?? 0)
-            }
-            return repoCountSubtitle(trendingRepoCount)
-        }
-        if selectedPage == .activity {
-            return activityNavigationSubtitle
-        }
+    private var manageNavigationSubtitle: String {
         // Smart Collections 总览：副标题是集合数量（与 sidebar 计数一致），不是仓库数。
         if case .smartCollectionsHome = viewModel.selection {
             return String(
@@ -1796,22 +1868,6 @@ struct RepoListView: View {
         // **R-07.2 修订**：DB 分页模式下 filteredSorted 只镜像已加载前缀，标题数量
         // 必须读 ViewModel 的真实查询总数，避免 1800+ 仓库首屏只显示 20。
         return repoCountSubtitle(viewModel.visibleRepoTotalCount)
-    }
-
-    private var activityNavigationSubtitle: String {
-        let count: Int
-        if selectedActivityCategory == .undoStar {
-            count = dependencies.activityCategoryCountService.count(for: .undoStar) ?? 0
-        } else {
-            count = activityItemCount
-        }
-        if selectedActivityCategory.usesRepositoryCountSubtitle {
-            return repoCountSubtitle(count)
-        }
-        return String(
-            format: String.l10n("activity.itemCountFormat"),
-            count
-        )
     }
 
     private func repoCountSubtitle(_ count: Int) -> String {

@@ -5573,6 +5573,23 @@
         }
       }
     },
+    "ai.assistant.prep.skipCurrent.accessibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip code context and continue generating"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过代码上下文并继续生成"
+          }
+        }
+      }
+    },
     "ai.assistant.prep.step.downloadingArchive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5637,6 +5654,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止准备代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.contextSkipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code context skipped. Generating summary…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过代码上下文，正在生成摘要…"
           }
         }
       }
@@ -5848,13 +5882,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reveal Code Context in Finder"
+            "value" : "Open Code Context"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Finder 中显示代码上下文"
+            "value" : "打开代码上下文"
           }
         }
       }
@@ -5921,6 +5955,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新生成摘要(不影响对话)"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.requesting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing summary request…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备摘要请求…"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.requesting.caption" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collecting repository metadata, README, and other available context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在整理仓库元数据、README 和其他可用上下文"
           }
         }
       }
@@ -44093,13 +44161,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "60s after app launch"
+            "value" : "Run once after launch (60s delay)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App 启动后延迟 60 秒"
+            "value" : "启动后自动整理一次（延迟 60 秒）"
           }
         }
       }
@@ -44127,13 +44195,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every 24 hours"
+            "value" : "Run on a schedule"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每 24 小时一次"
+            "value" : "定期开启"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.scheduledInterval" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interval (hours)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "间隔（小时）"
           }
         }
       }
@@ -45657,6 +45742,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chrome 插件"
+          }
+        }
+      }
+    },
+    "settings.integration.browserPlugin.copyEndpoint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Endpoint"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制端点"
           }
         }
       }

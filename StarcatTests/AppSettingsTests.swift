@@ -862,14 +862,15 @@ struct AutoTidySettingsTests {
         )
     }
 
-    @Test("默认值与 HOM-126 任务描述一致（开关关 + 启动/同步触发 + 50 + 最近 star + 仅标签 + 90%）")
+    @Test("默认值与 HOM-126 任务描述一致（开关关 + 启动/同步触发 + 定期关 + 1h + 50 + 最近 star + 仅标签 + 90%）")
     func defaultMatchesTaskSpec() {
         let s = AppSettings(defaults: makeIsolatedDefaults())
         let t = s.autoTidySettings
         #expect(t.enabled == false, "总开关默认关")
         #expect(t.triggerOnLaunch == true)
         #expect(t.triggerOnSync == true)
-        #expect(t.triggerScheduled == false, "定时默认关，避免新手烧 quota")
+        #expect(t.triggerScheduled == false, "定期默认关，避免新手烧 quota")
+        #expect(t.scheduledIntervalHours == 1, "定期间隔默认 1 小时")
         #expect(t.maxPerRun == 50)
         #expect(t.sortOrder == .recentlyStarred)
         #expect(t.generateSummary == false, "默认只跑标签，摘要烧 token 更多")
@@ -888,6 +889,7 @@ struct AutoTidySettingsTests {
         var t = s1.autoTidySettings
         t.enabled = true
         t.triggerScheduled = true
+        t.scheduledIntervalHours = 6
         t.maxPerRun = 200
         t.sortOrder = .random
         t.generateSummary = true
@@ -900,6 +902,7 @@ struct AutoTidySettingsTests {
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.autoTidySettings.enabled == true)
         #expect(s2.autoTidySettings.triggerScheduled == true)
+        #expect(s2.autoTidySettings.scheduledIntervalHours == 6)
         #expect(s2.autoTidySettings.maxPerRun == 200)
         #expect(s2.autoTidySettings.sortOrder == .random)
         #expect(s2.autoTidySettings.generateSummary == true)
@@ -923,6 +926,37 @@ struct AutoTidySettingsTests {
         #expect(decoded.useConfidenceThreshold == true, "老 build 没写本字段，应该回落到 default = true（保持 v1 行为）")
         #expect(decoded.generateTags == true)
         #expect(decoded.generateSummary == false)
+        #expect(decoded.scheduledIntervalHours == 1, "老 build 无定期间隔字段，回落默认 1 小时")
+    }
+
+    @Test("scheduledIntervalHours: 越界值会被 clamp 到 1...24")
+    func scheduledIntervalHoursClamped() {
+        #expect(AutoTidySettings.clampScheduledIntervalHours(0) == 1)
+        #expect(AutoTidySettings.clampScheduledIntervalHours(25) == 24)
+        #expect(AutoTidySettings.clampScheduledIntervalHours(3) == 3)
+
+        // 直接写字段可能越界；调度器读的秒级派生仍必须安全 clamp。
+        var t = AutoTidySettings.default
+        t.scheduledIntervalHours = 48
+        #expect(t.scheduledIntervalSeconds == TimeInterval(24 * 60 * 60))
+
+        let built = AutoTidySettings(
+            enabled: false,
+            triggerOnLaunch: true,
+            triggerOnSync: true,
+            triggerScheduled: true,
+            scheduledIntervalHours: 99,
+            maxPerRun: 50,
+            sortOrder: .recentlyStarred,
+            generateSummary: false,
+            generateTags: true,
+            useConfidenceThreshold: true,
+            confidenceThreshold: 0.9,
+            lastRunAt: nil,
+            lastRunStats: nil
+        )
+        #expect(built.scheduledIntervalHours == 24)
+        #expect(built.scheduledIntervalSeconds == TimeInterval(24 * 60 * 60))
     }
 
     @Test("makeBatchOptions: 只勾摘要 → actions={summary}, autoApply=false")

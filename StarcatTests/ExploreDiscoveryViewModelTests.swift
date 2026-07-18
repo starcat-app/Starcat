@@ -101,6 +101,53 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.fetchBulkCount() == 0)
     }
 
+    @Test("发现子分类切换复用会话 bulk，不重复读取缓存或请求远端")
+    func categorySwitchReusesInMemoryBulk() async {
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(
+                repoID: 125,
+                owner: "catalog",
+                name: "popular",
+                categories: ["popular"],
+                categoryRanks: ["popular": 1]
+            ),
+            Self.makeRepo(
+                repoID: 126,
+                owner: "catalog",
+                name: "release",
+                categories: ["new_releases"],
+                categoryRanks: ["new_releases": 1]
+            )
+        ]))
+        let viewModel = ExploreDiscoveryViewModel()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .popular,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+        let firstCacheReads = await repository.cachedBulkCount()
+        let firstFetches = await repository.fetchBulkCount()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .newReleases,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .release
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["catalog/release"])
+        #expect(await repository.cachedBulkCount() == firstCacheReads)
+        #expect(await repository.fetchBulkCount() == firstFetches)
+        #expect(viewModel.repos.count == 1)
+    }
+
     @Test("过期缓存等待远端完成后只发布远端快照")
     func staleCacheWaitsForRemoteBeforePublishing() async throws {
         let repository = FakeDiscoveryRepository()
@@ -332,7 +379,11 @@ struct ExploreDiscoveryViewModelTests {
         await repository.clearCache()
         await repository.setFetchError(FakeDiscoveryError.unavailable)
 
-        await viewModel.reload(
+        // 上一个 ViewModel 会按设计保留会话级 bulk；仅清 Repository 缓存不能再构造
+        // “完全无缓存”前提。新建 ViewModel 才能真实覆盖冷启动且远端失败的错误路径。
+        let coldViewModel = ExploreDiscoveryViewModel()
+
+        await coldViewModel.reload(
             repository: repository,
             mode: .discover,
             language: nil,
@@ -341,12 +392,12 @@ struct ExploreDiscoveryViewModelTests {
             sort: .recommended
         )
 
-        #expect(viewModel.repos.isEmpty)
-        #expect(viewModel.total == 0)
-        #expect(viewModel.nextPage == nil)
-        #expect(viewModel.loadError?.isEmpty == false)
-        #expect(!viewModel.isLoading)
-        #expect(!viewModel.isRefreshing)
+        #expect(coldViewModel.repos.isEmpty)
+        #expect(coldViewModel.total == 0)
+        #expect(coldViewModel.nextPage == nil)
+        #expect(coldViewModel.loadError?.isEmpty == false)
+        #expect(!coldViewModel.isLoading)
+        #expect(!coldViewModel.isRefreshing)
     }
 
     @Test("手动刷新失败且有 bulk 缓存时保留列表并展示缓存提示")
@@ -470,6 +521,7 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     private var fetchQueue: [DiscoveryBulkResult] = []
     private var fetchError: Error?
     private var bulkFetches = 0
+    private var bulkCacheReads = 0
     private var pageFetches = 0
     private var shouldPauseNextBulkFetch = false
     private var bulkFetchHasStarted = false
@@ -486,7 +538,8 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     }
 
     func cachedBulk() async -> DiscoveryBulkCachedSnapshot? {
-        cached
+        bulkCacheReads += 1
+        return cached
     }
 
     func fetchBulk(ignoresCache: Bool) async throws -> DiscoveryBulkFetchResult {
@@ -589,6 +642,10 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
 
     func fetchBulkCount() -> Int {
         bulkFetches
+    }
+
+    func cachedBulkCount() -> Int {
+        bulkCacheReads
     }
 
     private var lastIgnoresCache: Bool?

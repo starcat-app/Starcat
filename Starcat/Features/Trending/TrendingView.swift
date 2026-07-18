@@ -96,17 +96,21 @@ struct TrendingView: View {
 
             Divider()
 
-            // 骨架必须与 Manage / Activity 一样：直接挂在 VStack 里，不要再包
-            // `.id` + `.transition` + `.animation`。那套外层过渡会吞掉
-            // `SkeletonAnimatedPhase` / TimelineView 的持续刷新，看起来像「定格」
-            // （踩坑说明见 `RepoRowSkeletonView.swift` 文件头）。
-            if viewModel.isLoading && viewModel.repos.isEmpty {
-                RepoSkeletonListView(rowCount: 10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
-                errorView(message: error)
-            } else {
+            // List 宿主始终存在。切到未加载桶时只在中栏局部覆盖骨架，不销毁列表树，
+            // 因而工具栏、侧栏、详情栏和其它 TimelineView 动画都不会跟随重建。
+            ZStack {
                 contentView
+                    .opacity(viewModel.hasPublishedCurrentQuery ? 1 : 0)
+                    .allowsHitTesting(viewModel.hasPublishedCurrentQuery)
+
+                if !viewModel.hasPublishedCurrentQuery {
+                    if let error = viewModel.loadError, !viewModel.isLoading {
+                        errorView(message: error)
+                    } else {
+                        RepoSkeletonListView(rowCount: 10)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
             }
         }
         .task {
@@ -115,10 +119,8 @@ struct TrendingView: View {
             if settings.libraryFilter != .all {
                 await libraryLoad
             }
-            viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
-            if viewModel.selectedLanguage != selectedLanguage {
-                viewModel.selectedLanguage = selectedLanguage
-            }
+            await viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
+            await viewModel.updateGlobalFilter(trendingFilterSnapshot)
             // 切换语言或页面时先清详情，避免新列表加载完成前右栏残留旧 repo。
             clearTrendingDetailSelection()
             // 首次进入页面：按 TTL 决定是否拉网络（R-06.1，2026-06-15）
@@ -126,8 +128,10 @@ struct TrendingView: View {
             //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
             //   - 缓存空 → 必拉
             // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
-            restoreSortPreferenceIfNeeded()
-            await viewModel.reload(cachePolicy: .respectTTL)
+            await viewModel.activate(
+                language: selectedLanguage,
+                sort: restoredSortPreference()
+            )
             if settings.libraryFilter == .all {
                 await libraryLoad
             }
@@ -140,14 +144,24 @@ struct TrendingView: View {
             await observeLibraryStateChanges()
         }
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
-            await reloadWikiAvailabilityMap(for: viewModel.displayedRepos)
+            await reloadWikiAvailabilityMap(for: viewModel.filterCandidateRepos)
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
-            viewModel.updateLanguagePreferences(from: stats)
+            Task {
+                await viewModel.updateLanguagePreferences(from: stats)
+            }
+        }
+        .onChange(of: trendingFilterSnapshot) { _, filter in
+            Task {
+                await viewModel.updateGlobalFilter(filter)
+            }
         }
         .onChange(of: selectedLanguage) { _, language in
             clearTrendingDetailSelection()
-            viewModel.selectedLanguage = language
+            Task {
+                await viewModel.selectLanguage(language)
+                reportRepoCount()
+            }
         }
         .onChange(of: viewModel.selectedPeriod) { _, _ in
             clearTrendingDetailSelection()
@@ -169,8 +183,8 @@ struct TrendingView: View {
                 selectedTrendingRepo = nil
             }
         }
-        .onChange(of: viewModel.repos.count) { _, count in
-            onRepoCountChange(count)
+        .onChange(of: viewModel.repos.count) { _, _ in
+            reportRepoCount()
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
             applyTrendingDetailSelectionPolicy()
@@ -183,7 +197,50 @@ struct TrendingView: View {
     }
 
     private func reportRepoCount() {
-        onRepoCountChange(viewModel.repos.count)
+        onRepoCountChange(viewModel.displayedRepos.count)
+    }
+
+    /// 把 MainActor-only 的 Observable store 投影成可 Sendable 的值快照。
+    ///
+    /// 关闭某个筛选时不复制对应 store 的集合，避免 badge 缓存补载导致无意义的整榜重算；
+    /// View 只做 O(已加载信号数) 的边界投影，逐 repo 判断由 TrendingListPipeline actor 承担。
+    private var trendingFilterSnapshot: TrendingListFilter {
+        let starFilter = settings.starFilter
+        let libraryFilter = settings.libraryFilter
+        let wikiFilter = settings.wikiAvailabilityFilter
+        let healthFilter = settings.healthAvailabilityFilter
+        let openSSFFilter = settings.openSSFAvailabilityFilter
+
+        let wikiKnownRepoIDs = wikiFilter == .unknown ? [] : Set(wikiAvailabilityMap.keys)
+        let wikiAvailableRepoIDs: Set<Int64> = wikiFilter == .unknown ? [] : Set(
+            wikiAvailabilityMap.compactMap { repoID, available in available ? repoID : nil }
+        )
+        let openSSFAvailableRepoIDs: Set<Int64> = openSSFFilter == .unknown ? [] : Set(
+            dependencies.openSSFScoreStore.records.compactMap { repoID, record in
+                record.badgeData == nil ? nil : repoID
+            }
+        )
+
+        return TrendingListFilter(
+            star: starFilter,
+            library: libraryFilter,
+            hideArchived: settings.hideArchived,
+            hideForks: settings.hideForks,
+            languages: Set(settings.globalFilterLanguages.map { $0.lowercased() }),
+            wikiAvailability: wikiFilter,
+            healthAvailability: healthFilter,
+            openSSFAvailability: openSSFFilter,
+            starredRepoIDs: starFilter == .all ? [] : dependencies.starredRegistry.ids,
+            inLibraryRepoIDs: libraryFilter == .all
+                ? []
+                : Set(libraryStateMap.compactMap { repoID, state in state == .inLibrary ? repoID : nil }),
+            wikiKnownRepoIDs: wikiKnownRepoIDs,
+            wikiAvailableRepoIDs: wikiAvailableRepoIDs,
+            healthAvailableRepoIDs: healthFilter == .unknown
+                ? []
+                : Set(dependencies.repoHealthStore.snapshots.keys),
+            openSSFAvailableRepoIDs: openSSFAvailableRepoIDs
+        )
     }
 
     private func clearTrendingDetailSelection() {
@@ -273,7 +330,10 @@ struct TrendingView: View {
                 ForEach(TrendingPeriod.allCases) { period in
                     Button {
                         clearTrendingDetailSelectionIfChanging(period != viewModel.selectedPeriod)
-                        viewModel.selectedPeriod = period
+                        Task {
+                            await viewModel.selectPeriod(period)
+                            reportRepoCount()
+                        }
                     } label: {
                         filterMenuRow(
                             title: period.localizedDisplayName,
@@ -315,23 +375,25 @@ struct TrendingView: View {
             get: { viewModel.selectedSort },
             set: { sort in
                 clearTrendingDetailSelectionIfChanging(sort != viewModel.selectedSort)
-                viewModel.selectedSort = sort
                 settings.setListPreferenceValue(
                     sort.rawValue,
                     for: "trending.sort",
                     login: authSession.state.user?.login
                 )
-                applyTrendingDetailSelectionPolicy()
+                Task {
+                    await viewModel.selectSort(sort)
+                    applyTrendingDetailSelectionPolicy()
+                    reportRepoCount()
+                }
             }
         )
     }
 
-    private func restoreSortPreferenceIfNeeded() {
+    private func restoredSortPreference() -> TrendingSortOption {
         guard let raw = settings.listPreferenceValue(for: "trending.sort", login: authSession.state.user?.login),
-              let sort = TrendingSortOption(rawValue: raw),
-              viewModel.selectedSort != sort
-        else { return }
-        viewModel.selectedSort = sort
+              let sort = TrendingSortOption(rawValue: raw)
+        else { return viewModel.selectedSort }
+        return sort
     }
 
     @ViewBuilder
@@ -417,69 +479,6 @@ struct TrendingView: View {
 
     // MARK: - Content
 
-    /// Trending repo 的带下标快照。
-    ///
-    /// index 只用于 row reveal 的短 stagger；id 仍来自 repo.id，保证 selection 与 row
-    /// identity 跟原先 TrendingRepo.fullName 保持一致。
-    private var indexedRepos: [IndexedTrendingRepo] {
-        globalFilteredRepos(viewModel.displayedRepos)
-            .enumerated()
-            .map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
-    }
-
-    private func globalFilteredRepos(_ repos: [TrendingRepo]) -> [TrendingRepo] {
-        repos.filter { repo in
-            matchesGlobalFilters(
-                repoId: repo.ghRepoId,
-                language: repo.language,
-                isArchived: repo.isArchived ?? false,
-                isFork: repo.isFork ?? false
-            )
-        }
-    }
-
-    private func matchesGlobalFilters(
-        repoId: Int64,
-        language: String?,
-        isArchived: Bool,
-        isFork: Bool
-    ) -> Bool {
-        guard settings.starFilter.matches(
-            isStarred: dependencies.starredRegistry.contains(ghRepoId: repoId)
-        ) else { return false }
-        if settings.hideArchived, isArchived { return false }
-        if settings.hideForks, isFork { return false }
-        if !settings.globalFilterLanguages.isEmpty {
-            guard let language else { return false }
-            let selected = settings.globalFilterLanguages.contains {
-                $0.caseInsensitiveCompare(language) == .orderedSame
-            }
-            guard selected else { return false }
-        }
-        switch settings.libraryFilter {
-        case .all:
-            break
-        case .inLibrary:
-            guard libraryStateMap[repoId] == .inLibrary else { return false }
-        case .outsideLibrary:
-            guard libraryStateMap[repoId] != .inLibrary else { return false }
-        }
-        if !matchesWikiFilter(repoId: repoId) { return false }
-        if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
-            return false
-        }
-        if !matchesAvailability(dependencies.openSSFScoreStore.record(for: repoId)?.badgeData != nil, filter: settings.openSSFAvailabilityFilter) {
-            return false
-        }
-        return true
-    }
-
-    private func matchesWikiFilter(repoId: Int64) -> Bool {
-        guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let available = wikiAvailabilityMap[repoId] else { return false }
-        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
-    }
-
     private func reloadWikiAvailabilityMap(for repos: [TrendingRepo]) async {
         guard settings.wikiAvailabilityFilter != .unknown else {
             wikiAvailabilityMap = [:]
@@ -491,14 +490,6 @@ struct TrendingView: View {
         let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
         guard !Task.isCancelled else { return }
         wikiAvailabilityMap = snapshot
-    }
-
-    private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
-        switch filter {
-        case .unknown: return true
-        case .available: return available
-        case .missing: return !available
-        }
     }
 
     /// 单选列表使用手动 selection，而不是 `List(selection:)`。
@@ -515,7 +506,13 @@ struct TrendingView: View {
     /// 标记：用户在详情页 star / unstar 后无需手动 reload，registry 是 `@Observable`，
     /// SwiftUI 会重新调用 `repo.asCardData(registry:)` 让 row 同步刷新。
     private var contentView: some View {
-        List {
+        let filteredRepos = viewModel.displayedRepos
+        let visibleRepos = filteredRepos
+            .prefix(viewModel.visibleLimit)
+            .enumerated()
+            .map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
+
+        return List {
             // "为你推荐"卡片暂时隐藏（dong4j 2026-06-01）：当前推荐质量还不稳定，先关掉。
             // 重新启用：把 showsRecommendations 改回 true 即可，逻辑与 UI 均保留。
             if Self.showsRecommendations, !viewModel.recommendedRepos.isEmpty {
@@ -533,7 +530,7 @@ struct TrendingView: View {
             // 现在让 SwiftUI 走 ForEach + Identifiable 的天然 diff：
             // - 同 fullName 的 row 留在原地，stars 数等字段 in-place 更新（无动画）
             // - 新增/删除/换序的 row 才有动画（由 row reveal 处理）
-            ForEach(indexedRepos) { item in
+            ForEach(visibleRepos) { item in
                 let repo = item.repo
                 // W12 PR-4：多选模式下点击行 toggle 选中，否则进入详情页。
                 // 多选 store 由 AppDependencies 注入；isActive 由 toolbar 多选按钮控制。
@@ -563,9 +560,19 @@ struct TrendingView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
+                .listRowReveal(
+                    index: item.index,
+                    snapshotID: viewModel.reposRevision,
+                    skipAnimation: viewModel.skipListRowReveal
+                )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+                .onAppear {
+                    viewModel.loadMoreIfNeeded(
+                        currentIndex: item.index,
+                        totalAvailable: filteredRepos.count
+                    )
+                }
                 // HOM-201 P1-1（2026-06-14）：hover 500ms 后预拉 trending README，
                 // softTtl 短路在 API 层做（命中 6h 内 trending 缓存不打 GitHub；
                 // P1-4 让详情页 loadTrending 也用 softTtl,整条路径闭环）。
@@ -581,11 +588,22 @@ struct TrendingView: View {
             await viewModel.reload(cachePolicy: .forceNetwork)
             reportRepoCount()
         }
-        .task(id: viewModel.reposRevision) {
-            let repoIDs = viewModel.repos.map(\.ghRepoId)
-            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
-            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
-            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.displayedRepos)
+        .task(id: "\(viewModel.reposRevision):\(viewModel.visibleLimit)") {
+            // 先让首屏 row 提交一帧，再加载当前页 badge；不可见页随滚动分页补齐。
+            await Task.yield()
+            // 可用性筛选可能让展示列表暂时为空；信号补载必须基于未筛选候选，
+            // 否则“仅可用”会因没有 row 而永远没有机会加载缓存，形成自锁。
+            let candidateRepoIDs = viewModel.filterCandidateRepos.map(\.ghRepoId)
+            let visibleRepoIDs = visibleRepos.map { $0.repo.ghRepoId }
+            let openSSFRepoIDs = settings.openSSFAvailabilityFilter == .unknown
+                ? visibleRepoIDs
+                : candidateRepoIDs
+            let healthRepoIDs = settings.healthAvailabilityFilter == .unknown
+                ? visibleRepoIDs
+                : candidateRepoIDs
+            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.filterCandidateRepos)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: openSSFRepoIDs)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: healthRepoIDs)
             _ = await (openSSF, health, wiki)
             guard !Task.isCancelled else { return }
             applyTrendingDetailSelectionPolicy()
@@ -595,7 +613,7 @@ struct TrendingView: View {
         .background {
             let store = dependencies.trendingMultiSelectionStore
             Button {
-                let snapshots = viewModel.displayedRepos.map {
+                let snapshots = filteredRepos.map {
                     SelectionSnapshot(ghRepoId: $0.ghRepoId, owner: $0.owner, name: $0.name)
                 }
                 store.selectAll(snapshots)

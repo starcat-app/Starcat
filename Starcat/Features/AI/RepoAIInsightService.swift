@@ -64,6 +64,59 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
     var externalContextDegradationReason: ExternalContextDegradationReason?
 }
 
+/// 单次摘要生成使用的代码上下文控制器。
+///
+/// 为什么不能只取消 ViewModel 的后台 prep task：
+/// `generateInsight` 内部还会通过 `makeSource` 再次核对代码上下文；如果没有请求级状态，
+/// 用户点击“跳过”后，主生成链路会立刻重新下载 ZIP / 生成 XML。控制器同时承担两件事：
+///   1. 取消当前正在执行的 provider 子任务；
+///   2. 记住“本次跳过”，让尚未开始或取消后继续执行的 `makeSource` 返回
+///      `.featureDisabled`，但不修改全局设置，也不影响下一次生成。
+///
+/// 控制器限定在 MainActor：它只由单仓摘要 ViewModel 与同为 MainActor 的 service 使用，
+/// 避免为一个 UI 请求引入额外锁或跨 actor 状态同步。
+@MainActor
+final class RepoAICodeContextRequest {
+
+    private(set) var isSkipped = false
+    private var activeTask: Task<RepoAIContextOutcome, Error>?
+
+    func resolve(
+        operation: @escaping () async throws -> RepoAIContextOutcome
+    ) async throws -> RepoAIContextOutcome {
+        guard !isSkipped else { return .featureDisabled }
+
+        let task = Task {
+            try await operation()
+        }
+        activeTask = task
+        // 一个 request 只服务一次 `makeSource`，不存在并发 resolve；完成后直接释放句柄。
+        defer { activeTask = nil }
+
+        do {
+            // `Task {}` 句柄用于支持 UI 单独取消，但它不是结构化 child task；显式把
+            // 外层摘要任务的 cancellation 继续传下去，避免窗口关闭后 provider 仍在后台跑。
+            let outcome = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            // `skip()` 可能与 provider 正常完成发生竞态。用户意图优先：即使 XML 已在
+            // 最后一个 cancellation checkpoint 后完成，本次摘要仍不注入它。
+            return isSkipped ? .featureDisabled : outcome
+        } catch is CancellationError {
+            guard isSkipped else { throw CancellationError() }
+            return .featureDisabled
+        }
+    }
+
+    /// 只跳过本次请求，不删除已完整落盘的 ZIP / XML。
+    func skip() {
+        isSkipped = true
+        activeTask?.cancel()
+    }
+}
+
 @MainActor
 final class RepoAIInsightService {
 
@@ -274,10 +327,18 @@ final class RepoAIInsightService {
         includeSummary: Bool = true,
         includeTags: Bool = true,
         allowExternalContext: Bool = true,
+        codeContextRequest: RepoAICodeContextRequest? = nil,
+        onContextProgress: RepoAIContextProgressCallback? = nil,
+        onContextResolved: (@MainActor () -> Void)? = nil,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         try enforceGenerationEntitlement(includeSummary: includeSummary, includeTags: includeTags)
-        let source = try await makeSource(for: repo)
+        let source = try await makeSource(
+            for: repo,
+            codeContextRequest: codeContextRequest,
+            onContextProgress: onContextProgress
+        )
+        onContextResolved?()
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
         // Y9.3（2026-06-14 dong4j 反馈）：捕获 anysearch 降级原因，让 UI 给出具体反馈
@@ -897,7 +958,11 @@ final class RepoAIInsightService {
     /// - 优先使用 `readme_contents.content`(raw markdown,HOM-201 P2-2 拆表后独立):
     ///   决策 E3 后台懒补全完成时直接用原文,信息密度比 HTML 剥后高;
     ///   fallback `rendered_html` 保留兼容。
-    private func makeSource(for repo: Repo) async throws -> Source {
+    private func makeSource(
+        for repo: Repo,
+        codeContextRequest: RepoAICodeContextRequest? = nil,
+        onContextProgress: RepoAIContextProgressCallback? = nil
+    ) async throws -> Source {
         let markdown = try await readmeRepository.findContent(repoId: repo.id)
         let readme: Readme? = (markdown == nil)
             ? try await readmeRepository.find(repoId: repo.id)
@@ -984,7 +1049,14 @@ final class RepoAIInsightService {
         var degradationReason: ContextDegradationReason?
         var codeContextXml = ""
         if let provider = repoAIContextProvider {
-            let outcome = try await provider.contextOutcome(for: repo)
+            let operation = {
+                try await provider.contextOutcome(for: repo, onProgress: onContextProgress)
+            }
+            let outcome = if let codeContextRequest {
+                try await codeContextRequest.resolve(operation: operation)
+            } else {
+                try await operation()
+            }
             switch outcome {
             case .success(let result):
                 // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改

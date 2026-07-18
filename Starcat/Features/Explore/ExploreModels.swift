@@ -13,7 +13,7 @@
 import SwiftUI
 
 /// 探索页二级模块。
-enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
+enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
     case discover
     case trending
     case popular
@@ -87,7 +87,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// 发现 / 热门 / 新发布中栏筛选栏的排序选项。
-enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
+enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable, Sendable {
     case recommended
     case popular
     case stars

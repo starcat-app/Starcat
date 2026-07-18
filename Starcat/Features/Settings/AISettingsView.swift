@@ -809,7 +809,7 @@ struct AISettingsTab: View {
             .padding(.bottom, 4)
     }
 
-    /// 触发时机：启动后延迟 / 同步后增量 / 定时 24h。
+    /// 触发时机：启动后一次 / 同步后增量 / 定期（可配间隔）。
     @ViewBuilder
     private var triggerGroup: some View {
         autoTidySectionHeader("settings.autoTidy.triggers.label")
@@ -817,6 +817,23 @@ struct AISettingsTab: View {
         Toggle("settings.autoTidy.trigger.onLaunch", isOn: autoTidyBinding(\.triggerOnLaunch))
         Toggle("settings.autoTidy.trigger.onSync", isOn: autoTidyBinding(\.triggerOnSync))
         Toggle("settings.autoTidy.trigger.scheduled", isOn: autoTidyBinding(\.triggerScheduled))
+
+        // 间隔仅在「定期开启」打开时有意义；关掉时淡化 + disable，保留上次填写值。
+        LabeledContent {
+            TextField(
+                "",
+                value: scheduledIntervalHoursBinding,
+                format: .number.grouping(.never)
+            )
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 80)
+            .help("1 - 24")
+        } label: {
+            Text("settings.autoTidy.trigger.scheduledInterval")
+        }
+        .disabled(!settings.autoTidySettings.triggerScheduled)
+        .opacity(settings.autoTidySettings.triggerScheduled ? 1.0 : 0.5)
     }
 
     /// 处理范围：最多一次处理多少个 + 排序口径。
@@ -989,6 +1006,18 @@ struct AISettingsTab: View {
                 let clamped = max(5, min(500, newValue))
                 var s = self.settings.autoTidySettings
                 s.maxPerRun = clamped
+                self.settings.autoTidySettings = s
+            }
+        )
+    }
+
+    /// 定期间隔（小时）binding：clamp 到 `AutoTidySettings.scheduledIntervalHoursRange`。
+    private var scheduledIntervalHoursBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.autoTidySettings.scheduledIntervalHours },
+            set: { newValue in
+                var s = self.settings.autoTidySettings
+                s.scheduledIntervalHours = AutoTidySettings.clampScheduledIntervalHours(newValue)
                 self.settings.autoTidySettings = s
             }
         )

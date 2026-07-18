@@ -27,6 +27,8 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     var cached: [TrendingRepo]
     var lastRefreshedAtValue: Date?
     var fetchCallCount: Int = 0
+    var cachedCallCount: Int = 0
+    var lastRefreshedCallCount: Int = 0
 
     /// 用于测试可注入的 fetch 行为（默认返回 self.repos，可重写为抛错或动态返回）。
     var fetchHandler: (@Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> [TrendingRepo])?
@@ -50,7 +52,8 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     }
 
     func cachedTrending(since: TrendingPeriod, language: TrendingLanguage) async -> [TrendingRepo] {
-        cached
+        cachedCallCount += 1
+        return cached
     }
 
     func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo] {
@@ -62,7 +65,12 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     }
 
     func lastRefreshedAt(since: TrendingPeriod, language: TrendingLanguage) async -> Date? {
-        lastRefreshedAtValue
+        lastRefreshedCallCount += 1
+        return lastRefreshedAtValue
+    }
+
+    func storageReadCounts() -> (cached: Int, refreshedAt: Int) {
+        (cachedCallCount, lastRefreshedCallCount)
     }
 }
 
@@ -321,6 +329,107 @@ struct TrendingTests {
     }
 
     @MainActor
+    @Test("Trending 返回同一查询桶直接命中内存快照，不重复读取 SQLite")
+    func sameQueryReentryUsesMemorySnapshot() async {
+        let cachedRepos = (0..<45).map {
+            makeTrendingRepo(fullName: "owner/reentry-\($0)")
+        }
+        let stub = StubTrendingRepository(
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+        vm.loadMoreIfNeeded(currentIndex: 16, totalAvailable: cachedRepos.count)
+        let firstReads = await stub.storageReadCounts()
+        let firstRevision = vm.reposRevision
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        let secondReads = await stub.storageReadCounts()
+        #expect(secondReads.cached == firstReads.cached)
+        #expect(secondReads.refreshedAt == firstReads.refreshedAt)
+        #expect(vm.reposRevision == firstRevision)
+        #expect(vm.visibleLimit == 40)
+        #expect(vm.hasPublishedCurrentQuery)
+    }
+
+    @MainActor
+    @Test("Trending 首屏仅开放 20 条，并按滚动阈值逐页增长")
+    func visiblePageGrowsInTwentyItemChunks() async {
+        let cachedRepos = (0..<45).map {
+            makeTrendingRepo(fullName: "owner/repo-\($0)")
+        }
+        let stub = StubTrendingRepository(
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        #expect(vm.repos.count == 45)
+        #expect(vm.visibleLimit == 20)
+        vm.loadMoreIfNeeded(currentIndex: 16, totalAvailable: 45)
+        #expect(vm.visibleLimit == 40)
+        vm.loadMoreIfNeeded(currentIndex: 36, totalAvailable: 45)
+        #expect(vm.visibleLimit == 45)
+    }
+
+    @MainActor
+    @Test("Trending 相同查询并发 reload 只保留一个 Repository 请求")
+    func concurrentSameQueryReloadsShareOneRequest() async {
+        let stub = StubTrendingRepository()
+        await stub.setFetchHandler { _, _ in
+            try? await Task.sleep(for: .milliseconds(50))
+            return [makeTrendingRepo(fullName: "owner/once")]
+        }
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        let first = Task { @MainActor in
+            await vm.reload(cachePolicy: .respectTTL)
+        }
+        await Task.yield()
+        let second = Task { @MainActor in
+            await vm.reload(cachePolicy: .respectTTL)
+        }
+        await first.value
+        await second.value
+
+        #expect(await stub.fetchCallCount == 1)
+        #expect(vm.repos.map(\.fullName) == ["owner/once"])
+    }
+
+    @MainActor
+    @Test("Trending 快速切换周期时旧请求结果不能覆盖新查询")
+    func stalePeriodRequestCannotOverwriteLatestQuery() async {
+        let stub = StubTrendingRepository()
+        await stub.setFetchHandler { period, _ in
+            if period == .daily {
+                // 故意吞掉取消并晚返回，验证 ViewModel 的 generation guard。
+                try? await Task.sleep(for: .milliseconds(80))
+                return [makeTrendingRepo(fullName: "owner/daily")]
+            }
+            return [makeTrendingRepo(fullName: "owner/weekly")]
+        }
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        let oldReload = Task { @MainActor in
+            await vm.reload(cachePolicy: .respectTTL)
+        }
+        while await stub.fetchCallCount == 0 {
+            await Task.yield()
+        }
+        await vm.selectPeriod(.weekly)
+        await oldReload.value
+
+        #expect(vm.selectedPeriod == .weekly)
+        #expect(vm.repos.map(\.fullName) == ["owner/weekly"])
+        #expect(vm.hasPublishedCurrentQuery)
+    }
+
+    @MainActor
     @Test("TrendingViewModel.reload(.forceNetwork): cache hit still calls network")
     func reloadCacheHitFetchesWhenForceNetwork() async throws {
         let cachedRepos = [
@@ -561,12 +670,61 @@ struct TrendingTests {
         let repo = StubTrendingRepository(repos: [python, swift])
         let vm = TrendingViewModel(repository: repo, githubAPIClient: MockGitHubAPIClient())
 
-        vm.updateLanguagePreferences(from: [
+        await vm.updateLanguagePreferences(from: [
             LanguageStat(language: "Swift", count: 9),
             LanguageStat(language: "Python", count: 1)
         ])
         await vm.reload()
 
         #expect(vm.recommendedRepos.first?.fullName == "owner/swift-tool")
+    }
+
+    @MainActor
+    @Test("Trending 全局筛选由后台快照派生，并保留 Wiki unknown 语义")
+    func globalFilterIsDerivedByPipeline() async throws {
+        let keep = makeTrendingRepo(fullName: "owner/swift-tool", language: "Swift")
+        let drop = makeTrendingRepo(fullName: "owner/python-tool", language: "Python")
+        let repository = StubTrendingRepository(repos: [keep, drop])
+        let vm = TrendingViewModel(repository: repository, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload()
+        await vm.updateGlobalFilter(TrendingListFilter(
+            star: .starred,
+            library: .inLibrary,
+            hideArchived: false,
+            hideForks: false,
+            languages: ["swift"],
+            wikiAvailability: .available,
+            healthAvailability: .available,
+            openSSFAvailability: .available,
+            starredRepoIDs: [keep.ghRepoId],
+            inLibraryRepoIDs: [keep.ghRepoId],
+            wikiKnownRepoIDs: [keep.ghRepoId],
+            wikiAvailableRepoIDs: [keep.ghRepoId],
+            healthAvailableRepoIDs: [keep.ghRepoId],
+            openSSFAvailableRepoIDs: [keep.ghRepoId]
+        ))
+
+        #expect(vm.displayedRepos.map(\.fullName) == [keep.fullName])
+        #expect(vm.filterCandidateRepos.count == 2, "信号补载必须保留未筛选候选")
+
+        await vm.updateGlobalFilter(TrendingListFilter(
+            star: .all,
+            library: .all,
+            hideArchived: false,
+            hideForks: false,
+            languages: [],
+            wikiAvailability: .missing,
+            healthAvailability: .unknown,
+            openSSFAvailability: .unknown,
+            starredRepoIDs: [],
+            inLibraryRepoIDs: [],
+            wikiKnownRepoIDs: [drop.ghRepoId],
+            wikiAvailableRepoIDs: [],
+            healthAvailableRepoIDs: [],
+            openSSFAvailableRepoIDs: []
+        ))
+
+        #expect(vm.displayedRepos.map(\.fullName) == [drop.fullName])
     }
 }

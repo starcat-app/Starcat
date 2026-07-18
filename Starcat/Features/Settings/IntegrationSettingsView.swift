@@ -30,6 +30,7 @@ struct IntegrationSettingsTab: View {
     @State private var localAPIKeyStore = StarcatLocalAPIKeyStore.shared
     @State private var isLocalAPIKeyRevealed = false
     @State private var isHoveringCopyLocalAPIKey = false
+    @State private var isHoveringCopyPluginEndpoint = false
     @State private var isHoveringRotateLocalAPIKey = false
     @State private var isHoveringChromePlugin = false
     @State private var isHoveringSafariPlugin = false
@@ -316,11 +317,7 @@ struct IntegrationSettingsTab: View {
                     titleKey: "settings.integration.browserPlugin.status",
                     value: pluginStatusText
                 )
-                pluginInfoRow(
-                    titleKey: "settings.integration.browserPlugin.endpoint",
-                    value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1",
-                    isMonospacedValue: true
-                )
+                pluginEndpointRow
                 localAPIKeyReferenceRow
             }
 
@@ -413,6 +410,37 @@ struct IntegrationSettingsTab: View {
             return String.l10n("settings.integration.browserPlugin.status.running")
         case .failed:
             return String.l10n("settings.integration.browserPlugin.status.failed")
+        }
+    }
+
+    private var pluginEndpoint: String {
+        "http://127.0.0.1:\(pluginConfiguration.port)"
+    }
+
+    private var pluginEndpointRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("settings.integration.browserPlugin.endpoint")
+                .font(.body)
+                .foregroundStyle(.primary)
+                .frame(width: 88, alignment: .leading)
+            Text(verbatim: pluginEndpoint)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            CopyFeedbackButton(
+                providesContent: { pluginEndpoint },
+                tooltip: "settings.integration.browserPlugin.copyEndpoint"
+            ) { didCopy in
+                tokenActionIcon(
+                    systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc",
+                    foregroundStyle: didCopy ? Color.green : Color.secondary,
+                    isHovering: isHoveringCopyPluginEndpoint
+                )
+            }
+            .onHover { isHoveringCopyPluginEndpoint = $0 }
         }
     }
 

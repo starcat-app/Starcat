@@ -113,11 +113,13 @@ struct RepoAIWindowContentView: View {
     @State private var didRunInitialExternalSummaryRequest = false
     @State private var areExternalContextSourcesExpanded = false
     @State private var hoveredPrepStopStep: PrepStep?
+    @State private var isPreparingContextRowHovered = false
     /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
     /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
     @State private var pendingChatDraftReplacement: String?
     @FocusState private var isChatInputFocused: Bool
     @FocusState private var focusedPrepStopStep: PrepStep?
+    @FocusState private var isPreparingContextStopFocused: Bool
 
     /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
     ///
@@ -454,10 +456,9 @@ struct RepoAIWindowContentView: View {
                                 // 里的 chip 行展示真实进度。这里去掉旧的 loadingCache 分支，让首次进
                                 // 入直接落到 `emptySummaryState`（含生成摘要按钮 + prep chip 行）。
                                 if vm.isGenerating, vm.phase == .preparingContext {
-                                    // Y1：摘要生成首阶段 -- RepoContextPacker 正在打包代码上下文。
-                                    // 此时 streamingSummaryText 还是空字符串（service 还没收到 LLM
-                                    // 的第一个 delta），需要单独 UI 提示用户"在做事，别关窗口"。
-                                    preparingContextPlaceholder()
+                                    preparingContextPlaceholder(vm: vm)
+                                } else if vm.isGenerating, vm.phase == .requestingSummary {
+                                    requestingSummaryPlaceholder(vm: vm)
                                 } else if let draft = vm.streamingSummaryText, !draft.isEmpty {
                                     streamingSummary(draft)
                                 } else if let insight = vm.insight {
@@ -518,11 +519,11 @@ struct RepoAIWindowContentView: View {
                 copyButton(insight: insight)
 
                 // Y6（2026-06-13）：右上角原"重新生成"单按钮改为 ellipsis.circle Menu，
-                // 让"在 Finder 中显示代码上下文"找得到地方挂。
+                // 让"打开代码上下文"找得到地方挂。
                 //
                 // Menu 项：
                 //   1. 重新生成：与历史按钮等价；
-                //   2. 在 Finder 中显示上下文：当 insight.contextMetadata 非 nil 才出现
+                //   2. 打开代码上下文：当 insight.contextMetadata 非 nil 才出现
                 //      （README-only 路径下没意义）；点击调 RepoContextStorage.shared.revealProject。
                 Menu {
                     Button {
@@ -663,11 +664,14 @@ struct RepoAIWindowContentView: View {
     /// 字体与间距：caption2 + 4pt icon-label gap，与现有 `preparingContextPlaceholder`
     /// 的 caption2 风格对齐，避免引入新的字号层次。
     @ViewBuilder
-    private func prepStepChipRow(vm: RepoAIInsightViewModel) -> some View {
+    private func prepStepChipRow(
+        vm: RepoAIInsightViewModel,
+        allowsCancellation: Bool = true
+    ) -> some View {
         let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
         HStack(spacing: 6) {
             ForEach(Array(order.enumerated()), id: \.offset) { index, step in
-                prepStepChip(step: step, vm: vm)
+                prepStepChip(step: step, vm: vm, allowsCancellation: allowsCancellation)
                 if index < order.count - 1 {
                     Image(systemName: "circle.dotted")
                         .font(interfaceScale.font(.captionSmall))
@@ -683,10 +687,19 @@ struct RepoAIWindowContentView: View {
     }
 
     @ViewBuilder
-    private func prepStepChip(step: PrepStep, vm: RepoAIInsightViewModel) -> some View {
+    private func prepStepChip(
+        step: PrepStep,
+        vm: RepoAIInsightViewModel,
+        allowsCancellation: Bool
+    ) -> some View {
         let state = prepStepState(step: step, vm: vm)
         HStack(spacing: 4) {
-            prepStepIcon(step: step, state: state, vm: vm)
+            prepStepIcon(
+                step: step,
+                state: state,
+                vm: vm,
+                allowsCancellation: allowsCancellation
+            )
             Text(step.displayKey)
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(prepStepTextColor(state: state))
@@ -695,13 +708,24 @@ struct RepoAIWindowContentView: View {
     }
 
     @ViewBuilder
-    private func prepStepIcon(step: PrepStep, state: PrepStepState, vm: RepoAIInsightViewModel) -> some View {
+    private func prepStepIcon(
+        step: PrepStep,
+        state: PrepStepState,
+        vm: RepoAIInsightViewModel,
+        allowsCancellation: Bool
+    ) -> some View {
         switch state {
         case .done:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         case .active:
-            prepStopButton(step: step, vm: vm)
+            if allowsCancellation {
+                prepStopButton(step: step, vm: vm)
+            } else {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 14, height: 14)
+            }
         case .pending:
             Image(systemName: "circle")
                 // 故意用 .tertiary：pending 是「视觉降级」态，需要明显比 active 暗一档。
@@ -835,15 +859,66 @@ struct RepoAIWindowContentView: View {
     ///   - streaming：用户已经看到 LLM 在吐字了 → caption 提示"摘要正在生成"
     ///   - preparingContext：没有任何文字输出，但后台 packer 正在工作 → caption 提示
     ///     "正在分析仓库代码结构"，避免用户以为 App 卡死
-    private func preparingContextPlaceholder() -> some View {
+    private func preparingContextPlaceholder(vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
+                Button {
+                    vm.skipCodeContextForCurrentGeneration(repo: repo)
+                } label: {
+                    Group {
+                        if isPreparingContextRowHovered || isPreparingContextStopFocused {
+                            Image(systemName: "stop.circle.fill")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    // spinner 与 stop 图标共用固定尺寸，hover 时正文不发生水平位移。
+                    .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .focused($isPreparingContextStopFocused)
+                .accessibilityLabel(Text("ai.assistant.prep.skipCurrent.accessibility"))
+                .help("ai.assistant.prep.skipCurrent.accessibility")
+
                 Text("ai.assistant.summary.preparingContext")
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
+            .contentShape(Rectangle())
+            .onHover { isPreparingContextRowHovered = $0 }
+
+            // 摘要点击后的正文加载态也展示三段真实步骤；active step 用 spinner，
+            // 取消入口统一放在上面的文本行，避免同一区域出现两个停止按钮。
+            prepStepChipRow(vm: vm, allowsCancellation: false)
+
             Text("ai.assistant.summary.preparingContext.caption")
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 代码上下文已经完成或被主动跳过后，等待外部材料与 LLM 首个 token 的过渡态。
+    ///
+    /// 单独拆出该阶段，避免 XML 已经注入后仍显示可点击的“停止”按钮，造成操作成功但
+    /// 实际无法撤回上下文的假反馈。
+    private func requestingSummaryPlaceholder(vm: RepoAIInsightViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Group {
+                    if vm.didSkipCodeContextForCurrentGeneration {
+                        Text("ai.assistant.summary.contextSkipped")
+                    } else {
+                        Text("ai.assistant.summary.requesting")
+                    }
+                }
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+            }
+            Text("ai.assistant.summary.requesting.caption")
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }

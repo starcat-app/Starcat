@@ -144,7 +144,6 @@ private struct ExploreDiscoveryListView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
     @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
@@ -153,13 +152,14 @@ private struct ExploreDiscoveryListView: View {
             filterBar
             Divider()
             content
-                .id(contentStateID)
-                .transition(contentTransition)
-                .animation(contentAnimation, value: contentStateID)
         }
         .task(id: queryIdentity) {
-            let requestedIdentity = queryIdentity
             restoreSortPreferenceIfNeeded()
+            // 恢复偏好可能改变 task identity；先让 SwiftUI 取消旧代际，旧 task 不能继续
+            // 用恢复前 identity 再发一次 reload，避免首次进入出现双发布。
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            let requestedIdentity = queryIdentity
             selectedRepoID = nil
             selectedRepo = nil
             async let libraryLoad: Void = reloadLibraryStateMap()
@@ -291,27 +291,31 @@ private struct ExploreDiscoveryListView: View {
         settings.setListPreferenceValue(sort.rawValue, for: sortPreferenceKey, login: currentLogin)
     }
 
-    @ViewBuilder
     private var content: some View {
-        if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
-            RepoSkeletonListView(rowCount: 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            ExploreEmptyState(
-                systemImage: "exclamationmark.triangle",
-                titleKey: "error.loadFailed",
-                subtitleText: error
-            )
-        } else if viewModel.repos.isEmpty {
-            ExploreEmptyState(
-                systemImage: mode.systemImage,
-                titleKey: "explore.empty.title",
-                subtitleKey: "explore.empty.subtitle"
-            )
-        } else {
+        ZStack {
+            // 列表宿主始终保留；查询切换只在中栏叠加局部状态，不触发整棵 List 重建。
             VStack(spacing: 0) {
                 cacheWarningBanner
                 repoList
+            }
+            .opacity(hasPublishedCurrentQuery && !viewModel.repos.isEmpty ? 1 : 0)
+            .allowsHitTesting(hasPublishedCurrentQuery && !viewModel.repos.isEmpty)
+
+            if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
+                RepoSkeletonListView(rowCount: 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
+                ExploreEmptyState(
+                    systemImage: "exclamationmark.triangle",
+                    titleKey: "error.loadFailed",
+                    subtitleText: error
+                )
+            } else if viewModel.repos.isEmpty {
+                ExploreEmptyState(
+                    systemImage: mode.systemImage,
+                    titleKey: "explore.empty.title",
+                    subtitleKey: "explore.empty.subtitle"
+                )
             }
         }
     }
@@ -368,7 +372,11 @@ private struct ExploreDiscoveryListView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
+                .listRowReveal(
+                    index: item.index,
+                    snapshotID: viewModel.reposRevision,
+                    skipAnimation: true
+                )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .onAppear {
@@ -421,6 +429,8 @@ private struct ExploreDiscoveryListView: View {
             .hidden()
         }
         .task(id: viewModel.reposRevision) {
+            // 首屏先提交，再补当前 20 条的辅助信号，避免与 row 构造抢同一帧。
+            await Task.yield()
             let repoIDs = viewModel.repos.map(\.repoID)
             async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
             async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
@@ -607,27 +617,6 @@ private struct ExploreDiscoveryListView: View {
 
     private var hasPublishedCurrentQuery: Bool {
         viewModel.publishedQueryIdentity == queryIdentity
-    }
-
-    private var contentStateID: String {
-        if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
-            return "explore-loading"
-        }
-        if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            return "explore-error-\(error)"
-        }
-        return "explore-content-\(mode.id)"
-    }
-
-    private var contentAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.22)
-    }
-
-    private var contentTransition: AnyTransition {
-        reduceMotion ? .identity : .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity
-        )
     }
 
     private var formattedFreshness: String? {

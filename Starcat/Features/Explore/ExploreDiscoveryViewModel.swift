@@ -69,7 +69,36 @@ final class ExploreDiscoveryViewModel {
         loadError = nil
         cacheWarning = nil
 
-        let cached = showsRefreshIndicator ? nil : await repository.cachedBulk()
+        // 发现 / 热门 / 新发布共用同一 bulk。切换分类时先用会话内快照后台派生首屏，
+        // 不再每次重新读取 SQLite；快照过期时仍保留已发布列表并继续后台刷新。
+        if !showsRefreshIndicator, !bulkAllRepos.isEmpty {
+            await applyFiltersLocally(
+                sourceRepos: bulkAllRepos,
+                mode: mode,
+                language: language,
+                topic: topic,
+                platform: platform,
+                sort: sort,
+                bumpRevision: true,
+                requestID: requestID
+            )
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
+            publishedQueryIdentity = queryIdentity
+            isLoading = false
+
+            if let lastRefreshedAt, isCacheFresh(at: lastRefreshedAt) {
+                finish(requestID: requestID)
+                return
+            }
+            isRefreshing = true
+        }
+
+        let cached = showsRefreshIndicator || !bulkAllRepos.isEmpty
+            ? nil
+            : await repository.cachedBulk()
         guard !shouldStop(requestID: requestID) else {
             finish(requestID: requestID)
             return
@@ -83,15 +112,20 @@ final class ExploreDiscoveryViewModel {
                 finish(requestID: requestID)
                 return
             }
-            apply(
+            await apply(
                 snapshot: cached,
                 mode: mode,
                 language: language,
                 topic: topic,
                 platform: platform,
                 sort: sort,
-                bumpRevision: true
+                bumpRevision: true,
+                requestID: requestID
             )
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
             publishedQueryIdentity = queryIdentity
             finish(requestID: requestID)
             return
@@ -103,14 +137,19 @@ final class ExploreDiscoveryViewModel {
                 finish(requestID: requestID)
                 return
             }
-            apply(
+            await apply(
                 result: fetchResult.result,
                 mode: mode,
                 language: language,
                 topic: topic,
                 platform: platform,
-                sort: sort
+                sort: sort,
+                requestID: requestID
             )
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
             publishedQueryIdentity = queryIdentity
             if case .cachedFallback = fetchResult.source {
                 cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
@@ -186,19 +225,23 @@ final class ExploreDiscoveryViewModel {
         topic: String?,
         platform: String?,
         sort: ExploreSortOption,
-        bumpRevision: Bool
-    ) {
-        bulkAllRepos = snapshot.repos
-        latestSummary = snapshot.summary
-        lastRefreshedAt = snapshot.lastFetchedAt
-        applyFiltersLocally(
+        bumpRevision: Bool,
+        requestID: UUID
+    ) async {
+        await applyFiltersLocally(
+            sourceRepos: snapshot.repos,
             mode: mode,
             language: language,
             topic: topic,
             platform: platform,
             sort: sort,
-            bumpRevision: bumpRevision
+            bumpRevision: bumpRevision,
+            requestID: requestID
         )
+        guard !shouldStop(requestID: requestID) else { return }
+        bulkAllRepos = snapshot.repos
+        latestSummary = snapshot.summary
+        lastRefreshedAt = snapshot.lastFetchedAt
     }
 
     private func apply(
@@ -207,77 +250,101 @@ final class ExploreDiscoveryViewModel {
         language: String?,
         topic: String?,
         platform: String?,
-        sort: ExploreSortOption
-    ) {
-        bulkAllRepos = result.repos
-        latestSummary = result.summary
-        lastRefreshedAt = Date()
-        applyFiltersLocally(
+        sort: ExploreSortOption,
+        requestID: UUID
+    ) async {
+        await applyFiltersLocally(
+            sourceRepos: result.repos,
             mode: mode,
             language: language,
             topic: topic,
             platform: platform,
             sort: sort,
-            bumpRevision: true
+            bumpRevision: true,
+            requestID: requestID
         )
+        guard !shouldStop(requestID: requestID) else { return }
+        bulkAllRepos = result.repos
+        latestSummary = result.summary
+        lastRefreshedAt = Date()
     }
 
     private func applyFiltersLocally(
+        sourceRepos: [DiscoveryRepoDTO],
         mode: ExploreMode,
         language: String?,
         topic: String?,
         platform: String?,
         sort: ExploreSortOption,
-        bumpRevision: Bool
-    ) {
-        PerformanceTracer.shared.trace(.discoveryLocalFilter) {
-            var filtered = bulkAllRepos
+        bumpRevision: Bool,
+        requestID: UUID
+    ) async {
+        // Task.detached 只接收 Sendable 值快照；筛选与排序期间不读取任何 Observable 状态。
+        let task = Task.detached(priority: .userInitiated) {
+            Self.deriveLocalRepos(
+                sourceRepos: sourceRepos,
+                mode: mode,
+                language: language,
+                topic: topic,
+                platform: platform,
+                sort: sort
+            )
+        }
+        let filtered = await PerformanceTracer.shared.trace(.discoveryLocalFilter, task: task)
+        guard !shouldStop(requestID: requestID) else { return }
 
-            switch mode {
-            case .discover:
-                if let topic = normalizedFilter(topic) {
-                    filtered = filtered.filter { $0.topics.contains(topic) }
-                }
-                if let platform = normalizedFilter(platform) {
-                    filtered = filtered.filter { $0.platforms.contains(platform) }
-                }
-            case .popular:
-                filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
-                if let language = normalizedFilter(language) {
-                    filtered = filtered.filter { repo in
-                        if language == TrendingLanguage.uncategorizedKey {
-                            return (repo.language ?? "").isEmpty
-                        }
-                        return repo.language?.caseInsensitiveCompare(language) == .orderedSame
-                    }
-                }
-            case .newReleases:
-                filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
-                if let language = normalizedFilter(language) {
-                    filtered = filtered.filter { repo in
-                        if language == TrendingLanguage.uncategorizedKey {
-                            return (repo.language ?? "").isEmpty
-                        }
-                        return repo.language?.caseInsensitiveCompare(language) == .orderedSame
-                    }
-                }
-            case .trending, .weekly:
-                break
-            }
-
-            filtered.sort(by: Self.makeLocalSorter(sort.normalized(for: mode), mode: mode))
-            filteredLocalRepos = filtered
-            total = filtered.count
-            page = 1
-            repos = Array(filtered.prefix(Self.pageSize))
-            nextPage = filtered.count > repos.count ? 2 : nil
-            if bumpRevision {
-                reposRevision += 1
-            }
+        // MainActor 只发布首屏 20 条和分页元数据，不再执行全量 sort/filter。
+        filteredLocalRepos = filtered
+        total = filtered.count
+        page = 1
+        repos = Array(filtered.prefix(Self.pageSize))
+        nextPage = filtered.count > repos.count ? 2 : nil
+        if bumpRevision {
+            reposRevision += 1
         }
     }
 
-    private static func makeLocalSorter(_ sort: ExploreSortOption, mode: ExploreMode) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
+    /// 在后台线程完成 Discovery bulk 的模式筛选与排序。
+    private nonisolated static func deriveLocalRepos(
+        sourceRepos: [DiscoveryRepoDTO],
+        mode: ExploreMode,
+        language: String?,
+        topic: String?,
+        platform: String?,
+        sort: ExploreSortOption
+    ) -> [DiscoveryRepoDTO] {
+        var filtered = sourceRepos
+
+        switch mode {
+        case .discover:
+            if let topic = normalizedFilter(topic) {
+                filtered = filtered.filter { $0.topics.contains(topic) }
+            }
+            if let platform = normalizedFilter(platform) {
+                filtered = filtered.filter { $0.platforms.contains(platform) }
+            }
+        case .popular, .newReleases:
+            filtered = filtered.filter { $0.categories.contains(categoryCode(for: mode)) }
+            if let language = normalizedFilter(language) {
+                filtered = filtered.filter { repo in
+                    if language == TrendingLanguage.uncategorizedKey {
+                        return (repo.language ?? "").isEmpty
+                    }
+                    return repo.language?.caseInsensitiveCompare(language) == .orderedSame
+                }
+            }
+        case .trending, .weekly:
+            break
+        }
+
+        filtered.sort(by: makeLocalSorter(sort.normalized(for: mode), mode: mode))
+        return filtered
+    }
+
+    private nonisolated static func makeLocalSorter(
+        _ sort: ExploreSortOption,
+        mode: ExploreMode
+    ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
         switch sort {
         case .recommended:
             return scoreSorter(\.discoveryScore)
@@ -330,7 +397,9 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func scoreSorter(_ keyPath: KeyPath<DiscoveryRepoDTO, Double?>) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
+    private nonisolated static func scoreSorter(
+        _ keyPath: KeyPath<DiscoveryRepoDTO, Double?>
+    ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
         { lhs, rhs in
             let lhsScore = lhs[keyPath: keyPath] ?? lhs.score ?? 0
             let rhsScore = rhs[keyPath: keyPath] ?? rhs.score ?? 0
@@ -340,7 +409,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func categoryRankSorter(
+    private nonisolated static func categoryRankSorter(
         category: String,
         fallback: @escaping (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool
     ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
@@ -356,7 +425,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func dateStringSorter(
+    private nonisolated static func dateStringSorter(
         _ value: @escaping (DiscoveryRepoDTO) -> String?,
         ascending: Bool,
         mode: ExploreMode
@@ -373,14 +442,21 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func tieBreak(_ lhs: DiscoveryRepoDTO, _ rhs: DiscoveryRepoDTO, mode: ExploreMode) -> Bool {
+    private nonisolated static func tieBreak(
+        _ lhs: DiscoveryRepoDTO,
+        _ rhs: DiscoveryRepoDTO,
+        mode: ExploreMode
+    ) -> Bool {
         let lhsScore = defaultScore(lhs, mode: mode)
         let rhsScore = defaultScore(rhs, mode: mode)
         if lhsScore != rhsScore { return lhsScore > rhsScore }
         return lhs.repoID > rhs.repoID
     }
 
-    private static func defaultScore(_ repo: DiscoveryRepoDTO, mode: ExploreMode) -> Double {
+    private nonisolated static func defaultScore(
+        _ repo: DiscoveryRepoDTO,
+        mode: ExploreMode
+    ) -> Double {
         switch mode {
         case .discover:
             return repo.discoveryScore ?? repo.score ?? 0
@@ -451,7 +527,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func categoryCode(for mode: ExploreMode) -> String {
+    private nonisolated static func categoryCode(for mode: ExploreMode) -> String {
         switch mode {
         case .discover:
             return "discover"
@@ -464,7 +540,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private func normalizedFilter(_ value: String?) -> String? {
+    private nonisolated static func normalizedFilter(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty else {
             return nil

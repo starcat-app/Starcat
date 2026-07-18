@@ -5,7 +5,7 @@
 //  HOM-126 - 自动后台 AI 整理调度器。
 //
 //  模块职责：
-//  - 根据 `AutoTidySettings` 监听三类触发源：① App 启动延迟、② 同步完成、③ 24h 定时。
+//  - 根据 `AutoTidySettings` 监听三类触发源：① App 启动延迟、② 同步完成、③ 定期定时。
 //  - 任一触发命中时，从 `RepoRepository.fetchUntagged()` 取未分类 repos，按用户配的
 //    排序策略截取前 N 个，调 `BatchAIQueueService.start(..., silent: true)` 静默跑。
 //  - 一轮跑完后，把 (applied / ignored / failed / total) 结果写回
@@ -62,7 +62,8 @@ final class AutoTidyScheduler {
     /// 启动后延迟触发的 Task 句柄。app 关闭或 disable 时取消（防止延迟段被 retain）。
     private var launchDelayTask: Task<Void, Never>?
 
-    /// 24h 定时器。仅在 `triggerScheduled == true` 且 `enabled == true` 时存活。
+    /// 定期触发的 Timer。仅在 `triggerScheduled == true` 且 `enabled == true` 时存活。
+    /// 间隔读自 `autoTidySettings.scheduledIntervalHours`（默认 1 小时）。
     private var scheduledTimer: Timer?
 
     /// 上一次观察到的 `SyncState`，用于检测「从 syncing → completed」边沿。
@@ -176,43 +177,43 @@ final class AutoTidyScheduler {
         }
     }
 
-    // MARK: - 触发器：24h Timer
+    // MARK: - 触发器：定期 Timer
 
-    /// 安装 24h 定时器。仅在用户开启「定时」开关时生效。
+    /// 安装定期触发定时器。仅在用户开启「定期开启」时生效。
     ///
     /// 设计：
-    /// - 不用 `NSBackgroundActivityScheduler`（更省电但 wall-clock 不精确，
-    ///   HOM-126 描述是"每 24 小时"语义可宽松，**但**第一版用普通 Timer 调试简单），
-    ///   后续如果性能/电量诉求强可改用 NSBackgroundActivityScheduler。
-    /// - 触发时间不严格对齐"每天某点"，是"App 启动后每 24h"，与"启动延迟"叠加效果
-    ///   = 用户开 App 立刻一次 + 24h 后再一次，符合"前台运行时持续整理"语义。
-    /// - settings 变化（用户开/关 triggerScheduled）由 view 层调 `restartScheduledTimerIfNeeded`
-    ///   重新装载。
+    /// - 不用 `NSBackgroundActivityScheduler`（更省电但 wall-clock 不精确；
+    ///   第一版用普通 Timer 调试简单），后续若电量诉求强可再换。
+    /// - 触发时间不严格对齐"每天某点"，是「App 运行期间每 N 小时一次」，
+    ///   与「启动后触发」叠加 = 开 App 延迟一次 + 之后按间隔再跑，符合前台持续整理语义。
+    /// - 间隔变更 / 开关切换由 view 层 `reconfigure()` 立刻重装 Timer。
     private func installScheduledTimer() {
         scheduledTimer?.invalidate()
         scheduledTimer = nil
         guard settings.autoTidySettings.enabled,
               settings.autoTidySettings.triggerScheduled else { return }
+        let interval = settings.autoTidySettings.scheduledIntervalSeconds
         // Timer 在 main runloop 上跑，handler 已经在 @MainActor。
         // `repeats: true` 让它持续触发；卸载靠 invalidate。
-        scheduledTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { [weak self] _ in
+        scheduledTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 guard self.settings.autoTidySettings.enabled,
                       self.settings.autoTidySettings.triggerScheduled else { return }
-                AppLog.ai.notice("[autoTidy] trigger via 24h timer")
+                let hours = self.settings.autoTidySettings.scheduledIntervalHours
+                AppLog.ai.notice("[autoTidy] trigger via scheduled timer (\(hours, privacy: .public)h)")
                 self.triggerNow(reason: "timer")
             }
         }
     }
 
-    /// 设置项变更后调用：根据当前 settings 重新装载启动延迟 / 定时器。
+    /// 设置项变更后调用：根据当前 settings 重新装载定期定时器。
     ///
-    /// 用户在设置页切「定时」/「启动后延迟」开关时，HomeView 应在 `.onChange(of:
+    /// 用户在设置页切「定期开启」/ 改间隔时，HomeView 应在 `.onChange(of:
     /// settings.autoTidySettings)` 调用本方法，让监听跟着 settings 走。
     func reconfigure() {
         // 启动延迟只在 app 启动后跑一次，重新装载意义不大；这里仅重新装定时器，
-        // 因为定时器是周期性的、开关切换需要立即生效。
+        // 因为定时器是周期性的、开关 / 间隔切换需要立即生效。
         installScheduledTimer()
         AppLog.ai.debug("[autoTidy] reconfigured (scheduledTimer reinstalled)")
     }

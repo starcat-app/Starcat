@@ -10,8 +10,8 @@
 //  - 同时承载上次运行结果（lastRunAt + 应用/忽略/失败计数），供「运行状态」只读区展示。
 //
 //  关键约束：
-//  - 默认值与 HOM-126 任务描述一致：总开关 OFF、启动+同步触发 ON、定时 OFF、
-//    50 个 / 最近 star 优先 / 仅标签 / 90% 阈值。
+//  - 默认值与 HOM-126 任务描述一致：总开关 OFF、启动+同步触发 ON、定期 OFF、
+//    定期间隔 1 小时、50 个 / 最近 star 优先 / 仅标签 / 90% 阈值。
 //  - 总开关 OFF 时，调度器整体不工作（即使其他子开关为 ON 也不会触发）。
 //  - 处理范围与排序需要让用户能在不影响 HOM-52 手动模式的前提下独立调，
 //    所以**不复用** `BatchAIQueueOptions` 全部字段——只把 actions / autoApplyTags /
@@ -118,8 +118,8 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     /// 总开关。关闭时 `AutoTidyScheduler` 完全静默（不安装监听、不响应任何触发）。
     var enabled: Bool
 
-    /// App 启动后延迟一段时间触发一次（默认 60s）。
-    /// 启动期网络 / 数据库还没暖完，60s 让 stars 同步与首屏渲染先跑稳。
+    /// 开启后：App 启动延迟 60s 自动整理一次。关闭后：启动时不触发（不是立刻执行）。
+    /// 启动期网络 / 数据库还没暖完，固定 60s 让 stars 同步与首屏渲染先跑稳。
     var triggerOnLaunch: Bool
 
     /// 同步完成且检测到新 star 时增量触发。
@@ -127,8 +127,13 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     /// "本次有几个新 star" 增量数（HOM-126 第一版避免在 SyncManager 加新协议字段）。
     var triggerOnSync: Bool
 
-    /// 每 24h 定时触发一次。默认 OFF，避免新手第一周就被烧 quota。
+    /// 定期触发。默认 OFF，避免新手第一周就被烧 quota。
+    /// 开启后按 `scheduledIntervalHours` 间隔重复触发（仅 App 前台运行期间）。
     var triggerScheduled: Bool
+
+    /// 定期触发间隔（小时）。默认 1；UI / 调度器均 clamp 到 `scheduledIntervalHoursRange`。
+    /// 独立字段：关掉「定期开启」时仍保留用户上次选的间隔，再次打开可还原。
+    var scheduledIntervalHours: Int
 
     // MARK: - 2. 处理范围
 
@@ -174,12 +179,16 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
 
     // MARK: - 默认值
 
+    /// 定期间隔允许范围（小时）。下限 1 小时（高于调度器 5min 反抖动）；上限 24 小时。
+    static let scheduledIntervalHoursRange: ClosedRange<Int> = 1...24
+
     /// HOM-126 任务描述明确的最小烧 quota 安全默认值。
     static let `default` = AutoTidySettings(
         enabled: false,
         triggerOnLaunch: true,
         triggerOnSync: true,
         triggerScheduled: false,
+        scheduledIntervalHours: 1,
         maxPerRun: 50,
         sortOrder: .recentlyStarred,
         generateSummary: false,
@@ -196,7 +205,7 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     /// 老 build 写的 JSON 缺字段不会让整个 settings 反序列化失败。
     /// 等价于"per-field optional decode + 兜底"。
     private enum CodingKeys: String, CodingKey {
-        case enabled, triggerOnLaunch, triggerOnSync, triggerScheduled
+        case enabled, triggerOnLaunch, triggerOnSync, triggerScheduled, scheduledIntervalHours
         case maxPerRun, sortOrder
         case generateSummary, generateTags, useConfidenceThreshold, confidenceThreshold
         case lastRunAt, lastRunStats
@@ -207,6 +216,7 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         triggerOnLaunch: Bool,
         triggerOnSync: Bool,
         triggerScheduled: Bool,
+        scheduledIntervalHours: Int,
         maxPerRun: Int,
         sortOrder: AutoTidySortOrder,
         generateSummary: Bool,
@@ -220,6 +230,7 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         self.triggerOnLaunch = triggerOnLaunch
         self.triggerOnSync = triggerOnSync
         self.triggerScheduled = triggerScheduled
+        self.scheduledIntervalHours = Self.clampScheduledIntervalHours(scheduledIntervalHours)
         self.maxPerRun = maxPerRun
         self.sortOrder = sortOrder
         self.generateSummary = generateSummary
@@ -237,6 +248,9 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         self.triggerOnLaunch = (try? c.decode(Bool.self, forKey: .triggerOnLaunch)) ?? d.triggerOnLaunch
         self.triggerOnSync = (try? c.decode(Bool.self, forKey: .triggerOnSync)) ?? d.triggerOnSync
         self.triggerScheduled = (try? c.decode(Bool.self, forKey: .triggerScheduled)) ?? d.triggerScheduled
+        self.scheduledIntervalHours = Self.clampScheduledIntervalHours(
+            (try? c.decode(Int.self, forKey: .scheduledIntervalHours)) ?? d.scheduledIntervalHours
+        )
         self.maxPerRun = (try? c.decode(Int.self, forKey: .maxPerRun)) ?? d.maxPerRun
         self.sortOrder = (try? c.decode(AutoTidySortOrder.self, forKey: .sortOrder)) ?? d.sortOrder
         self.generateSummary = (try? c.decode(Bool.self, forKey: .generateSummary)) ?? d.generateSummary
@@ -245,6 +259,16 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         self.confidenceThreshold = (try? c.decode(Double.self, forKey: .confidenceThreshold)) ?? d.confidenceThreshold
         self.lastRunAt = try? c.decodeIfPresent(Date.self, forKey: .lastRunAt)
         self.lastRunStats = try? c.decodeIfPresent(AutoTidyLastRunStats.self, forKey: .lastRunStats)
+    }
+
+    /// 把用户输入 / 老数据钳到合法小时区间。
+    static func clampScheduledIntervalHours(_ hours: Int) -> Int {
+        min(max(hours, scheduledIntervalHoursRange.lowerBound), scheduledIntervalHoursRange.upperBound)
+    }
+
+    /// 调度器读取的秒级间隔（已 clamp）。
+    var scheduledIntervalSeconds: TimeInterval {
+        TimeInterval(Self.clampScheduledIntervalHours(scheduledIntervalHours) * 60 * 60)
     }
 
     // MARK: - 派生

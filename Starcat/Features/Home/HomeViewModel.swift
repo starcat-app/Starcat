@@ -57,12 +57,14 @@ final class HomeViewModel {
             Self.selectionChangeStartedAt = Date()
             AppLog.ui.notice("[switch-cat] T0 selection changed old=\(String(describing: oldValue), privacy: .private(mask: .hash)) new=\(String(describing: self.selection), privacy: .private(mask: .hash))")
             #endif
+            // selection 已经变化，旧 generation 从这一刻起就失去发布资格；不能等新的 `.task(id:)`
+            // 真正进入 reloadItems 后才取消，否则 SwiftUI 调度间隙仍可能让旧分类结果上屏。
+            // 必须先取消旧任务，再对调知识库默认排序：sortOption.didSet 会立即创建新分类查询，
+            // 如果顺序相反，这里的 cancelAll() 会误杀刚创建的新任务，列表就会停在空值或旧快照。
+            reloadCoordinator.cancelAll()
             // 知识库与 All Stars 共用 sortOption：进出知识库时在「默认/最近星标」与
             // 「最近加入知识库」之间对调，避免污染用户在知识库里主动选的其它排序。
             reconcileSortOptionForKnowledgeLibraryTransition(from: oldValue, to: selection)
-            // selection 已经变化，旧 generation 从这一刻起就失去发布资格；不能等新的 `.task(id:)`
-            // 真正进入 reloadItems 后才取消，否则 SwiftUI 调度间隙仍可能让旧分类结果上屏。
-            reloadCoordinator.cancelAll()
             if case .userSmartCollection = selection {
                 // 规则会在 reloadItems 里随 collection 重新读取。
             } else {
@@ -1699,6 +1701,29 @@ final class HomeViewModel {
         )
     }
 
+    /// 为完整列表刷新建立稳定、互相独立的性能基线。
+    ///
+    /// 基线包住数据库分页和内存查询两条路径，而不是只记录某个 fetch；用户 Smart Collection
+    /// 叠加搜索时允许嵌套区间，便于 Instruments 分别回答“集合切换”和“搜索模式”各自耗时。
+    /// signpost 名称保持静态，绝不写入搜索词或集合名称等用户数据。
+    private func repoListPerformanceBaselineSpans() -> [PerformanceSpan] {
+        var spans: [PerformanceSpan] = []
+
+        switch selection {
+        case .smartCollection:
+            spans.append(.systemSmartCollectionBaseline)
+        case .userSmartCollection:
+            spans.append(.userSmartCollectionBaseline)
+        default:
+            break
+        }
+
+        if isSearching {
+            spans.append(smartSearchMode == .semantic ? .semanticSearchBaseline : .keywordSearchBaseline)
+        }
+        return spans
+    }
+
     func reloadItems(
         forceRefresh: Bool = false,
         reason reloadReason: ManageReloadReason = .unspecified
@@ -1718,6 +1743,14 @@ final class HomeViewModel {
 
         let generation = reloadCoordinator.beginQuery(identity: identity)
         defer { reloadCoordinator.finishQuery(generation: generation, identity: identity) }
+        let baselineTokens = repoListPerformanceBaselineSpans().map {
+            PerformanceTracer.shared.begin($0)
+        }
+        defer {
+            for token in baselineTokens.reversed() {
+                PerformanceTracer.shared.end(token)
+            }
+        }
         #if DEBUG
         AppLog.ui.notice("[switch-cat] reload begin generation=\(generation) reason=\(reloadReason.rawValue, privacy: .public) scope=\(identity.safeSelectionKind, privacy: .public)")
         #endif
@@ -1933,28 +1966,7 @@ final class HomeViewModel {
                 async let statusMapAsync: [Int64: RepoStatus] = self.repoNoteRepository.fetchAllStatusMap()
                 async let libraryStateMapAsync: [Int64: LibraryState] = self.repoNoteRepository.fetchAllLibraryStateMap()
 
-                let fetched: (repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit])
-                if self.isSearching {
-                    let interval = PerformanceTracer.shared.begin(.searchQuery)
-                    do {
-                        fetched = try await fetchedTask()
-                        PerformanceTracer.shared.end(interval)
-                    } catch {
-                        PerformanceTracer.shared.end(interval)
-                        throw error
-                    }
-                } else if isUserSmartCollectionSelection {
-                    let interval = PerformanceTracer.shared.begin(.smartCollectionBaseline)
-                    do {
-                        fetched = try await fetchedTask()
-                        PerformanceTracer.shared.end(interval)
-                    } catch {
-                        PerformanceTracer.shared.end(interval)
-                        throw error
-                    }
-                } else {
-                    fetched = try await fetchedTask()
-                }
+                let fetched = try await fetchedTask()
                 async let wikiAvailabilityAsync = self.loadWikiAvailabilityIfNeeded(for: fetched.repos)
                 fetchedStatusMap = (try? await statusMapAsync) ?? [:]
                 fetchedLibraryStateMap = (try? await libraryStateMapAsync) ?? [:]

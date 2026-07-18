@@ -43,7 +43,7 @@ import SwiftUI
 /// 入参），让 Repository 协议保持纯净，避免引入"返回值标记 from-cache vs from-network"
 /// 的复杂度（否则 ViewModel 无法判断要不要更新 `lastRefreshedAt = Date()`，会出现
 /// "TTL 命中 → 更新刷新时间 → always-fresh 死循环"的 bug）。
-enum TrendingCachePolicy: Sendable {
+enum TrendingCachePolicy: Equatable, Sendable {
     case respectTTL
     case forceNetwork
 }
@@ -52,7 +52,7 @@ enum TrendingCachePolicy: Sendable {
 ///
 /// `recommended` 保留 trending-api 返回顺序,也就是官方趋势榜原始排名；其它选项只对
 /// 当前已加载列表做本地排序,不改变缓存桶和远端请求参数。
-enum TrendingSortOption: String, CaseIterable, Identifiable {
+enum TrendingSortOption: String, CaseIterable, Identifiable, Sendable {
     case recommended
     case starsDesc
     case starsAsc
@@ -147,8 +147,31 @@ final class TrendingViewModel {
 
     // MARK: - 数据状态
 
-    /// 当前 Trending 列表（可变，用于 star 操作后更新本地计数）
-    var repos: [TrendingRepo] = []
+    /// 当前 Trending 列表。
+    ///
+    /// 数据在 `TrendingListPipeline` 完成排序与评分后一次性发布；这里不再保存需要由
+    /// SwiftUI body 临时排序的原始数组，从而把主线程工作限制为小范围状态赋值与 diff。
+    private(set) var repos: [TrendingRepo] = []
+
+    /// 已排序但尚未应用全局筛选的候选列表。
+    ///
+    /// 仅供 View 补载 Wiki / Health / OpenSSF 信号；真正展示仍只读取 `repos`，避免为了
+    /// 获得筛选元数据而在主线程重跑整榜过滤。
+    private(set) var filterCandidateRepos: [TrendingRepo] = []
+
+    /// 当前允许 SwiftUI 构造的 row 数量。首屏固定 20，滚动接近底部再按页增长。
+    private(set) var visibleLimit: Int = TrendingViewModel.pageSize
+
+    /// 分类切换时跳过 row reveal，避免几十个 row 动画与列表 diff 同时争抢主线程。
+    private(set) var skipListRowReveal: Bool = false
+
+    /// 当前请求桶是否已经有可展示快照。
+    ///
+    /// 切到未加载桶时，旧 List 视图树仍保留但隐藏在局部骨架下；新快照发布后原地更新，
+    /// 不再用 if/else 销毁并重建整个列表宿主。
+    var hasPublishedCurrentQuery: Bool {
+        publishedQueryIdentity == currentQueryIdentity
+    }
 
     /// 当前 Trending 列表"身份快照"版本。
     ///
@@ -196,33 +219,14 @@ final class TrendingViewModel {
 
     // MARK: - 筛选状态
 
-    /// 当前时间周期
-    var selectedPeriod: TrendingPeriod = .daily {
-        didSet {
-            guard oldValue != selectedPeriod else { return }
-            // 周期切换 = 切到另一个 (period, language) 桶，按 TTL 决定是否走网络
-            // 如果目标桶仍在自身 TTL 内 → 直接走缓存零等待；否则才发请求
-            // R-06.1 之前是 `forceNetwork: true` 一律走网络，浪费"刚 6 分钟前看过 weekly"这种用户路径
-            Task { await reload(cachePolicy: .respectTTL) }
-        }
-    }
+    /// 当前时间周期。只能通过 `selectPeriod` 修改，确保一次交互只触发一次查询。
+    private(set) var selectedPeriod: TrendingPeriod = .daily
 
-    /// 当前语言筛选
-    var selectedLanguage: TrendingLanguage = .all {
-        didSet {
-            guard oldValue != selectedLanguage else { return }
-            // 语言切换同样切桶，按 TTL 决定（与 selectedPeriod 同款理由）
-            Task { await reload(cachePolicy: .respectTTL) }
-        }
-    }
+    /// 当前语言筛选。只能通过 `selectLanguage` 修改，避免 didSet 与 View.task 双触发。
+    private(set) var selectedLanguage: TrendingLanguage = .all
 
     /// 当前中栏排序方式。默认保留 trending-api 返回顺序,即官方趋势榜原始排名。
-    var selectedSort: TrendingSortOption = .recommended {
-        didSet {
-            guard oldValue != selectedSort else { return }
-            reposRevision += 1
-        }
-    }
+    private(set) var selectedSort: TrendingSortOption = .recommended
 
     // MARK: - AI 摘要状态
 
@@ -240,18 +244,46 @@ final class TrendingViewModel {
     // MARK: - 个性化推荐
 
     /// 用户收藏偏好：语言分布
-    var userLanguagePreferences: [String: Double] = [:]
+    private(set) var userLanguagePreferences: [String: Double] = [:]
 
     /// 用户收藏偏好：主题分布（基于 topics）
     var userTopicPreferences: [String: Double] = [:]
+
+    /// 推荐结果与主列表一起由后台 actor 派生；SwiftUI 只读前三项。
+    private(set) var recommendedRepos: [TrendingRepo] = []
 
     // MARK: - 依赖
 
     private let repository: any TrendingRepositoryProtocol
     private let githubAPIClient: any GitHubAPIClientProtocol
+    private let listPipeline = TrendingListPipeline()
+
+    /// 当前全局筛选的轻量值快照。Observable store 本身不能跨 actor，View 先投影成 Set，
+    /// 再由管线在 MainActor 之外逐项匹配。
+    private var globalFilter: TrendingListFilter = .all
+
+    /// 每个查询桶的内存新鲜度。返回已经看过的分类时先命中这里，不再重复读取 SQLite。
+    private var memoryRefreshDates: [TrendingQueryIdentity: Date] = [:]
+
+    /// 已经发布到 UI 的查询桶；与当前请求桶不同时，列表宿主进入局部占位状态。
+    private var publishedQueryIdentity: TrendingQueryIdentity?
+
+    /// 后台管线预先生成的 row identity 序列，避免发布时在 MainActor 再遍历全榜单。
+    private var publishedRepoIdentityIDs: [String] = []
+
+    /// reload 代际。即使底层 Repository 不响应取消，过期结果也不能覆盖新分类。
+    private var reloadGeneration: UInt64 = 0
 
     /// 当前 in-flight 的 reload 任务
     private var currentReloadTask: Task<Void, Never>?
+    private var currentReloadIdentity: TrendingQueryIdentity?
+    private var currentReloadPolicy: TrendingCachePolicy?
+
+    private static let pageSize = 20
+
+    private var currentQueryIdentity: TrendingQueryIdentity {
+        TrendingQueryIdentity(period: selectedPeriod, language: selectedLanguage)
+    }
 
     // MARK: - Initialization
 
@@ -264,6 +296,63 @@ final class TrendingViewModel {
     }
 
     // MARK: - Public Actions
+
+    /// 首次进入或从其它 Explore 分类返回时，原子设置语言与排序后只发起一次 reload。
+    func activate(
+        language: TrendingLanguage,
+        sort: TrendingSortOption
+    ) async {
+        selectedLanguage = language
+        selectedSort = sort
+        await reload(cachePolicy: .respectTTL)
+    }
+
+    /// 切换周期。所有查询条件变更都经由这里收敛，避免属性观察器隐式创建第二个任务。
+    func selectPeriod(_ period: TrendingPeriod) async {
+        guard selectedPeriod != period else { return }
+        selectedPeriod = period
+        await reload(cachePolicy: .respectTTL)
+    }
+
+    /// 切换语言。返回已访问桶时优先恢复会话内快照，不再重读 SQLite。
+    func selectLanguage(_ language: TrendingLanguage) async {
+        guard selectedLanguage != language else { return }
+        selectedLanguage = language
+        await reload(cachePolicy: .respectTTL)
+    }
+
+    /// 本地切换排序；排序和评分在 `TrendingListPipeline` actor 内完成。
+    func selectSort(_ sort: TrendingSortOption) async {
+        guard selectedSort != sort else { return }
+        selectedSort = sort
+        skipListRowReveal = true
+
+        let identity = currentQueryIdentity
+        let snapshot = await preparedMemorySnapshot(for: identity)
+        guard identity == currentQueryIdentity, let snapshot else { return }
+        publish(snapshot, for: identity, resetVisiblePage: true)
+    }
+
+    /// 应用 View 提供的全局筛选输入，并从已有原始快照在后台重新派生列表。
+    /// Store 状态未变化时直接短路，避免 row badge 的无关刷新触发整榜计算。
+    func updateGlobalFilter(_ filter: TrendingListFilter) async {
+        guard globalFilter != filter else { return }
+        globalFilter = filter
+        skipListRowReveal = true
+
+        let identity = currentQueryIdentity
+        let snapshot = await preparedMemorySnapshot(for: identity)
+        guard identity == currentQueryIdentity, let snapshot else { return }
+        publish(snapshot, for: identity, resetVisiblePage: true)
+    }
+
+    /// 滚动接近当前页尾时追加一页 row，避免首屏一次构造整个榜单。
+    func loadMoreIfNeeded(currentIndex: Int, totalAvailable: Int) {
+        guard totalAvailable > visibleLimit else { return }
+        let currentPageCount = min(visibleLimit, totalAvailable)
+        guard currentIndex >= max(0, currentPageCount - 4) else { return }
+        visibleLimit = min(visibleLimit + Self.pageSize, totalAvailable)
+    }
 
     /// 刷新 Trending 列表（R-06.1 TTL 升级版，2026-06-15 改造）。
     ///
@@ -298,144 +387,242 @@ final class TrendingViewModel {
     /// 注意：网络成功时 fetchTrending 已经 race-free（actor 内的 DB 写入是顺序的），
     /// 这里 ViewModel 层用 currentReloadTask 取消老任务即可。
     func reload(cachePolicy: TrendingCachePolicy = .respectTTL) async {
-        // 取消旧任务
-        currentReloadTask?.cancel()
+        let identity = currentQueryIdentity
 
-        // 与 ExploreDiscovery / Weekly 对齐：在任何 await 之前同步进入骨架态。
-        // 旧实现把 `isLoading=true` 放在读完缓存之后，导致点击「趋势」后首帧
-        // （以及 await lastRefreshedAt / cachedTrending 期间）一直是
-        // `isLoading=false && repos=[]` → 空 List，骨架永远闪不出来。
-        //
-        // `.forceNetwork` 且已有列表 = 用户下拉/点刷新：保留 SWR，只亮 toolbar 转圈。
-        let keepVisibleList = cachePolicy == .forceNetwork && !repos.isEmpty
-        if keepVisibleList {
-            isRefreshing = true
+        // 相同桶的重复入口复用现有任务；主动刷新可以升级并替换自动 TTL 任务。
+        if currentReloadIdentity == identity,
+           let currentReloadTask,
+           currentReloadPolicy == cachePolicy || currentReloadPolicy == .forceNetwork {
+            await currentReloadTask.value
+            return
+        }
+
+        currentReloadTask?.cancel()
+        reloadGeneration &+= 1
+        let generation = reloadGeneration
+        currentReloadIdentity = identity
+        currentReloadPolicy = cachePolicy
+        skipListRowReveal = publishedQueryIdentity != nil
+        loadError = nil
+
+        if hasPublishedCurrentQuery {
+            isLoading = false
+            isRefreshing = cachePolicy == .forceNetwork
         } else {
+            // 不清空 repos：稳定保留 List 宿主，局部骨架通过 query identity 将旧内容遮住。
             isLoading = true
             isRefreshing = false
-            loadError = nil
-            if !repos.isEmpty {
-                repos = []
-            }
         }
 
         let task = Task { [weak self] in
             guard let self else { return }
 
-            // ① 拿"上次刷新时间"放出来（toolbar 新鲜度提示首屏可见）
-            self.lastRefreshedAt = await self.repository.lastRefreshedAt(
-                since: self.selectedPeriod,
-                language: self.selectedLanguage
-            )
-            guard !Task.isCancelled else { return }
+            var hasUsableSnapshot = false
 
-            // ② 第一阶段：读本地缓存
-            let cached = await self.repository.cachedTrending(
-                since: self.selectedPeriod,
-                language: self.selectedLanguage
-            )
-            guard !Task.isCancelled else { return }
-
-            let hasUsableCache = !cached.isEmpty
-            if hasUsableCache {
-                self.repos = cached
-                self.reposRevision += 1   // 缓存上屏 = 首屏入场，需要 row reveal 动画
-                self.precomputeScores()
-                self.loadError = nil
+            // ① 会话级内存快照优先。返回看过的分类时不再重复读 SQLite。
+            if let memory = await self.preparedMemorySnapshot(for: identity) {
+                guard self.isCurrentReload(generation, identity: identity) else { return }
+                // 同一查询从其它 Explore 模块返回时保留已加载页；切到不同桶时
+                // `publish` 会因 queryChanged 自动重置为首屏 20 条。
+                self.publish(memory, for: identity, resetVisiblePage: false)
+                self.lastRefreshedAt = self.memoryRefreshDates[identity]
                 self.isLoading = false
+                hasUsableSnapshot = true
             } else {
-                // 没缓存 → 保持骨架，等网络回来
-                self.repos = []
-                self.isLoading = true
-                self.loadError = nil
+                // ② 首次访问该桶才读取持久化缓存；数据库 actor 不占用 MainActor。
+                let refreshedAt = await self.repository.lastRefreshedAt(
+                    since: identity.period,
+                    language: identity.language
+                )
+                guard self.isCurrentReload(generation, identity: identity) else { return }
+
+                let cached = await self.repository.cachedTrending(
+                    since: identity.period,
+                    language: identity.language
+                )
+                guard self.isCurrentReload(generation, identity: identity) else { return }
+
+                self.lastRefreshedAt = refreshedAt
+                if let refreshedAt {
+                    self.memoryRefreshDates[identity] = refreshedAt
+                }
+
+                if !cached.isEmpty {
+                    let prepared = await self.prepare(cached, for: identity)
+                    guard self.isCurrentReload(generation, identity: identity) else { return }
+                    self.publish(prepared, for: identity, resetVisiblePage: true)
+                    self.isLoading = false
+                    hasUsableSnapshot = true
+                }
             }
 
-            // ③ 第二阶段：是否走网络？
-            //   - 缓存空 → 必走（无脑拉）
-            //   - .forceNetwork → 走（用户主动 / 重试 / 下拉刷新，绕过 TTL）
-            //   - .respectTTL + 缓存有 + TTL 内 → 跳过
-            //   - .respectTTL + 缓存有 + TTL 过期 → 走（自动后台刷新）
             let shouldFetchNetwork: Bool = {
-                if !hasUsableCache { return true }
-                switch cachePolicy {
-                case .forceNetwork:
-                    return true
-                case .respectTTL:
-                    guard let last = self.lastRefreshedAt else { return true }
-                    let age = Date().timeIntervalSince(last)
-                    return age > Self.ttl(for: self.selectedPeriod)
-                }
+                guard hasUsableSnapshot else { return true }
+                if cachePolicy == .forceNetwork { return true }
+                guard let last = self.memoryRefreshDates[identity] else { return true }
+                return Date().timeIntervalSince(last) > Self.ttl(for: identity.period)
             }()
+
             guard shouldFetchNetwork else {
-                AppLog.network.debug("Trending cache hit + TTL 内, skip network (policy=.respectTTL)")
-                self.isLoading = false
-                self.isRefreshing = false
+                AppLog.network.debug("Trending memory snapshot + TTL 内, skip storage/network (\(identity.logValue, privacy: .public))")
+                self.finishReloadIfCurrent(generation, identity: identity)
                 return
             }
 
-            // 后台刷新指示器：仅在"有缓存 + 走网络"时点亮（避免与全屏 isLoading 重复）
-            if hasUsableCache {
-                self.isRefreshing = true
-            }
+            self.isLoading = !hasUsableSnapshot
+            self.isRefreshing = hasUsableSnapshot
 
             do {
                 let fetched = try await self.repository.fetchTrending(
-                    since: self.selectedPeriod,
-                    language: self.selectedLanguage
+                    since: identity.period,
+                    language: identity.language
                 )
-                guard !Task.isCancelled else { return }
+                guard self.isCurrentReload(generation, identity: identity) else { return }
 
-                // ④ 智能 revision：对比身份序列，变化才 bump
-                let oldIDs = self.repos.map(\.fullName)
-                let newIDs = fetched.map(\.fullName)
-                let identityChanged = oldIDs != newIDs
+                let prepared = await self.prepare(fetched, for: identity)
+                guard self.isCurrentReload(generation, identity: identity) else { return }
 
-                self.repos = fetched   // 不管是否 bump revision，都要赋值（让 SwiftUI 自然 diff 数值字段）
-                if identityChanged {
-                    self.reposRevision += 1
-                    AppLog.network.debug("Trending identity changed (\(oldIDs.count) → \(newIDs.count)), bumped revision")
-                } else {
-                    AppLog.network.debug("Trending identity unchanged, in-place update only")
-                }
-
-                self.precomputeScores()
+                self.publish(prepared, for: identity, resetVisiblePage: !hasUsableSnapshot)
+                let refreshedAt = Date()
+                self.lastRefreshedAt = refreshedAt
+                self.memoryRefreshDates[identity] = refreshedAt
                 self.loadError = nil
-                self.lastRefreshedAt = Date()   // 网络成功后立即更新（避免再 query DB）
             } catch {
-                guard !Task.isCancelled else {
-                    self.isRefreshing = false
-                    return
-                }
-                if hasUsableCache {
-                    // 缓存还能用 → 保持已上屏，仅记录错误（UI 在 toolbar 显示刷新失败提示）
-                    let friendly = UserFacingError.map(
-                        error,
-                        operation: String.l10n("diagnostics.operation.loadTrending"),
-                        service: "Trending"
+                guard self.isCurrentReload(generation, identity: identity) else { return }
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.loadTrending"),
+                    service: "Trending"
+                )
+                self.loadError = friendly.message
+                if hasUsableSnapshot {
+                    AppLog.network.warning("Trending 后台刷新失败但内存有快照，保持已显示: \(error.localizedDescription, privacy: .public)")
+                    friendly.record(
+                        level: .warning,
+                        category: "network",
+                        operation: "trending.reload",
+                        service: "trending"
                     )
-                    self.loadError = friendly.message
-                    AppLog.network.warning("Trending 后台刷新失败但本地有缓存，保持已显示: \(error.localizedDescription, privacy: .public)")
-                    friendly.record(level: .warning, category: "network", operation: "trending.reload", service: "trending")
                 } else {
-                    // 没缓存又拉失败 → 走原 errorView 流程
-                    let friendly = UserFacingError.map(
-                        error,
-                        operation: String.l10n("diagnostics.operation.loadTrending"),
-                        service: "Trending"
-                    )
-                    self.loadError = friendly.message
-                    self.repos = []
-                    self.reposRevision += 1
                     friendly.record(category: "network", operation: "trending.reload", service: "trending")
                 }
             }
 
-            self.isLoading = false
-            self.isRefreshing = false
+            self.finishReloadIfCurrent(generation, identity: identity)
         }
 
         currentReloadTask = task
         await task.value
+        if isCurrentReload(generation, identity: identity) {
+            currentReloadTask = nil
+            currentReloadIdentity = nil
+            currentReloadPolicy = nil
+        }
+    }
+
+    /// 从后台 actor 读取已有快照，并用 signpost 记录纯派生耗时。
+    private func preparedMemorySnapshot(
+        for identity: TrendingQueryIdentity
+    ) async -> TrendingPreparedSnapshot? {
+        while !Task.isCancelled {
+            let context = currentDerivationContext
+            let token = PerformanceTracer.shared.begin(.trendingDerive)
+            let snapshot = await listPipeline.preparedSnapshot(for: identity, context: context)
+            PerformanceTracer.shared.end(token)
+
+            // actor 执行期间用户可能继续切换排序或筛选。只允许与当前输入完全一致的
+            // 快照离开这里；否则用最新 context 重算，避免旧结果短暂上屏。
+            if context == currentDerivationContext {
+                return snapshot
+            }
+        }
+        return nil
+    }
+
+    /// 将缓存或网络结果写入后台 actor，再用当前最新派生输入生成可发布快照。
+    private func prepare(
+        _ repos: [TrendingRepo],
+        for identity: TrendingQueryIdentity
+    ) async -> TrendingPreparedSnapshot {
+        while !Task.isCancelled {
+            let context = currentDerivationContext
+            let token = PerformanceTracer.shared.begin(.trendingDerive)
+            let snapshot = await listPipeline.prepare(
+                repos: repos,
+                for: identity,
+                context: context
+            )
+            PerformanceTracer.shared.end(token)
+            if context == currentDerivationContext {
+                return snapshot
+            }
+        }
+
+        // 取消后的结果会被外层 generation guard 丢弃；这里仍返回一个完整值以保持 API
+        // 非可选，并避免在并发边界使用强制解包。
+        return await listPipeline.prepare(
+            repos: repos,
+            for: identity,
+            context: currentDerivationContext
+        )
+    }
+
+    private var currentDerivationContext: TrendingDerivationContext {
+        TrendingDerivationContext(
+            sort: selectedSort,
+            filter: globalFilter,
+            languagePreferences: userLanguagePreferences
+        )
+    }
+
+    /// MainActor 只发布已经准备好的值；不在发布区间做排序、评分或数据库访问。
+    private func publish(
+        _ snapshot: TrendingPreparedSnapshot,
+        for identity: TrendingQueryIdentity,
+        resetVisiblePage: Bool
+    ) {
+        PerformanceTracer.shared.trace(.trendingPublish) {
+            let oldIDs = publishedRepoIdentityIDs
+            let newIDs = snapshot.identityIDs
+            let queryChanged = publishedQueryIdentity != identity
+            let identityChanged = queryChanged || oldIDs != newIDs
+
+            filterCandidateRepos = snapshot.allRepos
+            repos = snapshot.repos
+            publishedRepoIdentityIDs = snapshot.identityIDs
+            scoreCache = snapshot.scores
+            recommendedRepos = snapshot.recommendedRepos
+            publishedQueryIdentity = identity
+            loadError = nil
+
+            if resetVisiblePage || identityChanged {
+                visibleLimit = Self.pageSize
+            }
+            if identityChanged {
+                reposRevision += 1
+                AppLog.network.debug(
+                    "Trending publish \(identity.logValue, privacy: .public), identity \(oldIDs.count) → \(newIDs.count)"
+                )
+            }
+        }
+    }
+
+    private func isCurrentReload(
+        _ generation: UInt64,
+        identity: TrendingQueryIdentity
+    ) -> Bool {
+        !Task.isCancelled
+            && reloadGeneration == generation
+            && currentQueryIdentity == identity
+    }
+
+    private func finishReloadIfCurrent(
+        _ generation: UInt64,
+        identity: TrendingQueryIdentity
+    ) {
+        guard isCurrentReload(generation, identity: identity) else { return }
+        isLoading = false
+        isRefreshing = false
     }
 
     // MARK: - Freshness（新鲜度展示）
@@ -496,149 +683,46 @@ final class TrendingViewModel {
 
     /// 获取 repo 的 AI 评分
     func score(for repo: TrendingRepo) -> TrendingScore {
-        if let cached = scoreCache[repo.fullName] {
-            return cached
-        }
-
-        // 计算评分
-        let score = calculateScore(for: repo)
-        scoreCache[repo.fullName] = score
-        return score
+        // 评分在后台快照派生阶段统一计算；这里绝不在 MainActor 补算或写缓存。
+        scoreCache[repo.fullName] ?? TrendingScore(total: 0, growthRate: 0, activity: 0, quality: 0)
     }
 
     /// 从本地 Stars 语言分布生成偏好权重。
-    func updateLanguagePreferences(from stats: [LanguageStat]) {
+    func updateLanguagePreferences(from stats: [LanguageStat]) async {
         let total = stats.reduce(0) { $0 + $1.count }
-        guard total > 0 else {
-            userLanguagePreferences = [:]
-            return
-        }
-
-        userLanguagePreferences = Dictionary(uniqueKeysWithValues: stats.compactMap { stat in
-            guard !stat.language.isEmpty else { return nil }
-            return (stat.language, Double(stat.count) / Double(total))
-        })
-    }
-
-    /// 推荐区使用的仓库列表。
-    ///
-    /// 有本地语言偏好时优先匹配用户常 star 的语言；没有偏好时退化为当前榜单评分最高的项目，
-    /// 这样未登录 / 未同步状态也能展示“发现”价值，而不是让区块永远消失。
-    var recommendedRepos: [TrendingRepo] {
-        let ranked: [TrendingRepo]
-        if userLanguagePreferences.isEmpty {
-            ranked = repos.sorted { score(for: $0).total > score(for: $1).total }
+        let preferences: [String: Double]
+        if total > 0 {
+            preferences = Dictionary(uniqueKeysWithValues: stats.compactMap { stat in
+                guard !stat.language.isEmpty else { return nil }
+                return (stat.language, Double(stat.count) / Double(total))
+            })
         } else {
-            ranked = repos.sorted { lhs, rhs in
-                let lhsPreference = userLanguagePreferences[lhs.language ?? ""] ?? 0
-                let rhsPreference = userLanguagePreferences[rhs.language ?? ""] ?? 0
-                if lhsPreference != rhsPreference {
-                    return lhsPreference > rhsPreference
-                }
-                return score(for: lhs).total > score(for: rhs).total
-            }
+            preferences = [:]
         }
 
-        return Array(ranked.prefix(3))
+        guard userLanguagePreferences != preferences else { return }
+        userLanguagePreferences = preferences
+
+        let identity = currentQueryIdentity
+        let snapshot = await preparedMemorySnapshot(for: identity)
+        guard identity == currentQueryIdentity, let snapshot else { return }
+        publish(snapshot, for: identity, resetVisiblePage: false)
     }
 
     /// 当前中栏实际展示的列表。
     ///
-    /// `repos` 保存 API/缓存原始顺序,供推荐计算、身份对比和恢复官方 ranking 使用；
-    /// UI 统一读取 `displayedRepos`,避免排序状态污染底层缓存语义。
+    /// 排序已经在 `TrendingListPipeline` actor 中完成；保留这个属性作为既有调用方的
+    /// 兼容读取面，但不再在 SwiftUI body 求值期间创建新的全量数组。
     var displayedRepos: [TrendingRepo] {
-        switch selectedSort {
-        case .recommended:
-            return repos
-        case .starsDesc:
-            return repos.sorted { $0.starsCount > $1.starsCount }
-        case .starsAsc:
-            return repos.sorted { $0.starsCount < $1.starsCount }
-        case .nameAsc:
-            return repos.sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
-        case .nameDesc:
-            return repos.sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedDescending }
-        case .updatedDesc:
-            return repos.sorted { trendingDate($0.updatedAt) > trendingDate($1.updatedAt) }
-        case .updatedAsc:
-            return repos.sorted { trendingDate($0.updatedAt) < trendingDate($1.updatedAt) }
-        case .createdDesc:
-            return repos.sorted { trendingDate($0.createdAt) > trendingDate($1.createdAt) }
-        case .createdAsc:
-            return repos.sorted { trendingDate($0.createdAt) < trendingDate($1.createdAt) }
-        case .risingTrend:
-            return repos.sorted {
-                if $0.starsInPeriod != $1.starsInPeriod {
-                    return $0.starsInPeriod > $1.starsInPeriod
-                }
-                if $0.starsCount != $1.starsCount {
-                    return $0.starsCount > $1.starsCount
-                }
-                return $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending
-            }
-        }
+        repos
     }
 
-    // MARK: - Private
-
-    private func trendingDate(_ text: String?) -> Date {
-        guard let text, let date = ISO8601DateFormatter.shared.date(from: text) else {
-            return .distantPast
-        }
-        return date
-    }
-
-    /// 预计算所有 repo 的 AI 评分
-    private func precomputeScores() {
-        for repo in repos {
-            let score = calculateScore(for: repo)
-            scoreCache[repo.fullName] = score
-        }
-    }
-
-    /// 计算单个 repo 的 AI 评分
-    private func calculateScore(for repo: TrendingRepo) -> TrendingScore {
-        // 多维度评分：
-        // 1. Star 增长率 (starsInPeriod / starsCount)
-        // 2. 活跃度 (forksCount / starsCount)
-        // 3. 质量指标 (contributors 数量)
-
-        let growthRate: Double
-        if repo.starsCount > 0 {
-            growthRate = Double(repo.starsInPeriod) / Double(repo.starsCount)
-        } else {
-            growthRate = 0
-        }
-
-        let forkRatio: Double
-        if repo.starsCount > 0 {
-            forkRatio = Double(repo.forksCount) / Double(repo.starsCount)
-        } else {
-            forkRatio = 0
-        }
-
-        let contributorBonus = min(Double(repo.contributors.count) * 2, 10) // 最多 5 个贡献者，每个加 2 分
-
-        // 综合评分 (0-100)
-        let growthScore = min(growthRate * 100 * 10, 40)  // 增长率权重 40%
-        let qualityScore = min(forkRatio * 30, 30)         // 质量权重 30%
-        let activityScore = contributorBonus               // 活跃度权重 30%
-
-        let total = growthScore + qualityScore + activityScore
-
-        return TrendingScore(
-            total: Int(total),
-            growthRate: growthRate,
-            activity: contributorBonus,
-            quality: forkRatio
-        )
-    }
 }
 
 // MARK: - TrendingScore
 
 /// AI 评分模型
-struct TrendingScore: Equatable {
+struct TrendingScore: Equatable, Sendable {
     /// 综合评分 (0-100)
     let total: Int
 

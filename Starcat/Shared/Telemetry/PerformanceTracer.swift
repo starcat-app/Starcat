@@ -23,12 +23,16 @@ enum PerformanceSpan: Sendable {
     case manageDerive
     case managePublish
     case wikiAvailabilityLoad
+    case trendingDerive
+    case trendingPublish
     case discoveryLocalFilter
     case activityLocalFilter
-    case smartCollectionBaseline
+    case systemSmartCollectionBaseline
+    case userSmartCollectionBaseline
     case activityInitialLoad
     case activityLoadMore
-    case searchQuery
+    case keywordSearchBaseline
+    case semanticSearchBaseline
     case readmeLoad
     case aiStreamResponse
     case repoContextPack
@@ -114,18 +118,26 @@ final class PerformanceTracer: @unchecked Sendable {
             return "manage.publish"
         case .wikiAvailabilityLoad:
             return "repo_list.wiki_availability"
+        case .trendingDerive:
+            return "trending.derive"
+        case .trendingPublish:
+            return "trending.publish"
         case .discoveryLocalFilter:
             return "discovery.local_filter"
         case .activityLocalFilter:
             return "activity.local_filter"
-        case .smartCollectionBaseline:
-            return "manage.smart_collection"
+        case .systemSmartCollectionBaseline:
+            return "manage.system_smart_collection"
+        case .userSmartCollectionBaseline:
+            return "manage.user_smart_collection"
         case .activityInitialLoad:
             return "activity.initial_load"
         case .activityLoadMore:
             return "activity.load_more"
-        case .searchQuery:
-            return "search.query"
+        case .keywordSearchBaseline:
+            return "manage.search.keyword"
+        case .semanticSearchBaseline:
+            return "manage.search.semantic"
         case .readmeLoad:
             return "readme.load"
         case .aiStreamResponse:

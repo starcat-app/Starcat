@@ -509,7 +509,11 @@ struct WeeklyContentView: View {
                         Text("weekly.action.copyURL")
                     }
                 }
-                .listRowReveal(index: index, snapshotID: viewModel.itemsRevision)
+                .listRowReveal(
+                    index: index,
+                    snapshotID: viewModel.itemsRevision,
+                    skipAnimation: true
+                )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .onAppear {
@@ -551,6 +555,8 @@ struct WeeklyContentView: View {
             .hidden()
         }
         .task(id: viewModel.itemsRevision) {
+            // Explore 分类切换时先让周刊首屏提交，再补 Wiki / OpenSSF / Health 信号。
+            await Task.yield()
             let repoIDs = viewModel.items.map(\.ghRepoId)
             async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.items)
             async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
