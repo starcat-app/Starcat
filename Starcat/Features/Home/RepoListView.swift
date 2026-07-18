@@ -1140,10 +1140,13 @@ struct RepoListView: View {
                 if viewModel.selection.isSmartCollectionsSurface {
                     SmartCollectionsOverviewView()
                 } else if viewModel.isGitHubStarListSwitchLoading && viewModel.items.isEmpty {
-                    Color.clear
+                    // 无缓存瞬切：空白会闪一帧「什么都没有」，与 VM 注释里的骨架屏意图对齐。
+                    RepoSkeletonListView(rowCount: 10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if shouldShowInitialStarsLoading {
-                    loadingState(title: "empty.loadingStars.title", subtitle: "empty.loadingStars.subtitle")
+                    // 首次 stars 同步尚未写入列表时，与分类切换同款骨架，不用 ProgressView。
+                    RepoSkeletonListView(rowCount: 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.isLoading && viewModel.items.isEmpty {
                     RepoSkeletonListView(rowCount: 10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1991,22 +1994,6 @@ struct RepoListView: View {
             subtitleText: subtitleText,
             spacing: 12
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
-    }
-
-    private func loadingState(title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.regular)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }

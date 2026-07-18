@@ -661,15 +661,10 @@ struct TrendingView: View {
 
     // MARK: - Loading
 
+    /// 与发现 / 热门 / 新发布 / 周刊同款骨架，避免趋势单独用 ProgressView 显得不一致。
     private var loadingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.2)
-            Text("trending.loading")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RepoSkeletonListView(rowCount: 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Error

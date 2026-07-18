@@ -97,7 +97,8 @@ struct ActivityView: View {
             } else if let viewModel {
                 content(viewModel)
             } else {
-                ProgressView()
+                // ViewModel 尚未 ensureLoaded 的极短首帧，与分类空载同款骨架。
+                RepoSkeletonListView(rowCount: 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

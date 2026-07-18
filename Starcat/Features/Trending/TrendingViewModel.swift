@@ -320,7 +320,7 @@ final class TrendingViewModel {
                 self.loadError = nil
                 self.isLoading = false
             } else {
-                // 没缓存 → 进 isLoading 让 UI 显示 ProgressView
+                // 没缓存 → 进 isLoading 让 UI 显示 RepoSkeletonListView
                 self.repos = []
                 self.isLoading = true
                 self.loadError = nil

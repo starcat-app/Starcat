@@ -524,14 +524,9 @@ struct SearchCenterView: View {
         if viewModel.lastSubmittedQuery.isEmpty {
             historyContent
         } else if viewModel.candidates.isEmpty, viewModel.isSearching {
-            // 注意:ProgressView 这里不能直接传 LocalizedStringKey,
-            // 因为 "search.searching" 的 value 是 "搜索：%@",需要把当前查询代进去。
-            // 直接走 LocalizedStringKey 不会做 printf 格式化,会原样显示 %@。
-            // 与 RepoListView 标题栏的写法保持一致,统一用 String(format:) 注入 query。
-            ProgressView {
-                Text(String(format: String.l10n("search.searching"), viewModel.lastSubmittedQuery))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 与主窗口 / 探索列表同款骨架；不再用 ProgressView + 文案，避免 repo 结果区加载态不统一。
+            RepoSkeletonListView(rowCount: 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isExternalSearchUnavailableEmpty {
             // 专属空态：.web scope + AnySearch 未启用。
             // 通用 "search.empty.title" 走的 errorMessages 拼接会带 "web:" 前缀
