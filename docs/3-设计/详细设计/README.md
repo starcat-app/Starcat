@@ -33,7 +33,7 @@
 | 28 | [搜索增强最终方案](28-搜索增强最终方案.md) | 保留 Manage 快速过滤，新增 `⌘K` 全局搜索中心，聚合 Local / GitHub / AnySearch Web 并复用现有详情与动作体系 |
 | 29 | [关键词与全文检索设计](29-关键词与全文检索设计.md) | 双引擎落地实现：FTS5（repos_fts unicode61 + notes_fts trigram + BM25 排序）+ 向量语义（A 显示重标定 + B 字面 boost + C FTS hit 加权 + tier 1-4★）+ 示例走查 + 后期优化方向 |
 | 30 | [本地 RAG 设计](30-本地RAG设计.md) | 知识库 RAG 详细设计：默认只使用 `libraryState == .inLibrary` repo，新增 chunk-level RAG 索引、知识库问答工作台、citation chip 与 evidence inspector |
-| 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 24h / Weekly 12h）+ 后端内存缓存（trending 分桶 1h/6h/24h + ETag、weekly 6h + pre-gzip + bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote）、3 个永久陷阱、关键决策一览、4 个项目共 33 个新测试用例验证 |
+| 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 分桶 1h/6h/24h、Weekly 6h）+ 后端同窗口内存缓存（ETag / pre-gzip / bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote） |
 | 32 | [Manage 列表分页与首页边沿上屏](32-Manage列表分页与首页边沿上屏.md) | Manage 列表分页、首页边沿上屏与滚动体验调整 |
 | 33 | [OpenSSF Scorecard 安全评分设计](33-OpenSSF-Scorecard-安全评分设计.md) | 已 star 仓库 OpenSSF Scorecard 缓存、列表 full_name 行徽章、详情页雷达图、后台刷新、i18n 与测试边界 |
 | 34 | [StarcatCLI 与外部 MCP 桥接设计](34-StarcatCLI与外部MCP桥接设计.md) | stdio MCP adapter + CLI 入口,解决 Codex / 老式 client 不兼容 HTTP MCP 的兼容性问题 |
@@ -75,6 +75,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-18 | 同步 31 文档当前缓存策略：Trending 客户端改为 1h/6h/24h 分桶，Weekly 客户端与后端统一为 6h |
 | 2026-07-16 | 新增 42 文档：Weekly 多来源采集、异步 Worker、HelloGitHub、AI 情报 Skill、动态来源缓存与置顶实现契约 |
 | 2026-07-03 | 新增 37 文档：External Search Provider 抽象、SearchCenter 单 Provider View、AI External Context 单 Provider / Pro 聚合、Provider 隔离缓存与本机凭据边界 |
 | 2026-07-03 | 重写 30 文档：本地 RAG 从“已 star 仓库问答”调整为“知识库问答”，补齐 chunk-level 索引、独立工作台、引用证据与实施切片 |

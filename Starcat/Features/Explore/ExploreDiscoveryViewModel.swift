@@ -19,7 +19,9 @@ import Observation
 final class ExploreDiscoveryViewModel {
 
     private static let pageSize = 20
-    private static let bulkTTL: TimeInterval = 30 * 60
+    /// Discovery 服务端默认每 3 小时刷新一次 bulk；客户端复用同一窗口，
+    /// 避免本地 30 分钟一过就重复请求尚未更新的服务端快照。
+    private static let bulkTTL: TimeInterval = 3 * 60 * 60
 
     private(set) var repos: [DiscoveryRepoDTO] = []
     private(set) var total: Int = 0

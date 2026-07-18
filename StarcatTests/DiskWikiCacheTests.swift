@@ -6,7 +6,8 @@
 //    - save / load round-trip（WikiStatusItem Codable + Snapshot Codable）
 //    - load miss / load 损坏 JSON 兜底（删文件 + 返回 nil）
 //    - 路径段安全校验（`..` / `/` / 空串 → 抛 unsafePathComponent）
-//    - WikiCacheSnapshot.computeNextProbeAt 双 TTL（全 indexed 30d / 含未收录 3d）
+//    - WikiCacheSnapshot.computeNextProbeAt 分层 TTL（indexed 30d / notIndexed 3d /
+//      unknown 6h / error 30m）
 //    - freshness 判定（now < nextProbeAt = fresh）
 //    - observable 派生量 itemCount / totalBytes 随 save / delete 更新
 //    - deleteEverything 全清 + reload 归零
@@ -159,7 +160,7 @@ struct DiskWikiCacheTests {
         }
     }
 
-    // MARK: - 双 TTL 计算
+    // MARK: - 分层 TTL 计算
 
     @Test("全部 indexed → 长 TTL = 30 天")
     func testLongTTLAllIndexed() {
@@ -174,24 +175,37 @@ struct DiskWikiCacheTests {
         #expect(abs(next.timeIntervalSince(expected)) < 0.001)
     }
 
-    @Test("任一未收录 → 短 TTL = 3 天")
-    func testShortTTLAnyUnindexed() {
+    @Test("任一明确未收录 → 短 TTL = 3 天")
+    func testShortTTLAnyNotIndexed() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let cases: [[WikiStatusItem]] = [
-            [makeItem(source: .deepWiki, status: .notIndexed)],
-            [
-                makeItem(source: .deepWiki, status: .indexed),
-                makeItem(source: .zread, status: .error)
-            ],
-            [
-                makeItem(source: .deepWiki, status: .indexed),
-                makeItem(source: .zread, status: .indexed),
-                makeItem(source: .codeWiki, status: .unknown("probing"))
-            ]
+        let items = [
+            makeItem(source: .deepWiki, status: .indexed),
+            makeItem(source: .zread, status: .notIndexed)
         ]
-        for items in cases {
+        let next = WikiCacheSnapshot.computeNextProbeAt(items: items, now: now)
+        let expected = now.addingTimeInterval(WikiCacheSnapshot.shortTTL)
+        #expect(abs(next.timeIntervalSince(expected)) < 0.001)
+    }
+
+    @Test("任一错误 → 错误 TTL = 30 分钟")
+    func testErrorTTL() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let items = [
+            makeItem(source: .deepWiki, status: .indexed),
+            makeItem(source: .zread, status: .error)
+        ]
+        let next = WikiCacheSnapshot.computeNextProbeAt(items: items, now: now)
+        let expected = now.addingTimeInterval(WikiCacheSnapshot.errorTTL)
+        #expect(abs(next.timeIntervalSince(expected)) < 0.001)
+    }
+
+    @Test("未知或空结果 → 未知 TTL = 6 小时")
+    func testUnknownTTL() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let unknownItems = [makeItem(source: .codeWiki, status: .unknown("probing"))]
+        for items in [unknownItems, []] {
             let next = WikiCacheSnapshot.computeNextProbeAt(items: items, now: now)
-            let expected = now.addingTimeInterval(WikiCacheSnapshot.shortTTL)
+            let expected = now.addingTimeInterval(WikiCacheSnapshot.unknownTTL)
             #expect(abs(next.timeIntervalSince(expected)) < 0.001)
         }
     }

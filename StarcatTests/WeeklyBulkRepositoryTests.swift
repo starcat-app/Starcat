@@ -457,9 +457,9 @@ struct WeeklyBulkRepositoryTests {
     // MARK: - WeeklyContentViewModel TTL 边界
 
     @MainActor
-    @Test("WeeklyContentViewModel.bulkTTL: 12 小时")
+    @Test("WeeklyContentViewModel.bulkTTL: 6 小时")
     func bulkTTLValue() {
-        #expect(WeeklyContentViewModel.bulkTTL == 12 * 60 * 60)
+        #expect(WeeklyContentViewModel.bulkTTL == 6 * 60 * 60)
     }
 
     @MainActor

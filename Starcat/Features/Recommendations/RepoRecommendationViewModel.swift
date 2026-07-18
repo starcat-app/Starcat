@@ -13,7 +13,7 @@
 //    已删除（铁律 #1），VM 现在只负责数据 load / loadMore / reset 三件事。
 //  - **v1.1.1 修订（2026-06-29）**：从直接调 `RecommendAPI` 改为走
 //    `RecommendationContextService`（read-through cache）。`loadInitial` 先同步读 cache
-//    立刻给 items 赋初值（详情页打开秒出数据），再异步走 service.refresh 拉新 + 写盘。
+//    立刻给 items 赋初值；fresh 快照直接返回，只有 stale / miss 才走 refresh 拉新 + 写盘。
 //
 
 import Foundation
@@ -34,12 +34,12 @@ final class RepoRecommendationViewModel {
 
     var hasItems: Bool { !items.isEmpty }
 
-    /// 初次加载：先同步读 cache 立刻渲染，再异步 refresh 拉新。
+    /// 初次加载：先同步读 cache 立刻渲染，再按 freshness 决定是否 refresh。
     ///
     /// 流程：
     /// 1. `guard loadedRepoID != repoID` —— 同一 repo 重复进入详情页不重拉；
     /// 2. 同步读 cache → 立刻赋 items / hasMore / nextOffset（**这一步不进网络**，详情页打开秒出数据）；
-    /// 3. 走 `service.refresh` 异步拉新 + 写盘，拿到 snapshot 后刷新 items；
+    /// 3. fresh 快照直接返回；stale / miss 才走 `service.refresh` 拉新 + 写盘；
     /// 4. 错误：保留旧 cache 值（如果 1 有），errorMessage 给 UI 显示。
     func loadInitial(repoID: Int64, service: RecommendationContextService) async {
         guard repoID > 0 else {
@@ -61,6 +61,11 @@ final class RepoRecommendationViewModel {
             items = snapshot.items
             hasMore = snapshot.hasMore
             nextOffset = snapshot.nextOffset
+            // 推荐缓存把空结果与有结果的重探时刻都编码在 snapshot 里；这里必须真正
+            // 尊重 freshness，否则 1h / 7d TTL 只停留在磁盘字段上，每次进详情仍会打服务端。
+            if snapshot.freshness() == .fresh {
+                return
+            }
         } else {
             currentSnapshot = nil
             items = []
@@ -68,7 +73,7 @@ final class RepoRecommendationViewModel {
             nextOffset = nil
         }
 
-        // 第 3 步：异步 refresh 拉新 + 写盘。
+        // 第 3 步：仅 stale / miss 才异步 refresh 拉新 + 写盘。
         do {
             let fresh = try await service.refresh(repoID: repoID, offset: 0)
             guard loadedRepoID == repoID else { return }

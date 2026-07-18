@@ -21,7 +21,7 @@
 //  自动响应。详情页 star 操作改走 `StarActionService.star(owner:repo:)` 单点。
 //
 //  R-06.1（2026-06-15）：客户端 Trending TTL 改造，把无脑 `forceNetwork: Bool` 升级到
-//  语义化 `TrendingCachePolicy` enum（`.respectTTL` / `.forceNetwork`）+ 24h TTL。
+//  语义化 `TrendingCachePolicy` enum（`.respectTTL` / `.forceNetwork`）+ 分周期 TTL。
 //  - `.respectTTL`：缓存命中且 TTL 内不走网络；空缓存或过期才拉
 //  - `.forceNetwork`：用户主动刷新按钮 / pull-to-refresh / 错误重试，永远走网络
 //  - 周期 / 语言切换走 `.respectTTL`（TTL 内可命中其它桶缓存避免无意义请求）
@@ -34,7 +34,7 @@ import SwiftUI
 
 /// Trending 数据加载的缓存策略。
 ///
-/// - `.respectTTL`：尊重 24h 客户端 TTL —— 缓存命中且未过期则不走网络；
+/// - `.respectTTL`：尊重当前周期的客户端 TTL —— 缓存命中且未过期则不走网络；
 ///   过期或空缓存才发请求。用于首次入场、周期切换、语言切换等"非用户主动刷新"场景。
 /// - `.forceNetwork`：绕过 TTL 永远走网络。用于 toolbar 刷新按钮、`refreshable` 下拉、
 ///   错误重试等"用户主动要新数据"场景。
@@ -130,17 +130,20 @@ final class TrendingViewModel {
 
     // MARK: - TTL 常量
 
-    /// 客户端 Trending 缓存的 TTL：24 小时。
+    /// 返回当前 Trending 周期的客户端 TTL。
     ///
-    /// 设计动机：与后端 trending-api 的 cron 节奏对齐 —— daily 桶每 1h 更新一次但客户端
-    /// 不必每 1h 都拉（用户感知不到，浪费请求）；weekly 桶 6h 更新一次，monthly 桶 24h+。
-    /// 取 24h 作为单一常量是这三档的平衡值：
-    /// - 对 daily 桶用户感知到的"最旧数据"约 24h（在 trending 主要消费场景下可接受）
-    /// - 对 weekly / monthly 桶 TTL 内永远命中本地，零请求
-    ///
-    /// 与 PR-1.5 后端 `TrendingCache` 的分桶 TTL（daily 1h / weekly 6h / monthly 24h）
-    /// 互补：客户端 24h 是"用户体感节奏"，后端是"数据新鲜度节奏"，两端独立判定。
-    static let trendingTTL: TimeInterval = 86_400
+    /// 客户端与后端分桶新鲜度保持一致，避免 daily 数据被统一 24h 策略长期遮蔽，
+    /// 同时让 weekly / monthly 继续复用更稳定的本地快照。
+    static func ttl(for period: TrendingPeriod) -> TimeInterval {
+        switch period {
+        case .daily:
+            return 60 * 60
+        case .weekly:
+            return 6 * 60 * 60
+        case .monthly:
+            return 24 * 60 * 60
+        }
+    }
 
     // MARK: - 数据状态
 
@@ -171,17 +174,20 @@ final class TrendingViewModel {
     /// 来源：① reload 开始时从 repository 读 trending_repos.cached_at 的 max；
     /// ② 网络成功后更新为 `Date()`（避免再 query 一次 DB）。
     ///
-    /// UI 用法：toolbar 显示"X 分钟前"新鲜度提示；超过 20 小时（`isStale`，80% TTL）变橙色。
+    /// UI 用法：toolbar 显示"X 分钟前"新鲜度提示；超过当前周期 TTL 的 80% 变橙色。
     /// 没缓存 / 还没刷新过返回 nil，UI 隐藏新鲜度提示。
     private(set) var lastRefreshedAt: Date?
 
-    /// 加载中状态
-    private(set) var isLoading: Bool = false
+    /// 加载中状态。
+    ///
+    /// 初始为 `true`：View 首帧在 `.task` 跑到 `reload` 之前就要能进骨架，
+    /// 否则 `isLoading=false && repos=[]` 会短暂渲染空 List（发现 / 周刊不会有这个问题）。
+    private(set) var isLoading: Bool = true
 
     /// 后台刷新中状态。
     ///
-    /// 与 `isLoading` 区分：`isLoading` 是"无缓存 + 网络在跑"的全屏 loading；
-    /// `isRefreshing` 是"有缓存 + 网络在跑"的轻量后台刷新（toolbar 刷新 icon 旋转）。
+    /// 与 `isLoading` 区分：`isLoading` 是"无可用列表 + 在等数据"的全屏骨架；
+    /// `isRefreshing` 是"有列表 + 网络在跑"的轻量后台刷新（toolbar 刷新 icon 旋转）。
     /// 同一时间至多一个为 true。
     private(set) var isRefreshing: Bool = false
 
@@ -195,7 +201,7 @@ final class TrendingViewModel {
         didSet {
             guard oldValue != selectedPeriod else { return }
             // 周期切换 = 切到另一个 (period, language) 桶，按 TTL 决定是否走网络
-            // 如果目标桶 24h 内拉过 → 直接走缓存零等待；否则才发请求
+            // 如果目标桶仍在自身 TTL 内 → 直接走缓存零等待；否则才发请求
             // R-06.1 之前是 `forceNetwork: true` 一律走网络，浪费"刚 6 分钟前看过 weekly"这种用户路径
             Task { await reload(cachePolicy: .respectTTL) }
         }
@@ -263,7 +269,7 @@ final class TrendingViewModel {
     ///
     /// **R-06.1 设计变更**（相比 2026-06-02 智能 revision 版）：
     /// - `forceNetwork: Bool` 升级为 `cachePolicy: TrendingCachePolicy` enum，语义更清晰
-    /// - 在"缓存命中"分支加入 TTL 判断：`.respectTTL` + 缓存在 24h 内 → 跳过网络；
+    /// - 在"缓存命中"分支加入 TTL 判断：`.respectTTL` + 缓存在当前周期 TTL 内 → 跳过网络；
     ///   否则走网络。`.forceNetwork` 永远走网络绕过 TTL
     /// - "智能 revision"逻辑不变（拿到 fresh 数据后对比 fullName 序列）
     ///
@@ -277,7 +283,7 @@ final class TrendingViewModel {
     /// | refreshable 下拉 | .forceNetwork | 走网络 + isLoading | 上屏缓存 + 后台刷新 | 上屏缓存 + 后台刷新 |
     ///
     /// SWR 关键约束：
-    /// - 缓存命中 + `.respectTTL` + TTL 内 → **完全不走网络**（24h 内零打扰，关键）
+    /// - 缓存命中 + `.respectTTL` + TTL 内 → **完全不走网络**
     /// - 缓存命中 + `.respectTTL` + TTL 过期 → 上屏缓存 → 后台拉网络 → 智能 revision
     /// - 缓存命中 + `.forceNetwork` → 上屏缓存 → 后台拉网络 → 智能 revision
     /// - 缓存空 → 必拉网络（不管 cachePolicy），isLoading=true
@@ -294,6 +300,24 @@ final class TrendingViewModel {
     func reload(cachePolicy: TrendingCachePolicy = .respectTTL) async {
         // 取消旧任务
         currentReloadTask?.cancel()
+
+        // 与 ExploreDiscovery / Weekly 对齐：在任何 await 之前同步进入骨架态。
+        // 旧实现把 `isLoading=true` 放在读完缓存之后，导致点击「趋势」后首帧
+        // （以及 await lastRefreshedAt / cachedTrending 期间）一直是
+        // `isLoading=false && repos=[]` → 空 List，骨架永远闪不出来。
+        //
+        // `.forceNetwork` 且已有列表 = 用户下拉/点刷新：保留 SWR，只亮 toolbar 转圈。
+        let keepVisibleList = cachePolicy == .forceNetwork && !repos.isEmpty
+        if keepVisibleList {
+            isRefreshing = true
+        } else {
+            isLoading = true
+            isRefreshing = false
+            loadError = nil
+            if !repos.isEmpty {
+                repos = []
+            }
+        }
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -320,7 +344,7 @@ final class TrendingViewModel {
                 self.loadError = nil
                 self.isLoading = false
             } else {
-                // 没缓存 → 进 isLoading 让 UI 显示 RepoSkeletonListView
+                // 没缓存 → 保持骨架，等网络回来
                 self.repos = []
                 self.isLoading = true
                 self.loadError = nil
@@ -329,7 +353,7 @@ final class TrendingViewModel {
             // ③ 第二阶段：是否走网络？
             //   - 缓存空 → 必走（无脑拉）
             //   - .forceNetwork → 走（用户主动 / 重试 / 下拉刷新，绕过 TTL）
-            //   - .respectTTL + 缓存有 + TTL 内 → 跳过（24h 内零打扰）
+            //   - .respectTTL + 缓存有 + TTL 内 → 跳过
             //   - .respectTTL + 缓存有 + TTL 过期 → 走（自动后台刷新）
             let shouldFetchNetwork: Bool = {
                 if !hasUsableCache { return true }
@@ -339,7 +363,7 @@ final class TrendingViewModel {
                 case .respectTTL:
                     guard let last = self.lastRefreshedAt else { return true }
                     let age = Date().timeIntervalSince(last)
-                    return age > Self.trendingTTL
+                    return age > Self.ttl(for: self.selectedPeriod)
                 }
             }()
             guard shouldFetchNetwork else {
@@ -422,15 +446,11 @@ final class TrendingViewModel {
         return Date().timeIntervalSince(date)
     }
 
-    /// 当前桶数据是否陈旧（>20 小时，约为 24h TTL 的 80%）。
+    /// 当前桶数据是否接近过期（超过当前周期 TTL 的 80%）。
     /// 超过此阈值 UI 会用橙色提示陈旧（不强制刷新，仅视觉信号）。
-    ///
-    /// R-06.1（2026-06-15）：阈值从 1h 调整到 20h，与新的 24h TTL 对齐。
-    /// 20h 是"接近过期"的预警位置：用户视觉看到橙色 → 知道再过 4h 数据会被自动刷新；
-    /// 直接绑 TTL（24h）的话只在过期那刻变色，预警价值为零。
     var isStale: Bool {
         guard let secs = secondsSinceLastRefresh else { return false }
-        return secs > 72_000 // 20h = 20 * 3600
+        return secs > Self.ttl(for: selectedPeriod) * 0.8
     }
 
     /// 当前桶可用的"刷新提示"文本（如"刚刚" / "12 分钟前" / "1 小时前" / "1 天前"）。

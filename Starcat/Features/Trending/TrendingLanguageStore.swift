@@ -103,7 +103,7 @@ final class TrendingLanguageStore {
     /// 调用时机：
     /// - HomeView 首次进入时（`task` modifier）
     /// - 用户在设置页改 baseURL / API Key 后（AppDependencies 主动调）
-    /// - 切换页面到 trending（可选，当前不做——首屏拿到一次就够，后端数据 24h 内变化频度低）
+    /// - 切换页面到 trending（可选，当前不做——语言聚合变化频率低，首屏拿到一次即可）
     ///
     /// 行为：
     /// - 拉成功且 data 非空 → 写入 `aggregates`、状态 `.success`

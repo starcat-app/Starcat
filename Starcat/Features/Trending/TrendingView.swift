@@ -41,7 +41,6 @@ struct TrendingView: View {
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
-    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
@@ -81,11 +80,18 @@ struct TrendingView: View {
 
             Divider()
 
-            // 主要内容
-            mainContentView
-                .id(contentAnimationID)
-                .transition(contentTransition)
-                .animation(contentAnimation, value: contentAnimationID)
+            // 骨架必须与 Manage / Activity 一样：直接挂在 VStack 里，不要再包
+            // `.id` + `.transition` + `.animation`。那套外层过渡会吞掉
+            // `SkeletonAnimatedPhase` / TimelineView 的持续刷新，看起来像「定格」
+            // （踩坑说明见 `RepoRowSkeletonView.swift` 文件头）。
+            if viewModel.isLoading && viewModel.repos.isEmpty {
+                RepoSkeletonListView(rowCount: 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
+                errorView(message: error)
+            } else {
+                contentView
+            }
         }
         .task {
             reportRepoCount()
@@ -97,7 +103,7 @@ struct TrendingView: View {
             // 切换语言或页面时先清详情，避免新列表加载完成前右栏残留旧 repo。
             clearTrendingDetailSelection()
             // 首次进入页面：按 TTL 决定是否拉网络（R-06.1，2026-06-15）
-            //   - 缓存命中且 24h 内 → 不走网络（零打扰，避免"二次入场动画"）
+            //   - 缓存命中且在当前周期 TTL 内 → 不走网络（避免"二次入场动画"）
             //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
             //   - 缓存空 → 必拉
             // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
@@ -317,7 +323,7 @@ struct TrendingView: View {
 
     /// "12 分钟前" 新鲜度提示。
     /// - 没有 lastRefreshedAt 时整组隐藏（`formattedFreshness == nil`）
-    /// - >20 小时（`isStale`）变橙色提示陈旧，但不强制刷新
+    /// - 超过当前周期 TTL 的 80%（`isStale`）变橙色提示陈旧，但不强制刷新
     @ViewBuilder
     private var freshnessIndicator: some View {
         if let text = viewModel.formattedFreshness {
@@ -332,7 +338,7 @@ struct TrendingView: View {
     /// hover 时 tooltip 显示"刷新榜单"或"上次刷新于 X 月 Y 日 HH:MM"。
     /// 使用共享 `SyncIconButton`（与详情页 cacheFooter 同款图标 + 旋转动画）。
     ///
-    /// 用户主动操作走 `.forceNetwork` 绕过 24h TTL（R-06.1）—— 哪怕缓存"刚 5 分钟前才拉过"
+    /// 用户主动操作走 `.forceNetwork` 绕过当前周期 TTL（R-06.1）—— 哪怕缓存"刚 5 分钟前才拉过"
     /// 也尊重用户的"我现在就要新数据"意图，不在按钮里做 TTL 短路否则用户会以为按钮坏了。
     private var refreshButton: some View {
         SyncIconButton(
@@ -383,17 +389,6 @@ struct TrendingView: View {
     }
 
     // MARK: - Content
-
-    @ViewBuilder
-    private var mainContentView: some View {
-        if viewModel.isLoading && viewModel.repos.isEmpty {
-            loadingView
-        } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            errorView(message: error)
-        } else {
-            contentView
-        }
-    }
 
     /// Trending repo 的带下标快照。
     ///
@@ -472,48 +467,6 @@ struct TrendingView: View {
         }
     }
 
-    /// 中栏 Trending 内容**三态过渡身份键**（loading / error / content）。
-    ///
-    /// 关键约束（2026-06-16 dong4j 反馈"切 day/week/month 列表先变暗再亮"修复）：
-    /// 这个 key **不**依赖 period / language / reposRevision 等"内容身份"，
-    /// 仅在三态之间切换时变化。切桶（day↔week↔month / 切语言）走的是 content → content，
-    /// `mainContentView` 的 `.id(...)` 不变 → 外层不重建 → 不播 `.opacity` 的淡出淡入。
-    ///
-    /// 为什么之前的设计有问题：
-    /// - 旧 key 包含 `period.id` / `language.id`，切桶时 key 变化 → SwiftUI 销毁旧
-    ///   `mainContentView` → 播 `removal: .opacity`（"变暗"）→ 重建新 `mainContentView` →
-    ///   播 `insertion: .opacity`（"再亮"）→ 用户视觉上看到列表整块"先变暗再展示新数据"
-    /// - dong4j 的诉求是"直接切换数据"，与切语言体感对齐（其实切语言之前也有同款过渡，
-    ///   只是视觉焦点在左侧 sidebar 没注意到，借此次机会一并修掉）
-    ///
-    /// 改后的分工：
-    /// - **外层 transition**（本 ID 驱动）：只管三态间切换的过渡（如 loading → content）
-    /// - **List 内数据替换**：靠 `ForEach + Identifiable` 的天然 in-place diff，
-    ///   旧 repo row 被新 repo row 直接替换，不走整块 transition
-    /// - **row reveal**：由 `reposRevision` 驱动（参见 `.listRowReveal(snapshotID:)`），
-    ///   缓存上屏 / identity 变化的网络刷新均会让 row 重新渐进入场
-    /// - **数值字段（stars / forks）**：ForEach in-place diff 默默更新，三层动画都不参与
-    private var contentAnimationID: String {
-        if viewModel.isLoading && viewModel.repos.isEmpty {
-            return "trending-loading"
-        }
-        if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            return "trending-error-\(error)"
-        }
-        return "trending-content"
-    }
-
-    private var contentAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.22)
-    }
-
-    private var contentTransition: AnyTransition {
-        reduceMotion ? .identity : .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity
-        )
-    }
-
     /// 单选列表使用手动 selection，而不是 `List(selection:)`。
     ///
     /// 原因（与 Manage `RepoListView.listContent(_:)` 对齐）：`List(selection:)` 会强制
@@ -590,7 +543,7 @@ struct TrendingView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .refreshable {
-            // Pull-to-refresh = 用户主动要新数据，绕过 24h TTL（R-06.1）
+            // Pull-to-refresh = 用户主动要新数据，绕过当前周期 TTL（R-06.1）
             await viewModel.reload(cachePolicy: .forceNetwork)
             reportRepoCount()
         }
@@ -659,14 +612,6 @@ struct TrendingView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: - Loading
-
-    /// 与发现 / 热门 / 新发布 / 周刊同款骨架，避免趋势单独用 ProgressView 显得不一致。
-    private var loadingView: some View {
-        RepoSkeletonListView(rowCount: 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
     // MARK: - Error
 
     private func errorView(message: String) -> some View {
@@ -685,7 +630,7 @@ struct TrendingView: View {
 
             Button("trending.retry") {
                 Task {
-                    // 错误重试 = 用户主动要新数据，绕过 24h TTL（R-06.1）
+                    // 错误重试 = 用户主动要新数据，绕过当前周期 TTL（R-06.1）
                     await viewModel.reload(cachePolicy: .forceNetwork)
                 }
             }

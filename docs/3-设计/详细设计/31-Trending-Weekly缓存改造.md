@@ -25,7 +25,7 @@ R-06 之前的 Trending / Weekly 数据链路存在三个明显短板：
 
 | 层 | 位置 | TTL | 主要承担 |
 |---|---|---|---|
-| L1 | 客户端 ViewModel `lastRefreshedAt` 时间戳 | **Trending 24h / Weekly 12h** | "用户体感节奏"——同一桶 / 同一全量 N 小时内不再发请求 |
+| L1 | 客户端 ViewModel `lastRefreshedAt` 时间戳 | **Trending 1h/6h/24h 分桶 / Weekly 6h** | 与服务端数据刷新窗口一致，同一桶在有效期内不再发请求 |
 | L2 | 客户端 GRDB SQLite | 不设单独 TTL（与 L1 共享） | 跨 App 重启的持久化、离线兜底、本地 sort / filter / page |
 | L3 | 后端 `*-api` 进程内 `sync.RWMutex` map / 单 entry | **trending 1h/6h/24h 分桶 / weekly 6h** | "数据新鲜度节奏"——主动 Invalidate 是主线、TTL 只是兜底 |
 
@@ -36,8 +36,8 @@ R-06 之前的 Trending / Weekly 数据链路存在三个明显短板：
 ```mermaid
 flowchart LR
     subgraph Client["客户端 Starcat (macOS)"]
-        TV[TrendingViewModel<br/>24h TTL] --> TR[(SQLite<br/>trending_repos)]
-        WV[WeeklyContentViewModel<br/>12h TTL + dataSource 双轨制] --> WR[(SQLite<br/>weekly_bulk_repos<br/>weekly_bulk_languages<br/>weekly_bulk_meta)]
+        TV[TrendingViewModel<br/>1h/6h/24h 分桶 TTL] --> TR[(SQLite<br/>trending_repos)]
+        WV[WeeklyContentViewModel<br/>6h TTL + dataSource 双轨制] --> WR[(SQLite<br/>weekly_bulk_repos<br/>weekly_bulk_languages<br/>weekly_bulk_meta)]
     end
 
     subgraph TrendingAPI["starcat-trending-api"]
@@ -61,19 +61,19 @@ flowchart LR
 
 ## 3. Trending 改造（R-06.1 + R-06.2）
 
-### 3.1 客户端：cachePolicy enum + 24h TTL
+### 3.1 客户端：cachePolicy enum + 1h/6h/24h 分桶 TTL
 
 把原来"二选一"的 `forceNetwork: Bool` 升级为意图明确的枚举：
 
 | Policy | 触发场景 | 行为 |
 |---|---|---|
-| `.respectTTL` | `.task` 首次入场、`selectedPeriod / selectedLanguage` 切桶 | 命中 24h TTL 内的桶 → 零请求；过期 → 拉网络 |
+| `.respectTTL` | `.task` 首次入场、`selectedPeriod / selectedLanguage` 切桶 | 命中当前周期 TTL 内的桶 → 零请求；过期 → 拉网络 |
 | `.forceNetwork` | toolbar 刷新按钮、`.refreshable` 下拉、错误重试 | 用户主动意图，必发请求 |
 
 **两个关键设计决策**：
 
 1. **TTL 判断放在 ViewModel 层**（而非 `TrendingRepository`）：ViewModel 本来就持有 `lastRefreshedAt` 做"新鲜度展示"，复用最直接；Repository 协议保持纯净，避免引入"返回值标记 from-cache vs from-network"的复杂度（否则 ViewModel 不知道要不要 `lastRefreshedAt = Date()`，会出现 always-fresh 死循环 bug）。
-2. **`isStale` 阈值 1h → 20h**（80% TTL 预警）：用户在 20h~24h 区间能看到橙色"接近过期"提示，自然引导主动刷新；24h 后入场自动短路到网络。
+2. **`isStale` 使用当前周期 TTL 的 80%**：daily / weekly / monthly 分别在约 48 分钟 / 4.8 小时 / 19.2 小时后显示橙色"接近过期"提示，过期后入场自动走网络。
 
 ### 3.2 后端：TrendingCache 分桶 TTL + ETag
 
@@ -141,7 +141,7 @@ Weekly 数据量级（~4000 条）远大于 Trending（300 条/桶），原"分�
 | 预处理 | pre-marshaled JSON | pre-marshaled JSON + **pre-compressed gzip** |
 | 失效 | enrich 完后 `Invalidate(since)` | 3 个 sync 触点 + admin RebuildAggregates 后 `Invalidate()` |
 
-**6h TTL 选择理由**：主动失效（scheduler + admin）是主线、TTL 只是"漏触点"兜底窗口；客户端 12h TTL 已把单客户端节流到天级，后端 cache 主要扛"多客户端并发 / 主动刷新风暴"；6h 与 trending weekly 桶对齐方便运维心智统一；不直接拉到 24h 是留个"中等长度自我修复窗口"。**2026-06-15 由初版 60s 调整**（见 §8 演进记录）。
+**6h TTL 选择理由**：主动失效（scheduler + admin）是主线、TTL 只是"漏触点"兜底窗口；客户端与服务端统一为 6h，避免客户端跨过服务端刷新窗口仍展示旧快照。后端 cache 主要扛"多客户端并发 / 主动刷新风暴"；6h 与 trending weekly 桶对齐方便运维心智统一。**2026-06-15 由初版 60s 调整，2026-07-18 客户端由 12h 收敛到 6h**（见 §8 演进记录）。
 
 **pre-gzip 收益**：4MB JSON → ~650KB（gzip BestSpeed level 1，16% 原大小）；hit 路径直接 `w.Write(gzipped)` 省每次响应的压缩 CPU。level 6 多压 5% 但 CPU 翻 3 倍，不划算。
 
@@ -175,7 +175,7 @@ stateDiagram-v2
     Local --> Local: 主动刷新成功<br/>(整批替换)
     Remote --> Remote: 切 sort/lang/page<br/>(走老分页 API)
 
-    note right of Local: 命中 SQLite + 12h TTL 内<br/>切 sort/lang = 0 请求
+    note right of Local: 命中 SQLite + 6h TTL 内<br/>切 sort/lang = 0 请求
     note right of Remote: 缓存空入场 / bulk 失败 fallback
 ```
 
@@ -185,7 +185,7 @@ stateDiagram-v2
 flowchart TD
     Start[进入 Weekly 页面] --> Q1{SQLite 缓存命中?}
     Q1 -- "是" --> Apply[立即上屏 dataSource = .local]
-    Apply --> Q2{12h TTL 内?}
+    Apply --> Q2{6h TTL 内?}
     Q2 -- "是" --> End1[零网络结束]
     Q2 -- "否" --> BgSync[后台静默 bulkSync<br/>不阻塞 UI]
     BgSync --> Replace[整批替换三表<br/>itemsRevision++]
@@ -198,7 +198,7 @@ flowchart TD
 
 #### 4.3.4 主动刷新与 sort/lang 切换
 
-- **主动刷新**（toolbar / pull-to-refresh）：永远走 bulkSync（forceNetwork 语义），失败 fallback 分页 API（保证按钮不空手而归）；完成后强制切到 `.local`，12h TTL 重新计时。
+- **主动刷新**（toolbar / pull-to-refresh）：永远走 bulkSync（forceNetwork 语义），失败 fallback 分页 API（保证按钮不空手而归）；完成后强制切到 `.local`，6h TTL 重新计时。
 - **切 sort/lang**：`.local` 模式走本地纯过滤 + 排序（瞬时无网络），切片到 page 1 上屏；`.remote` 模式仍走旧分页 API。
 - **本地排序与后端 SQL 排序精确对齐**：`latest_event_at DESC + ghRepoId tiebreaker` / `stars DESC + ghRepoId` / `pushed_at ISO8601 字典序 DESC + ghRepoId`——否则用户切到 .local 后切 sort 的视觉结果会与 .remote 模式不一致。
 
@@ -214,9 +214,9 @@ flowchart TD
 
 | 维度 | 选择 | 理由 |
 |---|---|---|
-| Trending 客户端 TTL | 24h | "用户体感节奏"——同桶切换 / 重入页面短路 |
-| Weekly 客户端 TTL | 12h | weekly 数据更新频率高于 trending（zread + discovery 天级），TTL 更短 |
-| `isStale` 阈值 | 80% TTL（trending 20h） | 接近过期预警，非"已过期" |
+| Trending 客户端 TTL | 分桶 1h/6h/24h | 与后端分桶更新节奏一致，daily 不再被统一 24h TTL 遮蔽 |
+| Weekly 客户端 TTL | 6h | 与服务端 bulk 快照窗口一致，避免跨刷新周期展示旧快照 |
+| `isStale` 阈值 | 当前周期 TTL 的 80% | 接近过期预警，非"已过期" |
 | Trending 后端 TTL | 分桶 1h/6h/24h | 与 cron 1:1 对齐，monthly cap 24h 让客户端最大滞后 1 天 |
 | Weekly 后端 TTL | 6h | 主动失效是主线、TTL 只是"漏触点"兜底；与 trending weekly 桶对齐；初版 60s 容易被主动刷新风暴击穿造成反复 build CPU 浪费 |
 | ETag 类型 | weak (`W/`) | HTTP 7232 §2.1，允许语义等价 |
@@ -264,7 +264,7 @@ flowchart TD
 | `WeeklyAPI.fetchBulkRepos()` | URLSession 自动 gzip 解压（CFNetwork 透明） |
 | migration v1-initial 加 3 张 `weekly_bulk_*` 表 | 直接改 v1，不写 ALTER |
 | `AppDependencies` 注入 `WeeklyBulkRepository` 单例 | 与 `weeklyAPI` actor 共享让 baseURL / apiKey 热更新双路径同时生效 |
-| `WeeklyContentViewModel` SWR 双轨制重写 | enum `WeeklyDataSource` / 12h TTL / 4 个入口分支调度 |
+| `WeeklyContentViewModel` SWR 双轨制重写 | enum `WeeklyDataSource` / 6h TTL / 4 个入口分支调度 |
 
 ---
 
@@ -281,7 +281,7 @@ flowchart TD
 
 ### 7.2 dong4j 端到端验收路径
 
-**Trending**：① 5 分钟前刷过的桶不再走网络；② 切到其它桶 24h 内有缓存的不走网络；③ toolbar 刷新仍走网络（绕过 TTL）；④ 20h 没刷的桶 → 上屏旧缓存 + 后台自动刷新 + 完成切新数据 + 文案变橙色；⑤ 后端 `curl -H "If-None-Match: <etag>"` → 304 + 无 body；⑥ cron 跑完 syncDaily 后下次客户端拿到新数据。
+**Trending**：① 5 分钟前刷过的桶不再走网络；② daily / weekly / monthly 分别在 1h / 6h / 24h 内复用缓存；③ toolbar 刷新仍走网络（绕过 TTL）；④ 超过当前周期 TTL 的 80% 显示橙色预警，TTL 过期后上屏旧缓存并后台刷新；⑤ 后端 `curl -H "If-None-Match: <etag>"` → 304 + 无 body；⑥ cron 跑完 syncDaily 后下次客户端拿到新数据。
 
 **Weekly**：① 首次入场缓存空 → 老分页 200ms 出图 + 后台 bulkSync ~4MB→650KB gzip 落盘；② 杀进程重进缓存命中 → 立即上屏切 `.local` + 零请求；③ TTL 内切 sort/lang 瞬时无网络；④ 主动刷新 bulk endpoint → 整批替换 → 入场动画；⑤ TTL 过期入场 → 上屏立即出 + 后台静默 bulkSync；⑥ 网络失败 + 缓存非空 → fallback 不抛错；⑦ admin POST `/internal/rebuild-aggregates` 后 bulk endpoint 立即失效。
 
@@ -289,11 +289,11 @@ flowchart TD
 
 ## 8. 已知限制与后续方向
 
-- **BulkCache TTL 60s → 6h 演进**（2026-06-15）：初版定 60s 出发点是"完全不信 scheduler 主动失效、TTL 强兜底"，但客户端 12h TTL 已把单客户端节流到天级，60s 在多客户端并发或主动刷新风暴下经常被击穿 → 反复 build CPU 浪费。讨论结论：主动失效（scheduler + admin）是真正主线、TTL 只是"漏失效路径"兜底窗口，TTL 长度只决定漏触点时的过时窗口大小、不决定数据新鲜度。最终调整到 6h（与 trending weekly 桶对齐），不直接拉到 24h 是留个中等长度自我修复窗口。
-- **不做 conditional GET 304**：客户端 12h / 24h TTL 总闸已经短路绝大多数请求，少数 forceNetwork 路径下省的几 KB body 不值得引入"304 → fallback 本地缓存 + 还要维护 ETag"的双路径复杂度。如未来真要做，建议先在客户端"刷新但 server 没变"的频次实测后再评估。
+- **BulkCache TTL 演进**：2026-06-15 后端由初版 60s 调整到 6h，主动失效（scheduler + admin）作为主线、TTL 作为漏触点兜底；2026-07-18 客户端由 12h 收敛到 6h，避免两级窗口错位。
+- **不做 conditional GET 304**：客户端 Trending 1h/6h/24h、Weekly 6h 的 TTL 总闸已经短路绝大多数请求，少数 forceNetwork 路径下省的几 KB body 不值得引入"304 → fallback 本地缓存 + 还要维护 ETag"的双路径复杂度。如未来真要做，建议先在客户端"刷新但 server 没变"的频次实测后再评估。
 - **不做后端 LRU / 持久化**：TrendingCache 总量级 MB；BulkCache 单 entry，服务重启冷启动下一次请求自然回填，无需磁盘。
 - **Weekly bulk endpoint 不接受 query 参数**：所有过滤 / 排序 / 分页都在客户端做。如未来字段超出 4000 条 / payload 超 10MB，应考虑：① 分多个 endpoint（如 `/repos/bulk?source=weekly`）；② 引入 `Last-Modified` + 304 让长期开 App 的客户端按需更新。
-- **客户端 `lastBulkFetchedAt` 不挂 UI**：当前只用于 12h TTL 判断，将来如需"上次同步：N 小时前"展示，已经预留接口 `WeeklyContentViewModel.lastBulkFetchedAt` 公开。
+- **客户端 `lastBulkFetchedAt` 不挂 UI**：当前只用于 6h TTL 判断，将来如需"上次同步：N 小时前"展示，已经预留接口 `WeeklyContentViewModel.lastBulkFetchedAt` 公开。
 
 ---
 
@@ -308,4 +308,4 @@ flowchart TD
 
 ---
 
-*最后更新：2026-06-15 22:10（BulkCache TTL 60s → 6h 调整，go test 41/15 packages 全绿）*
+*最后更新：2026-07-18（客户端 Trending 改为 1h/6h/24h 分桶，Weekly 改为 6h；后端 TTL 不变）*

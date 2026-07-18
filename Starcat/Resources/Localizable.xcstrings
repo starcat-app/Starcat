@@ -14058,6 +14058,662 @@
         }
       }
     },
+    "explore.help.cache.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存说明"
+          }
+        }
+      }
+    },
+    "explore.help.discover.cache.offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline handling: if the update fails, Starcat keeps the last successful cache and warns that the content may be out of date."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线处理：更新失败时继续使用上次成功缓存，并提示内容可能不是最新。"
+          }
+        }
+      }
+    },
+    "explore.help.discover.cache.ttl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache lifetime: 3 hours, shared with Popular and New Releases."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存有效期：3 小时，与热门、新发布共享同一份项目目录缓存。"
+          }
+        }
+      }
+    },
+    "explore.help.discover.cache.update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update: Starcat uses the local cache while it is valid and fetches the latest project catalog after it expires."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新方式：有效期内优先读取本地缓存；过期后重新获取最新项目目录。"
+          }
+        }
+      }
+    },
+    "explore.help.discover.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about Discover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解发现的数据规则"
+          }
+        }
+      }
+    },
+    "explore.help.discover.rule.catalog": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat combines high-attention repositories, repositories active in the last 30 days, and newer repositories created in the last year."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 综合收录高关注度、近 30 天活跃，以及近一年出现的新项目。"
+          }
+        }
+      }
+    },
+    "explore.help.discover.rule.ranking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommendations consider recent activity, topic relevance, and platform fit."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推荐会综合考虑近期活跃度、主题相关性和平台匹配度。"
+          }
+        }
+      }
+    },
+    "explore.help.discover.rule.scope": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The catalog refreshes regularly and does not represent every repository on GitHub."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目池会定期更新，并不代表 GitHub 全站的全部仓库。"
+          }
+        }
+      }
+    },
+    "explore.help.discover.source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Search, repository metadata, and release data."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Search、仓库资料和 Release 数据。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.cache.offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline handling: if the update fails, Starcat keeps the last successful cache and warns that the content may be out of date."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线处理：更新失败时继续使用上次成功缓存，并提示内容可能不是最新。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.cache.ttl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache lifetime: 3 hours, shared with Discover and Popular."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存有效期：3 小时，与发现、热门共享同一份项目目录缓存。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.cache.update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update: after the cache expires, Starcat fetches the latest project and Release data."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新方式：缓存过期后重新获取最新项目及 Release 信息。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about New Releases"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解新发布的数据规则"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.rule.ranking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projects are ordered by their most recent release time by default."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认按照项目最近一次发布时间排序。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.rule.release": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drafts, prereleases, releases without downloadable assets, archived repositories, and forks are excluded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "草稿版、预发布版、没有可下载内容的 Release、归档项目和 Fork 项目不会进入本分类。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.rule.window": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only projects with a stable release in the last 180 days are included."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅收录最近 180 天发布过稳定版本的项目。"
+          }
+        }
+      }
+    },
+    "explore.help.newReleases.source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Releases from projects in Starcat's Discover catalog."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 发现项目池中的 GitHub Releases。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.cache.offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline handling: if the update fails, Starcat keeps the last successful cache and warns that the content may be out of date."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线处理：更新失败时继续使用上次成功缓存，并提示内容可能不是最新。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.cache.ttl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache lifetime: 3 hours, shared with Discover and New Releases."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存有效期：3 小时，与发现、新发布共享同一份项目目录缓存。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.cache.update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update: after the cache expires, Starcat refreshes the shared catalog and recalculates the Popular list."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新方式：缓存过期后重新获取共享目录，并计算最新热门列表。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about Popular"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解热门的数据规则"
+          }
+        }
+      }
+    },
+    "explore.help.popular.rule.eligibility": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived repositories and forks are excluded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归档项目和 Fork 项目不会进入本分类。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.rule.ranking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The popularity score considers Stars, Forks, release downloads, and recent activity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "综合热度会参考 Stars、Forks、Release 下载量和近期活跃度。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.rule.threshold": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A project must have at least 1,000 Stars or meet the composite popularity threshold."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目需要达到 1,000 Stars，或达到综合热度门槛。"
+          }
+        }
+      }
+    },
+    "explore.help.popular.source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projects in Starcat's Discover catalog."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starcat 的发现项目池。"
+          }
+        }
+      }
+    },
+    "explore.help.rules.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inclusion rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入选规则"
+          }
+        }
+      }
+    },
+    "explore.help.source.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Data source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数据来源"
+          }
+        }
+      }
+    },
+    "explore.help.trending.cache.offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline handling: if the update fails, the current cached ranking remains available and is not cleared."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线处理：更新失败时保留当前缓存，不会清空已有榜单。"
+          }
+        }
+      }
+    },
+    "explore.help.trending.cache.ttl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache lifetime: 1 hour for Daily, 6 hours for Weekly, and 24 hours for Monthly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存有效期：日榜 1 小时、周榜 6 小时、月榜 24 小时。"
+          }
+        }
+      }
+    },
+    "explore.help.trending.cache.update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update: after expiry, Starcat shows the existing ranking first and refreshes it in the background. Manual refresh requests the latest data immediately."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新方式：过期后先显示已有榜单，同时在后台更新；手动刷新会立即请求最新数据。"
+          }
+        }
+      }
+    },
+    "explore.help.trending.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about Trending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解趋势的数据规则"
+          }
+        }
+      }
+    },
+    "explore.help.trending.rule.meaning": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trending reflects short-term attention changes and is not the same as long-term popularity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趋势反映短期关注度变化，不等同于长期热门。"
+          }
+        }
+      }
+    },
+    "explore.help.trending.rule.period": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows repositories from GitHub's daily, weekly, and monthly Trending lists."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展示 GitHub 日榜、周榜和月榜中的项目。"
+          }
+        }
+      }
+    },
+    "explore.help.trending.source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Trending, enriched with repository metadata from the GitHub API."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Trending，并通过 GitHub API 补全仓库资料。"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.cache.offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline handling: if the update fails, the last successful cache remains available for browsing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线处理：更新失败时继续保留上次成功缓存，不影响已有内容浏览。"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.cache.ttl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache lifetime: 6 hours."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存有效期：6 小时。"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.cache.update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update: Starcat uses the local cache while it is valid. After expiry, it shows the cached content first and refreshes silently in the background; manual refresh requests the latest data immediately."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新方式：有效期内直接使用本地缓存；过期后先显示已有内容并在后台静默更新，手动刷新会立即请求最新数据。"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn about Weekly"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解周刊的数据规则"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.rule.inclusion": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A project appears after it has been included by at least one enabled source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目至少被一个已启用来源收录后才会出现。"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.rule.priority": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A project may come from multiple sources, and editor-pinned projects appear first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一项目可能来自多个来源，编辑置顶的项目会优先展示。"
+          }
+        }
+      }
+    },
+    "explore.help.weekly.source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruan Yifeng's Weekly, ZRead, Hacker News, HelloGitHub, and verified AI intelligence."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阮一峰科技爱好者周刊、ZRead、Hacker News、HelloGitHub 和经核验的 AI 情报。"
+          }
+        }
+      }
+    },
     "explore.mode.discover": {
       "extractionState": "stale",
       "localizations": {

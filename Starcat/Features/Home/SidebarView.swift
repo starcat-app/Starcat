@@ -614,7 +614,11 @@ struct SidebarView: View {
             iconColor: mode.sidebarIconColor,
             count: exploreModeCount(mode)
         ) {
-            Text(mode.titleKey)
+            HStack(spacing: 5) {
+                Text(mode.titleKey)
+                // 信息按钮紧跟分类名，计数仍由外层 row 固定在最右侧，避免五行对齐被打散。
+                ExploreModeInfoButton(mode: mode)
+            }
         }
     }
 

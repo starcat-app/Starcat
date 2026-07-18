@@ -1090,7 +1090,7 @@ private struct StorageSettingsTab: View {
     @State private var wikiCache = DiskWikiCache.shared
 
     /// 推荐结果磁盘缓存（2026-06-29，与 wiki 同款形态）：按 repoID 落盘，
-    /// TTL 24h（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
+    /// TTL 7d（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
     @State private var recommendationCache = DiskRecommendationCache.shared
 
     /// HOM-70：AI 对话历史磁盘存储（按 repo 多 session）。

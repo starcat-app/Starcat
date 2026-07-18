@@ -65,7 +65,7 @@ struct ExploreDiscoveryViewModelTests {
             Self.makeBulkResult(repos: [
                 Self.makeRepo(repoID: 120, owner: "cached", name: "popular", categoryRanks: ["popular": 1])
             ]),
-            lastFetchedAt: Date()
+            lastFetchedAt: Date().addingTimeInterval(-2 * 60 * 60)
         )
         let viewModel = ExploreDiscoveryViewModel()
 
@@ -108,7 +108,7 @@ struct ExploreDiscoveryViewModelTests {
             Self.makeBulkResult(repos: [
                 Self.makeRepo(repoID: 130, owner: "stale", name: "repo", categoryRanks: ["popular": 1])
             ]),
-            lastFetchedAt: Date().addingTimeInterval(-31 * 60)
+            lastFetchedAt: Date().addingTimeInterval(-(3 * 60 * 60 + 60))
         )
         await repository.enqueueBulk(Self.makeBulkResult(repos: [
             Self.makeRepo(repoID: 131, owner: "remote", name: "repo", categoryRanks: ["popular": 1])
@@ -149,7 +149,7 @@ struct ExploreDiscoveryViewModelTests {
             Self.makeBulkResult(repos: [
                 Self.makeRepo(repoID: 135, owner: "fallback", name: "repo", categoryRanks: ["popular": 1])
             ]),
-            lastFetchedAt: Date().addingTimeInterval(-31 * 60)
+            lastFetchedAt: Date().addingTimeInterval(-(3 * 60 * 60 + 60))
         )
         await repository.setFetchError(FakeDiscoveryError.unavailable)
         let viewModel = ExploreDiscoveryViewModel()
@@ -178,7 +178,7 @@ struct ExploreDiscoveryViewModelTests {
             Self.makeBulkResult(repos: [
                 Self.makeRepo(repoID: 140, owner: "stale", name: "repo", categoryRanks: ["popular": 1])
             ]),
-            lastFetchedAt: Date().addingTimeInterval(-31 * 60)
+            lastFetchedAt: Date().addingTimeInterval(-(3 * 60 * 60 + 60))
         )
         await repository.enqueueBulk(Self.makeBulkResult(repos: [
             Self.makeRepo(repoID: 141, owner: "cancelled", name: "repo", categoryRanks: ["popular": 1])

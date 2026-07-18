@@ -265,6 +265,36 @@ struct TrendingTests {
     // star 操作走 `StarActionService.star(owner:repo:)` 单点（跨场景一致），由
     // `StarActionServiceTests` 套件统一覆盖（包含 stub apiClient.star 调用 + Registry add）。
 
+    // MARK: - 骨架屏入场（与发现 / 周刊对齐）
+
+    @MainActor
+    @Test("TrendingViewModel 初始 isLoading=true，首帧就能进 RepoSkeletonListView")
+    func initialStateReadyForSkeleton() {
+        let stub = StubTrendingRepository(repos: [], cached: [])
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        #expect(vm.isLoading)
+        #expect(vm.repos.isEmpty)
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.respectTTL) 缓存命中后结束 loading")
+    func reloadCacheHitClearsLoading() async {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+        #expect(vm.isLoading)
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        #expect(!vm.isLoading)
+        #expect(vm.repos.count == 1)
+    }
+
     // MARK: - 智能 revision 行为（2026-06-02 新增，配合"消除二次入场动画"改造）
 
     @MainActor
@@ -274,11 +304,11 @@ struct TrendingTests {
             makeTrendingRepo(fullName: "owner/a"),
             makeTrendingRepo(fullName: "owner/b")
         ]
-        // 缓存 1h 前刷过（远低于 24h TTL），.respectTTL 应跳过网络
+        // daily 缓存 30 分钟前刷过（低于 1h TTL），.respectTTL 应跳过网络
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -3_600)
+            lastRefreshedAt: Date(timeIntervalSinceNow: -1_800)
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -316,11 +346,11 @@ struct TrendingTests {
     @Test("TrendingViewModel.reload(.respectTTL): cache hit + TTL 过期 → 走网络")
     func reloadCacheHitBeyondTTLFetchesNetwork() async throws {
         let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
-        // 缓存 25 小时前刷过（> 24h TTL），.respectTTL 应回退到网络
+        // daily 缓存超过 1h TTL，.respectTTL 应回退到网络
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -90_000)  // 25 hours ago
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.ttl(for: .daily) + 60))
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -334,11 +364,11 @@ struct TrendingTests {
     @Test("TrendingViewModel.reload(.respectTTL): cache hit + 边界刚过 TTL → 走网络")
     func reloadCacheHitJustBeyondTTLFetches() async throws {
         let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
-        // TTL=86400，刚过 1 秒，应判定过期
+        // daily TTL 刚过 1 秒，应判定过期
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.trendingTTL + 1))
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.ttl(for: .daily) + 1))
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -352,11 +382,11 @@ struct TrendingTests {
     @Test("TrendingViewModel.reload(.respectTTL): cache hit + 边界刚到 TTL 内 → 跳过网络")
     func reloadCacheHitWithinTTLBoundaryNoFetch() async throws {
         let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
-        // TTL=86400，刚好差 1 秒，仍在 TTL 内
+        // daily TTL 刚好差 1 秒，仍在 TTL 内
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.trendingTTL - 1))
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.ttl(for: .daily) - 1))
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -364,6 +394,14 @@ struct TrendingTests {
 
         let count = await stub.fetchCallCount
         #expect(count == 0, "差 1 秒到 TTL 应继续走缓存")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.ttl: daily 1h / weekly 6h / monthly 24h")
+    func periodTTLValues() {
+        #expect(TrendingViewModel.ttl(for: .daily) == 1 * 60 * 60)
+        #expect(TrendingViewModel.ttl(for: .weekly) == 6 * 60 * 60)
+        #expect(TrendingViewModel.ttl(for: .monthly) == 24 * 60 * 60)
     }
 
     @MainActor
@@ -465,10 +503,10 @@ struct TrendingTests {
     }
 
     @MainActor
-    @Test("TrendingViewModel: isStale true when last refresh > 20 hours ago")
-    func isStaleAfter20Hours() async throws {
-        // R-06.1: isStale 阈值从 1h 调到 20h（80% TTL 预警）。21h 前应判定 stale
-        let timestamp = Date(timeIntervalSinceNow: -75_600)  // 21 小时前
+    @Test("TrendingViewModel: daily 超过 TTL 80% 时 isStale=true")
+    func isStaleAfterDailyWarningThreshold() async throws {
+        // daily TTL=1h，50 分钟已超过 80% 预警线但尚未过期，因此不会被自动刷新覆盖。
+        let timestamp = Date(timeIntervalSinceNow: -50 * 60)
         let stub = StubTrendingRepository(
             repos: [],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -482,10 +520,9 @@ struct TrendingTests {
     }
 
     @MainActor
-    @Test("TrendingViewModel: isStale false when last refresh < 20 hours ago")
-    func isStaleFalseWhenWithin20Hours() async throws {
-        // R-06.1: 2h 前不再算 stale（旧阈值 1h 时算，新阈值 20h 不算）
-        let timestamp = Date(timeIntervalSinceNow: -7_200)  // 2 小时前
+    @Test("TrendingViewModel: daily 未到 TTL 80% 时 isStale=false")
+    func isStaleFalseBeforeDailyWarningThreshold() async throws {
+        let timestamp = Date(timeIntervalSinceNow: -30 * 60)
         let stub = StubTrendingRepository(
             repos: [],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -495,7 +532,7 @@ struct TrendingTests {
 
         await vm.reload(cachePolicy: .respectTTL)
 
-        #expect(vm.isStale == false, "20h 阈值下，2h 前不算 stale")
+        #expect(vm.isStale == false, "daily 30 分钟未到 80% 预警线")
     }
 
     @MainActor

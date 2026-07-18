@@ -959,8 +959,9 @@ enum DatabaseMigrations {
     ///   不是 PK（PK 仍是榜单维度三元组）。
     /// - **readme_pk_c**：`trending_readmes` 用 `full_name` 作 PK（trending 只有 `owner/repo`，
     ///   没 Int64 id；与 `readmes.repo_id` 保持隔离）。
-    /// - **ttl_c**：列表与 README 都不设 TTL，每次进 Trending 都强制走网络重拉，本地缓存只承担
-    ///   「离线兜底 + 快速首屏 SWR」角色（先把缓存立即上屏，再后台拉网络覆盖）。
+    /// - **ttl_c（历史）**：初版列表与 README 不设 TTL；R-06.1 后列表改为由 ViewModel
+    ///   基于 `cached_at` 执行 daily 1h / weekly 6h / monthly 24h 分桶 TTL，表结构无需变化。
+    ///   README 仍走自身独立缓存策略。
     ///
     /// **PK 设计**：复合 PK `(period, language_filter, rank)` —— 同一榜单（period+language_filter）
     /// 内按 rank 排序定位每行；同一 repo 出现在多个榜单（如 daily Swift 第 3 + weekly Swift 第 5）
@@ -1025,7 +1026,7 @@ enum DatabaseMigrations {
             t.column("pushed_at", .text)
             t.column("created_at", .text)
             t.column("updated_at", .text)
-            t.column("cached_at", .text).notNull()               // 本地缓存于 X 时间前，不参与 TTL
+            t.column("cached_at", .text).notNull()               // ViewModel 按桶取 max 做分周期 TTL
 
             t.primaryKey(["period", "language_filter", "rank"])
         }
@@ -1321,7 +1322,7 @@ enum DatabaseMigrations {
     ///
     /// 单行设计避免"meta 表只有 1 行还做唯一约束"的丑陋写法；PK 固定字符串就够了。
     /// 跨 App 重启读这一行即可知道"上次什么时候拉的 / 拉了多少条 / 后端 ETag 是啥"，
-    /// ViewModel 据此判断 12h TTL。
+    /// ViewModel 据此判断 6h TTL。
     private static func createWeeklyBulkMeta(_ db: Database) throws {
         try db.create(table: "weekly_bulk_meta") { t in
             t.column("id", .text).primaryKey()                // 固定值 "singleton"

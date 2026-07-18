@@ -326,7 +326,7 @@ struct WeeklyBulkLanguageRecord: Codable, FetchableRecord, PersistableRecord, Eq
 /// `weekly_bulk_meta` 单行表行映射（PK = "singleton"）。
 ///
 /// 全表只有 1 行，存"上次什么时候拉的 / 拉了多少条 / 后端 ETag"，让 ViewModel 跨 App
-/// 重启都能读到 lastFetchedAt 判断 12h TTL。
+/// 重启都能读到 lastFetchedAt 判断 6h TTL。
 struct WeeklyBulkMetaRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
 
     /// 固定主键值——meta 表设计为只存一行，所有写入都用这个 id 覆写。

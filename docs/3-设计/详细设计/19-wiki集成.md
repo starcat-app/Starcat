@@ -276,6 +276,17 @@ Migration 沿用 trending 模式：`PRAGMA user_version` 自管版本号，V1 �
 | `error` | 30min | `expires_at = checked_at + 30m` |
 | `rate_limited` | 30min | 同上 |
 
+Starcat 客户端的 `DiskWikiCache` 是独立的跨重启读取缓存，不复用服务端 `expires_at`：
+
+| 客户端结果 | 客户端 TTL | 说明 |
+|---|---:|---|
+| 全部 `indexed` | 30d | 已确认链接长期稳定，减少重复读取 API |
+| 任一 `not_indexed` | 3d | 定期发现后续新收录 |
+| 空结果或任一 `unknown` | 6h | 契约漂移或探测中状态不做长缓存 |
+| 任一 `error` | 30min | 瞬态故障优先恢复，不能按未收录缓存 3 天 |
+
+客户端按以上优先级计算整份 snapshot 的 `nextProbeAt`；服务端仍按上表逐 source 管理 SWR，两级缓存职责不同但错误 / 未知语义一致。
+
 ### 4.3 缓存查询路径（v0.4 SWR stale-while-revalidate）
 
 > **v0.4 调整**：从"过期同步探测"改为 **SWR (stale-while-revalidate)** 模式——命中但过期时**立即返回 stale 数据**，后台异步刷新整张，保证客户端响应速度（dong4j 反馈点 1）。

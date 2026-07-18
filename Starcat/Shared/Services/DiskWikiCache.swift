@@ -2,7 +2,7 @@
 //  DiskWikiCache.swift
 //  Starcat
 //
-//  Wiki 探测结果磁盘缓存（2026-06-15 dong4j 拍板，形态 C = 磁盘 JSON + 双 TTL）。
+//  Wiki 探测结果磁盘缓存（2026-06-15 dong4j 拍板，形态 C = 磁盘 JSON + 分层 TTL）。
 //
 //  模块职责：
 //  - 把 `WikiAPI.fetchStatus(owner:repo:)` 一次往返拿到的 `[WikiStatusItem]` 落盘，
@@ -16,8 +16,8 @@
 //  关键设计（与搜索类磁盘缓存的差异 / 已踩过的坑）：
 //    1. **TTL 写进 snapshot 自身**：不像 AnySearch cache 用文件 mtime + 全局 TTL 常量
 //       判过期，本 cache 在 snapshot JSON 里直接存 `nextProbeAt`，read 时只看
-//       `now < nextProbeAt` 就够了。这样**双 TTL**（已收录 30 天 / 任一未收录 3 天）
-//       可以按"本次探测结果"动态计算，不需要为两种 TTL 拆目录。
+//       `now < nextProbeAt` 就够了。这样可以按结果分层（已收录 30 天 / 未收录 3 天 /
+//       未知 6 小时 / 错误 30 分钟），不需要为不同 TTL 拆目录。
 //    2. **零 LRU**：wiki 数据极小（每个 repo < 1KB，10000 repos < 10MB），TTL 自然
 //       控制重探频率，文件不会无限增长（一个 repo 永远只有一份 JSON）。**少一套机制
 //       少一套 bug**，与翻译缓存（50MB / 60d LRU）/ AnySearch cache（30MB LRU）的
@@ -77,7 +77,9 @@ struct WikiCacheSnapshot: Codable, Sendable, Equatable {
     /// 下一次重探时刻（UTC）。`now < nextProbeAt` → fresh；`now >= nextProbeAt` → stale。
     ///
     /// 计算规则（`Self.computeNextProbeAt`）：
-    /// - 任意 source 是 `not_indexed` / `error` / `unknown` → `now + 3 天`（让"新收录"能被发现）；
+    /// - 任意 source 是 `error` → `now + 30 分钟`（网络或上游故障应尽快恢复）；
+    /// - 空结果或任意 source 是 `unknown` → `now + 6 小时`（契约漂移 / 探测中不宜长时间缓存）；
+    /// - 任意 source 是 `not_indexed` → `now + 3 天`（让"新收录"能被发现）；
     /// - 全部 3 源都 `indexed` → `now + 30 天`（省 API）。
     let nextProbeAt: Date
 
@@ -95,19 +97,33 @@ struct WikiCacheSnapshot: Codable, Sendable, Equatable {
         now < nextProbeAt ? .fresh : .stale
     }
 
-    /// 根据探测结果算下一次重探时刻（双 TTL 策略）。
+    /// 根据探测结果算下一次重探时刻（分层 TTL 策略）。
     ///
     /// `nonisolated static`：纯函数，测试可从 sync 上下文直接断言。
     nonisolated static func computeNextProbeAt(
         items: [WikiStatusItem],
         now: Date = Date()
     ) -> Date {
-        let hasUnindexed = items.contains { item in
-            item.status != .indexed
+        if items.contains(where: { $0.status == .error }) {
+            return now.addingTimeInterval(errorTTL)
         }
+        let hasUnknown = items.isEmpty || items.contains { item in
+            if case .unknown = item.status { return true }
+            return false
+        }
+        if hasUnknown {
+            return now.addingTimeInterval(unknownTTL)
+        }
+        let hasUnindexed = items.contains { $0.status == .notIndexed }
         let ttl: TimeInterval = hasUnindexed ? shortTTL : longTTL
         return now.addingTimeInterval(ttl)
     }
+
+    /// 探测失败短 TTL：30 分钟。错误状态不能和明确未收录一样缓存 3 天。
+    nonisolated static let errorTTL: TimeInterval = 30 * 60
+
+    /// 空结果或未知状态 TTL：6 小时。给瞬态协议漂移或探测中状态留恢复窗口。
+    nonisolated static let unknownTTL: TimeInterval = 6 * 60 * 60
 
     /// 任一源未收录时的短 TTL：3 天。让"今天未收录、下周收录"的 repo 能被刷出来。
     nonisolated static let shortTTL: TimeInterval = 3 * 24 * 60 * 60

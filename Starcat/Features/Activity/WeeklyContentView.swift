@@ -26,17 +26,16 @@
 //    （缓存未命中走分页 API fallback）。两种模式 UI 完全无感知，只在 ViewModel 内做
 //    分支调度。
 //  - **入场策略**：① 先读 `WeeklyBulkRepository.cachedBulk()`；② 命中 → 立即上屏 +
-//    切到 `.local`；命中且 12h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
+//    切到 `.local`；命中且 6h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
 //    bulkSync 静默刷新（不阻塞 UI）；③ 未命中 → fallback 老分页 `fetchRepos(page=1)`
 //    立刻出图（200ms 级体感），同时后台启动 bulkSync 把 4000 条落盘；下次入场切 `.local`。
 //  - **切 source / sort / lang / 高级筛选**：`.local` 模式纯本地 filter + sort +
 //    客户端分页（瞬时无网络）；`.remote` 模式下高级筛选会先拉 bulk，再本地过滤，
 //    避免对远端分页第一页做不完整过滤导致 total 不准。
 //  - **主动刷新**：toolbar 刷新按钮 / pull-to-refresh 永远调 bulkSync（不论 dataSource），
-//    完成后强制切到 `.local`，让 12h TTL 重新计时。
-//  - **客户端 12h TTL**：判断在 ViewModel 层，Repository 不掺和；与 trending 24h TTL
-//    分层一致。weekly 数据更新慢（周一 00:00 UTC 周更）但聚合源多（zread + discovery
-//    天级），12h 是体感与新鲜度的平衡点。
+//    完成后强制切到 `.local`，让 6h TTL 重新计时。
+//  - **客户端 6h TTL**：判断在 ViewModel 层，Repository 不掺和；与后端 bulk 快照的
+//    6h 新鲜度窗口保持一致，避免客户端跨过一轮服务端刷新后仍继续展示旧快照。
 //
 
 import SwiftUI
@@ -785,10 +784,9 @@ final class WeeklyContentViewModel {
 
     // MARK: - Constants
 
-    /// 客户端 bulk 缓存 TTL（与 trending 24h 配套，但 weekly 数据更新频率更高所以更短）。
-    /// 与后端 60s TTL 配合形成两级缓存：客户端避免 12h 内重复打 server，server 避免
-    /// 60s 内重复 rebuild。
-    static let bulkTTL: TimeInterval = 12 * 60 * 60
+    /// 客户端 bulk 缓存 TTL，与后端 bulk 快照的 6h TTL 保持一致。
+    /// 两端采用相同新鲜度窗口，避免客户端继续展示已经跨过服务端刷新周期的旧快照。
+    static let bulkTTL: TimeInterval = 6 * 60 * 60
 
     /// `.local` 模式下客户端分页 page size（与后端 default page=20 对齐，让"切到 local
     /// 后滚动"与"remote 模式滚动"视觉体验一致）。
@@ -894,7 +892,7 @@ final class WeeklyContentViewModel {
     private var bulkAllItems: [WeeklyFeedItem] = []
     /// true 表示当前 `.local` 来自 SQLite 分页查询，而不是内存全量切片。
     private var usesPagedCache = false
-    /// 上次 bulk 拉取的客户端时间戳（用于判 12h TTL）。
+    /// 上次 bulk 拉取的客户端时间戳（用于判 6h TTL）。
     private(set) var lastBulkFetchedAt: Date?
 
     // MARK: - Dependencies
@@ -941,7 +939,7 @@ final class WeeklyContentViewModel {
             applyPagedCacheSnapshot(cached, page: 1, appending: false, bumpRevision: false)
             // Step 2: TTL 判断
             if isCacheFresh(at: cached.lastFetchedAt) {
-                return  // 12h 内，零网络上屏
+                return  // 6h 内，零网络上屏
             }
             // 缓存过期 → 后台静默刷新（不阻塞）
             Task { await self.silentBulkSync() }
@@ -1341,7 +1339,7 @@ final class WeeklyContentViewModel {
         )
     }
 
-    /// 12h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 12h 即新鲜）。
+    /// 6h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 6h 即新鲜）。
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
     }

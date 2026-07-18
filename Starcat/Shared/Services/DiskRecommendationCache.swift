@@ -17,9 +17,8 @@
 //    1. **key 用 `repoID: Int64` 而非 `owner/repo` 字符串**：RecommendAPI 的入参就是
 //       `repoID`（gh_repo_id），保持 key 与 API 同步省一次 join；且推荐不面向
 //       ephemeral repo（trending/weekly id=0），repoID > 0 是天然守卫。
-//    2. **TTL 比 wiki 短（24h / 1h vs wiki 30d / 3d）**：wiki 一旦 indexed 基本永久
-//       稳定，可走月级 TTL；推荐随用户 star 新 repo 会持续更新，**同一天内多次
-//       拉**才是合理预期（用户连续进详情页不应感知「数据永远不变」）。
+//    2. **TTL 按结果分层（有结果 7d / 空结果 1h）**：有结果的 embedding 推荐较稳定，
+//       一周重算一次足够；空结果可能只是后端尚未完成计算，短 TTL 便于尽快恢复。
 //    3. **不做 stale 后台刷新**：wiki 有 SWR 模式（cachedLinks + refreshInBackground
 //       并发去重）是因为 wiki 列表通常较稳定；推荐是"看到新东西"的发现型能力，
 //       stale 直接重新拉即可，不保留旧值。`RecommendationContextService` 提供
