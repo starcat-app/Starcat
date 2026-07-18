@@ -16,6 +16,8 @@
 
 APIS := sharing trending weekly wiki recommend discovery
 STATEFUL_APIS := sharing trending weekly wiki discovery
+# License API 独立维护 deploy/secrets/wipe/restore 入口；这里只将其纳入统一备份集合。
+BACKUP_APIS := $(STATEFUL_APIS) license
 FLY_APPS := $(foreach s,$(APIS),starcat-$(s)-api)
 SCRIPTS := scripts
 FLY_SECRETS_SYNC := bash $(SCRIPTS)/fly-secrets-sync.sh
@@ -26,7 +28,8 @@ FLY_RESTORE_DATA := bash $(SCRIPTS)/fly-restore-data.sh
 
 .PHONY: help fly-secrets-list fly-secrets-all fly-status-all fly-health-all fly-deploy-all
 .PHONY: $(foreach s,$(APIS),fly-secrets-$(s) fly-deploy-$(s) fly-status-$(s))
-.PHONY: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s) fly-backup-$(s) fly-restore-$(s))
+.PHONY: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s) fly-restore-$(s))
+.PHONY: $(foreach s,$(BACKUP_APIS),fly-backup-$(s))
 .PHONY: fly-backup-all
 
 help: ## 显示帮助
@@ -45,6 +48,7 @@ help: ## 显示帮助
 	@echo "  make fly-deploy-all         fly deploy --remote-only × 全部 App"
 	@echo "  make fly-backup-all         先建 Fly Volume Snapshot，再一致性备份 SQLite + /data"
 	@echo "  make fly-backup-weekly      创建平台快照后备份 starcat-weekly-api（无需停机）"
+	@echo "  make fly-backup-license     创建平台快照后备份 starcat-license-api（无需停机）"
 	@echo "  make fly-restore-trending   本地库/备份 tar 覆盖 Fly /data（需 LOCAL_DB 或 RESTORE_ARCHIVE）"
 	@echo "  make fly-wipe-data-all      ⚠️  SSH 清空有状态 App 的 /data 卷（删库重建）"
 	@echo ""
@@ -153,7 +157,7 @@ fly-deploy-discovery:
 
 # --- 备份持久化卷（/data → supports/backups/<app>/<timestamp>/）---
 
-fly-backup-all: $(foreach s,$(STATEFUL_APIS),fly-backup-$(s)) ## 顺序备份有状态 App /data
+fly-backup-all: $(foreach s,$(BACKUP_APIS),fly-backup-$(s)) ## 顺序备份全部已纳入备份的有状态 App /data
 	@echo "✓ 全部 backup 完成 → supports/backups/"
 
 fly-backup-sharing:
@@ -170,6 +174,9 @@ fly-backup-wiki:
 
 fly-backup-discovery:
 	$(FLY_BACKUP_DATA) starcat-discovery-api
+
+fly-backup-license:
+	$(FLY_BACKUP_DATA) starcat-license-api
 
 # --- 恢复持久化卷（本地 .db 或 backup tar → Fly /data）---
 

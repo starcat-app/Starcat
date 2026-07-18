@@ -11,6 +11,7 @@
 # 用法：
 #   bash supports/scripts/fly-backup-data.sh starcat-weekly-api
 #   bash supports/scripts/fly-backup-data.sh starcat-discovery-api
+#   bash supports/scripts/fly-backup-data.sh starcat-license-api
 #
 # 环境变量：
 #   FLY_BACKUP_ROOT        本地备份根目录（默认 supports/backups）
@@ -74,6 +75,7 @@ remote_db_path() {
     starcat-weekly-api) echo "/data/weekly.db" ;;
     starcat-wiki-api) echo "/data/wiki.db" ;;
     starcat-discovery-api) echo "/data/discovery.db" ;;
+    starcat-license-api) echo "/data/starcat-license-api.db" ;;
     *)
       echo "Error: unsupported stateful app: $APP" >&2
       exit 1
