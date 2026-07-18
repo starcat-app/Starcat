@@ -573,9 +573,8 @@ struct AISettingsTab: View {
     }
 
     private func taskModelRow(_ task: AIModelTask) -> some View {
-        // 2026-07-18 方案 B 修正：
-        // - 标签左、控件右（Spacer 推开），对齐系统设置行；
-        // - 模型下拉始终保留；勾选「使用自定义模型名」后在下一行单独出输入框。
+        // 2026-07-19：自定义模型改为「左 label + 右 Switch」；开启后下一行出加长输入框。
+        // 关闭开关只改 useCustomModel，不清空 customModelName。
         let currentProviderID = taskConfig(task).providerID
         let useCustom = taskConfig(task).useCustomModel
         let availableModels = enabledModels(
@@ -619,8 +618,10 @@ struct AISettingsTab: View {
 
             Divider()
 
-            Toggle("settings.ai.task.customToggle", isOn: taskCustomEnabledBinding(task))
-                .toggleStyle(.checkbox)
+            // 与「标签分类」同款：用 Toggle 自带的左标题 + 右开关，不要再套
+            // labelsHidden + 手写 HStack——后者在 Form 里会把开关撑得异常大、行高留白。
+            Toggle("settings.ai.task.customModelLabel", isOn: taskCustomEnabledBinding(task))
+                .toggleStyle(.switch)
                 .padding(.vertical, 8)
 
             if useCustom {
@@ -629,7 +630,7 @@ struct AISettingsTab: View {
                     TextField("", text: taskCustomModelBinding(task))
                         .textFieldStyle(.roundedBorder)
                         .disableAutocorrection(true)
-                        .frame(minWidth: 180, maxWidth: 320)
+                        .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -2456,7 +2457,8 @@ struct AISettingsTab: View {
             set: { modelName in
                 updateTask(task) { config in
                     config.modelID = modelName
-                    config.customModelName = modelName
+                    // 选列表模型时关掉自定义开关，但保留 customModelName，
+                    // 避免用户关掉/重开开关后发现上次手填内容被冲掉。
                     config.useCustomModel = false
                 }
             }
@@ -2469,7 +2471,7 @@ struct AISettingsTab: View {
             set: { enabled in
                 updateTask(task) { config in
                     config.useCustomModel = enabled
-                    // 勾选自定义时若尚未填过名字，用当前列表选中模型预填，避免空输入框。
+                    // 仅「开启且输入为空」时用当前列表模型预填；关闭开关绝不清空文本。
                     if enabled, config.customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         config.customModelName = config.modelID
                     }

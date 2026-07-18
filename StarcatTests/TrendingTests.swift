@@ -303,6 +303,24 @@ struct TrendingTests {
         #expect(vm.repos.count == 1)
     }
 
+    @MainActor
+    @Test("Trending 分类进入播放 row reveal，主动刷新不重复播放")
+    func categoryActivationRevealsRowsButRefreshSkipsReveal() async {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.activate(language: .all, sort: .recommended)
+        #expect(!vm.skipListRowReveal)
+
+        await vm.reload(cachePolicy: .forceNetwork)
+        #expect(vm.skipListRowReveal)
+    }
+
     // MARK: - 智能 revision 行为（2026-06-02 新增，配合"消除二次入场动画"改造）
 
     @MainActor

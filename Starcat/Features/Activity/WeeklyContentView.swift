@@ -511,8 +511,7 @@ struct WeeklyContentView: View {
                 }
                 .listRowReveal(
                     index: index,
-                    snapshotID: viewModel.itemsRevision,
-                    skipAnimation: true
+                    snapshotID: viewModel.itemsRevision
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)

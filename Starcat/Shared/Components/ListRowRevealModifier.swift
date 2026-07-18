@@ -24,8 +24,20 @@ extension View {
     ///   - snapshotID: 列表快照版本；快照变化时重新播放 reveal。
     ///   - skipAnimation: 少数调用方可显式跳过行动画（例如 Activity 切分类性能兜底）。
     ///     默认 false；排序切换 / 首次加载仍保留 reveal。
-    func listRowReveal(index: Int, snapshotID: Int, skipAnimation: Bool = false) -> some View {
-        modifier(ListRowRevealModifier(index: index, snapshotID: snapshotID, skipAnimation: skipAnimation))
+    ///   - replayAfterSnapshotCommit: 是否在快照变化后先提交一帧隐藏状态再播放。
+    ///     默认关闭，避免改变现有列表的分页 / 刷新行为；只给明确拥有“发布完成”触发器的列表启用。
+    func listRowReveal(
+        index: Int,
+        snapshotID: Int,
+        skipAnimation: Bool = false,
+        replayAfterSnapshotCommit: Bool = false
+    ) -> some View {
+        modifier(ListRowRevealModifier(
+            index: index,
+            snapshotID: snapshotID,
+            skipAnimation: skipAnimation,
+            replayAfterSnapshotCommit: replayAfterSnapshotCommit
+        ))
     }
 }
 
@@ -38,37 +50,80 @@ extension View {
 /// - `skipAnimation` 旁路只留给明确不应播放行动画的调用方；普通列表切换继续保留 reveal。
 ///   逻辑等价于 reduceMotion，但语义不同——这是性能兜底，不是无障碍诉求。
 private struct ListRowRevealModifier: ViewModifier {
+    /// 最大化主窗口时中栏首屏最多可见约 15 张卡片，只让这部分 row 参与 reveal。
+    /// 屏外 row 直接显示，避免滚动过程中继续积累延迟动画。
+    private static let animatedRowLimit = 15
+
     let index: Int
     let snapshotID: Int
     let skipAnimation: Bool
+    let replayAfterSnapshotCommit: Bool
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isVisible = false
+    @State private var revealGeneration = 0
 
     /// 是否跳过动画。
     ///
-    /// 首屏前 12 行足以表达渐进入场；List 预创建的屏外 rows 如果继续持有 delay/animation
+    /// 首屏前 15 行覆盖最大化窗口的可见卡片；List 预创建的屏外 rows 如果继续持有 delay/animation
     /// 状态，会在分类切换时放大主线程事务。屏外行直接显示，滚动体验也更稳定。
-    private var bypassAnimation: Bool { reduceMotion || skipAnimation || index >= 12 }
+    private var bypassAnimation: Bool {
+        reduceMotion || skipAnimation || index >= Self.animatedRowLimit
+    }
 
     func body(content: Content) -> some View {
         content
             .opacity(isVisible || bypassAnimation ? 1 : 0)
             .offset(y: isVisible || bypassAnimation ? 0 : 7)
-            .onAppear(perform: reveal)
+            .onAppear {
+                reveal(afterRenderCommit: false)
+            }
             .onChange(of: snapshotID) { _, _ in
-                reveal()
+                reveal(afterRenderCommit: replayAfterSnapshotCommit)
+            }
+            .onDisappear {
+                guard replayAfterSnapshotCommit else { return }
+                // 让已经离屏的 row 取消下一帧待执行的 reveal，避免快速切换后旧任务回写。
+                revealGeneration &+= 1
             }
     }
 
-    private func reveal() {
+    private func reveal(afterRenderCommit: Bool) {
+        guard afterRenderCommit else {
+            revealImmediately()
+            return
+        }
+
+        revealGeneration &+= 1
+        let generation = revealGeneration
+
         guard !bypassAnimation else {
             isVisible = true
             return
         }
 
         isVisible = false
-        let delay = min(Double(index % 14) * 0.012, 0.16)
+        // SwiftUI 可能合并同一轮更新里的 false -> true；非阻塞等待约一个显示帧，
+        // 让隐藏状态先有机会提交。只有首屏最多 15 个 row 会走到这里。
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(20))
+            guard generation == revealGeneration else { return }
+            animateReveal()
+        }
+    }
+
+    private func revealImmediately() {
+        guard !bypassAnimation else {
+            isVisible = true
+            return
+        }
+
+        isVisible = false
+        animateReveal()
+    }
+
+    private func animateReveal() {
+        let delay = min(Double(index % Self.animatedRowLimit) * 0.012, 0.17)
         withAnimation(.easeOut(duration: 0.22).delay(delay)) {
             isVisible = true
         }

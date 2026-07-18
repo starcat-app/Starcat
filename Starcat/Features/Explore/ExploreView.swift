@@ -166,6 +166,7 @@ private struct ExploreDiscoveryListView: View {
     @Environment(\.locale) private var locale
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
     @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
+    @State private var rowRevealRevision = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -219,6 +220,12 @@ private struct ExploreDiscoveryListView: View {
             guard hasPublishedCurrentQuery else { return }
             applySelectionPolicy()
             reportRepoCount()
+        }
+        .onChange(of: viewModel.publishedQueryIdentity) { _, publishedIdentity in
+            // reposRevision 会在骨架屏仍显示时提前变化；只有当前查询正式发布后才触发行动画。
+            // 分页和同查询刷新不会改变 published identity，因此不会重复播放首屏 reveal。
+            guard publishedIdentity == queryIdentity else { return }
+            rowRevealRevision &+= 1
         }
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled else { return }
@@ -394,8 +401,8 @@ private struct ExploreDiscoveryListView: View {
                 .focusEffectDisabled()
                 .listRowReveal(
                     index: item.index,
-                    snapshotID: viewModel.reposRevision,
-                    skipAnimation: true
+                    snapshotID: rowRevealRevision,
+                    replayAfterSnapshotCommit: true
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -523,7 +530,7 @@ private struct ExploreDiscoveryListView: View {
 
     private func repoRowIdentity(for repo: DiscoveryRepoDTO) -> String {
         // 同一个 repo 可能同时出现在发现 / 热门 / 新发布；把 mode 和 release 时间纳入
-        // row identity，避免 SwiftUI List 复用旧卡片导致新发布的发布时间 chip 不刷新。
+        // row 内容 identity，避免 SwiftUI List 复用旧卡片导致新发布的发布时间 chip 不刷新。
         "\(mode.id)-\(repo.repoID)-\(repo.latestReleaseAt ?? "__no_release__")"
     }
 

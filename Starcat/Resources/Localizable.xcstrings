@@ -42976,13 +42976,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "(No available model — test and fetch models, or enable custom model name)"
+            "value": "(No available model — test and fetch models, or turn on Custom model)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "（无可用模型，请测试并获取模型，或勾选「使用自定义模型名」）"
+            "value": "（无可用模型，请测试并获取模型，或开启「自定义模型」）"
           }
         }
       }
@@ -64079,6 +64079,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "提供商"
+          }
+        }
+      }
+    },
+    "settings.ai.task.customModelLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom model"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义模型"
           }
         }
       }

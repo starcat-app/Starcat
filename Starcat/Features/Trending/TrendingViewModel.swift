@@ -304,21 +304,21 @@ final class TrendingViewModel {
     ) async {
         selectedLanguage = language
         selectedSort = sort
-        await reload(cachePolicy: .respectTTL)
+        await reload(cachePolicy: .respectTTL, revealsRows: true)
     }
 
     /// 切换周期。所有查询条件变更都经由这里收敛，避免属性观察器隐式创建第二个任务。
     func selectPeriod(_ period: TrendingPeriod) async {
         guard selectedPeriod != period else { return }
         selectedPeriod = period
-        await reload(cachePolicy: .respectTTL)
+        await reload(cachePolicy: .respectTTL, revealsRows: true)
     }
 
     /// 切换语言。返回已访问桶时优先恢复会话内快照，不再重读 SQLite。
     func selectLanguage(_ language: TrendingLanguage) async {
         guard selectedLanguage != language else { return }
         selectedLanguage = language
-        await reload(cachePolicy: .respectTTL)
+        await reload(cachePolicy: .respectTTL, revealsRows: true)
     }
 
     /// 本地切换排序；排序和评分在 `TrendingListPipeline` actor 内完成。
@@ -386,13 +386,21 @@ final class TrendingViewModel {
     ///
     /// 注意：网络成功时 fetchTrending 已经 race-free（actor 内的 DB 写入是顺序的），
     /// 这里 ViewModel 层用 currentReloadTask 取消老任务即可。
-    func reload(cachePolicy: TrendingCachePolicy = .respectTTL) async {
+    func reload(
+        cachePolicy: TrendingCachePolicy = .respectTTL,
+        revealsRows: Bool = false
+    ) async {
         let identity = currentQueryIdentity
 
         // 相同桶的重复入口复用现有任务；主动刷新可以升级并替换自动 TTL 任务。
         if currentReloadIdentity == identity,
            let currentReloadTask,
            currentReloadPolicy == cachePolicy || currentReloadPolicy == .forceNetwork {
+            // 用户在同一查询仍刷新时切走再返回，继续复用数据任务，但不能吞掉本次
+            // 分类入场的 row reveal 请求；动画只影响 View，不会创建第二个网络任务。
+            if revealsRows {
+                skipListRowReveal = false
+            }
             await currentReloadTask.value
             return
         }
@@ -402,7 +410,9 @@ final class TrendingViewModel {
         let generation = reloadGeneration
         currentReloadIdentity = identity
         currentReloadPolicy = cachePolicy
-        skipListRowReveal = publishedQueryIdentity != nil
+        // Explore 进入趋势、切周期或切语言时，首屏应与星标分类一样播放 row reveal；
+        // 主动刷新仍跳过动画，避免同一份已显示内容因后台更新再次整批闪动。
+        skipListRowReveal = !revealsRows && publishedQueryIdentity != nil
         loadError = nil
 
         if hasPublishedCurrentQuery {
