@@ -42,12 +42,28 @@ private enum ExploreSidebarSelection: Hashable {
     case weeklyLanguage(String?)
 }
 
+/// 探索侧栏图标色：未选中用语义色；明亮主题选中时跟系统蓝底反成白色。
+///
+/// 为什么不用 `selection binding == tag`：macOS `List` 的蓝底高亮与 binding 写入不同步
+/// （按下即高亮、抬起才更新 selection；切换 mode 时下方 section 重建还会让旧行卡在白色
+/// 直到数据加载触发重绘）。`ShapeStyle.resolve` 读系统写入的 `backgroundProminence`，
+/// 与真实选中条对齐。黑暗主题语义色本身够亮，不改。
+private struct ExploreSidebarIconStyle: ShapeStyle {
+    let semanticColor: Color
+
+    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
+        if environment.backgroundProminence == .increased, environment.colorScheme == .light {
+            return AnyShapeStyle(.white)
+        }
+        return AnyShapeStyle(semanticColor)
+    }
+}
+
 struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
@@ -1330,17 +1346,14 @@ struct SidebarView: View {
         count: Int?,
         @ViewBuilder title: @escaping () -> Title
     ) -> some View {
-        // List 选中条在明亮主题是实心蓝底，文字会自动变白；但显式写入的语义色
-        // （尤其 cyan / green）不会跟着反色，蓝底上几乎看不见。暗色主题同色更亮，
-        // 对比度足够，只在 light + selected 时强制白色，与标题选中态对齐。
-        let isSelected = exploreSidebarSelectionBinding.wrappedValue == selection
-        let resolvedIconColor: Color = (isSelected && colorScheme == .light) ? .white : iconColor
-
-        return HStack(spacing: 8) {
+        HStack(spacing: 8) {
             if let icon {
                 Image(systemName: icon)
                     .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                    .foregroundStyle(resolvedIconColor)
+                    // 必须走 ShapeStyle.resolve(backgroundProminence)，不能手写 binding == selection：
+                    // macOS List 蓝底高亮与 selection binding 不同步（按下即高亮、抬起才写 binding；
+                    // 切换 mode 时下方 section 重建还会让旧行卡在「选中白」直到数据加载触发重绘）。
+                    .foregroundStyle(ExploreSidebarIconStyle(semanticColor: iconColor))
                     .frame(width: 16)
             }
 
