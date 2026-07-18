@@ -555,13 +555,16 @@ struct AISettingsTab: View {
                         title: { LocalizedStringKey($0.displayNameKey) }
                     )
                     .accessibilityLabel("settings.ai.task.pickerLabel")
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
 
                     Divider()
 
                     taskModelRow(taskModelTask)
+                        .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.ai.taskModels.title", systemImage: "slider.horizontal.3", isExpanded: $isTaskModelsExpanded)
@@ -570,12 +573,9 @@ struct AISettingsTab: View {
     }
 
     private func taskModelRow(_ task: AIModelTask) -> some View {
-        // 方案 B（2026-07-18）：标签列 + 控件列，与上方服务商配置同款扫读路径。
-        // - 提供商 / 模型 分两行，避免三个控件挤一行导致中间大空白；
-        // - 「使用自定义模型名」独立第三行；勾选后模型行控件位替换为 TextField，
-        //   不再额外蹦出一行输入框。
-        let labelWidth: CGFloat = 88
-        let columnSpacing: CGFloat = 14
+        // 2026-07-18 方案 B 修正：
+        // - 标签左、控件右（Spacer 推开），对齐系统设置行；
+        // - 模型下拉始终保留；勾选「使用自定义模型名」后在下一行单独出输入框。
         let currentProviderID = taskConfig(task).providerID
         let useCustom = taskConfig(task).useCustomModel
         let availableModels = enabledModels(
@@ -584,11 +584,7 @@ struct AISettingsTab: View {
         )
 
         return VStack(alignment: .leading, spacing: 0) {
-            taskModelLabeledRow(
-                label: "settings.ai.task.providerLabel",
-                labelWidth: labelWidth,
-                columnSpacing: columnSpacing
-            ) {
+            taskModelTrailingRow(label: "settings.ai.task.providerLabel") {
                 // HOM-AIPROVIDERS-2026-06-06：挂 provider logo，自定义 profile 名时仍能辨认服务商。
                 Picker("settings.ai.task.providerLabel", selection: taskProviderBinding(task)) {
                     ForEach(verifiedProfiles) { profile in
@@ -606,62 +602,49 @@ struct AISettingsTab: View {
 
             Divider()
 
-            taskModelLabeledRow(
-                label: "settings.ai.task.modelLabel",
-                labelWidth: labelWidth,
-                columnSpacing: columnSpacing
-            ) {
-                if useCustom {
-                    TextField(
-                        "settings.ai.task.customModelPlaceholder",
-                        text: taskCustomModelBinding(task)
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
-                } else {
-                    Picker("settings.ai.task.modelLabel", selection: taskModelBinding(task)) {
-                        if availableModels.isEmpty {
-                            Text("settings.ai.task.noAvailableModel")
-                                .tag("")
-                        } else {
-                            ForEach(availableModels) { model in
-                                Text(model.name).tag(model.name)
-                            }
+            taskModelTrailingRow(label: "settings.ai.task.modelLabel") {
+                Picker("settings.ai.task.modelLabel", selection: taskModelBinding(task)) {
+                    if availableModels.isEmpty {
+                        Text("settings.ai.task.noAvailableModel")
+                            .tag("")
+                    } else {
+                        ForEach(availableModels) { model in
+                            Text(model.name).tag(model.name)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
                 }
+                .pickerStyle(.menu)
+                .labelsHidden()
             }
 
             Divider()
 
-            // 勾选行：标签列留空，与上方控件列左缘对齐，语义挂在 checkbox 文案上。
-            HStack(alignment: .center, spacing: columnSpacing) {
-                Color.clear
-                    .frame(width: labelWidth)
-                Toggle("settings.ai.task.customToggle", isOn: taskCustomEnabledBinding(task))
-                    .toggleStyle(.checkbox)
-                    .fixedSize()
-                Spacer(minLength: 0)
+            Toggle("settings.ai.task.customToggle", isOn: taskCustomEnabledBinding(task))
+                .toggleStyle(.checkbox)
+                .padding(.vertical, 8)
+
+            if useCustom {
+                Divider()
+                taskModelTrailingRow(label: "settings.ai.task.customModelPlaceholder") {
+                    TextField("", text: taskCustomModelBinding(task))
+                        .textFieldStyle(.roundedBorder)
+                        .disableAutocorrection(true)
+                        .frame(minWidth: 180, maxWidth: 320)
+                }
             }
-            .padding(.vertical, 8)
         }
     }
 
-    /// 模型配置表格式单行：固定左标签列 + 右侧吃满剩余宽度的控件。
-    private func taskModelLabeledRow<Content: View>(
+    /// 设置行：左侧 label、右侧控件（一左一右）。
+    private func taskModelTrailingRow<Content: View>(
         label: LocalizedStringKey,
-        labelWidth: CGFloat,
-        columnSpacing: CGFloat,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        HStack(alignment: .center, spacing: columnSpacing) {
+        HStack(alignment: .center, spacing: 12) {
             Text(label)
-                .frame(width: labelWidth, alignment: .leading)
-                .lineLimit(1)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 12)
             content()
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
