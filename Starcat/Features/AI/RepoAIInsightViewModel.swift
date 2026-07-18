@@ -17,7 +17,7 @@
 //    `startBackgroundContextPrep(repo:)` 方法。打开 AI 面板时若 DB 里没有
 //    cached insight，就立刻起后台 prep（解析分支 → 下载 ZIP → pack context.xml），
 //    期间「生成摘要」按钮可点，UI 在按钮上方显示 step chip。`generate(repo:)`
-//    入口先 await prep 完成再进入主流程，保证 LLM 拿到最新 context。
+//    等待 prep 完成；用户也可按本次请求跳过，摘要直接使用 metadata + README。
 //
 
 import Foundation
@@ -29,7 +29,7 @@ import Observation
 /// 进度提示，而不是空白旋转 spinner。
 ///
 /// 两阶段区分点：
-///   - `preparingContext`：从 `generate(repo:)` 入口开始，直到收到第一个 streaming delta。
+///   - `preparingContext`：从 `generate(repo:)` 入口开始，到代码上下文完成或被跳过。
 ///     语义上只覆盖 makeSource 的代码上下文阶段，可展示精确步骤并允许本次跳过。
 ///   - `requestingSummary`：代码上下文已经完成或被用户跳过，正在收集其它材料并建立
 ///     LLM 请求；此时不能再取消代码上下文，避免“按钮点了但 XML 已经注入”的假反馈。
@@ -101,8 +101,15 @@ final class RepoAIInsightViewModel {
     private(set) var prepProgress: PrepProgress = .idle
 
     /// W4：当前进行中的后台 prep task。仅在 `prepProgress == .preparing(step:)` 期间非 nil。
-    /// 用户点「生成摘要」时 `generate(repo:)` 会先 `await prepTask?.value` 等其完成。
+    /// 用户点「生成摘要」后通过 continuation 等待；主动跳过会立即放行而不阻塞摘要。
     private var prepTask: Task<Void, Never>?
+
+    /// 标识当前后台 prep run，阻止已取消的旧 task 继续通过 progress callback 污染新状态。
+    private var prepRunID: UUID?
+
+    /// `generate` 等待后台 prep 的单个 continuation。主动跳过时立即 resume，让摘要主流程
+    /// 无需等待 ZIP 解压等同步工作走到下一个 cancellation checkpoint。
+    private var prepWaitContinuation: CheckedContinuation<Void, Never>?
 
     /// 本次摘要生成的请求级控制器。与后台 `prepTask` 分开：
     /// 前者阻止 `makeSource` 取消后重启 provider，后者只负责面板打开后的预热任务。
@@ -195,6 +202,9 @@ final class RepoAIInsightViewModel {
     private func startBackgroundContextPrep(repo: Repo) {
         // 防御：repo 切换时上一个 prep task 还没完，先 cancel 避免 chip 状态串到新 repo。
         prepTask?.cancel()
+        resumePrepWaiter()
+        let runID = UUID()
+        prepRunID = runID
         prepProgress = .preparing(step: .resolvingBranch)
         let service = self.service
 
@@ -208,20 +218,23 @@ final class RepoAIInsightViewModel {
                     // 改 prepProgress 即可。但因为外层 Task 没有强制 MainActor，这里
                     // 通过 MainActor.run 包一层保险（@Observable 必须主线程写）。
                     MainActor.assumeIsolated {
-                        guard let self else { return }
+                        guard let self, self.prepRunID == runID else { return }
                         self.prepProgress = .preparing(step: Self.mapStep(step))
                     }
                 }
             } catch is CancellationError {
                 // 用户主动停止 / repo 切换 cancel 都不应降级成失败态；调用方已经把
                 // prepProgress 收回 idle，旧 task 直接退出，避免异步回写污染新 UI。
+                await MainActor.run {
+                    self?.resumePrepWaiter()
+                }
                 return
             } catch {
                 outcome = .degraded(.networkUnavailable)
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard let self else { return }
+                guard let self, self.prepRunID == runID else { return }
                 switch outcome {
                 case .success:
                     // prep 完成。generate 路径会在 cache 命中分支里直接复用本地 xml，
@@ -237,6 +250,9 @@ final class RepoAIInsightViewModel {
                         "[RepoAIInsightViewModel] background prep degraded for \(repo.fullName, privacy: .public): \(String(describing: reason), privacy: .public)"
                     )
                 }
+                self.prepRunID = nil
+                self.prepTask = nil
+                self.resumePrepWaiter()
             }
         }
         prepTask = task
@@ -249,7 +265,9 @@ final class RepoAIInsightViewModel {
     func cancelContextPreparation(repo: Repo) {
         prepTask?.cancel()
         prepTask = nil
+        prepRunID = nil
         prepProgress = .idle
+        resumePrepWaiter()
         service.cleanupTemporaryContextPreparation(for: repo)
     }
 
@@ -265,9 +283,33 @@ final class RepoAIInsightViewModel {
         currentCodeContextRequest?.skip()
         prepTask?.cancel()
         prepTask = nil
+        prepRunID = nil
         prepProgress = .idle
         phase = .requestingSummary
+        resumePrepWaiter()
         service.cleanupTemporaryContextPreparation(for: repo)
+    }
+
+    /// 等待后台 prep 完成；用户主动跳过时由 `resumePrepWaiter()` 立即放行。
+    ///
+    /// 不能直接 `await prepTask.value`：ZIPFoundation 的某些同步区段只能在步骤边界响应
+    /// cancellation，UI 虽已显示“已跳过”，摘要却会继续等待，造成状态与真实执行脱节。
+    private func waitForBackgroundPrepUnlessSkipped(
+        request: RepoAICodeContextRequest
+    ) async {
+        guard case .preparing = prepProgress, !request.isSkipped else { return }
+        await withCheckedContinuation { continuation in
+            guard case .preparing = prepProgress, !request.isSkipped else {
+                continuation.resume()
+                return
+            }
+            prepWaitContinuation = continuation
+        }
+    }
+
+    private func resumePrepWaiter() {
+        prepWaitContinuation?.resume()
+        prepWaitContinuation = nil
     }
 
     /// W4：把 provider 给的 `RepoAIContextProgress` 映射成 ViewModel 自己的 `PrepStep`。
@@ -308,9 +350,7 @@ final class RepoAIInsightViewModel {
         // generate 主流程——LLM 必须拿到最新 context，不能在 ZIP 下载到一半时就发
         // 请求。现在 `isGenerating` / phase 已在 await 前写入，因此正文会展示真实 step，
         // 用户也可以在等待期间点击“跳过代码上下文并继续生成”。
-        if let task = prepTask {
-            _ = await task.value
-        }
+        await waitForBackgroundPrepUnlessSkipped(request: codeContextRequest)
 
         do {
             // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →

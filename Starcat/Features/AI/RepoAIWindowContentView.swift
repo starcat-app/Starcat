@@ -861,10 +861,10 @@ struct RepoAIWindowContentView: View {
     ///     "正在分析仓库代码结构"，避免用户以为 App 卡死
     private func preparingContextPlaceholder(vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Button {
-                    vm.skipCodeContextForCurrentGeneration(repo: repo)
-                } label: {
+            Button {
+                vm.skipCodeContextForCurrentGeneration(repo: repo)
+            } label: {
+                HStack(spacing: 6) {
                     Group {
                         if isPreparingContextRowHovered || isPreparingContextStopFocused {
                             Image(systemName: "stop.circle.fill")
@@ -876,19 +876,19 @@ struct RepoAIWindowContentView: View {
                     }
                     // spinner 与 stop 图标共用固定尺寸，hover 时正文不发生水平位移。
                     .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .focused($isPreparingContextStopFocused)
-                .accessibilityLabel(Text("ai.assistant.prep.skipCurrent.accessibility"))
-                .help("ai.assistant.prep.skipCurrent.accessibility")
 
-                Text("ai.assistant.summary.preparingContext")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
+                    Text("ai.assistant.summary.preparingContext")
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .focused($isPreparingContextStopFocused)
             .onHover { isPreparingContextRowHovered = $0 }
+            .accessibilityLabel(Text("ai.assistant.prep.skipCurrent.accessibility"))
+            .help("ai.assistant.prep.skipCurrent.accessibility")
 
             // 摘要点击后的正文加载态也展示三段真实步骤；active step 用 spinner，
             // 取消入口统一放在上面的文本行，避免同一区域出现两个停止按钮。
