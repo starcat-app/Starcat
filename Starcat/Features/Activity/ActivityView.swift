@@ -403,8 +403,8 @@ struct ActivityView: View {
     ///
     /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板 / v2.0 删时戳）：
     /// - `star` / `repository` / `suggestion` → `UnifiedRepoRow` 与 Manage/Trending/Weekly
-    ///   100% 视觉同构（badge 走 `.activityKind(category)`，
-    ///   头像角 kind icon 由 UnifiedRepoRow 承担；v2.0 已删右上 RelativeDateBadge）；
+    ///   100% 视觉同构；头像角 kind 标仅在 `selectedCategory == .all` 时挂上
+    ///   （单一分类下再标类型无辨识价值）；
     /// - 其它 kind（release 主体 = release name 而非 repo / announcement 无 repo）走老路径。
     ///
     /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
@@ -416,9 +416,10 @@ struct ActivityView: View {
         if let repo = item.repo, isUnifiedRowKind(item.kind) {
             // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
             // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
+            // 头像角 kind 标只在「全部分类」混排时有辨识意义；已切入单一分类再挂角标是冗余噪声。
             UnifiedRepoRow(
                 card: repo.asCardData(
-                    badge: .activityKind(item.category),
+                    badge: selectedCategory == .all ? .activityKind(item.category) : .none,
                     inlineMetadata: inlineMetadata(for: item),
                     isInLibrary: isInLibrary(repo.id),
                     openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)

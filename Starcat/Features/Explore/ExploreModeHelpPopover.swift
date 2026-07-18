@@ -57,6 +57,20 @@ extension ExploreMode {
     }
 }
 
+/// 探索侧栏 info 图标色：比正文 `.secondary` 再淡一档，避免和分类名抢视觉。
+///
+/// 明亮主题选中蓝底时反成半透明白（与 `ExploreSidebarIconStyle` 同机制）；
+/// 黑暗主题语义灰本身够用，不再强行漂白。`Color.secondary.opacity` 会随明暗主题自动适配。
+private struct ExploreModeInfoIconStyle: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
+        if environment.backgroundProminence == .increased, environment.colorScheme == .light {
+            return AnyShapeStyle(Color.white.opacity(0.68))
+        }
+        // 故意弱化：辅助说明入口，不是可读正文；比 `.secondary` 更淡但仍可辨认可点。
+        return AnyShapeStyle(Color.secondary.opacity(0.52))
+    }
+}
+
 /// 探索侧栏分类标题后的说明入口；按钮自身持有 popover 状态，不污染侧栏选择状态。
 struct ExploreModeInfoButton: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -70,13 +84,14 @@ struct ExploreModeInfoButton: View {
         } label: {
             Image(systemName: "info.circle")
                 .font(interfaceScale.font(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ExploreModeInfoIconStyle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(LocalizedStringKey(mode.helpOpenKey))
         .accessibilityLabel(Text(LocalizedStringKey(mode.helpOpenKey)))
-        .popover(isPresented: $isPresented, arrowEdge: .leading) {
+        // trailing：箭头贴在触发按钮右侧，弹层向右展开进中间栏，避免盖住侧栏分类列表。
+        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             ExploreModeHelpPopover(mode: mode)
                 .appLocaleEnvironment()
         }

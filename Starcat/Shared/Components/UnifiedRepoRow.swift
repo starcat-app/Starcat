@@ -274,13 +274,14 @@ struct UnifiedRepoRow: View {
         ZStack(alignment: .bottomTrailing) {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
             if case .activityKind(let category) = card.badge {
+                // 角标只在「全部分类」有辨识价值；尺寸刻意压到头像 ~1/4，避免抢 owner 头像。
                 Image(systemName: category.systemImage)
-                    .font(interfaceScale.font(.captionSmall, weight: .bold))
+                    .font(interfaceScale.font(size: 8, weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(3)
+                    .padding(2)
                     .background(Circle().fill(category.iconColor))
-                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
-                    .offset(x: 2, y: 2)
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+                    .offset(x: 1, y: 1)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -335,11 +336,14 @@ struct UnifiedRepoRow: View {
     private var sceneBadgeChip: some View {
         switch card.badge {
         case .trendingChange(let change):
+            // 与同行 Language / Stars / Forks 统一：captionSmall + 常规字重。
+            // 旧实现用 .code(12pt) + semibold，视觉上明显偏大偏粗。
             HStack(spacing: 3) {
                 Image(systemName: change >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(interfaceScale.font(.captionSmall, weight: .bold))
+                    .font(interfaceScale.font(.captionSmall))
                 Text("\(change >= 0 ? "+" : "")\(change.formattedShort)")
-                    .font(interfaceScale.font(.code, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall))
+                    .monospacedDigit()
             }
             .foregroundStyle(change >= 0 ? Color.green : Color.red)
             .padding(.horizontal, 6)

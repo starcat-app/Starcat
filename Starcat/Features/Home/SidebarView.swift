@@ -44,20 +44,9 @@ private enum ExploreSidebarSelection: Hashable {
 
 /// 探索侧栏图标色：未选中用语义色；明亮主题选中时跟系统蓝底反成白色。
 ///
-/// 为什么不用 `selection binding == tag`：macOS `List` 的蓝底高亮与 binding 写入不同步
-/// （按下即高亮、抬起才更新 selection；切换 mode 时下方 section 重建还会让旧行卡在白色
-/// 直到数据加载触发重绘）。`ShapeStyle.resolve` 读系统写入的 `backgroundProminence`，
-/// 与真实选中条对齐。黑暗主题语义色本身够亮，不改。
-private struct ExploreSidebarIconStyle: ShapeStyle {
-    let semanticColor: Color
-
-    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
-        if environment.backgroundProminence == .increased, environment.colorScheme == .light {
-            return AnyShapeStyle(.white)
-        }
-        return AnyShapeStyle(semanticColor)
-    }
-}
+/// 实现已收口到共享 `SidebarSemanticIconStyle`（星标 / 活动等 SF Symbol 行共用）。
+/// 语言 Devicon 不走反白，见 `LanguageIconView` 选中白底托盘。
+typealias ExploreSidebarIconStyle = SidebarSemanticIconStyle
 
 struct SidebarView: View {
 
@@ -618,12 +607,13 @@ struct SidebarView: View {
     private func exploreModeRow(_ mode: ExploreMode) -> some View {
         exploreSelectableRow(
             selection: .mode(mode),
-            icon: mode.systemImage,
-            iconColor: mode.sidebarIconColor,
             count: exploreModeCount(mode)
         ) {
+            exploreSidebarSystemIcon(mode.systemImage, color: mode.sidebarIconColor)
+        } title: {
             HStack(spacing: 5) {
                 Text(mode.titleKey)
+                    .lineLimit(1)
                 // 信息按钮紧跟分类名，计数仍由外层 row 固定在最右侧，避免五行对齐被打散。
                 ExploreModeInfoButton(mode: mode)
             }
@@ -795,9 +785,10 @@ struct SidebarView: View {
             activityCategoryLabel(category)
         } icon: {
             // Activity 分类使用系统语义图标，不复用 LanguageIconView，避免渲染出语言 logo。
+            // 明亮选中态反白：与探索「发现 / 趋势 / …」同一套 SidebarSemanticIconStyle。
             Image(systemName: category.systemImage)
                 .font(interfaceScale.font(size: 14, weight: .semibold))
-                .foregroundStyle(category.iconColor)
+                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: category.iconColor))
                 .frame(width: 16, height: 16)
         }
         .tag(category)
@@ -1256,10 +1247,13 @@ struct SidebarView: View {
         let code = topic?.code
         return exploreSelectableRow(
             selection: .topic(code),
-            icon: exploreTopicSystemImage(for: code),
-            iconColor: exploreTopicIconColor(for: code),
             count: dependencies.exploreCatalogStore.topicCount(for: code)
         ) {
+            exploreSidebarSystemIcon(
+                exploreTopicSystemImage(for: code),
+                color: exploreTopicIconColor(for: code)
+            )
+        } title: {
             if let topic {
                 exploreTopicTitle(topic)
             } else {
@@ -1317,71 +1311,84 @@ struct SidebarView: View {
         let code = platform?.code
         return exploreSelectableRow(
             selection: .platform(code),
-            icon: platform?.systemName ?? "square.stack.3d.up",
-            iconColor: .secondary,
             count: dependencies.exploreCatalogStore.platformCount(for: code)
         ) {
+            exploreSidebarSystemIcon(
+                platform?.systemName ?? "square.stack.3d.up",
+                color: .secondary
+            )
+        } title: {
             if let platform {
                 Text(verbatim: platform.label)
+                    .lineLimit(1)
             } else {
                 Text("explore.allPlatforms")
+                    .lineLimit(1)
             }
         }
     }
 
     private func exploreLanguageRow(_ language: DiscoveryLanguageDTO?) -> some View {
         let key = language?.key
+        // 语言 logo 不是 SF Symbol，不能塞进 systemImage 字符串；仍走 Label icon 槽，
+        // 与趋势/周刊语言行、星标主导航同一套 sidebar 图标列对齐。
         return exploreSelectableRow(
             selection: .language(key),
-            icon: nil,
-            iconColor: .secondary,
             count: dependencies.exploreCatalogStore.languageCount(for: key, mode: selectedExploreMode)
         ) {
             if let language {
-                HStack(spacing: 7) {
-                    exploreLanguageIcon(language)
-                    Text(verbatim: exploreLanguageTitle(language))
-                }
+                exploreLanguageIcon(language)
             } else {
-                HStack(spacing: 7) {
-                    AllLanguagesIcon(size: 14)
-                    Text("explore.allLanguages")
-                }
+                AllLanguagesIcon(size: 14)
+            }
+        } title: {
+            if let language {
+                Text(verbatim: exploreLanguageTitle(language))
+                    .lineLimit(1)
+            } else {
+                Text("explore.allLanguages")
+                    .lineLimit(1)
             }
         }
     }
 
-    private func exploreSelectableRow<Title: View>(
+    /// 探索侧栏 SF Symbol：语义色 + 明亮主题选中反白（见 `ExploreSidebarIconStyle`）。
+    @ViewBuilder
+    private func exploreSidebarSystemIcon(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(interfaceScale.font(.iconSmall, weight: .semibold))
+            // 必须走 ShapeStyle.resolve(backgroundProminence)，不能手写 binding == selection：
+            // macOS List 蓝底高亮与 selection binding 不同步（按下即高亮、抬起才写 binding；
+            // 切换 mode 时下方 section 重建还会让旧行卡在「选中白」直到数据加载触发重绘）。
+            .foregroundStyle(ExploreSidebarIconStyle(semanticColor: color))
+            .frame(width: 16, height: 16)
+    }
+
+    /// 与星标 / 活动侧栏一致：用 `Label` 走系统 sidebar 图标列，避免手写 HStack 把整行顶到更靠左。
+    private func exploreSelectableRow<Title: View, Icon: View>(
         selection: ExploreSidebarSelection,
-        icon: String?,
-        iconColor: Color,
         count: Int?,
-        @ViewBuilder title: @escaping () -> Title
+        @ViewBuilder icon: () -> Icon,
+        @ViewBuilder title: () -> Title
     ) -> some View {
-        HStack(spacing: 8) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                    // 必须走 ShapeStyle.resolve(backgroundProminence)，不能手写 binding == selection：
-                    // macOS List 蓝底高亮与 selection binding 不同步（按下即高亮、抬起才写 binding；
-                    // 切换 mode 时下方 section 重建还会让旧行卡在「选中白」直到数据加载触发重绘）。
-                    .foregroundStyle(ExploreSidebarIconStyle(semanticColor: iconColor))
-                    .frame(width: 16)
+        Label {
+            HStack(spacing: 4) {
+                title()
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                if let count {
+                    Text(count.formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
-
-            title()
-                .lineLimit(1)
-
-            Spacer(minLength: 4)
-
-            if let count {
-                Text(count.formatted())
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+        } icon: {
+            icon()
         }
-        .contentShape(Rectangle())
         .tag(selection)
     }
 
@@ -1555,7 +1562,9 @@ struct SidebarView: View {
             }
         } icon: {
             Image(systemName: item.systemImage)
-                .foregroundStyle(item.semanticIconColor ?? .secondary)
+                .foregroundStyle(
+                    SidebarSemanticIconStyle(semanticColor: item.semanticIconColor ?? .secondary)
+                )
         }
         .tag(item)
         // HOM-46 优化：鼠标悬停时预取相邻分类数据，降低点击后的感知延迟
@@ -1650,7 +1659,11 @@ struct SidebarView: View {
             }
         } icon: {
             Circle()
-                .fill(Color(hex: list.colorHex) ?? .accentColor)
+                .fill(
+                    SidebarSemanticIconStyle(
+                        semanticColor: Color(hex: list.colorHex) ?? .accentColor
+                    )
+                )
                 .frame(width: 14, height: 14)
         }
         .tag(item)
@@ -1691,8 +1704,13 @@ struct SidebarView: View {
             }
         } icon: {
             // 优先 user-defined SF Symbol；否则 fallback "tag.fill"
+            // 明亮选中反白，避免彩色 icon 叠在系统蓝底上看不清。
             Image(systemName: tag.icon ?? "tag.fill")
-                .foregroundStyle(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
+                .foregroundStyle(
+                    SidebarSemanticIconStyle(
+                        semanticColor: Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor
+                    )
+                )
         }
         .tag(item)
         // HOM-46 优化：hover 时预取相邻分类
@@ -1732,7 +1750,8 @@ struct SidebarView: View {
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            // 使用语言对应的彩色圆形图标
+            // 使用语言对应的彩色圆形图标。
+            // 选中可读性由 LanguageIconView 白底托盘处理（Devicon 不走 SF 反白）。
             if let lang = stat.languageOrNil, !lang.isEmpty {
                 LanguageIconView(language: lang, size: 14)
             } else {
