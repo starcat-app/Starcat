@@ -510,8 +510,10 @@ struct OpenAIClient: AIClientProtocol {
         let startedAt = Date().timeIntervalSince1970
         let resolvedModel = model?.nilIfBlank ?? configuration.embeddingModel
         let query = EmbeddingsQuery(input: .stringList(inputs), model: resolvedModel)
+        var capturedUsage: EmbeddingsResult.Usage?
         do {
             let result = try await client.embeddings(query: query)
+            capturedUsage = result.usage
             let vectors = result.data
                 .sorted { $0.index < $1.index }
                 .map { $0.embedding.map(Float.init) }
@@ -538,6 +540,7 @@ struct OpenAIClient: AIClientProtocol {
                 model: resolvedModel,
                 itemCount: inputs.count,
                 status: .cancelled,
+                usage: capturedUsage,
                 error: CancellationError()
             )
             throw CancellationError()
@@ -551,6 +554,7 @@ struct OpenAIClient: AIClientProtocol {
                 model: resolvedModel,
                 itemCount: inputs.count,
                 status: .failed,
+                usage: capturedUsage,
                 error: mappedError
             )
             throw mappedError
@@ -587,6 +591,7 @@ struct OpenAIClient: AIClientProtocol {
         model: String,
         itemCount: Int,
         status: AIUsageStatus,
+        usage: EmbeddingsResult.Usage?,
         error: Error
     ) async {
         await usageRecorder.record(AIUsageEventFactory.make(
@@ -594,9 +599,9 @@ struct OpenAIClient: AIClientProtocol {
             configuration: configuration,
             model: model,
             operation: .embedding,
-            inputTokens: nil,
-            outputTokens: nil,
-            totalTokens: nil,
+            inputTokens: usage?.promptTokens,
+            outputTokens: usage == nil ? nil : 0,
+            totalTokens: usage?.totalTokens,
             cachedInputTokens: nil,
             reasoningOutputTokens: nil,
             itemCount: itemCount,

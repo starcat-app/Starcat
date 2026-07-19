@@ -78,6 +78,29 @@ struct AIUsageCaptureTests {
         ))
     }
 
+    @Test("失败事件仍保留 Provider 已返回的 usage")
+    func failedResponsePreservesProviderUsage() {
+        let event = AIUsageEventFactory.make(
+            startedAt: 10,
+            completedAt: 11,
+            configuration: configuration,
+            model: "embedding-model",
+            operation: .embedding,
+            inputTokens: 48,
+            outputTokens: 0,
+            totalTokens: 48,
+            cachedInputTokens: nil,
+            reasoningOutputTokens: nil,
+            itemCount: 3,
+            status: .failed,
+            error: AIEmbeddingError.invalidResponse
+        )
+
+        #expect(event.status == AIUsageStatus.failed.rawValue)
+        #expect(event.totalTokens == 48)
+        #expect(event.usageSource == AIUsageSource.provider.rawValue)
+    }
+
     private var configuration: AIClientConfiguration {
         AIClientConfiguration(
             providerID: "profile-1",
