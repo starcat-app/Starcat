@@ -101,6 +101,28 @@ struct AIUsageCaptureTests {
         #expect(event.usageSource == AIUsageSource.provider.rawValue)
     }
 
+    @Test("取消终态不产生错误分类")
+    func cancellationHasNoErrorCategory() {
+        let event = AIUsageEventFactory.make(
+            startedAt: 10,
+            completedAt: 10.2,
+            configuration: configuration,
+            model: "chat-model",
+            operation: .chat,
+            inputTokens: nil,
+            outputTokens: nil,
+            totalTokens: nil,
+            cachedInputTokens: nil,
+            reasoningOutputTokens: nil,
+            itemCount: 1,
+            status: .cancelled,
+            error: CancellationError()
+        )
+
+        #expect(event.status == AIUsageStatus.cancelled.rawValue)
+        #expect(event.errorCategory == nil)
+    }
+
     private var configuration: AIClientConfiguration {
         AIClientConfiguration(
             providerID: "profile-1",

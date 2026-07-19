@@ -78,7 +78,9 @@ enum AIUsageEventFactory {
             itemCount: max(1, itemCount),
             usageSource: hasUsage ? AIUsageSource.provider.rawValue : AIUsageSource.unavailable.rawValue,
             status: status.rawValue,
-            errorCategory: error.map(errorCategory(for:))?.rawValue,
+            // 用户取消是独立终态，不属于 Provider / 网络错误；保持 NULL，避免错误分布
+            // 将主动取消混入 unknown。
+            errorCategory: status == .cancelled ? nil : error.map(errorCategory(for:))?.rawValue,
             correlationId: (usageContext ?? configuration.usageContext).correlationID
         )
     }
