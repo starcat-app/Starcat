@@ -6667,6 +6667,22 @@
         }
       }
     },
+    "ai.context.settings.maximumArchiveSize.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to complete repository ZIP downloads for AI Summary, AI Chat, Knowledge Base project context, CodeFlow, and CodebaseMemory. Processing stops when an archive exceeds this limit."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "影响 AI 摘要、AI 对话、知识库项目上下文、CodeFlow 和 CodebaseMemory 的完整仓库 ZIP 下载；压缩包超过此上限时将停止处理。"
+          }
+        }
+      }
+    },
     "ai.context.settings.tier1MaxLines": {
       "localizations": {
         "en": {
@@ -11551,6 +11567,39 @@
         }
       }
     },
+    "codeGraph.archiveLimit.adjust": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust Limit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整上限"
+          }
+        }
+      }
+    },
+    "codeGraph.archiveLimit.noticeFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads the complete repository ZIP. Archives over %lld MB are blocked; adjust this under AI Services → Code Context."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要下载完整仓库 ZIP；超过 %lld MB 将停止处理，可在「AI 服务 → 代码上下文」中调整。"
+          }
+        }
+      }
+    },
     "codeFlow.action.retry": {
       "extractionState": "manual",
       "localizations": {
@@ -11608,13 +11657,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Repository ZIP exceeds the current 100 MB download limit."
+            "value": "Repository ZIP exceeds the configured download limit."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仓库 ZIP 超过当前 100 MB 下载上限。"
+            "value": "仓库 ZIP 超过当前配置的下载上限。"
           }
         }
       }

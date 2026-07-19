@@ -42,6 +42,9 @@ struct CodebaseMemoryPanel: View {
                 VStack(alignment: .leading, spacing: 14) {
                     branchSection
                     versionBanner
+                    RepositoryArchiveLimitNotice(
+                        maximumArchiveMB: dependencies.settings.aiRepoContextMaximumArchiveMB
+                    )
                     overviewCard
 
                     if case .failed(let message) = viewModel.state {
@@ -385,13 +388,13 @@ struct CodebaseMemoryPanel: View {
             if viewModel.storedProject != nil, !viewModel.isRunning {
                 Button("codebaseMemory.panel.regenerate") {
                     guard requireAccess() else { return }
-                    viewModel.regenerate()
+                    viewModel.regenerate(maximumArchiveBytes: configuredMaximumArchiveBytes)
                 }
                 .disabled(!viewModel.canGenerate)
             }
             Button(actionTitle) {
                 guard requireAccess() else { return }
-                viewModel.start()
+                viewModel.start(maximumArchiveBytes: configuredMaximumArchiveBytes)
             }
             .buttonStyle(.borderedProminent)
             .disabled(viewModel.isRunning || (viewModel.storedProject == nil && !viewModel.canGenerate))
@@ -410,6 +413,11 @@ struct CodebaseMemoryPanel: View {
             }
             return "codebaseMemory.panel.start"
         }
+    }
+
+    /// 下载与持久解压必须共享同一运行时阈值，不能让缓存或第二阶段预检使用旧常量。
+    private var configuredMaximumArchiveBytes: Int {
+        dependencies.settings.aiRepoContextMaximumArchiveMB * 1_000_000
     }
 
     private var footerStatus: String {

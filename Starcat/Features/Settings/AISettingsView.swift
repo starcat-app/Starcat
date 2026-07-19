@@ -1863,7 +1863,10 @@ struct AISettingsTab: View {
                 ),
                 step: 1
             )
-            .disabled(!settings.aiRepoContextEnabled)
+            Text("ai.context.settings.maximumArchiveSize.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -7,10 +7,11 @@
 //  与 SourceZipExtractor 的关键差异：
 //  - 目标目录持久化（<codebasememory-root>/<owner>/<repo>/source/），不走 tmp
 //  - 幂等：写入 .zip.sha256 文件，二次调用时比较跳过解压
-//  - 安全参数与 SourceZipExtractor 同款（zipMaxBytes / allowUncontainedSymlinks / ZIP bomb）
+//  - 安全参数与 SourceZipExtractor 同款（运行时 ZIP 上限 / allowUncontainedSymlinks / ZIP bomb）
 //
 //  关键约束：
-//  - 复用 SharedSnapshotService 的 zipMaxBytes 常量（100MB）
+//  - 生产调用传入 AI「代码上下文」配置的 ZIP 上限，与下载阶段保持一致
+//  - 解压后上限按 ZIP 上限的 5 倍计算，避免提高下载上限后仍被旧 500MB 常量误拦截
 //  - 复用 SourceZipExtractor 已踩过的 allowUncontainedSymlinks: true 决策
 
 import CryptoKit
@@ -48,18 +49,21 @@ struct CodebaseMemoryExtractor: @unchecked Sendable {
     func extractIfNeeded(
         zipURL: URL,
         outputDirectory: URL,
+        maximumArchiveBytes: Int,
         fileManager overrideFM: FileManager? = nil
     ) async throws -> ExtractedSource {
         let fm = overrideFM ?? fileManager
 
-        // 1. 大小预检（100MB ZIP 上限，与 SharedSnapshotService.maximumArchiveBytes 对齐）
+        // 1. 再做一次运行时大小预检，避免缓存文件或非下载入口绕过用户配置。
         let zipSize = (try? fm.attributesOfItem(atPath: zipURL.path)[.size] as? Int) ?? 0
         guard zipSize > 0 else {
             throw CodebaseMemoryError.emptyArchive
         }
-        guard zipSize <= 104_857_600 else {
+        guard zipSize <= maximumArchiveBytes else {
             throw CodebaseMemoryError.archiveTooLarge(actualBytes: zipSize)
         }
+        let (scaledExtractedLimit, overflow) = maximumArchiveBytes.multipliedReportingOverflow(by: 5)
+        let maximumExtractedBytes = overflow ? Int.max : scaledExtractedLimit
 
         // 2. 计算 ZIP 的 SHA-256 并做幂等判断（CryptoKit, 对 100MB 文件 < 0.5s）
         let shaFileURL = outputDirectory.appendingPathComponent(".zip.sha256")
@@ -73,6 +77,11 @@ struct CodebaseMemoryExtractor: @unchecked Sendable {
            stored == zipSHA {
             let sourceDir = outputDirectory.appendingPathComponent("source", isDirectory: true)
             if fm.fileExists(atPath: sourceDir.path) {
+                // 用户调低阈值后，旧解压缓存也必须重新服从新的 5× 上限。
+                let cachedExtractedBytes = Self.directorySize(of: sourceDir, fileManager: fm)
+                guard cachedExtractedBytes <= maximumExtractedBytes else {
+                    throw CodebaseMemoryError.extractedTooLarge(actualBytes: cachedExtractedBytes)
+                }
                 return ExtractedSource(sourceURL: sourceDir, wasCached: true)
             }
         }
@@ -100,9 +109,9 @@ struct CodebaseMemoryExtractor: @unchecked Sendable {
             throw CodebaseMemoryError.indexFailed(underlying: error.localizedDescription)
         }
 
-        // 5. ZIP bomb 兜底（500MB 解压上限，同 SourceZipExtractor）
+        // 5. ZIP bomb 兜底。与 RepoContextPacker 一致按压缩包上限的 5 倍计算。
         let extractedBytes = Self.directorySize(of: sourceDir, fileManager: fm)
-        guard extractedBytes <= 524_288_000 else {
+        guard extractedBytes <= maximumExtractedBytes else {
             try? fm.removeItem(at: sourceDir)
             throw CodebaseMemoryError.extractedTooLarge(actualBytes: extractedBytes)
         }

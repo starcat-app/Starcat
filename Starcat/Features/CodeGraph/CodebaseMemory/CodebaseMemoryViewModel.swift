@@ -163,7 +163,7 @@ final class CodebaseMemoryViewModel {
         restoreCachedState()
     }
 
-    func start() {
+    func start(maximumArchiveBytes: Int) {
         task?.cancel()
         AppLog.ui.info("CodebaseMemory start requested repo=\(self.repo.fullName, privacy: .public) state=\(String(describing: self.state), privacy: .public) stored=\(self.storedProject?.id ?? "nil", privacy: .public) uiRunning=\((self.uiProcess?.isRunning ?? false), privacy: .public)")
         // `ready/succeeded` 只代表本次 ViewModel 持有一个仍在运行的 UI 进程。
@@ -186,13 +186,13 @@ final class CodebaseMemoryViewModel {
             task = Task { await openBrowser(port: port, url: url) }
             return
         }
-        generate(removingExisting: false)
+        generate(removingExisting: false, maximumArchiveBytes: maximumArchiveBytes)
     }
 
-    func regenerate() {
+    func regenerate(maximumArchiveBytes: Int) {
         task?.cancel()
         stopCurrentUI()
-        generate(removingExisting: true)
+        generate(removingExisting: true, maximumArchiveBytes: maximumArchiveBytes)
     }
 
     func cancel() {
@@ -204,7 +204,7 @@ final class CodebaseMemoryViewModel {
 
     // MARK: - 生成管线
 
-    private func generate(removingExisting: Bool) {
+    private func generate(removingExisting: Bool, maximumArchiveBytes: Int) {
         guard !selectedBranchName.isEmpty else {
             state = .failed(message: String.l10n("codeFlow.error.branchMissing"))
             return
@@ -281,7 +281,11 @@ final class CodebaseMemoryViewModel {
                 // Step 3: 拉 zipball（共享缓存，秒过）
                 state = .downloading
                 setStep(id: .download, status: .running)
-                let archive = try await snapshotService.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
+                let archive = try await snapshotService.archiveIfNeeded(
+                    repo: repo,
+                    commitSHA: branch.commitSHA,
+                    maximumBytes: maximumArchiveBytes
+                )
                 let byteText = ByteCountFormatter.string(fromByteCount: archive.bytes, countStyle: .file)
                 setStep(id: .download, status: .succeeded, detail: archive.wasDownloaded
                     ? String(format: String.l10n("codeFlow.runtime.cachedZipFormat"), byteText)
@@ -294,7 +298,11 @@ final class CodebaseMemoryViewModel {
                 setStep(id: .extract, status: .running)
                 let root = try storage.outputRootURL()
                 let outDir = storage.projectDirectory(root: root, owner: repo.owner, name: repo.name)
-                let source = try await extractor.extractIfNeeded(zipURL: archive.url, outputDirectory: outDir)
+                let source = try await extractor.extractIfNeeded(
+                    zipURL: archive.url,
+                    outputDirectory: outDir,
+                    maximumArchiveBytes: maximumArchiveBytes
+                )
                 setStep(id: .extract, status: .succeeded,
                         detail: source.wasCached ? "cached" : "extracted")
 

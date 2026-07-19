@@ -34,12 +34,34 @@ struct CodeFlowRunnerTests {
         let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: sha)
         defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
-        let result = try await runner.archiveIfNeeded(repo: repo, commitSHA: sha)
+        let result = try await runner.archiveIfNeeded(
+            repo: repo,
+            commitSHA: sha,
+            maximumBytes: SharedSnapshotService.maximumArchiveBytes
+        )
 
         #expect(result.wasDownloaded)
         #expect(try Data(contentsOf: result.url) == Data("zip-data".utf8))
         let requestedURLs = await downloader.requestedURLs
         #expect(requestedURLs == [URL(string: "https://api.github.com/repos/\(repo.owner)/codeflow/zipball/\(sha)")!])
+    }
+
+    @Test("CodeFlow 下载使用调用方传入的仓库 ZIP 上限")
+    func rejectsArchiveAboveConfiguredLimit() async throws {
+        let downloader = RecordingArchiveDownloader(data: Data("zip-data".utf8))
+        let runner = CodeFlowRunner(downloader: downloader, github: StubCodeFlowGitHubProvider())
+        let repo = makeRepo(owner: "starcat-limit-\(UUID().uuidString)", name: "codeflow")
+
+        do {
+            _ = try await runner.archiveIfNeeded(
+                repo: repo,
+                commitSHA: "configured-limit",
+                maximumBytes: 4
+            )
+            Issue.record("Expected configured archive limit to reject the download")
+        } catch CodeFlowError.archiveTooLarge {
+            // Expected.
+        }
     }
 
     @Test("同一 commit 已有 ZIP 时跳过网络下载")
@@ -52,7 +74,11 @@ struct CodeFlowRunnerTests {
         try makeZipHeader(firstEntry: "starcat-cache-demo-abc123/").write(to: archiveURL)
         defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
-        let result = try await runner.archiveIfNeeded(repo: repo, commitSHA: "abc123")
+        let result = try await runner.archiveIfNeeded(
+            repo: repo,
+            commitSHA: "abc123",
+            maximumBytes: SharedSnapshotService.maximumArchiveBytes
+        )
 
         #expect(!result.wasDownloaded)
         #expect(await downloader.requestedURLs.isEmpty)
@@ -84,7 +110,8 @@ struct CodeFlowRunnerTests {
             branch: branch,
             startedAt: Date(),
             steps: [],
-            previousGenerationCount: 2
+            previousGenerationCount: 2,
+            maximumBytes: SharedSnapshotService.maximumArchiveBytes
         )
 
         let html = try String(contentsOf: project.pageURL, encoding: .utf8)
@@ -93,6 +120,29 @@ struct CodeFlowRunnerTests {
         #expect(project.metadata.sourceRevision.commitSHA == branch.commitSHA)
         #expect(project.metadata.generation.generationCount == 3)
         #expect(try runner.existingProject(owner: repo.owner, name: repo.name)?.pageURL == project.pageURL)
+    }
+
+    @Test("CodeFlow HTML 注入阶段再次执行配置上限")
+    func pageGenerationRespectsConfiguredLimit() throws {
+        let fileManager = FileManager.default
+        let archiveURL = fileManager.temporaryDirectory
+            .appendingPathComponent("starcat-codeflow-page-limit-\(UUID().uuidString).zip")
+        try Data("zip-data".utf8).write(to: archiveURL)
+        defer { try? fileManager.removeItem(at: archiveURL) }
+
+        do {
+            _ = try CodeFlowRunner().makeVisualizationPage(
+                archive: CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: 8),
+                repo: makeRepo(owner: "starcat-limit", name: "codeflow"),
+                branch: CodeFlowBranch(name: "main", commitSHA: "configured-limit"),
+                startedAt: Date(),
+                steps: [],
+                maximumBytes: 4
+            )
+            Issue.record("Expected HTML generation to enforce the configured archive limit")
+        } catch CodeFlowError.archiveTooLarge {
+            // Expected.
+        }
     }
 
     @Test("CodeFlow 清理只删除生成物，不删除共享 ZIP")
@@ -104,13 +154,18 @@ struct CodeFlowRunnerTests {
         let runner = CodeFlowRunner(downloader: downloader, github: StubCodeFlowGitHubProvider(), storage: storage)
         let repo = makeRepo(owner: "starcat-delete-\(UUID().uuidString)", name: "demo")
         let sha = "abc123"
-        let archive = try await runner.archiveIfNeeded(repo: repo, commitSHA: sha)
+        let archive = try await runner.archiveIfNeeded(
+            repo: repo,
+            commitSHA: sha,
+            maximumBytes: SharedSnapshotService.maximumArchiveBytes
+        )
         let project = try runner.makeVisualizationPage(
             archive: archive,
             repo: repo,
             branch: CodeFlowBranch(name: "main", commitSHA: sha),
             startedAt: Date(),
-            steps: []
+            steps: [],
+            maximumBytes: SharedSnapshotService.maximumArchiveBytes
         )
         defer {
             try? fileManager.removeItem(at: root)

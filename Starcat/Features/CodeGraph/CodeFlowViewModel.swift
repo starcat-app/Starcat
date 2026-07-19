@@ -117,7 +117,7 @@ final class CodeFlowViewModel {
         Task { await checkSelectedBranchVersion() }
     }
 
-    func start() {
+    func start(maximumArchiveBytes: Int) {
         task?.cancel()
         if case .ready(let pageURL) = state {
             openExistingPage(pageURL)
@@ -127,12 +127,12 @@ final class CodeFlowViewModel {
             openExistingPage(pageURL)
             return
         }
-        generate(removingExisting: false)
+        generate(removingExisting: false, maximumArchiveBytes: maximumArchiveBytes)
     }
 
-    func regenerate() {
+    func regenerate(maximumArchiveBytes: Int) {
         task?.cancel()
-        generate(removingExisting: true)
+        generate(removingExisting: true, maximumArchiveBytes: maximumArchiveBytes)
     }
 
     func cancel() {
@@ -141,7 +141,7 @@ final class CodeFlowViewModel {
         restoreCachedState()
     }
 
-    private func generate(removingExisting: Bool) {
+    private func generate(removingExisting: Bool, maximumArchiveBytes: Int) {
         guard !selectedBranchName.isEmpty else {
             state = .failed(message: CodeFlowError.branchMissing.localizedDescription)
             return
@@ -171,7 +171,11 @@ final class CodeFlowViewModel {
                     id: "download",
                     runningDetail: String.l10n("codeFlow.runtime.downloadingZip")
                 ) {
-                    try await runner.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
+                    try await runner.archiveIfNeeded(
+                        repo: repo,
+                        commitSHA: branch.commitSHA,
+                        maximumBytes: maximumArchiveBytes
+                    )
                 } successDetail: { archive in
                     let bytes = Self.byteText(archive.bytes)
                     if archive.wasDownloaded {
@@ -191,7 +195,8 @@ final class CodeFlowViewModel {
                     branch: branch,
                     startedAt: startedAt,
                     steps: persistedSteps,
-                    previousGenerationCount: previousCount
+                    previousGenerationCount: previousCount,
+                    maximumBytes: maximumArchiveBytes
                 )
                 setStep(
                     id: "generatePage",

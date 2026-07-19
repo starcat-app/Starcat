@@ -32,6 +32,9 @@ struct CodeFlowPanel: View {
                 VStack(alignment: .leading, spacing: 14) {
                     branchSection
                     versionBanner
+                    RepositoryArchiveLimitNotice(
+                        maximumArchiveMB: dependencies.settings.aiRepoContextMaximumArchiveMB
+                    )
                     overviewCard
 
                     if case .failed(let message) = viewModel.state {
@@ -183,13 +186,13 @@ struct CodeFlowPanel: View {
             if viewModel.storedProject != nil, !isRunning {
                 Button("codeFlow.action.regenerate") {
                     guard requireCodeFlowAccess() else { return }
-                    viewModel.regenerate()
+                    viewModel.regenerate(maximumArchiveBytes: configuredMaximumArchiveBytes)
                 }
                     .disabled(!viewModel.canGenerate)
             }
             Button(actionTitle) {
                 guard requireCodeFlowAccess() else { return }
-                viewModel.start()
+                viewModel.start(maximumArchiveBytes: configuredMaximumArchiveBytes)
             }
                 .buttonStyle(.borderedProminent)
                 .disabled(isRunning || (viewModel.storedProject == nil && !viewModel.canGenerate))
@@ -203,6 +206,11 @@ struct CodeFlowPanel: View {
         case .downloading, .preparing, .opening: return true
         default: return false
         }
+    }
+
+    /// AppSettings 以十进制 MB 展示和持久化；下载与 HTML 注入阶段必须使用同一字节值。
+    private var configuredMaximumArchiveBytes: Int {
+        dependencies.settings.aiRepoContextMaximumArchiveMB * 1_000_000
     }
 
     private var actionTitle: LocalizedStringKey {
