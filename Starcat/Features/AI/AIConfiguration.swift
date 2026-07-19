@@ -258,6 +258,29 @@ extension AppSettings {
             parameters: effectiveParameters(for: task)
         )
     }
+
+    /// 设置页当前向量化配置的只读展示状态。
+    ///
+    /// UI 复用与真实请求相同的校验入口，避免模型名称为空时只渲染一块空白，或展示一个
+    /// 实际不能用于 Embedding 的 chat 模型。API Key 仍由创建客户端时校验，因为本地
+    /// Provider 可以合法地不需要 Key。
+    var embeddingConfigurationIssue: AIEmbeddingError? {
+        do {
+            _ = try resolveEmbeddingSelection()
+            return nil
+        } catch let error as AIEmbeddingError {
+            return error
+        } catch {
+            // `resolveEmbeddingSelection()` 当前只抛 AIEmbeddingError；保留兜底避免未来扩展
+            // 后 UI 把未知配置错误误判为“配置正常”。
+            return .requestFailed
+        }
+    }
+
+    /// 仅返回已经通过请求前校验的模型名称，供知识库概览和 Inspector 展示。
+    var configuredEmbeddingModelName: String? {
+        try? resolveEmbeddingSelection().modelName
+    }
 }
 
 /// Starcat 内置 AI 任务。
@@ -553,7 +576,7 @@ enum AIDefaultPrompts {
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
     /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
     /// - `{repoTags}`：当前仓库已绑定标签（强信号，逗号分隔，不带 label）；
-    /// - `{libraryTags}`：用户标签库高频前 30 个（弱信号，逗号分隔，不带 label）。
+    /// - `{libraryTags}`：字符预算内的用户标签库词表（按使用频率排序，逗号分隔）。
     ///
     /// **2026-06-14 v2 重命名**（dong4j 拍板，方案 C 全栈占位符归一化）：
     /// 旧两段点分式 `{output.language}` / `{repository.metadata}` / `{repository.readme}` /
@@ -564,7 +587,11 @@ enum AIDefaultPrompts {
     /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
     /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
     /// 占位符在 dict 中查不到时保留原文（让 LLM 看到字面量便于排错，不静默吞）。
-    static let tags = AIPromptConfiguration(
+    /// 2026-07-19 前发布的标签默认 Prompt。
+    ///
+    /// 只用于 `AppSettings` 做“旧默认值才升级”的精确比较；不能删除或修改，否则已经
+    /// 持久化旧默认 Prompt 的用户无法安全迁移，而真正的自定义 Prompt 又可能被误覆盖。
+    static let legacyTagsV1 = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's repository tagging assistant.
 
@@ -627,6 +654,79 @@ enum AIDefaultPrompts {
         {repoTags}
 
         Other frequently-used tags in your library (style hint, optional):
+        {libraryTags}
+        """
+    )
+
+    /// 复用优先的标签默认 Prompt（2026-07-19）。
+    ///
+    /// 与旧版“每次必须生成 3...8 个”不同，新版允许 0 个结果，并把标签库从风格参考
+    /// 提升为首选词表；只有词表确实无法表达仓库核心概念时才允许创建至多 1 个新标签。
+    /// 本地结果收敛仍会再次执行数量、置信度和同义形式约束，不能只信任模型自报遵守。
+    static let tags = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's repository tagging assistant. Your primary goal is to reuse the user's existing tag vocabulary and prevent tag-library growth.
+
+        # Output Format (STRICT)
+        Return strict JSON only in message.content. NO prose, NO markdown fences, NO reasoning traces, NO explanations outside the JSON.
+
+        Schema (failure to match this schema will cause the output to be rejected):
+        {
+          "suggestedTags": [
+            {"name": "string", "confidence": 0.0, "reason": "string"}
+          ]
+        }
+
+        Constraints:
+        - Return 0 to 3 tags total. Returning an empty array is correct when existing repository tags already cover the project or no high-confidence tag is justified.
+        - Reuse existing library tags whenever they express the same concept, even if you would normally choose a synonym.
+        - Copy a reused tag's spelling, capitalization, spacing, and punctuation EXACTLY from the provided vocabulary.
+        - Propose at most ONE tag that does not already exist in the provided vocabulary, and only when it represents an essential core concept that no existing tag covers.
+        - "confidence" MUST be a number in the closed interval [0, 1].
+        - "name" MUST be short (1-3 tokens), reusable across repositories, and suitable for a local tag system.
+        - "reason" should be one short sentence explaining why this tag fits this repository.
+        - Do not output duplicate, synonymous, broader-and-narrower, singular-and-plural, case-only, spacing-only, or hyphen-only variants in the same result.
+
+        # Tag Style Rules
+        Apply ONLY the branch matching {outputLanguage}:
+
+        - If {outputLanguage} is "Simplified Chinese" or "Traditional Chinese":
+          - New tag names must be no longer than 4 Chinese characters; use nouns or short technical terms only.
+          - Well-known technical English terms (e.g. RAG, LLM, GitHub, API) MAY remain in English.
+
+        - If {outputLanguage} is "English":
+          - New tag names must be a single domain word, abbreviation, or common technical term.
+          - New tag names MUST be in English; do NOT include non-ASCII characters.
+
+        - Otherwise (Japanese / Korean / others):
+          - Follow the same spirit: short nouns, no sentences. Well-known technical English terms may remain in English.
+
+        # Decision Order
+        1. Treat "Existing tags on this repository" as already-covered concepts. Do not suggest a synonym for them.
+        2. Search "Existing tag vocabulary" for reusable tags and copy matching names exactly.
+        3. If the repository is already sufficiently covered, return {"suggestedTags": []}.
+        4. Only if an essential concept remains uncovered, propose at most one genuinely new reusable tag.
+
+        # Output Language
+        The "reason" field MUST be written in {outputLanguage}.
+        Reused tag names retain the exact vocabulary spelling; only genuinely new names follow the language-specific style rules.
+        """,
+        userPromptTemplate: """
+        Suggest 0 to 3 reuse-first tags for the GitHub repository described below.
+
+        Repository metadata:
+        {metadata}
+
+        README:
+        {readme}
+
+        Code structure:
+        {codeContext}
+
+        Existing tags on this repository (already covered; do not generate synonyms):
+        {repoTags}
+
+        Existing tag vocabulary (reuse exact names whenever applicable):
         {libraryTags}
         """
     )

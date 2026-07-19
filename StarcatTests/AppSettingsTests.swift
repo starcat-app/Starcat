@@ -380,6 +380,38 @@ struct AppSettingsTests {
         #expect(s.aiRepoContextMaximumArchiveMB == AppSettings.defaultAIRepoContextMaximumArchiveMB)
     }
 
+    @Test("AI Tags: 已发布旧默认 Prompt 自动升级且保留模型配置")
+    func legacyDefaultTagsPromptMigrates() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+        var legacyTask = seeded.aiTagsTask
+        legacyTask.prompt = AIDefaultPrompts.legacyTagsV1
+        legacyTask.modelID = "custom-tag-model"
+        legacyTask.customModelName = "custom-tag-model"
+        seeded.aiTagsTask = legacyTask
+
+        let migrated = AppSettings(defaults: defaults).aiTagsTask
+        #expect(migrated.prompt == AIDefaultPrompts.tags)
+        #expect(migrated.modelID == "custom-tag-model")
+        #expect(migrated.customModelName == "custom-tag-model")
+
+        // 迁移结果必须写回 UserDefaults，否则每次启动都会重复走迁移。
+        #expect(AppSettings(defaults: defaults).aiTagsTask == migrated)
+    }
+
+    @Test("AI Tags: 用户自定义 Prompt 不被默认升级覆盖")
+    func customTagsPromptIsPreserved() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+        var customTask = seeded.aiTagsTask
+        customTask.prompt.systemPrompt += "\nUser custom rule"
+        seeded.aiTagsTask = customTask
+
+        let reloaded = AppSettings(defaults: defaults).aiTagsTask
+        #expect(reloaded.prompt == customTask.prompt)
+        #expect(reloaded.prompt != AIDefaultPrompts.tags)
+    }
+
     @Test("AI 代码上下文: ZIP 上限默认 50MB，可持久化且读取时钳制")
     func aiRepoContextMaximumArchiveSizePersistsAndClamps() {
         let defaults = makeIsolatedDefaults()
@@ -678,12 +710,16 @@ struct AppSettingsTests {
         #expect(throws: AIEmbeddingError.missingModel) {
             _ = try settings.resolveEmbeddingSelection()
         }
+        #expect(settings.embeddingConfigurationIssue == .missingModel)
+        #expect(settings.configuredEmbeddingModelName == nil)
 
         task.modelID = chatModel
         settings.aiEmbeddingTask = task
         #expect(throws: AIEmbeddingError.incompatibleModel(chatModel)) {
             _ = try settings.resolveEmbeddingSelection()
         }
+        #expect(settings.embeddingConfigurationIssue == .incompatibleModel(chatModel))
+        #expect(settings.configuredEmbeddingModelName == nil)
 
         task.useCustomModel = true
         task.customModelName = "custom-embedding-model"
@@ -691,18 +727,24 @@ struct AppSettingsTests {
         let customSelection = try settings.resolveEmbeddingSelection()
         #expect(customSelection.profile.id == profileID)
         #expect(customSelection.modelName == "custom-embedding-model")
+        #expect(settings.embeddingConfigurationIssue == nil)
+        #expect(settings.configuredEmbeddingModelName == "custom-embedding-model")
 
         profile.lastTestStatus = .failed("401")
         settings.aiProviderProfiles = [profile]
         #expect(throws: AIEmbeddingError.providerUnavailable) {
             _ = try settings.resolveEmbeddingSelection()
         }
+        #expect(settings.embeddingConfigurationIssue == .providerUnavailable)
+        #expect(settings.configuredEmbeddingModelName == nil)
 
         task.providerID = "removed-provider"
         settings.aiEmbeddingTask = task
         #expect(throws: AIEmbeddingError.missingProvider) {
             _ = try settings.resolveEmbeddingSelection()
         }
+        #expect(settings.embeddingConfigurationIssue == .missingProvider)
+        #expect(settings.configuredEmbeddingModelName == nil)
     }
 
     @Test("AI: 工作台入口先校验 Pro，再校验对话模型")

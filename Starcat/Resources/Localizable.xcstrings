@@ -27274,6 +27274,38 @@
         }
       }
     },
+    "rag.workspace.index.embeddingModel.configure": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure embedding model"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置向量模型"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.embeddingModel.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not configured or invalid"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未配置或配置无效"
+          }
+        }
+      }
+    },
     "rag.workspace.index.health": {
       "localizations": {
         "en": {
@@ -27338,6 +27370,22 @@
         }
       }
     },
+    "rag.workspace.index.issues.pendingAfterFailureFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last index refresh failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近一次索引刷新失败：%@"
+          }
+        }
+      }
+    },
     "rag.workspace.index.issues.pendingReason": {
       "localizations": {
         "en": {
@@ -27350,6 +27398,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待生成向量"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.issues.currentModelFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current model: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前模型：%@"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.issues.previousModelFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous model: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原模型：%@"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.issues.reasonFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reason: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原因：%@"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.issues.sectionFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Section: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "章节：%@"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.issues.sourcePrefix": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source: "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源："
           }
         }
       }

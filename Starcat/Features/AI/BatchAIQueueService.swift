@@ -399,7 +399,7 @@ final class BatchAIQueueService {
             throw RepoAIInsightError.invalidJSON  // 复用现有 error 类型；不应发生
         }
 
-        // 标签生成 hints：repo 自身标签（强信号）+ 全库高频前 30（弱信号）。
+        // 标签生成 hints：repo 自身标签（强信号）+ 字符预算内的全库复用词表。
         // 与单仓 AI 摘要应用标签路径（RepoAIInsightViewModel.generate）共享
         // `RepoAIInsightService.makeTagHints` 工厂方法，信号源单一信任源；
         // 详细约束见 `AITagHints` + `makeTagHints` 注释。
@@ -408,7 +408,7 @@ final class BatchAIQueueService {
         // 2026-06-14 修订（dong4j 反馈）：原版只用 `tagRepository.fetchAll().prefix(50).map(\.name)`，
         // 漏掉了 repo 自身标签——这些 repo 专属标签往往不在全局 Top 50 里，AI 看不到 →
         // 大概率生成同义新标签，与用户已有的 repo 标签重复。helper 现在显式拉 repo 自身标签
-        // 单独排前面强信号注入，全库标签去重后仅作风格参考弱信号注入。
+        // 单独排前面强信号注入，全库标签按使用频率排序、canonical 去重后作为复用词表。
         let hints: AITagHints
         if options.actions.contains(.tags) {
             hints = await RepoAIInsightService.makeTagHints(
@@ -483,51 +483,47 @@ final class BatchAIQueueService {
         onTagsChanged?()
     }
 
-    /// 把通过阈值过滤的建议落库为 repo_tags 关联。
-    /// 重复使用 RepoAIInsightViewModel 的 findOrCreate 模式：先按 name 查找，
-    /// 不存在则新建一个最小 Tag（无颜色、默认图标）。
+    /// 把通过阈值过滤的建议落库为 repo_tags 关联，但只允许复用已有标签。
+    ///
+    /// 批量自动应用没有逐项人工确认，不能因为模型自报高置信度就静默扩张标签库；真正的
+    /// 新标签仍保留在 AI 建议里，用户可回到详情页手动确认。这里使用宽松 canonical key，
+    /// 让 `Open-Source` / `open source` 等形式差异复用已有记录。
     private func applyTagsToRepo(repoId: Int64, suggestions: [AITagSuggestion]) async -> [String] {
+        let existingTags: [Tag]
+        do {
+            existingTags = try await tagRepository.fetchAll()
+        } catch {
+            AppLog.ai.error("[batch-ai] load existing tags failed: repo=\(repoId, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
+            return []
+        }
+
+        var existingTagByName: [String: Tag] = [:]
+        var existingTagByKey: [String: Tag] = [:]
+        for tag in existingTags {
+            existingTagByName[tag.name] = tag
+            let key = AITagSuggestionPolicy.canonicalKey(tag.name)
+            guard !key.isEmpty, existingTagByKey[key] == nil else { continue }
+            existingTagByKey[key] = tag
+        }
+
         var applied: [String] = []
         for suggestion in suggestions {
-            let normalized = suggestion.name
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            guard !normalized.isEmpty else { continue }
+            let normalized = AITagSuggestionPolicy.normalizedDisplayName(suggestion.name)
+            let key = AITagSuggestionPolicy.canonicalKey(normalized)
+            guard !normalized.isEmpty,
+                  let tag = existingTagByName[normalized] ?? existingTagByKey[key]
+            else {
+                AppLog.ai.notice("[batch-ai] skip new tag during auto-apply: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public)")
+                continue
+            }
             do {
-                let tag = try await findOrCreateTag(named: normalized)
                 try await repoTagRepository.addTag(repoId: repoId, tagId: tag.id)
-                applied.append(normalized)
+                applied.append(tag.name)
             } catch {
                 AppLog.ai.error("[batch-ai] apply tag failed: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
             }
         }
         return applied
-    }
-
-    /// 找到同名标签直接复用；否则按 `TagAutoVisual` 共享算法挑色 + 挑图标后落库。
-    ///
-    /// 视觉算法（FNV-1a 稳定哈希、不同位段挑色和图标、不能用 `String.hashValue`）
-    /// 已抽到 `TagAutoVisual.pick(for:)`，与单仓 AI 摘要应用标签路径
-    /// （`RepoAIInsightViewModel.findOrCreateTag`）共用。详见该枚举注释。
-    private func findOrCreateTag(named name: String) async throws -> Tag {
-        if let existing = try await tagRepository.findByName(name) {
-            return existing
-        }
-        let now = ISO8601DateFormatter.shared.string(from: Date())
-        let visual = TagAutoVisual.pick(for: name)
-        let tag = Tag(
-            id: UUID().uuidString,
-            name: name,
-            color: visual.colorHex,
-            icon: visual.iconName,
-            sortOrder: 0,
-            isPreset: false,
-            parentId: nil,
-            createdAt: now,
-            updatedAt: now
-        )
-        try await tagRepository.create(tag)
-        return tag
     }
 
     /// 处理单个 job 的失败：分流"重试" vs "终态失败"。

@@ -329,7 +329,7 @@ final class RepoAIInsightViewModel {
             // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →
             // 容易生成「向量搜索 / Vector Search / 向量检索」这种同义不同名标签。
             // 与批量 AI 整理路径走同一份 `RepoAIInsightService.makeTagHints` 工厂，
-            // 信号源单一：repo 自身标签（强信号）+ 全库高频前 30（弱信号），见 helper 注释。
+            // 信号源单一：repo 自身标签（强信号）+ 字符预算内的全库复用词表，见 helper 注释。
             // includeTags == false 时不构造 hints，节省两次 DB 查询。
             let hints: AITagHints = includeTags
                 ? await RepoAIInsightService.makeTagHints(
@@ -484,11 +484,21 @@ final class RepoAIInsightViewModel {
 
     /// 找到同名标签直接复用；否则按 `TagAutoVisual` 共享算法挑色 + 挑图标后落库。
     ///
-    /// 视觉与「批量 AI 整理」（`BatchAIQueueService`）走同一份 FNV-1a 算法，确保
-    /// AI 推荐路径上自动建出来的标签风格统一，且同名标签每次新建落到同一 (颜色, 图标)。
+    /// 只有详情页的人工确认路径允许新建；批量 AI 整理只复用已有标签。新建时继续走
+    /// `TagAutoVisual` 的 FNV-1a 算法，保证同名标签稳定落到同一 (颜色, 图标)。
     /// 详细约束见 `TagAutoVisual` 注释。
     private func findOrCreateTag(named name: String) async throws -> Tag {
         if let existing = try await tagRepository.findByName(name) {
+            return existing
+        }
+        // SQLite `name` 唯一约束默认区分大小写；AI 即使只改了大小写 / 空格 / 连字符，
+        // 精确查询也会 miss 并创建重复项。手动确认新建前先做一次 AI 专用宽松匹配，
+        // 仅当词表里确实没有等价形式时才继续创建。
+        let key = AITagSuggestionPolicy.canonicalKey(name)
+        let allTags = try await tagRepository.fetchAll()
+        if let existing = allTags.first(where: {
+            AITagSuggestionPolicy.canonicalKey($0.name) == key
+        }) {
             return existing
         }
         let now = ISO8601DateFormatter.shared.string(from: Date())

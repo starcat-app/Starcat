@@ -441,6 +441,8 @@ private final class KnowledgeRAGBrowserViewModel {
     }
 
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
+    var configuredEmbeddingModelName: String? { dependencies.settings.configuredEmbeddingModelName }
+    var embeddingConfigurationIssue: AIEmbeddingError? { dependencies.settings.embeddingConfigurationIssue }
     var selectedCandidate: RAGRepoCandidate? { candidates.first(where: { $0.repo.id == selectedRepoID }) }
     var selectedIndex: RAGKnowledgeRepositoryIndex? { selectedRepoID.flatMap { indexes[$0] } }
     var managedItems: [KnowledgeRAGBrowserManagedItem] {
@@ -1404,18 +1406,7 @@ private struct KnowledgeRAGBrowserView: View {
         let isCoverageComplete = knowledgeRepos > 0 && indexedRepos >= knowledgeRepos
 
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("rag.browser.overview.model")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Text(viewModel.embeddingModel)
-                    .font(interfaceScale.font(.caption, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(viewModel.embeddingModel)
-            }
+            knowledgeOverviewEmbeddingModelRow
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1471,6 +1462,39 @@ private struct KnowledgeRAGBrowserView: View {
                     issueColor: viewModel.indexStatus.staleChunks > 0 ? .purple : nil
                 )
             }
+        }
+    }
+
+    /// 索引概览不能用空字符串表示配置异常，否则用户既不知道原因，也找不到恢复入口。
+    /// 这里与 Inspector 共用同一套配置预检结果，并直达向量化任务模型设置。
+    @ViewBuilder
+    private var knowledgeOverviewEmbeddingModelRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("rag.browser.overview.model")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            if let modelName = viewModel.configuredEmbeddingModelName {
+                Text(modelName)
+                    .font(interfaceScale.font(.caption, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(modelName)
+            } else {
+                Button("rag.workspace.index.embeddingModel.configure") {
+                    settingsNavigation("ai.embedding")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+
+        if let issue = viewModel.embeddingConfigurationIssue {
+            Text(issue.localizedDescription)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

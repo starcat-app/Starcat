@@ -225,6 +225,72 @@ struct RepoAIInsightTests {
         #expect(tags[0].name == "local-ai")
     }
 
+    @Test("AI Tags: 本地策略优先复用标准拼写并限制新标签")
+    func normalizesTagSuggestionsAgainstVocabulary() {
+        let raw = [
+            AITagSuggestion(name: "  open source ", confidence: 0.95, reason: "  开源项目  "),
+            AITagSuggestion(name: "ai", confidence: 0.94, reason: "AI 相关"),
+            AITagSuggestion(name: "SWIFT", confidence: 0.93, reason: "Swift 项目"),
+            AITagSuggestion(name: "new-domain", confidence: 0.92, reason: "新领域"),
+            AITagSuggestion(name: "another-new", confidence: 0.91, reason: "另一个新领域"),
+            AITagSuggestion(name: "Open_Source", confidence: 0.90, reason: "重复形式"),
+            AITagSuggestion(name: "invalid", confidence: 1.2, reason: "越界置信度")
+        ]
+
+        let normalized = AITagSuggestionPolicy.normalizedSuggestions(
+            raw,
+            vocabulary: ["Open-Source", "AI", "Swift"]
+        )
+
+        // 已有标签优先占据 3 个槽位；大小写 / 空白 / 连字符形式恢复为词表标准名称。
+        #expect(normalized.map(\.name) == ["Open-Source", "AI", "Swift"])
+        #expect(normalized[0].reason == "开源项目")
+    }
+
+    @Test("AI Tags: 已有标签不足时至多保留一个新标签")
+    func limitsNewTagSuggestions() {
+        let normalized = AITagSuggestionPolicy.normalizedSuggestions(
+            [
+                AITagSuggestion(name: "AI", confidence: 0.95, reason: "已有"),
+                AITagSuggestion(name: "new-domain", confidence: 0.94, reason: "首个新标签"),
+                AITagSuggestion(name: "another-new", confidence: 0.93, reason: "第二个新标签")
+            ],
+            vocabulary: ["AI"]
+        )
+
+        #expect(normalized.map(\.name) == ["AI", "new-domain"])
+    }
+
+    @Test("AI Tags: 全库词表不再固定截断到 Top 30")
+    func tagHintsIncludeVocabularyBeyondThirty() async throws {
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let repoTagRepository = GRDBRepoTagRepository(database: database)
+        try await database.insertRepoFixture(id: 1)
+
+        try await tagRepository.create(.fixture(id: "repo-ai", name: "AI"))
+        try await repoTagRepository.addTag(repoId: 1, tagId: "repo-ai")
+        for index in 0..<40 {
+            try await tagRepository.create(.fixture(
+                id: "tag-\(index)",
+                name: String(format: "tag-%02d", index)
+            ))
+        }
+        // 与 repo 已有 AI 仅大小写不同，不能再次进入全库词表。
+        try await tagRepository.create(.fixture(id: "lower-ai", name: "ai"))
+
+        let hints = await RepoAIInsightService.makeTagHints(
+            for: makeRepo(id: 1),
+            repoTagRepository: repoTagRepository,
+            tagRepository: tagRepository
+        )
+
+        #expect(hints.repoTags == ["AI"])
+        #expect(hints.libraryTags.count == 40)
+        #expect(!hints.libraryTags.contains("ai"))
+        #expect(hints.libraryTags.contains("tag-39"))
+    }
+
     @MainActor
     @Test("AI 输出语言跟随 Starcat Display Language")
     func outputLanguageFollowsDisplayLanguage() {
@@ -266,6 +332,35 @@ struct RepoAIInsightTests {
         #expect(englishKey.contains("lang:English|"))
         #expect(chineseKey.contains("lang:Simplified Chinese|"))
         #expect(englishKey != chineseKey)
+    }
+
+    private func makeRepo(id: Int64) -> Repo {
+        Repo(
+            id: id,
+            owner: "owner",
+            name: "repo",
+            fullName: "owner/repo",
+            description: nil,
+            language: nil,
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/owner/repo",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: true,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
     }
 
     @MainActor

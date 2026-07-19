@@ -65,6 +65,8 @@ struct RAGWorkspaceInspector: View {
     @State private var isClearDebugTracesConfirmationPresented = false
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
+    /// 待处理 / 失败 / 过期共用同一套列表行 hover，ID 只在当前展开抽屉内生效。
+    @State private var hoveredIndexIssueChunkID: Int64?
     @State private var hoveredIndexBuildStageID: String?
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isKnowledgeMetadataRowHovered = false
@@ -3600,18 +3602,40 @@ struct RAGWorkspaceInspector: View {
                 .frame(height: 7)
                 .animation(.easeInOut(duration: 0.18), value: readyChunks)
 
-            // 当前向量模型决定 ready/stale 口径：换模型后旧分片会整体判为过期，这里让用户随时可核对。
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("rag.browser.overview.model")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Text(viewModel.embeddingModel)
+            embeddingModelConfigurationRow
+        }
+    }
+
+    /// 当前向量模型决定 ready/stale 口径。配置无效时不能留空，也不能继续把无效模型
+    /// 当作当前模型展示；提供直达「AI 设置 → 模型配置 → 向量化」的恢复入口。
+    @ViewBuilder
+    var embeddingModelConfigurationRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("rag.browser.overview.model")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            if let modelName = viewModel.configuredEmbeddingModelName {
+                Text(modelName)
                     .font(ragFont(.caption, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(modelName)
+            } else {
+                Button("rag.workspace.index.embeddingModel.configure") {
+                    settingsNavigation("ai.embedding")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
+        }
+
+        if let issue = viewModel.embeddingConfigurationIssue {
+            Text(issue.localizedDescription)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -3723,25 +3747,12 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(chunks, id: \.id) { chunk in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
-                                .font(ragFont(.caption, weight: .semibold))
-                            Text(indexIssueSourceTitle(chunk.source))
-                                .font(ragFont(.caption2))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath)
-                                .font(ragFont(.caption2))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        indexIssueReason(kind, chunk: chunk)
-                            .font(ragFont(.caption2))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 3)
+                ForEach(Array(chunks.enumerated()), id: \.element.id) { indexedChunk in
+                    indexIssueChunkRow(
+                        kind,
+                        chunk: indexedChunk.element,
+                        rowIndex: indexedChunk.offset
+                    )
                 }
             }
             if viewModel.hasMoreIndexIssueChunks(kind) {
@@ -3758,17 +3769,107 @@ struct RAGWorkspaceInspector: View {
         .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 7))
     }
 
+    /// 三类问题分片共享同一列表结构：每一行只承载一个语义字段，避免窄 Inspector
+    /// 把仓库名、来源和章节路径挤在同一行。斑马纹负责连续扫描，hover 只增强当前行。
+    func indexIssueChunkRow(
+        _ kind: RAGIndexIssueKind,
+        chunk: RAGChunk,
+        rowIndex: Int
+    ) -> some View {
+        let isHovered = chunk.id.map { hoveredIndexIssueChunkID == $0 } ?? false
+        let section = chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath
+
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .help(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+
+            (Text("rag.workspace.index.issues.sourcePrefix") + Text(indexIssueSourceTitle(chunk.source)))
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.sectionFormat"),
+                section
+            ))
+            .font(ragFont(.caption2))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help(section)
+
+            indexIssueReason(kind, chunk: chunk)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(
+            isHovered
+                ? Color.accentColor.opacity(0.08)
+                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
+            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+        )
+        .onHover { hovering in
+            if hovering {
+                hoveredIndexIssueChunkID = chunk.id
+            } else if hoveredIndexIssueChunkID == chunk.id {
+                hoveredIndexIssueChunkID = nil
+            }
+        }
+        .onDisappear {
+            if hoveredIndexIssueChunkID == chunk.id {
+                hoveredIndexIssueChunkID = nil
+            }
+        }
+    }
+
     @ViewBuilder
     func indexIssueReason(_ kind: RAGIndexIssueKind, chunk: RAGChunk) -> some View {
         switch kind {
         case .pending:
-            Text("rag.workspace.index.issues.pendingReason")
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.reasonFormat"),
+                pendingIndexIssueReason()
+            ))
         case .failed:
-            Text(userFacingEmbeddingFailure(chunk.embeddingError))
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.reasonFormat"),
+                userFacingEmbeddingFailure(chunk.embeddingError)
+            ))
         case .stale:
-            Text("rag.workspace.index.issues.staleReason")
-            Text("\(chunk.embeddingModel ?? "-") → \(viewModel.embeddingModel)")
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.reasonFormat"),
+                String.l10n("rag.workspace.index.issues.staleReason")
+            ))
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.previousModelFormat"),
+                chunk.embeddingModel ?? String.l10n("rag.workspace.index.embeddingModel.unavailable")
+            ))
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.currentModelFormat"),
+                viewModel.configuredEmbeddingModelName
+                    ?? String.l10n("rag.workspace.index.embeddingModel.unavailable")
+            ))
         }
+    }
+
+    /// 一批 embedding 请求失败后 builder 会停止，尚未领取的分片仍是 pending。
+    /// 这时“等待生成向量”会掩盖真正阻塞原因，应明确显示最近一次索引失败。
+    func pendingIndexIssueReason() -> String {
+        if let issue = viewModel.embeddingConfigurationIssue {
+            return issue.localizedDescription
+        }
+        if case .failed(let lastFailure) = viewModel.indexingStatus {
+            return String(
+                format: String.l10n("rag.workspace.index.issues.pendingAfterFailureFormat"),
+                userFacingEmbeddingFailure(lastFailure)
+            )
+        }
+        return String.l10n("rag.workspace.index.issues.pendingReason")
     }
 
     /// 旧版本把 Provider 错误体的 SDK 解码失败原样存入 `embedding_error`，看起来像是

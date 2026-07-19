@@ -873,7 +873,13 @@ final class RepoAIInsightService {
             parameters: settings.effectiveParameters(for: task),
             responseFormat: .jsonObject
         ))
-        return try Self.decodeTagSuggestions(json: response.content)
+        let decoded = try Self.decodeTagSuggestions(json: response.content)
+        // Prompt 是概率约束，不能直接作为写库边界。repo 标签排在词表前面，确保历史
+        // 同义形式冲突时优先沿用当前仓库已经绑定的标准拼写。
+        return AITagSuggestionPolicy.normalizedSuggestions(
+            decoded,
+            vocabulary: hints.repoTags + hints.libraryTags
+        )
     }
 
     /// `{outputLanguage}` 占位符的 Display Language 派发。
@@ -931,7 +937,7 @@ final class RepoAIInsightService {
         return "lang:\(outputLanguage)|summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
 
-    /// 为标签生成构造双层 hints：repo 自身已绑定标签（强信号） + 用户标签库其它高频标签（弱信号）。
+    /// 为标签生成构造双层 hints：repo 自身已绑定标签（强信号） + 用户标签库复用词表。
     ///
     /// **必须由两条调用入口共享**——`RepoAIInsightViewModel.generate(...)`（单仓 AI 摘要应用标签）
     /// 与 `BatchAIQueueService.processSingle(...)`（批量 AI 整理）。两边必须走同一份提示构造逻辑，
@@ -942,22 +948,21 @@ final class RepoAIInsightService {
     /// 1. 拉 `repo` 当前已绑定标签（一般 ≤10 个，全部传入；强信号）。
     /// 2. 拉全库标签 + 全库使用次数 dict，按 (使用次数 DESC, name ASC) 稳定排序。
     /// 3. 从全库标签中**剔除已在 repo 上**的项（避免与 repoTags 重复占字符 / 信号矛盾）。
-    /// 4. 截断到 `libraryLimit`（默认 30，dong4j 2026-06-14 拍板：≤40 个不挤压 README，
-    ///    避免 prompt 偏向风格匹配过强）。
+    /// 4. 按 canonical key 去重后填充到 `libraryCharacterBudget`，避免词表无限挤占上下文。
     ///
     /// **稳定性约束**：
-    /// - 两个 list 都按 `(useCount DESC, name ASC)` 排序——不用 `Set → Array` 顺序不稳的
-    ///   桶序，避免同一份输入产生不同 source.hash 让 AI 摘要缓存失效。
+    /// - repo list 按 name 排序，全库 list 按 `(useCount DESC, name ASC)` 排序；不用
+    ///   `Set → Array` 的不稳定桶序，确保同一份输入生成同一份 Prompt。
     /// - 任一 repository 抛错时降级为空数组（标签生成是辅助优化项，不能因此阻断 AI 摘要主流程）。
     ///
     /// **参数**：
-    /// - `libraryLimit` 默认 30，可由 caller 调整；过大 (>50) 会让 prompt 偏向"风格匹配"信号
-    ///   稀释「优先在 repo 已有里复用」的强信号；过小 (<10) 又失去"参考其它命名颗粒度"的价值。
+    /// - `libraryCharacterBudget` 默认 12K，可由测试 / caller 调整；当前约 900 个短标签可
+    ///   完整进入词表，未来增长时仍保持有界。
     static func makeTagHints(
         for repo: Repo,
         repoTagRepository: any RepoTagRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
-        libraryLimit: Int = 30
+        libraryCharacterBudget: Int = 12_000
     ) async -> AITagHints {
         async let repoTagsResult: [Tag] = {
             (try? await repoTagRepository.fetchTags(forRepo: repo.id)) ?? []
@@ -979,22 +984,46 @@ final class RepoAIInsightService {
             let cleaned = repoTags
                 .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
-            return Array(Set(cleaned)).sorted()
+                .sorted()
+            var seenKeys: Set<String> = []
+            return cleaned.filter {
+                let key = AITagSuggestionPolicy.canonicalKey($0)
+                return !key.isEmpty && seenKeys.insert(key).inserted
+            }
         }()
 
-        // 全库标签：剔除 repo 已有项 → 按 (useCount DESC, name ASC) 排 → 截断。
-        let repoNameSet = Set(repoNames)
-        let libraryNames: [String] = allTags
+        // 全库标签：剔除 repo 已有项 → 按 (useCount DESC, name ASC) 排 → 按字符预算截断。
+        // 旧版只传 Top 30，模型看不到大量长尾标签，因而不断创造同义新词。标签名本身很短，
+        // 用字符预算比固定数量更贴近 Prompt 体积：当前约 900 个标签仍可完整放入 12K；
+        // 将来词表继续增长时也不会无界挤占 README / code context。
+        let repoNameKeys = Set(repoNames.map(AITagSuggestionPolicy.canonicalKey))
+        let sortedLibraryNames: [String] = allTags
             .map { (name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines), id: $0.id) }
-            .filter { !$0.name.isEmpty && !repoNameSet.contains($0.name) }
+            .filter {
+                !$0.name.isEmpty
+                    && !repoNameKeys.contains(AITagSuggestionPolicy.canonicalKey($0.name))
+            }
             .sorted { lhs, rhs in
                 let lc = counts[lhs.id] ?? 0
                 let rc = counts[rhs.id] ?? 0
                 if lc != rc { return lc > rc }
                 return lhs.name < rhs.name
             }
-            .prefix(max(0, libraryLimit))
             .map(\.name)
+
+        var libraryNames: [String] = []
+        var seenKeys = repoNameKeys
+        var usedCharacters = 0
+        let budget = max(0, libraryCharacterBudget)
+        for name in sortedLibraryNames {
+            let key = AITagSuggestionPolicy.canonicalKey(name)
+            guard !key.isEmpty, seenKeys.insert(key).inserted else { continue }
+            // 与实际 `joined(separator: ", ")` 一致计入分隔符，避免边界附近超预算。
+            let additionalCharacters = name.count + (libraryNames.isEmpty ? 0 : 2)
+            guard usedCharacters + additionalCharacters <= budget else { continue }
+            libraryNames.append(name)
+            usedCharacters += additionalCharacters
+        }
 
         return AITagHints(repoTags: repoNames, libraryTags: libraryNames)
     }

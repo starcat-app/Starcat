@@ -96,6 +96,7 @@ struct AISettingsTab: View {
     // 选模型"完整路径时不需要手动展开折叠组。
     @SceneStorage("settings.ai.discoveredModels.expanded") private var isDiscoveredModelsExpanded: Bool = false
     @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
+    private static let taskModelsSettingsAnchor = "settings.ai.taskModels"
     /// 「自动整理」分组的展开偏好。默认折叠——与同 Tab 内其他 DisclosureGroup
     /// （已发现模型 / 模型配置 / Prompt / AI 索引 / AI 代码上下文）的默认折叠风格统一，
     /// 避免设置页一进来一堆分组同时展开造成视觉拥挤；用户主动展开后由 SceneStorage 持久化。
@@ -157,6 +158,7 @@ struct AISettingsTab: View {
             providerSection
             enabledModelsSection
             taskModelsSection
+                .id(Self.taskModelsSettingsAnchor)
             promptSection
             // HOM-126 follow-up (dong4j 反馈 2026-06-07)：
             // 自动整理分类放到 Prompt 之后——按"配置链路从上到下"顺序排：
@@ -195,6 +197,15 @@ struct AISettingsTab: View {
             // Settings 首次创建时 Form 的滚动容器要到下一轮 RunLoop 才完成布局。
             DispatchQueue.main.async {
                 proxy.scrollTo(Self.repoContextSettingsAnchor, anchor: .top)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIEmbeddingSection)) { _ in
+            // 入口语义是“配置向量模型”：展开模型配置并直接切换到向量化任务，
+            // 避免用户还要在 AI 设置里二次寻找目标。
+            isTaskModelsExpanded = true
+            taskModelTask = .embedding
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.taskModelsSettingsAnchor, anchor: .top)
             }
         }
         // HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):

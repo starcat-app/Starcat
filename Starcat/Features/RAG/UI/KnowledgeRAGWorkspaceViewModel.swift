@@ -563,7 +563,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
     /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
     var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
-    var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
+    var configuredEmbeddingModelName: String? { dependencies.settings.configuredEmbeddingModelName }
+    var embeddingConfigurationIssue: AIEmbeddingError? { dependencies.settings.embeddingConfigurationIssue }
     var errorMessage: String? {
         didSet {
             if errorMessage == nil { workspaceError = nil }
@@ -3982,8 +3983,14 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func refreshIndexCoverage() async throws {
         indexStatus = try await dependencies.knowledgeRAGIndexBuilder.coverage()
-        indexIssueChunks = [:]
-        indexIssueHasMore = []
+
+        // 索引通知到达时，已经展开的问题抽屉必须刷新第一页，不能直接清空缓存：
+        // 展开状态归 Inspector 所有，ViewModel 清空后不会触发再次加载，最终会把
+        // “缓存被清空”误画成“暂无匹配分片”。用已有 key 作为已加载集合，既避免
+        // 未展开类别的额外查询，也让状态变化后的列表与顶部计数保持一致。
+        for kind in Array(indexIssueChunks.keys) {
+            await loadIndexIssueChunks(kind)
+        }
     }
 
     /// 面板初次展示与知识库边界/索引变化后都从固定 SQL 重新读取。失败不能影响问答或索引刷新；
