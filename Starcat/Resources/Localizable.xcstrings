@@ -37249,6 +37249,23 @@
         }
       }
     },
+    "repo.card.aiSummaryAvailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summary available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有 AI 摘要"
+          }
+        }
+      }
+    },
     "repo.card.alreadyStarred": {},
     "repo.card.inLibrary": {
       "extractionState": "manual",

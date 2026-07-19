@@ -56,7 +56,7 @@ struct KnowledgeRAGCoreTests {
         #expect(metadata.readsTags && metadata.readsMetadataSnapshot)
     }
 
-    @Test("单仓摘要读取只返回该仓库最新记录")
+    @Test("单仓与批量摘要读取都按仓库返回最新记录")
     func latestSummaryForRepository() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 7_001)
@@ -86,7 +86,39 @@ struct KnowledgeRAGCoreTests {
 
         #expect(try await repository.fetchLatest(repoId: 7_001)?.model == "newer")
         #expect(try await repository.fetchLatest(repoId: 9_999) == nil)
+        let latestPerRepo = try await repository.fetchLatestPerRepo()
+        #expect(latestPerRepo.count == 2)
+        #expect(latestPerRepo[7_001]?.model == "newer")
+        #expect(latestPerRepo[7_002]?.model == "other-repo")
+        #expect(try await repository.fetchRepoIDsWithSummary() == [7_001, 7_002])
     }
+
+    @Test("Repo 列表摘要标识在用户数据库切换后丢弃旧账号记录")
+    @MainActor
+    func repoListSummaryAvailabilityResetsAcrossDatabases() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 7_001)
+        let repository = GRDBAISummaryRepository(database: database)
+        try await repository.upsert(.init(
+            repoId: 7_001,
+            model: "anonymous-summary",
+            sourceHash: "anonymous",
+            summaryJson: "{}",
+            generatedAt: "2026-07-19T00:00:00Z"
+        ))
+
+        let availability = RepoListAISummaryAvailability()
+        await availability.reload(from: repository)
+        #expect(availability.contains(7_001))
+
+        try await database.reopen(userId: 42)
+        availability.resetForDatabaseChange()
+        await availability.reload(from: repository)
+
+        #expect(!availability.contains(7_001))
+        #expect(availability.repoIDs.isEmpty)
+    }
+
     @Test("README 重建使用有界并发且进度按完成数单调递增")
     func readmeRebuildUsesBoundedConcurrencyWithStableProgress() async throws {
         let probe = RAGBoundedConcurrencyProbe()

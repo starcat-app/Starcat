@@ -131,6 +131,10 @@ struct UnifiedRepoRow: View {
     /// 因此会关闭该标记；主窗口等原有场景继续使用默认值。
     let showReadStatusBadge: Bool
 
+    /// 当前仓库是否至少存在一份 AI 摘要。
+    /// 默认关闭，只有星标管理列表显式注入，避免 Trending / Weekly 等共享行误显示本地状态。
+    let hasAISummary: Bool
+
     /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
     let trailingReservedWidth: CGFloat
@@ -143,6 +147,7 @@ struct UnifiedRepoRow: View {
         showStarredCheckmark: Bool = false,
         showLibraryBadge: Bool = true,
         showReadStatusBadge: Bool = true,
+        hasAISummary: Bool = false,
         trailingReservedWidth: CGFloat = 0
     ) {
         self.card = card
@@ -151,6 +156,7 @@ struct UnifiedRepoRow: View {
         self.showStarredCheckmark = showStarredCheckmark
         self.showLibraryBadge = showLibraryBadge
         self.showReadStatusBadge = showReadStatusBadge
+        self.hasAISummary = hasAISummary
         self.trailingReservedWidth = trailingReservedWidth
     }
 
@@ -311,6 +317,18 @@ struct UnifiedRepoRow: View {
             StarsBadge(count: card.starsCount, style: .full)
             if includeForks {
                 MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: .secondary)
+            }
+            if hasAISummary {
+                // 与 RAG 仓库选择器复用同一 `sparkles` 语义；只显示图标，完整含义通过
+                // tooltip 与 accessibility label 提供，避免在窄栏挤占 metadata 行。
+                MetaBadge(
+                    systemImage: "sparkles",
+                    text: "",
+                    tint: .accentColor,
+                    iconOnly: true,
+                    accessibilityLabel: "repo.card.aiSummaryAvailable"
+                )
+                .help("repo.card.aiSummaryAvailable")
             }
             if let metadata = card.footerMetadata {
                 RepoCardInlineMetadataBadge(metadata: metadata, iconOnly: footerIconOnly)

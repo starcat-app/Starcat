@@ -31,6 +31,10 @@ protocol AISummaryRepositoryProtocol: Sendable {
     ///
     /// 返回 dict：repoId → 该 repo 最近一次生成的 `AISummaryRecord`。无摘要的 repo 不在 dict 中。
     func fetchLatestPerRepo() async throws -> [Int64: AISummaryRecord]
+
+    /// 返回至少存在一条 AI 摘要的 repo ID 集合。
+    /// 列表状态只需要存在性，不能为了一个图标把所有 `summary_json` 正文读入内存。
+    func fetchRepoIDsWithSummary() async throws -> Set<Int64>
 }
 
 struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
@@ -88,6 +92,12 @@ struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
                 result[record.repoId] = record
             }
             return result
+        }
+    }
+
+    func fetchRepoIDsWithSummary() async throws -> Set<Int64> {
+        try await database.writer.read { db in
+            Set(try Int64.fetchAll(db, sql: "SELECT DISTINCT repo_id FROM ai_summaries"))
         }
     }
 }

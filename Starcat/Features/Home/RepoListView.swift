@@ -42,6 +42,48 @@ private final class RepoListNavigationMetrics {
     }
 }
 
+/// 星标管理列表会话内的 AI 摘要存在状态。
+///
+/// 这里单独使用 `@Observable` 引用对象，而不是把 `Set<Int64>` 直接放进
+/// `RepoListView.@State`：摘要写入时只需要让读取该状态的 Repo 行失效，不能让包含
+/// toolbar、sheet 和整棵 List 的页面根视图一起重算。
+@MainActor
+@Observable
+final class RepoListAISummaryAvailability {
+    private(set) var repoIDs: Set<Int64> = []
+    /// 数据库切换时递增；旧库查询即使忽略 Task cancellation 晚到，也不能污染新账号。
+    private var reloadRevision: UInt64 = 0
+
+    func contains(_ repoID: Int64) -> Bool {
+        repoIDs.contains(repoID)
+    }
+
+    func reload(from repository: any AISummaryRepositoryProtocol) async {
+        let requestedRevision = reloadRevision
+        do {
+            let fetchedRepoIDs = try await repository.fetchRepoIDsWithSummary()
+            guard requestedRevision == reloadRevision, !Task.isCancelled else { return }
+            // 与实时通知采用并集合并，避免查询返回时覆盖查询期间刚生成的摘要。
+            // 每次 Manage 列表重新出现都会执行轻量 DISTINCT 查询，补回列表隐藏期间漏接的通知。
+            repoIDs.formUnion(fetchedRepoIDs)
+        } catch {
+            // 标识缺失不应阻断 Repo 列表；列表下次出现时会自然重试。
+            AppLog.database.warning("Repo list AI summary availability load failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 账号数据库是硬隔离边界；切库后旧账号的存在性集合必须立即丢弃。
+    func resetForDatabaseChange() {
+        reloadRevision &+= 1
+        repoIDs.removeAll()
+    }
+
+    func markAvailable(repoID: Int64) {
+        guard !repoIDs.contains(repoID) else { return }
+        repoIDs.insert(repoID)
+    }
+}
+
 /// 只观察导航计数的局部 modifier。
 ///
 /// 关键约束：调用方传入 Manage 的静态副标题，但不读取 `metrics`；因此 Trending / Activity
@@ -191,6 +233,8 @@ struct RepoListView: View {
     @State private var lastSyncedAt: Date?
     /// 列表计数由独立观察对象承载，避免计数发布让整个 RepoListView 根层重算。
     @State private var navigationMetrics = RepoListNavigationMetrics()
+    /// 摘要存在状态与导航计数同样局部观察，避免摘要生成后重算整个页面根视图。
+    @State private var aiSummaryAvailability = RepoListAISummaryAvailability()
     /// Repo List 窗口会话级事实源。
     ///
     /// Explore / Activity 的 View 会随 `selectedPage` 条件分支创建和销毁；这里只持有
@@ -1586,6 +1630,7 @@ struct RepoListView: View {
                         ManageRepoRowContent(
                             repo: repo,
                             viewModel: viewModel,
+                            aiSummaryAvailability: aiSummaryAvailability,
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
                                 : (selection.wrappedValue == repo.id)
@@ -1636,6 +1681,14 @@ struct RepoListView: View {
             // task 与 view lifetime 绑定（view 退出自动 cancel），不会泄漏 NotificationCenter observer。
             .task {
                 await viewModel.observeRepoStatusChanges()
+            }
+            .task(id: dependencies.databaseScopeRevision) {
+                // 以数据库真正完成 reopen 为准，不能使用可能提前恢复的登录 profile 作为切库信号。
+                aiSummaryAvailability.resetForDatabaseChange()
+                await aiSummaryAvailability.reload(from: dependencies.aiSummaryRepository)
+            }
+            .task {
+                await observeAISummaryChanges()
             }
             // 知识库状态观察已上移到 HomeView：空库 / Smart Collections 总览时这里没有 List。
             .task(id: viewModel.items.map(\.id)) {
@@ -1753,6 +1806,18 @@ struct RepoListView: View {
             viewModel.invalidateDatabaseSnapshotsForOpenSSFSignalChange()
             guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
             await dependencies.openSSFScoreStore.loadCachedScores(for: [repoID], forceReload: true)
+        }
+    }
+
+    @MainActor
+    private func observeAISummaryChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .aiSummaryDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
+            // ai_summaries 当前只有 upsert 写入口；收到通知即可直接把该 repo 标为已有摘要，
+            // 无需重新扫描整张表，也不会把摘要正文带入列表内存。
+            aiSummaryAvailability.markAvailable(repoID: repoID)
         }
     }
 
@@ -2422,6 +2487,7 @@ struct RepoListView: View {
 private struct ManageRepoRowContent: View {
     let repo: Repo
     let viewModel: HomeViewModel
+    let aiSummaryAvailability: RepoListAISummaryAvailability
     let isSelected: Bool
 
     @Environment(AppDependencies.self) private var dependencies
@@ -2435,7 +2501,8 @@ private struct ManageRepoRowContent: View {
                 healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
             ),
             isSelected: isSelected,
-            semanticHit: viewModel.semanticHit(for: repo.id)
+            semanticHit: viewModel.semanticHit(for: repo.id),
+            hasAISummary: aiSummaryAvailability.contains(repo.id)
         )
     }
 }

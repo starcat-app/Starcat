@@ -29,6 +29,11 @@ final class AppDependencies {
     // MARK: - 依赖实例（顺序敏感）
 
     let database: any DatabaseManaging
+    /// 当前用户数据库每次真正切换后递增，供依赖数据库内容的 UI 快照硬失效。
+    ///
+    /// 不能直接使用 `AuthSession.state.user.id`：冷启动会先从磁盘 profile 提前恢复登录 UI，
+    /// 此时数据库仍可能指向 `_anonymous`，必须等 `database.reopen` 完成后再刷新账号级缓存。
+    private(set) var databaseScopeRevision: UInt64 = 0
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
     let apiClient: any GitHubAPIClientProtocol
     let oauthService: any GithubOAuthServiceProtocol
@@ -1354,7 +1359,10 @@ final class AppDependencies {
     /// 关键约束：本方法内部 `await database.reopen(userId:)`——后者标 `@MainActor`，
     /// 在 MainActor 队列内串行执行，多次并发调用会顺序排队不并发。
     func switchUserDatabase(to userId: Int64?) async throws {
+        let previousUserId = database.currentUserId
         try await database.reopen(userId: userId)
+        guard database.currentUserId != previousUserId else { return }
+        databaseScopeRevision &+= 1
     }
 
     // MARK: - 本机恢复出厂
