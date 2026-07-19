@@ -91,6 +91,34 @@ struct RepoAICodeContextRequestTests {
             try await task.value
         }
     }
+
+    @Test("两次生成各自独立的 request，旧次跳过不影响新次")
+    func skipOnOneRequestDoesNotAffectAnother() async throws {
+        let first = RepoAICodeContextRequest()
+        let second = RepoAICodeContextRequest()
+
+        first.skip()
+        let firstOutcome = try await first.resolve {
+            Issue.record("已跳过的 request 不应再执行 operation")
+            return .degraded(.networkUnavailable)
+        }
+        guard case .featureDisabled = firstOutcome else {
+            Issue.record("第一次跳过后应返回 featureDisabled")
+            return
+        }
+
+        var didRunSecond = false
+        let secondOutcome = try await second.resolve {
+            didRunSecond = true
+            return .degraded(.networkUnavailable)
+        }
+
+        #expect(didRunSecond)
+        guard case .degraded(.networkUnavailable) = secondOutcome else {
+            Issue.record("第二次未跳过的 request 应保留 provider 结果")
+            return
+        }
+    }
 }
 
 /// 让并发测试等待 operation 确实进入执行态，避免依赖 `Task.yield()` 的调度时序。

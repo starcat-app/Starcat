@@ -105,6 +105,13 @@ final class RepoAIInsightViewModel {
     /// 本次摘要生成的请求级控制器；负责跳过当前 provider 工作，但不改全局设置。
     private var currentCodeContextRequest: RepoAICodeContextRequest?
 
+    /// 当前正在生成的仓库 id。内联浮层会复用同一个 ViewModel 切换 repo；
+    /// 用它保证「跳过 / 进度 / 结果写回」只作用于发起那一次的仓库。
+    private var activeGenerationRepoID: Repo.ID?
+
+    /// 生成世代号：换 repo / 重新 load 时递增，丢弃过期 generate 的写回与进度回调。
+    private var generationEpoch: UInt64 = 0
+
     /// Y4：本次摘要生成时代码上下文的降级原因（nil = 成功 或 用户主动关）。
     /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
     private(set) var contextDegradationReason: ContextDegradationReason?
@@ -134,6 +141,10 @@ final class RepoAIInsightViewModel {
     }
 
     func load(repo: Repo) async {
+        // 内联浮层复用同一 ViewModel 切换仓库时：必须作废上一仓未完成的生成，
+        // 否则「跳过代码上下文」标记 / streaming 文案会串到新仓库。
+        invalidateActiveGeneration(reason: .repoChanged(to: repo.id))
+
         isLoading = true
         defer { isLoading = false }
         do {
@@ -179,13 +190,21 @@ final class RepoAIInsightViewModel {
     /// 这不是取消摘要：只取消当前 provider 子任务，并把本次 request 标记为跳过。
     /// `makeSource` 随后以空 `{codeContext}` 继续组装 metadata + README 等现有上下文；
     /// 下一次生成会创建全新的 request，因此自动恢复正常代码上下文策略。
+    ///
+    /// 关键约束：`repo` 必须是当前这一次 `generate` 绑定的仓库；换仓后旧面板上的
+    /// 跳过按钮即使还在视图树里，也不能改写新仓库的生成状态。
     func skipCodeContextForCurrentGeneration(repo: Repo) {
-        guard isGenerating, phase == .preparingContext else { return }
+        guard isGenerating,
+              phase == .preparingContext,
+              activeGenerationRepoID == repo.id else { return }
 
         didSkipCodeContextForCurrentGeneration = true
         currentCodeContextRequest?.skip()
         prepProgress = .idle
-        phase = .requestingSummary
+        // 跳过 XML 后仍可能继续 External Search；保持与 onContextResolved 一致的阶段语义。
+        phase = usesExternalContextForCurrentGeneration
+            ? .fetchingExternalContext
+            : .requestingSummary
         service.cleanupTemporaryContextPreparation(for: repo)
     }
 
@@ -239,6 +258,11 @@ final class RepoAIInsightViewModel {
         if !usesCodeContext {
             codeContextRequest.skip()
         }
+
+        // 作废任何残留的旧世代（例如上一仓未完成生成），再绑定本次 repo。
+        generationEpoch &+= 1
+        let runEpoch = generationEpoch
+        activeGenerationRepoID = repo.id
         currentCodeContextRequest = codeContextRequest
         didSkipCodeContextForCurrentGeneration = false
         usesExternalContextForCurrentGeneration = usesExternalContext
@@ -251,12 +275,17 @@ final class RepoAIInsightViewModel {
         phase = .requestingSummary
         prepProgress = .idle
         defer {
-            isGenerating = false
-            streamingSummaryText = nil
-            phase = nil
-            currentCodeContextRequest = nil
-            prepProgress = .idle
-            usesExternalContextForCurrentGeneration = false
+            // 只有当前世代结束时才清 UI 生成态；被换仓作废的旧 generate 收尾不得清掉新生成。
+            if generationEpoch == runEpoch {
+                isGenerating = false
+                streamingSummaryText = nil
+                phase = nil
+                currentCodeContextRequest = nil
+                prepProgress = .idle
+                usesExternalContextForCurrentGeneration = false
+                didSkipCodeContextForCurrentGeneration = false
+                activeGenerationRepoID = nil
+            }
         }
 
         do {
@@ -272,20 +301,23 @@ final class RepoAIInsightViewModel {
                     tagRepository: tagRepository
                 )
                 : .empty
+            guard generationEpoch == runEpoch else { return }
+
             let result = try await service.generateInsight(
                 for: repo,
                 existingTagHints: hints,
                 includeTags: includeTags,
                 codeContextRequest: codeContextRequest,
                 onContextProgress: { [weak self] progress in
-                    guard usesCodeContext,
-                          let self,
+                    guard let self,
+                          self.generationEpoch == runEpoch,
+                          usesCodeContext,
                           !codeContextRequest.isSkipped else { return }
                     self.phase = .preparingContext
                     self.publishPrepStep(Self.mapStep(progress))
                 },
                 onContextResolved: { [weak self] in
-                    guard let self else { return }
+                    guard let self, self.generationEpoch == runEpoch else { return }
                     self.prepProgress = .idle
                     // 代码上下文结束后：有外部搜索则先进入该阶段，否则直接准备 LLM 请求。
                     self.phase = usesExternalContext
@@ -293,7 +325,9 @@ final class RepoAIInsightViewModel {
                         : .requestingSummary
                 },
                 onExternalContextProgress: { [weak self] progress in
-                    guard let self, usesExternalContext else { return }
+                    guard let self,
+                          self.generationEpoch == runEpoch,
+                          usesExternalContext else { return }
                     switch progress {
                     case .started:
                         self.phase = .fetchingExternalContext
@@ -302,11 +336,14 @@ final class RepoAIInsightViewModel {
                     }
                 }
             ) { [weak self] partial in
-                self?.streamingSummaryText = partial
+                guard let self, self.generationEpoch == runEpoch else { return }
+                self.streamingSummaryText = partial
                 // 第一次 delta 时切阶段——之后所有 delta 都已经是 streamingSummary，
                 // 不需要 if 判等比较（赋值同款值开销可忽略）。
-                self?.phase = .streamingSummary
+                self.phase = .streamingSummary
             }
+            guard generationEpoch == runEpoch else { return }
+
             insight = result.insight
             tagErrorMessage = result.tagErrorMessage
             // Y4：透传降级原因到 UI banner。
@@ -315,9 +352,35 @@ final class RepoAIInsightViewModel {
             externalContextDegradationReason = result.externalContextDegradationReason
             errorMessage = nil
         } catch {
+            guard generationEpoch == runEpoch else { return }
             presentPaywallIfNeeded(error)
             presentGenerateFailure(error)
         }
+    }
+
+    /// 换仓 / 重新打开面板时作废进行中的生成，避免旧仓「跳过」污染新仓。
+    private enum GenerationInvalidationReason {
+        case repoChanged(to: Repo.ID)
+    }
+
+    private func invalidateActiveGeneration(reason: GenerationInvalidationReason) {
+        switch reason {
+        case .repoChanged(let newID):
+            // 同一仓再次 load（极少见）保留进行中的生成；只有换仓才作废。
+            if activeGenerationRepoID == newID { return }
+        }
+
+        generationEpoch &+= 1
+        // 取消仍在跑的代码上下文子任务（含 3 秒缓冲 sleep），但不改全局设置。
+        currentCodeContextRequest?.skip()
+        currentCodeContextRequest = nil
+        activeGenerationRepoID = nil
+        isGenerating = false
+        streamingSummaryText = nil
+        phase = nil
+        prepProgress = .idle
+        usesExternalContextForCurrentGeneration = false
+        didSkipCodeContextForCurrentGeneration = false
     }
 
     /// 把摘要生成失败分成两类用户文案：

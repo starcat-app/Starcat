@@ -213,6 +213,17 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
                   \(debugDump, privacy: .public)
                 """
             )
+            if reason == .packFailure {
+                DiagnosticLogStore.record(
+                    level: .error,
+                    visibility: .issue,
+                    category: "repo-context",
+                    operation: "repoContext.pack",
+                    message: "Repository code context packing failed",
+                    underlying: debugDump,
+                    context: ["repo": repo.fullName]
+                )
+            }
             return .degraded(reason)
         }
     }
