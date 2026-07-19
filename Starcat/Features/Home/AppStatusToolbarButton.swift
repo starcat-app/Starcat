@@ -339,12 +339,11 @@ private struct AppStatusPanel: View {
 
     private func loadAIUsageSummary() async {
         do {
-            aiUsageSummary = try await aiUsageRepository.statistics(
+            aiUsageSummary = try await aiUsageRepository.summary(
                 filter: AIUsageFilter(timeRange: .today),
                 now: Date(),
-                calendar: .current,
-                recentLimit: 1
-            ).summary
+                calendar: .current
+            )
         } catch {
             // 状态 popover 是轻量入口；查询失败不应该再制造一个全局诊断问题。
             aiUsageSummary = .empty

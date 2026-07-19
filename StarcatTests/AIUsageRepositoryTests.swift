@@ -103,6 +103,13 @@ struct AIUsageRepositoryTests {
         #expect(snapshot.byFeature.map(\.key) == [AIUsageFeature.rag.rawValue, AIUsageFeature.semanticSearch.rawValue])
         #expect(snapshot.filterOptions.models == ["chat-a", "chat-b", "embed-a"])
 
+        let summary = try await repository.summary(
+            filter: filter,
+            now: now,
+            calendar: calendar
+        )
+        #expect(summary == snapshot.summary)
+
         filter.feature = .rag
         snapshot = try await repository.statistics(
             filter: filter,

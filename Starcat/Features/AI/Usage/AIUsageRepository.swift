@@ -11,6 +11,11 @@ import GRDB
 protocol AIUsageRepositoryProtocol: Sendable {
     func insert(_ event: AIUsageEvent) async throws
     func fetchRecent(limit: Int) async throws -> [AIUsageEvent]
+    func summary(
+        filter: AIUsageFilter,
+        now: Date,
+        calendar: Calendar
+    ) async throws -> AIUsageSummary
     func statistics(
         filter: AIUsageFilter,
         now: Date,
@@ -43,6 +48,17 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
         }
     }
 
+    func summary(
+        filter: AIUsageFilter,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) async throws -> AIUsageSummary {
+        let predicate = Self.predicate(filter: filter, now: now, calendar: calendar)
+        return try await database.writer.read { db in
+            try Self.summary(in: db, predicate: predicate)
+        }
+    }
+
     func statistics(
         filter: AIUsageFilter,
         now: Date = Date(),
@@ -51,28 +67,7 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
     ) async throws -> AIUsageStatisticsSnapshot {
         let predicate = Self.predicate(filter: filter, now: now, calendar: calendar)
         return try await database.writer.read { db in
-            let summaryRow = try Row.fetchOne(db, sql: """
-                SELECT
-                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                    COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                    COUNT(*) AS call_count,
-                    SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS successful_count,
-                    SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END) AS usage_count,
-                    COALESCE(SUM(CASE WHEN operation = 'embedding' THEN item_count ELSE 0 END), 0) AS embedding_items
-                FROM ai_usage_events
-                \(predicate.whereClause)
-                """, arguments: predicate.arguments)
-
-            let summary = AIUsageSummary(
-                totalTokens: summaryRow?["total_tokens"] ?? 0,
-                inputTokens: summaryRow?["input_tokens"] ?? 0,
-                outputTokens: summaryRow?["output_tokens"] ?? 0,
-                callCount: summaryRow?["call_count"] ?? 0,
-                successfulCallCount: summaryRow?["successful_count"] ?? 0,
-                callsWithUsage: summaryRow?["usage_count"] ?? 0,
-                embeddingItemCount: summaryRow?["embedding_items"] ?? 0
-            )
+            let summary = try Self.summary(in: db, predicate: predicate)
 
             let dailyRows = try Row.fetchAll(db, sql: """
                 SELECT
@@ -142,6 +137,35 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                 filterOptions: AIUsageFilterOptions(providerIDs: providers, models: models)
             )
         }
+    }
+
+    /// 状态 popover 与完整面板共用同一统计口径，但前者只执行这一条汇总 SQL。
+    private static func summary(
+        in db: Database,
+        predicate: (whereClause: String, arguments: StatementArguments)
+    ) throws -> AIUsageSummary {
+        let row = try Row.fetchOne(db, sql: """
+            SELECT
+                COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                COUNT(*) AS call_count,
+                SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS successful_count,
+                SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END) AS usage_count,
+                COALESCE(SUM(CASE WHEN operation = 'embedding' THEN item_count ELSE 0 END), 0) AS embedding_items
+            FROM ai_usage_events
+            \(predicate.whereClause)
+            """, arguments: predicate.arguments)
+
+        return AIUsageSummary(
+            totalTokens: row?["total_tokens"] ?? 0,
+            inputTokens: row?["input_tokens"] ?? 0,
+            outputTokens: row?["output_tokens"] ?? 0,
+            callCount: row?["call_count"] ?? 0,
+            successfulCallCount: row?["successful_count"] ?? 0,
+            callsWithUsage: row?["usage_count"] ?? 0,
+            embeddingItemCount: row?["embedding_items"] ?? 0
+        )
     }
 
     private static func predicate(
