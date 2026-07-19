@@ -64,7 +64,8 @@ final class StarcatMCPFacade {
             query: trimmed,
             candidates: candidates,
             ftsHitIDs: Set(ftsHits.map(\.id)),
-            limit: sanitizedLimit
+            limit: sanitizedLimit,
+            usageContext: AIUsageContext(feature: .mcp, phase: "semantic_search")
         )
         return MCPSemanticSearchResult(
             query: trimmed,

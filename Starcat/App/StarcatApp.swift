@@ -401,6 +401,13 @@ private struct StarcatAppCommands: Commands {
                 NotificationCenter.default.post(name: .starcatCommandOpenGlobalSearch, object: nil)
             }
 
+            Button("ai.usage.open") {
+                if let dependencies {
+                    AIUsageWindowController.show(dependencies: dependencies)
+                }
+            }
+            .disabled(dependencies == nil)
+
             if dependencies?.directUpdateController.isDirectBuild == true {
                 Button("commands.actions.checkForUpdates") {
                     dependencies?.directUpdateController.checkForUpdates()

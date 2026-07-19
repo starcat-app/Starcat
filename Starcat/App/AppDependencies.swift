@@ -34,6 +34,8 @@ final class AppDependencies {
     /// 不能直接使用 `AuthSession.state.user.id`：冷启动会先从磁盘 profile 提前恢复登录 UI，
     /// 此时数据库仍可能指向 `_anonymous`，必须等 `database.reopen` 完成后再刷新账号级缓存。
     private(set) var databaseScopeRevision: UInt64 = 0
+    /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
+    let aiUsageRepository: any AIUsageRepositoryProtocol
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
     let apiClient: any GitHubAPIClientProtocol
     let oauthService: any GithubOAuthServiceProtocol
@@ -484,14 +486,16 @@ final class AppDependencies {
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
             timeout: chatSelection.parameters.timeoutSeconds,
-            missingAPIKeyError: AIClientError.missingAPIKey
+            missingAPIKeyError: AIClientError.missingAPIKey,
+            usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
         )
         let embeddingClient = try makeRAGClient(
             profile: embeddingSelection.profile,
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
             timeout: embeddingSelection.parameters.timeoutSeconds,
-            missingAPIKeyError: AIEmbeddingError.missingAPIKey
+            missingAPIKeyError: AIEmbeddingError.missingAPIKey,
+            usageContext: AIUsageContext(feature: .rag, phase: "query_embedding")
         )
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
@@ -642,7 +646,8 @@ final class AppDependencies {
         chatModel: String,
         embeddingModel: String,
         timeout: TimeInterval,
-        missingAPIKeyError: any Error
+        missingAPIKeyError: any Error,
+        usageContext: AIUsageContext
     ) throws -> any AIClientProtocol {
         let apiKey = try KeychainManager.shared.loadAIKey(forProvider: profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -656,7 +661,8 @@ final class AppDependencies {
             baseURL: profile.baseURL,
             chatModel: chatModel,
             embeddingModel: embeddingModel,
-            timeoutInterval: timeout
+            timeoutInterval: timeout,
+            usageContext: usageContext
         ))
     }
 
@@ -684,6 +690,10 @@ final class AppDependencies {
             throw error
         }
         self.database = db
+        // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
+        // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
+        AIUsageRecorder.shared.configure(database: db)
+        self.aiUsageRepository = GRDBAIUsageRepository(database: db)
 
         let api = GitHubAPIClient()
         self.apiClient = api

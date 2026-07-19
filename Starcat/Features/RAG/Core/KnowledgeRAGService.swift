@@ -1319,7 +1319,8 @@ struct KnowledgeRAGService: Sendable {
             // selectedModelID 是 UI 的 provider::model 标识，依赖容器已经把它
             // 解析为真实模型名，不能把复合 id 直接发给 OpenAI-compatible API。
             model: generatorModel,
-            parameters: generationParameters
+            parameters: generationParameters,
+            usageContext: AIUsageContext(feature: .rag, phase: "answer")
         )
         sink.debug(.prompt, """
         endpoint: \(debugEndpoint ?? "<unknown>")
@@ -1460,7 +1461,8 @@ struct KnowledgeRAGService: Sendable {
                 tokenBudget: compressionBudget.remainingInputTokens
             ),
             model: generatorModel,
-            parameters: parameters
+            parameters: parameters,
+            usageContext: AIUsageContext(feature: .rag, phase: "compression")
         )
         var debugEvents: [RAGDebugEvent] = []
         if isDebugEnabled {
@@ -1547,7 +1549,8 @@ struct KnowledgeRAGService: Sendable {
                 "firstQuestion": firstQuestion,
             ]),
             model: generatorModel,
-            parameters: parameters
+            parameters: parameters,
+            usageContext: AIUsageContext(feature: .rag, phase: "title")
         )
         var debugEvents: [RAGDebugEvent] = []
         if isDebugEnabled {

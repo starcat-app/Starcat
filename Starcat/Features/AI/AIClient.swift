@@ -26,6 +26,8 @@ struct AIClientConfiguration: Equatable, Sendable {
     var chatModel: String
     var embeddingModel: String
     var timeoutInterval: TimeInterval = 300
+    /// 业务归因必须在创建客户端时确定，底层 adapter 不猜调用方属于哪个功能。
+    var usageContext: AIUsageContext = .unknown
 }
 
 /// Chat 返回格式要求。
@@ -74,6 +76,9 @@ struct AIChatRequest: Equatable, Sendable {
     var model: String
     var parameters: AIModelParameters
     var responseFormat: AIChatResponseFormat = .text
+    /// 同一长寿命客户端可服务 RAG 的 planning / answer / title 等阶段，请求级归因优先于
+    /// client configuration；普通业务不传时继续使用客户端默认值。
+    var usageContext: AIUsageContext? = nil
 }
 
 /// 非流式 Chat 响应。

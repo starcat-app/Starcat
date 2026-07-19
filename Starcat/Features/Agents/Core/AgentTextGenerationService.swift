@@ -186,7 +186,8 @@ enum AgentTextGeneratorFactory {
                 baseURL: profile.baseURL,
                 chatModel: model,
                 embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
-                timeoutInterval: parameters.timeoutSeconds
+                timeoutInterval: parameters.timeoutSeconds,
+                usageContext: AIUsageContext(feature: .agent, phase: "generation")
             ))
             return OpenAIAgentTextGenerator(
                 client: client,
