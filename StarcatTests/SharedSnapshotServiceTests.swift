@@ -50,6 +50,44 @@ struct SharedSnapshotServiceTests {
         #expect(await downloader.requestedURLs.isEmpty)
     }
 
+    @Test("ZIP 缓存命中时不触发下载前缓冲")
+    func cachedArchiveSkipsBeforeDownloadGate() async throws {
+        let service = SharedSnapshotService(
+            downloader: SnapshotRecordingDownloader(data: Data("new".utf8)),
+            github: SnapshotStubGitHubProvider()
+        )
+        let repo = makeRepo(owner: "starcat-gate-hit-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
+        try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try makeZipHeader(firstEntry: "starcat-gate-hit-demo-deadbee/").write(to: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+        let gate = SnapshotDownloadGateRecorder()
+
+        _ = try await service.archiveIfNeeded(repo: repo, commitSHA: "deadbeef") {
+            await gate.record()
+        }
+
+        #expect(await gate.callCount == 0)
+    }
+
+    @Test("ZIP 缓存未命中时在真实下载前触发缓冲")
+    func downloadMissRunsBeforeDownloadGate() async throws {
+        let service = SharedSnapshotService(
+            downloader: SnapshotRecordingDownloader(data: Data("zip-payload".utf8)),
+            github: SnapshotStubGitHubProvider()
+        )
+        let repo = makeRepo(owner: "starcat-gate-miss-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+        let gate = SnapshotDownloadGateRecorder()
+
+        _ = try await service.archiveIfNeeded(repo: repo, commitSHA: "deadbeef") {
+            await gate.record()
+        }
+
+        #expect(await gate.callCount == 1)
+    }
+
     @Test("仓库级 ZIP 对应旧 commit 时重新下载并替换")
     func replacesArchiveForDifferentCommit() async throws {
         let downloader = SnapshotRecordingDownloader(data: Data("new-zip".utf8))
@@ -193,6 +231,14 @@ private actor SnapshotRecordingDownloader: CodeFlowArchiveDownloading {
         requestedURLs.append(url)
         let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: nil)!
         return (data, response)
+    }
+}
+
+private actor SnapshotDownloadGateRecorder {
+    private(set) var callCount = 0
+
+    func record() {
+        callCount += 1
     }
 }
 

@@ -445,6 +445,7 @@ struct RepoAIOpenButton: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
@@ -457,7 +458,8 @@ struct RepoAIOpenButton: View {
             RepoAIWindowController.show(
                 repo: repo,
                 dependencies: dependencies,
-                homeViewModel: viewModel
+                homeViewModel: viewModel,
+                openSettings: openSettings
             )
         } label: {
             HStack(spacing: 6) {

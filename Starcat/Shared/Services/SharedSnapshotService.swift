@@ -121,7 +121,11 @@ struct SharedSnapshotService: @unchecked Sendable {
     /// 旧缓存只按 `<owner>/<repo>.zip` 命名，因此不能只凭“文件存在”判断命中。GitHub
     /// zipball 的首个目录名包含 7 位 commit SHA；只有它与请求 SHA 匹配时才复用，避免
     /// 分支 HEAD 更新后把旧源码误标成新提交。任何下游都不得主动删除这个共享 ZIP。
-    func archiveIfNeeded(repo: Repo, commitSHA: String) async throws -> CodeFlowArchiveResult {
+    func archiveIfNeeded(
+        repo: Repo,
+        commitSHA: String,
+        beforeDownload: (@Sendable () async throws -> Void)? = nil
+    ) async throws -> CodeFlowArchiveResult {
         guard !repo.isPrivate else { throw SharedSnapshotError.privateRepository }
         let archiveURL = try archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: commitSHA)
         if fileManager.fileExists(atPath: archiveURL.path) {
@@ -131,6 +135,10 @@ struct SharedSnapshotService: @unchecked Sendable {
                 return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
             }
         }
+
+        // 只有确认本地 ZIP 不可复用后才进入门控。单仓摘要在这里展示下载步骤并提供
+        // 3 秒取消缓冲；CodeFlow / RAG 等调用方不传闭包，行为与性能保持不变。
+        try await beforeDownload?()
 
         let encodedOwner = Self.encodePathComponent(repo.owner)
         let encodedName = Self.encodePathComponent(repo.name)

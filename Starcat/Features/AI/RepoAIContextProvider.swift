@@ -8,8 +8,8 @@
 //     事件，让 AI 面板能在「生成摘要」按钮上方显示「解析分支 → 下载项目代码 → 解压并
 //     生成上下文」进度 chip，不再被前置 IO 阻塞按钮可点状态。
 //
-//  对外只暴露一个方法 `contextOutcome(for:onProgress:) async throws -> RepoAIContextOutcome`
-//  （+ 兼容旧 `context(for:)` / 新 `prepareContextForGeneration` 走 service 层），内部三步：
+//  对外只暴露一个方法 `contextOutcome(for:onProgress:) async throws -> RepoAIContextOutcome`，
+//  单仓摘要与 RAG 各自在用户发起对应操作后调用；内部三步：
 //    ① `SharedSnapshotService.resolveBranch + archiveIfNeeded` 拿 ZIP；
 //    ② 查 `RepoContextStorage.existingProject(owner:repo:)` 看缓存是否命中
 //       （commitSha + tokenBudget + tier1MaxLines + tierRulesVersion 四件套全等）；
@@ -103,6 +103,12 @@ enum RepoAIContextProgress: Sendable, Equatable {
 /// `@Observable` 状态，必须主线程；provider 在任意 actor 上调用回调即可。
 typealias RepoAIContextProgressCallback = @MainActor (RepoAIContextProgress) -> Void
 
+/// 单仓摘要在真正执行高成本步骤前的异步门。
+///
+/// 生产路径用它提供 3 秒可取消缓冲；RAG / 批处理等未传 gate 的调用方保持原速度。
+/// gate 位于 progress 事件之后，因此等待期间 UI 已展示对应步骤及「跳过本次」入口。
+typealias RepoAIContextStepGate = @Sendable (RepoAIContextProgress) async throws -> Void
+
 protocol RepoAIContextProviding: Sendable {
     func contextOutcome(
         for repo: Repo,
@@ -155,6 +161,18 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         for repo: Repo,
         onProgress: RepoAIContextProgressCallback? = nil
     ) async throws -> RepoAIContextOutcome {
+        try await contextOutcome(for: repo, onProgress: onProgress, beforeStep: nil)
+    }
+
+    /// 单仓摘要专用入口：允许在真实步骤前插入可取消缓冲。
+    ///
+    /// 不把缓冲固化到 provider，是因为本 provider 也服务知识库 RAG；RAG 的主动生成
+    /// 已有独立取消体验，不应被单仓摘要的产品节奏额外拖慢。
+    func contextOutcome(
+        for repo: Repo,
+        onProgress: RepoAIContextProgressCallback? = nil,
+        beforeStep: RepoAIContextStepGate?
+    ) async throws -> RepoAIContextOutcome {
         // 先把 settings 快照到本地（一次性跨 MainActor 调用，后续 pipeline 用快照）。
         let snapshot = await snapshotSettings()
 
@@ -162,7 +180,12 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         guard snapshot.enabled else { return .featureDisabled }
 
         do {
-            return .success(try await prepareContext(for: repo, snapshot: snapshot, onProgress: onProgress))
+            return .success(try await prepareContext(
+                for: repo,
+                snapshot: snapshot,
+                onProgress: onProgress,
+                beforeStep: beforeStep
+            ))
         } catch is CancellationError {
             // 透传 cancellation 让上层 task tree 能优雅退出
             throw CancellationError()
@@ -259,13 +282,15 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
     private func prepareContext(
         for repo: Repo,
         snapshot: SettingsSnapshot,
-        onProgress: RepoAIContextProgressCallback?
+        onProgress: RepoAIContextProgressCallback?,
+        beforeStep: RepoAIContextStepGate?
     ) async throws -> RepoAIContextResult {
         // ② 解析分支 → 拿 commit SHA
         let defaultBranchName = repo.defaultBranch ?? "main"
         // W4：先发 progress 事件，再 await 网络。UI 在 `resolveBranch` 期间就能切换 chip
         // 到「解析分支」态，不至于让用户在 commit SHA 拿到前看到空白 chip。
         await onProgress?(.resolvingBranch)
+        try await beforeStep?(.resolvingBranch)
         let branch = try await snapshotService.resolveBranch(repo: repo, name: defaultBranchName)
 
         // ③ 缓存命中判定四件套：用入口处快照的 settings 值
@@ -313,13 +338,20 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
             )
         }
 
-        // ④ 不命中 → 走完整 pipeline：下载 ZIP + Packer
-        // W4：发 `.downloadingArchive` 让 UI 把 chip 切到「下载项目代码」。
-        await onProgress?(.downloadingArchive)
-        let archive = try await snapshotService.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
+        // ④ 不命中 → 走完整 pipeline：下载 ZIP + Packer。
+        // `beforeDownload` 只在 SharedSnapshotService 确认 ZIP 缓存未命中后执行，
+        // 避免已有 ZIP 仍假播「下载」并等待 3 秒。
+        let archive = try await snapshotService.archiveIfNeeded(
+            repo: repo,
+            commitSHA: branch.commitSHA
+        ) {
+            await onProgress?(.downloadingArchive)
+            try await beforeStep?(.downloadingArchive)
+        }
 
         // W4：发 `.packingContext` 让 UI 把 chip 切到「解压并生成上下文」。
         await onProgress?(.packingContext)
+        try await beforeStep?(.packingContext)
         let packer = try RepoContextPacker(writer: DefaultContextWriter(storage: storage))
         // PackInput.outputBaseDir 在 storage 注入路径下被忽略，但字段是 non-optional，
         // 这里给一个语义清晰的默认（storage 的 root URL），不会被实际使用。

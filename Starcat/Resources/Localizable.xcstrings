@@ -5590,6 +5590,23 @@
         }
       }
     },
+    "ai.assistant.prep.step.externalSearch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External Search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "获取外部资料"
+          }
+        }
+      }
+    },
     "ai.assistant.prep.step.packingContext": {
       "extractionState": "manual",
       "localizations": {
@@ -5603,6 +5620,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "解压并生成上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.step.requestingLLM": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requesting AI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准备摘要请求"
           }
         }
       }
@@ -5637,6 +5671,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止准备代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.codeContext.disabled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Context is off"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目上下文未开启"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.codeContext.enabled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Context is on"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目上下文已开启"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.codeContext.openSettings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前往设置"
           }
         }
       }
@@ -5680,13 +5765,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can ask directly in the chat below; for a structured summary, click \"Generate Summary\" on the right. It reads this repo's metadata, README, and topics, then renders as Markdown."
+            "value": "When enabled, Project Context analyzes the repository's code structure during summary generation to improve accuracy. Code is prepared only after you click Generate Summary."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可以直接在下方对话区追问；如需结构化摘要,点击右侧「生成摘要」。摘要会读取本仓库的元数据、README、topics 并以 Markdown 输出。"
+            "value": "开启项目上下文后，生成摘要时会分析仓库代码结构，帮助 AI 更准确地理解项目；相关代码仅在点击「生成摘要」后准备。"
           }
         }
       }
@@ -5707,6 +5792,40 @@
         }
       }
     },
+    "ai.assistant.summary.error.requestFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI request failed. Check the API key, Base URL, model name, and your network connection."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调用 AI 服务失败。请检查 API Key、Base URL、模型名称是否正确，以及网络是否可用。"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.error.requestFailedFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI request failed: %@. Check the API key, Base URL, model name, and your network connection."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调用 AI 服务失败：%@。请检查 API Key、Base URL、模型名称是否正确，以及网络是否可用。"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.externalReferences.title": {
       "extractionState": "manual",
       "localizations": {
@@ -5720,6 +5839,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "外部参考来源"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.fetchingExternal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fetching external materials…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在获取外部资料…"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.fetchingExternal.caption": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using External Search to find documentation, release notes, and related pages"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在通过 External Search 检索文档、Release Notes 等相关网页"
           }
         }
       }
@@ -5965,13 +6118,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Collecting repository metadata, README, and other available context"
+            "value": "Assembling available context and waiting for the first AI response"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在整理仓库元数据、README 和其他可用上下文"
+            "value": "正在组装可用上下文，并等待 AI 返回首段摘要"
           }
         }
       }
@@ -7025,13 +7178,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configure the corresponding provider's API key in Settings → AI before generating an AI summary."
+            "value": "No AI API key is configured. Open Settings → AI, add a provider and API key, then try generating the summary again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先在 Settings → AI 配置对应 Provider 的 API Key，再生成 AI 摘要。"
+            "value": "尚未配置 AI 服务的 API Key。请先到「设置 → AI」添加服务商并填写 API Key，再生成摘要。"
           }
         }
       }
@@ -7042,13 +7195,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No provider is configured for AI task: %@."
+            "value": "No AI provider is configured for “%@”. Open Settings → AI, add a provider, then try generating again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 任务 %@ 没有可用的 Provider 配置。"
+            "value": "「%@」尚未配置可用的 AI 服务。请先到「设置 → AI」添加服务商，再生成摘要。"
           }
         }
       }

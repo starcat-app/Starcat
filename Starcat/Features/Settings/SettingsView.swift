@@ -36,9 +36,13 @@ import SwiftUI
 //   3. 名字加 `starcat.` 前缀防止与系统 / 三方框架冲突。
 extension Notification.Name {
     /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
-    /// `"pro"` / `"ai"` / `"services"` / `"integrations"` /
+    /// `"pro"` / `"ai"` / `"ai.repoContext"` / `"services"` / `"integrations"` /
     /// `"integrations.localAPIKey"` / `"integrations.externalSearch"` / `"diagnostics"`。
     static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
+    /// SettingsView 切到 AI Tab 并完成一轮布局后，再通知 AISettingsView 展开并定位。
+    static let starcatJumpToAIRepoContextSection: Notification.Name = .init(
+        "starcat.settings.jumpToAIRepoContextSection"
+    )
 }
 
 struct SettingsView: View {
@@ -139,7 +143,15 @@ struct SettingsView: View {
             switch target {
             case "general":      selectedTab = .general
             case "pro":          selectedTab = .pro
-            case "ai":           selectedTab = .ai
+            case "ai":
+                selectedTab = .ai
+            case "ai.repoContext":
+                selectedTab = .ai
+                // 第一次打开 Settings 时 AISettingsView 尚未进入视图树，不能让它和
+                // SettingsView 同时消费原通知；延后一轮发 section 事件可避免丢失定位。
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .starcatJumpToAIRepoContextSection, object: nil)
+                }
             case "mcp":          selectedTab = .mcp
             case "services":     selectedTab = .services
             case "integrations", "integrations.localAPIKey", "integrations.browserPlugin", "integrations.externalSearch":

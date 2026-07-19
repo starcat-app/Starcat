@@ -48,6 +48,9 @@ struct UserFacingError: Equatable, Sendable {
         if let ai = error as? AIClientError {
             return mapAI(ai, operation: operation, service: service)
         }
+        if let insight = error as? RepoAIInsightError {
+            return mapRepoAIInsight(insight, operation: operation, service: service)
+        }
         if let translation = error as? ReadmeTranslationError {
             return mapReadmeTranslation(translation, operation: operation, service: service)
         }
@@ -193,9 +196,43 @@ struct UserFacingError: Equatable, Sendable {
     ) -> UserFacingError {
         switch error {
         case .missingAPIKey, .invalidBaseURL:
-            return make(kind: .aiConfiguration, operation: operation, service: service, diagnostic: error.localizedDescription)
+            // 配置类错误直接展示底层已本地化文案，避免再包一层「需要有效 AI 配置」泛化句。
+            return UserFacingError(
+                title: String.l10n("error.user.aiConfiguration.title"),
+                message: error.localizedDescription,
+                recovery: String.l10n("error.user.aiConfiguration.recovery"),
+                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription)
+            )
         case .emptyResponse, .responseTruncated, .modelListRequestFailed:
             return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
+        }
+    }
+
+    /// 单仓摘要 / 标签生成的配置错误。
+    ///
+    /// `.missingProvider` / `.missingAPIKey` 属于「生成前本地配置不完整」，文案已在
+    /// `RepoAIInsightError` 内写清楚设置路径；这里不要再套 `error.user.aiConfiguration.message`
+    /// 的 operation/service 模板，否则会盖掉具体原因。
+    private static func mapRepoAIInsight(
+        _ error: RepoAIInsightError,
+        operation: String,
+        service: String?
+    ) -> UserFacingError {
+        switch error {
+        case .missingProvider, .missingAPIKey:
+            return UserFacingError(
+                title: String.l10n("error.user.aiConfiguration.title"),
+                message: error.localizedDescription,
+                recovery: String.l10n("error.user.aiConfiguration.recovery"),
+                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription)
+            )
+        case .invalidJSON:
+            return make(
+                kind: .aiProvider,
+                operation: operation,
+                service: service,
+                diagnostic: error.localizedDescription
+            )
         }
     }
 

@@ -71,6 +71,26 @@ struct RepoAICodeContextRequestTests {
             return
         }
     }
+
+    @Test("单仓摘要每个真实代码上下文步骤预留三秒缓冲")
+    func contextStepDelayIsThreeSeconds() {
+        #expect(RepoAIInsightService.codeContextStepStartDelay == .seconds(3))
+    }
+
+    @Test("步骤缓冲可被本次跳过立即取消")
+    func contextStepDelayIsCancellable() async throws {
+        let task = Task {
+            try await RepoAIInsightService.waitBeforeCodeContextStep()
+        }
+
+        // 确保 task 已获得一次调度机会，再模拟用户在缓冲期点击「跳过本次」。
+        await Task.yield()
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+    }
 }
 
 /// 让并发测试等待 operation 确实进入执行态，避免依赖 `Task.yield()` 的调度时序。

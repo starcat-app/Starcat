@@ -70,11 +70,14 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     ///     刷新。属性以强引用形式传给 SwiftUI environment（`HomeViewModel` 是 class），
     ///     不会循环引用——主窗关闭时 HomeViewModel 自然释放，AI 窗口里的弱引用回调
     ///     会安全失效。
+    ///   - openSettings: 主 Scene 的 Settings 打开动作。AppKit 自建窗口拿不到
+    ///     `@Environment(\.openSettings)`，必须由调用方从主窗透传（与 RAG 工作台同款）。
     @MainActor
     static func show(
         repo: Repo,
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
+        homeViewModel: HomeViewModel,
+        openSettings: OpenSettingsAction
     ) {
         if let existing = instances[repo.id] {
             existing.showWindow(nil)
@@ -87,7 +90,8 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         let controller = RepoAIWindowController(
             repo: repo,
             dependencies: dependencies,
-            homeViewModel: homeViewModel
+            homeViewModel: homeViewModel,
+            openSettings: openSettings
         )
         instances[repo.id] = controller
         controller.showWindow(nil)
@@ -117,7 +121,8 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     private init(
         repo: Repo,
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
+        homeViewModel: HomeViewModel,
+        openSettings: OpenSettingsAction
     ) {
         self.repoId = repo.id
 
@@ -132,6 +137,15 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         // `@Environment(AppDependencies.self)` / `@Environment(HomeViewModel.self)`。
         // 这里同时挂上 settings，因为部分子视图（未来如果引入主题相关 modifier）
         // 会读 settings；与主窗 `StarcatApp` 给 ContentView 注入的链路对齐。
+        //
+        // Settings 导航必须单独注入：AppKit hosting 树拿不到主 Scene 的
+        // `OpenSettingsAction`，否则「前往设置」点了没反应。
+        let settingsNavigation = AISettingsNavigationAction { target in
+            openSettings()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: target)
+            }
+        }
         let content = RepoAIWindowContentView(
             repo: repo,
             onClose: { [weak window] in
@@ -139,6 +153,7 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
             }
         )
             .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            .environment(\.aiSettingsNavigation, settingsNavigation)
 
         let hostingController = NSHostingController(rootView: content)
         self.hostedContentController = hostingController

@@ -967,7 +967,8 @@ struct HomeView: View {
         RepoAIWindowController.show(
             repo: repo,
             dependencies: dependencies,
-            homeViewModel: viewModel
+            homeViewModel: viewModel,
+            openSettings: openSettings
         )
     }
 

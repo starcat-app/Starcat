@@ -120,6 +120,7 @@ struct AISettingsTab: View {
     /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
     /// 用户主动点开后偏好持久化（SceneStorage 跨设置窗口打开周期保留）。
     @SceneStorage("settings.ai.repoContext.expanded") private var isRepoContextExpanded: Bool = false
+    private static let repoContextSettingsAnchor = "settings.ai.repoContext"
 
     /// HOM-68 v3 (2026-06-15)：AI 代码上下文产物管理面板从存储 Tab 搬过来。
     /// `@Observable` 单例直接订阅；视图层调 reveal / delete 等方法时由 storage 内部
@@ -146,6 +147,7 @@ struct AISettingsTab: View {
     }
 
     private var aiConfigurationForm: some View {
+        ScrollViewReader { proxy in
         // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
         // 删除独立的"模型参数"区。原因：参数与"任务"绑定有歧义——同一模型被
         // 摘要 / 标签 / 翻译复用时，按任务调参数会出现"在'模型参数 → 摘要'调
@@ -168,6 +170,7 @@ struct AISettingsTab: View {
             // 放在 aiIndexSection 与 privacySection 之间——与「索引」性质相同（消费上游配置的
             // 高级 AI 能力），且紧贴 privacySection 形成「先看功能再看隐私」的阅读节奏。
             aiRepoContextSection
+                .id(Self.repoContextSettingsAnchor)
             privacySection
         }
         .alert(
@@ -186,6 +189,13 @@ struct AISettingsTab: View {
             ensureSelection()
             loadAPIKeys()
             loadRAGBackendKeys()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIRepoContextSection)) { _ in
+            isRepoContextExpanded = true
+            // Settings 首次创建时 Form 的滚动容器要到下一轮 RunLoop 才完成布局。
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.repoContextSettingsAnchor, anchor: .top)
+            }
         }
         // HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
         // SwiftUI macOS Settings scene 关闭窗口后不一定销毁 view 树,
@@ -247,6 +257,7 @@ struct AISettingsTab: View {
             Button("general.ok") { aiContextActionError = nil }
         } message: {
             Text(aiContextActionError ?? "")
+        }
         }
     }
 
@@ -562,7 +573,6 @@ struct AISettingsTab: View {
 
                     taskModelRow(taskModelTask)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)

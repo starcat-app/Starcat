@@ -44,6 +44,31 @@ struct DiagnosticsTests {
         #expect(error.diagnosticSummary.contains("503"))
     }
 
+    @Test("单仓摘要未配置 Provider 时直接展示配置文案")
+    func userFacingErrorMapsMissingProvider() {
+        let error = UserFacingError.map(
+            RepoAIInsightError.missingProvider("摘要"),
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+
+        #expect(error.title == String.l10n("error.user.aiConfiguration.title"))
+        #expect(error.message == RepoAIInsightError.missingProvider("摘要").localizedDescription)
+        #expect(!error.message.contains("在访问 AI 时失败"))
+    }
+
+    @Test("单仓摘要缺少 API Key 时直接展示配置文案")
+    func userFacingErrorMapsMissingAPIKey() {
+        let error = UserFacingError.map(
+            RepoAIInsightError.missingAPIKey,
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+
+        #expect(error.title == String.l10n("error.user.aiConfiguration.title"))
+        #expect(error.message == String.l10n("ai.insight.error.missingAPIKey"))
+    }
+
     @Test("诊断日志写入 JSONL")
     func diagnosticLogStoreWritesJSONL() async throws {
         let root = FileManager.default.temporaryDirectory

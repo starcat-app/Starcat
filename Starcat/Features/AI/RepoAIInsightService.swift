@@ -14,9 +14,8 @@
 //  - 不自动触发批量生成；只有用户在详情页点击生成 / 重新生成才调用 chat。
 //  - 不自动写标签；标签推荐只进入 UI 确认流。
 //  - 摘要和标签是两个独立 AI 任务。标签 JSON 失败不应让已生成的摘要文本丢失。
-//  - W4（2026-06-21）：新增 `cachedInsightFast(for:)` 与 `prepareContextForGeneration(for:onStep:)`
-//    两个公开方法，分别给 ViewModel 提供「启动期秒显已缓存摘要」与「后台 prep + 进度回调」
-//    两条快速路径。`cachedInsightFast` 不做 hash 校验，hash 校验推迟到 `generate` 路径。
+//  - `cachedInsightFast(for:)` 只负责启动期秒显已缓存摘要，不做 hash 校验；
+//    代码上下文检查与进度回调统一留在用户发起的 `generate` 路径。
 //
 
 import CryptoKit
@@ -66,9 +65,9 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
 
 /// 单次摘要生成使用的代码上下文控制器。
 ///
-/// 为什么不能只取消 ViewModel 的后台 prep task：
-/// `generateInsight` 内部还会通过 `makeSource` 再次核对代码上下文；如果没有请求级状态，
-/// 用户点击“跳过”后，主生成链路会立刻重新下载 ZIP / 生成 XML。控制器同时承担两件事：
+/// 为什么不能只切换 ViewModel 的 UI 状态：
+/// `generateInsight` 内部正在通过 `makeSource` 准备代码上下文；如果没有请求级状态，
+/// 用户点击“跳过”后，provider 仍会继续下载 ZIP / 生成 XML。控制器同时承担两件事：
 ///   1. 取消当前正在执行的 provider 子任务；
 ///   2. 记住“本次跳过”，让尚未开始或取消后继续执行的 `makeSource` 返回
 ///      `.featureDisabled`，但不修改全局设置，也不影响下一次生成。
@@ -117,8 +116,28 @@ final class RepoAICodeContextRequest {
     }
 }
 
+/// 单仓摘要在代码上下文完成后、LLM 流式输出前的 External Search 进度事件。
+///
+/// 仅当设置允许对本仓库收集外部上下文时才会发出；UI 用它把「几秒外搜」从笼统的
+/// 「正在准备摘要请求」里拆出来。
+enum RepoAIExternalContextProgress: Sendable, Equatable {
+    case started
+    case finished
+}
+
 @MainActor
 final class RepoAIInsightService {
+
+    /// 单仓摘要每个真实代码上下文步骤开始前的用户取消缓冲。
+    ///
+    /// 只在 `RepoAICodeContextRequest` 存在时启用；批量 AI、RAG 与其它复用 provider
+    /// 的路径不等待。用 `Task.sleep` 而非不可取消的 Dispatch 延迟，用户点「跳过本次」
+    /// 后 `RepoAICodeContextRequest.skip()` 能立即取消 sleep 并继续摘要。
+    static let codeContextStepStartDelay: Duration = .seconds(3)
+
+    static func waitBeforeCodeContextStep() async throws {
+        try await Task.sleep(for: codeContextStepStartDelay)
+    }
 
     /// makeSource 产物：Summary / Tags 任务都用占位符渲染（`{metadata}` / `{readme}` /
     /// `{codeContext}` / `{externalContext}` / `{repoTags}` / `{libraryTags}`，详见
@@ -186,6 +205,27 @@ final class RepoAIInsightService {
     private let keychain: any KeychainManaging
     private let externalContextProvider: ExternalSearchContextProvider
     private let entitlementGate: EntitlementGate?
+
+    /// 单仓 AI 摘要是否应在本次生成中准备代码上下文。
+    ///
+    /// 只暴露最终有效状态给 ViewModel 决定是否展示三步进度；真正的设置判断与
+    /// provider 调用仍收口在 service/provider 内，RAG 工作台不经过这个属性。
+    var isCodeContextEnabled: Bool {
+        settings.aiRepoContextEnabled && repoAIContextProvider != nil
+    }
+
+    /// 单仓摘要本次是否会进入 External Search 拉取。
+    ///
+    /// 与 `ExternalSearchContextProvider.collect` 的门控一致（总开关 + 私仓白名单）；
+    /// ViewModel 用它在生成开始时冻结「是否展示外部搜索步骤」，避免生成中途改设置
+    /// 导致进度 chip 突然出现 / 消失。
+    func isExternalContextAllowed(for repo: Repo) -> Bool {
+        ExternalSearchContextProvider.allowsExternalContext(
+            repoIsPrivate: repo.isPrivate,
+            enabled: settings.externalContextEnabled,
+            allowPrivate: settings.externalSearchAllowPrivateRepos
+        )
+    }
 
     /// X4（2026-06-13）：注入 RepoContextPacker 的代码上下文。
     ///
@@ -274,32 +314,7 @@ final class RepoAIInsightService {
         return try Self.decodeInsight(json: record.summaryJson)
     }
 
-    /// W4（2026-06-21）：后台准备代码上下文（不进 `makeSource`，可独立调用）。
-    ///
-    /// 与 `cachedInsight(for:)` / `generateInsight(for:)` 内嵌的 context 准备逻辑一致，
-    /// 但**独立**暴露给 ViewModel 用于「打开面板即启动后台 prep」——UI 此时已经显示
-    /// 「生成摘要」按钮，prep 进度通过 `onStep` 回调驱动 chip 行更新，按钮可点不被阻塞。
-    ///
-    /// 调用方（ViewModel）的处理约定：
-    ///   - 用户在 prep 期间点击「生成摘要」：ViewModel 会先 `await prepTask` 再调
-    ///     `generateInsight`，LLM 永远拿最新 context（避免钱白烧）；
-    ///   - prep 失败（`.degraded`）：按钮仍然可点，generate 走降级路径（README-only）。
-    ///
-    /// - Parameter onStep: 进度回调，3 个边界点对应 prep pipeline 的 resolveBranch /
-    ///   archiveIfNeeded / pack。
-    /// - Returns: 与 `contextOutcome(for:)` 完全一致的 3 态结果。
-    func prepareContextForGeneration(
-        for repo: Repo,
-        onStep: @escaping RepoAIContextProgressCallback
-    ) async throws -> RepoAIContextOutcome {
-        guard let provider = repoAIContextProvider else {
-            // 与「toggle off」语义对齐：provider 没注入 → 全链路跳过，UI 不显示降级提示。
-            return .featureDisabled
-        }
-        return try await provider.contextOutcome(for: repo, onProgress: onStep)
-    }
-
-    /// 用户停止后台代码上下文准备时的窄清理入口。
+    /// 用户跳过本次代码上下文准备时的窄清理入口。
     ///
     /// 这里不删除正式 ZIP / 已生成 context.xml，只清理下载链路的未完成临时文件；
     /// 这样下次生成仍能复用已经完整落盘的缓存，避免把「停止」变成破坏性清缓存。
@@ -329,23 +344,31 @@ final class RepoAIInsightService {
         allowExternalContext: Bool = true,
         codeContextRequest: RepoAICodeContextRequest? = nil,
         onContextProgress: RepoAIContextProgressCallback? = nil,
-        onContextResolved: (@MainActor () async -> Void)? = nil,
+        onContextResolved: (@MainActor () -> Void)? = nil,
+        onExternalContextProgress: (@MainActor (RepoAIExternalContextProgress) -> Void)? = nil,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         try enforceGenerationEntitlement(includeSummary: includeSummary, includeTags: includeTags)
+        // 必须在 makeSource（ZIP / XML）之前完成配置校验：没配好服务商时不应浪费下载。
+        try ensureGenerationClientsReady(includeSummary: includeSummary, includeTags: includeTags)
         let source = try await makeSource(
             for: repo,
             codeContextRequest: codeContextRequest,
             onContextProgress: onContextProgress
         )
-        // 允许 UI 在进入 LLM 前补完最短步骤展示；跳过时回调应立刻返回。
-        await onContextResolved?()
+        // 代码上下文已经确定后切到请求阶段，避免继续展示可点击的“跳过”入口。
+        onContextResolved?()
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
         // Y9.3（2026-06-14 dong4j 反馈）：捕获 anysearch 降级原因，让 UI 给出具体反馈
         // （之前只打 log 静默降级，用户看不到为什么没注入）。
         var externalDegradationReason: ExternalContextDegradationReason?
-        if includeSummary, allowExternalContext {
+        let shouldCollectExternal = includeSummary
+            && allowExternalContext
+            && isExternalContextAllowed(for: repo)
+        if shouldCollectExternal {
+            // 先通知 UI 进入「获取外部资料」，再 await collect；否则几秒外搜会被误标成「准备摘要请求」。
+            onExternalContextProgress?(.started)
             do {
                 resolvedExternalContext = try await externalContextProvider.collect(for: repo)
             } catch {
@@ -354,6 +377,7 @@ final class RepoAIInsightService {
                 resolvedExternalContext = nil
                 externalDegradationReason = ExternalContextDegradationReason.classify(error)
             }
+            onExternalContextProgress?(.finished)
         } else {
             resolvedExternalContext = nil
         }
@@ -618,6 +642,27 @@ final class RepoAIInsightService {
         }
         if includeTags {
             try entitlementGate.requirePro(.aiTags)
+        }
+    }
+
+    /// 生成前校验摘要 / 标签任务是否已有可用的 Provider + API Key。
+    ///
+    /// 只检查本地配置完备性，不发起真实 LLM 请求；失败时抛 `RepoAIInsightError`
+    ///（`.missingProvider` / `.missingAPIKey`），让 UI 在下载 ZIP / 生成 XML 之前提示用户去设置。
+    func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {
+        if includeSummary {
+            _ = try makeClient(
+                task: settings.aiSummaryTask,
+                fallbackModel: settings.aiChatModel,
+                taskName: String.l10n("ai.taskName.summary")
+            )
+        }
+        if includeTags {
+            _ = try makeClient(
+                task: settings.aiTagsTask,
+                fallbackModel: settings.aiChatModel,
+                taskName: String.l10n("ai.taskName.tagRecommendation")
+            )
         }
     }
 
@@ -1050,8 +1095,23 @@ final class RepoAIInsightService {
         var degradationReason: ContextDegradationReason?
         var codeContextXml = ""
         if let provider = repoAIContextProvider {
+            // 只有单仓摘要会创建 request，因此也只有该路径插入 3 秒可取消缓冲。
+            // provider 在真实步骤 progress 发出后才调用 gate，ZIP 缓存命中时不会调用
+            // 下载 gate；这样既给用户取消窗口，也不为跳过的步骤人为加时。
+            let beforeStep: RepoAIContextStepGate?
+            if codeContextRequest == nil {
+                beforeStep = nil
+            } else {
+                beforeStep = { _ in
+                    try await Self.waitBeforeCodeContextStep()
+                }
+            }
             let operation = {
-                try await provider.contextOutcome(for: repo, onProgress: onContextProgress)
+                try await provider.contextOutcome(
+                    for: repo,
+                    onProgress: onContextProgress,
+                    beforeStep: beforeStep
+                )
             }
             let outcome = if let codeContextRequest {
                 try await codeContextRequest.resolve(operation: operation)
