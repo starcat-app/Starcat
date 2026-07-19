@@ -6451,92 +6451,222 @@
     "ai.embedding.error.authenticationRejected": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider rejected the credential. Update the API key in AI Settings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商拒绝了当前凭据，请在 AI 设置中更新 API Key。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding provider rejected the credential. Update the API key in AI Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化服务商拒绝了当前凭据，请在 AI 设置中更新 API Key。"
+          }
+        }
       }
     },
     "ai.embedding.error.emptyResponse": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding model returned no usable vectors. Check the selected model and try again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化模型没有返回可用向量，请检查所选模型后重试。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding model returned no usable vectors. Check the selected model and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化模型没有返回可用向量，请检查所选模型后重试。"
+          }
+        }
       }
     },
     "ai.embedding.error.incompatibleModelFormat": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The selected model %@ is not an embedding model. Choose an embedding-capable model in AI Settings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前选择的模型 %@ 不是向量化模型，请在 AI 设置中选择支持 Embedding 的模型。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected model %@ is not an embedding model. Choose an embedding-capable model in AI Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前选择的模型 %@ 不是向量化模型，请在 AI 设置中选择支持 Embedding 的模型。"
+          }
+        }
       }
     },
     "ai.embedding.error.invalidResponse": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider returned an unsupported response. Check that the selected model supports embeddings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务返回了无法识别的响应，请确认所选模型支持 Embedding。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding provider returned an unsupported response. Check that the selected model supports embeddings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化服务返回了无法识别的响应，请确认所选模型支持 Embedding。"
+          }
+        }
       }
     },
     "ai.embedding.error.missingAPIKey": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider has no API key. Add one in AI Settings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商尚未配置 API Key，请先在 AI 设置中补充。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding provider has no API key. Add one in AI Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化服务商尚未配置 API Key，请先在 AI 设置中补充。"
+          }
+        }
       }
     },
     "ai.embedding.error.missingModel": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No embedding model is configured. Choose one in AI Settings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚未配置向量化模型，请先在 AI 设置中选择。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No embedding model is configured. Choose one in AI Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未配置向量化模型，请先在 AI 设置中选择。"
+          }
+        }
       }
     },
     "ai.embedding.error.missingProvider": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No embedding provider is configured. Choose a valid provider in AI Settings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚未配置向量化服务商，请先在 AI 设置中选择有效的服务商。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No embedding provider is configured. Choose a valid provider in AI Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未配置向量化服务商，请先在 AI 设置中选择有效的服务商。"
+          }
+        }
       }
     },
     "ai.embedding.error.modelRequestRejected": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider rejected this model request. Check that the model name and endpoint support embeddings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商拒绝了模型请求，请检查模型名称和接口是否支持 Embedding。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding provider rejected this model request. Check that the model name and endpoint support embeddings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化服务商拒绝了模型请求，请检查模型名称和接口是否支持 Embedding。"
+          }
+        }
       }
     },
     "ai.embedding.error.networkUnavailable": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Couldn't connect to the embedding provider. Check the network and Base URL, then try again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法连接向量化服务，请检查网络和 Base URL 后重试。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't connect to the embedding provider. Check the network and Base URL, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接向量化服务，请检查网络和 Base URL 后重试。"
+          }
+        }
       }
     },
     "ai.embedding.error.providerUnavailable": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider is disabled or has not passed connection testing. Verify it in AI Settings first." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商未启用或尚未通过连接测试，请先在 AI 设置中完成验证。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding provider is disabled or has not passed connection testing. Verify it in AI Settings first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化服务商未启用或尚未通过连接测试，请先在 AI 设置中完成验证。"
+          }
+        }
       }
     },
     "ai.embedding.error.rateLimited": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider is rate-limiting requests. Wait a moment and try again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务请求过于频繁，请稍后重试。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding provider is rate-limiting requests. Wait a moment and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化服务请求过于频繁，请稍后重试。"
+          }
+        }
       }
     },
     "ai.embedding.error.requestFailed": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding request failed. Check the provider and model configuration, then try again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化请求失败，请检查服务商和模型配置后重试。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding request failed. Check the provider and model configuration, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化请求失败，请检查服务商和模型配置后重试。"
+          }
+        }
       }
     },
     "ai.embedding.error.timedOut": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The embedding request timed out. Check the network or increase the task timeout." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化请求超时，请检查网络或调大任务超时时间。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The embedding request timed out. Check the network or increase the task timeout."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化请求超时，请检查网络或调大任务超时时间。"
+          }
+        }
       }
     },
     "ai.client.modelList.noHTTPResponse": {
@@ -64822,6 +64952,244 @@
           "stringUnit": {
             "state": "translated",
             "value": "自定义模型"
+          }
+        }
+      }
+    },
+    "ai.client.error.authenticationRejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI provider rejected the credential. Update the API key in AI Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务商拒绝了当前凭据，请在 AI 设置中更新 API Key。"
+          }
+        }
+      }
+    },
+    "ai.client.error.rateLimited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI provider is rate-limiting requests. Wait a moment and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务请求过于频繁，请稍后重试。"
+          }
+        }
+      }
+    },
+    "ai.client.error.requestRejectedFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI provider rejected the request (HTTP %d)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务拒绝了请求（HTTP %d）。"
+          }
+        }
+      }
+    },
+    "ai.client.error.networkUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't reach the AI provider. Check the network and Base URL, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 AI 服务，请检查网络和 Base URL 后重试。"
+          }
+        }
+      }
+    },
+    "ai.client.error.timedOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI request timed out. Check the network or increase the task timeout."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 请求超时，请检查网络或调大任务超时时间。"
+          }
+        }
+      }
+    },
+    "ai.client.error.requestFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI request failed. Check the provider and model configuration, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 请求失败，请检查服务商和模型配置后重试。"
+          }
+        }
+      }
+    },
+    "batchAI.panel.row.showDetails": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看详情"
+          }
+        }
+      }
+    },
+    "batchAI.panel.row.hideDetails": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起详情"
+          }
+        }
+      }
+    },
+    "batchAI.panel.row.copyDetails": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制详情"
+          }
+        }
+      }
+    },
+    "batchAI.panel.row.copiedDetails": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制"
+          }
+        }
+      }
+    },
+    "ai.client.error.paymentRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI provider requires payment or has insufficient balance (HTTP 402). Top up or check your plan quota."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务商要求付费或账户余额不足（HTTP 402）。请充值或检查套餐额度。"
+          }
+        }
+      }
+    },
+    "ai.client.error.badRequest": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI provider rejected the request (HTTP 400). Check the model name, Base URL, and request parameters."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 请求被拒绝（HTTP 400）。请检查模型名称、Base URL 与请求参数。"
+          }
+        }
+      }
+    },
+    "ai.client.error.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI endpoint or model was not found (HTTP 404). Check the Base URL and model name."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 接口或模型不存在（HTTP 404）。请检查 Base URL 与模型名称。"
+          }
+        }
+      }
+    },
+    "ai.client.error.unprocessable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The AI provider could not process the request (HTTP 422). Check that the model supports this task or adjust parameters."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 请求无法处理（HTTP 422）。请确认模型支持当前任务，或调整请求参数。"
           }
         }
       }

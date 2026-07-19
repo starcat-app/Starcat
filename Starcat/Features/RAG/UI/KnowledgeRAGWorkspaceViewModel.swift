@@ -563,6 +563,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     var indexingStatus: RAGIndexingStatus { dependencies.knowledgeRAGIndexBuilder.status }
     /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
     var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
+    var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
     var configuredEmbeddingModelName: String? { dependencies.settings.configuredEmbeddingModelName }
     var embeddingConfigurationIssue: AIEmbeddingError? { dependencies.settings.embeddingConfigurationIssue }
     var errorMessage: String? {
@@ -1472,7 +1473,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         workspaceError = nil
     }
 
-    /// 错误 Sheet 的动作只改变当前工作台状态，不做任何隐式网络重试或数据删除。
+    /// 错误 Alert 的动作只改变当前工作台状态，不做任何隐式网络重试或数据删除。
     func resolveWorkspaceErrorAction(_ action: RAGWorkspaceErrorAction) {
         switch action {
         case .retry, .checkNetwork:

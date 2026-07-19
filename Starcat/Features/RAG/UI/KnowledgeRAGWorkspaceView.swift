@@ -53,6 +53,7 @@ private struct RAGWorkspaceRightWidthPreferenceKey: PreferenceKey {
 
 struct KnowledgeRAGWorkspaceView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
     @Environment(AppDependencies.self) private var dependencies
 
     @Bindable var chromeState: WorkspaceChromeState
@@ -144,14 +145,26 @@ struct KnowledgeRAGWorkspaceView: View {
             viewModel.handleLink(url)
             return .handled
         })
-        .sheet(isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.dismissError() } })) {
-            RAGWorkspaceErrorSheet(
-                error: viewModel.workspaceError ?? .init(technicalDetail: viewModel.errorMessage ?? ""),
-                onAction: viewModel.resolveWorkspaceErrorAction,
-                onDismiss: viewModel.dismissError
-            )
-                .appLocaleEnvironment()
-        }
+        .ragWorkspaceErrorAlert(
+            error: Binding(
+                get: {
+                    viewModel.workspaceError
+                        ?? viewModel.errorMessage.map(RAGWorkspaceError.init(technicalDetail:))
+                },
+                set: { if $0 == nil { viewModel.dismissError() } }
+            ),
+            onAction: { presentedError in
+                // 向量化错误应直达向量模型配置，而不是只打开设置首页让用户自行定位。
+                if presentedError.action == .openAISettings,
+                   presentedError.kind == .embeddingConfiguration
+                       || presentedError.kind == .embeddingRequest {
+                    settingsNavigation("ai.embedding")
+                    viewModel.dismissError()
+                } else {
+                    viewModel.resolveWorkspaceErrorAction(presentedError.action)
+                }
+            }
+        )
         .sheet(isPresented: $chromeState.isSettingsPresented) {
             RAGWorkspaceSettingsSheet(settings: dependencies.settings)
         }

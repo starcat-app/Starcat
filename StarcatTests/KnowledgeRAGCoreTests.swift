@@ -1225,15 +1225,25 @@ struct KnowledgeRAGCoreTests {
 
     @Test("工作台错误按可恢复操作分类，技术细节不作为普通文案")
     func workspaceErrorClassification() {
+        let embeddingConfiguration = RAGWorkspaceError(error: AIEmbeddingError.missingModel)
+        let embeddingRequest = RAGWorkspaceError(error: AIEmbeddingError.invalidResponse)
+
         #expect(RAGWorkspaceError(error: AIClientError.missingAPIKey).kind == .configuration)
-        #expect(RAGWorkspaceError(error: AIEmbeddingError.missingModel).kind == .embeddingConfiguration)
+        #expect(embeddingConfiguration.kind == .embeddingConfiguration)
         #expect(RAGWorkspaceError(error: AIEmbeddingError.incompatibleModel("chat-model")).kind == .embeddingConfiguration)
         #expect(RAGWorkspaceError(error: AIEmbeddingError.modelRequestRejected).kind == .embeddingRequest)
-        #expect(RAGWorkspaceError(error: AIEmbeddingError.invalidResponse).kind == .embeddingRequest)
+        #expect(embeddingRequest.kind == .embeddingRequest)
         #expect(RAGWorkspaceError(error: GitHubRemoteContextError.http(status: 401, message: "bad token")).kind == .authentication)
         #expect(RAGWorkspaceError(error: URLError(.timedOut)).kind == .timeout)
         #expect(RAGWorkspaceError(error: RAGAttachmentError.unreadable("notes.pdf")).kind == .attachment)
         #expect(RAGWorkspaceError(error: AIClientError.emptyResponse).kind == .generation)
+
+        // 知识库浏览器必须把原始 AIEmbeddingError 传到这里，原生 alert 才能展示具体原因
+        // 并给出“打开 AI 设置”，而不是退化成通用问答失败文案。
+        #expect(embeddingConfiguration.messageText == AIEmbeddingError.missingModel.localizedDescription)
+        #expect(embeddingConfiguration.action == .openAISettings)
+        #expect(embeddingRequest.messageText == AIEmbeddingError.invalidResponse.localizedDescription)
+        #expect(embeddingRequest.action == .openAISettings)
     }
 
     @Test("Planner: 日期歧义计划必须带追问")

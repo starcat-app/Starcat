@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Starcat 应用隐私政策。详细说明我们如何收集、使用、存储与保护您的个人信息,符合 Apple App Store 要求、GDPR、以及中国《个人信息保护法》等法律法规。">
+    <meta name="description" content="Starcat macOS 应用与 Starcat Browser Plugin 隐私政策。">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://starcat.ink/privacy-zh.html">
     <link rel="alternate" hreflang="en" href="https://starcat.ink/privacy.html">
@@ -492,9 +492,9 @@
         <h1>Starcat 隐私政策</h1>
         <div class="hero-meta">
             <span><strong>生效日期:</strong> 2026 年 6 月 1 日</span>
-            <span><strong>最近更新:</strong> 2026 年 6 月 1 日</span>
-            <span><strong>版本:</strong> v1.0</span>
-            <span><strong>适用平台:</strong> macOS 15 及以上</span>
+            <span><strong>最近更新:</strong> 2026 年 7 月 19 日</span>
+            <span><strong>版本:</strong> v1.1</span>
+            <span><strong>适用平台:</strong> macOS 15 及以上 / Chrome</span>
         </div>
     </div>
 </section>
@@ -521,6 +521,7 @@
             <li><a href="#sec-14">Cookies 与类似技术</a></li>
             <li><a href="#sec-15">政策更新</a></li>
             <li><a href="#sec-16">联系我们</a></li>
+            <li><a href="#sec-17">浏览器插件</a></li>
         </ol>
     </aside>
 
@@ -549,7 +550,7 @@
         <section class="chapter" id="sec-1">
             <h2><span class="num">01</span>引言</h2>
             <p>本应用是面向 Apple 平台的 GitHub Star 管理工具，核心定位为"<strong>本地优先</strong>"的个人知识管理应用。除非您主动启用云同步或 AI 功能，绝大多数数据处理过程均在您本地的 Apple 设备上完成。</p>
-            <p>本政策适用于您通过 Apple App Store 下载、安装和使用 Starcat 应用的全部场景。本应用的开发与运营主体（以下简称"<strong>我们</strong>"）为本政策项下的"<strong>个人信息处理者</strong>"。</p>
+            <p>本政策适用于您使用 Starcat macOS 应用或 Starcat Browser Plugin 的场景。Starcat 的开发与运营主体（以下简称"<strong>我们</strong>"）为本政策项下的"<strong>个人信息处理者</strong>"。</p>
             <p>请注意，本政策<strong>不涉及</strong>第三方服务（如 GitHub、Apple、AI 提供商等）对您信息的处理，这些第三方各自适用其自身的隐私政策。</p>
         </section>
 
@@ -915,6 +916,27 @@
             <p style="margin-top: 24px; color: var(--color-text-tertiary); font-size: 14px;">
                 如您认为我们的个人信息处理行为损害了您的合法权益，且经我们处理后仍未得到妥善解决，您还可以向有管辖权的<strong>个人信息保护监管部门</strong>（中国大陆：国家网信办；欧盟：所在国数据保护机构 DPA）进行投诉或举报。
             </p>
+        </section>
+
+        <section class="chapter" id="sec-17">
+            <h2><span class="num">17</span>Starcat Browser Plugin</h2>
+            <p>Starcat Browser Plugin 是 Starcat macOS 应用的本地伴侣插件。它在 GitHub 仓库页，以及包含 GitHub 仓库链接的受支持 Google 搜索结果页中显示本机 Starcat 已有的仓库上下文。</p>
+            <h3>17.1 本地处理的页面数据</h3>
+            <ul>
+                <li>在 GitHub 页面中，插件读取当前仓库 URL，以及放置 Starcat 控件所需的最少页面结构。</li>
+                <li>在受支持的 Google 搜索页中，插件最多识别 8 条可见结果里的 GitHub 仓库链接。</li>
+                <li>这些页面数据仅用于提供用户可见的插件功能；插件不会保留完整页面内容或浏览历史。</li>
+            </ul>
+            <h3>17.2 配对与本机通信</h3>
+            <ul>
+                <li>本机 Starcat 服务地址与 Local API Key 保存在 <code>chrome.storage.local</code> 中，用于维持配对。</li>
+                <li>Local API Key 仅作为 Bearer 凭证发送到 <code>127.0.0.1</code> 或 <code>localhost</code> 上运行的 Starcat Companion 服务。</li>
+                <li>当您保存私人笔记时，笔记内容仅发送到同一台 Mac 上运行的 Starcat 应用；插件不会在扩展存储中保留笔记正文。</li>
+            </ul>
+            <div class="callout success">
+                <span class="label">插件数据不远程传输</span>
+                插件不会把页面数据、Local API Key 或私人笔记发送到 Starcat 服务器、广告网络、分析服务或其他第三方。
+            </div>
         </section>
 
     </article>

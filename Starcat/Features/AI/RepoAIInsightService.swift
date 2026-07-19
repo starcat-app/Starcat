@@ -21,7 +21,7 @@
 import CryptoKit
 import Foundation
 
-enum RepoAIInsightError: Error, LocalizedError, Equatable {
+enum RepoAIInsightError: Error, LocalizedError, Equatable, Sendable {
     case missingAPIKey
     case missingProvider(String)
     case invalidJSON

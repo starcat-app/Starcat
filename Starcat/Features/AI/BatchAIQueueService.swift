@@ -264,7 +264,8 @@ final class BatchAIQueueService {
         guard jobs[idx].status == .failed else { return }
         jobs[idx].status = .queued
         jobs[idx].attempts = 0
-        jobs[idx].errorMessage = nil
+        jobs[idx].failure = nil
+        jobs[idx].errorDiagnostic = nil
         jobs[idx].finishedAt = nil
         if !isRunning {
             isRunning = true
@@ -280,7 +281,8 @@ final class BatchAIQueueService {
         for idx in jobs.indices where jobs[idx].status == .failed {
             jobs[idx].status = .queued
             jobs[idx].attempts = 0
-            jobs[idx].errorMessage = nil
+            jobs[idx].failure = nil
+            jobs[idx].errorDiagnostic = nil
             jobs[idx].finishedAt = nil
             touched = true
         }
@@ -348,10 +350,10 @@ final class BatchAIQueueService {
             // 用户取消时，把可能停在 .processing 的孤儿 job 收尾，避免 UI 留"永远转圈"行。
             if cancelRequested {
                 let now = Date()
-                let reason = String.l10n("batchAI.panel.cancelledByUser")
                 for idx in jobs.indices where jobs[idx].status == .processing {
                     jobs[idx].status = .failed
-                    jobs[idx].errorMessage = reason
+                    jobs[idx].failure = .cancelled
+                    jobs[idx].errorDiagnostic = nil
                     jobs[idx].finishedAt = now
                 }
             }
@@ -530,17 +532,76 @@ final class BatchAIQueueService {
     private func handleFailure(jobId: Int64, error: Error, options: BatchAIQueueOptions) {
         guard let idx = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
 
-        let message = error.localizedDescription
-        AppLog.ai.error("[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(message, privacy: .public)")
+        let friendly = UserFacingError.map(
+            error,
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+        let failure = BatchAIFailure(error: error)
+        let shortMessage = failure.localizedMessage
+        let diagnostic = Self.failureDiagnostic(for: error, friendly: friendly, shortMessage: shortMessage)
+        AppLog.ai.error(
+            "[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(shortMessage, privacy: .public), diagnostic=\(diagnostic ?? "", privacy: .public)"
+        )
+        friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider")
 
         if isPermanentError(error) || jobs[idx].attempts >= options.maxRetries {
             jobs[idx].status = .failed
-            jobs[idx].errorMessage = message
+            jobs[idx].failure = failure
+            jobs[idx].errorDiagnostic = diagnostic
             jobs[idx].finishedAt = Date()
         } else {
             // 可重试：回退到 queued，主循环下一轮会重新拉取（重试次数已在 processNext 入口 +1）。
             jobs[idx].status = .queued
         }
+    }
+
+    /// 测试与非 UI 调用方共用入口；实际 job 只保存 `BatchAIFailure`，不缓存本地化结果。
+    static func userVisibleFailureMessage(for error: Error) -> String {
+        BatchAIFailure(error: error).localizedMessage
+    }
+
+    /// 可展开详情：结构化诊断（已脱敏）；与短文案不同时才返回。
+    static func failureDiagnostic(
+        for error: Error,
+        friendly: UserFacingError,
+        shortMessage: String
+    ) -> String? {
+        if let ai = error as? AIClientError, let detail = ai.diagnosticDetail {
+            let redacted = DiagnosticEvent.redact(detail)
+            guard redacted != shortMessage, !redacted.isEmpty else { return nil }
+            return redacted
+        }
+        let summary = friendly.diagnosticSummary
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, summary != shortMessage else { return nil }
+        if summary.count > 1200 {
+            return String(summary.prefix(1197)) + "…"
+        }
+        return summary
+    }
+
+    /// 复制到剪贴板的完整失败报告：仓库 + 用户文案 + 诊断详情。
+    static func copyableFailureReport(
+        repoFullName: String,
+        message: String?,
+        diagnostic: String?
+    ) -> String {
+        var lines: [String] = []
+        let repo = repoFullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !repo.isEmpty {
+            lines.append("Repo: \(repo)")
+        }
+        let short = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !short.isEmpty {
+            lines.append("Message: \(short)")
+        }
+        let detail = (diagnostic ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !detail.isEmpty {
+            if !lines.isEmpty { lines.append("") }
+            lines.append(detail)
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// 不可重试错误判别：用户没改配置之前永远会失败的那一类。
@@ -550,6 +611,15 @@ final class BatchAIQueueService {
             case .missingAPIKey, .missingProvider:
                 return true
             case .invalidJSON:
+                return false
+            }
+        }
+        if let ai = error as? AIClientError {
+            switch ai {
+            case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired:
+                return true
+            case .emptyResponse, .responseTruncated, .modelListRequestFailed,
+                 .rateLimited, .requestRejected, .networkUnavailable, .timedOut, .requestFailed:
                 return false
             }
         }

@@ -15,6 +15,8 @@
 //  - 面板用 .sheet 承载：关闭面板不会停止队列（队列继续在后台跑，再开面板可恢复观察），
 //    对应"支持后台继续"验收点。
 //  - 区分三档终态视觉：completed=绿色 / ignored=灰色 / failed=红色，搭配文字补充原因。
+//  - 失败行置顶；主文案只显示用户可读短句，原始诊断放在可展开详情里。
+//  - 进度条下方「当前任务」行固定高度占位，避免有/无文案时 sheet 跳动。
 //
 
 import SwiftUI
@@ -134,12 +136,17 @@ struct BatchAIQueuePanel: View {
             ProgressView(value: progressFraction)
                 .progressViewStyle(.linear)
                 .tint(service.failedCount > 0 ? .orange : .accentColor)
+            // 固定高度占位：有/无「当前任务」文案时都占同一行，避免 sheet 上下跳动。
             currentJobLabel
+                .frame(height: Self.currentJobLabelHeight, alignment: .leading)
             countersRow
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }
+
+    /// caption + small ProgressView 的稳定行高；必须与 `currentJobLabel` 占位一致。
+    private static let currentJobLabelHeight: CGFloat = 18
 
     @ViewBuilder
     private var currentJobLabel: some View {
@@ -162,11 +169,24 @@ struct BatchAIQueuePanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
         } else if service.isFinished {
             Label("batchAI.panel.finished", systemImage: "checkmark.seal.fill")
                 .font(.caption)
                 .foregroundStyle(.green)
+                .lineLimit(1)
+        } else {
+            // 与上方同结构的隐形占位，保证暂停 / 间歇态行高不塌。
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(verbatim: " ")
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+            .accessibilityHidden(true)
+            .opacity(0)
         }
     }
 
@@ -197,7 +217,7 @@ struct BatchAIQueuePanel: View {
     private var jobList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(service.jobs) { job in
+                ForEach(displayedJobs) { job in
                     JobRow(job: job, onRetry: {
                         service.retry(jobId: job.repoId)
                     })
@@ -206,6 +226,13 @@ struct BatchAIQueuePanel: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
+    }
+
+    /// 失败置顶，组内保持原队列相对顺序，方便用户先处理问题项。
+    private var displayedJobs: [BatchAIJob] {
+        let failed = service.jobs.filter { $0.status == .failed }
+        let others = service.jobs.filter { $0.status != .failed }
+        return failed + others
     }
 
     // MARK: - 失败底栏
@@ -250,9 +277,12 @@ struct BatchAIQueuePanel: View {
 ///
 /// 性能：用 LazyVStack 懒加载，行内只渲染轻量元素（无 markdown / 图像）。
 /// 大批次（1000+）滚动时也只渲染可视行，不会爆 CPU。
+/// 失败行默认只显示短文案；有诊断详情时才露出「查看详情」折叠区。
 private struct JobRow: View {
     let job: BatchAIJob
     let onRetry: () -> Void
+
+    @State private var isDiagnosticExpanded = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -260,7 +290,7 @@ private struct JobRow: View {
                 .frame(width: 16, height: 16)
                 .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: job.repoFullName)
                     .font(.subheadline.monospaced())
                     .lineLimit(1)
@@ -268,7 +298,11 @@ private struct JobRow: View {
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(isDiagnosticExpanded ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if job.status == .failed, let diagnostic = expandableDiagnostic {
+                    diagnosticDisclosure(diagnostic)
                 }
             }
 
@@ -285,6 +319,71 @@ private struct JobRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func diagnosticDisclosure(_ diagnostic: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isDiagnosticExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(isDiagnosticExpanded ? 90 : 0))
+                Text(isDiagnosticExpanded ? "batchAI.panel.row.hideDetails" : "batchAI.panel.row.showDetails")
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+
+        if isDiagnosticExpanded {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: diagnostic)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                // 复制完整报告（仓库 + 短文案 + 诊断）；图标与文案固定占位，避免反馈态撑缩 sheet。
+                CopyFeedbackButton(
+                    providesContent: { copyableFailureReport },
+                    tooltip: "batchAI.panel.row.copyDetails"
+                ) { didCopy in
+                    HStack(spacing: 4) {
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(.system(size: 11, weight: .regular))
+                            .frame(width: 12, height: 12)
+                            .foregroundStyle(didCopy ? Color.green : .secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                        ZStack(alignment: .leading) {
+                            // 用更长的「复制详情」撑开宽度，避免切到「已复制」时整行收缩。
+                            Text("batchAI.panel.row.copyDetails")
+                                .font(.caption)
+                                .hidden()
+                            Text(didCopy ? "batchAI.panel.row.copiedDetails" : "batchAI.panel.row.copyDetails")
+                                .font(.caption)
+                                .foregroundStyle(didCopy ? Color.green : .secondary)
+                        }
+                    }
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+
+    /// 剪贴板内容：短文案 + 结构化诊断，方便粘贴到反馈/issue。
+    private var copyableFailureReport: String {
+        BatchAIQueueService.copyableFailureReport(
+            repoFullName: job.repoFullName,
+            message: failureMessage,
+            diagnostic: job.errorDiagnostic
+        )
     }
 
     @ViewBuilder
@@ -329,7 +428,23 @@ private struct JobRow: View {
             }.joined(separator: ", ")
             return String(format: String.l10n("batchAI.panel.row.ignoredFormat"), names)
         case .failed:
-            return job.errorMessage ?? String.l10n("batchAI.panel.row.failedUnknown")
+            return failureMessage
         }
+    }
+
+    /// 每次渲染都从结构化失败重新查表，应用语言切换后不会残留失败发生时的旧语言。
+    private var failureMessage: String {
+        job.failure?.localizedMessage ?? String.l10n("batchAI.panel.row.failedUnknown")
+    }
+
+    /// 仅当诊断与短文案不同时才提供展开入口。
+    private var expandableDiagnostic: String? {
+        guard let diagnostic = job.errorDiagnostic?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !diagnostic.isEmpty
+        else { return nil }
+        let short = failureMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard diagnostic != short else { return nil }
+        return diagnostic
     }
 }

@@ -227,8 +227,48 @@ struct UserFacingError: Equatable, Sendable {
                 diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription),
                 shouldRecordDiagnostic: false
             )
-        case .emptyResponse, .responseTruncated, .modelListRequestFailed:
-            return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
+        case .authenticationRejected:
+            return make(
+                kind: .unauthorized,
+                operation: operation,
+                service: service,
+                diagnostic: error.diagnosticDetail ?? error.localizedDescription,
+                statusCode: 401
+            )
+        case .rateLimited:
+            return make(
+                kind: .rateLimited,
+                operation: operation,
+                service: service,
+                diagnostic: error.diagnosticDetail ?? error.localizedDescription,
+                statusCode: 429
+            )
+        case .paymentRequired:
+            // 402：文案已在 AIClientError 写清「余额/付费」，直接展示，避免再套泛化模板。
+            return UserFacingError(
+                title: String.l10n("error.user.aiProvider.title"),
+                message: error.localizedDescription,
+                recovery: String.l10n("error.user.aiProvider.recovery"),
+                diagnosticSummary: DiagnosticEvent.redact(error.diagnosticDetail ?? error.localizedDescription),
+                statusCode: 402,
+                shouldRecordDiagnostic: false
+            )
+        case .requestRejected(let statusCode, let detail):
+            return make(
+                kind: .aiProvider,
+                operation: operation,
+                service: service,
+                diagnostic: detail,
+                statusCode: statusCode
+            )
+        case .emptyResponse, .responseTruncated, .modelListRequestFailed,
+             .networkUnavailable, .timedOut, .requestFailed:
+            return make(
+                kind: .aiProvider,
+                operation: operation,
+                service: service,
+                diagnostic: error.diagnosticDetail ?? error.localizedDescription
+            )
         }
     }
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Starcat Privacy Policy. Explains how we collect, use, store, and protect your personal information in compliance with Apple App Store requirements, GDPR, and applicable laws.">
+    <meta name="description" content="Starcat Privacy Policy for the macOS app and Starcat Browser Plugin.">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://starcat.ink/privacy.html">
     <link rel="alternate" hreflang="en" href="https://starcat.ink/privacy.html">
@@ -179,9 +179,9 @@
         <h1>Starcat Privacy Policy</h1>
         <div class="hero-meta">
             <span><strong>Effective Date:</strong> June 1, 2026</span>
-            <span><strong>Last Updated:</strong> June 1, 2026</span>
-            <span><strong>Version:</strong> v1.0</span>
-            <span><strong>Platform:</strong> macOS 15+</span>
+            <span><strong>Last Updated:</strong> July 19, 2026</span>
+            <span><strong>Version:</strong> v1.1</span>
+            <span><strong>Platform:</strong> macOS 15+ / Chrome</span>
         </div>
     </div>
 </section>
@@ -206,6 +206,7 @@
             <li><a href="#sec-14">Cookies &amp; Similar Technologies</a></li>
             <li><a href="#sec-15">Policy Updates</a></li>
             <li><a href="#sec-16">Contact Us</a></li>
+            <li><a href="#sec-17">Browser Plugin</a></li>
         </ol>
     </aside>
 
@@ -231,7 +232,7 @@
         <section class="chapter" id="sec-1">
             <h2><span class="num">01</span>Introduction</h2>
             <p>The App is a GitHub Star management tool for Apple platforms, built on a "<strong>local-first</strong>" philosophy. Unless you actively enable cloud sync or AI features, the vast majority of data processing happens on your local Apple device.</p>
-            <p>This policy applies to all scenarios where you download, install, and use Starcat via the Apple App Store. The developer and operator of the App (hereinafter "<strong>we</strong>") is the "<strong>personal information controller</strong>" under this policy.</p>
+            <p>This policy applies when you use the Starcat macOS app or the Starcat Browser Plugin. The developer and operator of Starcat (hereinafter "<strong>we</strong>") is the "<strong>personal information controller</strong>" under this policy.</p>
             <p>Note that this policy <strong>does not cover</strong> third-party services (such as GitHub, Apple, AI providers, etc.), each of which is governed by its own privacy policy.</p>
         </section>
 
@@ -468,6 +469,27 @@
             <p style="margin-top: 24px; color: var(--color-text-tertiary); font-size: 14px;">
                 If you believe our processing infringes on your legal rights and remains unresolved after contacting us, you may lodge a complaint with the competent <strong>data protection supervisory authority</strong>.
             </p>
+        </section>
+
+        <section class="chapter" id="sec-17">
+            <h2><span class="num">17</span>Starcat Browser Plugin</h2>
+            <p>The Starcat Browser Plugin is a local companion for the Starcat macOS app. It displays repository context on GitHub repository pages and on supported Google Search result pages that contain GitHub repository links.</p>
+            <h3>17.1 Page data processed locally</h3>
+            <ul>
+                <li>On GitHub, the extension reads the current repository URL and the minimum rendered page structure needed to place Starcat controls.</li>
+                <li>On supported Google Search pages, it identifies GitHub repository links in up to eight visible results.</li>
+                <li>This page data is used only to provide visible extension features. The extension does not retain complete page content or browsing history.</li>
+            </ul>
+            <h3>17.2 Pairing and local communication</h3>
+            <ul>
+                <li>The local Starcat service URL and Local API Key are stored in <code>chrome.storage.local</code> for pairing.</li>
+                <li>The key is sent only as a Bearer credential to the Starcat Companion service on <code>127.0.0.1</code> or <code>localhost</code>.</li>
+                <li>When you save a private note, its content is sent only to the Starcat app running on the same Mac. The extension does not retain note content in extension storage.</li>
+            </ul>
+            <div class="callout success">
+                <span class="label">No remote extension data transfer</span>
+                The extension does not send page data, Local API Keys, or private notes to Starcat servers, advertising networks, analytics providers, or other third parties.
+            </div>
         </section>
     </article>
 </main>

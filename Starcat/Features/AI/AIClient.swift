@@ -218,12 +218,31 @@ protocol AIClientProtocol: Sendable {
 }
 
 /// AI 客户端错误。
-enum AIClientError: Error, LocalizedError, Equatable {
+///
+/// chat / completions 路径会把 MacPaw SDK 的 `OpenAIError.statusError` 等原始 dump
+/// 收成这里的枚举，避免 UI 直接展示 `NSHTTPURLResponse` 调试字符串。
+/// 带 `detail` 的 case 把结构化诊断留给日志与「可展开详情」；`errorDescription` 始终是
+/// 按 HTTP 状态码区分的用户可读短文案。
+enum AIClientError: Error, LocalizedError, Equatable, Sendable {
     case missingAPIKey
     case invalidBaseURL(String)
     case emptyResponse
     case responseTruncated
     case modelListRequestFailed(String)
+    /// Provider 拒绝凭据（HTTP 401 / 403 或等价鉴权文案）。
+    case authenticationRejected(detail: String)
+    /// Provider 限流（HTTP 429）。
+    case rateLimited(detail: String)
+    /// 需要付费 / 余额不足（HTTP 402）。
+    case paymentRequired(detail: String)
+    /// Provider 拒绝本次请求（HTTP 400 / 404 / 422 等）；`detail` 供展开诊断。
+    case requestRejected(statusCode: Int, detail: String)
+    /// 网络不可达或 5xx。
+    case networkUnavailable(detail: String)
+    /// 请求超时。
+    case timedOut(detail: String)
+    /// 其它已归类失败；`detail` 供展开诊断。
+    case requestFailed(detail: String)
 
     var errorDescription: String? {
         switch self {
@@ -237,7 +256,54 @@ enum AIClientError: Error, LocalizedError, Equatable {
             return String.l10n("ai.client.error.responseTruncated")
         case .modelListRequestFailed(let message):
             return String(format: String.l10n("ai.client.error.modelListRequestFailedFormat"), message)
+        case .authenticationRejected:
+            return String.l10n("ai.client.error.authenticationRejected")
+        case .rateLimited:
+            return String.l10n("ai.client.error.rateLimited")
+        case .paymentRequired:
+            return String.l10n("ai.client.error.paymentRequired")
+        case .requestRejected(let statusCode, _):
+            switch statusCode {
+            case 400:
+                return String.l10n("ai.client.error.badRequest")
+            case 404, 405:
+                return String.l10n("ai.client.error.notFound")
+            case 422:
+                return String.l10n("ai.client.error.unprocessable")
+            default:
+                return String(format: String.l10n("ai.client.error.requestRejectedFormat"), statusCode)
+            }
+        case .networkUnavailable:
+            return String.l10n("ai.client.error.networkUnavailable")
+        case .timedOut:
+            return String.l10n("ai.client.error.timedOut")
+        case .requestFailed:
+            return String.l10n("ai.client.error.requestFailed")
         }
+    }
+
+    /// 可展开详情 / 诊断日志用的结构化细节；配置类错误通常为 nil。
+    var diagnosticDetail: String? {
+        switch self {
+        case .modelListRequestFailed(let message):
+            return Self.nonEmpty(message)
+        case .authenticationRejected(let detail),
+             .rateLimited(let detail),
+             .paymentRequired(let detail),
+             .networkUnavailable(let detail),
+             .timedOut(let detail),
+             .requestFailed(let detail):
+            return Self.nonEmpty(detail)
+        case .requestRejected(_, let detail):
+            return Self.nonEmpty(detail)
+        case .missingAPIKey, .invalidBaseURL, .emptyResponse, .responseTruncated:
+            return nil
+        }
+    }
+
+    private static func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

@@ -432,12 +432,29 @@ private final class KnowledgeRAGBrowserViewModel {
     var isTestingRetrieval = false
     /// 仅在服务端成功返回后置位，用于区分“尚未测试”和“测试完成但无命中”。
     var hasCompletedRetrievalTest = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet {
+            if errorMessage == nil { workspaceError = nil }
+        }
+    }
+    /// 保留原始 Error 类型供共享 alert 分类；字符串只用于反馈邮件中的技术细节。
+    var workspaceError: RAGWorkspaceError?
 
     init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         self.dependencies = dependencies
         self.homeViewModel = homeViewModel
         self.retrievalTestSettings = dependencies.settings.ragRetrievalSettings.normalized()
+    }
+
+    func dismissError() {
+        errorMessage = nil
+        workspaceError = nil
+    }
+
+    /// 向量化、网络与配置错误必须保留具体类型，不能先抹平成 String 再让 UI 猜测。
+    private func presentError(_ error: Error) {
+        errorMessage = error.localizedDescription
+        workspaceError = RAGWorkspaceError(error: error)
     }
 
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
@@ -668,7 +685,7 @@ private final class KnowledgeRAGBrowserViewModel {
             do {
                 try await dependencies.knowledgeRAGIndexBuilder.rebuildRepository(repo)
                 await refresh()
-            } catch { errorMessage = error.localizedDescription }
+            } catch { presentError(error) }
             await KnowledgeRAGIndexRefreshPresentation.waitForMinimumDuration(startedAt: startedAt, clock: clock)
             isIndexing = false
         }
@@ -710,7 +727,7 @@ private final class KnowledgeRAGBrowserViewModel {
                 retrievalHits = result.childHits.sorted { $0.score > $1.score }
                 retrievalTestDiagnostics = result.diagnostics
                 hasCompletedRetrievalTest = true
-            } catch { errorMessage = error.localizedDescription }
+            } catch { presentError(error) }
         }
     }
 
@@ -757,7 +774,7 @@ private final class KnowledgeRAGBrowserViewModel {
                     ])
                     await refresh()
                 } catch {
-                    errorMessage = error.localizedDescription
+                    presentError(error)
                 }
             }
             return nil
@@ -832,7 +849,7 @@ private final class KnowledgeRAGBrowserViewModel {
                     ])
                     await refresh()
                 } catch {
-                    errorMessage = error.localizedDescription
+                    presentError(error)
                 }
             }
         } catch { errorMessage = error.localizedDescription }
@@ -1085,22 +1102,26 @@ private struct KnowledgeRAGBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await viewModel.bootstrap() }
         .task { await viewModel.observeIndexChanges() }
-        .sheet(isPresented: Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { if !$0 { viewModel.errorMessage = nil } }
-        )) {
-            RAGWorkspaceErrorSheet(
-                error: .init(technicalDetail: viewModel.errorMessage ?? ""),
-                onAction: { action in
-                    if action == .openAISettings {
+        .ragWorkspaceErrorAlert(
+            error: Binding(
+                get: {
+                    viewModel.workspaceError
+                        ?? viewModel.errorMessage.map(RAGWorkspaceError.init(technicalDetail:))
+                },
+                set: { if $0 == nil { viewModel.dismissError() } }
+            ),
+            onAction: { presentedError in
+                if presentedError.action == .openAISettings {
+                    if presentedError.kind == .embeddingConfiguration
+                        || presentedError.kind == .embeddingRequest {
+                        settingsNavigation("ai.embedding")
+                    } else {
                         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                     }
-                    viewModel.errorMessage = nil
-                },
-                onDismiss: { viewModel.errorMessage = nil }
-            )
-            .appLocaleEnvironment()
-        }
+                }
+                viewModel.dismissError()
+            }
+        )
         .sheet(item: $editingChunk) { chunk in
             KnowledgeRAGChunkEditor(chunk: chunk) { title, sectionPath, content in
                 await viewModel.saveChunk(chunk, title: title, sectionPath: sectionPath, content: content)

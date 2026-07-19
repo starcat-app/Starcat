@@ -48,37 +48,48 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     func chat(request: AIChatRequest) async throws -> AIChatResponse {
-        let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
-        #if DEBUG
-        AIDebugLogger.logChatRequest(
-            baseURL: configuration.baseURL,
-            model: resolvedModel,
-            systemPromptLength: request.systemPrompt.count,
-            userPromptLength: request.userPrompt.count
-        )
-        #endif
-        let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
-
-        let result = try await client.chats(query: query)
-        #if DEBUG
-        if DebugFlags.aiHTTPLogging {
-            AIDebugLogger.dumpDecodedChatResult(result, reason: "chat-success")
-        }
-        #endif
-        guard let content = result.choices.first?.message.content?.nilIfBlank else {
+        do {
+            let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
             #if DEBUG
-            AIDebugLogger.dumpDecodedChatResult(result, reason: "empty-message-content")
+            AIDebugLogger.logChatRequest(
+                baseURL: configuration.baseURL,
+                model: resolvedModel,
+                systemPromptLength: request.systemPrompt.count,
+                userPromptLength: request.userPrompt.count
+            )
             #endif
-            throw AIClientError.emptyResponse
+            let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
+
+            let result = try await client.chats(query: query)
+            #if DEBUG
+            if DebugFlags.aiHTTPLogging {
+                AIDebugLogger.dumpDecodedChatResult(result, reason: "chat-success")
+            }
+            #endif
+            guard let content = result.choices.first?.message.content?.nilIfBlank else {
+                #if DEBUG
+                AIDebugLogger.dumpDecodedChatResult(result, reason: "empty-message-content")
+                #endif
+                throw AIClientError.emptyResponse
+            }
+            if result.choices.first?.finishReason == ChatResult.Choice.FinishReason.length.rawValue {
+                throw AIClientError.responseTruncated
+            }
+            return AIChatResponse(
+                content: content,
+                model: result.model,
+                finishReason: result.choices.first?.finishReason
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as AIClientError {
+            throw error
+        } catch {
+            // SDK 的 statusError 会把整段 NSHTTPURLResponse dump 进 localizedDescription；
+            // 产品层只应看到归类后的 AIClientError。
+            AppLog.ai.error("Chat request failed: \(error.localizedDescription, privacy: .public)")
+            throw Self.mapChatFailure(error)
         }
-        if result.choices.first?.finishReason == ChatResult.Choice.FinishReason.length.rawValue {
-            throw AIClientError.responseTruncated
-        }
-        return AIChatResponse(
-            content: content,
-            model: result.model,
-            finishReason: result.choices.first?.finishReason
-        )
     }
 
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
@@ -134,11 +145,115 @@ struct OpenAIClient: AIClientProtocol {
                         finishReason: finishReason
                     )))
                     continuation.finish()
-                } catch {
+                } catch is CancellationError {
+                    continuation.finish(throwing: CancellationError())
+                } catch let error as AIClientError {
                     continuation.finish(throwing: error)
+                } catch {
+                    AppLog.ai.error("Chat stream failed: \(error.localizedDescription, privacy: .public)")
+                    continuation.finish(throwing: Self.mapChatFailure(error))
                 }
             }
         }
+    }
+
+    // MARK: - Chat 错误映射
+
+    /// 把 MacPaw SDK / URLSession 层错误收成 `AIClientError`，供 UI 与批量整理面板展示。
+    ///
+    /// 保持与 `embeddingError(from:)` 同构：按 HTTP 状态码 / Provider 文案分流，并把
+    /// 短诊断塞进 associated `detail`，避免把 `statusError(response: <NSHTTPURLResponse…>)`
+    /// 原样甩给用户。
+    static func mapChatFailure(_ error: Error) -> AIClientError {
+        if let error = error as? AIClientError {
+            return error
+        }
+        if let error = error as? APIErrorResponse {
+            return chatAPIError(message: error.error.message)
+        }
+        if let error = error as? OpenAIError {
+            switch error {
+            case .emptyData:
+                return .emptyResponse
+            case .statusError(let response, let statusCode):
+                let detail = httpDiagnosticDetail(response: response, statusCode: statusCode)
+                return chatHTTPError(statusCode: statusCode, detail: detail)
+            }
+        }
+        if let error = error as? URLError {
+            let detail = "URLError \(error.code.rawValue): \(error.localizedDescription)"
+            return error.code == .timedOut
+                ? .timedOut(detail: detail)
+                : .networkUnavailable(detail: detail)
+        }
+        if error is DecodingError {
+            return .requestFailed(detail: "decoding error")
+        }
+        // 兜底：截断并脱敏，绝不把超长 SDK dump 当作主文案。
+        let raw = String(describing: error)
+        let clipped = String(raw.prefix(800))
+        return .requestFailed(detail: DiagnosticEvent.redact(clipped))
+    }
+
+    /// 结构化 HTTP 诊断（多行），供展开详情与复制；不含 Authorization 等敏感头。
+    private static func httpDiagnosticDetail(response: HTTPURLResponse, statusCode: Int) -> String {
+        var lines: [String] = []
+        let phrase = HTTPURLResponse.localizedString(forStatusCode: statusCode)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if phrase.isEmpty {
+            lines.append("HTTP \(statusCode)")
+        } else {
+            lines.append("HTTP \(statusCode) \(phrase)")
+        }
+        if let url = response.url?.absoluteString, !url.isEmpty {
+            lines.append("URL: \(url)")
+        }
+        if let mime = response.mimeType?.trimmingCharacters(in: .whitespacesAndNewlines), !mime.isEmpty {
+            lines.append("Content-Type: \(mime)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func chatHTTPError(statusCode: Int, detail: String) -> AIClientError {
+        switch statusCode {
+        case 401, 403:
+            return .authenticationRejected(detail: detail)
+        case 402:
+            return .paymentRequired(detail: detail)
+        case 408, 504:
+            return .timedOut(detail: detail)
+        case 429:
+            return .rateLimited(detail: detail)
+        case 400, 404, 405, 422:
+            return .requestRejected(statusCode: statusCode, detail: detail)
+        case 500...599:
+            return .networkUnavailable(detail: detail)
+        default:
+            return .requestFailed(detail: detail)
+        }
+    }
+
+    private static func chatAPIError(message: String) -> AIClientError {
+        let normalized = message.lowercased()
+        let detail = DiagnosticEvent.redact(String(message.prefix(800)))
+        if normalized.contains("unauthorized")
+            || normalized.contains("authentication")
+            || normalized.contains("api key")
+            || normalized.contains("invalid api key") {
+            return .authenticationRejected(detail: detail)
+        }
+        if normalized.contains("rate limit") || normalized.contains("too many requests") {
+            return .rateLimited(detail: detail)
+        }
+        if normalized.contains("insufficient")
+            || normalized.contains("balance")
+            || normalized.contains("quota")
+            || normalized.contains("payment")
+            || normalized.contains("billing")
+            || normalized.contains("402") {
+            return .paymentRequired(detail: detail)
+        }
+        return .requestRejected(statusCode: 400, detail: detail)
     }
 
     func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {

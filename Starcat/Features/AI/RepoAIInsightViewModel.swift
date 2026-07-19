@@ -434,9 +434,10 @@ final class RepoAIInsightViewModel {
         }
         if let aiError = error as? AIClientError {
             switch aiError {
-            case .missingAPIKey, .invalidBaseURL:
+            case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired:
                 return aiError.localizedDescription
-            case .emptyResponse, .responseTruncated, .modelListRequestFailed:
+            case .emptyResponse, .responseTruncated, .modelListRequestFailed,
+                 .rateLimited, .requestRejected, .networkUnavailable, .timedOut, .requestFailed:
                 return String(
                     format: String.l10n("ai.assistant.summary.error.requestFailedFormat"),
                     aiError.localizedDescription

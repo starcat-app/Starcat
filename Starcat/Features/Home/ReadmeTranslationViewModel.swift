@@ -362,9 +362,10 @@ final class ReadmeTranslationViewModel {
         }
         if let ai = error as? AIClientError {
             switch ai {
-            case .missingAPIKey, .invalidBaseURL:
+            case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired:
                 return .aiConfiguration
-            case .emptyResponse, .responseTruncated, .modelListRequestFailed:
+            case .emptyResponse, .responseTruncated, .modelListRequestFailed,
+                 .rateLimited, .requestRejected, .networkUnavailable, .timedOut, .requestFailed:
                 return .other
             }
         }

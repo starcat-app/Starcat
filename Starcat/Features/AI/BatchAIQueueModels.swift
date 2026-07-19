@@ -43,6 +43,58 @@ enum BatchAIJobStatus: String, Codable, Equatable, Sendable {
     case failed
 }
 
+// MARK: - BatchAIFailure
+
+/// 批量任务失败的结构化语义。
+///
+/// 不能在 job 里保存失败发生时已经翻译完成的 `String`：用户运行任务后切换应用语言，
+/// SwiftUI 会重建面板，但旧字符串不会重新查 String Catalog，最终出现英文界面夹中文错误。
+/// 这里保留错误类型与参数，`localizedMessage` 每次渲染时按当前 `LocaleStore` 重新查表。
+enum BatchAIFailure: Equatable, Sendable {
+    case aiClient(AIClientError)
+    case repoInsight(RepoAIInsightError)
+    case cancelled
+    /// 无法归类的第三方错误；nil 表示原始内容为空或属于不可展示的 SDK dump。
+    case unknown(String?)
+
+    init(error: Error) {
+        if let ai = error as? AIClientError {
+            self = .aiClient(ai)
+            return
+        }
+        if let insight = error as? RepoAIInsightError {
+            self = .repoInsight(insight)
+            return
+        }
+
+        let detail = error.localizedDescription
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = detail.lowercased()
+        let isRawSDKDump = normalized.contains("statuserror(")
+            || normalized.contains("<nshttpurlresponse")
+            || normalized.contains("nsurlerror")
+        guard !detail.isEmpty, !isRawSDKDump else {
+            self = .unknown(nil)
+            return
+        }
+        self = .unknown(detail.count > 160 ? String(detail.prefix(157)) + "…" : detail)
+    }
+
+    /// 当前应用语言下的短文案。切换语言后重新求值，不缓存翻译结果。
+    var localizedMessage: String {
+        switch self {
+        case .aiClient(let error):
+            return error.localizedDescription
+        case .repoInsight(let error):
+            return error.localizedDescription
+        case .cancelled:
+            return String.l10n("batchAI.panel.cancelledByUser")
+        case .unknown(let message):
+            return message ?? String.l10n("batchAI.panel.row.failedUnknown")
+        }
+    }
+}
+
 // MARK: - BatchAIJob
 
 /// 队列中单个 repo 的执行记录。
@@ -63,8 +115,11 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     /// 已经发起的尝试次数（不含尚未开始的本次）。失败重试上限见 BatchAIQueueOptions.maxRetries。
     var attempts: Int = 0
 
-    /// 失败原因（status == .failed 时填）。Markdown / 系统通知都会引用。
-    var errorMessage: String?
+    /// 失败语义（status == .failed 时填）。UI 在渲染时才按当前应用语言生成短文案。
+    var failure: BatchAIFailure?
+
+    /// 可展开的诊断详情（已脱敏）。与动态短文案不同时才在 UI 展示「查看详情」。
+    var errorDiagnostic: String?
 
     /// 成功应用的标签名（status == .completed 时填）。
     /// 用 [String] 而非 [Tag]，避免 ViewModel 跨线程持有 GRDB 实体。
@@ -91,7 +146,8 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
               lhs.repoFullName == rhs.repoFullName,
               lhs.status == rhs.status,
               lhs.attempts == rhs.attempts,
-              lhs.errorMessage == rhs.errorMessage,
+              lhs.failure == rhs.failure,
+              lhs.errorDiagnostic == rhs.errorDiagnostic,
               lhs.appliedTagNames == rhs.appliedTagNames,
               lhs.finishedAt == rhs.finishedAt,
               lhs.didGenerateSummary == rhs.didGenerateSummary,
