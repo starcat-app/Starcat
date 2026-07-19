@@ -35,7 +35,8 @@
 //    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag` /
 //    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
-//    `v12-rag-metadata-revision` / `v13-weekly-multi-source`
+//    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
+//    `v14-ai-usage-events`
 //
 
 import Foundation
@@ -65,6 +66,44 @@ enum DatabaseMigrations {
         registerV11(into: &migrator)
         registerV12(into: &migrator)
         registerV13(into: &migrator)
+        registerV14(into: &migrator)
+    }
+
+    // MARK: - v14-ai-usage-events：AI 请求用量事件（2026-07-19）
+
+    /// 每次 Chat / Embedding HTTP 推理请求对应一行本地事件。
+    ///
+    /// 为什么保存原始事件而不是预聚合日报：功能、模型和 Provider 都是低基数维度，SQLite
+    /// 可以实时聚合；原始事件还能在统计口径调整后重新计算。表刻意不包含 prompt、response、
+    /// API Key、Base URL 和完整错误文本，避免统计功能扩大敏感数据落盘面。
+    private static func registerV14(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v14-ai-usage-events") { db in
+            try db.create(table: "ai_usage_events") { table in
+                table.column("id", .text).primaryKey()
+                table.column("started_at", .double).notNull()
+                table.column("completed_at", .double).notNull()
+                table.column("duration_ms", .integer).notNull()
+                table.column("provider_id", .text).notNull()
+                table.column("provider_kind", .text).notNull()
+                table.column("model", .text).notNull()
+                table.column("feature", .text).notNull()
+                table.column("phase", .text).notNull()
+                table.column("operation", .text).notNull()
+                table.column("input_tokens", .integer)
+                table.column("output_tokens", .integer)
+                table.column("total_tokens", .integer)
+                table.column("cached_input_tokens", .integer)
+                table.column("reasoning_output_tokens", .integer)
+                table.column("item_count", .integer).notNull().defaults(to: 1)
+                table.column("usage_source", .text).notNull()
+                table.column("status", .text).notNull()
+                table.column("error_category", .text)
+                table.column("correlation_id", .text)
+            }
+            try db.create(index: "idx_ai_usage_events_completed", on: "ai_usage_events", columns: ["completed_at"])
+            try db.create(index: "idx_ai_usage_events_feature_completed", on: "ai_usage_events", columns: ["feature", "completed_at"])
+            try db.create(index: "idx_ai_usage_events_model_completed", on: "ai_usage_events", columns: ["model", "completed_at"])
+        }
     }
 
     // MARK: - v12-rag-metadata-revision：元数据快照修订号（2026-07-16）

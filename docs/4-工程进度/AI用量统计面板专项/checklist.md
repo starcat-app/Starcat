@@ -25,8 +25,8 @@
 
 ## 3. 数据与采集
 
-- [ ] 新增 `v14-ai-usage-events` 数据库迁移、索引和已发布数据库升级测试。
-- [ ] 新增用量事件领域模型、功能 / 阶段 / 状态 / 来源枚举及 GRDB Repository。
+- [x] 新增 `v14-ai-usage-events` 数据库迁移、索引和已发布数据库升级测试。
+- [x] 新增用量事件领域模型、功能 / 阶段 / 状态 / 来源枚举及 GRDB Repository。
 - [ ] 为非流式 Chat 接入 Provider 精确 usage 采集。
 - [ ] 为流式 Chat 请求 usage，并在正常结束时采集；中断或不兼容 Provider 不影响原调用结果。
 - [ ] 为 Embedding 接入 usage 与批量 item 数采集。
