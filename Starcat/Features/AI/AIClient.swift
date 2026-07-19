@@ -240,3 +240,64 @@ enum AIClientError: Error, LocalizedError, Equatable {
         }
     }
 }
+
+/// 向量化配置与请求错误。
+///
+/// 配置类错误可在调用 Provider 前确定，便于设置页和 RAG 工作台直接引导用户修正；
+/// 请求类错误只能由真实 embedding 请求确认，不能误报成笔记内容或数据格式问题。
+enum AIEmbeddingError: Error, LocalizedError, Equatable, Sendable {
+    case missingProvider
+    case providerUnavailable
+    case missingAPIKey
+    case missingModel
+    case incompatibleModel(String)
+    case authenticationRejected
+    case rateLimited
+    case modelRequestRejected
+    case networkUnavailable
+    case timedOut
+    case invalidResponse
+    case emptyResponse
+    case requestFailed
+
+    var isConfigurationIssue: Bool {
+        switch self {
+        case .missingProvider, .providerUnavailable, .missingAPIKey, .missingModel, .incompatibleModel:
+            return true
+        case .authenticationRejected, .rateLimited, .modelRequestRejected, .networkUnavailable,
+             .timedOut, .invalidResponse, .emptyResponse, .requestFailed:
+            return false
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .missingProvider:
+            return String.l10n("ai.embedding.error.missingProvider")
+        case .providerUnavailable:
+            return String.l10n("ai.embedding.error.providerUnavailable")
+        case .missingAPIKey:
+            return String.l10n("ai.embedding.error.missingAPIKey")
+        case .missingModel:
+            return String.l10n("ai.embedding.error.missingModel")
+        case .incompatibleModel(let model):
+            return String(format: String.l10n("ai.embedding.error.incompatibleModelFormat"), model)
+        case .authenticationRejected:
+            return String.l10n("ai.embedding.error.authenticationRejected")
+        case .rateLimited:
+            return String.l10n("ai.embedding.error.rateLimited")
+        case .modelRequestRejected:
+            return String.l10n("ai.embedding.error.modelRequestRejected")
+        case .networkUnavailable:
+            return String.l10n("ai.embedding.error.networkUnavailable")
+        case .timedOut:
+            return String.l10n("ai.embedding.error.timedOut")
+        case .invalidResponse:
+            return String.l10n("ai.embedding.error.invalidResponse")
+        case .emptyResponse:
+            return String.l10n("ai.embedding.error.emptyResponse")
+        case .requestFailed:
+            return String.l10n("ai.embedding.error.requestFailed")
+        }
+    }
+}

@@ -762,7 +762,7 @@ final class KnowledgeRAGIndexBuilder {
                 // Provider 若少返回一条或给出空向量，不能让部分 chunk 永久停留在带 claim 的 pending。
                 // 整批按失败处理，下一轮可重新领取；同时避免把错位向量写到错误正文。
                 guard vectors.count == claimed.count, vectors.allSatisfy({ !$0.isEmpty }) else {
-                    throw AIClientError.emptyResponse
+                    throw AIEmbeddingError.emptyResponse
                 }
                 let updates = zip(claimed, vectors).compactMap { chunk, vector -> RAGEmbeddingWrite? in
                     guard let id = chunk.id else { return nil }
@@ -955,30 +955,26 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     private func makeEmbeddingClient() throws -> (any AIClientProtocol, String) {
-        let task = settings.aiEmbeddingTask
-        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
-            throw SemanticSearchError.missingAPIKey
-        }
-        let apiKey = try keychain.loadAIKey(forProvider: profile.id)?
+        let selection = try settings.resolveEmbeddingSelection()
+        let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
-            throw SemanticSearchError.missingAPIKey
+        guard !apiKey.isEmpty || selection.profile.provider.allowsEmptyAPIKey else {
+            throw AIEmbeddingError.missingAPIKey
         }
-        let model = Self.nonBlank(task.resolvedModelName) ?? settings.aiEmbeddingModel
         let client = try OpenAIClient(configuration: AIClientConfiguration(
-            providerID: profile.id,
-            provider: profile.provider,
+            providerID: selection.profile.id,
+            provider: selection.profile.provider,
             apiKey: apiKey,
-            baseURL: profile.baseURL,
+            baseURL: selection.profile.baseURL,
             chatModel: settings.aiChatTask.resolvedModelName,
-            embeddingModel: model,
-            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
+            embeddingModel: selection.modelName,
+            timeoutInterval: selection.parameters.timeoutSeconds
         ))
-        return (client, model)
+        return (client, selection.modelName)
     }
 
     private func resolvedEmbeddingModel() -> String {
-        Self.nonBlank(settings.aiEmbeddingTask.resolvedModelName) ?? settings.aiEmbeddingModel
+        settings.aiEmbeddingTask.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 所有会写 RAG 索引的公开异步入口都必须经过这里，切库屏障才能覆盖未被本类持有的调用方 Task。

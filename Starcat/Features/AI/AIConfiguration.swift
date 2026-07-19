@@ -187,6 +187,16 @@ struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// 一次 embedding 调用所需的已校验配置快照。
+///
+/// 调用方必须通过 `AppSettings.resolveEmbeddingSelection()` 获取，避免索引与问答路径
+/// 各自维护不同的回退规则，导致 Provider 与模型被错误拼接。
+struct AIEmbeddingSelection: Equatable, Sendable {
+    let profile: AIProviderProfile
+    let modelName: String
+    let parameters: AIModelParameters
+}
+
 extension AppSettings {
     /// 设置页「模型配置 → 对话」是否已经指向一个可用模型。
     ///
@@ -213,6 +223,40 @@ extension AppSettings {
                 && $0.isEnabled
                 && ($0.capability == .chat || $0.capability == .unknown)
         }
+    }
+
+    /// 解析并校验设置页当前选择的向量化配置。
+    ///
+    /// 这里仅检查无需网络请求即可确定的错误；自定义模型在 Provider 已验证且名称非空时放行，
+    /// 它是否真正支持 embeddings 由请求期错误映射负责判断。
+    func resolveEmbeddingSelection() throws -> AIEmbeddingSelection {
+        let task = aiEmbeddingTask
+        guard let profile = aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
+            throw AIEmbeddingError.missingProvider
+        }
+        guard profile.isVerifiedConfiguration else {
+            throw AIEmbeddingError.providerUnavailable
+        }
+
+        let modelName = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelName.isEmpty else {
+            throw AIEmbeddingError.missingModel
+        }
+
+        if !task.useCustomModel {
+            guard let model = profile.models.first(where: { $0.name == task.modelID && $0.isEnabled }) else {
+                throw AIEmbeddingError.missingModel
+            }
+            guard model.capability == .embedding || model.capability == .unknown else {
+                throw AIEmbeddingError.incompatibleModel(modelName)
+            }
+        }
+
+        return AIEmbeddingSelection(
+            profile: profile,
+            modelName: modelName,
+            parameters: effectiveParameters(for: task)
+        )
     }
 }
 

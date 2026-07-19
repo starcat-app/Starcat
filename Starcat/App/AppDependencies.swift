@@ -473,18 +473,20 @@ final class AppDependencies {
         // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
         try entitlementGate.requirePro(.knowledgeRAG)
         let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
-        let embeddingSelection = try resolveRAGTaskSelection(task: settings.aiEmbeddingTask)
+        let embeddingSelection = try settings.resolveEmbeddingSelection()
         let chatClient = try makeRAGClient(
             profile: chatSelection.profile,
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
-            timeout: chatSelection.parameters.timeoutSeconds
+            timeout: chatSelection.parameters.timeoutSeconds,
+            missingAPIKeyError: AIClientError.missingAPIKey
         )
         let embeddingClient = try makeRAGClient(
             profile: embeddingSelection.profile,
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
-            timeout: embeddingSelection.parameters.timeoutSeconds
+            timeout: embeddingSelection.parameters.timeoutSeconds,
+            missingAPIKeyError: AIEmbeddingError.missingAPIKey
         )
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
@@ -634,12 +636,13 @@ final class AppDependencies {
         profile: AIProviderProfile,
         chatModel: String,
         embeddingModel: String,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        missingAPIKeyError: any Error
     ) throws -> any AIClientProtocol {
         let apiKey = try KeychainManager.shared.loadAIKey(forProvider: profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
-            throw SemanticSearchError.missingAPIKey
+            throw missingAPIKeyError
         }
         return try OpenAIClient(configuration: AIClientConfiguration(
             providerID: profile.id,

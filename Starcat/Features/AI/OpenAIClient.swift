@@ -153,7 +153,7 @@ struct OpenAIClient: AIClientProtocol {
 
     func embedding(input: String, model: String?) async throws -> [Float] {
         let vectors = try await embeddings(inputs: [input], model: model)
-        guard let first = vectors.first else { throw AIClientError.emptyResponse }
+        guard let first = vectors.first else { throw AIEmbeddingError.emptyResponse }
         return first
     }
 
@@ -161,14 +161,71 @@ struct OpenAIClient: AIClientProtocol {
         guard !inputs.isEmpty else { return [] }
         let resolvedModel = model?.nilIfBlank ?? configuration.embeddingModel
         let query = EmbeddingsQuery(input: .stringList(inputs), model: resolvedModel)
-        let result = try await client.embeddings(query: query)
-        let vectors = result.data
-            .sorted { $0.index < $1.index }
-            .map { $0.embedding.map(Float.init) }
-        guard vectors.count == inputs.count, vectors.allSatisfy({ !$0.isEmpty }) else {
-            throw AIClientError.emptyResponse
+        do {
+            let result = try await client.embeddings(query: query)
+            let vectors = result.data
+                .sorted { $0.index < $1.index }
+                .map { $0.embedding.map(Float.init) }
+            guard vectors.count == inputs.count, vectors.allSatisfy({ !$0.isEmpty }) else {
+                throw AIEmbeddingError.emptyResponse
+            }
+            return vectors
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // SDK 对 OpenAI-compatible Provider 的非标准错误体可能只暴露 DecodingError。
+            // 原始错误写入日志用于反馈诊断，产品层统一收到可执行的向量化错误。
+            AppLog.ai.error("Embedding request failed: \(error.localizedDescription, privacy: .public)")
+            throw Self.embeddingError(from: error)
         }
-        return vectors
+    }
+
+    private static func embeddingError(from error: Error) -> AIEmbeddingError {
+        if let error = error as? AIEmbeddingError {
+            return error
+        }
+        if let error = error as? APIErrorResponse {
+            return embeddingAPIError(message: error.error.message)
+        }
+        if let error = error as? OpenAIError {
+            switch error {
+            case .emptyData:
+                return .emptyResponse
+            case .statusError(_, let statusCode):
+                return embeddingHTTPError(statusCode: statusCode)
+            }
+        }
+        if let error = error as? URLError {
+            return error.code == .timedOut ? .timedOut : .networkUnavailable
+        }
+        if error is DecodingError {
+            return .invalidResponse
+        }
+        return .requestFailed
+    }
+
+    private static func embeddingHTTPError(statusCode: Int) -> AIEmbeddingError {
+        switch statusCode {
+        case 401, 403: return .authenticationRejected
+        case 408, 504: return .timedOut
+        case 429: return .rateLimited
+        case 400, 404, 405, 422: return .modelRequestRejected
+        case 500...599: return .networkUnavailable
+        default: return .requestFailed
+        }
+    }
+
+    private static func embeddingAPIError(message: String) -> AIEmbeddingError {
+        let normalized = message.lowercased()
+        if normalized.contains("unauthorized")
+            || normalized.contains("authentication")
+            || normalized.contains("api key") {
+            return .authenticationRejected
+        }
+        if normalized.contains("rate limit") || normalized.contains("too many requests") {
+            return .rateLimited
+        }
+        return .modelRequestRejected
     }
 
     func listModels() async throws -> [AIModelDescriptor] {

@@ -6448,6 +6448,97 @@
         }
       }
     },
+    "ai.embedding.error.authenticationRejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider rejected the credential. Update the API key in AI Settings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商拒绝了当前凭据，请在 AI 设置中更新 API Key。" } }
+      }
+    },
+    "ai.embedding.error.emptyResponse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding model returned no usable vectors. Check the selected model and try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化模型没有返回可用向量，请检查所选模型后重试。" } }
+      }
+    },
+    "ai.embedding.error.incompatibleModelFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The selected model %@ is not an embedding model. Choose an embedding-capable model in AI Settings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前选择的模型 %@ 不是向量化模型，请在 AI 设置中选择支持 Embedding 的模型。" } }
+      }
+    },
+    "ai.embedding.error.invalidResponse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider returned an unsupported response. Check that the selected model supports embeddings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务返回了无法识别的响应，请确认所选模型支持 Embedding。" } }
+      }
+    },
+    "ai.embedding.error.missingAPIKey": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider has no API key. Add one in AI Settings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商尚未配置 API Key，请先在 AI 设置中补充。" } }
+      }
+    },
+    "ai.embedding.error.missingModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No embedding model is configured. Choose one in AI Settings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚未配置向量化模型，请先在 AI 设置中选择。" } }
+      }
+    },
+    "ai.embedding.error.missingProvider": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No embedding provider is configured. Choose a valid provider in AI Settings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚未配置向量化服务商，请先在 AI 设置中选择有效的服务商。" } }
+      }
+    },
+    "ai.embedding.error.modelRequestRejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider rejected this model request. Check that the model name and endpoint support embeddings." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商拒绝了模型请求，请检查模型名称和接口是否支持 Embedding。" } }
+      }
+    },
+    "ai.embedding.error.networkUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Couldn't connect to the embedding provider. Check the network and Base URL, then try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法连接向量化服务，请检查网络和 Base URL 后重试。" } }
+      }
+    },
+    "ai.embedding.error.providerUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider is disabled or has not passed connection testing. Verify it in AI Settings first." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务商未启用或尚未通过连接测试，请先在 AI 设置中完成验证。" } }
+      }
+    },
+    "ai.embedding.error.rateLimited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding provider is rate-limiting requests. Wait a moment and try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化服务请求过于频繁，请稍后重试。" } }
+      }
+    },
+    "ai.embedding.error.requestFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding request failed. Check the provider and model configuration, then try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化请求失败，请检查服务商和模型配置后重试。" } }
+      }
+    },
+    "ai.embedding.error.timedOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The embedding request timed out. Check the network or increase the task timeout." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量化请求超时，请检查网络或调大任务超时时间。" } }
+      }
+    },
     "ai.client.modelList.noHTTPResponse": {
       "extractionState": "manual",
       "localizations": {
@@ -25568,6 +25659,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "请完成 AI 配置"
+          }
+        }
+      }
+    },
+    "rag.workspace.error.embeddingConfiguration.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete the embedding provider and model configuration in AI Settings, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在 AI 设置中完成向量化服务商和模型配置，然后重试。"
+          }
+        }
+      }
+    },
+    "rag.workspace.error.embeddingConfiguration.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish embedding setup"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请完成向量化配置"
+          }
+        }
+      }
+    },
+    "rag.workspace.error.embeddingRequest.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The configured embedding model could not complete the request. Check the model and provider settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前向量化模型无法完成请求，请检查模型和服务商配置。"
+          }
+        }
+      }
+    },
+    "rag.workspace.error.embeddingRequest.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedding model unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向量化模型不可用"
           }
         }
       }

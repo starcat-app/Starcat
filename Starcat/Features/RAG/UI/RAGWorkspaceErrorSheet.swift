@@ -20,6 +20,8 @@ enum RAGWorkspaceFeedbackMail {
 /// 仅随反馈邮件发送。这样既能恢复问题，也不会把内部错误字符串当成产品文案。
 enum RAGWorkspaceErrorKind: Equatable {
     case configuration
+    case embeddingConfiguration
+    case embeddingRequest
     case authentication
     case network
     case timeout
@@ -55,6 +57,8 @@ struct RAGWorkspaceError: Identifiable {
     var titleKey: String {
         switch kind {
         case .configuration, .authentication: return "rag.workspace.error.configuration.title"
+        case .embeddingConfiguration: return "rag.workspace.error.embeddingConfiguration.title"
+        case .embeddingRequest: return "rag.workspace.error.embeddingRequest.title"
         case .network, .timeout: return "rag.workspace.error.network.title"
         case .planner: return "rag.workspace.error.planner.title"
         case .attachment: return "rag.workspace.error.attachment.title"
@@ -66,6 +70,8 @@ struct RAGWorkspaceError: Identifiable {
     var messageKey: String {
         switch kind {
         case .configuration: return "rag.workspace.error.configuration.message"
+        case .embeddingConfiguration: return "rag.workspace.error.embeddingConfiguration.message"
+        case .embeddingRequest: return "rag.workspace.error.embeddingRequest.message"
         case .authentication: return "rag.workspace.error.authentication.message"
         case .network: return "rag.workspace.error.network.message"
         case .timeout: return "rag.workspace.error.timeout.message"
@@ -76,9 +82,20 @@ struct RAGWorkspaceError: Identifiable {
         }
     }
 
+    /// 向量化领域错误本身已经是本地化、可执行的产品文案，直接展示具体原因；
+    /// 其他错误仍用固定文案，避免把 HTTP / GRDB 等内部细节暴露给用户。
+    var messageText: String {
+        switch kind {
+        case .embeddingConfiguration, .embeddingRequest:
+            return technicalDetail
+        case .configuration, .authentication, .network, .timeout, .planner, .attachment, .generation, .unknown:
+            return String.l10n(messageKey)
+        }
+    }
+
     var action: RAGWorkspaceErrorAction {
         switch kind {
-        case .configuration, .authentication: return .openAISettings
+        case .configuration, .embeddingConfiguration, .embeddingRequest, .authentication: return .openAISettings
         case .network: return .checkNetwork
         case .timeout, .planner, .generation: return .retry
         case .attachment: return .removeAttachments
@@ -99,6 +116,18 @@ struct RAGWorkspaceError: Identifiable {
     private static func classify(error: Error?, detail: String) -> RAGWorkspaceErrorKind {
         if error is RAGAttachmentError { return .attachment }
         if error is RAGQueryPlannerError { return .planner }
+        if let error = error as? AIEmbeddingError {
+            if error.isConfigurationIssue { return .embeddingConfiguration }
+            switch error {
+            case .authenticationRejected: return .authentication
+            case .networkUnavailable, .rateLimited: return .network
+            case .timedOut: return .timeout
+            case .modelRequestRejected, .invalidResponse, .emptyResponse, .requestFailed:
+                return .embeddingRequest
+            case .missingProvider, .providerUnavailable, .missingAPIKey, .missingModel, .incompatibleModel:
+                return .embeddingConfiguration
+            }
+        }
         if let error = error as? AIClientError {
             switch error {
             case .missingAPIKey, .invalidBaseURL: return .configuration
@@ -145,7 +174,7 @@ struct RAGWorkspaceErrorSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(LocalizedStringKey(error.titleKey))
                         .font(.headline)
-                    Text(LocalizedStringKey(error.messageKey))
+                    Text(error.messageText)
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

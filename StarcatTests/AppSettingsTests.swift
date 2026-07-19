@@ -655,6 +655,56 @@ struct AppSettingsTests {
         #expect(!settings.hasConfiguredChatModel)
     }
 
+    @Test("AI: 向量化配置在请求前区分缺失、不可用和模型能力错误")
+    func embeddingSelectionPreflightValidation() throws {
+        let settings = AppSettings(defaults: makeIsolatedDefaults())
+        let profileID = "embedding-provider"
+        let chatModel = "chat-only-model"
+        var profile = AIProviderProfile(
+            id: profileID,
+            provider: .openAICompatible,
+            models: [
+                AIModelDescriptor(providerID: profileID, name: chatModel, capability: .chat)
+            ],
+            lastTestStatus: .success(modelCount: 1)
+        )
+        settings.aiProviderProfiles = [profile]
+
+        var task = settings.aiEmbeddingTask
+        task.providerID = profileID
+        task.useCustomModel = false
+        task.modelID = ""
+        settings.aiEmbeddingTask = task
+        #expect(throws: AIEmbeddingError.missingModel) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+
+        task.modelID = chatModel
+        settings.aiEmbeddingTask = task
+        #expect(throws: AIEmbeddingError.incompatibleModel(chatModel)) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+
+        task.useCustomModel = true
+        task.customModelName = "custom-embedding-model"
+        settings.aiEmbeddingTask = task
+        let customSelection = try settings.resolveEmbeddingSelection()
+        #expect(customSelection.profile.id == profileID)
+        #expect(customSelection.modelName == "custom-embedding-model")
+
+        profile.lastTestStatus = .failed("401")
+        settings.aiProviderProfiles = [profile]
+        #expect(throws: AIEmbeddingError.providerUnavailable) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+
+        task.providerID = "removed-provider"
+        settings.aiEmbeddingTask = task
+        #expect(throws: AIEmbeddingError.missingProvider) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+    }
+
     @Test("AI: 工作台入口先校验 Pro，再校验对话模型")
     func workspaceEntryAccessOrder() {
         switch AIWorkspaceEntryGate.access(

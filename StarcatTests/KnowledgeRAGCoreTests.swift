@@ -1226,6 +1226,10 @@ struct KnowledgeRAGCoreTests {
     @Test("工作台错误按可恢复操作分类，技术细节不作为普通文案")
     func workspaceErrorClassification() {
         #expect(RAGWorkspaceError(error: AIClientError.missingAPIKey).kind == .configuration)
+        #expect(RAGWorkspaceError(error: AIEmbeddingError.missingModel).kind == .embeddingConfiguration)
+        #expect(RAGWorkspaceError(error: AIEmbeddingError.incompatibleModel("chat-model")).kind == .embeddingConfiguration)
+        #expect(RAGWorkspaceError(error: AIEmbeddingError.modelRequestRejected).kind == .embeddingRequest)
+        #expect(RAGWorkspaceError(error: AIEmbeddingError.invalidResponse).kind == .embeddingRequest)
         #expect(RAGWorkspaceError(error: GitHubRemoteContextError.http(status: 401, message: "bad token")).kind == .authentication)
         #expect(RAGWorkspaceError(error: URLError(.timedOut)).kind == .timeout)
         #expect(RAGWorkspaceError(error: RAGAttachmentError.unreadable("notes.pdf")).kind == .attachment)

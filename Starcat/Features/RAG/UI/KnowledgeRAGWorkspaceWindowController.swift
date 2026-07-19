@@ -2325,6 +2325,14 @@ private struct KnowledgeRAGBrowserView: View {
                     .pointerStyle(.link)
                     .foregroundStyle(.red)
                     .help(managed.isExcluded ? "rag.browser.chunk.permanentDelete" : "rag.browser.chunk.disable")
+                } else {
+                    // Metadata 系统分片不可删；同尺寸置灰 trash 仅占位，与下方可删行右对齐。
+                    Image(systemName: "trash")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 16)
+                        .help("rag.browser.chunk.metadataManaged")
+                        .accessibilityLabel(Text("rag.browser.chunk.metadataManaged"))
                 }
             }
             .frame(minHeight: 18)

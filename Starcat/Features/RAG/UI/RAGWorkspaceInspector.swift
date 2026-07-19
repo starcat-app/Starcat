@@ -3764,11 +3764,25 @@ struct RAGWorkspaceInspector: View {
         case .pending:
             Text("rag.workspace.index.issues.pendingReason")
         case .failed:
-            Text(chunk.embeddingError?.isEmpty == false ? chunk.embeddingError! : String.l10n("rag.workspace.index.issues.failedReason"))
+            Text(userFacingEmbeddingFailure(chunk.embeddingError))
         case .stale:
             Text("rag.workspace.index.issues.staleReason")
             Text("\(chunk.embeddingModel ?? "-") → \(viewModel.embeddingModel)")
         }
+    }
+
+    /// 旧版本把 Provider 错误体的 SDK 解码失败原样存入 `embedding_error`，看起来像是
+    /// 笔记正文格式损坏。该字段只记录向量化失败，因此在展示层将这类遗留文案迁移成
+    /// 准确的模型响应错误；新的失败会直接保存 `AIEmbeddingError` 的友好描述。
+    func userFacingEmbeddingFailure(_ storedError: String?) -> String {
+        guard let storedError, !storedError.isEmpty else {
+            return String.l10n("rag.workspace.index.issues.failedReason")
+        }
+        let normalized = storedError.lowercased()
+        if normalized.contains("格式不正确") || normalized.contains("correct format") {
+            return AIEmbeddingError.invalidResponse.localizedDescription
+        }
+        return storedError
     }
 
     func indexIssueTitle(_ kind: RAGIndexIssueKind) -> LocalizedStringKey {
