@@ -1860,6 +1860,15 @@ final class AppSettings {
             defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
         } catch {
             AppLog.general.error("persistJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "settings",
+                operation: "settings.persistJSON",
+                message: "A settings value could not be encoded",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["key": key]
+            )
         }
     }
 
@@ -1935,6 +1944,15 @@ final class AppSettings {
             return try JSONDecoder().decode(type, from: data)
         } catch {
             AppLog.general.error("decodeJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "settings",
+                operation: "settings.decodeJSON",
+                message: "A persisted settings value could not be decoded",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["key": key]
+            )
             return nil
         }
     }

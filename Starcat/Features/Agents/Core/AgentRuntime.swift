@@ -444,6 +444,15 @@ struct DefaultAgentRuntime: AgentRuntime {
             )
         } catch {
             AppLog.database.warning("Agent run persistence create failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "agent-history",
+                operation: "agentRun.create",
+                message: "Agent run history could not create a run record",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["runID": runID.uuidString]
+            )
         }
     }
 
@@ -465,6 +474,15 @@ struct DefaultAgentRuntime: AgentRuntime {
             )
         } catch {
             AppLog.database.warning("Agent run persistence status failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "agent-history",
+                operation: "agentRun.updateStatus",
+                message: "Agent run history could not persist its final status",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["runID": runID.uuidString, "status": status.rawValue]
+            )
         }
     }
 

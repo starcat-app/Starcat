@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import GRDB
 import SwiftUI
 
 /// 用户可读错误。
@@ -24,12 +25,22 @@ struct UserFacingError: Equatable, Sendable {
     var diagnosticSummary: String
     var statusCode: Int?
     var errorCode: String?
+    /// 只有用户无法自行恢复、需要开发者定位的故障才允许写入诊断问题。
+    var shouldRecordDiagnostic: Bool
 
     static func map(
         _ error: Error,
         operation: String,
         service: String? = nil
     ) -> UserFacingError {
+        if error is CancellationError || error is EntitlementGateError {
+            return make(
+                kind: .recoverable,
+                operation: operation,
+                service: service,
+                diagnostic: error.localizedDescription
+            )
+        }
         if let network = error as? NetworkError {
             return mapNetwork(network, operation: operation, service: service)
         }
@@ -62,6 +73,15 @@ struct UserFacingError: Equatable, Sendable {
                 diagnostic: database.localizedDescription
             )
         }
+        if error is GRDB.DatabaseError {
+            let nsError = error as NSError
+            return make(
+                kind: .localData,
+                operation: operation,
+                service: service,
+                diagnostic: "GRDB database error domain=\(nsError.domain) code=\(nsError.code)"
+            )
+        }
         if let keychain = error as? KeychainError {
             return make(
                 kind: .secureStorage,
@@ -83,8 +103,10 @@ struct UserFacingError: Equatable, Sendable {
     }
 
     func record(level: DiagnosticEvent.Level = .error, category: String, operation: String, service: String? = nil) {
+        guard shouldRecordDiagnostic else { return }
         DiagnosticLogStore.record(
             level: level,
+            visibility: .issue,
             category: category,
             operation: operation,
             message: message,
@@ -106,6 +128,7 @@ struct UserFacingError: Equatable, Sendable {
         case secureStorage
         case aiConfiguration
         case aiProvider
+        case recoverable
         case unknown
     }
 
@@ -144,7 +167,7 @@ struct UserFacingError: Equatable, Sendable {
             }
             return make(kind: .networkUnavailable, operation: operation, service: service, diagnostic: error.localizedDescription)
         case .cancelled:
-            return make(kind: .unknown, operation: operation, service: service, diagnostic: error.localizedDescription)
+            return make(kind: .recoverable, operation: operation, service: service, diagnostic: error.localizedDescription)
         }
     }
 
@@ -201,7 +224,8 @@ struct UserFacingError: Equatable, Sendable {
                 title: String.l10n("error.user.aiConfiguration.title"),
                 message: error.localizedDescription,
                 recovery: String.l10n("error.user.aiConfiguration.recovery"),
-                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription)
+                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription),
+                shouldRecordDiagnostic: false
             )
         case .emptyResponse, .responseTruncated, .modelListRequestFailed:
             return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
@@ -224,7 +248,8 @@ struct UserFacingError: Equatable, Sendable {
                 title: String.l10n("error.user.aiConfiguration.title"),
                 message: error.localizedDescription,
                 recovery: String.l10n("error.user.aiConfiguration.recovery"),
-                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription)
+                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription),
+                shouldRecordDiagnostic: false
             )
         case .invalidJSON:
             return make(
@@ -327,6 +352,10 @@ struct UserFacingError: Equatable, Sendable {
             titleKey = "error.user.aiProvider.title"
             messageKey = "error.user.aiProvider.message"
             recoveryKey = "error.user.aiProvider.recovery"
+        case .recoverable:
+            titleKey = "error.user.unknown.title"
+            messageKey = "error.user.unknown.message"
+            recoveryKey = "error.user.unknown.recovery"
         case .unknown:
             titleKey = "error.user.unknown.title"
             messageKey = "error.user.unknown.message"
@@ -338,13 +367,22 @@ struct UserFacingError: Equatable, Sendable {
         if let context {
             diagnostic += " (\(context))"
         }
+        let shouldRecordDiagnostic: Bool
+        switch kind {
+        case .decoding, .localData, .secureStorage:
+            shouldRecordDiagnostic = true
+        case .networkUnavailable, .unauthorized, .rateLimited, .notFound,
+             .serverUnavailable, .aiConfiguration, .aiProvider, .recoverable, .unknown:
+            shouldRecordDiagnostic = false
+        }
         return UserFacingError(
             title: String.l10n(titleKey),
             message: String(format: String.l10n(messageKey), operation, serviceName),
             recovery: String.l10n(recoveryKey),
             diagnosticSummary: diagnostic,
             statusCode: statusCode,
-            errorCode: errorCode
+            errorCode: errorCode,
+            shouldRecordDiagnostic: shouldRecordDiagnostic
         )
     }
 }

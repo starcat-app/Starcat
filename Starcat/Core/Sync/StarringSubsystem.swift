@@ -238,6 +238,15 @@ final class StarActionService {
             )
         } catch {
             AppLog.sync.error("UndoStar remove failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "database",
+                operation: "undoStar.remove",
+                message: "Undo Star history could not remove a restored repository",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["repoID": String(saved.id)]
+            )
         }
 
         // 6. HomeView 刷新
@@ -297,6 +306,15 @@ final class StarActionService {
             NotificationCenter.default.post(name: .undoStarHistoryDidChange, object: nil)
         } catch {
             AppLog.sync.error("UndoStar record failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "database",
+                operation: "undoStar.record",
+                message: "Undo Star history could not persist an unstarred repository",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["repoID": String(ghRepoId)]
+            )
         }
 
         AppLog.sync.info("Unstar OK \(owner, privacy: .public)/\(name, privacy: .public) (id=\(ghRepoId, privacy: .public))")
@@ -419,6 +437,14 @@ final class StarredRegistryBootstrapper {
         } catch {
             // 失败不清空 registry，避免「正在用着用着突然全变未 star」的体验崩塌
             AppLog.sync.error("StarredRegistryBootstrapper.reload failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "database",
+                operation: "starredRegistry.reload",
+                message: "The local starred repository registry could not be rebuilt",
+                underlying: DiagnosticEvent.summarize(error)
+            )
         }
     }
 

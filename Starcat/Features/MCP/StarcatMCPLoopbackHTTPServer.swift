@@ -58,9 +58,22 @@ final class StarcatMCPLoopbackHTTPServer {
                 self?.accept(connection)
             }
         }
+        let diagnosticPort = port
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state {
                 AppLog.network.error("MCP HTTP listener failed: \(error.localizedDescription, privacy: .public)")
+                if case .posix(.EADDRINUSE) = error {
+                    return
+                }
+                DiagnosticLogStore.record(
+                    level: .error,
+                    visibility: .issue,
+                    category: "mcp",
+                    operation: "mcp.listenerRuntime",
+                    message: "MCP HTTP listener failed after startup",
+                    underlying: DiagnosticEvent.summarize(error),
+                    context: ["port": String(diagnosticPort)]
+                )
             }
         }
         listener.start(queue: queue)

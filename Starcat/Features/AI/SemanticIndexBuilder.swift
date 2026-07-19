@@ -317,6 +317,21 @@ final class SemanticIndexBuilder {
         } catch {
             AppLog.ai.error("SemanticIndexBuilder failed: \(error.localizedDescription, privacy: .public)")
             status = .failed(message: error.localizedDescription)
+            let friendly = UserFacingError.map(
+                error,
+                operation: "semanticIndex.rebuild",
+                service: "Starcat"
+            )
+            if friendly.shouldRecordDiagnostic {
+                DiagnosticLogStore.record(
+                    level: .error,
+                    visibility: .issue,
+                    category: "semantic-index",
+                    operation: "semanticIndex.rebuild",
+                    message: "Semantic search index rebuild failed because of a local or contract error",
+                    underlying: friendly.diagnosticSummary
+                )
+            }
         }
     }
 

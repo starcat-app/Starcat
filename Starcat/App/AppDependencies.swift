@@ -670,13 +670,7 @@ final class AppDependencies {
         do {
             db = try DatabaseManager(userId: nil)
         } catch {
-            DiagnosticLogStore.record(
-                level: .critical,
-                category: "database",
-                operation: "startup.openDatabase",
-                message: "Failed to initialize database",
-                underlying: error.localizedDescription
-            )
+            // 统一交给 StarcatApp 顶层映射并记录一次 critical issue，避免同一启动失败双记。
             throw error
         }
         self.database = db
@@ -1282,6 +1276,15 @@ final class AppDependencies {
                 AppLog.database.error(
                     "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
+                DiagnosticLogStore.record(
+                    level: .critical,
+                    visibility: .issue,
+                    category: "database",
+                    operation: "database.switchUser",
+                    message: "Failed to switch the active user database",
+                    underlying: DiagnosticEvent.summarize(error),
+                    context: ["targetUser": userId.map(String.init) ?? "anonymous"]
+                )
             }
             self.knowledgeRAGIndexBuilder.resumeAfterUserDatabaseChange()
             self.wikiKnowledgeBackfillCoordinator.resumeAfterUserDatabaseChange()
@@ -1395,16 +1398,40 @@ final class AppDependencies {
         catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskChatHistoryStore.shared.deleteEverything() }
-        catch { AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "chat-history", error: error)
+        }
 
         do { try RepoContextStorage.shared.deleteAllProjects() }
-        catch { AppLog.general.warning("Factory reset: AI context cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: AI context cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "repo-context", error: error)
+        }
 
         do { try CodeFlowStorage.shared.deleteAllProjects() }
-        catch { AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "code-flow", error: error)
+        }
 
         do { try CodebaseMemoryStorage.shared.deleteAllProjects() }
-        catch { AppLog.general.warning("Factory reset: CodebaseMemory cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: CodebaseMemory cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "codebase-memory", error: error)
+        }
+    }
+
+    private func recordFactoryResetCleanupFailure(component: String, error: Error) {
+        DiagnosticLogStore.record(
+            level: .error,
+            visibility: .issue,
+            category: "factory-reset",
+            operation: "factoryReset.cleanup",
+            message: "Factory reset left generated user data on disk",
+            underlying: DiagnosticEvent.summarize(error),
+            context: ["component": component]
+        )
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）

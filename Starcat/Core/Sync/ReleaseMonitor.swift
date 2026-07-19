@@ -93,6 +93,14 @@ actor ReleaseMonitor {
             subscriptions = try await subscriptionRepo.fetchActive()
         } catch {
             AppLog.network.error("ReleaseMonitor: fetchActive failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "database",
+                operation: "releaseMonitor.loadSubscriptions",
+                message: "Release Monitor could not load local subscriptions",
+                underlying: DiagnosticEvent.summarize(error)
+            )
             return ReleaseMonitorReport(
                 newReleasesByRepo: [:],
                 notifications: [],

@@ -157,6 +157,20 @@ final class StarcatMCPService {
                 guard generation == self.lifecycleGeneration else { return }
                 self.state = .failed(error.localizedDescription)
                 AppLog.network.error("MCP Service failed: \(error.localizedDescription, privacy: .public)")
+                if let mcpError = error as? StarcatMCPError,
+                   case .invalidArguments = mcpError {
+                    // 非法端口或端口占用可由用户在设置页修改，不进入开发者诊断。
+                } else {
+                    DiagnosticLogStore.record(
+                        level: .error,
+                        visibility: .issue,
+                        category: "mcp",
+                        operation: "mcp.start",
+                        message: "MCP runtime failed to start",
+                        underlying: DiagnosticEvent.summarize(error),
+                        context: ["port": String(port)]
+                    )
+                }
                 await self.notificationService?.dispatchMCPFailure(message: error.localizedDescription)
             }
         }

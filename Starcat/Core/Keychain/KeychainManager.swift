@@ -139,6 +139,14 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
             return try JSONDecoder().decode([String: String].self, from: finalData)
         } catch {
             AppLog.keychain.error("loadAll: decode failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .critical,
+                visibility: .issue,
+                category: "secure-storage",
+                operation: "credentials.decode",
+                message: "Encrypted credentials file could not be decoded",
+                underlying: DiagnosticEvent.summarize(error)
+            )
             return [:]
         }
     }
@@ -161,6 +169,14 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
             values.isExcludedFromBackup = true
             try? mutableURL.setResourceValues(values)
         } catch {
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "secure-storage",
+                operation: "credentials.write",
+                message: "Encrypted credentials could not be persisted",
+                underlying: DiagnosticEvent.summarize(error)
+            )
             if error is KeychainError {
                 throw error
             }
@@ -258,6 +274,14 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
             }
             AppLog.keychain.info("All local credentials removed")
         } catch {
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "secure-storage",
+                operation: "credentials.deleteAll",
+                message: "Encrypted credentials file could not be deleted",
+                underlying: DiagnosticEvent.summarize(error)
+            )
             if error is KeychainError {
                 throw error
             }
@@ -272,6 +296,13 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
         let readBack = value(forAccount: Account.selfCheck)
         guard readBack == canary else {
             AppLog.keychain.error("Secure store self-check mismatch")
+            DiagnosticLogStore.record(
+                level: .critical,
+                visibility: .issue,
+                category: "secure-storage",
+                operation: "credentials.selfCheck",
+                message: "Secure storage self-check returned mismatched data"
+            )
             throw KeychainError.selfCheckMismatch
         }
 

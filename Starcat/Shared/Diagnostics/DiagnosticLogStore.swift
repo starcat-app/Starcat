@@ -14,7 +14,8 @@ import Foundation
 
 /// 诊断日志给 UI 展示用的轻量摘要。
 ///
-/// 只统计 warning 及以上级别，避免 debug/info 健康检查日志让 toolbar 状态看起来像故障。
+/// 只统计显式标记为 `issue` 的 warning 及以上事件。错误级别描述技术严重度，
+/// `visibility` 才决定是否属于用户无法自行恢复、需要导出给开发者的问题。
 struct DiagnosticLogSummary: Equatable, Sendable {
     var issueCount: Int
     var latestIssue: DiagnosticEvent?
@@ -69,7 +70,9 @@ actor DiagnosticLogStore {
             let data = try encoder.encode(event)
             try append(data)
             markRecorded(event)
-            NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
+            if event.visibility == .issue {
+                NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
+            }
         } catch {
             AppLog.general.error("Diagnostic log write failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -201,6 +204,7 @@ private extension DiagnosticEvent {
     }
 
     var isUserVisibleIssue: Bool {
+        guard visibility == .issue else { return false }
         switch level {
         case .warning, .error, .critical:
             return true
@@ -212,24 +216,26 @@ private extension DiagnosticEvent {
 
 private struct DiagnosticEventFingerprint: Hashable {
     let level: String
+    let visibility: String
     let category: String
     let operation: String
     let message: String
     let service: String?
     let statusCode: Int?
     let errorCode: String?
-    let underlying: String?
     let context: [ContextPair]
 
     init(_ event: DiagnosticEvent) {
         self.level = event.level.rawValue
+        self.visibility = event.visibility.rawValue
         self.category = event.category
         self.operation = event.operation
         self.message = event.message
         self.service = event.service
         self.statusCode = event.statusCode
         self.errorCode = event.errorCode
-        self.underlying = event.underlying
+        // `underlying` 常含 response 指针、绝对路径或逐次变化的系统描述。它保留在
+        // JSONL 供开发者定位，但不参与指纹，避免同一故障绕过 5 分钟去重造成日志风暴。
         // `Dictionary` 的枚举顺序不稳定；排序后再做 key，避免相同 context 因顺序不同绕过去重。
         self.context = event.context
             .map { ContextPair(key: $0.key, value: $0.value) }
@@ -254,6 +260,7 @@ extension DiagnosticLogStore {
     /// Fire-and-forget 便捷入口，适合 catch 分支和 UI action 调用。
     nonisolated static func record(
         level: DiagnosticEvent.Level,
+        visibility: DiagnosticEvent.Visibility = .context,
         category: String,
         operation: String,
         message: String,
@@ -265,6 +272,7 @@ extension DiagnosticLogStore {
     ) {
         let event = DiagnosticEvent(
             level: level,
+            visibility: visibility,
             category: category,
             operation: operation,
             message: message,
