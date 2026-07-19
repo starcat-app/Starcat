@@ -140,7 +140,7 @@ struct OpenAIClient: AIClientProtocol {
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                let startedAt = Date().timeIntervalSince1970
+                var startedAt = Date().timeIntervalSince1970
                 let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
                 var query = makeChatQuery(
                     request: request,
@@ -192,6 +192,20 @@ struct OpenAIClient: AIClientProtocol {
                         // 部分 OpenAI-compatible 服务会因未知 `stream_options` 直接拒绝请求。
                         // 只在尚未收到任何 chunk 且错误明确指向 usage 参数时重试，避免回答
                         // 已开始后重复扣费或把两段正文拼在一起。重试成功时 token 保持 unavailable。
+                        let compatibilityError = Self.mapChatFailure(
+                            error,
+                            requestJSON: Self.formattedJSON(query),
+                            exchange: Self.takeFailureExchange(for: error)
+                        )
+                        await recordChatUsage(
+                            startedAt: startedAt,
+                            model: resolvedModel,
+                            context: request.usageContext,
+                            usage: nil,
+                            status: .failed,
+                            error: compatibilityError
+                        )
+                        startedAt = Date().timeIntervalSince1970
                         query = makeChatQuery(
                             request: request,
                             resolvedModel: resolvedModel,
@@ -734,7 +748,7 @@ struct OpenAIClient: AIClientProtocol {
 
     /// 兼容 Provider 的 fallback 必须非常保守：网络错误、鉴权错误或普通 400 都不能自动
     /// 重试，只有诊断文本明确提到 `stream_options` / `include_usage` 才能判定是参数不兼容。
-    private static func shouldRetryWithoutStreamUsage(_ error: Error) -> Bool {
+    static func shouldRetryWithoutStreamUsage(_ error: Error) -> Bool {
         let diagnostic: String
         if let error = error as? AIClientError {
             diagnostic = error.diagnosticDetail ?? error.localizedDescription

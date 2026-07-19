@@ -62,6 +62,22 @@ struct AIUsageCaptureTests {
         #expect(event.itemCount == 8)
     }
 
+    @Test("流式 usage fallback 只接受明确的参数不兼容错误")
+    func streamUsageFallbackIsConservative() {
+        #expect(OpenAIClient.shouldRetryWithoutStreamUsage(
+            AIClientError.requestRejected(
+                statusCode: 400,
+                detail: "Unknown parameter: stream_options.include_usage"
+            )
+        ))
+        #expect(!OpenAIClient.shouldRetryWithoutStreamUsage(
+            AIClientError.requestRejected(statusCode: 400, detail: "Invalid model")
+        ))
+        #expect(!OpenAIClient.shouldRetryWithoutStreamUsage(
+            AIClientError.networkUnavailable(detail: "connection reset")
+        ))
+    }
+
     private var configuration: AIClientConfiguration {
         AIClientConfiguration(
             providerID: "profile-1",
