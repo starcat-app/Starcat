@@ -146,6 +146,7 @@ struct AIUsageDashboardView: View {
             }
         }
         .help(title)
+        .accessibilityLabel(Text(title) + Text(": ") + Text(selection))
         .frame(maxWidth: 145)
     }
 
@@ -258,13 +259,13 @@ struct AIUsageDashboardView: View {
 
             Chart(viewModel.snapshot.daily) { point in
                 BarMark(
-                    x: .value("Day", point.day),
-                    y: .value("Input", point.inputTokens)
+                    x: .value(String.l10n("ai.usage.trend.day"), point.day),
+                    y: .value(String.l10n("ai.usage.metric.inputTokens"), point.inputTokens)
                 )
                 .foregroundStyle(Color.blue.gradient)
                 BarMark(
-                    x: .value("Day", point.day),
-                    y: .value("Output", point.outputTokens)
+                    x: .value(String.l10n("ai.usage.trend.day"), point.day),
+                    y: .value(String.l10n("ai.usage.metric.outputTokens"), point.outputTokens)
                 )
                 .foregroundStyle(Color.purple.gradient)
             }

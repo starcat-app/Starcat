@@ -65770,6 +65770,7 @@
     "ai.usage.metric.embeddingHint": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Items processed in batches"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"批量请求处理的条目数"}}}},
     "ai.usage.trend.title": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Token trend"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Token 趋势"}}}},
     "ai.usage.trend.subtitle": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Provider-reported input and output tokens by day"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"按天展示 Provider 返回的输入与输出 token"}}}},
+    "ai.usage.trend.day": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Day"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"日期"}}}},
     "ai.usage.trend.callsFormat": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%@ API calls in the selected range"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"所选范围内共 %@ 次 API 调用"}}}},
     "ai.usage.detail.title": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Details"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"明细"}}}},
     "ai.usage.detail.feature": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Features"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"功能"}}}},
