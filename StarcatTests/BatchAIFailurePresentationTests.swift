@@ -10,7 +10,8 @@ import OpenAI
 import Testing
 @testable import Starcat
 
-@Suite("BatchAIFailurePresentation")
+@MainActor
+@Suite("BatchAIFailurePresentation", .serialized)
 struct BatchAIFailurePresentationTests {
 
     @Test("AIClientError 请求拒绝时主文案含 HTTP 状态码，诊断保留 detail")
@@ -112,6 +113,47 @@ struct BatchAIFailurePresentationTests {
         #expect(BatchAIQueueService.userVisibleFailureMessage(for: mapped).contains("402"))
     }
 
+    @Test("同一个结构化失败会跟随应用语言重新生成文案")
+    func structuredFailureRelocalizesAfterLanguageChange() {
+        let defaults = UserDefaults.standard
+        let key = "AppLocaleOverride"
+        let previous = defaults.string(forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        let failure = BatchAIFailure.aiClient(
+            .paymentRequired(detail: "HTTP 402 payment required")
+        )
+
+        defaults.set("zh-Hans", forKey: key)
+        let chinese = failure.localizedMessage
+        #expect(chinese.contains("余额不足"))
+        let chineseReport = BatchAIQueueService.copyableFailureReport(
+            repoFullName: "owner/repo",
+            message: chinese,
+            diagnostic: "HTTP 402"
+        )
+        #expect(chineseReport.contains("仓库：owner/repo"))
+        #expect(chineseReport.contains("错误："))
+
+        defaults.set("en", forKey: key)
+        let english = failure.localizedMessage
+        #expect(english.contains("insufficient balance"))
+        #expect(english != chinese)
+        let englishReport = BatchAIQueueService.copyableFailureReport(
+            repoFullName: "owner/repo",
+            message: english,
+            diagnostic: "HTTP 402"
+        )
+        #expect(englishReport.contains("Repo: owner/repo"))
+        #expect(englishReport.contains("Message:"))
+    }
+
     @Test("复制报告包含仓库、短文案与诊断全文")
     func copyableFailureReportIncludesFullPackage() {
         let report = BatchAIQueueService.copyableFailureReport(
@@ -119,8 +161,8 @@ struct BatchAIFailurePresentationTests {
             message: String.l10n("ai.client.error.paymentRequired"),
             diagnostic: "HTTP 402 Payment Required\nURL: https://api.deepseek.com/v1/chat/completions"
         )
-        #expect(report.contains("Repo: mvanhorn/last30days-skill"))
-        #expect(report.contains("Message:"))
+        #expect(report.contains("mvanhorn/last30days-skill"))
+        #expect(report.contains(String.l10n("ai.client.error.paymentRequired")))
         #expect(report.contains("HTTP 402"))
         #expect(report.contains("api.deepseek.com"))
     }

@@ -590,11 +590,11 @@ final class BatchAIQueueService {
         var lines: [String] = []
         let repo = repoFullName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !repo.isEmpty {
-            lines.append("Repo: \(repo)")
+            lines.append(String(format: String.l10n("batchAI.panel.report.repoFormat"), repo))
         }
         let short = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !short.isEmpty {
-            lines.append("Message: \(short)")
+            lines.append(String(format: String.l10n("batchAI.panel.report.messageFormat"), short))
         }
         let detail = (diagnostic ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !detail.isEmpty {
