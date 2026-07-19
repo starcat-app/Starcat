@@ -914,6 +914,12 @@ struct HomeView: View {
     /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
     /// 这里复用 Search Center 本地结果跳转语义：切到 Manage / All Stars，清空搜索，
     /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
+    ///
+    /// 侧栏后台摘要任务也会走这里。关键点：
+    /// 1. 立刻写 `externalSelectedRepo`，避免切到 All Stars 后「自动打开第一条」
+    ///    抢选中，导致详情停在别的仓、开面板通知被丢弃。
+    /// 2. reload + `ensureRepoVisible` 后再发开面板通知，并略微延迟，等
+    ///    `RepoAIFloatingOverlay` 按新 `repo.id` 挂载完成。
     private func openCompanionRepository(
         _ repo: Repo,
         generateSummary: Bool = false,
@@ -922,28 +928,43 @@ struct HomeView: View {
         selectedSidebarPage = .manage
         viewModel.selection = .allStars
         viewModel.submitSearch("")
+        // 先钉住目标仓详情，挡住 applyManageDetailSelectionPolicy 选中第一条。
+        viewModel.externalSelectedRepo = repo
+        viewModel.shouldScrollSelectedRepoIntoView = true
+        viewModel.selectedRepoID = repo.id
+        // 尽早挂起展开请求：目标 overlay 一挂载就能在 onAppear 消费，不必等 reload。
+        if openSummaryPanel {
+            viewModel.pendingInlineAIPresentationRepoID = repo.id
+        }
+
         Task {
             await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
+            viewModel.ensureRepoVisible(repoId: repo.id)
             viewModel.shouldScrollSelectedRepoIntoView = true
             viewModel.selectedRepoID = repo.id
+            // 列表已能解析该 id 时，交还给 filteredSorted 真源，避免外部选中残留。
+            if viewModel.filteredSorted.contains(where: { $0.id == repo.id }) {
+                viewModel.externalSelectedRepo = nil
+            }
+
             guard generateSummary || openSummaryPanel else { return }
             NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
             dependencies.telemetryManager.track(.aiPanelOpened, properties: [
                 .source: .string(generateSummary ? "browser-plugin" : "sidebar-background-task")
             ])
-            // 详情页底部横条入口随 selectedRepoID 渲染；排到下一轮 main queue 再发请求，
-            // 避免通知早于 RepoAIFloatingOverlay 挂载而被丢弃。
             let repoID = repo.id
-            await MainActor.run {
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: generateSummary
-                            ? .repoAIInlineGenerateSummaryRequested
-                            : .repoAIInlineOpenRequested,
-                        object: nil,
-                        userInfo: ["repoId": repoID]
-                    )
-                }
+            if generateSummary {
+                // 生成路径仍走通知：需携带 autoGenerate 意图给现有 handleExternalSummaryRequest。
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
+                NotificationCenter.default.post(
+                    name: .repoAIInlineGenerateSummaryRequested,
+                    object: nil,
+                    userInfo: ["repoId": repoID]
+                )
+            } else if viewModel.pendingInlineAIPresentationRepoID != repoID {
+                // 若 onAppear 已消费过则不必再写；否则 reload 后补一次，覆盖换仓竞态。
+                viewModel.pendingInlineAIPresentationRepoID = repoID
             }
         }
     }

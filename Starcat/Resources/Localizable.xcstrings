@@ -20836,13 +20836,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Existing RepoContext XML is ready"
+            "value": "Repository commit and code context settings are unchanged; reused existing RepoContext XML"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已复用现有 RepoContext XML"
+            "value": "仓库 commit 与代码上下文配置均未变化，已复用现有 RepoContext XML"
           }
         }
       }
@@ -55653,6 +55653,38 @@
         }
       }
     },
+    "sidebar.background.combinedFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$lld summaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · 摘要 %2$lld"
+          }
+        }
+      }
+    },
+    "sidebar.background.manual.popover.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual AI Tidy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动 AI 整理"
+          }
+        }
+      }
+    },
     "sidebar.background.manual.runningFormat": {
       "localizations": {
         "en": {
@@ -55674,13 +55706,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "View the manual AI tidy queue"
+            "value": "View background AI tasks"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看手动 AI 整理队列"
+            "value": "查看后台 AI 任务"
           }
         }
       }
@@ -55701,6 +55733,22 @@
         }
       }
     },
+    "sidebar.background.summary.countFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summaries generating %1$lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要生成中 %1$lld"
+          }
+        }
+      }
+    },
     "sidebar.background.summary.failed": {
       "localizations": {
         "en": {
@@ -55717,6 +55765,22 @@
         }
       }
     },
+    "sidebar.background.summary.popover.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Summary Tasks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要任务"
+          }
+        }
+      }
+    },
     "sidebar.background.summary.running": {
       "localizations": {
         "en": {
@@ -55729,6 +55793,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 摘要生成中"
+          }
+        }
+      }
+    },
+    "sidebar.background.summary.section": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要"
+          }
+        }
+      }
+    },
+    "sidebar.background.summary.singleFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summary · %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要生成中 · %1$@"
           }
         }
       }

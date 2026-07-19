@@ -2100,10 +2100,14 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     /// 左侧标题与索引摘要都指向同一真实数据浏览器，避免用户误以为“知识库”只是装饰标签。
-    func showKnowledgeBrowser(presentingWindow: NSWindow?) {
+    func showKnowledgeBrowser(
+        presentingWindow: NSWindow?,
+        settingsNavigation: RAGSettingsNavigationAction
+    ) {
         KnowledgeRAGBrowserWindowController.show(
             dependencies: dependencies,
             homeViewModel: homeViewModel,
+            settingsNavigation: settingsNavigation,
             centeredOver: presentingWindow
         )
     }
@@ -2114,11 +2118,17 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     /// 左栏知识库入口：空库走入库 Sheet，有仓库才打开只读浏览器。
-    func openKnowledgeBaseEntry(presentingWindow: NSWindow?) {
+    func openKnowledgeBaseEntry(
+        presentingWindow: NSWindow?,
+        settingsNavigation: RAGSettingsNavigationAction
+    ) {
         if isKnowledgeBaseEmpty {
             presentAddToLibrary()
         } else {
-            showKnowledgeBrowser(presentingWindow: presentingWindow)
+            showKnowledgeBrowser(
+                presentingWindow: presentingWindow,
+                settingsNavigation: settingsNavigation
+            )
         }
     }
 

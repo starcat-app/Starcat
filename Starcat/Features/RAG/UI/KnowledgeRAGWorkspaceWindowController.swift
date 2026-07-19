@@ -184,12 +184,14 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     static func show(
         dependencies: AppDependencies,
         homeViewModel: HomeViewModel,
+        settingsNavigation: RAGSettingsNavigationAction,
         centeredOver presentingWindow: NSWindow?
     ) {
         let isNewWindow = shared == nil
         let controller = shared ?? KnowledgeRAGBrowserWindowController(
             dependencies: dependencies,
-            homeViewModel: homeViewModel
+            homeViewModel: homeViewModel,
+            settingsNavigation: settingsNavigation
         )
         shared = controller
         controller.showWindow(nil)
@@ -219,14 +221,20 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
         window.setFrameOrigin(frame.origin)
     }
 
-    private init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+    private init(
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel,
+        settingsNavigation: RAGSettingsNavigationAction
+    ) {
         let viewModel = KnowledgeRAGBrowserViewModel(
             dependencies: dependencies,
             homeViewModel: homeViewModel
         )
         self.viewModel = viewModel
         let content = KnowledgeRAGBrowserView(viewModel: viewModel)
-        .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            // 浏览器也是独立 NSWindow，不能依赖默认 no-op EnvironmentAction。
+            .environment(\.ragSettingsNavigation, settingsNavigation)
         let window = NSWindow(contentViewController: NSHostingController(rootView: content))
         window.title = ""
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]

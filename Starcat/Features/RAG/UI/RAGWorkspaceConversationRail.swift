@@ -49,6 +49,7 @@ struct RAGConversationRailRowEntry: Identifiable {
 struct RAGWorkspaceConversationRail: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var renameTarget: RAGConversationSummary?
@@ -200,7 +201,10 @@ struct RAGWorkspaceConversationRail: View {
 
     var indexSummary: some View {
         Button {
-            viewModel.openKnowledgeBaseEntry(presentingWindow: NSApp.keyWindow)
+            viewModel.openKnowledgeBaseEntry(
+                presentingWindow: NSApp.keyWindow,
+                settingsNavigation: settingsNavigation
+            )
         } label: {
             VStack(alignment: .leading, spacing: 7) {
                 HStack {

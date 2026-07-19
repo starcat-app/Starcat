@@ -734,7 +734,8 @@ struct IntegrationSettingsTab: View {
                 // 用户无需在 API Key 输入行和下方反馈之间来回寻找状态。
                 HStack(alignment: .center, spacing: 8) {
                     externalSearchAPIKeyTestFeedback(provider)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // EmptyView 不参与布局，必须用独立 Spacer 保证无反馈时按钮仍右对齐。
+                    Spacer(minLength: 8)
 
                     Button {
                         testExternalSearchAPIKey(provider)
@@ -748,6 +749,7 @@ struct IntegrationSettingsTab: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
+                    .fixedSize()
                     .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
                 }
             }

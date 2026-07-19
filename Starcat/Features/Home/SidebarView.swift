@@ -117,8 +117,10 @@ struct SidebarView: View {
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
-    /// 自动整理 popover 显示状态。点击 footer 或 hover 进入时打开，跑完自动关闭。
-    @State private var showAutoTidyPopover: Bool = false
+    /// 底部状态条 popover：承载自动/手动整理详情，以及面板已关闭的单仓摘要任务列表。
+    @State private var showBackgroundTaskPopover: Bool = false
+    /// popover 内摘要任务行的 hover 高亮；用 id 而不是 index，避免列表刷新时错位。
+    @State private var hoveredSummaryTaskID: RepoAISummaryBackgroundTask.ID?
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
     /// 探索页当前由系统 `List(selection:)` 高亮的行。
@@ -219,84 +221,322 @@ struct SidebarView: View {
             )
             .appLocaleEnvironment()
         }
-        .onChange(of: autoTidyScheduler.isAutoTidyRunning) { _, isRunning in
-            if !isRunning {
-                showAutoTidyPopover = false
+        .onChange(of: hasAnyBackgroundTask) { _, hasTask in
+            if !hasTask {
+                showBackgroundTaskPopover = false
             }
         }
     }
 
-    // MARK: - HOM-126：自动整理底部指示
+    // MARK: - 底部后台任务状态条
 
+    /// 是否有需要在侧栏底栏展示的后台任务。
+    ///
+    /// 手动整理会抢占本轮自动整理，因此 `isManualBatchRunning` 与
+    /// `isAutoTidyRunning` 不会同时为 true；摘要任务可与整理并存。
+    private var isManualBatchRunning: Bool {
+        let service = dependencies.batchAIQueueService
+        return service.isRunning && !service.silent
+    }
+
+    private var summaryBackgroundTasks: [RepoAISummaryBackgroundTask] {
+        dependencies.repoAIInsightSessionStore.backgroundTasks
+    }
+
+    private var hasAnyBackgroundTask: Bool {
+        isManualBatchRunning
+            || autoTidyScheduler.isAutoTidyRunning
+            || !summaryBackgroundTasks.isEmpty
+    }
+
+    /// 底栏只放一条紧凑状态行；详情（整理进度 / 摘要列表）一律进 popover。
+    ///
+    /// 对齐原「AI 自动整理中 N/M」：侧栏不膨胀成任务列表；
+    /// **仅点击**状态行才展开详情（不做 hover 自动弹出），点击摘要行再跳回对应仓库。
     @ViewBuilder
     private var backgroundTaskFooter: some View {
-        let batchService = dependencies.batchAIQueueService
-        let summaryTasks = dependencies.repoAIInsightSessionStore.backgroundTasks
-
-        if (batchService.isRunning && !batchService.silent) || !summaryTasks.isEmpty
-            || autoTidyScheduler.isAutoTidyRunning {
-            VStack(spacing: 0) {
-                let showsBatchRow = (batchService.isRunning && !batchService.silent)
-                    || autoTidyScheduler.isAutoTidyRunning
-                if batchService.isRunning && !batchService.silent {
-                    manualBatchFooter
-                } else {
-                    autoTidyFooter
+        if hasAnyBackgroundTask {
+            Button {
+                showBackgroundTaskPopover.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 12, height: 12)
+                    Text(backgroundTaskStatusText)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .monospacedDigit()
+                    Spacer(minLength: 0)
+                    Image(systemName: "info.circle")
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
-
-                if !summaryTasks.isEmpty {
-                    if showsBatchRow {
-                        Divider()
-                    }
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(summaryTasks) { task in
-                                summaryTaskRow(task)
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 132)
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
             .background(Color.secondary.opacity(0.06))
+            .help(Text(backgroundTaskTooltipKey))
+            .popover(isPresented: $showBackgroundTaskPopover, arrowEdge: .bottom) {
+                backgroundTaskPopover
+                    .appLocaleEnvironment()
+            }
             .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: hasAnyBackgroundTask)
         }
     }
 
-    private var manualBatchFooter: some View {
+    private var backgroundTaskStatusText: String {
+        let summaryCount = summaryBackgroundTasks.count
+        if isManualBatchRunning {
+            let service = dependencies.batchAIQueueService
+            let tidy = String(
+                format: String.l10n("sidebar.background.manual.runningFormat"),
+                service.finishedCount,
+                service.totalCount
+            )
+            if summaryCount > 0 {
+                return String(
+                    format: String.l10n("sidebar.background.combinedFormat"),
+                    tidy,
+                    summaryCount
+                )
+            }
+            return tidy
+        }
+        if autoTidyScheduler.isAutoTidyRunning {
+            let tidy = String(
+                format: String.l10n("sidebar.autoTidy.runningFormat"),
+                autoTidyScheduler.autoTidyProgressText
+            )
+            if summaryCount > 0 {
+                return String(
+                    format: String.l10n("sidebar.background.combinedFormat"),
+                    tidy,
+                    summaryCount
+                )
+            }
+            return tidy
+        }
+        if summaryCount == 1, let only = summaryBackgroundTasks.first {
+            return String(
+                format: String.l10n("sidebar.background.summary.singleFormat"),
+                only.repo.fullName
+            )
+        }
+        return String(
+            format: String.l10n("sidebar.background.summary.countFormat"),
+            summaryCount
+        )
+    }
+
+    private var backgroundTaskTooltipKey: LocalizedStringKey {
+        if isManualBatchRunning {
+            return "sidebar.background.manual.tooltip"
+        }
+        if autoTidyScheduler.isAutoTidyRunning {
+            return "sidebar.autoTidy.tooltip"
+        }
+        return "sidebar.background.summary.tooltip"
+    }
+
+    private var backgroundTaskPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                Text(backgroundTaskPopoverTitleKey)
+                    .font(interfaceScale.font(.body))
+                Spacer()
+                Button {
+                    showBackgroundTaskPopover = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+            }
+
+            if isManualBatchRunning {
+                manualBatchPopoverSection
+            } else if autoTidyScheduler.isAutoTidyRunning {
+                autoTidyPopoverSection
+            }
+
+            if !summaryBackgroundTasks.isEmpty {
+                if isManualBatchRunning || autoTidyScheduler.isAutoTidyRunning {
+                    Divider()
+                }
+                summaryTasksPopoverSection
+            }
+        }
+        .padding(14)
+        .frame(width: 290)
+    }
+
+    private var backgroundTaskPopoverTitleKey: LocalizedStringKey {
+        if isManualBatchRunning {
+            "sidebar.background.manual.popover.title"
+        } else if autoTidyScheduler.isAutoTidyRunning {
+            "sidebar.autoTidy.popover.title"
+        } else {
+            "sidebar.background.summary.popover.title"
+        }
+    }
+
+    private var manualBatchPopoverSection: some View {
         let service = dependencies.batchAIQueueService
-        return Button {
-            onShowBatchAIPanel?()
-        } label: {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.mini)
-                    .frame(width: 12, height: 12)
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(
+                    value: Double(service.finishedCount),
+                    total: Double(max(service.totalCount, 1))
+                )
                 Text(String(
-                    format: String.l10n("sidebar.background.manual.runningFormat"),
+                    format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
                     service.finishedCount,
                     service.totalCount
                 ))
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
                 .monospacedDigit()
-                Spacer(minLength: 0)
-                Image(systemName: "rectangle.stack")
+            }
+
+            // 与自动整理同一套三卡片口径：已应用 / 已忽略 / 失败。
+            HStack(spacing: 8) {
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.completed",
+                    count: service.completedCount,
+                    color: .green,
+                    backgroundOpacity: 0.12
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.ignored",
+                    count: service.ignoredCount,
+                    color: .secondary,
+                    backgroundOpacity: 0.08
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.failed",
+                    count: service.failedCount,
+                    color: .red,
+                    backgroundOpacity: 0.12
+                )
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    showBackgroundTaskPopover = false
+                    onShowBatchAIPanel?()
+                } label: {
+                    Label("sidebar.autoTidy.popover.viewQueue", systemImage: "rectangle.stack")
+                }
+
+                Button {
+                    showBackgroundTaskPopover = false
+                    openAISettings()
+                } label: {
+                    Label("sidebar.autoTidy.popover.openAISettings", systemImage: "gearshape")
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var autoTidyPopoverSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(
+                    value: Double(autoTidyScheduler.autoTidyFinishedCount),
+                    total: Double(max(autoTidyScheduler.autoTidyTotalCount, 1))
+                )
+                Text(String(
+                    format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
+                    autoTidyScheduler.autoTidyFinishedCount,
+                    autoTidyScheduler.autoTidyTotalCount
+                ))
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
+
+            HStack(spacing: 8) {
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.completed",
+                    count: autoTidyScheduler.autoTidyCompletedCount,
+                    color: .green,
+                    backgroundOpacity: 0.12
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.ignored",
+                    count: autoTidyScheduler.autoTidyIgnoredCount,
+                    color: .secondary,
+                    backgroundOpacity: 0.08
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.failed",
+                    count: autoTidyScheduler.autoTidyFailedCount,
+                    color: .red,
+                    backgroundOpacity: 0.12
+                )
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    showBackgroundTaskPopover = false
+                    onShowBatchAIPanel?()
+                } label: {
+                    Label("sidebar.autoTidy.popover.viewQueue", systemImage: "rectangle.stack")
+                }
+
+                Button {
+                    showBackgroundTaskPopover = false
+                    openAISettings()
+                } label: {
+                    Label("sidebar.autoTidy.popover.openAISettings", systemImage: "gearshape")
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var summaryTasksPopoverSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 与上方「AI 自动整理」标题行对齐：图标 + 文案，避免分组看起来像纯文字标签。
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.purple)
+                Text("sidebar.background.summary.section")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .contentShape(Rectangle())
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(summaryBackgroundTasks.enumerated()), id: \.element.id) { index, task in
+                        summaryTaskRow(task, rowIndex: index)
+                    }
+                }
+            }
+            .frame(maxHeight: 160)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .help(Text("sidebar.background.manual.tooltip"))
     }
 
-    private func summaryTaskRow(_ task: RepoAISummaryBackgroundTask) -> some View {
-        Button {
+    /// 摘要任务行：斑马纹便于扫读多仓并发；hover 用 accent 浅底提示可点。
+    private func summaryTaskRow(
+        _ task: RepoAISummaryBackgroundTask,
+        rowIndex: Int
+    ) -> some View {
+        let isHovered = hoveredSummaryTaskID == task.id
+        return Button {
+            showBackgroundTaskPopover = false
             onOpenSummaryTask?(task.repo)
         } label: {
             HStack(spacing: 8) {
@@ -320,13 +560,31 @@ struct SidebarView: View {
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 8)
             .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .background(summaryTaskRowBackground(isHovered: isHovered, rowIndex: rowIndex))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .onHover { hovering in
+            hoveredSummaryTaskID = hovering ? task.id : nil
+        }
+        .onDisappear {
+            if hoveredSummaryTaskID == task.id {
+                hoveredSummaryTaskID = nil
+            }
+        }
         .help(Text("sidebar.background.summary.tooltip"))
+    }
+
+    /// 斑马纹用 primary 极低透明；hover 优先于斑马纹，避免明暗主题下交替色被盖没。
+    private func summaryTaskRowBackground(isHovered: Bool, rowIndex: Int) -> Color {
+        if isHovered {
+            return Color.accentColor.opacity(0.10)
+        }
+        return rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
     @ViewBuilder
@@ -355,136 +613,6 @@ struct SidebarView: View {
         case .failed:
             "sidebar.background.summary.failed"
         }
-    }
-
-    /// 自动整理"占位行 + 实时进度"。
-    ///
-    /// 设计：
-    /// - 仅在 `autoTidyScheduler.isAutoTidyRunning == true` 时挂入，跑完整体消失。
-    ///   零进度时也立刻消失而非保留"上次跑了 X"残留——那是设置页「运行状态」区的
-    ///   职责，sidebar 只反映"当前是否在跑"。
-    /// - 点击 / hover 展示 popover：进度、成功 / 忽略 / 失败计数、查看队列、打开 AI 设置。
-    ///   Settings Tab 跳转复用 `starcatJumpToSettingsTab`，不新增跨 scene 路由机制。
-    /// - 没有 .padding(.bottom) 是因为 background(.bar) 已经画到底；放在 VStack
-    ///   末尾天然贴底，与 sidebarList 之间有 4pt 视觉间隙（通过 padding(.top, 4) 实现）。
-    @ViewBuilder
-    private var autoTidyFooter: some View {
-        if autoTidyScheduler.isAutoTidyRunning {
-            Button {
-                showAutoTidyPopover.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.mini)
-                        // 让 indeterminate spinner 与文字基线对齐（macOS 默认会偏高 1-2pt）
-                        .frame(width: 12, height: 12)
-                    // 2026-06-16:走 `String.l10n(_:)` wrapper,绕开 `String(localized:)`
-                    // 不响应 LocaleStore 的问题(实测 `locale:` 参数无效)。
-                    // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
-                    Text(String(format: String.l10n("sidebar.autoTidy.runningFormat"),
-                                autoTidyScheduler.autoTidyProgressText))
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 0)
-                    Image(systemName: "info.circle")
-                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .help(Text("sidebar.autoTidy.tooltip"))
-            .onHover { hovering in
-                if hovering {
-                    showAutoTidyPopover = true
-                }
-            }
-            .popover(isPresented: $showAutoTidyPopover, arrowEdge: .bottom) {
-                autoTidyPopover
-                    .appLocaleEnvironment()
-            }
-            // 2026-06-15:reduceMotion 兜底——transition 降为 .identity 瞬切,
-            // 外层 .animation 同步置 nil,避免 0.2s 包裹。
-            .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: autoTidyScheduler.isAutoTidyRunning)
-        }
-    }
-
-    private var autoTidyPopover: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.purple)
-                Text("sidebar.autoTidy.popover.title")
-                    .font(interfaceScale.font(.body))
-                Spacer()
-                Button {
-                    showAutoTidyPopover = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                ProgressView(
-                    value: Double(autoTidyScheduler.autoTidyFinishedCount),
-                    total: Double(max(autoTidyScheduler.autoTidyTotalCount, 1))
-                )
-                Text(String(format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
-                            autoTidyScheduler.autoTidyFinishedCount,
-                            autoTidyScheduler.autoTidyTotalCount))
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-
-            HStack(spacing: 8) {
-                autoTidyCounter(
-                    title: "sidebar.autoTidy.popover.completed",
-                    count: autoTidyScheduler.autoTidyCompletedCount,
-                    color: .green,
-                    backgroundOpacity: 0.12
-                )
-                autoTidyCounter(
-                    title: "sidebar.autoTidy.popover.ignored",
-                    count: autoTidyScheduler.autoTidyIgnoredCount,
-                    color: .secondary,
-                    backgroundOpacity: 0.08
-                )
-                autoTidyCounter(
-                    title: "sidebar.autoTidy.popover.failed",
-                    count: autoTidyScheduler.autoTidyFailedCount,
-                    color: .red,
-                    backgroundOpacity: 0.12
-                )
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    showAutoTidyPopover = false
-                    onShowBatchAIPanel?()
-                } label: {
-                    Label("sidebar.autoTidy.popover.viewQueue", systemImage: "rectangle.stack")
-                }
-
-                Button {
-                    showAutoTidyPopover = false
-                    openAISettings()
-                } label: {
-                    Label("sidebar.autoTidy.popover.openAISettings", systemImage: "gearshape")
-                }
-            }
-            .controlSize(.small)
-        }
-        .padding(14)
-        .frame(width: 290)
     }
 
     private func autoTidyCounter(

@@ -286,6 +286,12 @@ final class HomeViewModel {
     /// 下一行，体感像「点 A 却定位到 B」（dong4j 2026-06-17 Manage 回归）。
     var shouldScrollSelectedRepoIntoView = false
 
+    /// 侧栏后台摘要等外部入口请求「展开当前详情页 AI 面板」。
+    ///
+    /// 用状态而不是纯 Notification：详情 overlay 随 `repo.id` 重建时，
+    /// 通知可能落在旧实例上被丢掉；overlay 在 `onAppear` / onChange 消费此字段更稳。
+    var pendingInlineAIPresentationRepoID: Int64?
+
     /// 派生：当前详情选中的 Repo 值。
     /// 找不到（filteredSorted 已变，旧 selection 还在）时返回 nil；调用方可据此显示空态。
     ///

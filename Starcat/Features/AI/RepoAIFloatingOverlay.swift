@@ -88,6 +88,12 @@ struct RepoAIFloatingOverlay: View {
                   repoID == repo.id else { return }
             presentation = .expanded
         }
+        .onAppear {
+            consumePendingInlinePresentationIfNeeded()
+        }
+        .onChange(of: homeViewModel.pendingInlineAIPresentationRepoID) { _, _ in
+            consumePendingInlinePresentationIfNeeded()
+        }
         .onExitCommand {
             guard presentation.isPanelVisible else { return }
             presentation = .collapsed
@@ -100,6 +106,17 @@ struct RepoAIFloatingOverlay: View {
         }
         // repo 切换时直接清空临时会话与展示状态，确保新问题只绑定当前 repo。
         .id(repo.id)
+    }
+
+    /// 消费 HomeViewModel 上的「展开 AI 面板」挂起请求。
+    ///
+    /// 侧栏后台任务跳转会先换仓再请求展开；若只靠 Notification，可能在
+    /// `.id(repo.id)` 重建前发出而被旧 overlay 丢掉。pending 状态由目标
+    /// overlay 在挂载后自行认领，避免竞态。
+    private func consumePendingInlinePresentationIfNeeded() {
+        guard homeViewModel.pendingInlineAIPresentationRepoID == repo.id else { return }
+        homeViewModel.pendingInlineAIPresentationRepoID = nil
+        presentation = .expanded
     }
 
     private var collapsedBar: some View {

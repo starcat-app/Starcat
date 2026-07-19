@@ -48,6 +48,7 @@ struct RAGWorkspaceInspector: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var inspectorTab: RAGInspectorTab = .evidence
@@ -982,7 +983,10 @@ struct RAGWorkspaceInspector: View {
                 value: localizedInteger(health.totalChunks),
                 helpKey: "rag.workspace.header.knowledge"
             ) {
-                viewModel.openKnowledgeBaseEntry(presentingWindow: NSApp.keyWindow)
+                viewModel.openKnowledgeBaseEntry(
+                    presentingWindow: NSApp.keyWindow,
+                    settingsNavigation: settingsNavigation
+                )
             }
             // 与“索引可用性”统一为单行键值数据。状态颜色会让普通统计看起来像告警，
             // 并且胶囊无法解释 total 与 keyword-only 的差额，因此这里保持无色、可对账。
@@ -3613,7 +3617,10 @@ struct RAGWorkspaceInspector: View {
 
     var knowledgeRepositoryRow: some View {
         Button {
-            viewModel.showKnowledgeBrowser(presentingWindow: NSApp.keyWindow)
+            viewModel.showKnowledgeBrowser(
+                presentingWindow: NSApp.keyWindow,
+                settingsNavigation: settingsNavigation
+            )
         } label: {
             HStack(spacing: 8) {
                 Text("rag.browser.overview.repositoryCoverage")
