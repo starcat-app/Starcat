@@ -46,79 +46,85 @@ struct AIUsageDashboardView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Label("ai.usage.title", systemImage: "chart.bar.xaxis")
-                    .font(.title3.weight(.semibold))
-                Text("ai.usage.subtitle")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("ai.usage.title", systemImage: "chart.bar.xaxis")
+                        .font(.title3.weight(.semibold))
+                    Text("ai.usage.subtitle")
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 20)
+
+                SyncIconButton(
+                    isRefreshing: viewModel.isLoading,
+                    disabled: viewModel.isLoading,
+                    tooltip: String.l10n("ai.usage.refresh")
+                ) { reload() }
             }
 
-            Spacer(minLength: 20)
-
-            Picker("ai.usage.filter.range", selection: $viewModel.filter.timeRange) {
-                ForEach(AIUsageTimeRange.allCases) { range in
-                    Text(range.titleKey).tag(range)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 260)
-            .onChange(of: viewModel.filter.timeRange) { _, _ in reload() }
-
-            filterMenu(
-                title: "ai.usage.filter.feature",
-                selection: featureFilterTitle
-            ) {
-                Button("ai.usage.filter.allFeatures") {
-                    Task { await viewModel.selectFeature(nil) }
-                }
-                Divider()
-                ForEach(AIUsageFeature.allCases.filter { $0 != .unknown }) { feature in
-                    Button(feature.titleKey) {
-                        Task { await viewModel.selectFeature(feature) }
+            HStack(spacing: 12) {
+                Picker("ai.usage.filter.range", selection: $viewModel.filter.timeRange) {
+                    ForEach(AIUsageTimeRange.allCases) { range in
+                        Text(range.titleKey).tag(range)
                     }
                 }
-            }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+                .onChange(of: viewModel.filter.timeRange) { _, _ in reload() }
 
-            filterMenu(
-                title: "ai.usage.filter.provider",
-                selection: viewModel.filter.providerID ?? String.l10n("ai.usage.filter.allProviders")
-            ) {
-                Button("ai.usage.filter.allProviders") {
-                    viewModel.filter.providerID = nil
-                    reload()
+                Spacer(minLength: 20)
+
+                filterMenu(
+                    title: "ai.usage.filter.feature",
+                    selection: featureFilterTitle
+                ) {
+                    Button("ai.usage.filter.allFeatures") {
+                        Task { await viewModel.selectFeature(nil) }
+                    }
+                    Divider()
+                    ForEach(AIUsageFeature.allCases.filter { $0 != .unknown }) { feature in
+                        Button(feature.titleKey) {
+                            Task { await viewModel.selectFeature(feature) }
+                        }
+                    }
                 }
-                if !viewModel.snapshot.filterOptions.providerIDs.isEmpty { Divider() }
-                ForEach(viewModel.snapshot.filterOptions.providerIDs, id: \.self) { provider in
-                    Button(provider) {
-                        viewModel.filter.providerID = provider
+
+                filterMenu(
+                    title: "ai.usage.filter.provider",
+                    selection: viewModel.filter.providerID ?? String.l10n("ai.usage.filter.allProviders")
+                ) {
+                    Button("ai.usage.filter.allProviders") {
+                        viewModel.filter.providerID = nil
                         reload()
                     }
+                    if !viewModel.snapshot.filterOptions.providerIDs.isEmpty { Divider() }
+                    ForEach(viewModel.snapshot.filterOptions.providerIDs, id: \.self) { provider in
+                        Button(provider) {
+                            viewModel.filter.providerID = provider
+                            reload()
+                        }
+                    }
                 }
-            }
 
-            filterMenu(
-                title: "ai.usage.filter.model",
-                selection: viewModel.filter.model ?? String.l10n("ai.usage.filter.allModels")
-            ) {
-                Button("ai.usage.filter.allModels") {
-                    Task { await viewModel.selectModel(nil) }
-                }
-                if !viewModel.snapshot.filterOptions.models.isEmpty { Divider() }
-                ForEach(viewModel.snapshot.filterOptions.models, id: \.self) { model in
-                    Button(model) {
-                        Task { await viewModel.selectModel(model) }
+                filterMenu(
+                    title: "ai.usage.filter.model",
+                    selection: viewModel.filter.model ?? String.l10n("ai.usage.filter.allModels")
+                ) {
+                    Button("ai.usage.filter.allModels") {
+                        Task { await viewModel.selectModel(nil) }
+                    }
+                    if !viewModel.snapshot.filterOptions.models.isEmpty { Divider() }
+                    ForEach(viewModel.snapshot.filterOptions.models, id: \.self) { model in
+                        Button(model) {
+                            Task { await viewModel.selectModel(model) }
+                        }
                     }
                 }
             }
-
-            SyncIconButton(
-                isRefreshing: viewModel.isLoading,
-                disabled: viewModel.isLoading,
-                tooltip: String.l10n("ai.usage.refresh")
-            ) { reload() }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
