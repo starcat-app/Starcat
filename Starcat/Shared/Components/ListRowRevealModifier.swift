@@ -12,6 +12,15 @@
 
 import SwiftUI
 
+/// Repo List 行动画的统一边界；独立成可测试的纯值，避免各模块各写一个 14 / 15。
+enum ListRowRevealMetrics {
+    static let animatedRowLimit = 15
+
+    static func shouldAnimate(index: Int) -> Bool {
+        index >= 0 && index < animatedRowLimit
+    }
+}
+
 extension View {
     /// 列表 row 的轻量渐进式入场动画。
     ///
@@ -50,10 +59,6 @@ extension View {
 /// - `skipAnimation` 旁路只留给明确不应播放行动画的调用方；普通列表切换继续保留 reveal。
 ///   逻辑等价于 reduceMotion，但语义不同——这是性能兜底，不是无障碍诉求。
 private struct ListRowRevealModifier: ViewModifier {
-    /// 最大化主窗口时中栏首屏最多可见约 15 张卡片，只让这部分 row 参与 reveal。
-    /// 屏外 row 直接显示，避免滚动过程中继续积累延迟动画。
-    private static let animatedRowLimit = 15
-
     let index: Int
     let snapshotID: Int
     let skipAnimation: Bool
@@ -68,7 +73,7 @@ private struct ListRowRevealModifier: ViewModifier {
     /// 首屏前 15 行覆盖最大化窗口的可见卡片；List 预创建的屏外 rows 如果继续持有 delay/animation
     /// 状态，会在分类切换时放大主线程事务。屏外行直接显示，滚动体验也更稳定。
     private var bypassAnimation: Bool {
-        reduceMotion || skipAnimation || index >= Self.animatedRowLimit
+        reduceMotion || skipAnimation || !ListRowRevealMetrics.shouldAnimate(index: index)
     }
 
     func body(content: Content) -> some View {
@@ -123,7 +128,7 @@ private struct ListRowRevealModifier: ViewModifier {
     }
 
     private func animateReveal() {
-        let delay = min(Double(index % Self.animatedRowLimit) * 0.012, 0.17)
+        let delay = min(Double(index % ListRowRevealMetrics.animatedRowLimit) * 0.012, 0.17)
         withAnimation(.easeOut(duration: 0.22).delay(delay)) {
             isVisible = true
         }

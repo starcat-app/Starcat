@@ -745,4 +745,67 @@ struct TrendingTests {
 
         #expect(vm.displayedRepos.map(\.fullName) == [drop.fullName])
     }
+
+    @Test("Trending prepared snapshot 命中不重复派生，新事实源只失效对应桶")
+    func preparedSnapshotSkipsRepeatedDerivation() async {
+        let pipeline = TrendingListPipeline()
+        let identity = TrendingQueryIdentity(period: .daily, language: .all)
+        let context = TrendingDerivationContext(
+            sort: .recommended,
+            filter: .all,
+            languagePreferences: ["Swift": 1]
+        )
+        let repos = [
+            makeTrendingRepo(fullName: "owner/a"),
+            makeTrendingRepo(fullName: "owner/b")
+        ]
+
+        _ = await pipeline.prepare(repos: repos, for: identity, context: context)
+        #expect(await pipeline.derivationCountForTesting() == 1)
+
+        let cached = await pipeline.preparedSnapshot(for: identity, context: context)
+        #expect(cached?.repos.map(\.fullName) == ["owner/a", "owner/b"])
+        #expect(await pipeline.derivationCountForTesting() == 1,
+                "同 identity + context 命中必须直接返回 prepared snapshot")
+
+        let sortedContext = TrendingDerivationContext(
+            sort: .nameDesc,
+            filter: .all,
+            languagePreferences: ["Swift": 1]
+        )
+        _ = await pipeline.preparedSnapshot(for: identity, context: sortedContext)
+        #expect(await pipeline.derivationCountForTesting() == 2)
+
+        _ = await pipeline.prepare(
+            repos: [makeTrendingRepo(fullName: "owner/c")],
+            for: identity,
+            context: context
+        )
+        #expect(await pipeline.derivationCountForTesting() == 3,
+                "同桶新事实源必须淘汰旧 prepared snapshot 并重新派生")
+    }
+
+    @Test("Trending prepared snapshot LRU 超过 12 项后淘汰最旧 context")
+    func preparedSnapshotLRUEvictsOldestContext() async {
+        let pipeline = TrendingListPipeline()
+        let identity = TrendingQueryIdentity(period: .daily, language: .all)
+        let repos = [makeTrendingRepo(fullName: "owner/a")]
+        let contexts = (0...12).map { index in
+            TrendingDerivationContext(
+                sort: .recommended,
+                filter: .all,
+                languagePreferences: ["Lang\(index)": Double(index)]
+            )
+        }
+
+        _ = await pipeline.prepare(repos: repos, for: identity, context: contexts[0])
+        for context in contexts.dropFirst() {
+            _ = await pipeline.preparedSnapshot(for: identity, context: context)
+        }
+        let derivationsAfterThirteenContexts = await pipeline.derivationCountForTesting()
+
+        _ = await pipeline.preparedSnapshot(for: identity, context: contexts[0])
+        #expect(await pipeline.derivationCountForTesting() == derivationsAfterThirteenContexts + 1,
+                "容量为 12 时，第 13 个 context 必须淘汰最久未访问项")
+    }
 }

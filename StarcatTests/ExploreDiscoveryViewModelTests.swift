@@ -146,6 +146,64 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.cachedBulkCount() == firstCacheReads)
         #expect(await repository.fetchBulkCount() == firstFetches)
         #expect(viewModel.repos.count == 1)
+
+        let derivationsAfterAB = viewModel.localDerivationCountForTesting
+        await viewModel.reload(
+            repository: repository,
+            mode: .popular,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["catalog/popular"])
+        #expect(viewModel.localDerivationCountForTesting == derivationsAfterAB,
+                "A-B-A 回到热门时必须直接发布 prepared snapshot，不再 filter / sort bulk")
+        #expect(await repository.cachedBulkCount() == firstCacheReads)
+        #expect(await repository.fetchBulkCount() == firstFetches)
+    }
+
+    @Test("Discovery prepared snapshot LRU 超过 12 项后淘汰最旧查询")
+    func preparedSnapshotLRUEvictsOldestQuery() async {
+        let languages = (0...12).map { "Lang\($0)" }
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueBulk(Self.makeBulkResult(repos: languages.enumerated().map { index, language in
+            Self.makeRepo(
+                repoID: Int64(1_000 + index),
+                owner: "catalog",
+                name: "repo-\(index)",
+                language: language,
+                categories: ["popular"],
+                categoryRanks: ["popular": index + 1]
+            )
+        }))
+        let viewModel = ExploreDiscoveryViewModel()
+
+        for language in languages {
+            await viewModel.reload(
+                repository: repository,
+                mode: .popular,
+                language: language,
+                topic: nil,
+                platform: nil,
+                sort: .popular
+            )
+        }
+        let derivationsAfterThirteenQueries = viewModel.localDerivationCountForTesting
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .popular,
+            language: languages[0],
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+
+        #expect(viewModel.localDerivationCountForTesting == derivationsAfterThirteenQueries + 1,
+                "容量为 12 时，第 13 个查询必须淘汰最久未访问的第 1 项")
+        #expect(await repository.fetchBulkCount() == 1, "LRU miss 只允许重做本地派生，不能重复请求事实源")
     }
 
     @Test("过期缓存等待远端完成后只发布远端快照")

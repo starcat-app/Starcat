@@ -19,6 +19,8 @@ import Observation
 final class ExploreDiscoveryViewModel {
 
     private static let pageSize = 20
+    /// 语言 / Topic / 平台组合使用有界近期工作集，避免查询快照无限增长。
+    private static let preparedSnapshotCapacity = 12
     /// Discovery 服务端默认每 3 小时刷新一次 bulk；客户端复用同一窗口，
     /// 避免本地 30 分钟一过就重复请求尚未更新的服务端快照。
     private static let bulkTTL: TimeInterval = 3 * 60 * 60
@@ -43,8 +45,17 @@ final class ExploreDiscoveryViewModel {
 
     private var bulkAllRepos: [DiscoveryRepoDTO] = []
     private var filteredLocalRepos: [DiscoveryRepoDTO] = []
+    /// 已完成 filter / sort 的查询结果；命中时只发布首屏，不再扫描 bulk。
+    private var preparedSnapshots: [String: PreparedSnapshot] = [:]
+    private var preparedSnapshotLRU: [String] = []
     private var page: Int = 1
     private var inFlightRequestID = UUID()
+    /// 定向测试确认 prepared snapshot 命中没有再次扫描 bulk；不参与 UI 逻辑。
+    private(set) var localDerivationCountForTesting = 0
+
+    private struct PreparedSnapshot {
+        let filteredRepos: [DiscoveryRepoDTO]
+    }
 
     func reload(
         repository: any DiscoveryRepositoryProtocol,
@@ -68,10 +79,26 @@ final class ExploreDiscoveryViewModel {
         isRefreshing = showsRefreshIndicator
         loadError = nil
         cacheWarning = nil
+        var didPublishPreparedSnapshot = false
+
+        // A → B → A 时直接提交已经派生好的快照。TTL 过期只触发后台 SWR，
+        // 不让仍可用的列表重新退回骨架屏。
+        if !showsRefreshIndicator, let prepared = preparedSnapshot(for: queryIdentity) {
+            publishPreparedSnapshot(prepared, bumpRevision: true)
+            publishedQueryIdentity = queryIdentity
+            isLoading = false
+            didPublishPreparedSnapshot = true
+
+            if let lastRefreshedAt, isCacheFresh(at: lastRefreshedAt) {
+                finish(requestID: requestID)
+                return
+            }
+            isRefreshing = true
+        }
 
         // 发现 / 热门 / 新发布共用同一 bulk。切换分类时先用会话内快照后台派生首屏，
         // 不再每次重新读取 SQLite；快照过期时仍保留已发布列表并继续后台刷新。
-        if !showsRefreshIndicator, !bulkAllRepos.isEmpty {
+        if !showsRefreshIndicator, !didPublishPreparedSnapshot, !bulkAllRepos.isEmpty {
             await applyFiltersLocally(
                 sourceRepos: bulkAllRepos,
                 mode: mode,
@@ -162,12 +189,18 @@ final class ExploreDiscoveryViewModel {
                 finish(requestID: requestID)
                 return
             }
-            loadError = error.localizedDescription
-            repos = []
-            total = 0
-            nextPage = nil
+            if !bulkAllRepos.isEmpty || didPublishPreparedSnapshot {
+                // SWR / 手动刷新失败不能删除最后一次成功快照；列表保持可用，只提示缓存状态。
+                loadError = nil
+                cacheWarning = Self.cacheFallbackWarning(error.localizedDescription)
+            } else {
+                loadError = error.localizedDescription
+                repos = []
+                total = 0
+                nextPage = nil
+                reposRevision += 1
+            }
             publishedQueryIdentity = queryIdentity
-            reposRevision += 1
         }
 
         finish(requestID: requestID)
@@ -228,6 +261,7 @@ final class ExploreDiscoveryViewModel {
         bumpRevision: Bool,
         requestID: UUID
     ) async {
+        clearPreparedSnapshots()
         await applyFiltersLocally(
             sourceRepos: snapshot.repos,
             mode: mode,
@@ -253,6 +287,7 @@ final class ExploreDiscoveryViewModel {
         sort: ExploreSortOption,
         requestID: UUID
     ) async {
+        clearPreparedSnapshots()
         await applyFiltersLocally(
             sourceRepos: result.repos,
             mode: mode,
@@ -280,6 +315,7 @@ final class ExploreDiscoveryViewModel {
         requestID: UUID
     ) async {
         // Task.detached 只接收 Sendable 值快照；筛选与排序期间不读取任何 Observable 状态。
+        localDerivationCountForTesting &+= 1
         let task = Task.detached(priority: .userInitiated) {
             Self.deriveLocalRepos(
                 sourceRepos: sourceRepos,
@@ -293,15 +329,51 @@ final class ExploreDiscoveryViewModel {
         let filtered = await PerformanceTracer.shared.trace(.discoveryLocalFilter, task: task)
         guard !shouldStop(requestID: requestID) else { return }
 
-        // MainActor 只发布首屏 20 条和分页元数据，不再执行全量 sort/filter。
-        filteredLocalRepos = filtered
-        total = filtered.count
+        let identity = Self.queryIdentity(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort
+        )
+        let prepared = PreparedSnapshot(filteredRepos: filtered)
+        storePreparedSnapshot(prepared, for: identity)
+        publishPreparedSnapshot(prepared, bumpRevision: bumpRevision)
+    }
+
+    /// MainActor 只提交已准备好的首屏值；缓存命中和后台派生共用同一发布边界。
+    private func publishPreparedSnapshot(_ snapshot: PreparedSnapshot, bumpRevision: Bool) {
+        filteredLocalRepos = snapshot.filteredRepos
+        total = snapshot.filteredRepos.count
         page = 1
-        repos = Array(filtered.prefix(Self.pageSize))
-        nextPage = filtered.count > repos.count ? 2 : nil
+        repos = Array(snapshot.filteredRepos.prefix(Self.pageSize))
+        nextPage = snapshot.filteredRepos.count > repos.count ? 2 : nil
         if bumpRevision {
             reposRevision += 1
         }
+    }
+
+    private func preparedSnapshot(for identity: String) -> PreparedSnapshot? {
+        guard let snapshot = preparedSnapshots[identity] else { return nil }
+        preparedSnapshotLRU.removeAll { $0 == identity }
+        preparedSnapshotLRU.append(identity)
+        return snapshot
+    }
+
+    private func storePreparedSnapshot(_ snapshot: PreparedSnapshot, for identity: String) {
+        preparedSnapshots[identity] = snapshot
+        preparedSnapshotLRU.removeAll { $0 == identity }
+        preparedSnapshotLRU.append(identity)
+        while preparedSnapshotLRU.count > Self.preparedSnapshotCapacity {
+            let evicted = preparedSnapshotLRU.removeFirst()
+            preparedSnapshots.removeValue(forKey: evicted)
+        }
+    }
+
+    /// bulk 事实源替换后，旧派生结果不能继续参与查询。
+    private func clearPreparedSnapshots() {
+        preparedSnapshots.removeAll(keepingCapacity: true)
+        preparedSnapshotLRU.removeAll(keepingCapacity: true)
     }
 
     /// 在后台线程完成 Discovery bulk 的模式筛选与排序。

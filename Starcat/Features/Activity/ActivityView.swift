@@ -53,6 +53,8 @@ struct ActivityView: View {
     // R-01 §3.1.4 Step 7.3：refreshRow 改用 SyncIconButton 后顶层 reduceMotion 已不需要。
     // ActivityRowView 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
+    /// 由 Repo List 窗口会话持有，离开 Activity 时保留聚合与分类快照。
+    @Binding private var viewModel: ActivityViewModel?
     @Binding var selectedCategory: ActivityCategory
     @Binding var selectedItem: ActivityItem?
     /// Getting Started 的 Undo Star 教学跳转后，一次性请求打开第一条记录。
@@ -65,19 +67,20 @@ struct ActivityView: View {
     @State private var selectedUndoStarRecord: UndoStarRecord?
     var onSelectUndoStarRepo: ((Repo?) -> Void)?
 
-    @State private var viewModel: ActivityViewModel?
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
     @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
     init(
+        viewModel: Binding<ActivityViewModel?>,
         selectedCategory: Binding<ActivityCategory>,
         selectedItem: Binding<ActivityItem?>,
         undoStarAutoSelectRequestID: Int = 0,
         onItemCountChange: @escaping (Int) -> Void = { _ in },
         onSelectUndoStarRepo: ((Repo?) -> Void)? = nil
     ) {
+        _viewModel = viewModel
         _selectedCategory = selectedCategory
         _selectedItem = selectedItem
         self.undoStarAutoSelectRequestID = undoStarAutoSelectRequestID
@@ -218,7 +221,9 @@ struct ActivityView: View {
     private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
         let visibleItems = globalFilteredItems(viewModel.items)
         List {
-            ForEach(visibleItems) { item in
+            // Activity 首屏最多 30 行，enumerated 的小数组成本可控；真实 index 是“只动画
+            // 前 15 行”的正确性边界，不能再用 item ID 哈希伪造顺序。
+            ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
                 Button {
                     selectedItem = item
                 } label: {
@@ -227,9 +232,9 @@ struct ActivityView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .listRowReveal(
-                    index: Self.listRevealStaggerIndex(for: item.id),
-                    snapshotID: viewModel.itemsRevision,
-                    skipAnimation: viewModel.skipListRowReveal
+                    index: index,
+                    snapshotID: viewModel.rowRevealRevision,
+                    replayAfterSnapshotCommit: true
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -622,10 +627,6 @@ struct ActivityView: View {
         return formatter.string(from: date)
     }
 
-    /// `listRowReveal` stagger 用：由 item id 派生，避免 `Array(enumerated())` 每帧分配。
-    private static func listRevealStaggerIndex(for itemID: String) -> Int {
-        abs(itemID.hashValue % 14)
-    }
 }
 
 // MARK: - Row

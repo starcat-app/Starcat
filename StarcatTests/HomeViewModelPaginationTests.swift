@@ -155,6 +155,60 @@ struct HomeViewModelPaginationTests {
         #expect(vm.items.map(\.id) == [1], "旧 all-stars 结果返回后不得覆盖 Swift 分类")
     }
 
+    @Test("DB Paging: 分类 A-B-A 命中首屏快照时同步上屏且不重复查询")
+    func categoryRoundTripUsesPreparedDatabaseSnapshot() async throws {
+        let counter = DatabaseFetchCounter()
+        let (vm, db) = try makeSUT {
+            await counter.recordFetch()
+        }
+        try await insertRepo(db, id: 1, fullName: "o/swift", starredAt: starredAt(forID: 1))
+        try await insertRepo(db, id: 2, fullName: "o/go", starredAt: starredAt(forID: 2))
+        try await db.writer.write { database in
+            try database.execute(sql: "UPDATE repos SET language = 'Swift' WHERE id = 1")
+            try database.execute(sql: "UPDATE repos SET language = 'Go' WHERE id = 2")
+        }
+
+        await vm.reloadItems(reason: .selection)
+        vm.selection = .language("Swift")
+        await vm.reloadItems(reason: .selection)
+        #expect(await counter.value() == 2)
+
+        vm.selection = .allStars
+        #expect(vm.items.map(\.id) == [1, 2], "selection didSet 必须在下一帧前同步恢复 A 首屏")
+        #expect(vm.hasCachedItems, "新鲜 DB snapshot 应阻止 View 层重复派发查询")
+
+        await vm.reloadItems(reason: .selection)
+        #expect(await counter.value() == 2, "显式 reload 也应在 fresh snapshot 处短路")
+        #expect(vm.visibleRepoTotalCount == 2)
+
+        vm.resetAllStateForUserSwitch()
+        #expect(!vm.hasCachedItems, "账号 / 数据库切换必须硬清理 DB snapshot")
+    }
+
+    @Test("DB Paging: Health 信号只失效参与筛选或排序的快照")
+    func healthSignalInvalidationIsPrecise() async throws {
+        let counter = DatabaseFetchCounter()
+        let (vm, db) = try makeSUT {
+            await counter.recordFetch()
+        }
+        try await insertRepo(db, id: 1, fullName: "o/r1", starredAt: starredAt(forID: 1))
+
+        await vm.reloadItems(reason: .selection)
+        #expect(await counter.value() == 1)
+
+        vm.healthAvailabilityFilter = .missing
+        await vm.awaitPendingListReloadForTesting()
+        #expect(await counter.value() == 2)
+
+        vm.invalidateDatabaseSnapshotsForHealthSignalChange()
+        await vm.reloadItems(reason: .selection)
+        #expect(await counter.value() == 3, "Health 筛选快照必须在信号写入后失效")
+
+        vm.healthAvailabilityFilter = .unknown
+        await vm.awaitPendingListReloadForTesting()
+        #expect(await counter.value() == 3, "不依赖 Health 的默认快照不应被连带淘汰")
+    }
+
     @Test("DB Paging: reloadItems 后 items 是首页 pageSize 切片,全集只通过轻量 projection 获取")
     func reloadItemsSlicesToFirstPage() async throws {
         let (vm, db) = try makeSUT()
@@ -394,5 +448,17 @@ private actor FirstDatabaseFetchGate {
 
     func totalCallCount() -> Int {
         callCount
+    }
+}
+
+private actor DatabaseFetchCounter {
+    private var count = 0
+
+    func recordFetch() {
+        count += 1
+    }
+
+    func value() -> Int {
+        count
     }
 }

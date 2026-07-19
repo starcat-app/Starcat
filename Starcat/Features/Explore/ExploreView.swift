@@ -16,6 +16,10 @@ struct ExploreView: View {
 
     var trendingRepository: (any TrendingRepositoryProtocol)?
     var githubAPIClient: (any GitHubAPIClientProtocol)?
+    /// 由 Repo List 窗口会话持有，跨 Manage / Explore / Activity 切换不销毁。
+    let discoveryViewModel: ExploreDiscoveryViewModel
+    @Binding var trendingViewModel: TrendingViewModel?
+    @Binding var weeklyViewModel: WeeklyContentViewModel?
 
     @Binding var selectedMode: ExploreMode
     @Binding var selectedTrendingLanguage: TrendingLanguage
@@ -31,9 +35,6 @@ struct ExploreView: View {
     let onRepoCountChange: (Int) -> Void
 
     @Environment(AppDependencies.self) private var dependencies
-    @State private var discoveryViewModel = ExploreDiscoveryViewModel()
-    @State private var trendingViewModel: TrendingViewModel? = nil
-    @State private var weeklyViewModel: WeeklyContentViewModel? = nil
 
     var body: some View {
         Group {

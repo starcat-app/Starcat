@@ -191,6 +191,14 @@ struct RepoListView: View {
     @State private var lastSyncedAt: Date?
     /// 列表计数由独立观察对象承载，避免计数发布让整个 RepoListView 根层重算。
     @State private var navigationMetrics = RepoListNavigationMetrics()
+    /// Repo List 窗口会话级事实源。
+    ///
+    /// Explore / Activity 的 View 会随 `selectedPage` 条件分支创建和销毁；这里只持有
+    /// ViewModel 与数据快照，不常驻隐藏的 List，从而兼顾模块回切缓存和稳定布局成本。
+    @State private var discoveryViewModel = ExploreDiscoveryViewModel()
+    @State private var trendingViewModel: TrendingViewModel?
+    @State private var weeklyViewModel: WeeklyContentViewModel?
+    @State private var activityViewModel: ActivityViewModel?
     @State private var smartSearchExpandToken = 0
     @State private var toolbarSearchHistory: [SearchHistory] = []
     @State private var showingInterestedLanguagePicker = false
@@ -311,6 +319,10 @@ struct RepoListView: View {
             if !isAuthed {
                 exitAllRemoteStores()
             }
+        }
+        .onChange(of: authSession.state.user?.login) { oldLogin, newLogin in
+            guard oldLogin != newLogin else { return }
+            resetRepoListModuleSession()
         }
         // W12 PR-5 A2 路线：Manage filter/sort 变化触发 reloadItems → itemsRevision 自增 →
         // 此处调 store.retain(visibleIDs) 清理被隐藏的孤儿选中项（替代原 viewModel.applyView
@@ -1184,6 +1196,9 @@ struct RepoListView: View {
                 ExploreView(
                     trendingRepository: trendingRepository,
                     githubAPIClient: githubAPIClient,
+                    discoveryViewModel: discoveryViewModel,
+                    trendingViewModel: $trendingViewModel,
+                    weeklyViewModel: $weeklyViewModel,
                     selectedMode: $selectedExploreMode,
                     selectedTrendingLanguage: $selectedTrendingLanguage,
                     selectedTrendingRepoID: $selectedTrendingRepoID,
@@ -1198,6 +1213,7 @@ struct RepoListView: View {
                 )
             } else if selectedPage == .activity {
                 ActivityView(
+                    viewModel: $activityViewModel,
                     selectedCategory: $selectedActivityCategory,
                     selectedItem: $selectedActivityItem,
                     undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
@@ -1217,6 +1233,14 @@ struct RepoListView: View {
                 manageCategoryContent(vm)
             }
         }
+    }
+
+    /// 账号 / 用户数据库边界必须硬失效，禁止跨用户复用 Explore / Activity 快照。
+    private func resetRepoListModuleSession() {
+        discoveryViewModel = ExploreDiscoveryViewModel()
+        trendingViewModel = nil
+        weeklyViewModel = nil
+        activityViewModel = nil
     }
 
     /// Manage 全部分类共用：列表顶栏 + 下方内容（横幅 / 列表 / 骨架 / 空态）。
@@ -1713,6 +1737,8 @@ struct RepoListView: View {
         for await note in stream {
             guard !Task.isCancelled else { break }
             guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
+            // 即使更新行当前不可见，也可能改变某个已缓存分类的筛选成员关系或排序。
+            viewModel.invalidateDatabaseSnapshotsForHealthSignalChange()
             guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
             await dependencies.repoHealthStore.loadCachedSnapshots(for: [repoID], forceReload: true)
         }
@@ -1724,6 +1750,7 @@ struct RepoListView: View {
         for await note in stream {
             guard !Task.isCancelled else { break }
             guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
+            viewModel.invalidateDatabaseSnapshotsForOpenSSFSignalChange()
             guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
             await dependencies.openSSFScoreStore.loadCachedScores(for: [repoID], forceReload: true)
         }

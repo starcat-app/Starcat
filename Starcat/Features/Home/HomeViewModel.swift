@@ -114,6 +114,14 @@ final class HomeViewModel {
                 #if DEBUG
                 AppLog.ui.notice("[switch-cat] T0' eager cache load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                 #endif
+            } else if let databaseSnapshot = databaseSnapshotForCurrentQuery() {
+                publishDatabaseSnapshot(databaseSnapshot)
+                if self.isLoading { self.isLoading = false }
+                isRefreshing = databaseSnapshot.isExpired
+                if self.loadError != nil { self.loadError = nil }
+                #if DEBUG
+                AppLog.ui.notice("[switch-cat] T0' eager DB snapshot load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
+                #endif
             } else if isKnownEmptyGitHubStarListSelection {
                 if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 // Sidebar 计数已经确认目标分组为空时，立即进入空态，避免先渲染上一组 repo。
@@ -336,11 +344,52 @@ final class HomeViewModel {
     /// 缓存搜索结果（isSearching=true）单独处理，不进此缓存。
     private var listCache: [SidebarItem: CacheEntry] = [:]
 
+    /// 数据库分页分类的查询级首屏快照。
+    ///
+    /// 旧 `listCache` 只按 SidebarItem 保存全量内存路径，数据库分页完成后又会主动移除它；
+    /// 所以 All Stars / Untagged / Language 等高频分类 A → B → A 仍会重查 SQLite。这里缓存
+    /// 已经可以直接发布给 List 的最多 40 条与 metadata，不缓存任何 SwiftUI View。
+    private struct DatabaseSnapshotKey: Hashable {
+        let selection: SidebarItem
+        let hideArchived: Bool
+        let hideForks: Bool
+        let status: String?
+        let star: String
+        let library: String
+        let language: String
+        let selectedLanguages: Set<String>
+        let healthAvailability: String
+        let openSSFAvailability: String
+        let selectedTagIDs: Set<String>
+        let sort: String
+    }
+
+    private struct DatabasePageSnapshot {
+        let items: [Repo]
+        let statusMap: [Int64: RepoStatus]
+        let libraryStateMap: [Int64: LibraryState]
+        let total: Int
+        let hasMore: Bool
+        let cachedAt: Date
+
+        var isExpired: Bool {
+            Date().timeIntervalSince(cachedAt) > 300
+        }
+    }
+
+    private static let databaseSnapshotCapacity = 24
+    private var databaseSnapshots: [DatabaseSnapshotKey: DatabasePageSnapshot] = [:]
+    private var databaseSnapshotLRU: [DatabaseSnapshotKey] = []
+
     /// 派生：给定 selection 是否有可用（未过期）缓存。
     var hasCachedItems: Bool {
         guard !isSearching else { return false }
         guard effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown else { return false }
-        return listCache[selection] != nil && !listCache[selection]!.isExpired
+        if let cached = listCache[selection], !cached.isExpired {
+            return true
+        }
+        guard let snapshot = databaseSnapshotForCurrentQuery() else { return false }
+        return !snapshot.isExpired
     }
 
     /// 当前选中的 GitHub Stars List 是否已由 Sidebar 计数确认为空。
@@ -665,6 +714,7 @@ final class HomeViewModel {
         guard libraryStateMap[repoId] != state else { return }
         invalidateLibraryDerivedCaches()
         libraryStateMap[repoId] = state
+        patchDatabaseSnapshotMetadata(repoId: repoId, libraryState: state)
         guard selectionNeedsReloadAfterLibraryStateChange else { return }
         reloadOrApplyCurrentManageView()
     }
@@ -677,6 +727,15 @@ final class HomeViewModel {
         listCache.removeValue(forKey: .library)
         listCache.removeValue(forKey: .smartCollection(.library))
         listCache.removeValue(forKey: .smartCollection(.outsideLibraryStars))
+        removeDatabaseSnapshots { key in
+            if key.library != RepoLibraryFilter.all.rawValue { return true }
+            switch key.selection {
+            case .library, .smartCollection(.library), .smartCollection(.outsideLibraryStars):
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     private var selectionNeedsReloadAfterLibraryStateChange: Bool {
@@ -698,6 +757,8 @@ final class HomeViewModel {
     fileprivate func applyStatusChange(repoId: Int64, status: RepoStatus) {
         guard statusMap[repoId] != status else { return }
         statusMap[repoId] = status
+        removeDatabaseSnapshots { $0.status != nil }
+        patchDatabaseSnapshotMetadata(repoId: repoId, status: status)
         // 未启用状态过滤时，只需要让 row 角标刷新；重查分页列表反而可能把尚未落库的
         // 通知状态覆盖回旧值。只有状态过滤生效时，才需要重新计算该 repo 是否仍可见。
         guard effectiveGlobalFilterState.statusFilter != nil else { return }
@@ -1099,6 +1160,7 @@ final class HomeViewModel {
         prefetchTask = nil
 
         listCache.removeAll()
+        clearDatabaseSnapshots()
         rawItems = []
         statusMap = [:]
         libraryStateMap = [:]
@@ -1190,7 +1252,9 @@ final class HomeViewModel {
         }
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.reloadItems(forceRefresh: true, reason: .filterOrSort)
+            // filter / sort 本身已经进入 DatabaseSnapshotKey。A → B → A 回切时允许命中
+            // prepared snapshot；只有同步、外部事实变更和手动刷新才应 force bypass。
+            await self.reloadItems(forceRefresh: false, reason: .filterOrSort)
         }
         reloadCoordinator.installActionTask(task, generation: actionGeneration)
     }
@@ -1198,6 +1262,9 @@ final class HomeViewModel {
     /// 刷新 Sidebar 数据（counts + language stats）。
     /// 通常在 onAppear 或 sync 完成后调用。
     func refreshSidebar() async {
+        let previousRepoTagsMap = repoTagsMap
+        let previousGitHubListCounts = githubStarListCounts
+        let previousUngroupedCount = githubStarListUngroupedCount
         do {
             async let total = repository.starredCount()
             async let untagged = repository.fetchUntagged().count
@@ -1229,6 +1296,28 @@ final class HomeViewModel {
             self.releaseSubscriptionCount = try await releaseSubscriptionCountResult
             let assignments = try await tagAssignmentsResult
             self.repoTagsMap = assignments.mapValues { Set($0.map(\.id)) }
+            if previousRepoTagsMap != self.repoTagsMap {
+                removeDatabaseSnapshots { key in
+                    if !key.selectedTagIDs.isEmpty { return true }
+                    switch key.selection {
+                    case .untagged, .tag:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+            }
+            if previousGitHubListCounts != self.githubStarListCounts ||
+                previousUngroupedCount != self.githubStarListUngroupedCount {
+                removeDatabaseSnapshots { key in
+                    switch key.selection {
+                    case .githubStarList, .githubStarListUngrouped:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+            }
 
             // 标签被删除后，如果还在 selectedTagIds 里，过滤会变空集；这里主动收敛。
             let validTagIds = Set(self.tags.map(\.id))
@@ -1252,10 +1341,29 @@ final class HomeViewModel {
     /// Star 派生列表缓存；如果当前 selection 仍是 Manage 范畴，再立即重拉当前列表。
     func refreshAfterExternalStarChange() async {
         listCache.removeAll()
+        clearDatabaseSnapshots()
         await refreshSidebar()
 
         guard !selection.isTrending else { return }
         await reloadItems(forceRefresh: true)
+    }
+
+    /// Health / OpenSSF 的后台写入可能改变“有数据 / 无数据”筛选成员关系或分数排序。
+    ///
+    /// 通知通常会在预热期间逐仓库到达；这里只精准淘汰受影响的 prepared snapshot，
+    /// 不为每条通知立即重查当前列表，避免把后台预热重新变成主窗口的查询风暴。
+    func invalidateDatabaseSnapshotsForHealthSignalChange() {
+        removeDatabaseSnapshots { key in
+            key.healthAvailability != RepoSignalAvailabilityFilter.unknown.rawValue ||
+                key.sort == RepoSortOption.healthScoreDesc.rawValue
+        }
+    }
+
+    func invalidateDatabaseSnapshotsForOpenSSFSignalChange() {
+        removeDatabaseSnapshots { key in
+            key.openSSFAvailability != RepoSignalAvailabilityFilter.unknown.rawValue ||
+                key.sort == RepoSortOption.openSSFScoreDesc.rawValue
+        }
     }
 
     func userSmartCollection(id: String) -> UserSmartCollection? {
@@ -1535,6 +1643,122 @@ final class HomeViewModel {
             openSSFAvailability: filters.openSSFAvailabilityFilter,
             selectedTagIDs: selectedTagIds
         )
+    }
+
+    private func makeDatabaseSnapshotKey() -> DatabaseSnapshotKey? {
+        guard !isSearching, currentRepoListScopeForDatabasePaging() != nil else { return nil }
+        let filters = currentRepoListFiltersForDatabasePaging()
+        return DatabaseSnapshotKey(
+            selection: selection,
+            hideArchived: filters.hideArchived,
+            hideForks: filters.hideForks,
+            status: filters.status?.rawValue,
+            star: filters.star.rawValue,
+            library: filters.library.rawValue,
+            language: filters.language.persistedRawValue,
+            selectedLanguages: filters.selectedLanguages,
+            healthAvailability: filters.healthAvailability.rawValue,
+            openSSFAvailability: filters.openSSFAvailability.rawValue,
+            selectedTagIDs: filters.selectedTagIDs,
+            sort: sortOption.rawValue
+        )
+    }
+
+    /// 读取时也推进 LRU；expired 快照仍可用于 SWR 首帧，但 `hasCachedItems` 不会阻止后台刷新。
+    private func databaseSnapshotForCurrentQuery() -> DatabasePageSnapshot? {
+        guard let key = makeDatabaseSnapshotKey(), let snapshot = databaseSnapshots[key] else {
+            return nil
+        }
+        databaseSnapshotLRU.removeAll { $0 == key }
+        databaseSnapshotLRU.append(key)
+        return snapshot
+    }
+
+    private func storeDatabaseSnapshot(
+        items: [Repo],
+        statusMap: [Int64: RepoStatus],
+        libraryStateMap: [Int64: LibraryState],
+        total: Int,
+        hasMore: Bool,
+        key: DatabaseSnapshotKey
+    ) {
+        let firstScreen = Array(items.prefix(Self.pageSize))
+        let visibleIDs = Set(firstScreen.map(\.id))
+        let firstScreenStatus = statusMap.filter { visibleIDs.contains($0.key) }
+        let firstScreenLibrary = libraryStateMap.filter { visibleIDs.contains($0.key) }
+        databaseSnapshots[key] = DatabasePageSnapshot(
+            items: firstScreen,
+            statusMap: firstScreenStatus,
+            libraryStateMap: firstScreenLibrary,
+            total: total,
+            hasMore: hasMore || total > firstScreen.count,
+            cachedAt: Date()
+        )
+        databaseSnapshotLRU.removeAll { $0 == key }
+        databaseSnapshotLRU.append(key)
+        while databaseSnapshotLRU.count > Self.databaseSnapshotCapacity {
+            let evicted = databaseSnapshotLRU.removeFirst()
+            databaseSnapshots.removeValue(forKey: evicted)
+        }
+    }
+
+    /// 同步发布已准备好的首屏值，确保 selection 的下一帧不会先渲染上一分类。
+    private func publishDatabaseSnapshot(_ snapshot: DatabasePageSnapshot) {
+        isDatabasePagingActive = true
+        let idsIdentical = snapshot.items.count == items.count &&
+            zip(snapshot.items, items).allSatisfy { $0.id == $1.id }
+        rawItems = snapshot.items
+        filteredSorted = snapshot.items
+        visibleRepoTotalCount = snapshot.total
+        items = snapshot.items
+        currentPage = 1
+        hasMore = snapshot.hasMore
+        statusMap = snapshot.statusMap
+        libraryStateMap = snapshot.libraryStateMap
+        if !idsIdentical {
+            itemsRevision &+= 1
+        }
+        if let id = selectedRepoID, !snapshot.items.contains(where: { $0.id == id }) {
+            selectedRepoID = nil
+        }
+    }
+
+    private func removeDatabaseSnapshots(
+        where shouldRemove: (DatabaseSnapshotKey) -> Bool
+    ) {
+        let staleKeys = databaseSnapshotLRU.filter(shouldRemove)
+        staleKeys.forEach { databaseSnapshots.removeValue(forKey: $0) }
+        databaseSnapshotLRU.removeAll(where: shouldRemove)
+    }
+
+    private func clearDatabaseSnapshots() {
+        databaseSnapshots.removeAll(keepingCapacity: true)
+        databaseSnapshotLRU.removeAll(keepingCapacity: true)
+    }
+
+    /// 不参与成员关系的 metadata 变化直接 patch 快照；参与筛选 / scope 的快照由调用方先失效。
+    private func patchDatabaseSnapshotMetadata(
+        repoId: Int64,
+        status: RepoStatus? = nil,
+        libraryState: LibraryState? = nil
+    ) {
+        for key in databaseSnapshotLRU {
+            guard var snapshot = databaseSnapshots[key],
+                  snapshot.items.contains(where: { $0.id == repoId }) else { continue }
+            var nextStatusMap = snapshot.statusMap
+            var nextLibraryStateMap = snapshot.libraryStateMap
+            if let status { nextStatusMap[repoId] = status }
+            if let libraryState { nextLibraryStateMap[repoId] = libraryState }
+            snapshot = DatabasePageSnapshot(
+                items: snapshot.items,
+                statusMap: nextStatusMap,
+                libraryStateMap: nextLibraryStateMap,
+                total: snapshot.total,
+                hasMore: snapshot.hasMore,
+                cachedAt: snapshot.cachedAt
+            )
+            databaseSnapshots[key] = snapshot
+        }
     }
 
     /// Cmd+A 使用的全集快照。
@@ -2121,6 +2345,21 @@ final class HomeViewModel {
     ) async {
         isDatabasePagingActive = true
 
+        let snapshotKey = makeDatabaseSnapshotKey()
+        if reason == .reset,
+           !identity.forceRefresh,
+           let cached = databaseSnapshotForCurrentQuery() {
+            publishDatabaseSnapshot(cached)
+            isLoading = false
+            loadError = nil
+            if !cached.isExpired {
+                isRefreshing = false
+                return
+            }
+            // TTL 过期只代表需要后台更新，不代表旧首屏不可用。
+            isRefreshing = true
+        }
+
         let wasDeepScrolledToEnd = reason == .refreshPreservingPage &&
             !hasMore && items.count > Self.pageSize
 
@@ -2249,6 +2488,16 @@ final class HomeViewModel {
                         }
                         self.statusMap = pageStatusMap
                         self.libraryStateMap = pageLibraryStateMap
+                        if let snapshotKey {
+                            self.storeDatabaseSnapshot(
+                                items: visibleRows,
+                                statusMap: pageStatusMap,
+                                libraryStateMap: pageLibraryStateMap,
+                                total: queryTotalCount,
+                                hasMore: nextHasMore,
+                                key: snapshotKey
+                            )
+                        }
                     }
                     self.listCache.removeValue(forKey: identity.selection)
 

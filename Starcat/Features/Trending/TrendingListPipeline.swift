@@ -27,7 +27,7 @@ struct TrendingQueryIdentity: Hashable, Sendable {
 ///
 /// SwiftUI 只负责从各个 Observable store 复制当前值；真正逐 repo 匹配在后台 actor 内完成。
 /// 对已关闭的筛选，调用方传空集合，避免无关 store 变化触发整榜重新派生。
-struct TrendingListFilter: Equatable, Sendable {
+struct TrendingListFilter: Hashable, Sendable {
     let star: RepoStarFilter
     let library: RepoLibraryFilter
     let hideArchived: Bool
@@ -59,6 +59,25 @@ struct TrendingListFilter: Equatable, Sendable {
         healthAvailableRepoIDs: [],
         openSSFAvailableRepoIDs: []
     )
+
+    /// 查询快照缓存需要把所有影响列表成员关系的输入纳入 key。
+    /// 使用枚举 rawValue，避免为了本地缓存把共享筛选枚举扩展成额外协议依赖。
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(star.rawValue)
+        hasher.combine(library.rawValue)
+        hasher.combine(hideArchived)
+        hasher.combine(hideForks)
+        hasher.combine(languages)
+        hasher.combine(wikiAvailability.rawValue)
+        hasher.combine(healthAvailability.rawValue)
+        hasher.combine(openSSFAvailability.rawValue)
+        hasher.combine(starredRepoIDs)
+        hasher.combine(inLibraryRepoIDs)
+        hasher.combine(wikiKnownRepoIDs)
+        hasher.combine(wikiAvailableRepoIDs)
+        hasher.combine(healthAvailableRepoIDs)
+        hasher.combine(openSSFAvailableRepoIDs)
+    }
 
     func matches(_ repo: TrendingRepo) -> Bool {
         let repoID = repo.ghRepoId
@@ -114,10 +133,16 @@ struct TrendingListFilter: Equatable, Sendable {
 }
 
 /// 会影响 Trending 展示快照的全部本地派生输入。
-struct TrendingDerivationContext: Equatable, Sendable {
+struct TrendingDerivationContext: Hashable, Sendable {
     let sort: TrendingSortOption
     let filter: TrendingListFilter
     let languagePreferences: [String: Double]
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(sort.rawValue)
+        hasher.combine(filter)
+        hasher.combine(languagePreferences)
+    }
 }
 
 /// 已完成后台派生、可以直接发布给 SwiftUI 的不可变快照。
@@ -135,16 +160,35 @@ struct TrendingPreparedSnapshot: Sendable {
 /// 关键约束：这里只保存可重建的远端缓存数据；用户数据仍由各自 Repository 管理。
 /// actor 隔离也保证快速切换多个分类时，不会并发读写同一个快照字典。
 actor TrendingListPipeline {
+    private static let preparedSnapshotCapacity = 12
+
     private var rawSnapshots: [TrendingQueryIdentity: [TrendingRepo]] = [:]
+    /// 完整 context 命中后可直接返回，不再重复排序、过滤、评分与推荐计算。
+    private var preparedSnapshots: [PreparedSnapshotKey: TrendingPreparedSnapshot] = [:]
+    private var preparedSnapshotLRU: [PreparedSnapshotKey] = []
+    /// 仅供定向测试确认 cache hit 没有重新进入昂贵派生；不参与 UI 观察。
+    private var derivationCount = 0
     private let dateFormatter = ISO8601DateFormatter()
+
+    private struct PreparedSnapshotKey: Hashable {
+        let identity: TrendingQueryIdentity
+        let context: TrendingDerivationContext
+    }
 
     /// 返回内存中已有桶的派生快照；未访问过该桶时返回 nil。
     func preparedSnapshot(
         for identity: TrendingQueryIdentity,
         context: TrendingDerivationContext
     ) -> TrendingPreparedSnapshot? {
+        let key = PreparedSnapshotKey(identity: identity, context: context)
+        if let snapshot = preparedSnapshots[key] {
+            touchPreparedSnapshot(key)
+            return snapshot
+        }
         guard let repos = rawSnapshots[identity] else { return nil }
-        return derive(repos: repos, context: context)
+        let snapshot = derive(repos: repos, context: context)
+        storePreparedSnapshot(snapshot, for: key)
+        return snapshot
     }
 
     /// 替换指定桶的原始数据，并用指定 context 生成快照。ViewModel 会在 await 后复核
@@ -155,7 +199,37 @@ actor TrendingListPipeline {
         context: TrendingDerivationContext
     ) -> TrendingPreparedSnapshot {
         rawSnapshots[identity] = repos
-        return derive(repos: repos, context: context)
+        // 同一个远端桶拿到新事实源后，旧 context 的派生结果必须整体失效。
+        removePreparedSnapshots(for: identity)
+        let snapshot = derive(repos: repos, context: context)
+        storePreparedSnapshot(
+            snapshot,
+            for: PreparedSnapshotKey(identity: identity, context: context)
+        )
+        return snapshot
+    }
+
+    private func storePreparedSnapshot(
+        _ snapshot: TrendingPreparedSnapshot,
+        for key: PreparedSnapshotKey
+    ) {
+        preparedSnapshots[key] = snapshot
+        touchPreparedSnapshot(key)
+        while preparedSnapshotLRU.count > Self.preparedSnapshotCapacity {
+            let evicted = preparedSnapshotLRU.removeFirst()
+            preparedSnapshots.removeValue(forKey: evicted)
+        }
+    }
+
+    private func touchPreparedSnapshot(_ key: PreparedSnapshotKey) {
+        preparedSnapshotLRU.removeAll { $0 == key }
+        preparedSnapshotLRU.append(key)
+    }
+
+    private func removePreparedSnapshots(for identity: TrendingQueryIdentity) {
+        let staleKeys = preparedSnapshotLRU.filter { $0.identity == identity }
+        staleKeys.forEach { preparedSnapshots.removeValue(forKey: $0) }
+        preparedSnapshotLRU.removeAll { $0.identity == identity }
     }
 
     /// 在 actor 内完成全量排序、筛选、评分与推荐，避免 SwiftUI body 重复派生。
@@ -163,6 +237,7 @@ actor TrendingListPipeline {
         repos: [TrendingRepo],
         context: TrendingDerivationContext
     ) -> TrendingPreparedSnapshot {
+        derivationCount &+= 1
         let sorted = sortedRepos(repos, by: context.sort)
         let filtered = sorted.filter(context.filter.matches)
         let scores = Dictionary(uniqueKeysWithValues: repos.map { repo in
@@ -264,5 +339,9 @@ actor TrendingListPipeline {
             activity: contributorBonus,
             quality: forkRatio
         )
+    }
+
+    func derivationCountForTesting() -> Int {
+        derivationCount
     }
 }

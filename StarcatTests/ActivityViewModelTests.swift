@@ -30,6 +30,15 @@ import GRDB
 @Suite("ActivityViewModel SWR")
 struct ActivityViewModelTests {
 
+    @Test("Repo List 行动画严格只覆盖前 15 行")
+    func rowRevealLimitIsExactlyFifteen() {
+        #expect(ListRowRevealMetrics.animatedRowLimit == 15)
+        #expect(ListRowRevealMetrics.shouldAnimate(index: 0))
+        #expect(ListRowRevealMetrics.shouldAnimate(index: 14))
+        #expect(!ListRowRevealMetrics.shouldAnimate(index: 15))
+        #expect(!ListRowRevealMetrics.shouldAnimate(index: 29))
+    }
+
     // MARK: - Harness
 
     /// 引用类型计数器（让 releasePollerRunner 闭包能跨调用累加）。
@@ -661,20 +670,20 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.itemsRevision == revisionAfterLoad)
     }
 
-    @Test("切分类 selectCategory 标记 skipListRowReveal，排序切换恢复 animated")
-    func selectCategorySetsSkipListRowReveal() async throws {
+    @Test("切分类在首屏提交后推进独立 row reveal，排序不冒充分类动画")
+    func selectCategoryAdvancesRowRevealAfterSnapshotCommit() async throws {
         let h = try Harness()
         await h.viewModel.ensureLoaded(category: .star)
+        let initialRevealRevision = h.viewModel.rowRevealRevision
 
         h.viewModel.selectCategory(.repository)
-        #expect(h.viewModel.skipListRowReveal == true)
-
-        try await Task.sleep(nanoseconds: 20_000_000)
-        #expect(h.viewModel.skipListRowReveal == false)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+        #expect(h.viewModel.rowRevealRevision > initialRevealRevision)
+        let categoryRevealRevision = h.viewModel.rowRevealRevision
 
         h.viewModel.changeTimeSort(to: .oldestFirst)
-        #expect(h.viewModel.skipListRowReveal == false)
         #expect(h.viewModel.itemsRevision > 0)
+        #expect(h.viewModel.rowRevealRevision == categoryRevealRevision)
     }
 
     @Test("切分类 selectCategory 不重复拉 events")

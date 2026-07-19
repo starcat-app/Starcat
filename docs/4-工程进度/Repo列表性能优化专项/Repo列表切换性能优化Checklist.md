@@ -1,6 +1,6 @@
 # Repo List 切换性能优化 Checklist
 
-> 状态：实施中（42 / 60 项完成）
+> 状态：实施中（57 / 60 项完成）
 >
 > 范围：优化 Starred / Manage、Explore（趋势、周刊、发现、热门、新发布）与 Activity 的模块切换、分类切换和首屏 Repo List 上屏链路；不改变列表业务语义，不在首轮引入 AppKit 列表容器或数据库 schema 变更。
 
@@ -167,32 +167,36 @@
 
 ## 第八阶段：窗口会话级状态持有
 
-- [ ] 在 Repo List 窗口会话层建立稳定的 Explore / Activity 状态所有者，不持有不可见模块的完整 View 树。
-- [ ] ExploreView 改为注入持久的 Discovery / Trending / Weekly ViewModel，跨模块回切不重新创建事实源。
-- [ ] ActivityView 改为注入持久的 ActivityViewModel，保留聚合快照、分类过滤缓存与分页状态。
+- [x] 在 Repo List 窗口会话层建立稳定的 Explore / Activity 状态所有者，不持有不可见模块的完整 View 树。
+- [x] ExploreView 改为注入持久的 Discovery / Trending / Weekly ViewModel，跨模块回切不重新创建事实源。
+- [x] ActivityView 改为注入持久的 ActivityViewModel，保留聚合快照、分类过滤缓存与分页状态。
 - [ ] 用户 / 数据库切换时统一取消三模块旧任务并清空窗口会话缓存，增加跨用户隔离测试。
+
+> 当前代码已在登录账号 identity 变化时硬重建 Explore / Activity 会话状态；本项暂不勾选，待补可自动观察的跨用户隔离测试后再收口。
 
 ## 第九阶段：模块与分类 prepared snapshot
 
-- [ ] Manage 为数据库分页分类增加 query-keyed 首屏快照，缓存命中同步发布 40 条与可见 metadata。
-- [ ] Discovery 为发现 / 热门 / 新发布增加派生结果缓存，命中时不再重新 filter / sort bulk。
-- [ ] Trending 缓存 prepared snapshot，命中时不再重新执行排序、过滤、评分与推荐派生。
-- [ ] Weekly 建立完整筛选身份快照，并把 bulk 本地过滤、排序移出 MainActor。
-- [ ] Activity 保留全部固定分类的过滤结果；分类命中只提交首屏 slice，不重新聚合事实源。
-- [ ] 为各模块接入独立有界 LRU 与 source revision，锁定容量和淘汰行为。
+- [x] Manage 为数据库分页分类增加 query-keyed 首屏快照，缓存命中同步发布 40 条与可见 metadata。
+- [x] Discovery 为发现 / 热门 / 新发布增加派生结果缓存，命中时不再重新 filter / sort bulk。
+- [x] Trending 缓存 prepared snapshot，命中时不再重新执行排序、过滤、评分与推荐派生。
+- [x] Weekly 建立完整筛选身份快照，并把 bulk 本地过滤、排序移出 MainActor。
+- [x] Activity 保留全部固定分类的过滤结果；分类命中只提交首屏 slice，不重新聚合事实源。
+- [x] 为各模块接入独立有界 LRU 与 source revision，锁定容量和淘汰行为。
 
 ## 第十阶段：失效、SWR 与稳定视图树
 
-- [ ] 接入 Stars、标签、GitHub Stars List、状态、知识库、各远端事实源更新的精准 revision 失效矩阵。
-- [ ] 统一 stale-while-revalidate：stale 先上屏，成功静默替换，失败保留最后成功快照；账号 / 数据库切换必须硬失效。
-- [ ] 手动刷新保留当前列表，只显示刷新状态；分页追加和 metadata patch 不触发分类入场动画。
-- [ ] 移除分类动画对整个 `List.id` 重建的依赖，验证排序变化、Smart Collection 与稳定 repo identity 无回归。
+- [x] 接入 Stars、标签、GitHub Stars List、状态、知识库、各远端事实源更新的精准 revision 失效矩阵。
+- [x] 统一 stale-while-revalidate：stale 先上屏，成功静默替换，失败保留最后成功快照；账号 / 数据库切换必须硬失效。
+- [x] 手动刷新保留当前列表，只显示刷新状态；分页追加和 metadata patch 不触发分类入场动画。
+- [x] 移除分类动画对整个 `List.id` 重建的依赖，验证排序变化、Smart Collection 与稳定 repo identity 无回归。
 
 ## 第十一阶段：Activity 动画与专项验收
 
-- [ ] Activity 使用独立 row reveal revision 与真实 enumerated index，所有分类严格只动画前 15 行。
-- [ ] 统一 Manage / Explore / Activity 的“快照提交后动画”语义，并锁定 reduce motion、缓存命中、刷新、分页边界。
+- [x] Activity 使用独立 row reveal revision 与真实 enumerated index，所有分类严格只动画前 15 行。
+- [x] 统一 Manage / Explore / Activity 的“快照提交后动画”语义，并锁定 reduce motion、缓存命中、刷新、分页边界。
 - [ ] 增加分类缓存、精准失效、旧 generation 防覆盖、前 15 行动画边界测试，并完成固定短时 UI / Instruments 验收。
+
+> 分类缓存、精准失效、旧 generation 与前 15 行边界的自动测试已完成；本项仍保留未完成，等待固定短时 UI / Instruments 人工验收。
 
 ## 固定验收脚本
 
@@ -213,6 +217,13 @@
 - Trending 定向 Suite 25 个测试通过，新增全局筛选组合与 Wiki unknown 语义回归测试。
 - `DiskWikiCacheTests.batchAvailabilityKeepsUnknownDistinct` 使用线程观察器锁定每次 JSON 检查均不在主线程执行。
 - Explore / Activity 的动态计数改由局部 Observation modifier 消费；计数发布不再使 RepoList 根层、toolbar、tint 与 List 宿主共同失效。
+
+## 本轮自动验证记录（2026-07-19，独立 worktree）
+
+- 工作目录：`Starcat-repo-list-session-cache`；本地分支：`codex/repo-list-session-cache`，基于 `dev@f1de774d`。
+- Manage / Discovery / Trending / Weekly / Activity 相关 5 个定向 Suite 共 103 个测试通过；覆盖 A-B-A 快照命中、LRU 淘汰、精准失效、旧 generation 防覆盖与 15 行动画边界。
+- `Starcat` 测试目标与 `StarcatDirect` Debug 构建通过；`git diff --check` 通过。
+- 未执行长时间运行时测试；固定短时 UI / Instruments 仍保留为人工验收项，不以自动结果冒充主窗口体感结论。
 - Manage / Explore / Weekly / Activity 等 8 个定向 Suite 共 140 个测试通过；同时修复进入知识库时新查询被 `cancelAll()` 误取消的任务顺序问题。
 - Xcode 关闭后全量测试通过：180 个 Suite、1565 个测试，保留 1 个既有 known issue，无新增失败。
 - `git diff --check`：通过。
