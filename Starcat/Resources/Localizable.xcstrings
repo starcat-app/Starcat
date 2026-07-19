@@ -1652,13 +1652,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activity Categories"
+            "value": "Activity"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "活动分类"
+            "value": "活动"
           }
         }
       }
@@ -6516,6 +6516,23 @@
         }
       }
     },
+    "ai.context.degraded.archiveTooLargeFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository ZIP exceeds the %lld MB limit – code not analyzed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库 ZIP 超过 %lld MB 上限，未分析代码内容"
+          }
+        }
+      }
+    },
     "ai.context.degraded.networkUnavailable": {
       "extractionState": "stale",
       "localizations": {
@@ -6630,6 +6647,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理已生成的上下文 → 存储 Tab"
+          }
+        }
+      }
+    },
+    "ai.context.settings.maximumArchiveSize": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository ZIP Size Limit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库 ZIP 大小上限"
           }
         }
       }

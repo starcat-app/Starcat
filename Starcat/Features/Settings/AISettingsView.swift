@@ -1778,16 +1778,13 @@ struct AISettingsTab: View {
     // 设计要点（沿用 promptSection / autoTidySection / aiIndexSection 同款风格）：
     //   - DisclosureGroup 默认折叠（@SceneStorage 持久化）；
     //   - 总开关 Toggle 控制下面控件的 disabled 状态（用户关掉总开关后调下面没意义）；
-    //   - Slider 走 Int↔Double 适配 binding（SwiftUI Slider 强制 BinaryFloatingPoint，不能直接绑 Int）；
-    //   - Stepper 走自定义 Int binding（AISettingsTab 没用 @Bindable var settings = settings）；
+    //   - Token 与 ZIP 上限 Slider 走 Int↔Double 适配；行数使用数字 TextField，遵守禁止 Stepper 规范；
     //   - **不提供「私有仓库」开关**：当前 OAuth scope 是 `read:user` + `public_repo`，
     //     API 永远不会返回 isPrivate=true 的 repo；增加一个永远走不到的开关只会污染设置页；
-    //   - 「管理已生成的上下文 →」按钮**当前先 print 占位**（Y3 仅 UI 阶段，Y5 触点 E 落地存储 Tab 才接通）。
     //
     // 关键约束：
     //   - 本 section 完全是 UI 层；改字段值只写 AppSettings UserDefaults，不触发任何 AI / 网络 / 磁盘 I/O。
-    //   - 用户改 Slider/Stepper 立即落盘（didSet）；下次生成 AI 摘要才生效（X4 接通 RepoAIInsightService）。
-    //   - X4 / Y5 未完成期间，本 section 是「光配置不生效」状态——用户改完看不到效果，但配置是真持久化的。
+    //   - 用户改 Slider/TextField 后立即落盘（didSet），下次生成 AI 摘要时读取一次配置快照。
 
     private var aiRepoContextSection: some View {
         Section {
@@ -1797,6 +1794,9 @@ struct AISettingsTab: View {
                         .padding(.vertical, 8)
                     Divider()
                     repoContextTokenBudgetRow
+                        .padding(.vertical, 8)
+                    Divider()
+                    repoContextMaximumArchiveSizeRow
                         .padding(.vertical, 8)
                     Divider()
                     repoContextTier1MaxLinesRow
@@ -1839,6 +1839,29 @@ struct AISettingsTab: View {
                 value: tokenBudgetBinding,
                 in: 4000...32000,
                 step: 2000
+            )
+            .disabled(!settings.aiRepoContextEnabled)
+        }
+    }
+
+    /// 源码 ZIP 大小上限。沿用 Token 预算的标题 + 数值 + Slider 结构，避免同一设置组
+    /// 出现两套数值配置交互；1...500MB 的值会同时传给下载层与 Packer 解压预检。
+    private var repoContextMaximumArchiveSizeRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("ai.context.settings.maximumArchiveSize")
+                    .font(.callout)
+                Spacer()
+                Text("\(settings.aiRepoContextMaximumArchiveMB) MB")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: maximumArchiveSizeBinding,
+                in: Double(AppSettings.aiRepoContextMaximumArchiveMBRange.lowerBound)...Double(
+                    AppSettings.aiRepoContextMaximumArchiveMBRange.upperBound
+                ),
+                step: 1
             )
             .disabled(!settings.aiRepoContextEnabled)
         }
@@ -2042,6 +2065,21 @@ struct AISettingsTab: View {
             get: { Double(self.settings.aiRepoContextTokenBudget) },
             set: { newValue in
                 self.settings.aiRepoContextTokenBudget = Int(newValue.rounded())
+            }
+        )
+    }
+
+    /// 源码 ZIP 上限 Int↔Double 适配。setter 再做一次范围钳制，防止键盘辅助操作或未来
+    /// 调整 Slider 范围时把底层 Packer 无法接受的值写进 UserDefaults。
+    private var maximumArchiveSizeBinding: Binding<Double> {
+        Binding(
+            get: { Double(self.settings.aiRepoContextMaximumArchiveMB) },
+            set: { newValue in
+                let range = AppSettings.aiRepoContextMaximumArchiveMBRange
+                self.settings.aiRepoContextMaximumArchiveMB = min(
+                    max(Int(newValue.rounded()), range.lowerBound),
+                    range.upperBound
+                )
             }
         )
     }

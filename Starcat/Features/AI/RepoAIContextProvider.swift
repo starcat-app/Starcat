@@ -140,41 +140,70 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         let enabled: Bool
         let tokenBudget: Int
         let tier1MaxLines: Int
+        let maximumArchiveBytes: Int
     }
 
     @MainActor
-    private func snapshotSettings() -> SettingsSnapshot {
+    private func snapshotSettings(maximumArchiveBytes: Int) -> SettingsSnapshot {
         SettingsSnapshot(
             enabled: settings.aiRepoContextEnabled,
             tokenBudget: settings.aiRepoContextTokenBudget,
-            tier1MaxLines: settings.aiRepoContextTier1MaxLines
+            tier1MaxLines: settings.aiRepoContextTier1MaxLines,
+            maximumArchiveBytes: maximumArchiveBytes
         )
     }
 
-    /// 给 `RepoAIInsightService.makeSource(for:)` 用的入口（Y4 引入 3 态 outcome）。
+    /// 共享入口（协议 / RAG）：读取单一的项目上下文 ZIP 阈值。
     ///
+    /// 单仓 AI、知识库主动生成和 Deep Thinking 都必须使用同一配置，避免同一个仓库
+    /// 在两个入口得到不同的可用性结果。
     /// - Parameter onProgress: 进度回调，consumer 在 step 切换时显示 UI 进度。
-    ///   默认 `nil`，保持现有调用方（`makeSource`）零改动。**调用方**必须是 MainActor
+    ///   默认 `nil`，保持现有调用方零改动。**调用方**必须是 MainActor
     ///   才能把 step 写进 @Observable 状态，所以回调本身也强制 `@MainActor`。
     /// - Throws: 只抛 `CancellationError`，其它错误内部静默吞并映射为 `.degraded(reason)`。
     func contextOutcome(
         for repo: Repo,
         onProgress: RepoAIContextProgressCallback? = nil
     ) async throws -> RepoAIContextOutcome {
-        try await contextOutcome(for: repo, onProgress: onProgress, beforeStep: nil)
+        let userLimitBytes = await MainActor.run {
+            settings.aiRepoContextMaximumArchiveMB * 1_000_000
+        }
+        return try await contextOutcome(
+            for: repo,
+            onProgress: onProgress,
+            beforeStep: nil,
+            maximumArchiveBytes: userLimitBytes
+        )
     }
 
     /// 单仓摘要专用入口：允许在真实步骤前插入可取消缓冲。
     ///
-    /// 不把缓冲固化到 provider，是因为本 provider 也服务知识库 RAG；RAG 的主动生成
+    /// 不把缓冲固化到默认入口，是因为本 provider 也服务知识库 RAG；RAG 的主动生成
     /// 已有独立取消体验，不应被单仓摘要的产品节奏额外拖慢。
     func contextOutcome(
         for repo: Repo,
         onProgress: RepoAIContextProgressCallback? = nil,
         beforeStep: RepoAIContextStepGate?
     ) async throws -> RepoAIContextOutcome {
+        let userLimitBytes = await MainActor.run {
+            settings.aiRepoContextMaximumArchiveMB * 1_000_000
+        }
+        return try await contextOutcome(
+            for: repo,
+            onProgress: onProgress,
+            beforeStep: beforeStep,
+            maximumArchiveBytes: userLimitBytes
+        )
+    }
+
+    private func contextOutcome(
+        for repo: Repo,
+        onProgress: RepoAIContextProgressCallback?,
+        beforeStep: RepoAIContextStepGate?,
+        maximumArchiveBytes: Int
+    ) async throws -> RepoAIContextOutcome {
         // 先把 settings 快照到本地（一次性跨 MainActor 调用，后续 pipeline 用快照）。
-        let snapshot = await snapshotSettings()
+        let snapshot = await snapshotSettings(maximumArchiveBytes: maximumArchiveBytes)
 
         // ① 总开关 guard：关掉 = 完全跳过下游链路（语义上 ≠ 失败，UI 不显示 banner）
         guard snapshot.enabled else { return .featureDisabled }
@@ -288,6 +317,35 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         snapshotService.cleanupTemporaryArchive(owner: repo.owner, name: repo.name)
     }
 
+    /// XML 缓存命中时，按共享 ZIP 的真实大小判断能否复用。
+    ///
+    /// ZIP 已被清理或为空时返回 false，调用方必须重新下载并验证；不能直接放行旧 XML，
+    /// 否则“清 ZIP 缓存 → 调低阈值”会绕过限制。
+    private func cachedArchiveFitsLimit(
+        owner: String,
+        name: String,
+        commitSHA: String,
+        maximumBytes: Int
+    ) throws -> Bool {
+        let archiveURL = try snapshotService.archiveFileURL(
+            owner: owner,
+            name: name,
+            commitSHA: commitSHA
+        )
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: archiveURL.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return false
+        }
+        let values = try archiveURL.resourceValues(forKeys: [.fileSizeKey])
+        let bytes = Int64(values.fileSize ?? 0)
+        guard bytes > 0 else { return false }
+        guard bytes <= Int64(maximumBytes) else {
+            throw SharedSnapshotError.archiveTooLarge
+        }
+        return true
+    }
+
     // MARK: - 内部 pipeline
 
     private func prepareContext(
@@ -318,7 +376,13 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
            existing.metadata.tokenBudget == tokenBudget,
            // tier1MaxLines 可能为 nil（W7 扩字段前的旧 metadata）；按 80 兜底
            (existing.metadata.tier1MaxLines ?? 80) == tier1MaxLines,
-           existing.metadata.tierRulesVersion == currentTierRulesVersion {
+           existing.metadata.tierRulesVersion == currentTierRulesVersion,
+           try cachedArchiveFitsLimit(
+                owner: repo.owner,
+                name: repo.name,
+                commitSHA: branch.commitSHA,
+                maximumBytes: snapshot.maximumArchiveBytes
+           ) {
             // 命中缓存 → 刷新 lastAccessedAt 让 UI 列表能按"最近使用"排序
             try? await MainActor.run {
                 try storage.touch(owner: repo.owner, repo: repo.name)
@@ -354,7 +418,8 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         // 避免已有 ZIP 仍假播「下载」并等待 3 秒。
         let archive = try await snapshotService.archiveIfNeeded(
             repo: repo,
-            commitSHA: branch.commitSHA
+            commitSHA: branch.commitSHA,
+            maximumBytes: snapshot.maximumArchiveBytes
         ) {
             await onProgress?(.downloadingArchive)
             try await beforeStep?(.downloadingArchive)
@@ -363,7 +428,14 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         // W4：发 `.packingContext` 让 UI 把 chip 切到「解压并生成上下文」。
         await onProgress?(.packingContext)
         try await beforeStep?(.packingContext)
-        let packer = try RepoContextPacker(writer: DefaultContextWriter(storage: storage))
+        // 下载层和解压层必须使用同一运行期阈值；否则 100...500MB 的配置会在下载成功后
+        // 被 Packer 历史固定上限再次拒绝，形成不可用的“假配置”。
+        let packer = try RepoContextPacker(
+            extractor: DefaultSourceZipExtractor(
+                maximumArchiveBytes: snapshot.maximumArchiveBytes
+            ),
+            writer: DefaultContextWriter(storage: storage)
+        )
         // PackInput.outputBaseDir 在 storage 注入路径下被忽略，但字段是 non-optional，
         // 这里给一个语义清晰的默认（storage 的 root URL），不会被实际使用。
         let outputBaseDir = (try? await MainActor.run { try storage.outputRootURL() }) ?? FileManager.default.temporaryDirectory

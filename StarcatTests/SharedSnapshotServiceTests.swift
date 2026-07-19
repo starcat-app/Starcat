@@ -8,7 +8,7 @@
 //    1. 私有仓库直接抛 `.privateRepository`，不走网络
 //    2. 已有 ZIP 缓存时复用，不重新下载
 //    3. 首次下载并写盘成功
-//    4. 100MB 上限时抛 `.archiveTooLarge`
+//    4. 默认或调用方自定义上限时抛 `.archiveTooLarge`
 //    5. 空 response 抛 `.emptyArchive`
 //    6. 仓库级旧 ZIP 的 SHA 不匹配时重新下载
 //
@@ -140,7 +140,7 @@ struct SharedSnapshotServiceTests {
         #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
     }
 
-    @Test("ZIP 超过 100MB 上限时抛 archiveTooLarge")
+    @Test("ZIP 超过默认 100MB 上限时抛 archiveTooLarge")
     func rejectsOversizedArchive() async throws {
         // 构造一个超过 maximumArchiveBytes 1 字节的 payload
         let payload = Data(count: SharedSnapshotService.maximumArchiveBytes + 1)
@@ -152,6 +152,56 @@ struct SharedSnapshotServiceTests {
 
         await #expect(throws: SharedSnapshotError.self) {
             _ = try await service.archiveIfNeeded(repo: repo, commitSHA: "deadbeef")
+        }
+    }
+
+    @Test("调用方传入更低阈值时按该阈值拒绝下载结果")
+    func rejectsArchiveAboveCustomLimit() async throws {
+        let downloader = SnapshotRecordingDownloader(data: Data(count: 11))
+        let service = SharedSnapshotService(downloader: downloader, github: SnapshotStubGitHubProvider())
+        let repo = makeRepo(owner: "starcat-custom-limit-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        do {
+            _ = try await service.archiveIfNeeded(
+                repo: repo,
+                commitSHA: "deadbeef",
+                maximumBytes: 10
+            )
+            Issue.record("超过自定义阈值时应抛 archiveTooLarge")
+        } catch SharedSnapshotError.archiveTooLarge {
+            // 预期分支。
+        } catch {
+            Issue.record("预期 archiveTooLarge，实际为 \(error)")
+        }
+    }
+
+    @Test("缓存 ZIP 也受调用方自定义阈值约束")
+    func cachedArchiveRespectsCustomLimit() async throws {
+        let service = SharedSnapshotService(
+            downloader: SnapshotRecordingDownloader(data: Data()),
+            github: SnapshotStubGitHubProvider()
+        )
+        let repo = makeRepo(owner: "starcat-cached-limit-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
+        try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var cachedArchive = makeZipHeader(firstEntry: "starcat-cached-limit-demo-deadbee/")
+        cachedArchive.append(Data(count: 32))
+        try cachedArchive.write(to: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        do {
+            _ = try await service.archiveIfNeeded(
+                repo: repo,
+                commitSHA: "deadbeef",
+                maximumBytes: 10
+            )
+            Issue.record("缓存 ZIP 超过自定义阈值时应抛 archiveTooLarge")
+        } catch SharedSnapshotError.archiveTooLarge {
+            // 预期分支。
+        } catch {
+            Issue.record("预期 archiveTooLarge，实际为 \(error)")
         }
     }
 

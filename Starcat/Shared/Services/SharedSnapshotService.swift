@@ -12,7 +12,7 @@
 //    1. ZIP 缓存统一复用 CodeFlow 旧目录：
 //       `Application Support/Starcat/archives/github.com/<owner>/<repo>.zip`。
 //       RepoContextPacker 不再维护第二份 `repository-snapshots` 下载缓存。
-//    2. 100MB 上限不变（`maximumArchiveBytes = 100_000_000`）。
+//    2. 默认 100MB 安全上限不变；AI 代码上下文可为单次请求传入更低的用户阈值。
 //    3. 错误自治：`SharedSnapshotError` 与 `CodeFlowError` 各自独立，CodeFlowRunner
 //       在 catch SharedSnapshotError 时映射成 CodeFlowError 保持现有文案不变。
 //    4. 私有仓库：`repo.isPrivate` 时**直接抛** `.privateRepository`——这是 GitHub
@@ -124,6 +124,7 @@ struct SharedSnapshotService: @unchecked Sendable {
     func archiveIfNeeded(
         repo: Repo,
         commitSHA: String,
+        maximumBytes: Int = Self.maximumArchiveBytes,
         beforeDownload: (@Sendable () async throws -> Void)? = nil
     ) async throws -> CodeFlowArchiveResult {
         guard !repo.isPrivate else { throw SharedSnapshotError.privateRepository }
@@ -132,6 +133,9 @@ struct SharedSnapshotService: @unchecked Sendable {
             let bytes = try fileSize(archiveURL)
             guard bytes > 0 else { throw SharedSnapshotError.emptyArchive }
             if try archiveMatchesCommit(at: archiveURL, commitSHA: commitSHA) {
+                // 阈值也必须约束缓存命中。否则用户降低设置后，同一个大 ZIP 会绕过下载后校验，
+                // 继续进入解压和打包，造成“设置已改但没有生效”的错觉。
+                guard bytes <= Int64(maximumBytes) else { throw SharedSnapshotError.archiveTooLarge }
                 return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
             }
         }
@@ -156,7 +160,7 @@ struct SharedSnapshotService: @unchecked Sendable {
             throw SharedSnapshotError.requestFailed(statusCode: response.statusCode)
         }
         guard !data.isEmpty else { throw SharedSnapshotError.emptyArchive }
-        guard data.count <= Self.maximumArchiveBytes else { throw SharedSnapshotError.archiveTooLarge }
+        guard data.count <= maximumBytes else { throw SharedSnapshotError.archiveTooLarge }
 
         try fileManager.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let temporaryURL = archiveURL.appendingPathExtension("tmp")

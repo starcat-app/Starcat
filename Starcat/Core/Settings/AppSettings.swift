@@ -932,10 +932,11 @@ final class AppSettings {
 
     // MARK: - AI 代码上下文（2026-06-13 引入，RepoContextPacker 客户端接入阶段 X1）
     //
-    // 3 个偏好字段对应 `docs/3-设计/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
+    // 4 个偏好字段对应 RepoContextPacker 的运行期配置：
     //   1. aiRepoContextEnabled       —— 总开关（默认 true，启用 RepoContextPacker 注入 AI prompt）
     //   2. aiRepoContextTokenBudget   —— Token 预算（默认 8000，范围 4000-32000，控制 XML 体积）
     //   3. aiRepoContextTier1MaxLines —— 关键文件保留行数（默认 80，范围 40-200，对应 `TierTruncation.tier1MaxLines`）
+    //   4. aiRepoContextMaximumArchiveMB —— 源码 ZIP 上限（默认 50MB，范围 1-500MB）
     //
     // 设计要点：
     //   - 字段独立于 `externalContextEnabled`（那个是 External Search 检索结果注入）；
@@ -963,6 +964,18 @@ final class AppSettings {
     /// 用户调大会让 Tier 1 单文件估算 token 数翻倍（按 `byteCount × 0.27` 估算）。
     var aiRepoContextTier1MaxLines: Int {
         didSet { defaults.set(aiRepoContextTier1MaxLines, forKey: Keys.aiRepoContextTier1MaxLines) }
+    }
+
+    /// AI 代码上下文允许处理的源码 ZIP 上限。
+    ///
+    /// 单仓 AI 与知识库 RAG 共用该阈值；RepoContextPacker 解压前使用同一运行期上限，
+    /// 避免“下载允许、打包仍按固定 100MB 拒绝”的伪配置。CodeFlow / CodebaseMemory
+    /// 保留各自独立的安全上限，不读取此偏好。
+    static let aiRepoContextMaximumArchiveMBRange = 1...500
+    static let defaultAIRepoContextMaximumArchiveMB = 50
+
+    var aiRepoContextMaximumArchiveMB: Int {
+        didSet { defaults.set(aiRepoContextMaximumArchiveMB, forKey: Keys.aiRepoContextMaximumArchiveMB) }
     }
 
     /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
@@ -1558,12 +1571,18 @@ final class AppSettings {
                 defaults: defaults
             )
         )
-        // 2026-06-13 RepoContextPacker 客户端接入（3 个字段）：
-        // 总开关默认 true（P0 价值卖点）；token budget 默认 8000 / Tier 1 行数默认 80
+        // RepoContextPacker 客户端配置：
+        // 总开关默认 true；token budget 默认 8000 / Tier 1 行数默认 80 / ZIP 上限默认 50MB
         // 与 RepoContextPacker `PackInput.tokenBudget` / `TierTruncation.tier1MaxLines` 缺省值对齐。
         self.aiRepoContextEnabled = defaults.object(forKey: Keys.aiRepoContextEnabled) as? Bool ?? true
         self.aiRepoContextTokenBudget = defaults.object(forKey: Keys.aiRepoContextTokenBudget) as? Int ?? 8000
         self.aiRepoContextTier1MaxLines = defaults.object(forKey: Keys.aiRepoContextTier1MaxLines) as? Int ?? 80
+        let storedMaximumArchiveMB = defaults.object(forKey: Keys.aiRepoContextMaximumArchiveMB) as? Int
+            ?? Self.defaultAIRepoContextMaximumArchiveMB
+        self.aiRepoContextMaximumArchiveMB = min(
+            max(storedMaximumArchiveMB, Self.aiRepoContextMaximumArchiveMBRange.lowerBound),
+            Self.aiRepoContextMaximumArchiveMBRange.upperBound
+        )
 
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
@@ -1759,6 +1778,7 @@ final class AppSettings {
         aiRepoContextEnabled = true
         aiRepoContextTokenBudget = 8_000
         aiRepoContextTier1MaxLines = 80
+        aiRepoContextMaximumArchiveMB = Self.defaultAIRepoContextMaximumArchiveMB
         snakeStyle = SnakeStyle.default
         readmeTranslationLanguage = .defaultForCurrentLocale()
         disableAnimations = false
@@ -2129,6 +2149,7 @@ final class AppSettings {
         static let aiRepoContextEnabled = "settings.ai.repoContext.enabled.v1"
         static let aiRepoContextTokenBudget = "settings.ai.repoContext.tokenBudget.v1"
         static let aiRepoContextTier1MaxLines = "settings.ai.repoContext.tier1MaxLines.v1"
+        static let aiRepoContextMaximumArchiveMB = "settings.ai.repoContext.maximumArchiveMB.v1"
 
         static let resettableKeys: [String] = [
             appearanceMode,
@@ -2207,7 +2228,8 @@ final class AppSettings {
             aiSemanticSearchScoreThreshold,
             aiRepoContextEnabled,
             aiRepoContextTokenBudget,
-            aiRepoContextTier1MaxLines
+            aiRepoContextTier1MaxLines,
+            aiRepoContextMaximumArchiveMB
         ]
     }
 }

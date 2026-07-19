@@ -137,6 +137,8 @@ final class AppDependencies {
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
+    /// 单仓 AI 摘要的进程内会话表。按 repo 保留生成 Task 与 UI 状态，切换详情不取消。
+    let repoAIInsightSessionStore: RepoAIInsightSessionStore
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
     let repoAIContextProvider: RepoAIContextProvider
     /// RepoContext 文件系统真源。知识库浏览器只通过该对象读写 XML，不跨 security scope 持有 URL。
@@ -850,6 +852,12 @@ final class AppDependencies {
         let githubStarListRepo = GRDBGitHubStarListRepository(database: db)
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
+        // Session store 同时依赖 AI service 与标签仓储，因此必须在两组依赖都完成装配后创建。
+        self.repoAIInsightSessionStore = RepoAIInsightSessionStore(
+            service: aiInsight,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo
+        )
         self.githubStarListRepository = githubStarListRepo
         self.githubStarListSyncService = GitHubStarListSyncService(
             apiClient: api,
@@ -1266,6 +1274,9 @@ final class AppDependencies {
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
             self.ragComposerDraftStore.removeAll()
+            // 摘要 session 是进程内、按当前用户数据库构建的状态。先取消并清空，
+            // 避免旧用户尚未完成的生成在切库后继续写入或显示给新用户。
+            await self.repoAIInsightSessionStore.removeAll()
             KnowledgeRAGWorkspaceWindowController.closeForUserDatabaseChange()
             await self.wikiKnowledgeBackfillCoordinator.suspendForUserDatabaseChange()
             await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()

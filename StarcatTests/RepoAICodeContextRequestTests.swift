@@ -7,7 +7,8 @@
 //  关键约束：
 //  - skip 必须取消正在执行的 provider 子任务；
 //  - 取消不能向上终止摘要生成，而要收敛成 `.featureDisabled`；
-//  - 未点击 skip 时必须原样返回 provider outcome，避免改变正常生成路径。
+//  - 未点击 skip 时必须原样返回 provider outcome，避免改变正常生成路径；
+//  - 摘要会话按 repo 复用，切换详情不能丢失当前仓的运行态。
 //
 
 import Foundation
@@ -118,6 +119,66 @@ struct RepoAICodeContextRequestTests {
             Issue.record("第二次未跳过的 request 应保留 provider 结果")
             return
         }
+    }
+
+    @Test("同仓复用摘要会话，不同仓状态互相隔离")
+    func insightSessionsAreScopedByRepo() throws {
+        let store = try makeInsightSessionStore()
+
+        let firstA = store.viewModel(for: 101)
+        let secondA = store.viewModel(for: 101)
+        let repoB = store.viewModel(for: 202)
+
+        #expect(firstA === secondA)
+        #expect(firstA !== repoB)
+    }
+
+    @Test("清空会话后不复用旧用户的摘要状态")
+    func clearingInsightSessionsDropsCachedViewModels() async throws {
+        let store = try makeInsightSessionStore()
+        let oldSession = store.viewModel(for: 101)
+
+        await store.removeAll()
+        let newSession = store.viewModel(for: 101)
+
+        #expect(oldSession !== newSession)
+    }
+
+    @Test("空闲会话超出上限时按 LRU 淘汰最旧仓")
+    func idleSessionsAreEvictedByLRU() throws {
+        let store = try makeInsightSessionStore(maxIdleSessionCount: 2)
+
+        let first = store.viewModel(for: 1)
+        _ = store.viewModel(for: 2)
+        _ = store.viewModel(for: 3)
+
+        #expect(store.retainedSessionCount == 2)
+        // 最旧的 1 应被淘汰；再取 1 会得到新实例。
+        #expect(store.viewModel(for: 1) !== first)
+        #expect(store.retainedSessionCount == 2)
+    }
+
+    /// 使用真实内存仓储装配 Store，只验证 session 身份与生命周期，不触发网络或 Keychain。
+    private func makeInsightSessionStore(
+        maxIdleSessionCount: Int = RepoAIInsightSessionStore.defaultMaxIdleSessionCount
+    ) throws -> RepoAIInsightSessionStore {
+        let database = try InMemoryDatabaseManager()
+        let suiteName = "test.starcat.repo-ai-session.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let keychain = InMemoryKeychain()
+        let service = RepoAIInsightService(
+            summaryRepository: GRDBAISummaryRepository(database: database),
+            readmeRepository: ReadmeRepository(database: database),
+            settings: AppSettings(defaults: defaults, keychain: keychain),
+            keychain: keychain
+        )
+        return RepoAIInsightSessionStore(
+            service: service,
+            tagRepository: GRDBTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            maxIdleSessionCount: maxIdleSessionCount
+        )
     }
 }
 

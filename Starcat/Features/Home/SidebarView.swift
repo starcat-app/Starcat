@@ -752,8 +752,9 @@ struct SidebarView: View {
             }
         } label: {
             HStack(spacing: 6) {
+                // 不设显式 `.font`：继承 List `.sidebar` 的 section header 字体，
+                // 与星标模块 `Section("sidebar.mainNavigation")` 的「主导航」文本一致。
                 Text("activity.category.section")
-                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
@@ -883,6 +884,9 @@ struct SidebarView: View {
 
     /// HOM-43：Tags header 需要同时有折叠入口和独立的标签管理按钮。
     /// 避免把 `Button` 嵌在另一个 `Button` 里，否则 SwiftUI 事件命中会不稳定。
+    ///
+    /// 整行可点（对齐 `docs/5-规范/UI-折叠展开-规范.md`）：标题与「空白 + 计数 + chevron」
+    /// 各用独立 expand Button 覆盖命中区；`+` / 清除保留各自点击区，不误触发展开。
     private var tagSectionHeader: some View {
         HStack(spacing: 6) {
             Button {
@@ -933,20 +937,24 @@ struct SidebarView: View {
                 .help(Text("sidebar.clearSelectedTags"))
             }
 
-            Spacer(minLength: 8)
-
-            Text(viewModel.tags.count.formatted())
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(minWidth: 18, alignment: .trailing)
-
+            // 右侧剩余行宽（空白 / 计数 / chevron）整块可点，避免只点得到小 chevron。
             Button {
                 toggleTags()
             } label: {
-                disclosureChevron(isExpanded: tagsExpanded)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Spacer(minLength: 8)
+
+                    Text(viewModel.tags.count.formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 18, alignment: .trailing)
+
+                    disclosureChevron(isExpanded: tagsExpanded)
+                        .frame(width: 20, height: 20)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -957,6 +965,7 @@ struct SidebarView: View {
     }
 
     /// GitHub Stars List 分组 header：折叠入口 + 独立新增 / 刷新按钮。
+    /// 整行可点策略与 `tagSectionHeader` 一致：标题与右侧剩余行宽各自 expand，操作按钮独立命中。
     private var githubStarListSectionHeader: some View {
         HStack(spacing: 6) {
             Button {
@@ -991,21 +1000,25 @@ struct SidebarView: View {
                 action: { refreshGitHubStarLists() }
             )
 
-            Spacer(minLength: 8)
-
-            // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
-            Text((viewModel.githubStarLists.count + 1).formatted())
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(minWidth: 18, alignment: .trailing)
-
+            // 右侧剩余行宽（空白 / 计数 / chevron）整块可点，与 Tags / Languages 手感对齐。
             Button {
                 toggleGitHubStarLists()
             } label: {
-                disclosureChevron(isExpanded: githubStarListsExpanded)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Spacer(minLength: 8)
+
+                    // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
+                    Text((viewModel.githubStarLists.count + 1).formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 18, alignment: .trailing)
+
+                    disclosureChevron(isExpanded: githubStarListsExpanded)
+                        .frame(width: 20, height: 20)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()

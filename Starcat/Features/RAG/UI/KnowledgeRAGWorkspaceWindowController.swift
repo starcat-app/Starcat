@@ -531,7 +531,11 @@ private final class KnowledgeRAGBrowserViewModel {
                     repoContextGenerationState = .idle
                     isRepoContextSettingsPromptPresented = true
                 case .degraded(let reason):
-                    repoContextGenerationState = .failed(String.l10n(reason.bannerMessageKey))
+                    // 知识库主动生成与单仓 AI 共用项目上下文 ZIP 阈值；超限时必须把
+                    // 当前配置值直接告诉用户，不能回退到历史固定 100MB 文案。
+                    repoContextGenerationState = .failed(reason.bannerMessage(
+                        maximumArchiveMB: dependencies.settings.aiRepoContextMaximumArchiveMB
+                    ))
                 }
                 repoContextGenerationIdentity = nil
                 repoContextGenerationTask = nil

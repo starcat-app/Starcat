@@ -5,10 +5,10 @@
 // 决议来源：§22.6 Q5（临时目录）+ §22.11 Q10（安全防护）。
 //
 // 流程：
-//   1. **大小预检**：ZIP 自身 > 100MB → 抛 `zipTooLarge`（防御性，省得解压完才发现）
+//   1. **大小预检**：ZIP 自身超过调用方运行期上限 → 抛 `zipTooLarge`
 //   2. **创建临时目录**：系统 `temporaryDirectory/RepoContextPacker/<UUID>/`，OS reboot 兜底 GC
 //   3. **ZIPFoundation 解压**：放 `Task.detached(.userInitiated)` 避免阻塞调用线程
-//   4. **ZIP bomb 兜底**：解压后总大小 > 500MB → cleanup + 抛 `extractedDirectoryTooLarge`
+//   4. **ZIP bomb 兜底**：解压后总大小 > ZIP 上限的 5 倍 → cleanup + 抛错
 //   5. **识别 unzipped root**：一级目录单个 → 进入它（GitHub source ZIP 通用包裹）/ 否则 flat
 //   6. **返回 ExtractedSourceDirectory**：含 rootURL + idempotent cleanup 闭包
 //
@@ -22,7 +22,18 @@ import ZIPFoundation
 
 public struct DefaultSourceZipExtractor: SourceZipExtracting {
 
-    public init() {}
+    private let maximumArchiveBytes: Int
+    private let maximumExtractedBytes: Int
+
+    /// - Parameter maximumArchiveBytes: 本次 RepoContext 允许处理的 ZIP 大小。
+    ///   默认保留历史 100 MiB，直接使用 Packer 的旧调用方行为不变；AI / RAG provider
+    ///   会传入用户配置的十进制 MB 阈值。解压上限保持历史 5 倍比例，既让 500MB
+    ///   配置真实可用，也继续阻断异常高压缩比 ZIP bomb。
+    public init(maximumArchiveBytes: Int = TierRules.zipMaxBytes) {
+        self.maximumArchiveBytes = maximumArchiveBytes
+        let (expandedLimit, overflow) = maximumArchiveBytes.multipliedReportingOverflow(by: 5)
+        self.maximumExtractedBytes = overflow ? Int.max : expandedLimit
+    }
 
     public func extract(_ zipURL: URL) async throws -> ExtractedSourceDirectory {
         // Step 1：ZIP 文件存在性 + 大小预检
@@ -32,10 +43,10 @@ public struct DefaultSourceZipExtractor: SourceZipExtracting {
         guard zipSize > 0 else {
             throw RepoContextPackerError.zipFileNotFound(zipURL)
         }
-        guard zipSize <= TierRules.zipMaxBytes else {
+        guard zipSize <= maximumArchiveBytes else {
             throw RepoContextPackerError.zipTooLarge(
                 actualBytes: zipSize,
-                maxBytes: TierRules.zipMaxBytes
+                maxBytes: maximumArchiveBytes
             )
         }
 
@@ -93,11 +104,11 @@ public struct DefaultSourceZipExtractor: SourceZipExtracting {
 
         // Step 4：ZIP bomb 兜底
         let extractedSize = Self.directorySize(of: tempRoot)
-        guard extractedSize <= TierRules.extractedMaxBytes else {
+        guard extractedSize <= maximumExtractedBytes else {
             try? FileManager.default.removeItem(at: tempRoot)
             throw RepoContextPackerError.extractedDirectoryTooLarge(
                 actualBytes: extractedSize,
-                maxBytes: TierRules.extractedMaxBytes
+                maxBytes: maximumExtractedBytes
             )
         }
 

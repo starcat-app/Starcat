@@ -94,6 +94,7 @@ struct AppSettingsTests {
         settings.mcpServiceEnabled = true
         settings.mcpServicePort = 7777
         settings.mcpAllowDestructiveWrites = true
+        settings.aiRepoContextMaximumArchiveMB = 90
         settings.setCustomURL("https://example.com", for: .trending)
         settings.setCustomAPIKey("service-key", for: .weekly)
         settings.setExternalSearchAPIKey("anysearch-key", for: .anySearch)
@@ -123,6 +124,7 @@ struct AppSettingsTests {
         #expect(settings.mcpServiceEnabled == false)
         #expect(settings.mcpServicePort == AppSettings.defaultMCPServicePort)
         #expect(settings.mcpAllowDestructiveWrites == false)
+        #expect(settings.aiRepoContextMaximumArchiveMB == AppSettings.defaultAIRepoContextMaximumArchiveMB)
         #expect(settings.customServiceURL(for: .trending) == nil)
         #expect(settings.customServiceAPIKey(for: .weekly) == nil)
         #expect(settings.externalSearchAPIKey(for: .anySearch) == nil)
@@ -375,6 +377,29 @@ struct AppSettingsTests {
         #expect(s.ragPromptSettings.title.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.title.userPromptTemplate.contains("{firstQuestion}"))
         #expect(s.ragRetrievalSettings == .balanced)
+        #expect(s.aiRepoContextMaximumArchiveMB == AppSettings.defaultAIRepoContextMaximumArchiveMB)
+    }
+
+    @Test("AI 代码上下文: ZIP 上限默认 50MB，可持久化且读取时钳制")
+    func aiRepoContextMaximumArchiveSizePersistsAndClamps() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.aiRepoContextMaximumArchiveMB == 50)
+
+        settings.aiRepoContextMaximumArchiveMB = 80
+        #expect(AppSettings(defaults: defaults).aiRepoContextMaximumArchiveMB == 80)
+
+        defaults.set(999, forKey: AppSettings.Keys.aiRepoContextMaximumArchiveMB)
+        #expect(
+            AppSettings(defaults: defaults).aiRepoContextMaximumArchiveMB
+                == AppSettings.aiRepoContextMaximumArchiveMBRange.upperBound
+        )
+
+        defaults.set(1, forKey: AppSettings.Keys.aiRepoContextMaximumArchiveMB)
+        #expect(
+            AppSettings(defaults: defaults).aiRepoContextMaximumArchiveMB
+                == AppSettings.aiRepoContextMaximumArchiveMBRange.lowerBound
+        )
     }
 
     @Test("RAG: Generator/Planner/Compressor/Title 提示词配置应持久化")

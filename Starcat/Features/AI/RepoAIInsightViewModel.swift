@@ -105,12 +105,20 @@ final class RepoAIInsightViewModel {
     /// 本次摘要生成的请求级控制器；负责跳过当前 provider 工作，但不改全局设置。
     private var currentCodeContextRequest: RepoAICodeContextRequest?
 
-    /// 当前正在生成的仓库 id。内联浮层会复用同一个 ViewModel 切换 repo；
-    /// 用它保证「跳过 / 进度 / 结果写回」只作用于发起那一次的仓库。
+    /// 当前正在生成的仓库 id。虽然 session store 已按 repo 隔离 ViewModel，
+    /// 仍在跳过入口校验 id，防止错误调用改写其它仓库的请求。
     private var activeGenerationRepoID: Repo.ID?
 
-    /// 生成世代号：换 repo / 重新 load 时递增，丢弃过期 generate 的写回与进度回调。
+    /// 生成世代号：session 重置时递增，丢弃已取消 generate 的迟到写回与进度回调。
     private var generationEpoch: UInt64 = 0
+
+    /// 本 ViewModel 已完成缓存加载的仓库。
+    ///
+    /// `RepoAIInsightSessionStore` 会按 repo 复用 ViewModel；面板收起、切走再切回时
+    /// SwiftUI 会重新触发 `.task`，这里必须把重复 load 收敛成 no-op，否则缓存加载会
+    /// 清掉仍在生成中的 streaming / phase 状态。
+    private var loadedRepoID: Repo.ID?
+    private var loadingRepoID: Repo.ID?
 
     /// Y4：本次摘要生成时代码上下文的降级原因（nil = 成功 或 用户主动关）。
     /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
@@ -141,12 +149,28 @@ final class RepoAIInsightViewModel {
     }
 
     func load(repo: Repo) async {
-        // 内联浮层复用同一 ViewModel 切换仓库时：必须作废上一仓未完成的生成，
-        // 否则「跳过代码上下文」标记 / streaming 文案会串到新仓库。
-        invalidateActiveGeneration(reason: .repoChanged(to: repo.id))
+        // 每个 session 只绑定一个 repo。重复挂载同一面板时直接复用内存状态，
+        // 尤其不能用数据库中的旧摘要覆盖仍在流式生成的新摘要。
+        guard loadedRepoID == nil || loadedRepoID == repo.id else {
+            assertionFailure("RepoAIInsightViewModel cannot be rebound to another repo")
+            return
+        }
+        guard loadedRepoID != repo.id,
+              loadingRepoID != repo.id,
+              !isGenerating,
+              activeGenerationRepoID != repo.id else { return }
 
+        // `cachedInsightFast` / `fetchTags` 期间用户可能已经点了生成；
+        // 用 epoch 门控写回，避免 TOCTOU 把 streaming 状态冲掉。
+        let loadEpoch = generationEpoch
+        loadingRepoID = repo.id
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if loadingRepoID == repo.id {
+                loadingRepoID = nil
+                isLoading = false
+            }
+        }
         do {
             // W4：换成 fast 路径——只查 DB + JSON decode，**不做** hash 校验。
             // 旧 `cachedInsight(for:)` 内部 await `makeSource`（含 ZIP 下载 / pack），
@@ -158,8 +182,11 @@ final class RepoAIInsightViewModel {
             // 这是显式的 tradeoff（启动延迟 vs 数据新鲜度），与 HOM-199 缓存稳定化
             // 设计目标一致。
             let cached = try await service.cachedInsightFast(for: repo)
-            insight = cached
+            guard canApplyIdleLoad(for: repo.id, loadEpoch: loadEpoch) else { return }
             let currentTags = try await repoTagRepository.fetchTags(forRepo: repo.id)
+            guard canApplyIdleLoad(for: repo.id, loadEpoch: loadEpoch) else { return }
+
+            insight = cached
             appliedTagNames = Set(currentTags.map { $0.name.normalizedTagName })
             errorMessage = nil
             tagErrorMessage = nil
@@ -173,7 +200,9 @@ final class RepoAIInsightViewModel {
             // 打开面板只读摘要与标签缓存。代码上下文必须等用户发起生成后再准备，
             // 避免“只是查看空面板”也产生网络下载和本地 XML。
             prepProgress = .idle
+            loadedRepoID = repo.id
         } catch {
+            guard canApplyIdleLoad(for: repo.id, loadEpoch: loadEpoch) else { return }
             presentPaywallIfNeeded(error)
             let friendly = UserFacingError.map(
                 error,
@@ -183,6 +212,14 @@ final class RepoAIInsightViewModel {
             errorMessage = friendly.message
             friendly.record(category: "ai", operation: "insight.load", service: "ai-provider")
         }
+    }
+
+    /// load 写回前的二次校验：生成已开始或 session 被重置时丢弃迟到缓存结果。
+    private func canApplyIdleLoad(for repoID: Repo.ID, loadEpoch: UInt64) -> Bool {
+        generationEpoch == loadEpoch
+            && !isGenerating
+            && activeGenerationRepoID != repoID
+            && (loadedRepoID == nil || loadedRepoID == repoID)
     }
 
     /// 用户在摘要生成中的“准备代码上下文”行点击停止。
@@ -358,20 +395,12 @@ final class RepoAIInsightViewModel {
         }
     }
 
-    /// 换仓 / 重新打开面板时作废进行中的生成，避免旧仓「跳过」污染新仓。
-    private enum GenerationInvalidationReason {
-        case repoChanged(to: Repo.ID)
-    }
-
-    private func invalidateActiveGeneration(reason: GenerationInvalidationReason) {
-        switch reason {
-        case .repoChanged(let newID):
-            // 同一仓再次 load（极少见）保留进行中的生成；只有换仓才作废。
-            if activeGenerationRepoID == newID { return }
-        }
-
+    /// App 级 session store 清理（例如切换登录用户）时作废本仓运行态。
+    ///
+    /// 先递增 epoch 再取消 Task，可保证取消错误与迟到的 streaming 回调都被丢弃；
+    /// `RepoAICodeContextRequest.skip()` 只终止当前代码上下文子任务，不改全局设置。
+    func invalidateForSessionStoreReset() {
         generationEpoch &+= 1
-        // 取消仍在跑的代码上下文子任务（含 3 秒缓冲 sleep），但不改全局设置。
         currentCodeContextRequest?.skip()
         currentCodeContextRequest = nil
         activeGenerationRepoID = nil
@@ -381,6 +410,9 @@ final class RepoAIInsightViewModel {
         prepProgress = .idle
         usesExternalContextForCurrentGeneration = false
         didSkipCodeContextForCurrentGeneration = false
+        loadedRepoID = nil
+        loadingRepoID = nil
+        isLoading = false
     }
 
     /// 把摘要生成失败分成两类用户文案：
@@ -483,6 +515,136 @@ final class RepoAIInsightViewModel {
     private func presentPaywallIfNeeded(_ error: Error) {
         guard let gateError = error as? EntitlementGateError else { return }
         paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
+    }
+}
+
+/// 单仓 AI 摘要的 App 级会话表。
+///
+/// 为什么放在依赖容器而不是 SwiftUI View：
+/// - 内联浮层会随 repo 切换和折叠而销毁；View 持有 Task 会让进度与流式文本一起丢失；
+/// - 每个 repo 独占一个 ViewModel 与 Task，天然隔离「跳过本次」、阶段和错误状态；
+/// - Task 由本 Store 持有，因此 A、B 可以并发生成，切回任一仓都能恢复实时状态。
+///
+/// 这是进程内会话，不做磁盘恢复。App 退出后只有成功写入数据库的最终摘要会保留。
+///
+/// 空闲会话（无 running task）受 LRU 上限约束，避免「看过的仓」永久钉在内存里；
+/// 正在生成的会话永不淘汰，直到任务结束或用户切换账号。
+@MainActor
+final class RepoAIInsightSessionStore {
+    private struct RunningTask {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
+    /// 生产默认空闲会话上限；测试可注入更小值验证淘汰。
+    static let defaultMaxIdleSessionCount = 24
+
+    private let service: RepoAIInsightService
+    private let tagRepository: any TagRepositoryProtocol
+    private let repoTagRepository: any RepoTagRepositoryProtocol
+    private let maxIdleSessionCount: Int
+    private var viewModels: [Repo.ID: RepoAIInsightViewModel] = [:]
+    private var runningTasks: [Repo.ID: RunningTask] = [:]
+    /// 最近访问的空闲/活跃 repo，队尾最新；淘汰只扫无 running task 的前缀。
+    private var lruOrder: [Repo.ID] = []
+
+    init(
+        service: RepoAIInsightService,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        maxIdleSessionCount: Int = RepoAIInsightSessionStore.defaultMaxIdleSessionCount
+    ) {
+        self.service = service
+        self.tagRepository = tagRepository
+        self.repoTagRepository = repoTagRepository
+        self.maxIdleSessionCount = max(1, maxIdleSessionCount)
+    }
+
+    /// 同一 repo 始终返回同一 ViewModel；不同 repo 的运行态互不共享。
+    func viewModel(for repoID: Repo.ID) -> RepoAIInsightViewModel {
+        if let existing = viewModels[repoID] {
+            touch(repoID)
+            return existing
+        }
+        let viewModel = RepoAIInsightViewModel(
+            service: service,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        viewModels[repoID] = viewModel
+        touch(repoID)
+        evictIdleSessionsIfNeeded()
+        return viewModel
+    }
+
+    /// 启动由 Store 托管的生成 Task。
+    ///
+    /// 不把 Task 交给 Button / `.task` 生命周期持有，避免视图切换时 SwiftUI 取消工作。
+    /// 每仓同一时间只允许一个生成；其它仓库不受影响，可以并行执行。
+    func startGeneration(for repo: Repo, includeTags: Bool) {
+        guard runningTasks[repo.id] == nil else { return }
+
+        let viewModel = viewModel(for: repo.id)
+        let taskID = UUID()
+        let task = Task { [weak self, viewModel] in
+            await viewModel.generate(repo: repo, includeTags: includeTags)
+            self?.finishGeneration(for: repo.id, taskID: taskID)
+        }
+        runningTasks[repo.id] = RunningTask(id: taskID, task: task)
+        touch(repo.id)
+    }
+
+    /// 登录用户变化时清空所有进程内状态，防止旧账号摘要状态显示到新账号。
+    ///
+    /// 必须等待取消真正完成后再允许依赖容器切换数据库；只发出 `cancel()` 就返回，
+    /// 迟到的摘要持久化可能落进新用户数据库，造成跨账号数据污染。
+    func removeAll() async {
+        let tasks = runningTasks.values.map(\.task)
+        runningTasks.removeAll()
+        viewModels.values.forEach { $0.invalidateForSessionStoreReset() }
+        viewModels.removeAll()
+        lruOrder.removeAll()
+        tasks.forEach { $0.cancel() }
+        for task in tasks {
+            await task.value
+        }
+    }
+
+    /// 测试与诊断用：当前进程内会话数（含正在生成的仓）。
+    var retainedSessionCount: Int { viewModels.count }
+
+    private func finishGeneration(for repoID: Repo.ID, taskID: UUID) {
+        guard runningTasks[repoID]?.id == taskID else { return }
+        runningTasks[repoID] = nil
+        // 任务结束后才允许按空闲上限淘汰；生成中的仓必须始终可切回。
+        evictIdleSessionsIfNeeded()
+    }
+
+    private func touch(_ repoID: Repo.ID) {
+        if let index = lruOrder.firstIndex(of: repoID) {
+            lruOrder.remove(at: index)
+        }
+        lruOrder.append(repoID)
+    }
+
+    /// 只驱逐「无 running task」的最旧会话；正在生成的仓始终保留。
+    private func evictIdleSessionsIfNeeded() {
+        var idleCount = viewModels.keys.reduce(into: 0) { count, repoID in
+            if runningTasks[repoID] == nil { count += 1 }
+        }
+        guard idleCount > maxIdleSessionCount else { return }
+
+        var index = 0
+        while idleCount > maxIdleSessionCount, index < lruOrder.count {
+            let candidate = lruOrder[index]
+            if runningTasks[candidate] == nil, viewModels[candidate] != nil {
+                viewModels[candidate] = nil
+                lruOrder.remove(at: index)
+                idleCount -= 1
+                continue
+            }
+            index += 1
+        }
     }
 }
 

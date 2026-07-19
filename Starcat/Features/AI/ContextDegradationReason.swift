@@ -28,7 +28,10 @@ enum ContextDegradationReason: Sendable, Equatable {
     /// ZIP 下载失败：网络异常 / GitHub 5xx / 超时等。
     case networkUnavailable
 
-    /// 仓库 ZIP 超过 100MB 上限。
+    /// 仓库 ZIP 超过当前调用方生效的大小上限。
+    ///
+    /// 单仓 AI 与知识库 RAG 使用同一用户配置阈值。展示文案必须走
+    /// `bannerMessage(maximumArchiveMB:)`，不要直接读 `bannerMessageKey` 的固定 100MB 文案。
     case archiveTooLarge
 
     /// RepoContextPacker pipeline 失败（解压 / Tier 分类 / XML 拼装等）。
@@ -38,6 +41,9 @@ enum ContextDegradationReason: Sendable, Equatable {
     case outputDirectoryUnavailable
 
     /// 本地化的 banner 文案 key（i18n 在 Y4 一并补齐）。
+    ///
+    /// `.archiveTooLarge` 仍保留固定 100MB key，供旧调用方兜底；新代码请用
+    /// `bannerMessage(maximumArchiveMB:)`，以免用户阈值与提示对不上。
     var bannerMessageKey: String {
         switch self {
         case .privateRepository: return "ai.context.degraded.privateRepository"
@@ -46,6 +52,22 @@ enum ContextDegradationReason: Sendable, Equatable {
         case .packFailure: return "ai.context.degraded.packFailure"
         case .outputDirectoryUnavailable: return "ai.context.degraded.outputDirectoryUnavailable"
         }
+    }
+
+    /// 按当前生效阈值渲染用户可读降级文案。
+    ///
+    /// - Parameter maximumArchiveMB: 本次拒绝实际使用的上限（MB）。省略时仅为旧调用方
+    ///   按历史 100MB 安全上限兜底；单仓 AI 与 RAG UI 都应显式传当前设置值。
+    func bannerMessage(
+        maximumArchiveMB: Int = SharedSnapshotService.maximumArchiveBytes / 1_000_000
+    ) -> String {
+        if self == .archiveTooLarge {
+            return String(
+                format: String.l10n("ai.context.degraded.archiveTooLargeFormat"),
+                maximumArchiveMB
+            )
+        }
+        return String.l10n(bannerMessageKey)
     }
 
     /// 把任意 error 分类到 5 case 之一。

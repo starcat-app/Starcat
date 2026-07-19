@@ -255,8 +255,8 @@ struct RepoAIWindowContentView: View {
             // 辅助状态信息，而不是 banner-style 横在头顶。
             //
             // 关键设计：
-            //   - **数据源复用摘要 vm**：`insight.contextMetadata` / `vm.contextDegradationReason`
-            //     在摘要 generate 路径已被填充，chat 路径与摘要共用同一份 makeSource 结果，
+            //   - **数据源复用摘要 vm**：`insight.contextMetadata` 在摘要 generate 路径已被
+            //     填充，chat 路径与摘要共用同一份 makeSource 结果，
             //     不需要在 RepoAIChatViewModel 里再持一份；
             //   - **只在 .chat 面板显示**：摘要面板已有 banner / footer 双重提示，无需重复；
             //   - **3 态不显**（用户主动关总开关 / 摘要还没生成过 / 网络在跑）：不打扰，
@@ -322,7 +322,10 @@ struct RepoAIWindowContentView: View {
         await initializeInsightViewModelIfNeeded()
         guard let vm = insightVM, !vm.isGenerating else { return }
         panelMode = .summary
-        await vm.generate(repo: repo, includeTags: starredAtOpen == true)
+        dependencies.repoAIInsightSessionStore.startGeneration(
+            for: repo,
+            includeTags: starredAtOpen == true
+        )
     }
 
     /// 任一时刻只让当前面板进入 SwiftUI 视图树。旧实现把另一面板压到高度 0，
@@ -406,11 +409,9 @@ struct RepoAIWindowContentView: View {
     /// 后再创建可靠得多。
     private func initializeInsightViewModelIfNeeded() async {
         if insightVM == nil {
-            let ivm = RepoAIInsightViewModel(
-                service: dependencies.repoAIInsightService,
-                tagRepository: dependencies.tagRepository,
-                repoTagRepository: dependencies.repoTagRepository
-            )
+            // 摘要 VM 由 App 级 session store 按 repo 复用。浮层收起或切到其它仓库时，
+            // 当前生成 Task 与 streaming 状态仍然存活，切回来直接接上原状态。
+            let ivm = dependencies.repoAIInsightSessionStore.viewModel(for: repo.id)
             // 与旧详情页 AI Tab 行为一致：应用标签后刷新主窗 Sidebar + 列表。
             // 窗口可能独立于主窗存在，但 HomeViewModel 是同一实例，刷新调用安全。
             ivm.onTagsChanged = { [weak homeViewModel] in
@@ -561,7 +562,10 @@ struct RepoAIWindowContentView: View {
                 //      （README-only 路径下没意义）；点击调 RepoContextStorage.shared.revealProject。
                 Menu {
                     Button {
-                        Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                        dependencies.repoAIInsightSessionStore.startGeneration(
+                            for: repo,
+                            includeTags: starredAtOpen == true
+                        )
                     } label: {
                         Label("ai.assistant.summary.regenerate", systemImage: "arrow.clockwise")
                     }
@@ -632,7 +636,10 @@ struct RepoAIWindowContentView: View {
 
             Button {
                 // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
-                Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                dependencies.repoAIInsightSessionStore.startGeneration(
+                    for: repo,
+                    includeTags: starredAtOpen == true
+                )
             } label: {
                 if vm.isGenerating {
                     ProgressView().controlSize(.small)
@@ -1141,7 +1148,10 @@ struct RepoAIWindowContentView: View {
                 .font(interfaceScale.font(.caption))
             Spacer(minLength: 8)
             Button {
-                Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                dependencies.repoAIInsightSessionStore.startGeneration(
+                    for: repo,
+                    includeTags: starredAtOpen == true
+                )
             } label: {
                 Text("ai.assistant.summary.staleSettings.regenerate")
                     .font(interfaceScale.font(.caption, weight: .medium))
@@ -2082,7 +2092,9 @@ struct RepoAIWindowContentView: View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.yellow)
-            Text(LocalizedStringKey(reason.bannerMessageKey))
+            Text(verbatim: reason.bannerMessage(
+                maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
+            ))
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
         }
@@ -2128,16 +2140,17 @@ struct RepoAIWindowContentView: View {
 
     /// Y9（2026-06-14，决议 E=e3+）：对话输入框上方的"上下文汇总"状态行。
     ///
-    /// 优先级（从高到低，命中即停）：
-    ///   1. **降级 banner**：摘要生成时 RepoContextPacker 报错（`vm.contextDegradationReason`
-    ///      非 nil）→ 黄色 ⚠ + degradation 文案。这是异常路径的强信号，盖过其他显示。
-    ///   2. **3 维汇总**：按当前 settings + cachedInsight 动态拼接「摘要 · 代码 · 外网」
+    /// 展示规则：
+    ///   1. **3 维汇总**：按当前 settings + cachedInsight 动态拼接「摘要 · 代码 · 外网」
     ///      - 摘要：`vm.insight?.summaryMarkdown` 非空（说明用户至少生成过一次）；
     ///      - 代码：`settings.aiRepoContextEnabled == true` 且 contextMetadata 实际有
     ///        （上次确实 pack 成功 / 还在缓存里）；
     ///      - 外网：settings 当前允许 External Context（开关 + 私仓门控）且
     ///        `vm.insight?.externalContextMarkdown` 有缓存。
-    ///   3. **三者都为 false**：完全不显示（README-only 是默认状态，无需占位）。
+    ///   2. **三者都为 false**：完全不显示（README-only 是默认状态，无需占位）。
+    ///
+    /// 代码上下文降级原因只在 AI 摘要面板展示。对话页只回答“当前实际带了哪些上下文”，
+    /// 不重复超限、网络失败等提示，避免同一问题在两个 Tab 反复出现。
     ///
     /// 为什么混用「settings 当前值」+「cachedInsight 实际有否」：
     ///   - settings 反映"用户当前意图"（即将翻译成 system prompt 的开关）；
@@ -2152,30 +2165,8 @@ struct RepoAIWindowContentView: View {
     @ViewBuilder
     private var chatContextStatusRow: some View {
         if let vm = insightVM {
-            if let reason = vm.contextDegradationReason {
-                degradationStatusRow(reason: reason)
-            } else {
-                summarizedStatusRow(vm: vm)
-            }
+            summarizedStatusRow(vm: vm)
         }
-    }
-
-    /// 降级 banner（沿用 Y4 / Y8 风格）。
-    ///
-    /// 顶 2pt 与输入框底部 8pt 合计 10pt 间距；底 6pt 作为窗口底边呼吸距。
-    /// `summarizedStatusRow` 同步。
-    private func degradationStatusRow(reason: ContextDegradationReason) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-            Text(LocalizedStringKey(reason.bannerMessageKey))
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 3 维汇总状态行。
@@ -2246,7 +2237,7 @@ struct RepoAIWindowContentView: View {
                     }
                 }
             }
-            // 顶 2pt + 输入框底 8pt = 10pt；底 6pt 窗口底边呼吸距。详见 degradationStatusRow。
+            // 顶 2pt + 输入框底 8pt = 10pt；底 6pt 作为窗口底边呼吸距。
             .padding(.horizontal, 20)
             .padding(.top, 2)
             .padding(.bottom, 6)
