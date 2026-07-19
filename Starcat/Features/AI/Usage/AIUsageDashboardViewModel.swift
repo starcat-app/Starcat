@@ -27,6 +27,12 @@ final class AIUsageDashboardViewModel {
         let generation = reloadGeneration
         isLoading = true
         errorMessage = nil
+        // 旧请求结束时不能清掉新请求的 loading；当前请求无论成功、失败或取消都必须收尾。
+        defer {
+            if generation == reloadGeneration {
+                isLoading = false
+            }
+        }
         do {
             let loaded = try await repository.statistics(
                 filter: filter,
@@ -41,9 +47,6 @@ final class AIUsageDashboardViewModel {
         } catch {
             guard generation == reloadGeneration else { return }
             errorMessage = error.localizedDescription
-        }
-        if generation == reloadGeneration {
-            isLoading = false
         }
     }
 
