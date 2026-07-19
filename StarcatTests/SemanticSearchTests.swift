@@ -267,4 +267,55 @@ struct RepoAIInsightTests {
         #expect(chineseKey.contains("lang:Simplified Chinese|"))
         #expect(englishKey != chineseKey)
     }
+
+    @MainActor
+    @Test("AI 摘要切换语言时回退到最近缓存，并保持当前语言优先")
+    func cachedInsightFallsBackAcrossLanguages() async throws {
+        let oldSelection = LocaleStore.shared.selection
+        defer { LocaleStore.shared.selection = oldSelection }
+
+        let suiteName = "test.starcat.ai-cache-language-fallback.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let keychain = InMemoryKeychain()
+        let database = try InMemoryDatabaseManager()
+        let summaryRepository = GRDBAISummaryRepository(database: database)
+        let service = RepoAIInsightService(
+            summaryRepository: summaryRepository,
+            readmeRepository: ReadmeRepository(database: database),
+            settings: AppSettings(defaults: defaults, keychain: keychain),
+            keychain: keychain
+        )
+        let repo = Repo.makeMinimal(owner: "starcat", name: "language-cache")
+        try await database.writer.write { db in
+            var persistedRepo = repo
+            try persistedRepo.insert(db)
+        }
+
+        LocaleStore.shared.selection = .simplifiedChinese
+        let chineseKey = service.cacheModelKey()
+        try await summaryRepository.upsert(AISummaryRecord(
+            repoId: repo.id,
+            model: chineseKey,
+            sourceHash: "zh-source",
+            summaryJson: #"{"oneLiner":"中文摘要","summary":"中文摘要正文","platforms":[],"suitableFor":[],"strengths":[],"risks":[],"suggestedTags":[],"model":"test","generatedAt":"2026-07-19T12:00:00Z"}"#,
+            generatedAt: "2026-07-19T12:00:00Z"
+        ))
+
+        LocaleStore.shared.selection = .english
+        let fallback = try await service.cachedInsightFast(for: repo)
+        #expect(fallback?.oneLiner == "中文摘要")
+
+        let englishKey = service.cacheModelKey()
+        try await summaryRepository.upsert(AISummaryRecord(
+            repoId: repo.id,
+            model: englishKey,
+            sourceHash: "en-source",
+            summaryJson: #"{"oneLiner":"English summary","summary":"English body","platforms":[],"suitableFor":[],"strengths":[],"risks":[],"suggestedTags":[],"model":"test","generatedAt":"2026-07-19T11:00:00Z"}"#,
+            generatedAt: "2026-07-19T11:00:00Z"
+        ))
+
+        let exactLanguageHit = try await service.cachedInsightFast(for: repo)
+        #expect(exactLanguageHit?.oneLiner == "English summary")
+    }
 }

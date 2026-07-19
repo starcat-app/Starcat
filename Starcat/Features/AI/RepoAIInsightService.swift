@@ -308,10 +308,15 @@ final class RepoAIInsightService {
     /// 与 HOM-199 「缓存稳定化」（剔除 stars/forks 等流量字段）的设计目标一致——只有
     /// 语义级变更才该让缓存失效。
     func cachedInsightFast(for repo: Repo) async throws -> RepoAIInsight? {
-        guard let record = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()) else {
+        // 当前语言的缓存优先；若用户只切换了显示语言，则回退到该仓库最近一次摘要。
+        // 语言仍保留在 cache key 中，确保重新生成后能恢复“当前语言优先”，同时不影响 RAG 的 latest-wins 语义。
+        if let currentLanguageRecord = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()) {
+            return try Self.decodeInsight(json: currentLanguageRecord.summaryJson)
+        }
+        guard let latest = try await summaryRepository.fetchLatest(repoId: repo.id) else {
             return nil
         }
-        return try Self.decodeInsight(json: record.summaryJson)
+        return try Self.decodeInsight(json: latest.summaryJson)
     }
 
     /// 用户跳过本次代码上下文准备时的窄清理入口。
