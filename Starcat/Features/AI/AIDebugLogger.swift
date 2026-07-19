@@ -32,7 +32,7 @@ enum AIDebugLogger {
     /// 打印 chat completion HTTP 原始响应。
     ///
     /// 这里打印的是 MacPaw/OpenAI SDK 解码前的 body，是确认 LM Studio 实际返回格式的
-    /// 第一手证据。只由 `AIHTTPDebugURLProtocol` 在 DEBUG + 主动开启开关时调用。
+    /// 第一手证据。只由 `AIHTTPDiagnosticURLProtocol` 在 DEBUG + 主动开启开关时调用。
     static func dumpRawChatHTTPResponse(
         id: String,
         url: URL?,

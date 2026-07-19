@@ -113,6 +113,56 @@ struct BatchAIFailurePresentationTests {
         #expect(BatchAIQueueService.userVisibleFailureMessage(for: mapped).contains("402"))
     }
 
+    @Test("HTTP 失败诊断包含格式化的原始请求与响应 JSON")
+    func mapChatFailureIncludesFormattedRequestAndResponseJSON() {
+        let url = URL(string: "https://api.deepseek.com/v1/chat/completions")!
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 402,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        let exchange = AIHTTPFailureExchange(
+            url: url,
+            statusCode: 402,
+            mimeType: "application/json",
+            requestBody: Data(#"{"model":"deepseek-chat","messages":[{"role":"user","content":"hello"}]}"#.utf8),
+            responseBody: Data(#"{"error":{"type":"insufficient_balance","message":"Insufficient Balance"}}"#.utf8),
+            responseBodyTruncated: false
+        )
+
+        let mapped = OpenAIClient.mapChatFailure(
+            OpenAIError.statusError(response: response, statusCode: 402),
+            exchange: exchange
+        )
+        guard case .paymentRequired(let detail) = mapped else {
+            Issue.record("expected paymentRequired, got \(mapped)")
+            return
+        }
+
+        #expect(detail.contains("Response JSON:\n{"))
+        #expect(detail.contains(#""message" : "Insufficient Balance""#))
+        #expect(detail.contains("Request JSON:\n{"))
+        #expect(detail.contains(#""model" : "deepseek-chat""#))
+        #expect(detail.contains("\n  \"messages\" : ["))
+    }
+
+    @Test("失败交换缓存禁止 nil/nil 通配取走，避免并发错绑")
+    func failureExchangeStoreRejectsWildcardTake() {
+        let url = URL(string: "https://api.deepseek.com/v1/chat/completions")!
+        AIHTTPFailureExchangeStore.shared.record(AIHTTPFailureExchange(
+            url: url,
+            statusCode: 402,
+            mimeType: "application/json",
+            requestBody: Data(#"{"model":"a"}"#.utf8),
+            responseBody: Data(#"{"error":"x"}"#.utf8),
+            responseBodyTruncated: false
+        ))
+        #expect(AIHTTPFailureExchangeStore.shared.take(url: nil, statusCode: nil) == nil)
+        let taken = AIHTTPFailureExchangeStore.shared.take(url: url, statusCode: 402)
+        #expect(taken?.statusCode == 402)
+    }
+
     @Test("同一个结构化失败会跟随应用语言重新生成文案")
     func structuredFailureRelocalizesAfterLanguageChange() {
         let defaults = UserDefaults.standard

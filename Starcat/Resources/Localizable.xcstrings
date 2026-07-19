@@ -43073,91 +43073,6 @@
         }
       }
     },
-    "settings.ai.prompt.placeholders.chat": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Available placeholders for the Chat task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives reply language and the auto-translated fallback sentence when context is insufficient.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {summary} — cached AI summary markdown for this repository (empty when no summary has been generated yet)\n• {externalContext} — external web search markdown from External Search (empty when disabled or unavailable)\n\nNote: the Chat task does not use the User Prompt template — user messages go directly to the model through the conversation messages array. The User Prompt field is unused.\n\nDelete a placeholder from the System Prompt to skip injecting that data; restore by clicking the reset button."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chat 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和上下文不足时的兜底句自然翻译。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {summary} —— 该仓库的缓存 AI 摘要 markdown（未生成过摘要时为空）\n• {externalContext} —— External Search 生成的外部网页检索 markdown（关闭或拉取失败时为空）\n\n说明：Chat 任务不使用 User Prompt 模板——用户消息直接通过对话 messages 数组传给模型。User Prompt 一栏不会被使用。\n\n从 System Prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
-          }
-        }
-      }
-    },
-    "settings.ai.prompt.placeholders.embedding": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Available placeholders for the Embedding task:\n\n• {fullName} — owner/name\n• {description} — repo description\n• {language} — primary language\n• {topics} — topics list (comma-separated)\n• {license} — SPDX license identifier\n• {homepage} — homepage URL\n• {body} — main body (AI summary > README > description+topics fallback)\n• {notes} — your private note\n\nNote: embedding API does not accept a system prompt — leaving the System Prompt field empty has no effect.\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Embedding 任务可用占位符：\n\n• {fullName} —— owner/name\n• {description} —— 仓库描述\n• {language} —— 主语言\n• {topics} —— topics 列表（逗号分隔）\n• {license} —— SPDX 许可证标识\n• {homepage} —— 主页 URL\n• {body} —— 主体内容（三级降级：AI 摘要 > README 纯文本 > description+topics 兜底）\n• {notes} —— 用户私有笔记\n\n说明:embedding API 不接受 system prompt,系统提示词留空不会被使用。\n\n从 prompt 里删掉占位符即不注入对应数据;改坏了点恢复默认按钮还原。"
-          }
-        }
-      }
-    },
-    "settings.ai.prompt.placeholders.summary": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Available placeholders for the Summary task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives both body language and section titles.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {externalContext} — external web search markdown from External Search (wrapped in <external_context trust=\"untrusted\">; empty when disabled or unavailable)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Summary 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和章节标题语言。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {externalContext} —— External Search 生成的外部网页检索 markdown（已含 <external_context trust=\"untrusted\"> 包裹；关闭或拉取失败时为空）\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
-          }
-        }
-      }
-    },
-    "settings.ai.prompt.placeholders.tags": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Available placeholders for the Tags task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale)\n• {metadata} — repo metadata block (full name, description, language, topics, license, etc.)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML (empty when disabled or unavailable)\n• {repoTags} — tags already attached to this repository (comma-separated)\n• {libraryTags} — top-30 frequently-used tags from your library (comma-separated)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tags 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / 等）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— 代码上下文 XML（关闭或拉取失败时为空）\n• {repoTags} —— 当前仓库已绑定的标签（逗号分隔）\n• {libraryTags} —— 标签库高频前 30 个（逗号分隔）\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
-          }
-        }
-      }
-    },
-    "settings.ai.prompt.placeholders.translation": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Available placeholders for the README Translation task:\n\n• {targetLanguage} — current target language descriptor (e.g. Simplified Chinese / English / Japanese), driven by the language picker on the README pane.\n• {readmeHTML} — source README HTML fragment (rendered by GitHub's HTML endpoint; user-prompt only).\n\nNote: {targetLanguage} should appear at least once in either System or User prompt, otherwise the model has to guess. {readmeHTML} only makes sense in the User prompt.\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "README 翻译任务可用占位符：\n\n• {targetLanguage} —— 当前目标语言名（如 Simplified Chinese / English / Japanese），由 README 面板上的语言选择器决定。\n• {readmeHTML} —— 源 README HTML 片段（GitHub HTML render 端点产物；只能用于 User Prompt）。\n\n说明：{targetLanguage} 必须在 System / User 任一处出现，否则模型不知道要翻成哪种语言。{readmeHTML} 写在 System 中没有意义。\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
-          }
-        }
-      }
-    },
     "settings.ai.prompt.restoreHelpFormat": {
       "extractionState": "manual",
       "localizations": {
@@ -43171,6 +43086,465 @@
           "stringUnit": {
             "state": "translated",
             "value": "恢复 %@ 的默认 Prompt"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Placeholders"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用占位符"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.openHelp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show placeholder names and meanings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看占位符名称与含义"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Placeholder Reference"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "占位符说明"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete a placeholder from the prompt to skip injecting that data; use Restore Default if you break the template."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.footnote.chat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Note: the Chat task does not use the User Prompt template — user messages go directly to the model through the conversation messages array."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明：Chat 任务不使用 User Prompt 模板——用户消息直接通过对话 messages 数组传给模型。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.footnote.embedding": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Note: the embedding API does not accept a system prompt — leaving the System Prompt field empty has no effect."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明：embedding API 不接受 system prompt，系统提示词留空不会被使用。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholders.footnote.translation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Note: {targetLanguage} must appear in System or User prompt; {readmeHTML} only belongs in the User prompt."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说明：{targetLanguage} 必须在 System / User 任一处出现；{readmeHTML} 写在 System 中没有意义。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.outputLanguage.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output language (follows Settings → Language; e.g. Simplified Chinese / English / Japanese). Drives body language and section titles."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出语言（跟随设置 → 语言，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和章节标题语言。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.outputLanguage.tags": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output language (follows Settings → Language; e.g. Simplified Chinese / English / Japanese)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出语言（跟随设置 → 语言，如 Simplified Chinese / English / Japanese）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.outputLanguage.chat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output language (follows Settings → Language). Drives reply language and the fallback sentence when context is insufficient."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出语言（跟随设置 → 语言）；同时驱动正文语言和上下文不足时的兜底句自然翻译。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.metadata": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository metadata block (fullName / description / language / topics / license / stars / forks / homepage)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.readme": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleaned and truncated README plain text."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清洗 + 截断后的 README 纯文本。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.codeContext": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code context XML from RepoContextPacker (empty when disabled or fetch fails)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.externalContext": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External Search markdown (wrapped in <external_context trust=\"untrusted\">; empty when disabled or fetch fails)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External Search 生成的外部网页检索 markdown（已含 <external_context trust=\"untrusted\"> 包裹；关闭或拉取失败时为空）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cached AI summary markdown for this repository (empty when no summary has been generated)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该仓库的缓存 AI 摘要 markdown（未生成过摘要时为空）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.repoTags": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags already attached to this repository (comma-separated)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前仓库已绑定的标签（逗号分隔）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.libraryTags": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top-30 frequently used tags from your library (comma-separated)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签库高频前 30 个（逗号分隔）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.fullName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "owner/name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "owner/name"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository description."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库描述。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.language": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primary language."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主语言。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.topics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topics list (comma-separated)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "topics 列表（逗号分隔）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.license": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SPDX license identifier."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SPDX 许可证标识。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.homepage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Homepage URL."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主页 URL。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main body (fallback: AI summary → README plain text → description + topics)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主体内容（三级降级：AI 摘要 > README 纯文本 > description + topics 兜底）。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.notes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your private note."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用户私有笔记。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.targetLanguage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target language name (e.g. Simplified Chinese / English / Japanese), from the README pane language picker."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前目标语言名（如 Simplified Chinese / English / Japanese），由 README 面板上的语言选择器决定。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.readmeHTML": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source README HTML fragment from GitHub’s HTML render endpoint (User Prompt only)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源 README HTML 片段（GitHub HTML render 端点产物；只能用于 User Prompt）。"
           }
         }
       }

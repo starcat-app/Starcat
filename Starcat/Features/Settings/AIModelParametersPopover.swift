@@ -12,9 +12,9 @@
 //    stream）。这避免了"用户在'模型参数 → 摘要'调温度，结果只对'用 X 模型的摘要
 //    任务'生效，其它任务用 X 模型时还是默认温度"的反直觉行为。
 //  - Binding<AIModelParameters> 在 getter 里把 descriptor.parameters == nil 时
-//    显示 capability 默认（不写回），setter 写回时立即把 descriptor.parameters
-//    materialize 成非 nil。这样用户**首次打开 popover 不会污染任何数据**，只在
-//    实际改值后才记为"覆盖"。
+//    显示 capability 默认（不写回），setter 写回时：若语义仍等于默认则保持 / 清回
+//    nil，只有真正改出默认才 materialize。这样打开 popover 时 Slider/TextField
+//    的误写回不会标成「已自定义」。
 //  - "重置默认"按钮把 descriptor.parameters 清回 nil，下次调用回到 capability
 //    默认；按钮在没有覆盖时禁用，UI 上有"是否已覆盖"的视觉提示。
 //
@@ -29,8 +29,9 @@ struct AIModelParametersPopover: View {
     /// 双向绑定到 descriptor.parameters。getter 在 nil 时返回 capability 默认（不写回）；
     /// setter 写入时把 descriptor.parameters materialize 为非 nil 值。
     @Binding var parameters: AIModelParameters
-    /// 当前模型是否存在用户级覆盖（descriptor.parameters != nil）。
+    /// 当前模型是否存在用户级覆盖（语义上不等于 capability 默认）。
     /// 决定"重置默认"按钮是否可点 + 是否显示"已自定义"标识。
+    /// 打开弹窗误写回的默认值副本不算覆盖。
     let hasOverride: Bool
     /// 把 descriptor.parameters 清回 nil 的回调。
     let onReset: () -> Void
@@ -88,10 +89,12 @@ struct AIModelParametersPopover: View {
                 }
             }
             Spacer()
+            // icon-only：文案留给 accessibility + .help，避免挤占模型名行宽。
             Button {
                 onReset()
             } label: {
                 Label("settings.ai.modelParams.resetDefault", systemImage: "arrow.counterclockwise")
+                    .labelStyle(.iconOnly)
             }
             .disabled(!hasOverride)
             .help(hasOverride

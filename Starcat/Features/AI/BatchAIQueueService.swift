@@ -540,8 +540,10 @@ final class BatchAIQueueService {
         let failure = BatchAIFailure(error: error)
         let shortMessage = failure.localizedMessage
         let diagnostic = Self.failureDiagnostic(for: error, friendly: friendly, shortMessage: shortMessage)
+        // `diagnostic` 现在可能包含完整 prompt 与服务商 response body，只能在用户主动
+        // 展开 / 复制时使用，不能写入持久化日志或 Console。
         AppLog.ai.error(
-            "[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(shortMessage, privacy: .public), diagnostic=\(diagnostic ?? "", privacy: .public)"
+            "[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(shortMessage, privacy: .public)"
         )
         friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider")
 

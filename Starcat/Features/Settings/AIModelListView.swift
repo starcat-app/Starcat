@@ -162,11 +162,13 @@ struct AIModelListView: View {
             // 整行，避免点击其它区域（toggle / capability picker）误触发 popover。
             // 已覆盖参数的模型 SF Symbol 显示 .fill 变体 + tint orange，给个轻量
             // "这个模型已自定义"视觉提示，与 popover header 的"已自定义"角标呼应。
+            // 「已自定义」按语义判断：打开弹窗误写回的默认值副本不算覆盖。
+            let isCustomized = modelHasCustomizedParameters(model)
             Button {
                 popoverModel = model
             } label: {
-                Image(systemName: parametersBinding(model).wrappedValue == nil ? "gearshape" : "gearshape.fill")
-                    .foregroundStyle(parametersBinding(model).wrappedValue == nil ? Color.secondary : Color.orange)
+                Image(systemName: isCustomized ? "gearshape.fill" : "gearshape")
+                    .foregroundStyle(isCustomized ? Color.orange : Color.secondary)
                     .imageScale(.medium)
             }
             .buttonStyle(.plain)
@@ -182,13 +184,19 @@ struct AIModelListView: View {
             AIModelParametersPopover(
                 model: focused,
                 parameters: nonNullParametersBinding(for: focused),
-                hasOverride: parametersBinding(focused).wrappedValue != nil,
+                hasOverride: modelHasCustomizedParameters(focused),
                 onReset: {
                     parametersBinding(focused).wrappedValue = nil
                 }
             )
             .appLocaleEnvironment()
         }
+    }
+
+    /// 实时读 binding：落库为默认值副本时也不算自定义。
+    private func modelHasCustomizedParameters(_ model: AIModelDescriptor) -> Bool {
+        guard let parameters = parametersBinding(model).wrappedValue else { return false }
+        return !parameters.isEffectivelyDefault(for: model.capability)
     }
 
     /// 把 `popoverModel` 收窄成"只在等于本行 model 时为非 nil"的 Binding——这样
@@ -203,15 +211,27 @@ struct AIModelListView: View {
     }
 
     /// 把 nullable 的 `Binding<AIModelParameters?>` 提升成 popover 需要的非空
-    /// `Binding<AIModelParameters>`：getter 在 nil 时返回 capability 默认（不写回），
-    /// setter 写入时立即把 descriptor.parameters materialize 为非 nil。这样
-    /// 用户**首次打开 popover 不会污染数据**——只有真正调整某个滑块/输入框
-    /// 才会把这份覆盖落库。
+    /// `Binding<AIModelParameters>`：getter 在 nil 时返回 capability 默认（不写回）；
+    /// setter 仅在用户改出默认语义时 materialize。打开 popover 时 Slider/TextField
+    /// 常会把当前显示值写回——若仍等于 capability 默认，必须保持 / 清回 `nil`，
+    /// 否则会误标「已自定义」。
     private func nonNullParametersBinding(for model: AIModelDescriptor) -> Binding<AIModelParameters> {
         let nullable = parametersBinding(model)
         return Binding(
             get: { nullable.wrappedValue ?? AIModelParameters.defaults(for: model.capability) },
-            set: { nullable.wrappedValue = $0 }
+            set: { newValue in
+                if newValue.isEffectivelyDefault(for: model.capability) {
+                    // 误写回默认值，或用户改回默认：清掉覆盖。
+                    if nullable.wrappedValue != nil {
+                        nullable.wrappedValue = nil
+                    }
+                    return
+                }
+                if let current = nullable.wrappedValue, current.isEffectivelyEqual(to: newValue) {
+                    return
+                }
+                nullable.wrappedValue = newValue
+            }
         )
     }
 }

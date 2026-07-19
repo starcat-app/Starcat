@@ -64,6 +64,8 @@ struct AISettingsTab: View {
     @State private var isTestingProfileID: String?
     @State private var keyError: String?
     @State private var promptTask: AIModelTask = .summary
+    /// Prompt 区「可用占位符」popover；切换任务时关闭，避免旧任务说明残留。
+    @State private var isPromptPlaceholderPopoverPresented = false
 
     /// HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
     /// 删除服务商需要二次确认。删除会同步删 profile + Keychain key + 修复
@@ -1160,16 +1162,42 @@ struct AISettingsTab: View {
 
                     Divider()
 
-                    Text(promptPlaceholderHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // 对齐 RAG 工作台：长文案收进 popover，底部只留入口按钮。
+                    promptPlaceholderHelpButton
                         .padding(.vertical, 10)
                 }
                 .padding(.top, 4)
+                .onChange(of: promptTask) { _, _ in
+                    isPromptPlaceholderPopoverPresented = false
+                }
             } label: {
                 disclosureLabel("settings.ai.prompt.title", systemImage: "text.quote", isExpanded: $isPromptExpanded)
             }
+        }
+    }
+
+    /// 底部入口：点开看 token + 含义，避免设置页底部一长段 bullet。
+    private var promptPlaceholderHelpButton: some View {
+        Button {
+            isPromptPlaceholderPopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "curlybraces")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("settings.ai.prompt.placeholders.open")
+                    .font(.caption.weight(.medium))
+                Image(systemName: "info.circle")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("settings.ai.prompt.placeholders.openHelp")
+        .popover(isPresented: $isPromptPlaceholderPopoverPresented, arrowEdge: .top) {
+            AIPromptPlaceholderPopover(catalog: AIPromptPlaceholderCatalog.catalog(for: promptTask))
+                .appLocaleEnvironment()
         }
     }
 
@@ -2116,41 +2144,6 @@ struct AISettingsTab: View {
             get: { self.settings.aiRepoContextTier1MaxLines },
             set: { self.settings.aiRepoContextTier1MaxLines = min(max($0, 40), 200) }
         )
-    }
-
-    /// 当前任务的占位符提示文案（2026-06-14 v4 占位符全栈归一化方案 C：单段 camelCase）。
-    ///
-    /// 各任务占位符**互不共享**——每个任务有自己独立的占位符命名空间：
-    /// - **summary**：5 个占位符（system 用 `{outputLanguage}`；user 用 `{outputLanguage}` /
-    ///   `{metadata}` / `{readme}` / `{codeContext}` / `{externalContext}`）；详见
-    ///   `AIDefaultPrompts.summary` 的注释。
-    /// - **tags**：6 个占位符（system 用 `{outputLanguage}`；user 用 `{metadata}` /
-    ///   `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}`）；详见
-    ///   `AIDefaultPrompts.tags` 的注释。
-    /// - **chat**：6 个占位符（system 用 `{outputLanguage}` / `{metadata}` / `{readme}` /
-    ///   `{codeContext}` / `{summary}` / `{externalContext}`；userPromptTemplate 留空，
-    ///   用户消息直接走 messages 数组）；详见 `AIDefaultPrompts.chat` 的注释。
-    /// - **embedding**：8 个占位符（`{fullName}` / `{description}` / `{language}` / `{topics}` /
-    ///   `{license}` / `{homepage}` / `{body}` / `{notes}`）；详见 `AIDefaultPrompts.embedding`
-    ///   的注释；embedding API 不接受 system prompt，所以 system 一栏空且不会被使用。
-    /// - **translation**：`{targetLanguage}` + `{readmeHTML}`；详见 `AIDefaultPrompts.translation`
-    ///   的注释（2026-06-14 v2 占位符由 `{context}` 重命名为 `{readmeHTML}`）。
-    ///
-    /// **删占位符 = 不注入对应数据**：用户在 prompt 里删掉某个占位符就不会渲染对应内容；
-    /// 改坏了点 Restore Default 还原。
-    private var promptPlaceholderHint: String {
-        switch promptTask {
-        case .summary:
-            return String.l10n("settings.ai.prompt.placeholders.summary")
-        case .tags:
-            return String.l10n("settings.ai.prompt.placeholders.tags")
-        case .translation:
-            return String.l10n("settings.ai.prompt.placeholders.translation")
-        case .embedding:
-            return String.l10n("settings.ai.prompt.placeholders.embedding")
-        case .chat:
-            return String.l10n("settings.ai.prompt.placeholders.chat")
-        }
     }
 
     private var privacySection: some View {

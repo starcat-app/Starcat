@@ -869,6 +869,47 @@ struct AppSettingsTests {
         #expect(decoded.capability == .chat)
     }
 
+    @Test("AI: 显式 32K contextWindow 与默认 nil 语义等价，不算已自定义")
+    func parametersEffectivelyEqualTreatsResolvedContextWindow() {
+        var polluted = AIModelParameters.summaryDefault
+        polluted.contextWindowTokens = 32 * 1_024
+        #expect(polluted.isEffectivelyEqual(to: .summaryDefault))
+        #expect(polluted.isEffectivelyDefault(for: .chat))
+        #expect(polluted.isEffectivelyDefault(for: .unknown))
+
+        var changed = polluted
+        changed.temperature = 0.5
+        #expect(!changed.isEffectivelyEqual(to: .summaryDefault))
+        #expect(!changed.isEffectivelyDefault(for: .chat))
+    }
+
+    @Test("AI: descriptor.hasCustomizedParameters 忽略默认值副本污染")
+    func descriptorHasCustomizedParametersIgnoresDefaultClone() {
+        var defaultClone = AIModelParameters.summaryDefault
+        defaultClone.contextWindowTokens = 32 * 1_024
+        let polluted = AIModelDescriptor(
+            providerID: "p",
+            name: "flash",
+            capability: .chat,
+            parameters: defaultClone
+        )
+        #expect(polluted.parameters != nil)
+        #expect(!polluted.hasCustomizedParameters)
+
+        var realOverride = AIModelParameters.summaryDefault
+        realOverride.topK = 80
+        let customized = AIModelDescriptor(
+            providerID: "p",
+            name: "pro",
+            capability: .chat,
+            parameters: realOverride
+        )
+        #expect(customized.hasCustomizedParameters)
+
+        let clean = AIModelDescriptor(providerID: "p", name: "base", capability: .chat)
+        #expect(!clean.hasCustomizedParameters)
+    }
+
     @Test("AI: 非法 provider / search mode 回退到默认")
     func aiInvalidRawValuesFallback() {
         let defaults = makeIsolatedDefaults()

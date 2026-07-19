@@ -31,14 +31,10 @@ struct OpenAIClient: AIClientProtocol {
 
         let sdkConfig = try Self.makeSDKConfiguration(from: configuration, apiKey: trimmedKey)
         self.configuration = configuration
-        #if DEBUG
         self.client = OpenAI(
             configuration: sdkConfig,
-            session: Self.makeDebuggableSession(timeoutInterval: configuration.timeoutInterval)
+            session: Self.makeDiagnosticSession(timeoutInterval: configuration.timeoutInterval)
         )
-        #else
-        self.client = OpenAI(configuration: sdkConfig)
-        #endif
     }
 
     /// 生产代码注入真实 MacPaw client；单元测试可用 mock OpenAIProtocol 走这里。
@@ -48,8 +44,9 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     func chat(request: AIChatRequest) async throws -> AIChatResponse {
+        let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
+        let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
         do {
-            let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
             #if DEBUG
             AIDebugLogger.logChatRequest(
                 baseURL: configuration.baseURL,
@@ -58,8 +55,6 @@ struct OpenAIClient: AIClientProtocol {
                 userPromptLength: request.userPrompt.count
             )
             #endif
-            let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
-
             let result = try await client.chats(query: query)
             #if DEBUG
             if DebugFlags.aiHTTPLogging {
@@ -88,15 +83,20 @@ struct OpenAIClient: AIClientProtocol {
             // SDK 的 statusError 会把整段 NSHTTPURLResponse dump 进 localizedDescription；
             // 产品层只应看到归类后的 AIClientError。
             AppLog.ai.error("Chat request failed: \(error.localizedDescription, privacy: .public)")
-            throw Self.mapChatFailure(error)
+            throw Self.mapChatFailure(
+                error,
+                requestJSON: Self.formattedJSON(query),
+                exchange: Self.takeFailureExchange(for: error)
+            )
         }
     }
 
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
+                let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
+                let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
                 do {
-                    let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
                     #if DEBUG
                     AIDebugLogger.logChatRequest(
                         baseURL: configuration.baseURL,
@@ -105,7 +105,6 @@ struct OpenAIClient: AIClientProtocol {
                         userPromptLength: request.userPrompt.count
                     )
                     #endif
-                    let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
                     var content = ""
                     var finishReason: String?
                     var reasoningNormalizer = AIStreamReasoningNormalizer()
@@ -151,7 +150,11 @@ struct OpenAIClient: AIClientProtocol {
                     continuation.finish(throwing: error)
                 } catch {
                     AppLog.ai.error("Chat stream failed: \(error.localizedDescription, privacy: .public)")
-                    continuation.finish(throwing: Self.mapChatFailure(error))
+                    continuation.finish(throwing: Self.mapChatFailure(
+                        error,
+                        requestJSON: Self.formattedJSON(query),
+                        exchange: Self.takeFailureExchange(for: error)
+                    ))
                 }
             }
         }
@@ -164,19 +167,33 @@ struct OpenAIClient: AIClientProtocol {
     /// 保持与 `embeddingError(from:)` 同构：按 HTTP 状态码 / Provider 文案分流，并把
     /// 短诊断塞进 associated `detail`，避免把 `statusError(response: <NSHTTPURLResponse…>)`
     /// 原样甩给用户。
-    static func mapChatFailure(_ error: Error) -> AIClientError {
+    static func mapChatFailure(
+        _ error: Error,
+        requestJSON: String? = nil,
+        exchange: AIHTTPFailureExchange? = nil
+    ) -> AIClientError {
         if let error = error as? AIClientError {
             return error
         }
         if let error = error as? APIErrorResponse {
-            return chatAPIError(message: error.error.message)
+            let detail = failureDiagnostic(
+                fallback: error.error.message,
+                requestJSON: requestJSON,
+                exchange: exchange
+            )
+            return chatAPIError(message: error.error.message, detail: detail)
         }
         if let error = error as? OpenAIError {
             switch error {
             case .emptyData:
                 return .emptyResponse
             case .statusError(let response, let statusCode):
-                let detail = httpDiagnosticDetail(response: response, statusCode: statusCode)
+                let detail = httpDiagnosticDetail(
+                    response: response,
+                    statusCode: statusCode,
+                    requestJSON: requestJSON,
+                    exchange: exchange
+                )
                 return chatHTTPError(statusCode: statusCode, detail: detail)
             }
         }
@@ -196,7 +213,12 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     /// 结构化 HTTP 诊断（多行），供展开详情与复制；不含 Authorization 等敏感头。
-    private static func httpDiagnosticDetail(response: HTTPURLResponse, statusCode: Int) -> String {
+    private static func httpDiagnosticDetail(
+        response: HTTPURLResponse,
+        statusCode: Int,
+        requestJSON: String?,
+        exchange: AIHTTPFailureExchange?
+    ) -> String {
         var lines: [String] = []
         let phrase = HTTPURLResponse.localizedString(forStatusCode: statusCode)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -211,7 +233,95 @@ struct OpenAIClient: AIClientProtocol {
         if let mime = response.mimeType?.trimmingCharacters(in: .whitespacesAndNewlines), !mime.isEmpty {
             lines.append("Content-Type: \(mime)")
         }
+        appendPayloads(to: &lines, requestJSON: requestJSON, exchange: exchange)
         return lines.joined(separator: "\n")
+    }
+
+    /// 将请求参数与服务商原始返回体整理成可复制的格式化 JSON。
+    ///
+    /// 请求优先采用 URLSession 实际发送的 body；若系统没有暴露 `httpBody`，才回退到
+    /// 对 `ChatQuery` 的编码结果。非 JSON 响应包进 `{"raw": ...}`，确保复制内容仍是
+    /// 合法 JSON，而不是难以区分边界的裸文本。
+    private static func appendPayloads(
+        to lines: inout [String],
+        requestJSON: String?,
+        exchange: AIHTTPFailureExchange?
+    ) {
+        if let exchange {
+            lines.append("")
+            lines.append("Response JSON:")
+            lines.append(formattedJSONData(exchange.responseBody))
+            if exchange.responseBodyTruncated {
+                lines.append("…<truncated at \(AIHTTPFailureExchangeStore.maxBodyBytes) bytes>")
+            }
+        }
+
+        // Request JSON 以 ChatQuery 重编码为准（完整 prompt）；URLProtocol 的 httpBody
+        // 通常已被 URLSession 内部化，只在测试/缺回退时用 exchange.requestBody。
+        let requestText = requestJSON
+            ?? exchange.flatMap { $0.requestBody.isEmpty ? nil : formattedJSONData($0.requestBody) }
+        if let requestText {
+            lines.append("")
+            lines.append("Request JSON:")
+            lines.append(DiagnosticEvent.redact(requestText))
+        }
+    }
+
+    private static func failureDiagnostic(
+        fallback: String,
+        requestJSON: String?,
+        exchange: AIHTTPFailureExchange?
+    ) -> String {
+        guard let exchange else {
+            var lines = [DiagnosticEvent.redact(fallback)]
+            appendPayloads(to: &lines, requestJSON: requestJSON, exchange: nil)
+            return lines.joined(separator: "\n")
+        }
+
+        var lines: [String] = []
+        let phrase = HTTPURLResponse.localizedString(forStatusCode: exchange.statusCode)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        lines.append(phrase.isEmpty ? "HTTP \(exchange.statusCode)" : "HTTP \(exchange.statusCode) \(phrase)")
+        if let url = exchange.url?.absoluteString, !url.isEmpty {
+            lines.append("URL: \(url)")
+        }
+        if let mime = exchange.mimeType?.trimmingCharacters(in: .whitespacesAndNewlines), !mime.isEmpty {
+            lines.append("Content-Type: \(mime)")
+        }
+        appendPayloads(to: &lines, requestJSON: requestJSON, exchange: exchange)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formattedJSON<T: Encodable>(_ value: T) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func formattedJSONData(_ data: Data) -> String {
+        guard !data.isEmpty else { return "null" }
+        if let object = try? JSONSerialization.jsonObject(with: data),
+           let pretty = try? JSONSerialization.data(
+               withJSONObject: object,
+               options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+           ),
+           let text = String(data: pretty, encoding: .utf8) {
+            return DiagnosticEvent.redact(text)
+        }
+
+        let raw = String(data: data, encoding: .utf8) ?? data.base64EncodedString()
+        let wrapper = ["raw": DiagnosticEvent.redact(raw)]
+        return formattedJSON(wrapper) ?? "{\"raw\":\"<unavailable>\"}"
+    }
+
+    private static func takeFailureExchange(for error: Error) -> AIHTTPFailureExchange? {
+        // 只在 statusError 且 URL+状态码都匹配时取走；禁止通配，避免并发错绑。
+        guard let openAIError = error as? OpenAIError,
+              case let .statusError(response, statusCode) = openAIError else {
+            return nil
+        }
+        return AIHTTPFailureExchangeStore.shared.take(url: response.url, statusCode: statusCode)
     }
 
     private static func chatHTTPError(statusCode: Int, detail: String) -> AIClientError {
@@ -233,9 +343,9 @@ struct OpenAIClient: AIClientProtocol {
         }
     }
 
-    private static func chatAPIError(message: String) -> AIClientError {
+    private static func chatAPIError(message: String, detail: String? = nil) -> AIClientError {
         let normalized = message.lowercased()
-        let detail = DiagnosticEvent.redact(String(message.prefix(800)))
+        let detail = detail ?? DiagnosticEvent.redact(String(message.prefix(800)))
         if normalized.contains("unauthorized")
             || normalized.contains("authentication")
             || normalized.contains("api key")
@@ -498,22 +608,20 @@ struct OpenAIClient: AIClientProtocol {
         return finalURL
     }
 
-    #if DEBUG
-    /// 构造 Debug 期可插拔的 URLSession。
+    /// 构造带失败交换捕获能力的 URLSession。
     ///
-    /// MacPaw/OpenAI 允许注入 `URLSession`。这里仅在 `DebugAIHTTPLogging` 打开时
-    /// 插入 `AIHTTPDebugURLProtocol`，这样能看到 LM Studio 原始 JSON，同时不影响
-    /// 默认开发体验；Release 构建完全走普通 SDK 初始化路径。
-    private static func makeDebuggableSession(timeoutInterval: TimeInterval) -> URLSession {
-        guard DebugFlags.aiHTTPLogging else { return .shared }
-
+    /// Release 也需要捕获非 2xx response body，才能让用户主动复制完整诊断；
+    /// 成功响应只做逐块透传，不在内存保留。DEBUG 的原始 HTTP 日志由同一 protocol 负责。
+    ///
+    /// 仅覆盖非流式 `chats`。MacPaw `chatStream` 会经自建 `URLSession` 绕过本 session，
+    /// 批量整理走 `chat` 不受影响；流式聊天若要同等诊断需另接 streaming factory。
+    private static func makeDiagnosticSession(timeoutInterval: TimeInterval) -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = timeoutInterval
         configuration.timeoutIntervalForResource = timeoutInterval
-        configuration.protocolClasses = [AIHTTPDebugURLProtocol.self] + (configuration.protocolClasses ?? [])
+        configuration.protocolClasses = [AIHTTPDiagnosticURLProtocol.self] + (configuration.protocolClasses ?? [])
         return URLSession(configuration: configuration)
     }
-    #endif
 }
 
 private struct ProviderModelsResponse: Decodable {

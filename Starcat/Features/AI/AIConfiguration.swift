@@ -145,6 +145,13 @@ struct AIModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         self.isCustom = isCustom
         self.parameters = parameters
     }
+
+    /// 是否存在用户真正改过的参数覆盖。
+    /// `parameters == nil`，或落库值与 capability 默认语义等价（含打开弹窗误写回的默认值副本），都不算自定义。
+    var hasCustomizedParameters: Bool {
+        guard let parameters else { return false }
+        return !parameters.isEffectivelyDefault(for: capability)
+    }
 }
 
 /// 一个可调用的 AI 服务商配置。
@@ -347,6 +354,28 @@ struct AIModelParameters: Codable, Equatable, Sendable {
     /// RAG 的单一窗口来源。4K 以下通常无法容纳系统提示与输出预留，2M 以上多为误填。
     var resolvedContextWindowTokens: Int {
         min(max(contextWindowTokens ?? 32 * 1_024, 4 * 1_024), 2 * 1_024 * 1_024)
+    }
+
+    /// 用户可感知维度上是否等价。
+    ///
+    /// `contextWindowTokens` 用 `resolvedContextWindowTokens` 比较：默认 `nil` 与显式
+    /// `32K` 在 UI 上都显示 32，不能因为 Codable 落成非 nil 就当成「已自定义」。
+    /// 其余字段走精确相等——设置页 Slider / 整数输入不会引入浮点噪声。
+    func isEffectivelyEqual(to other: AIModelParameters) -> Bool {
+        temperature == other.temperature
+            && topP == other.topP
+            && topK == other.topK
+            && maxCompletionTokens == other.maxCompletionTokens
+            && timeoutSeconds == other.timeoutSeconds
+            && streamEnabled == other.streamEnabled
+            && resolvedContextWindowTokens == other.resolvedContextWindowTokens
+    }
+
+    /// 是否与 capability 默认在用户感知上等价。
+    /// 打开参数 popover 时 Slider/TextField 常会把显示值写回；若语义仍是默认，
+    /// 应视为未覆盖，避免误标「已自定义」。
+    func isEffectivelyDefault(for capability: AIModelCapability) -> Bool {
+        isEffectivelyEqual(to: .defaults(for: capability))
     }
 
     // HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：把所有 chat 任务的
