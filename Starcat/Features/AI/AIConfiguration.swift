@@ -17,10 +17,19 @@
 
 import Foundation
 
-/// AI 模型能力。
+/// AI 模型能力（目录标签）。
+///
+/// 当前任务路由只认 `.chat` / `.embedding`；其余类型（含 `.unknown`）仅作分类铺垫，
+/// 不改变现有任务筛选与调用路径。`.unknown` 仍按原逻辑：可同时出现在 Chat / Embedding
+/// 任务模型列表里，参数默认与 Chat 共用。
 enum AIModelCapability: String, Codable, CaseIterable, Identifiable, Sendable {
     case chat
     case embedding
+    case rerank
+    case vision
+    case video
+    case tts
+    case asr
     case unknown
 
     var id: String { rawValue }
@@ -29,7 +38,26 @@ enum AIModelCapability: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .chat:      return "Chat"
         case .embedding: return "Embedding"
+        case .rerank:    return "Rerank"
+        case .vision:    return "Vision"
+        case .video:     return "Video"
+        case .tts:       return "TTS"
+        case .asr:       return "ASR"
         case .unknown:   return "Unknown"
+        }
+    }
+
+    /// 设置页能力 Picker / 行标签用的 SF Symbol。
+    var systemImage: String {
+        switch self {
+        case .chat:      return "bubble.left.and.bubble.right"
+        case .embedding: return "point.3.connected.trianglepath.dotted"
+        case .rerank:    return "arrow.up.arrow.down"
+        case .vision:    return "eye"
+        case .video:     return "video"
+        case .tts:       return "speaker.wave.2"
+        case .asr:       return "waveform"
+        case .unknown:   return "questionmark.circle"
         }
     }
 
@@ -37,15 +65,42 @@ enum AIModelCapability: String, Codable, CaseIterable, Identifiable, Sendable {
     ///
     /// OpenAI-compatible 的 `/models` 返回没有统一 capability schema，OpenRouter 会给
     /// architecture，LM Studio / Ollama 又只返回本地模型名。这里仅用于初始填充 UI，
-    /// 用户仍可在设置页手动修正。
+    /// 用户仍可在设置页手动修正。认不出时默认 `.chat`，不会自动标成 `.unknown`。
     static func inferred(from modelName: String) -> AIModelCapability {
         let lower = modelName.localizedLowercase
+        // 更具体的关键词优先：bge-reranker 含 "bge"，若先匹配 embedding 会误判。
+        if lower.contains("rerank") || lower.contains("re-rank") {
+            return .rerank
+        }
         if lower.contains("embedding")
             || lower.contains("embed")
             || lower.contains("nomic")
             || lower.contains("bge")
             || lower.contains("text-embedding") {
             return .embedding
+        }
+        // Vision 覆盖图像理解与图片生成；名称里常见 vision / dall-e / flux / sd 等。
+        if lower.contains("vision")
+            || lower.contains("vl-")
+            || lower.contains("-vl")
+            || lower.contains("dall-e")
+            || lower.contains("dalle")
+            || lower.contains("flux")
+            || lower.contains("stable-diffusion")
+            || lower.contains("imagen") {
+            return .vision
+        }
+        if lower.contains("video") || lower.contains("sora") || lower.contains("runway") {
+            return .video
+        }
+        if lower.contains("tts") || lower.contains("text-to-speech") || lower.contains("speech-synthesis") {
+            return .tts
+        }
+        if lower.contains("asr")
+            || lower.contains("whisper")
+            || lower.contains("speech-to-text")
+            || lower.contains("transcri") {
+            return .asr
         }
         return .chat
     }
@@ -337,6 +392,16 @@ enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
         case .embedding:                           return .embedding
         }
     }
+
+    /// Embedding API 只有 input，没有 system role；设置页据此禁用无效输入。
+    var supportsSystemPrompt: Bool {
+        self != .embedding
+    }
+
+    /// Chat 的用户消息直接进入多轮 messages，不再额外套一层固定模板。
+    var supportsUserPromptTemplate: Bool {
+        self != .chat
+    }
 }
 
 /// 单个 AI 任务的模型参数。
@@ -431,15 +496,17 @@ struct AIModelParameters: Codable, Equatable, Sendable {
 
     /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：模型粒度参数引入后，
     /// `AIModelDescriptor.parameters == nil` 时需要一份"按能力分类"的默认参数兜底。
-    /// chat / unknown 用 summaryDefault（128K maxToken / 0.2 温度 / 300s 超时 / 流式 on），
-    /// embedding 用 embeddingDefault（不需要温度 / maxToken 等 chat 字段）。
+    /// embedding 用 embeddingDefault；其余目录标签（含 unknown / vision 等）暂与 chat
+    /// 共用 summaryDefault——当前任务路由只用 chat/embedding，新类型仅分类铺垫。
     ///
     /// 历史的 `AIModelTaskConfiguration.parameters` 仍保留（作为 effectiveParameters
     /// 找不到 descriptor 时的二级 fallback），但 UI 已不再暴露任务粒度的参数编辑。
     static func defaults(for capability: AIModelCapability) -> AIModelParameters {
         switch capability {
-        case .embedding: return .embeddingDefault
-        case .chat, .unknown: return .summaryDefault
+        case .embedding:
+            return .embeddingDefault
+        case .chat, .rerank, .vision, .video, .tts, .asr, .unknown:
+            return .summaryDefault
         }
     }
 }

@@ -43567,6 +43567,23 @@
         }
       }
     },
+    "settings.ai.prompt.system.embeddingUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedding APIs do not support system prompts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Embedding API 不支持系统提示词。"
+          }
+        }
+      }
+    },
     "settings.ai.prompt.task.pickerLabel": {
       "extractionState": "manual",
       "localizations": {
@@ -43614,6 +43631,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "用户提示词"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.user.chatUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat messages are sent directly and do not use a user prompt template."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat 消息会直接发送，不使用用户提示词模板。"
           }
         }
       }
@@ -44903,18 +44937,17 @@
       }
     },
     "settings.autoTidy.actions.generateTags": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recommend & apply tags"
+            "value": "Auto-apply tags"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "推荐并自动应用标签"
+            "value": "自动应用标签"
           }
         }
       }
@@ -44991,30 +45024,29 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Max per run"
+            "value": "Batch size"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每轮最多处理"
+            "value": "批处理数量"
           }
         }
       }
     },
     "settings.autoTidy.range.sortOrder": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Order"
+            "value": "Processing priority"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "优先排序"
+            "value": "处理优先级"
           }
         }
       }
@@ -45137,69 +45169,65 @@
       }
     },
     "settings.autoTidy.trigger.onLaunch": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run once after launch (60s delay)"
+            "value": "Run after launch"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启动后自动整理一次（延迟 60 秒）"
+            "value": "启动后整理"
           }
         }
       }
     },
     "settings.autoTidy.trigger.onSync": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After star sync detects new repos"
+            "value": "Run after sync"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "同步完成检测到新 star 时增量触发"
+            "value": "同步后整理"
           }
         }
       }
     },
     "settings.autoTidy.trigger.scheduled": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run on a schedule"
+            "value": "Run on schedule"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "定期开启"
+            "value": "定时执行"
           }
         }
       }
     },
     "settings.autoTidy.trigger.scheduledInterval": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Interval (hours)"
+            "value": "Interval"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "间隔（小时）"
+            "value": "间隔"
           }
         }
       }
@@ -65598,6 +65626,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "仓库：%@"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.onLaunch.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "After the app launches, wait 60 seconds and tidy one batch of untagged stars.",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "应用启动 60 秒后，自动整理一轮未分类 Star。",
+            "state": "translated"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.onSync.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "After star sync finishes, tidy currently untagged stars.",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "Star 同步完成后，自动整理当前未分类的 Star。",
+            "state": "translated"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.scheduledInterval.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "How often scheduled tidy runs, in hours (1–24).",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "定时执行的间隔，单位为小时，范围 1–24。",
+            "state": "translated"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.range.maxPerRun.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "Maximum number of untagged stars to process per run (5–500).",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "每轮最多处理的未分类 Star 数量，范围 5–500。",
+            "state": "translated"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.range.sortOrder.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "Choose whether each run prefers recently starred, earliest starred, or random stars.",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "决定每轮优先处理最近、最早或随机选择的 Star。",
+            "state": "translated"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.actions.generateTags.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "Recommend tags and apply them automatically; with the threshold enabled, only tags that meet the confidence requirement are applied.",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "AI 推荐并直接应用标签；启用阈值后，仅应用达到置信度要求的标签。",
+            "state": "translated"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.actions.generateSummary.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "value": "Generate and save AI summaries for processed stars. Uses additional model quota.",
+            "state": "translated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "value": "为处理的 Star 生成并保存 AI 摘要，会额外消耗模型额度。",
+            "state": "translated"
           }
         }
       }

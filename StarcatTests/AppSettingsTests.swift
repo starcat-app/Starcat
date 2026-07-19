@@ -380,6 +380,19 @@ struct AppSettingsTests {
         #expect(s.aiRepoContextMaximumArchiveMB == AppSettings.defaultAIRepoContextMaximumArchiveMB)
     }
 
+    @Test("AI: Prompt 可编辑方向与请求协议一致")
+    func aiPromptRoleSupport() {
+        #expect(!AIModelTask.embedding.supportsSystemPrompt)
+        #expect(AIModelTask.embedding.supportsUserPromptTemplate)
+        #expect(AIModelTask.chat.supportsSystemPrompt)
+        #expect(!AIModelTask.chat.supportsUserPromptTemplate)
+
+        for task in [AIModelTask.summary, .tags, .translation] {
+            #expect(task.supportsSystemPrompt)
+            #expect(task.supportsUserPromptTemplate)
+        }
+    }
+
     @Test("AI Tags: 已发布旧默认 Prompt 自动升级且保留模型配置")
     func legacyDefaultTagsPromptMigrates() {
         let defaults = makeIsolatedDefaults()
@@ -781,6 +794,22 @@ struct AppSettingsTests {
         // unknown 当 chat 用——大多数 OpenAI-compatible /models 接口返回 owned_by
         // 推不出能力时落到 unknown，UI 还能让用户手改成 chat / embedding。
         #expect(AIModelParameters.defaults(for: .unknown) == AIModelParameters.summaryDefault)
+        // 其余目录标签（rerank / vision / …）暂与 chat 共用默认，仅做分类铺垫。
+        for capability in [AIModelCapability.rerank, .vision, .video, .tts, .asr] {
+            #expect(AIModelParameters.defaults(for: capability) == AIModelParameters.summaryDefault)
+        }
+    }
+
+    @Test("AI: AIModelCapability.inferred 识别常见关键词，默认 chat")
+    func aiCapabilityInferred() {
+        #expect(AIModelCapability.inferred(from: "text-embedding-3-small") == .embedding)
+        #expect(AIModelCapability.inferred(from: "bge-reranker-v2") == .rerank)
+        #expect(AIModelCapability.inferred(from: "gpt-4o-vision") == .vision)
+        #expect(AIModelCapability.inferred(from: "sora-turbo") == .video)
+        #expect(AIModelCapability.inferred(from: "tts-1-hd") == .tts)
+        #expect(AIModelCapability.inferred(from: "whisper-1") == .asr)
+        #expect(AIModelCapability.inferred(from: "deepseek-v4-flash") == .chat)
+        #expect(AIModelCapability.unknown.systemImage == "questionmark.circle")
     }
 
     @Test("AI: effectiveParameters 优先用模型粒度覆盖")

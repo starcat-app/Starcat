@@ -851,18 +851,48 @@ struct AISettingsTab: View {
             .padding(.vertical, 8)
     }
 
-    /// 触发时机：启动后一次 / 同步后增量 / 定期（可配间隔）。
+    /// 标题 + caption 备注：设置页行 Label 标准结构（见 UI-设置页规范）。
+    private func autoTidyLabel(title: LocalizedStringKey, description: LocalizedStringKey) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 带备注的 Toggle，避免每个开关重复拼 VStack。
+    private func autoTidyToggle(
+        title: LocalizedStringKey,
+        description: LocalizedStringKey,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            autoTidyLabel(title: title, description: description)
+        }
+    }
+
+    /// 触发时机：启动后一次 / 同步后增量 / 定时（可配间隔）。
     @ViewBuilder
     private var triggerGroup: some View {
         Divider()
         autoTidySectionHeader("settings.autoTidy.triggers.label")
 
         autoTidyRow {
-            Toggle("settings.autoTidy.trigger.onLaunch", isOn: autoTidyBinding(\.triggerOnLaunch))
+            autoTidyToggle(
+                title: "settings.autoTidy.trigger.onLaunch",
+                description: "settings.autoTidy.trigger.onLaunch.description",
+                isOn: autoTidyBinding(\.triggerOnLaunch)
+            )
         }
         Divider()
         autoTidyRow {
-            Toggle("settings.autoTidy.trigger.onSync", isOn: autoTidyBinding(\.triggerOnSync))
+            autoTidyToggle(
+                title: "settings.autoTidy.trigger.onSync",
+                description: "settings.autoTidy.trigger.onSync.description",
+                isOn: autoTidyBinding(\.triggerOnSync)
+            )
         }
         Divider()
         autoTidyRow {
@@ -870,7 +900,7 @@ struct AISettingsTab: View {
         }
         Divider()
 
-        // 间隔仅在「定期开启」打开时有意义；关掉时淡化 + disable，保留上次填写值。
+        // 间隔仅在「定时执行」打开时有意义；关掉时淡化 + disable，保留上次填写值。
         autoTidyRow {
             LabeledContent {
                 TextField(
@@ -883,14 +913,17 @@ struct AISettingsTab: View {
                 .frame(width: 80)
                 .help("1 - 24")
             } label: {
-                Text("settings.autoTidy.trigger.scheduledInterval")
+                autoTidyLabel(
+                    title: "settings.autoTidy.trigger.scheduledInterval",
+                    description: "settings.autoTidy.trigger.scheduledInterval.description"
+                )
             }
             .disabled(!settings.autoTidySettings.triggerScheduled)
             .opacity(settings.autoTidySettings.triggerScheduled ? 1.0 : 0.5)
         }
     }
 
-    /// 处理范围：最多一次处理多少个 + 排序口径。
+    /// 处理范围：批处理数量 + 处理优先级。
     @ViewBuilder
     private var rangeGroup: some View {
         Divider()
@@ -913,15 +946,23 @@ struct AISettingsTab: View {
                 .frame(width: 80)
                 .help("5 - 500")
             } label: {
-                Text("settings.autoTidy.range.maxPerRun")
+                autoTidyLabel(
+                    title: "settings.autoTidy.range.maxPerRun",
+                    description: "settings.autoTidy.range.maxPerRun.description"
+                )
             }
         }
         Divider()
         autoTidyRow {
-            Picker("settings.autoTidy.range.sortOrder", selection: autoTidyBinding(\.sortOrder)) {
+            Picker(selection: autoTidyBinding(\.sortOrder)) {
                 ForEach(AutoTidySortOrder.allCases) { order in
                     Text(order.displayNameKey).tag(order)
                 }
+            } label: {
+                autoTidyLabel(
+                    title: "settings.autoTidy.range.sortOrder",
+                    description: "settings.autoTidy.range.sortOrder.description"
+                )
             }
             .pickerStyle(.menu)
         }
@@ -934,11 +975,19 @@ struct AISettingsTab: View {
         autoTidySectionHeader("settings.autoTidy.actions.label")
 
         autoTidyRow {
-            Toggle("settings.autoTidy.actions.generateTags", isOn: autoTidyBinding(\.generateTags))
+            autoTidyToggle(
+                title: "settings.autoTidy.actions.generateTags",
+                description: "settings.autoTidy.actions.generateTags.description",
+                isOn: autoTidyBinding(\.generateTags)
+            )
         }
         Divider()
         autoTidyRow {
-            Toggle("settings.autoTidy.actions.generateSummary", isOn: autoTidyBinding(\.generateSummary))
+            autoTidyToggle(
+                title: "settings.autoTidy.actions.generateSummary",
+                description: "settings.autoTidy.actions.generateSummary.description",
+                isOn: autoTidyBinding(\.generateSummary)
+            )
         }
         Divider()
 
@@ -1137,10 +1186,17 @@ struct AISettingsTab: View {
                         TextEditor(text: promptSystemBinding(promptTask))
                             .font(.system(.caption, design: .monospaced))
                             .frame(height: 180)
+                            .disabled(!promptTask.supportsSystemPrompt)
+                            .opacity(promptTask.supportsSystemPrompt ? 1.0 : 0.5)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
+                        if !promptTask.supportsSystemPrompt {
+                            Text("settings.ai.prompt.system.embeddingUnavailable")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.vertical, 10)
 
@@ -1153,18 +1209,28 @@ struct AISettingsTab: View {
                         TextEditor(text: promptUserBinding(promptTask))
                             .font(.system(.caption, design: .monospaced))
                             .frame(height: 80)
+                            .disabled(!promptTask.supportsUserPromptTemplate)
+                            .opacity(promptTask.supportsUserPromptTemplate ? 1.0 : 0.5)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
+                        if !promptTask.supportsUserPromptTemplate {
+                            Text("settings.ai.prompt.user.chatUnavailable")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.vertical, 10)
 
                     Divider()
 
-                    // 对齐 RAG 工作台：长文案收进 popover，底部只留入口按钮。
-                    promptPlaceholderHelpButton
-                        .padding(.vertical, 10)
+                    // 对齐设置页独立操作按钮右对齐规范：长文案收进 popover，底部只留入口。
+                    HStack {
+                        Spacer(minLength: 0)
+                        promptPlaceholderHelpButton
+                    }
+                    .padding(.vertical, 10)
                 }
                 .padding(.top, 4)
                 .onChange(of: promptTask) { _, _ in
@@ -1215,8 +1281,8 @@ struct AISettingsTab: View {
     ///   ├ 高级（折叠）  ── 主体阈值 Slider + 笔记阈值 Slider   ← HOM-197 Stepper→Slider
     ///   ├ ─────────────────────
     ///   ├ 启动自动预拉 [开关]
-    ///   ├ [开始预拉] [暂停]     进度 234 / 1801（失败 0）
-    ///   └ [⚠ 全量重建]
+    ///   ├ 进度 234 / 1801（失败 0）          [开始预拉 / 暂停]   ← 按钮右对齐
+    ///   └ 强制…会消耗配额。                 [⚠ 全量重建]       ← 文案左、按钮右
     /// ```
     ///
     /// 切换预设时通过 `applyAIIndexPreset(_:)` 把 body / notes 具体数字同步过去，避免
@@ -1644,15 +1710,19 @@ struct AISettingsTab: View {
 
     /// 开始 / 暂停 / 进度行。
     ///
+    /// **布局（设置页按钮右对齐规范）**：进度 /「已是最新」徽章在左，操作按钮在右。
+    ///
     /// **2026-06-13 dong4j 反馈"开始预拉闪烁"改造**：
     /// `.alreadyUpToDate(total)` 与 `.completed` 共用按钮分支（都回到"开始预拉"），
-    /// 右侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
+    /// 左侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
     /// + 同色系文字"已是最新（共 N 个仓库）"，参考登录页 `GithubAuthView` 的复制成功
     /// 徽章姿势（保持视觉语言一致，新用户一眼就懂）。
     @ViewBuilder
     private var builderControlsRow: some View {
         let builder = dependencies.semanticIndexBuilder
         HStack(spacing: 10) {
+            builderProgressView
+            Spacer()
             switch builder.status {
             case .idle, .completed, .alreadyUpToDate, .failed:
                 Button(String.l10n("settings.aiIndex.prefetch.start")) {
@@ -1667,12 +1737,10 @@ struct AISettingsTab: View {
                     builder.resume()
                 }
             }
-            Spacer()
-            builderProgressView
         }
     }
 
-    /// 右侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
+    /// 左侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
     /// 其它状态保持原"caption 灰色文本"行为。
     @ViewBuilder
     private var builderProgressView: some View {
@@ -1732,17 +1800,20 @@ struct AISettingsTab: View {
     }
 
     /// "全量重建"按钮。点击只弹确认 dialog，实际执行在 body 的 `.confirmationDialog`。
+    ///
+    /// **布局（设置页按钮右对齐规范）**：消耗配额提示在左，destructive 按钮在右。
     private var rebuildAllRow: some View {
-        HStack {
+        HStack(spacing: 10) {
+            Text("settings.aiIndex.rebuildAll.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
             Button(role: .destructive) {
                 pendingRebuildAllConfirm = true
             } label: {
                 Label("settings.aiIndex.rebuildAll.button", systemImage: "exclamationmark.triangle.fill")
             }
-            Spacer()
-            Text("settings.aiIndex.rebuildAll.hint")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 

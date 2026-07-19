@@ -149,13 +149,16 @@ struct AIModelListView: View {
 
             Spacer(minLength: 8)
 
+            // 能力是目录标签：Chat/Embedding 参与任务路由，其余（含 Unknown）仅分类。
+            // Label + SF Symbol 让类型一眼可辨；frame 略加宽给图标留位。
             Picker("", selection: capabilityBinding(model)) {
                 ForEach(AIModelCapability.allCases) { capability in
-                    Text(capability.displayName).tag(capability)
+                    Label(capability.displayName, systemImage: capability.systemImage)
+                        .tag(capability)
                 }
             }
             .labelsHidden()
-            .frame(width: 132)
+            .frame(width: 148)
 
             // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
             // 齿轮按钮 → 弹出模型参数编辑 popover。锚定到 plain Button 而不是
