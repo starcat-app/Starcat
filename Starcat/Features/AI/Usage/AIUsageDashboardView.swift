@@ -452,8 +452,20 @@ struct AIUsageDashboardView: View {
     }
 
     private func duration(_ milliseconds: Int) -> String {
-        if milliseconds < 1_000 { return "\(milliseconds) ms" }
-        return String(format: "%.1f s", Double(milliseconds) / 1_000)
+        let duration = Duration.milliseconds(milliseconds)
+        if milliseconds < 1_000 {
+            return duration.formatted(
+                .units(allowed: [.milliseconds], width: .abbreviated).locale(locale)
+            )
+        }
+        return duration.formatted(
+            .units(
+                allowed: [.seconds],
+                width: .abbreviated,
+                fractionalPart: .show(length: 1)
+            )
+            .locale(locale)
+        )
     }
 
     private func statusTitle(_ rawValue: String) -> LocalizedStringKey {
