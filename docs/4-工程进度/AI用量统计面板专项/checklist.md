@@ -36,8 +36,8 @@
 
 ## 4. 查询与展示
 
-- [ ] 新增 Today / 7 天 / 30 天 / 全部时间范围查询和功能 / Provider / 模型筛选。
-- [ ] 新增总览指标：总 token、输入 token、输出 token、API 调用次数、Embedding item 数、可用率。
+- [x] 新增 Today / 7 天 / 30 天 / 全部时间范围查询和功能 / Provider / 模型筛选。
+- [x] 新增总览指标：总 token、输入 token、输出 token、API 调用次数、Embedding item 数、可用率。
 - [ ] 新增按日趋势图，区分输入 / 输出 token，并显示调用次数。
 - [ ] 新增功能分布与模型分布，支持从图表联动筛选明细。
 - [ ] 新增最近调用明细，展示时间、功能、模型、状态、耗时、token 与 usage 来源。
