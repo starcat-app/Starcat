@@ -158,6 +158,20 @@ struct RepoAICodeContextRequestTests {
         #expect(store.retainedSessionCount == 2)
     }
 
+    @Test("摘要面板关闭后才会进入侧栏后台任务列表")
+    func summaryBackgroundTasksAppearOnlyWhenPanelHidden() throws {
+        let store = try makeInsightSessionStore()
+        var repo = Repo.makeMinimal(owner: "acme", name: "demo")
+        repo.id = 42
+
+        store.panelDidAppear(for: repo.id)
+        store.startGeneration(for: repo, includeTags: false)
+        #expect(store.backgroundTasks.isEmpty)
+
+        store.panelDidDisappear(for: repo.id)
+        #expect(store.backgroundTasks.map(\.repo.id) == [repo.id])
+    }
+
     /// 使用真实内存仓储装配 Store，只验证 session 身份与生命周期，不触发网络或 Keychain。
     private func makeInsightSessionStore(
         maxIdleSessionCount: Int = RepoAIInsightSessionStore.defaultMaxIdleSessionCount

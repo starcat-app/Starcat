@@ -83,6 +83,11 @@ struct RepoAIFloatingOverlay: View {
         .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineGenerateSummaryRequested)) { notification in
             handleExternalSummaryRequest(notification)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineOpenRequested)) { notification in
+            guard let repoID = notification.userInfo?["repoId"] as? Repo.ID,
+                  repoID == repo.id else { return }
+            presentation = .expanded
+        }
         .onExitCommand {
             guard presentation.isPanelVisible else { return }
             presentation = .collapsed
@@ -236,6 +241,8 @@ extension Notification.Name {
     /// 这个通知只面向 inline overlay。旧的独立 AI window 仍可被历史入口打开，
     /// 但 Browser Plugin 的 generate-summary 动作必须落到当前详情页入口。
     static let repoAIInlineGenerateSummaryRequested = Notification.Name("StarcatRepoAIInlineGenerateSummaryRequested")
+    /// 侧栏后台摘要任务点击后，只展开对应 repo 的摘要面板，不重复发起生成。
+    static let repoAIInlineOpenRequested = Notification.Name("StarcatRepoAIInlineOpenRequested")
 }
 
 private extension View {

@@ -65,6 +65,10 @@ final class BatchAIQueueService {
     /// 用户主动取消标志位：在 processNext 循环开始处轮询，命中即跳出。
     private var cancelRequested: Bool = false
 
+    /// 当前串行队列 Task。普通“取消”保持协作式语义；手动任务抢占自动任务时，
+    /// 通过本句柄取消 in-flight AI 请求并等待旧循环完全退出，避免两轮并发写库。
+    private var runLoopTask: Task<Void, Never>?
+
     /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
     private var hasPendingTagsChangedNotification: Bool = false
 
@@ -180,7 +184,7 @@ final class BatchAIQueueService {
         self.startedAt = Date()
         self.currentJobId = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
-        Task { await runLoop() }
+        launchRunLoop()
     }
 
     /// 暂停。当前 job 跑完即停；不杀进行中的 AI 调用（强中断会触发 partial 状态难处理）。
@@ -195,7 +199,7 @@ final class BatchAIQueueService {
         guard isRunning, isPaused else { return }
         isPaused = false
         AppLog.ai.notice("[batch-ai] resumed")
-        Task { await runLoop() }
+        launchRunLoop()
     }
 
     /// 取消整批。
@@ -220,6 +224,19 @@ final class BatchAIQueueService {
         let removed = jobs.filter { $0.status == .queued }.count
         jobs.removeAll { $0.status == .queued }
         AppLog.ai.notice("[batch-ai] cancel requested, cleared \(removed, privacy: .public) queued jobs")
+    }
+
+    /// 用户明确启动手动整理时，强制抢占正在运行的自动整理轮次。
+    ///
+    /// 与面板里的普通 `cancel()` 不同：这里会取消当前 AI await，并等待旧 runLoop
+    /// 完全退出后才返回。调用方随后启动手动批次，保证“用户操作 > 自动后台任务”，
+    /// 同时避免两个批次共享同一 jobs / options 状态。
+    func preemptAutomaticRunForManualStart() async {
+        guard isRunning, silent else { return }
+        cancel()
+        let task = runLoopTask
+        task?.cancel()
+        await task?.value
     }
 
     /// UI 派生：true 时显示"正在终止当前 AI 调用..."提示。
@@ -253,7 +270,7 @@ final class BatchAIQueueService {
             isRunning = true
             isPaused = false
             cancelRequested = false
-            Task { await runLoop() }
+            launchRunLoop()
         }
     }
 
@@ -271,11 +288,20 @@ final class BatchAIQueueService {
             isRunning = true
             isPaused = false
             cancelRequested = false
-            Task { await runLoop() }
+            launchRunLoop()
         }
     }
 
     // MARK: - 主循环
+
+    private func launchRunLoop() {
+        guard runLoopTask == nil else { return }
+        runLoopTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runLoop()
+            self.runLoopTask = nil
+        }
+    }
 
     /// 串行拉取 queued 的 job 处理，直到全部进入终态、被暂停或被取消。
     ///

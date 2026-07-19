@@ -275,6 +275,14 @@ struct RepoAIWindowContentView: View {
                 .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
                 .allowsHitTesting(false)
         }
+        .onAppear {
+            // 内联浮层与独立窗口都走同一内容 View；用引用计数记录可见性，
+            // 只有所有摘要面板都关闭时，运行任务才进入 Sidebar 后台任务区。
+            dependencies.repoAIInsightSessionStore.panelDidAppear(for: repo.id)
+        }
+        .onDisappear {
+            dependencies.repoAIInsightSessionStore.panelDidDisappear(for: repo.id)
+        }
         .task(id: repo.id) {
             // R-01 §3.2.7 Step 8：第一次 task 触发时冻结 star 状态。
             // 窗口可能在 task 期间被切换 repo（id 变化触发 task 重跑），那种情况
@@ -2097,6 +2105,14 @@ struct RepoAIWindowContentView: View {
             ))
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            if reason == .archiveTooLarge {
+                Button("codeGraph.archiveLimit.adjust") {
+                    openCodeContextSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
         .padding(10)
         .background(

@@ -20,7 +20,7 @@ struct RepoContextStorageTests {
         #expect(RepoContextGenerationStep.map(.packingContext) == .packing)
         #expect(RepoContextGenerationState.preparing(.packing).isActive)
         #expect(!RepoContextGenerationState.succeeded(cacheHit: true).isActive)
-        #expect(!RepoContextGenerationState.failed("failure").isActive)
+        #expect(!RepoContextGenerationState.failed(message: "failure", reason: nil).isActive)
         #expect(!RepoContextGenerationState.cancelled.isActive)
     }
 
@@ -42,7 +42,7 @@ struct RepoContextStorageTests {
             .idle,
             .preparing(.downloading),
             .succeeded(cacheHit: false),
-            .failed("failure"),
+            .failed(message: "failure", reason: .archiveTooLarge),
             .cancelled,
         ]
 

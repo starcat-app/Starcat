@@ -530,14 +530,24 @@ final class RepoAIInsightViewModel {
 /// 空闲会话（无 running task）受 LRU 上限约束，避免「看过的仓」永久钉在内存里；
 /// 正在生成的会话永不淘汰，直到任务结束或用户切换账号。
 @MainActor
+@Observable
 final class RepoAIInsightSessionStore {
     private struct RunningTask {
         let id: UUID
+        let repo: Repo
         let task: Task<Void, Never>
+        var wasBackgrounded: Bool
+    }
+
+    private struct FinishedTask {
+        let repo: Repo
+        let state: RepoAISummaryBackgroundTask.State
     }
 
     /// 生产默认空闲会话上限；测试可注入更小值验证淘汰。
     static let defaultMaxIdleSessionCount = 24
+    /// 后台摘要完成/失败后保留一小段时间，给用户确认结果并支持点击返回。
+    static let finishedTaskRetention: Duration = .seconds(5)
 
     private let service: RepoAIInsightService
     private let tagRepository: any TagRepositoryProtocol
@@ -545,6 +555,10 @@ final class RepoAIInsightSessionStore {
     private let maxIdleSessionCount: Int
     private var viewModels: [Repo.ID: RepoAIInsightViewModel] = [:]
     private var runningTasks: [Repo.ID: RunningTask] = [:]
+    private var finishedTasks: [Repo.ID: FinishedTask] = [:]
+    private var finishedExpiryTasks: [Repo.ID: Task<Void, Never>] = [:]
+    /// 同一 repo 可能同时开着内联面板和独立窗口，因此不能只存 Bool。
+    private var visiblePanelCounts: [Repo.ID: Int] = [:]
     /// 最近访问的空闲/活跃 repo，队尾最新；淘汰只扫无 running task 的前缀。
     private var lruOrder: [Repo.ID] = []
 
@@ -584,14 +598,59 @@ final class RepoAIInsightSessionStore {
     func startGeneration(for repo: Repo, includeTags: Bool) {
         guard runningTasks[repo.id] == nil else { return }
 
+        finishedExpiryTasks[repo.id]?.cancel()
+        finishedExpiryTasks[repo.id] = nil
+        finishedTasks[repo.id] = nil
         let viewModel = viewModel(for: repo.id)
         let taskID = UUID()
         let task = Task { [weak self, viewModel] in
             await viewModel.generate(repo: repo, includeTags: includeTags)
             self?.finishGeneration(for: repo.id, taskID: taskID)
         }
-        runningTasks[repo.id] = RunningTask(id: taskID, task: task)
+        runningTasks[repo.id] = RunningTask(
+            id: taskID,
+            repo: repo,
+            task: task,
+            wasBackgrounded: visiblePanelCounts[repo.id, default: 0] == 0
+        )
         touch(repo.id)
+    }
+
+    /// 摘要面板挂载/卸载时维护引用计数；任务只在所有面板都不可见时进入 Sidebar。
+    func panelDidAppear(for repoID: Repo.ID) {
+        visiblePanelCounts[repoID, default: 0] += 1
+    }
+
+    func panelDidDisappear(for repoID: Repo.ID) {
+        let next = max(0, visiblePanelCounts[repoID, default: 0] - 1)
+        if next == 0 {
+            visiblePanelCounts[repoID] = nil
+            if var running = runningTasks[repoID] {
+                running.wasBackgrounded = true
+                runningTasks[repoID] = running
+            }
+        } else {
+            visiblePanelCounts[repoID] = next
+        }
+    }
+
+    /// Sidebar 只展示面板不可见的运行任务，以及曾进入后台的短暂完成态。
+    var backgroundTasks: [RepoAISummaryBackgroundTask] {
+        let running = runningTasks.values.compactMap { entry -> RepoAISummaryBackgroundTask? in
+            guard visiblePanelCounts[entry.repo.id, default: 0] == 0 else { return nil }
+            let phase = viewModels[entry.repo.id]?.phase
+            return RepoAISummaryBackgroundTask(repo: entry.repo, state: .running(phase))
+        }
+        let finished = finishedTasks.values.compactMap { entry -> RepoAISummaryBackgroundTask? in
+            guard visiblePanelCounts[entry.repo.id, default: 0] == 0 else { return nil }
+            return RepoAISummaryBackgroundTask(repo: entry.repo, state: entry.state)
+        }
+        return (running + finished).sorted { lhs, rhs in
+            if lhs.state.sortPriority != rhs.state.sortPriority {
+                return lhs.state.sortPriority < rhs.state.sortPriority
+            }
+            return lhs.repo.fullName.localizedCaseInsensitiveCompare(rhs.repo.fullName) == .orderedAscending
+        }
     }
 
     /// 登录用户变化时清空所有进程内状态，防止旧账号摘要状态显示到新账号。
@@ -603,6 +662,10 @@ final class RepoAIInsightSessionStore {
         runningTasks.removeAll()
         viewModels.values.forEach { $0.invalidateForSessionStoreReset() }
         viewModels.removeAll()
+        finishedTasks.removeAll()
+        finishedExpiryTasks.values.forEach { $0.cancel() }
+        finishedExpiryTasks.removeAll()
+        visiblePanelCounts.removeAll()
         lruOrder.removeAll()
         tasks.forEach { $0.cancel() }
         for task in tasks {
@@ -614,10 +677,26 @@ final class RepoAIInsightSessionStore {
     var retainedSessionCount: Int { viewModels.count }
 
     private func finishGeneration(for repoID: Repo.ID, taskID: UUID) {
-        guard runningTasks[repoID]?.id == taskID else { return }
+        guard let running = runningTasks[repoID], running.id == taskID else { return }
         runningTasks[repoID] = nil
+        if running.wasBackgrounded {
+            let state: RepoAISummaryBackgroundTask.State =
+                viewModels[repoID]?.errorMessage == nil ? .completed : .failed
+            finishedTasks[repoID] = FinishedTask(repo: running.repo, state: state)
+            scheduleFinishedTaskExpiry(for: repoID)
+        }
         // 任务结束后才允许按空闲上限淘汰；生成中的仓必须始终可切回。
         evictIdleSessionsIfNeeded()
+    }
+
+    private func scheduleFinishedTaskExpiry(for repoID: Repo.ID) {
+        finishedExpiryTasks[repoID]?.cancel()
+        finishedExpiryTasks[repoID] = Task { [weak self] in
+            try? await Task.sleep(for: Self.finishedTaskRetention)
+            guard !Task.isCancelled else { return }
+            self?.finishedTasks[repoID] = nil
+            self?.finishedExpiryTasks[repoID] = nil
+        }
     }
 
     private func touch(_ repoID: Repo.ID) {
@@ -646,6 +725,27 @@ final class RepoAIInsightSessionStore {
             index += 1
         }
     }
+}
+
+/// Sidebar 使用的单仓摘要后台任务只读快照。
+struct RepoAISummaryBackgroundTask: Identifiable {
+    enum State: Equatable {
+        case running(SummaryPhase?)
+        case completed
+        case failed
+
+        fileprivate var sortPriority: Int {
+            switch self {
+            case .running: 0
+            case .failed: 1
+            case .completed: 2
+            }
+        }
+    }
+
+    var id: Repo.ID { repo.id }
+    let repo: Repo
+    let state: State
 }
 
 private extension String {

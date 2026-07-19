@@ -914,7 +914,11 @@ struct HomeView: View {
     /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
     /// 这里复用 Search Center 本地结果跳转语义：切到 Manage / All Stars，清空搜索，
     /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
-    private func openCompanionRepository(_ repo: Repo, generateSummary: Bool = false) {
+    private func openCompanionRepository(
+        _ repo: Repo,
+        generateSummary: Bool = false,
+        openSummaryPanel: Bool = false
+    ) {
         selectedSidebarPage = .manage
         viewModel.selection = .allStars
         viewModel.submitSearch("")
@@ -922,19 +926,20 @@ struct HomeView: View {
             await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
             viewModel.shouldScrollSelectedRepoIntoView = true
             viewModel.selectedRepoID = repo.id
-            guard generateSummary else { return }
+            guard generateSummary || openSummaryPanel else { return }
             NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
-            dependencies.telemetryManager.track(
-                .aiPanelOpened,
-                properties: [.source: .string("browser-plugin")]
-            )
+            dependencies.telemetryManager.track(.aiPanelOpened, properties: [
+                .source: .string(generateSummary ? "browser-plugin" : "sidebar-background-task")
+            ])
             // 详情页底部横条入口随 selectedRepoID 渲染；排到下一轮 main queue 再发请求，
             // 避免通知早于 RepoAIFloatingOverlay 挂载而被丢弃。
             let repoID = repo.id
             await MainActor.run {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
-                        name: .repoAIInlineGenerateSummaryRequested,
+                        name: generateSummary
+                            ? .repoAIInlineGenerateSummaryRequested
+                            : .repoAIInlineOpenRequested,
                         object: nil,
                         userInfo: ["repoId": repoID]
                     )
@@ -1122,6 +1127,9 @@ struct HomeView: View {
             onSelectRootPage: selectSidebarRootPage,
             onShowBatchAIPanel: {
                 showBatchAIPanel = true
+            },
+            onOpenSummaryTask: { repo in
+                openCompanionRepository(repo, openSummaryPanel: true)
             },
             // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
             currentTrendingRepo: selectedTrendingRepo,
@@ -1818,6 +1826,9 @@ struct HomeView: View {
             return
         }
         guard !untagged.isEmpty else { return }
+        // 用户主动整理优先于静默自动轮次。必须等待旧 runLoop 完全退出后再复用
+        // BatchAIQueueService，避免两轮同时改写 jobs / options 和标签数据。
+        await dependencies.batchAIQueueService.preemptAutomaticRunForManualStart()
         dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
         showBatchAIPanel = true
     }

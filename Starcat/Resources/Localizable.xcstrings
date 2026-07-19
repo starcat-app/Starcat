@@ -46382,6 +46382,23 @@
         }
       }
     },
+    "settings.integration.codebaseMemory.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tree-sitter index + browser-based 3D visualization"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Tree-sitter 构建索引，并通过浏览器展示 3D 可视化图谱。"
+          }
+        }
+      }
+    },
     "settings.integration.codeFlow.actionFailedTitle": {
       "extractionState": "manual",
       "localizations": {
@@ -55636,6 +55653,102 @@
         }
       }
     },
+    "sidebar.background.manual.runningFormat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual AI tidy %1$lld/%2$lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动 AI 整理中 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "sidebar.background.manual.tooltip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View the manual AI tidy queue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看手动 AI 整理队列"
+          }
+        }
+      }
+    },
+    "sidebar.background.summary.completed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summary completed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要已完成"
+          }
+        }
+      }
+    },
+    "sidebar.background.summary.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI summary failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要生成失败"
+          }
+        }
+      }
+    },
+    "sidebar.background.summary.running": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generating AI summary"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 摘要生成中"
+          }
+        }
+      }
+    },
+    "sidebar.background.summary.tooltip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open this repository and show its AI summary"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开该仓库并展开 AI 摘要"
+          }
+        }
+      }
+    },
     "sidebar.clearSelectedTags": {
       "localizations": {
         "en": {
@@ -62251,7 +62364,6 @@
         }
       }
     },
-    "Tree-sitter index + browser-based 3D visualization": {},
     "trending.aiScore": {
       "extractionState": "stale",
       "localizations": {

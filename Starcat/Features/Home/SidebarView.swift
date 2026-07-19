@@ -103,6 +103,8 @@ struct SidebarView: View {
     /// HOM-126 follow-up：Sidebar 自动整理 popover 的「查看队列」入口。
     /// 由 HomeView 承载 sheet 状态，Sidebar 只发起动作，避免左栏持有批量整理面板。
     var onShowBatchAIPanel: (() -> Void)?
+    /// 后台单仓摘要点击后，由 HomeView 负责切换到目标 repo 并展开摘要面板。
+    var onOpenSummaryTask: ((Repo) -> Void)?
 
     /// 当前在 Trending 页面选中的 repo，仅用于透传给 `SidebarHeaderView` 让头像背景的
     /// 语言色在 Trending 页也能联动（2026-06-02 21:38 接入）。Manage 页面应为 nil。
@@ -197,10 +199,9 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             sidebarFixedHeader
             sidebarList
-            // HOM-126：自动整理底部轻量指示。仅当调度器正在跑「自动模式」时显示，
-            // 跑完自动消失。视觉权重故意做小（10pt 字 + 浅灰背景 + 单行）—
-            // 自动整理本意是"用户感知不到地完成"，强提示反而违反设计。
-            autoTidyFooter
+            // 后台任务区统一承载自动/手动整理与面板已关闭的单仓摘要。
+            // 手动整理会抢占本轮自动整理，因此两者不会同时出现。
+            backgroundTaskFooter
         }
         .background(.bar)
         .sheet(isPresented: $showLoginSheet) {
@@ -226,6 +227,135 @@ struct SidebarView: View {
     }
 
     // MARK: - HOM-126：自动整理底部指示
+
+    @ViewBuilder
+    private var backgroundTaskFooter: some View {
+        let batchService = dependencies.batchAIQueueService
+        let summaryTasks = dependencies.repoAIInsightSessionStore.backgroundTasks
+
+        if (batchService.isRunning && !batchService.silent) || !summaryTasks.isEmpty
+            || autoTidyScheduler.isAutoTidyRunning {
+            VStack(spacing: 0) {
+                let showsBatchRow = (batchService.isRunning && !batchService.silent)
+                    || autoTidyScheduler.isAutoTidyRunning
+                if batchService.isRunning && !batchService.silent {
+                    manualBatchFooter
+                } else {
+                    autoTidyFooter
+                }
+
+                if !summaryTasks.isEmpty {
+                    if showsBatchRow {
+                        Divider()
+                    }
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(summaryTasks) { task in
+                                summaryTaskRow(task)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 132)
+                }
+            }
+            .background(Color.secondary.opacity(0.06))
+            .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private var manualBatchFooter: some View {
+        let service = dependencies.batchAIQueueService
+        return Button {
+            onShowBatchAIPanel?()
+        } label: {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 12, height: 12)
+                Text(String(
+                    format: String.l10n("sidebar.background.manual.runningFormat"),
+                    service.finishedCount,
+                    service.totalCount
+                ))
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .monospacedDigit()
+                Spacer(minLength: 0)
+                Image(systemName: "rectangle.stack")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .help(Text("sidebar.background.manual.tooltip"))
+    }
+
+    private func summaryTaskRow(_ task: RepoAISummaryBackgroundTask) -> some View {
+        Button {
+            onOpenSummaryTask?(task.repo)
+        } label: {
+            HStack(spacing: 8) {
+                summaryTaskIcon(task.state)
+                    .frame(width: 14, height: 14)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: task.repo.fullName)
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(summaryTaskStatusKey(task.state))
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text("sidebar.background.summary.tooltip"))
+    }
+
+    @ViewBuilder
+    private func summaryTaskIcon(_ state: RepoAISummaryBackgroundTask.State) -> some View {
+        switch state {
+        case .running:
+            ProgressView()
+                .controlSize(.mini)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func summaryTaskStatusKey(
+        _ state: RepoAISummaryBackgroundTask.State
+    ) -> LocalizedStringKey {
+        switch state {
+        case .running:
+            "sidebar.background.summary.running"
+        case .completed:
+            "sidebar.background.summary.completed"
+        case .failed:
+            "sidebar.background.summary.failed"
+        }
+    }
 
     /// 自动整理"占位行 + 实时进度"。
     ///
@@ -267,7 +397,6 @@ struct SidebarView: View {
             .focusEffectDisabled()
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(Color.secondary.opacity(0.06))
             .help(Text("sidebar.autoTidy.tooltip"))
             .onHover { hovering in
                 if hovering {

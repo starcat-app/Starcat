@@ -324,7 +324,8 @@ enum RepoContextGenerationState: Equatable, Sendable {
     case idle
     case preparing(RepoContextGenerationStep)
     case succeeded(cacheHit: Bool)
-    case failed(String)
+    /// 保留结构化降级原因，避免 UI 通过本地化后的 message 反推是否应展示恢复操作。
+    case failed(message: String, reason: ContextDegradationReason?)
     case cancelled
 
     var isActive: Bool {
@@ -533,9 +534,12 @@ private final class KnowledgeRAGBrowserViewModel {
                 case .degraded(let reason):
                     // 知识库主动生成与单仓 AI 共用项目上下文 ZIP 阈值；超限时必须把
                     // 当前配置值直接告诉用户，不能回退到历史固定 100MB 文案。
-                    repoContextGenerationState = .failed(reason.bannerMessage(
-                        maximumArchiveMB: dependencies.settings.aiRepoContextMaximumArchiveMB
-                    ))
+                    repoContextGenerationState = .failed(
+                        message: reason.bannerMessage(
+                            maximumArchiveMB: dependencies.settings.aiRepoContextMaximumArchiveMB
+                        ),
+                        reason: reason
+                    )
                 }
                 repoContextGenerationIdentity = nil
                 repoContextGenerationTask = nil
@@ -554,7 +558,10 @@ private final class KnowledgeRAGBrowserViewModel {
                     currentID: repoContextGenerationIdentity?.id,
                     selectedRepoID: selectedRepoID
                 ) else { return }
-                repoContextGenerationState = .failed(error.localizedDescription)
+                repoContextGenerationState = .failed(
+                    message: error.localizedDescription,
+                    reason: nil
+                )
                 repoContextGenerationTask = nil
                 repoContextGenerationRepo = nil
             }
@@ -1008,6 +1015,7 @@ private struct KnowledgeRAGBrowserView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
     @State private var editingChunk: RAGManagedChunk?
     @State private var editingRepoContext: RepoContextDocument?
     @State private var inspectingHit: RAGRetrievalHitInspection?
@@ -2114,15 +2122,25 @@ private struct KnowledgeRAGBrowserView: View {
             )
             .font(.caption.weight(.semibold))
             .foregroundStyle(.green)
-        case .failed(let message):
-            Label {
-                Text(verbatim: message)
-            } icon: {
-                Image(systemName: "exclamationmark.triangle.fill")
-            }
-                .font(.caption)
-                .foregroundStyle(.red)
+        case .failed(let message, let reason):
+            HStack(spacing: 8) {
+                Label {
+                    Text(verbatim: message)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
                 .textSelection(.enabled)
+                .foregroundStyle(.red)
+                Spacer(minLength: 8)
+                if reason == .archiveTooLarge {
+                    Button("codeGraph.archiveLimit.adjust") {
+                        settingsNavigation("ai.repoContext")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .font(.caption)
         }
     }
 

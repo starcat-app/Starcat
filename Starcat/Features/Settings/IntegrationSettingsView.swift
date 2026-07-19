@@ -131,7 +131,7 @@ struct IntegrationSettingsTab: View {
             }
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Tree-sitter index + browser-based 3D visualization")
+                    Text("settings.integration.codebaseMemory.subtitle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -727,23 +727,28 @@ struct IntegrationSettingsTab: View {
                         .focusEffectDisabled()
                         .help(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show")
                         .accessibilityLabel(Text(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show"))
-
-                        Button {
-                            testExternalSearchAPIKey(provider)
-                        } label: {
-                            if externalSearchAPIKeyTestStates[provider] == .testing {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Text("settings.externalSearch.apiKey.test")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                        .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
                     }
+                }
 
+                // 测试是独立操作，按设置页规范右对齐；结果与错误留在同行左侧，
+                // 用户无需在 API Key 输入行和下方反馈之间来回寻找状态。
+                HStack(alignment: .center, spacing: 8) {
                     externalSearchAPIKeyTestFeedback(provider)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button {
+                        testExternalSearchAPIKey(provider)
+                    } label: {
+                        if externalSearchAPIKeyTestStates[provider] == .testing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("settings.externalSearch.apiKey.test")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
                 }
             }
         }
