@@ -189,6 +189,11 @@ struct AISettingsTab: View {
             Text("settings.aiIndex.rebuildAll.confirmMessage")
         }
         .formStyle(.grouped)
+        // Placeholders popover 锚在 Prompt 区按钮上：Form 一滚就关，避免锚点滚走后浮层悬空。
+        .onScrollPhaseChange { _, newPhase in
+            guard newPhase != .idle else { return }
+            isPromptPlaceholderPopoverPresented = false
+        }
         .task {
             ensureSelection()
             loadAPIKeys()

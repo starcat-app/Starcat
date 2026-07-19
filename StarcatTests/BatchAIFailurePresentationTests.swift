@@ -147,6 +147,43 @@ struct BatchAIFailurePresentationTests {
         #expect(detail.contains("\n  \"messages\" : ["))
     }
 
+    @Test("展开详情只保留 HTTP 摘要，复制诊断保留请求与响应")
+    func displayDiagnosticExcludesPayloadWhileCopyKeepsIt() {
+        let full = """
+        HTTP 402 payment required
+        URL: https://api.deepseek.com/v1/chat/completions
+        Content-Type: application/json
+
+        Response JSON:
+        {
+          "error" : "Insufficient Balance"
+        }
+
+        Request JSON:
+        {
+          "model" : "deepseek-chat"
+        }
+        """
+        let display = BatchAIQueueService.displayFailureDiagnostic(
+            from: full,
+            shortMessage: String.l10n("ai.client.error.paymentRequired")
+        )
+        #expect(display?.contains("HTTP 402") == true)
+        #expect(display?.contains("api.deepseek.com") == true)
+        #expect(display?.contains("Response JSON") == false)
+        #expect(display?.contains("Request JSON") == false)
+
+        let report = BatchAIQueueService.copyableFailureReport(
+            repoFullName: "owner/repo",
+            message: String.l10n("ai.client.error.paymentRequired"),
+            diagnostic: full
+        )
+        #expect(report.contains("Response JSON"))
+        #expect(report.contains("Insufficient Balance"))
+        #expect(report.contains("Request JSON"))
+        #expect(report.contains("deepseek-chat"))
+    }
+
     @Test("失败交换缓存禁止 nil/nil 通配取走，避免并发错绑")
     func failureExchangeStoreRejectsWildcardTake() {
         let url = URL(string: "https://api.deepseek.com/v1/chat/completions")!

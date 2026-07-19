@@ -70,8 +70,9 @@ echo "✓ 生产 Nginx 配置已部署并重载完成"
 # 确保远程目录存在
 "${SSH_CMD[@]}" "$REMOTE_HOST" "mkdir -p $REMOTE_WEB_DIR"
 
-# rsync 同步 pages/direct/ 目录下的静态文件
-# --delete: 删除远程多余文件，保持完全一致
+# rsync 同步 pages/direct/ 目录下由官网部署维护的静态文件。
+# downloads/ 与 appcast.xml 由 release-direct.sh 单独维护，必须排除，避免官网部署
+# 的 --delete 删除已发布 DMG，或用仓库里的旧 feed 覆盖线上 Sparkle 更新信息。
 echo "正在同步文件..."
 rsync -avz --delete --progress \
     -e "$RSYNC_SSH" \
@@ -79,6 +80,8 @@ rsync -avz --delete --progress \
     --exclude '*.log' \
     --exclude 'node_modules' \
     --exclude 'starcat.ink.conf' \
+    --exclude 'downloads/' \
+    --exclude 'appcast.xml' \
     "$SCRIPT_DIR/" \
     "$REMOTE_HOST:$REMOTE_WEB_DIR/"
 

@@ -118,8 +118,13 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     /// 失败语义（status == .failed 时填）。UI 在渲染时才按当前应用语言生成短文案。
     var failure: BatchAIFailure?
 
-    /// 可展开的诊断详情（已脱敏）。与动态短文案不同时才在 UI 展示「查看详情」。
+    /// 可展开的短诊断（已脱敏），只保留 HTTP / URL / Content-Type 等摘要。
+    /// 这里禁止存 Request / Response payload，避免 SwiftUI 展开时渲染超长文本。
     var errorDiagnostic: String?
+
+    /// 仅供用户点击「复制详情」时读取的完整诊断，包含格式化 Request / Response JSON。
+    /// 与 `errorDiagnostic` 分开保存，确保展开区保持轻量。
+    var copyDiagnostic: String?
 
     /// 成功应用的标签名（status == .completed 时填）。
     /// 用 [String] 而非 [Tag]，避免 ViewModel 跨线程持有 GRDB 实体。
@@ -148,6 +153,7 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
               lhs.attempts == rhs.attempts,
               lhs.failure == rhs.failure,
               lhs.errorDiagnostic == rhs.errorDiagnostic,
+              lhs.copyDiagnostic == rhs.copyDiagnostic,
               lhs.appliedTagNames == rhs.appliedTagNames,
               lhs.finishedAt == rhs.finishedAt,
               lhs.didGenerateSummary == rhs.didGenerateSummary,

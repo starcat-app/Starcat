@@ -150,14 +150,33 @@ struct AIModelListView: View {
             Spacer(minLength: 8)
 
             // 能力是目录标签：Chat/Embedding 参与任务路由，其余（含 Unknown）仅分类。
-            // Label + SF Symbol 让类型一眼可辨；frame 略加宽给图标留位。
-            Picker("", selection: capabilityBinding(model)) {
-                ForEach(AIModelCapability.allCases) { capability in
-                    Label(capability.displayName, systemImage: capability.systemImage)
-                        .tag(capability)
+            // 不用裸 Picker：macOS popup button 会把选中项 SF Symbol 放大，和下拉菜单
+            // 里的小图标不一致。改用 Menu + inline Picker（同 UnifiedSortMenu），label
+            // 自行控制图标字号，与菜单项对齐。
+            Menu {
+                Picker("", selection: capabilityBinding(model)) {
+                    ForEach(AIModelCapability.allCases) { capability in
+                        Label(capability.displayName, systemImage: capability.systemImage)
+                            .tag(capability)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                let capability = capabilityBinding(model).wrappedValue
+                HStack(spacing: 6) {
+                    Image(systemName: capability.systemImage)
+                        .font(.body)
+                        .imageScale(.small)
+                    Text(capability.displayName)
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .labelsHidden()
+            .menuIndicator(.hidden)
             .frame(width: 148)
 
             // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：

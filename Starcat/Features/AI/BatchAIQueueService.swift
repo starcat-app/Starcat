@@ -266,6 +266,7 @@ final class BatchAIQueueService {
         jobs[idx].attempts = 0
         jobs[idx].failure = nil
         jobs[idx].errorDiagnostic = nil
+        jobs[idx].copyDiagnostic = nil
         jobs[idx].finishedAt = nil
         if !isRunning {
             isRunning = true
@@ -283,6 +284,7 @@ final class BatchAIQueueService {
             jobs[idx].attempts = 0
             jobs[idx].failure = nil
             jobs[idx].errorDiagnostic = nil
+            jobs[idx].copyDiagnostic = nil
             jobs[idx].finishedAt = nil
             touched = true
         }
@@ -354,6 +356,7 @@ final class BatchAIQueueService {
                     jobs[idx].status = .failed
                     jobs[idx].failure = .cancelled
                     jobs[idx].errorDiagnostic = nil
+                    jobs[idx].copyDiagnostic = nil
                     jobs[idx].finishedAt = now
                 }
             }
@@ -539,9 +542,16 @@ final class BatchAIQueueService {
         )
         let failure = BatchAIFailure(error: error)
         let shortMessage = failure.localizedMessage
-        let diagnostic = Self.failureDiagnostic(for: error, friendly: friendly, shortMessage: shortMessage)
-        // `diagnostic` 现在可能包含完整 prompt 与服务商 response body，只能在用户主动
-        // 展开 / 复制时使用，不能写入持久化日志或 Console。
+        let copyDiagnostic = Self.copyFailureDiagnostic(
+            for: error,
+            friendly: friendly,
+            shortMessage: shortMessage
+        )
+        let diagnostic = Self.displayFailureDiagnostic(
+            from: copyDiagnostic,
+            shortMessage: shortMessage
+        )
+        // 完整 payload 只能在用户主动复制时使用，不能写入持久化日志或 Console。
         AppLog.ai.error(
             "[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(shortMessage, privacy: .public)"
         )
@@ -551,6 +561,7 @@ final class BatchAIQueueService {
             jobs[idx].status = .failed
             jobs[idx].failure = failure
             jobs[idx].errorDiagnostic = diagnostic
+            jobs[idx].copyDiagnostic = copyDiagnostic
             jobs[idx].finishedAt = Date()
         } else {
             // 可重试：回退到 queued，主循环下一轮会重新拉取（重试次数已在 processNext 入口 +1）。
@@ -563,8 +574,20 @@ final class BatchAIQueueService {
         BatchAIFailure(error: error).localizedMessage
     }
 
-    /// 可展开详情：结构化诊断（已脱敏）；与短文案不同时才返回。
+    /// 可展开详情：只保留结构化摘要，不包含 Request / Response payload。
     static func failureDiagnostic(
+        for error: Error,
+        friendly: UserFacingError,
+        shortMessage: String
+    ) -> String? {
+        displayFailureDiagnostic(
+            from: copyFailureDiagnostic(for: error, friendly: friendly, shortMessage: shortMessage),
+            shortMessage: shortMessage
+        )
+    }
+
+    /// 复制专用完整诊断：保留格式化 Request / Response JSON。
+    static func copyFailureDiagnostic(
         for error: Error,
         friendly: UserFacingError,
         shortMessage: String
@@ -581,6 +604,23 @@ final class BatchAIQueueService {
             return String(summary.prefix(1197)) + "…"
         }
         return summary
+    }
+
+    /// 从完整诊断中裁掉 payload，只把轻量 HTTP 摘要交给展开区渲染。
+    static func displayFailureDiagnostic(from diagnostic: String?, shortMessage: String) -> String? {
+        guard let diagnostic = diagnostic?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !diagnostic.isEmpty
+        else { return nil }
+
+        let payloadMarkers = ["\n\nResponse JSON:", "\n\nRequest JSON:"]
+        let firstPayload = payloadMarkers
+            .compactMap { diagnostic.range(of: $0)?.lowerBound }
+            .min()
+        let display = firstPayload.map { String(diagnostic[..<$0]) } ?? diagnostic
+        let trimmed = display.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != shortMessage else { return nil }
+        return trimmed
     }
 
     /// 复制到剪贴板的完整失败报告：仓库 + 用户文案 + 诊断详情。

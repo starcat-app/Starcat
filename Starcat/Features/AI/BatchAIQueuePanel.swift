@@ -15,7 +15,8 @@
 //  - 面板用 .sheet 承载：关闭面板不会停止队列（队列继续在后台跑，再开面板可恢复观察），
 //    对应"支持后台继续"验收点。
 //  - 区分三档终态视觉：completed=绿色 / ignored=灰色 / failed=红色，搭配文字补充原因。
-//  - 失败行置顶；主文案只显示用户可读短句，原始诊断放在可展开详情里。
+//  - 失败行置顶；主文案显示用户可读短句，展开区只显示轻量 HTTP 摘要，
+//    完整 Request / Response JSON 仅在用户主动复制时读取。
 //  - 进度条下方「当前任务」行固定高度占位，避免有/无文案时 sheet 跳动。
 //
 
@@ -348,7 +349,8 @@ private struct JobRow: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                // 复制完整报告（仓库 + 短文案 + 诊断）；图标与文案固定占位，避免反馈态撑缩 sheet。
+                // 展开区只渲染短诊断；完整 Request / Response JSON 到用户点击复制时才读取。
+                // 图标与文案固定占位，避免反馈态撑缩 sheet。
                 CopyFeedbackButton(
                     providesContent: { copyableFailureReport },
                     tooltip: "batchAI.panel.row.copyDetails"
@@ -377,12 +379,12 @@ private struct JobRow: View {
         }
     }
 
-    /// 剪贴板内容：短文案 + 结构化诊断，方便粘贴到反馈/issue。
+    /// 剪贴板内容：短文案 + 完整诊断；payload 不参与上方展开区的 Text 渲染。
     private var copyableFailureReport: String {
         BatchAIQueueService.copyableFailureReport(
             repoFullName: job.repoFullName,
             message: failureMessage,
-            diagnostic: job.errorDiagnostic
+            diagnostic: job.copyDiagnostic ?? job.errorDiagnostic
         )
     }
 

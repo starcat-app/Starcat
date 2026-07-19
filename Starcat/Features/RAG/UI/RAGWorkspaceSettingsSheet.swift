@@ -296,6 +296,10 @@ struct RAGWorkspaceSettingsSheet: View {
             Divider()
             actionBar
         }
+        // 切到检索页时底栏入口消失，主动关掉以免 popover 残留。
+        .onChange(of: section) { _, _ in
+            isPlaceholderPopoverPresented = false
+        }
     }
 
     /// 右侧只展示当前分类标题，避免在左栏和内容区重复铺大标题。
@@ -436,6 +440,14 @@ struct RAGWorkspaceSettingsSheet: View {
         }
         .scrollIndicators(.automatic)
         .frame(maxHeight: .infinity)
+        // 底栏 Placeholders 锚点固定，但内容区一滚仍关掉，避免说明浮层盖住正在阅读的模板。
+        .onScrollPhaseChange { _, newPhase in
+            guard newPhase != .idle else { return }
+            isPlaceholderPopoverPresented = false
+        }
+        .onChange(of: tab) { _, _ in
+            isPlaceholderPopoverPresented = false
+        }
     }
 
     private var retrievalSettingsContent: some View {
