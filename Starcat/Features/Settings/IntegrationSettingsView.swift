@@ -61,6 +61,10 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
 
+                RepositoryArchiveLimitNotice(
+                    maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
+                )
+
                 HStack(spacing: 8) {
                     Text(storage.outputDirectoryDisplayPath)
                         .font(.system(.body, design: .monospaced))
@@ -131,6 +135,10 @@ struct IntegrationSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                RepositoryArchiveLimitNotice(
+                    maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
+                )
 
                 HStack(spacing: 8) {
                     Text(codebaseMemoryStorage.outputDirectoryDisplayPath)
