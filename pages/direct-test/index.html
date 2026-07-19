@@ -450,7 +450,8 @@
         .footer-link { cursor: pointer; }
         .footer-link:hover { color: var(--color-text); }
         .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 44px; padding-top: 28px; border-top: 1px solid var(--color-border); }
-        .footer-copyright { font-size: var(--fs-caption); color: var(--color-text-muted); }
+        .footer-copyright { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--fs-caption); color: var(--color-text-muted); }
+        .footer-copyright .footer-link { font-size: var(--fs-caption); }
         .footer-meta { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
         .footer-meta .footer-link { font-size: var(--fs-caption); }
         @media (max-width: 1023px) { .footer-main { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -1198,7 +1199,10 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <div class="footer-copyright">&copy; 2026 Starcat. All rights reserved.</div>
+                <div class="footer-copyright">
+                    <span>&copy; 2026 Starcat. All rights reserved.</span>
+                    <a href="https://beian.miit.gov.cn/#/Integrated/recordQuery" class="footer-link" target="_blank" rel="noopener noreferrer">渝ICP备2026015773号</a>
+                </div>
                 <div class="footer-meta">
                     <a href="https://starcat.ink/privacy.html" class="footer-link">Privacy</a>
                     <a href="https://starcat.ink/eula.html" class="footer-link">EULA</a>

@@ -1873,8 +1873,15 @@
         }
 
         .footer-copyright {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
             font-size: var(--fs-caption);
             color: var(--color-text-muted);
+        }
+        .footer-copyright .footer-link {
+            font-size: var(--fs-caption);
         }
 
         .footer-meta {
@@ -2785,7 +2792,10 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <div class="footer-copyright">&copy; 2026 Starcat. All rights reserved.</div>
+                <div class="footer-copyright">
+                    <span>&copy; 2026 Starcat. All rights reserved.</span>
+                    <a href="https://beian.miit.gov.cn/#/Integrated/recordQuery" class="footer-link" target="_blank" rel="noopener noreferrer">渝ICP备2026015773号</a>
+                </div>
                 <div class="footer-meta">
                     <a href="privacy-zh.html" class="footer-link">隐私</a>
                     <a href="eula-zh.html" class="footer-link">协议</a>
