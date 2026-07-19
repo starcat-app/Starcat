@@ -78,6 +78,7 @@ struct AppStatusToolbarButton: View {
                 browserPluginEndpointURL: "http://127.0.0.1:\(pluginConfiguration.port)",
                 serviceSummary: dependencies.serviceAvailabilityMonitor.summary,
                 diagnosticSummary: diagnosticSummary,
+                aiUsageRepository: dependencies.aiUsageRepository,
                 relativePastDate: relativePastDate,
                 relativeFutureDate: relativeFutureDate,
                 onOpenDiagnostics: { openSettings(tab: "diagnostics") },
@@ -87,6 +88,7 @@ struct AppStatusToolbarButton: View {
                 onOpenServices: { openSettings(tab: "services") },
                 onOpenMCP: { openSettings(tab: "mcp") },
                 onOpenBrowserPlugin: { openSettings(tab: "integrations.browserPlugin") },
+                onOpenAIUsage: { AIUsageWindowController.show(dependencies: dependencies) },
                 onShowBatchAIPanel: onShowBatchAIPanel
             )
             .frame(width: 340)
@@ -222,6 +224,7 @@ private struct AppStatusPanel: View {
     let browserPluginEndpointURL: String
     let serviceSummary: ServiceAvailabilitySummary
     let diagnosticSummary: DiagnosticLogSummary
+    let aiUsageRepository: any AIUsageRepositoryProtocol
     let relativePastDate: (Date) -> String
     let relativeFutureDate: (Date) -> String
     let onOpenDiagnostics: () -> Void
@@ -229,10 +232,13 @@ private struct AppStatusPanel: View {
     let onOpenServices: () -> Void
     let onOpenMCP: () -> Void
     let onOpenBrowserPlugin: () -> Void
+    let onOpenAIUsage: () -> Void
     let onShowBatchAIPanel: (() -> Void)?
 
     @State private var isTaskCancelHovered = false
+    @State private var aiUsageSummary = AIUsageSummary.empty
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -251,6 +257,21 @@ private struct AppStatusPanel: View {
                 title: "toolbar.status.tasks.title",
                 subtitle: taskSubtitle,
                 accessory: { taskAccessory }
+            )
+            statusRow(
+                icon: "chart.bar.xaxis",
+                tint: aiUsageSummary.callCount > 0 ? .accentColor : .secondary,
+                title: "ai.usage.popover.title",
+                subtitle: String(
+                    format: String.l10n("ai.usage.popover.summaryFormat"),
+                    aiUsageSummary.totalTokens.formatted(.number.notation(.compactName).locale(locale)),
+                    aiUsageSummary.callCount
+                ),
+                accessory: {
+                    Button("ai.usage.open") { onOpenAIUsage() }
+                        .controlSize(.small)
+                        .focusEffectDisabled()
+                }
             )
             statusRow(
                 icon: serviceIcon,
@@ -312,6 +333,21 @@ private struct AppStatusPanel: View {
                     accessory: { EmptyView() }
                 )
             }
+        }
+        .task { await loadAIUsageSummary() }
+    }
+
+    private func loadAIUsageSummary() async {
+        do {
+            aiUsageSummary = try await aiUsageRepository.statistics(
+                filter: AIUsageFilter(timeRange: .today),
+                now: Date(),
+                calendar: .current,
+                recentLimit: 1
+            ).summary
+        } catch {
+            // 状态 popover 是轻量入口；查询失败不应该再制造一个全局诊断问题。
+            aiUsageSummary = .empty
         }
     }
 

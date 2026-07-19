@@ -29,6 +29,8 @@ final class AppDependencies {
     // MARK: - 依赖实例（顺序敏感）
 
     let database: any DatabaseManaging
+    /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
+    let aiUsageRepository: any AIUsageRepositoryProtocol
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
     let apiClient: any GitHubAPIClientProtocol
     let oauthService: any GithubOAuthServiceProtocol
@@ -686,6 +688,7 @@ final class AppDependencies {
         // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
         // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
         AIUsageRecorder.shared.configure(database: db)
+        self.aiUsageRepository = GRDBAIUsageRepository(database: db)
 
         let api = GitHubAPIClient()
         self.apiClient = api
