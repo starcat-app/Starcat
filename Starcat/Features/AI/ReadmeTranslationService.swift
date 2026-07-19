@@ -232,7 +232,8 @@ final class ReadmeTranslationService {
             baseURL: profile.baseURL,
             chatModel: model,
             embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
-            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
+            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds,
+            usageContext: AIUsageContext(feature: .readmeTranslation, phase: "translation")
         ))
         return (client, model)
     }

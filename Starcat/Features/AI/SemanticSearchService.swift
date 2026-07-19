@@ -142,14 +142,15 @@ final class SemanticSearchService {
         query: String,
         candidates: [Repo],
         ftsHitIDs: Set<Int64> = [],
-        limit: Int = 80
+        limit: Int = 80,
+        usageContext: AIUsageContext = AIUsageContext(feature: .semanticSearch, phase: "query")
     ) async throws -> [SemanticSearchHit] {
         try entitlementGate?.requirePro(.semanticSearch)
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
 
-        let (client, model) = try makeClient()
+        let (client, model) = try makeClient(usageContext: usageContext)
         try await ensureIndexed(candidates, model: model, client: client)
 
         let stored = try await embeddingRepository.fetchEmbeddingsByRepoID(
@@ -212,7 +213,9 @@ final class SemanticSearchService {
     func refreshIndex(for repos: [Repo]) async throws -> Int {
         try entitlementGate?.requirePro(.semanticSearch)
         guard !repos.isEmpty else { return 0 }
-        let (client, model) = try makeClient()
+        let (client, model) = try makeClient(
+            usageContext: AIUsageContext(feature: .semanticSearch, phase: "indexing")
+        )
         return try await ensureIndexed(repos, model: model, client: client, force: true)
     }
 
@@ -247,7 +250,9 @@ final class SemanticSearchService {
     func refreshIndexIfChanged(for repos: [Repo]) async -> Int {
         do {
             try entitlementGate?.requirePro(.semanticSearch)
-            let (client, model) = try makeClient()
+            let (client, model) = try makeClient(
+                usageContext: AIUsageContext(feature: .semanticSearch, phase: "indexing")
+            )
             return try await ensureIndexed(repos, model: model, client: client)
         } catch EntitlementGateError.requiresPro {
             return 0
@@ -260,7 +265,7 @@ final class SemanticSearchService {
         }
     }
 
-    private func makeClient() throws -> (any AIClientProtocol, String) {
+    private func makeClient(usageContext: AIUsageContext) throws -> (any AIClientProtocol, String) {
         let selection = try settings.resolveEmbeddingSelection()
         let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -275,7 +280,8 @@ final class SemanticSearchService {
             baseURL: selection.profile.baseURL,
             chatModel: settings.aiSummaryTask.resolvedModelName,
             embeddingModel: selection.modelName,
-            timeoutInterval: selection.parameters.timeoutSeconds
+            timeoutInterval: selection.parameters.timeoutSeconds,
+            usageContext: usageContext
         )), selection.modelName)
     }
 

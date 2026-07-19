@@ -24,13 +24,18 @@ struct OpenAIClient: AIClientProtocol {
 
     private let configuration: AIClientConfiguration
     private let client: OpenAIProtocol
+    private let usageRecorder: any AIUsageRecording
 
-    init(configuration: AIClientConfiguration) throws {
+    init(
+        configuration: AIClientConfiguration,
+        usageRecorder: any AIUsageRecording = AIUsageRecorder.shared
+    ) throws {
         let trimmedKey = Self.effectiveAPIKey(for: configuration)
         guard !trimmedKey.isEmpty else { throw AIClientError.missingAPIKey }
 
         let sdkConfig = try Self.makeSDKConfiguration(from: configuration, apiKey: trimmedKey)
         self.configuration = configuration
+        self.usageRecorder = usageRecorder
         self.client = OpenAI(
             configuration: sdkConfig,
             session: Self.makeDiagnosticSession(timeoutInterval: configuration.timeoutInterval)
@@ -38,14 +43,21 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     /// 生产代码注入真实 MacPaw client；单元测试可用 mock OpenAIProtocol 走这里。
-    init(configuration: AIClientConfiguration, client: OpenAIProtocol) {
+    init(
+        configuration: AIClientConfiguration,
+        client: OpenAIProtocol,
+        usageRecorder: any AIUsageRecording = AIUsageRecorder.shared
+    ) {
         self.configuration = configuration
         self.client = client
+        self.usageRecorder = usageRecorder
     }
 
     func chat(request: AIChatRequest) async throws -> AIChatResponse {
+        let startedAt = Date().timeIntervalSince1970
         let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
         let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
+        var capturedUsage: ChatResult.CompletionUsage?
         do {
             #if DEBUG
             AIDebugLogger.logChatRequest(
@@ -56,6 +68,7 @@ struct OpenAIClient: AIClientProtocol {
             )
             #endif
             let result = try await client.chats(query: query)
+            capturedUsage = result.usage
             #if DEBUG
             if DebugFlags.aiHTTPLogging {
                 AIDebugLogger.dumpDecodedChatResult(result, reason: "chat-success")
@@ -70,32 +83,72 @@ struct OpenAIClient: AIClientProtocol {
             if result.choices.first?.finishReason == ChatResult.Choice.FinishReason.length.rawValue {
                 throw AIClientError.responseTruncated
             }
-            return AIChatResponse(
+            let response = AIChatResponse(
                 content: content,
                 model: result.model,
                 finishReason: result.choices.first?.finishReason
             )
+            await recordChatUsage(
+                startedAt: startedAt,
+                model: result.model,
+                context: request.usageContext,
+                usage: capturedUsage,
+                status: .succeeded
+            )
+            return response
         } catch is CancellationError {
+            await recordChatUsage(
+                startedAt: startedAt,
+                model: resolvedModel,
+                context: request.usageContext,
+                usage: capturedUsage,
+                status: .cancelled,
+                error: CancellationError()
+            )
             throw CancellationError()
         } catch let error as AIClientError {
+            await recordChatUsage(
+                startedAt: startedAt,
+                model: resolvedModel,
+                context: request.usageContext,
+                usage: capturedUsage,
+                status: .failed,
+                error: error
+            )
             throw error
         } catch {
             // SDK 的 statusError 会把整段 NSHTTPURLResponse dump 进 localizedDescription；
             // 产品层只应看到归类后的 AIClientError。
             AppLog.ai.error("Chat request failed: \(error.localizedDescription, privacy: .public)")
-            throw Self.mapChatFailure(
+            let mappedError = Self.mapChatFailure(
                 error,
                 requestJSON: Self.formattedJSON(query),
                 exchange: Self.takeFailureExchange(for: error)
             )
+            await recordChatUsage(
+                startedAt: startedAt,
+                model: resolvedModel,
+                context: request.usageContext,
+                usage: capturedUsage,
+                status: .failed,
+                error: mappedError
+            )
+            throw mappedError
         }
     }
 
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
+                let startedAt = Date().timeIntervalSince1970
                 let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
-                let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
+                var query = makeChatQuery(
+                    request: request,
+                    resolvedModel: resolvedModel,
+                    stream: true,
+                    includeStreamUsage: true
+                )
+                var capturedUsage: ChatResult.CompletionUsage?
                 do {
                     #if DEBUG
                     AIDebugLogger.logChatRequest(
@@ -108,7 +161,13 @@ struct OpenAIClient: AIClientProtocol {
                     var content = ""
                     var finishReason: String?
                     var reasoningNormalizer = AIStreamReasoningNormalizer()
-                    for try await chunk in client.chatsStream(query: query) {
+                    var receivedChunk = false
+
+                    func consume(_ chunk: ChatStreamResult) {
+                        receivedChunk = true
+                        if let usage = chunk.usage {
+                            capturedUsage = usage
+                        }
                         for choice in chunk.choices {
                             for event in reasoningNormalizer.ingest(
                                 content: choice.delta.content,
@@ -124,20 +183,42 @@ struct OpenAIClient: AIClientProtocol {
                             }
                         }
                     }
+
+                    do {
+                        for try await chunk in client.chatsStream(query: query) {
+                            consume(chunk)
+                        }
+                    } catch where !receivedChunk && Self.shouldRetryWithoutStreamUsage(error) {
+                        // 部分 OpenAI-compatible 服务会因未知 `stream_options` 直接拒绝请求。
+                        // 只在尚未收到任何 chunk 且错误明确指向 usage 参数时重试，避免回答
+                        // 已开始后重复扣费或把两段正文拼在一起。重试成功时 token 保持 unavailable。
+                        query = makeChatQuery(
+                            request: request,
+                            resolvedModel: resolvedModel,
+                            stream: true,
+                            includeStreamUsage: false
+                        )
+                        for try await chunk in client.chatsStream(query: query) {
+                            consume(chunk)
+                        }
+                    }
                     for event in reasoningNormalizer.finish() {
                         if case .delta(let delta) = event {
                             content += delta
                         }
                         continuation.yield(event)
                     }
-                    guard let final = content.nilIfBlank else {
-                        continuation.finish(throwing: AIClientError.emptyResponse)
-                        return
-                    }
+                    guard let final = content.nilIfBlank else { throw AIClientError.emptyResponse }
                     if finishReason == ChatResult.Choice.FinishReason.length.rawValue {
-                        continuation.finish(throwing: AIClientError.responseTruncated)
-                        return
+                        throw AIClientError.responseTruncated
                     }
+                    await recordChatUsage(
+                        startedAt: startedAt,
+                        model: resolvedModel,
+                        context: request.usageContext,
+                        usage: capturedUsage,
+                        status: .succeeded
+                    )
                     continuation.yield(.completed(AIChatResponse(
                         content: final,
                         model: resolvedModel,
@@ -145,18 +226,46 @@ struct OpenAIClient: AIClientProtocol {
                     )))
                     continuation.finish()
                 } catch is CancellationError {
+                    await recordChatUsage(
+                        startedAt: startedAt,
+                        model: resolvedModel,
+                        context: request.usageContext,
+                        usage: capturedUsage,
+                        status: .cancelled,
+                        error: CancellationError()
+                    )
                     continuation.finish(throwing: CancellationError())
                 } catch let error as AIClientError {
+                    await recordChatUsage(
+                        startedAt: startedAt,
+                        model: resolvedModel,
+                        context: request.usageContext,
+                        usage: capturedUsage,
+                        status: .failed,
+                        error: error
+                    )
                     continuation.finish(throwing: error)
                 } catch {
                     AppLog.ai.error("Chat stream failed: \(error.localizedDescription, privacy: .public)")
-                    continuation.finish(throwing: Self.mapChatFailure(
+                    let mappedError = Self.mapChatFailure(
                         error,
                         requestJSON: Self.formattedJSON(query),
                         exchange: Self.takeFailureExchange(for: error)
-                    ))
+                    )
+                    await recordChatUsage(
+                        startedAt: startedAt,
+                        model: resolvedModel,
+                        context: request.usageContext,
+                        usage: capturedUsage,
+                        status: .failed,
+                        error: mappedError
+                    )
+                    continuation.finish(throwing: mappedError)
                 }
             }
+            // 消费端关闭窗口或取消任务时同步取消底层网络流，才能正确记录 cancelled，
+            // 也避免无人消费的 SSE 继续占用连接。
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -384,6 +493,7 @@ struct OpenAIClient: AIClientProtocol {
 
     func embeddings(inputs: [String], model: String?) async throws -> [[Float]] {
         guard !inputs.isEmpty else { return [] }
+        let startedAt = Date().timeIntervalSince1970
         let resolvedModel = model?.nilIfBlank ?? configuration.embeddingModel
         let query = EmbeddingsQuery(input: .stringList(inputs), model: resolvedModel)
         do {
@@ -394,15 +504,91 @@ struct OpenAIClient: AIClientProtocol {
             guard vectors.count == inputs.count, vectors.allSatisfy({ !$0.isEmpty }) else {
                 throw AIEmbeddingError.emptyResponse
             }
+            await usageRecorder.record(AIUsageEventFactory.make(
+                startedAt: startedAt,
+                configuration: configuration,
+                model: result.model,
+                operation: .embedding,
+                inputTokens: result.usage.promptTokens,
+                outputTokens: 0,
+                totalTokens: result.usage.totalTokens,
+                cachedInputTokens: nil,
+                reasoningOutputTokens: nil,
+                itemCount: inputs.count,
+                status: .succeeded
+            ))
             return vectors
         } catch is CancellationError {
+            await recordEmbeddingFailure(
+                startedAt: startedAt,
+                model: resolvedModel,
+                itemCount: inputs.count,
+                status: .cancelled,
+                error: CancellationError()
+            )
             throw CancellationError()
         } catch {
             // SDK 对 OpenAI-compatible Provider 的非标准错误体可能只暴露 DecodingError。
             // 原始错误写入日志用于反馈诊断，产品层统一收到可执行的向量化错误。
             AppLog.ai.error("Embedding request failed: \(error.localizedDescription, privacy: .public)")
-            throw Self.embeddingError(from: error)
+            let mappedError = Self.embeddingError(from: error)
+            await recordEmbeddingFailure(
+                startedAt: startedAt,
+                model: resolvedModel,
+                itemCount: inputs.count,
+                status: .failed,
+                error: mappedError
+            )
+            throw mappedError
         }
+    }
+
+    private func recordChatUsage(
+        startedAt: Double,
+        model: String,
+        context: AIUsageContext?,
+        usage: ChatResult.CompletionUsage?,
+        status: AIUsageStatus,
+        error: Error? = nil
+    ) async {
+        await usageRecorder.record(AIUsageEventFactory.make(
+            startedAt: startedAt,
+            configuration: configuration,
+            usageContext: context,
+            model: model,
+            operation: .chat,
+            inputTokens: usage?.promptTokens,
+            outputTokens: usage?.completionTokens,
+            totalTokens: usage?.totalTokens,
+            cachedInputTokens: usage?.promptTokensDetails?.cachedTokens,
+            reasoningOutputTokens: usage?.completionTokensDetails?.reasoningTokens,
+            itemCount: 1,
+            status: status,
+            error: error
+        ))
+    }
+
+    private func recordEmbeddingFailure(
+        startedAt: Double,
+        model: String,
+        itemCount: Int,
+        status: AIUsageStatus,
+        error: Error
+    ) async {
+        await usageRecorder.record(AIUsageEventFactory.make(
+            startedAt: startedAt,
+            configuration: configuration,
+            model: model,
+            operation: .embedding,
+            inputTokens: nil,
+            outputTokens: nil,
+            totalTokens: nil,
+            cachedInputTokens: nil,
+            reasoningOutputTokens: nil,
+            itemCount: itemCount,
+            status: status,
+            error: error
+        ))
     }
 
     private static func embeddingError(from error: Error) -> AIEmbeddingError {
@@ -500,7 +686,8 @@ struct OpenAIClient: AIClientProtocol {
     private func makeChatQuery(
         request: AIChatRequest,
         resolvedModel: String,
-        stream: Bool
+        stream: Bool,
+        includeStreamUsage: Bool = false
     ) -> ChatQuery {
         // 顺序：system → [history...] → user。
         //
@@ -540,8 +727,31 @@ struct OpenAIClient: AIClientProtocol {
             responseFormat: request.responseFormat == .jsonObject ? .jsonObject : nil,
             temperature: request.parameters.temperature,
             topP: request.parameters.topP,
-            stream: stream
+            stream: stream,
+            streamOptions: stream && includeStreamUsage ? .init(includeUsage: true) : nil
         )
+    }
+
+    /// 兼容 Provider 的 fallback 必须非常保守：网络错误、鉴权错误或普通 400 都不能自动
+    /// 重试，只有诊断文本明确提到 `stream_options` / `include_usage` 才能判定是参数不兼容。
+    private static func shouldRetryWithoutStreamUsage(_ error: Error) -> Bool {
+        let diagnostic: String
+        if let error = error as? AIClientError {
+            diagnostic = error.diagnosticDetail ?? error.localizedDescription
+        } else {
+            diagnostic = error.localizedDescription
+        }
+        let normalized = diagnostic.lowercased()
+        let mentionsParameter = normalized.contains("stream_options")
+            || normalized.contains("stream options")
+            || normalized.contains("include_usage")
+            || normalized.contains("include usage")
+        let indicatesUnsupported = normalized.contains("unsupported")
+            || normalized.contains("unknown")
+            || normalized.contains("unrecognized")
+            || normalized.contains("invalid")
+            || normalized.contains("not allowed")
+        return mentionsParameter && indicatesUnsupported
     }
 
     /// 将用户输入的 OpenAI-compatible Base URL 拆给 MacPaw/OpenAI。

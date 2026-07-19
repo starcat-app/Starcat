@@ -27,12 +27,12 @@
 
 - [x] 新增 `v14-ai-usage-events` 数据库迁移、索引和已发布数据库升级测试。
 - [x] 新增用量事件领域模型、功能 / 阶段 / 状态 / 来源枚举及 GRDB Repository。
-- [ ] 为非流式 Chat 接入 Provider 精确 usage 采集。
-- [ ] 为流式 Chat 请求 usage，并在正常结束时采集；中断或不兼容 Provider 不影响原调用结果。
-- [ ] 为 Embedding 接入 usage 与批量 item 数采集。
-- [ ] 将 RAG 规划、查询向量、回答、标题、压缩等阶段映射到稳定功能维度。
-- [ ] 将知识库索引、语义搜索、Repo AI、README 翻译、Agent 与 MCP 调用映射到稳定功能维度。
-- [ ] 成功、失败、取消请求均记录调用事件，错误仅落枚举分类。
+- [x] 为非流式 Chat 接入 Provider 精确 usage 采集。
+- [x] 为流式 Chat 请求 usage，并在正常结束时采集；中断或不兼容 Provider 不影响原调用结果。
+- [x] 为 Embedding 接入 usage 与批量 item 数采集。
+- [x] 将 RAG 规划、查询向量、回答、标题、压缩等阶段映射到稳定功能维度。
+- [x] 将知识库索引、语义搜索、Repo AI、README 翻译、Agent 与 MCP 调用映射到稳定功能维度。
+- [x] 成功、失败、取消请求均记录调用事件，错误仅落枚举分类。
 
 ## 4. 查询与展示
 

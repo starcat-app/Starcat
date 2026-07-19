@@ -479,14 +479,16 @@ final class AppDependencies {
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
             timeout: chatSelection.parameters.timeoutSeconds,
-            missingAPIKeyError: AIClientError.missingAPIKey
+            missingAPIKeyError: AIClientError.missingAPIKey,
+            usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
         )
         let embeddingClient = try makeRAGClient(
             profile: embeddingSelection.profile,
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
             timeout: embeddingSelection.parameters.timeoutSeconds,
-            missingAPIKeyError: AIEmbeddingError.missingAPIKey
+            missingAPIKeyError: AIEmbeddingError.missingAPIKey,
+            usageContext: AIUsageContext(feature: .rag, phase: "query_embedding")
         )
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
@@ -637,7 +639,8 @@ final class AppDependencies {
         chatModel: String,
         embeddingModel: String,
         timeout: TimeInterval,
-        missingAPIKeyError: any Error
+        missingAPIKeyError: any Error,
+        usageContext: AIUsageContext
     ) throws -> any AIClientProtocol {
         let apiKey = try KeychainManager.shared.loadAIKey(forProvider: profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -651,7 +654,8 @@ final class AppDependencies {
             baseURL: profile.baseURL,
             chatModel: chatModel,
             embeddingModel: embeddingModel,
-            timeoutInterval: timeout
+            timeoutInterval: timeout,
+            usageContext: usageContext
         ))
     }
 
@@ -679,6 +683,9 @@ final class AppDependencies {
             throw error
         }
         self.database = db
+        // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
+        // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
+        AIUsageRecorder.shared.configure(database: db)
 
         let api = GitHubAPIClient()
         self.apiClient = api

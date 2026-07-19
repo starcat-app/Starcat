@@ -968,7 +968,8 @@ final class KnowledgeRAGIndexBuilder {
             baseURL: selection.profile.baseURL,
             chatModel: settings.aiChatTask.resolvedModelName,
             embeddingModel: selection.modelName,
-            timeoutInterval: selection.parameters.timeoutSeconds
+            timeoutInterval: selection.parameters.timeoutSeconds,
+            usageContext: AIUsageContext(feature: .knowledgeIndexing, phase: "chunk_embedding")
         ))
         return (client, selection.modelName)
     }

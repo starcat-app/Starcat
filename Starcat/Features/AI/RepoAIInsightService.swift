@@ -612,7 +612,8 @@ final class RepoAIInsightService {
             history: history,
             model: model,
             parameters: settings.effectiveParameters(for: task),
-            responseFormat: .text
+            responseFormat: .text,
+            usageContext: AIUsageContext(feature: .repoChat, phase: "conversation")
         )
 
         var accumulated = ""
@@ -809,7 +810,8 @@ final class RepoAIInsightService {
             ]),
             model: model,
             parameters: params,
-            responseFormat: .text
+            responseFormat: .text,
+            usageContext: AIUsageContext(feature: .repoSummary, phase: "generation")
         )
 
         if params.streamEnabled {
@@ -871,7 +873,8 @@ final class RepoAIInsightService {
             userPrompt: userPrompt,
             model: model,
             parameters: settings.effectiveParameters(for: task),
-            responseFormat: .jsonObject
+            responseFormat: .jsonObject,
+            usageContext: AIUsageContext(feature: .repoTags, phase: "recommendation")
         ))
         let decoded = try Self.decodeTagSuggestions(json: response.content)
         // Prompt 是概率约束，不能直接作为写库边界。repo 标签排在词表前面，确保历史
