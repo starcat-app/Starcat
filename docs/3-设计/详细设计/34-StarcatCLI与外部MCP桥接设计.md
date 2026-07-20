@@ -61,7 +61,7 @@ starcat capabilities
 starcat repo search "local RAG" --semantic
 starcat repo context owner/repo
 starcat repo summary owner/repo --generate
-printf '%s' "$NOTE" | starcat repo note set owner/repo --stdin --apply
+printf '%s' "$NOTE" | starcat repo note set owner/repo --apply
 starcat repo tags add owner/repo Swift macOS --apply
 starcat mcp
 ```
@@ -69,7 +69,7 @@ starcat mcp
 约束：
 
 - `help`、`version`、`pair`、`unpair`、`doctor`、`update` 默认输出终端文本；数据命令输出 JSON；`starcat mcp` 的 stdout 只承载 JSON-RPC。
-- `doctor --json` 只用于脚本或 Agent 明确需要机器可读诊断的场景；本来就输出 JSON 的数据命令不提供冗余 `--json`。
+- `doctor` 只输出适合终端阅读的诊断文本；脚本或 Agent 需要结构化结果时统一通过 MCP 工具获取。
 - 所有错误只写 stderr，未知 flag 必须报错，不能静默忽略。
 - 写命令默认 `dry_run=true`，显式 `--apply` 才持久化。
 - 笔记正文只从 stdin 读取，不进入进程参数。
