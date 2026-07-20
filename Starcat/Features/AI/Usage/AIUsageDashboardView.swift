@@ -21,6 +21,7 @@ struct AIUsageDashboardView: View {
     @State private var detailTab: DetailTab = .feature
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +34,7 @@ struct AIUsageDashboardView: View {
                     dashboard
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
                 if viewModel.isLoading, viewModel.snapshot.summary.callCount == 0 {
                     ProgressView()
@@ -41,6 +43,9 @@ struct AIUsageDashboardView: View {
             }
         }
         .frame(minWidth: 980, minHeight: 640)
+        // AppKit 恢复较大窗口时，内容必须填满 hosting view 并钉在顶部；
+        // 否则空状态只有最小固有高度，会在窗口中垂直居中，形成大块顶部留白。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await viewModel.reload() }
     }
@@ -95,7 +100,9 @@ struct AIUsageDashboardView: View {
 
                 filterMenu(
                     title: "ai.usage.filter.provider",
-                    selection: viewModel.filter.providerID ?? String.l10n("ai.usage.filter.allProviders")
+                    selection: viewModel.filter.providerID.map(providerFilterTitle)
+                        ?? String.l10n("ai.usage.filter.allProviders"),
+                    tooltip: viewModel.filter.providerID
                 ) {
                     Button("ai.usage.filter.allProviders") {
                         viewModel.filter.providerID = nil
@@ -103,7 +110,7 @@ struct AIUsageDashboardView: View {
                     }
                     if !viewModel.snapshot.filterOptions.providerIDs.isEmpty { Divider() }
                     ForEach(viewModel.snapshot.filterOptions.providerIDs, id: \.self) { provider in
-                        Button(provider) {
+                        Button(providerFilterTitle(provider)) {
                             viewModel.filter.providerID = provider
                             reload()
                         }
@@ -112,7 +119,8 @@ struct AIUsageDashboardView: View {
 
                 filterMenu(
                     title: "ai.usage.filter.model",
-                    selection: viewModel.filter.model ?? String.l10n("ai.usage.filter.allModels")
+                    selection: viewModel.filter.model ?? String.l10n("ai.usage.filter.allModels"),
+                    tooltip: viewModel.filter.model
                 ) {
                     Button("ai.usage.filter.allModels") {
                         Task { await viewModel.selectModel(nil) }
@@ -133,6 +141,7 @@ struct AIUsageDashboardView: View {
     private func filterMenu<Content: View>(
         title: LocalizedStringKey,
         selection: String,
+        tooltip: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         Menu {
@@ -145,7 +154,8 @@ struct AIUsageDashboardView: View {
                     .font(.caption2)
             }
         }
-        .help(title)
+        // 按钮保持紧凑，完整模型名或历史 Provider ID 仍可通过悬停查看。
+        .help(tooltip ?? selection)
         .accessibilityLabel(Text(title) + Text(": ") + Text(selection))
         .frame(maxWidth: 145)
     }
@@ -238,8 +248,7 @@ struct AIUsageDashboardView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06)))
+        .dashboardSurface()
     }
 
     private var trendCard: some View {
@@ -370,37 +379,91 @@ struct AIUsageDashboardView: View {
     }
 
     private var recentCallRows: some View {
-        LazyVStack(spacing: 0) {
-            HStack {
-                Text("ai.usage.calls.time").frame(width: 130, alignment: .leading)
-                Text("ai.usage.calls.feature").frame(width: 140, alignment: .leading)
-                Text("ai.usage.calls.model").frame(maxWidth: .infinity, alignment: .leading)
-                Text("ai.usage.calls.status").frame(width: 90, alignment: .leading)
-                Text("ai.usage.calls.duration").frame(width: 80, alignment: .trailing)
-                Text("ai.usage.metric.totalTokens").frame(width: 90, alignment: .trailing)
-                Text("ai.usage.calls.source").frame(width: 90, alignment: .trailing)
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 8) {
+            // 最近调用仍保留完整 80 条快照，但交给 macOS 原生 Table 独立滚动，
+            // 避免高频 Embedding 调用把整个 Dashboard 撑成超长页面。
+            Table(viewModel.snapshot.recentEvents) {
+                TableColumn("ai.usage.calls.time") { event in
+                    Text(callDate(event.completedAt))
+                }
+                .width(min: 110, ideal: 130, max: 160)
 
-            ForEach(viewModel.snapshot.recentEvents) { event in
-                Divider()
-                HStack {
-                    Text(callDate(event.completedAt)).frame(width: 130, alignment: .leading)
-                    Text(featureTitle(event.feature)).frame(width: 140, alignment: .leading)
-                    Text(event.model).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
+                TableColumn("ai.usage.calls.feature") { event in
+                    Text(featureTitle(event.feature))
+                }
+                .width(min: 100, ideal: 130, max: 150)
+
+                TableColumn("ai.usage.calls.model") { event in
+                    Text(event.model)
+                        .font(.caption.monospaced())
+                        .lineLimit(1)
+                        .help(event.model)
+                }
+                .width(min: 180, ideal: 280)
+
+                TableColumn("ai.usage.calls.status") { event in
                     Label(statusTitle(event.status), systemImage: statusIcon(event.status))
                         .foregroundStyle(statusColor(event.status))
-                        .frame(width: 90, alignment: .leading)
-                    Text(duration(event.durationMs)).frame(width: 80, alignment: .trailing)
-                    Text(event.totalTokens.map(compact) ?? "—").frame(width: 90, alignment: .trailing)
-                    Text(sourceTitle(event.usageSource)).frame(width: 90, alignment: .trailing)
                 }
-                .font(.caption)
-                .padding(.vertical, 9)
+                .width(min: 72, ideal: 88, max: 100)
+
+                TableColumn("ai.usage.calls.duration") { event in
+                    Text(duration(event.durationMs))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 64, ideal: 78, max: 90)
+
+                TableColumn("ai.usage.metric.totalTokens") { event in
+                    Text(event.totalTokens.map(compact) ?? "—")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 70, ideal: 86, max: 100)
+
+                TableColumn("ai.usage.calls.source") { event in
+                    Text(sourceTitle(event.usageSource))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 64, ideal: 78, max: 90)
             }
+            .font(.caption)
+            .tableStyle(.inset(alternatesRowBackgrounds: true))
+            .scrollContentBackground(.hidden)
+            .frame(height: 420)
+
+            Text(String(
+                format: String.l10n("ai.usage.calls.recentCountFormat"),
+                viewModel.snapshot.recentEvents.count
+            ))
+            .font(interfaceScale.font(.captionSmall))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
+    }
+
+    private func providerFilterTitle(_ providerID: String) -> String {
+        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == providerID }) else {
+            return String(
+                format: String.l10n("ai.usage.filter.unknownProviderFormat"),
+                shortProviderID(providerID)
+            )
+        }
+
+        let displayName = profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayName.isEmpty else { return shortProviderID(providerID) }
+
+        // 同名配置必须保留可区分性，但不再把完整 UUID 暴露给用户。
+        let duplicateCount = viewModel.snapshot.filterOptions.providerIDs.filter { optionID in
+            settings.aiProviderProfiles.first(where: { $0.id == optionID })?
+                .displayName.trimmingCharacters(in: .whitespacesAndNewlines) == displayName
+        }.count
+        if duplicateCount > 1 {
+            return "\(displayName) · \(shortProviderID(providerID, length: 4))"
+        }
+        return displayName
+    }
+
+    private func shortProviderID(_ providerID: String, length: Int = 8) -> String {
+        String(providerID.prefix(length)).uppercased()
     }
 
     private var emptyState: some View {
@@ -534,10 +597,25 @@ private extension AIUsageDashboardView.DetailTab {
     }
 }
 
+private struct AIUsageDashboardSurfaceModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        // 浅色主题降低灰底存在感；深色主题保留更高明度差，避免卡片边界消失。
+        let backgroundOpacity = colorScheme == .light ? 0.025 : 0.07
+        content
+            .background(Color.primary.opacity(backgroundOpacity), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.07)))
+    }
+}
+
 private extension View {
+    func dashboardSurface() -> some View {
+        modifier(AIUsageDashboardSurfaceModifier())
+    }
+
     func dashboardCard() -> some View {
         padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.06)))
+            .dashboardSurface()
     }
 }
