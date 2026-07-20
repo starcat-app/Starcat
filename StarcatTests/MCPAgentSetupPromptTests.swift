@@ -90,14 +90,13 @@ struct MCPAgentSetupPromptTests {
         #expect(prompt.contains("$starcat-skill"))
     }
 
-    @Test("四类 Agent prompt 使用结构化 Markdown 且角色描述明确")
+    @Test("CLI、配对和 MCP Agent prompt 使用结构化 Markdown 且角色描述明确")
     func agentPromptsUseStructuredMarkdownWithExplicitRoles() {
         let invitation = "starcat-pair://connect?v=1&secret=temporary"
         let prompts = [
             MCPAgentSetupPrompt.cliAgentInstall,
             MCPAgentSetupPrompt.pairAgent(invitationURI: invitation),
             MCPAgentSetupPrompt.mcpAgentSetup,
-            MCPAgentSetupPrompt.skillAgentInstall,
         ]
 
         for prompt in prompts {
@@ -112,17 +111,15 @@ struct MCPAgentSetupPromptTests {
         }
     }
 
-    @Test("Skill Agent prompt 覆盖安装、重载和只读验证")
-    func skillAgentPromptCoversInstallationAndVerification() {
+    @Test("Skill Agent prompt 只保留单行安装请求和公开仓库")
+    func skillAgentPromptStaysMinimal() {
         let prompt = MCPAgentSetupPrompt.skillAgentInstall
 
         #expect(prompt.contains("starcat-skill"))
         #expect(prompt.contains(MCPAgentSetupPrompt.skillRepositoryURL))
-        #expect(prompt.contains(".codex/skills/starcat-skill"))
-        #expect(prompt.contains(".claude/skills/starcat-skill"))
-        #expect(prompt.contains("pull --ff-only"))
-        #expect(prompt.contains("starcat --help"))
-        #expect(prompt.contains("$starcat-skill"))
+        #expect(prompt.split(separator: "\n").count == 1)
+        #expect(!prompt.contains("pull --ff-only"))
+        #expect(!prompt.contains("starcat --help"))
     }
 
     @Test("配对命令包含单次 URI 且可直接粘贴执行")
