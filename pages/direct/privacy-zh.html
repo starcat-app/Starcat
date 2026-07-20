@@ -492,7 +492,7 @@
         <h1>Starcat 隐私政策</h1>
         <div class="hero-meta">
             <span><strong>生效日期:</strong> 2026 年 6 月 1 日</span>
-            <span><strong>最近更新:</strong> 2026 年 7 月 19 日</span>
+            <span><strong>最近更新:</strong> 2026 年 7 月 20 日</span>
             <span><strong>版本:</strong> v1.1</span>
             <span><strong>适用平台:</strong> macOS 15 及以上 / Chrome</span>
         </div>
@@ -607,9 +607,9 @@
                         <td>是</td>
                     </tr>
                     <tr>
-                        <td class="col-cat">使用数据<span class="sub">页面浏览、功能点击</span></td>
-                        <td>仅本地用于改进体验</td>
-                        <td>不上传至服务器</td>
+                        <td class="col-cat">使用数据<span class="sub">白名单功能事件</span></td>
+                        <td>用户 opt-in，默认关闭</td>
+                        <td>匿名分析</td>
                         <td>否</td>
                     </tr>
                     <tr>
@@ -633,6 +633,11 @@
                 </tbody>
             </table>
 
+            <div class="callout info">
+                <span class="label">RAG 与远程处理</span>
+                核心知识库数据保存在本地。当您调用已配置的远程 AI、Embedding、重排、GitHub 实时上下文或 External Search 功能时，所选提供商仅接收完成该次请求所需的内容，可能包括问题、有限的会话历史、检索命中的知识片段（含私有笔记）、本轮选择的附件、仓库代码上下文或生成的搜索 query。
+            </div>
+
             <h3>3.1 您主动提供的信息</h3>
             <ul>
                 <li><strong>GitHub 账户授权信息</strong>：通过 OAuth 流程获取的 access token、您的 GitHub 用户名、头像 URL、邮箱（可见时）、ID。本应用申请的权限范围为 <code>read:user</code> 与 <code>public_repo</code>，<strong>无法</strong>读取您的 GitHub 密码，<strong>无法</strong>访问您的私有仓库内容。</li>
@@ -650,6 +655,7 @@
 
             <h3>3.3 自动收集的信息</h3>
             <ul>
+                <li><strong>匿名遥测</strong>（仅在您主动开启后）：向 Aptabase 发送白名单事件名、应用版本和粗粒度分桶；不包含您的 GitHub 身份、仓库名称、搜索 query、README 内容、笔记、AI prompt 或响应、API Key、Token 和本地文件路径；</li>
                 <li><strong>设备与运行环境信息</strong>（仅在崩溃发生且您已选择上报时）：设备型号、macOS 版本、本应用版本、调用栈、内存使用情况。<strong>不</strong>包含您的具体内容数据；</li>
                 <li><strong>IP 地址</strong>：仅在您直接与我们的自建 AI 代理服务器通信时，服务器会临时记录访问 IP 用于安全审计与滥用防范，<strong>保留期不超过 30 天</strong>。</li>
             </ul>
@@ -667,8 +673,9 @@
             <ol>
                 <li><strong>提供与维护核心功能</strong>：同步 Stars、本地全文搜索、标签管理、笔记保存，以及后续 CloudKit 同步；</li>
                 <li><strong>验证您的身份与订阅权益</strong>：通过 GitHub OAuth 与 Apple StoreKit 验证；</li>
-                <li><strong>提供 AI 增强能力</strong>（需您主动启用）：AI 摘要、标签推荐、语义搜索、推荐与健康度评估；</li>
-                <li><strong>修复缺陷与改进体验</strong>：基于您自愿上报的诊断信息；</li>
+                <li><strong>提供 AI 与知识库 RAG 能力</strong>（需完成配置并由您主动调用）：AI 摘要、标签推荐、语义搜索、Embedding、重排、带引用问答和可选实时上下文；</li>
+                <li><strong>提供 External Search</strong>（可选）：将生成的搜索 query 和请求参数发送给您选择的提供商，并将返回结果作为本轮临时证据；</li>
+                <li><strong>修复缺陷与改进体验</strong>：基于可选匿名遥测和您自愿上报的诊断信息；</li>
                 <li><strong>响应您的客户支持请求</strong>；</li>
                 <li><strong>履行法律义务</strong>：在必要范围内配合主管机关的合法要求。</li>
             </ol>
@@ -713,8 +720,18 @@
                         <td>FileVault + iCloud 端到端加密</td>
                     </tr>
                     <tr>
-                        <td>AI 请求与响应</td>
+                        <td>RAG 索引、会话、引用与本地审计元数据</td>
+                        <td><span class="badge badge-local">本地 SQLite</span></td>
+                        <td>受 macOS FileVault 全盘加密保护</td>
+                    </tr>
+                    <tr>
+                        <td>远程 AI / Embedding 请求与响应</td>
                         <td><span class="badge badge-server">所选 AI 提供商</span></td>
+                        <td>HTTPS（TLS 1.2+）</td>
+                    </tr>
+                    <tr>
+                        <td>匿名遥测（用户 opt-in）</td>
+                        <td><span class="badge badge-server">Aptabase</span></td>
                         <td>HTTPS（TLS 1.2+）</td>
                     </tr>
                     <tr>
@@ -729,6 +746,9 @@
             <p><strong>当前版本的 Starcat 尚未提供 iCloud / CloudKit 同步。</strong>该功能计划在后续版本作为 Starcat Pro 权益上线。未来当 iCloud 同步可用且由您主动启用后，您的用户内容将通过 Apple CloudKit 存储在<strong>您自己的 iCloud 私有数据库</strong>中（而非我们的服务器）。我们<strong>无法</strong>访问您 iCloud 中的任何内容。同步遵循 Apple 公布的端到端加密机制，详见 <a href="https://support.apple.com/zh-cn/HT202303" target="_blank" rel="noopener">Apple iCloud 数据安全说明</a>。</p>
             <h3>5.2 自建 AI 代理（选用）</h3>
             <p>当您选择使用我们提供的"Starcat Pro"AI 代理时，请求将通过我们部署的服务器中转至底层 AI 提供商。我们的代理：<strong>不</strong>持久化您的请求内容；<strong>不</strong>使用您的内容训练模型；仅保留必要的<strong>请求时间、配额计数、错误码</strong>用于配额管理与故障排查。</p>
+            <h3>5.3 RAG、Embedding 与 External Search</h3>
+            <p>当您调用知识库 RAG 时，Starcat 可能把您的问题、有限的会话历史、仓库元数据、README、AI 摘要、检索命中的知识片段（含私有笔记）、本轮选择的附件、仓库代码上下文以及临时 GitHub 或 Web 上下文发送给您配置的 AI 提供商。远程 Embedding 或重排提供商会接收生成向量或排序证据所需的知识文本；Ollama 等本地模型在您的 Mac 上处理数据。</p>
+            <p>当本轮启用 External Search 时，所选提供商会收到生成的搜索 query 和请求参数。网页结果正文只作为本轮临时证据，不写入长期 RAG 历史；Starcat 可能在本地保存提供商名称、query 摘要、结果数量、URL、耗时和错误等审计元数据。除非您另行开启“允许私有仓库 External Search”，否则私有仓库名称会被排除。</p>
         </section>
 
         <!-- 第 6 节 -->
@@ -737,7 +757,7 @@
             <p>我们<strong>不会</strong>主动向任何第三方共享您的个人信息，以下情形除外：</p>
             <ul>
                 <li><strong>已取得您的明确同意</strong>；</li>
-                <li><strong>提供您所选功能所必需</strong>：例如，当您启用 AI 功能时，将相关请求转发至您所选的 AI 提供商；</li>
+                <li><strong>提供您所选功能所必需</strong>：例如，将 AI、Embedding、重排或搜索请求发送至您所选的提供商；</li>
                 <li><strong>履行法定义务</strong>：根据有管辖权的司法机关、行政机关或监管机构的合法要求；</li>
                 <li><strong>维护合法权益</strong>：在不违反法律的前提下，为保护用户、公众或我们自身的人身、财产或权利安全所必需；</li>
                 <li><strong>业务转让</strong>：如发生合并、收购或资产转让，我们将在事前以合理方式通知您，并要求受让方继续受本政策约束。</li>
@@ -780,6 +800,14 @@
                 <div>
                     <dt>Ollama（本地）</dt>
                     <dd>可选本地模型运行时，数据不离开您的设备。</dd>
+                </div>
+                <div>
+                    <dt>External Search 提供商</dt>
+                    <dd>可选 Web 上下文，可使用 <a href="https://www.anysearch.com/legal?type=privacy" target="_blank" rel="noopener">AnySearch</a>、<a href="https://www.tavily.com/privacy" target="_blank" rel="noopener">Tavily</a>、<a href="https://exa.ai/privacy-policy" target="_blank" rel="noopener">Exa</a> 或 <a href="https://search.brave.com/help/privacy-policy" target="_blank" rel="noopener">Brave Search</a>。所选提供商会接收返回结果所需的 query 和请求参数。</dd>
+                </div>
+                <div>
+                    <dt>Aptabase</dt>
+                    <dd>可选匿名遥测，默认关闭；仅在您主动开启后接收白名单产品事件。<br><a href="https://aptabase.com/legal/privacy" target="_blank" rel="noopener">Aptabase 隐私政策 ↗</a></dd>
                 </div>
             </dl>
             <div class="callout">

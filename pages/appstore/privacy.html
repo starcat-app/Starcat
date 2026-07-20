@@ -143,7 +143,7 @@
             <p class="hero-eyebrow">Legal</p>
             <h1>Privacy Policy</h1>
             <div class="hero-meta">
-                <span>Last updated: <strong>July 9, 2026</strong></span>
+                <span>Last updated: <strong>July 20, 2026</strong></span>
                 <span>·</span>
                 <span>App Store Version</span>
                 <span>·</span>
@@ -161,7 +161,7 @@
                 <li><a href="#overview">Overview &amp; Scope</a></li>
                 <li><a href="#pledge">Our Privacy Pledge</a></li>
                 <li><a href="#data-we-collect">Data We Collect</a></li>
-                <li><a href="#data-we-dont">Data We Don't Collect</a></li>
+                <li><a href="#data-we-dont">Data Starcat Services Don't Collect</a></li>
                 <li><a href="#data-storage">How Your Data Is Stored</a></li>
                 <li><a href="#data-usage">How We Use Data</a></li>
                 <li><a href="#third-party">Third-Party Services</a></li>
@@ -185,12 +185,12 @@
             <div class="pledge" id="pledge">
                 <h3>🛡 Our Privacy Pledge</h3>
                 <ul>
-                    <li>We do not collect your GitHub Stars data</li>
+                    <li>Starcat-operated services do not store your GitHub Stars data</li>
                     <li>We do not have access to your API keys</li>
                     <li>We do not sell or share your personal data</li>
-                    <li>We do not track your app usage</li>
-                    <li>Your data stays on your Mac</li>
-                    <li>AI requests go directly to your provider</li>
+                    <li>We do not use your data for advertising or cross-app tracking</li>
+                    <li>Your core library data is stored on your Mac</li>
+                    <li>Remote AI and search run only when you configure and invoke them</li>
                 </ul>
             </div>
 
@@ -200,7 +200,7 @@
                 <p>Starcat is a <strong>local-first</strong> macOS application. The vast majority of your data never leaves your Mac. This policy applies to the Mac App Store distribution of Starcat.</p>
                 <p>Starcat is designed to minimize data collection by default. We believe you should control your data, not us.</p>
                 <div class="callout info">
-                    <strong>Key principle:</strong> Starcat does not operate a backend that collects or stores your GitHub data, stars, tags, notes, or AI provider keys. Your data lives on your Mac.
+                    <strong>Key principle:</strong> Starcat-operated services do not collect or store your GitHub data, stars, tags, notes, or provider keys by default. Core library data lives on your Mac. When you invoke a configured remote AI or search feature, the selected provider receives only the content needed for that request as described below.
                 </div>
             </section>
 
@@ -210,26 +210,31 @@
 
                 <h3>2.1 Information You Provide</h3>
                 <p><strong>GitHub OAuth:</strong> When you sign in with GitHub, Starcat receives an OAuth access token with <code>read:user</code> and <code>public_repo</code> scopes. This token is stored locally in your Mac's Keychain and is used only to authenticate GitHub API requests from the app.</p>
-                <p><strong>AI Provider Keys:</strong> If you configure AI features, you provide API keys for your chosen provider (e.g., OpenAI, Gemini, DeepSeek). These keys are stored locally in your Mac's Keychain and are never transmitted to Starcat servers.</p>
+                <p><strong>AI and Search Provider Keys:</strong> If you configure AI or External Search features, you may provide API keys for your chosen provider (e.g., OpenAI, Gemini, DeepSeek, AnySearch, Tavily, Exa, or Brave Search). These keys are stored locally in your Mac's Keychain and are never transmitted to Starcat servers.</p>
 
                 <h3>2.2 Information Collected Automatically</h3>
                 <p><strong>GitHub Data:</strong> When you use Starcat, the app fetches your starred repositories, their metadata (description, topics, language, stars count), README content, and release information from the GitHub API. This data is cached locally in a SQLite database on your Mac.</p>
                 <p><strong>Starcat Service APIs:</strong> The app may request data from Starcat-operated services for discovery features (trending repos, weekly picks, popular repos) and OpenSSF Scorecard data. These requests do <strong>not</strong> include your personal data, GitHub identity, or API keys.</p>
                 <p><strong>App Store Receipt Validation:</strong> When verifying your Pro subscription, the app communicates with Apple's App Store servers to validate the receipt. This is handled by Apple's StoreKit framework.</p>
+
+                <h3>2.3 Optional Anonymous Telemetry</h3>
+                <p><strong>Anonymous telemetry is off by default.</strong> If you enable it in <em>Settings → Diagnostics</em> and this build is configured with Aptabase, Starcat sends allowlisted event names, the app version, and coarse value buckets to Aptabase to understand feature reliability and usage. Telemetry excludes your GitHub identity, repository names, search queries, README content, notes, AI prompts or responses, API keys, tokens, and local file paths. It is not used for advertising or cross-app tracking.</p>
             </section>
 
-            <!-- 3. Data We Don't Collect -->
+            <!-- 3. Data Starcat-Operated Services Don't Collect -->
             <section class="chapter" id="data-we-dont">
-                <h2><span class="num">03</span> Data We Don't Collect</h2>
-                <p>Starcat does <strong>not</strong> collect, transmit, or have access to:</p>
+                <h2><span class="num">03</span> Data Starcat Services Don't Collect</h2>
+                <p>Except when you explicitly select a Starcat-operated AI proxy, Starcat-operated services do <strong>not</strong> receive or store:</p>
                 <ul>
                     <li>Your GitHub Stars list or organization data (tags, notes, status)</li>
                     <li>Your GitHub OAuth token (stored in your local Keychain only)</li>
-                    <li>Your AI provider API keys (stored in your local Keychain only)</li>
-                    <li>Your app usage analytics or behavior patterns</li>
-                    <li>Your README reading history or search queries</li>
+                    <li>Your AI or External Search provider API keys (stored in your local Keychain only)</li>
+                    <li>Your RAG questions, knowledge-base content, private notes, attachments, or conversation history</li>
+                    <li>Your app usage data unless you explicitly enable anonymous telemetry</li>
+                    <li>Your README reading history</li>
                     <li>Crash reports (unless you choose to share via Apple's crash reporting)</li>
                 </ul>
+                <p>This section describes Starcat-operated services. If you invoke remote AI, Embedding, GitHub live context, or External Search, the provider you selected receives the request data described in Sections 5 and 6.</p>
             </section>
 
             <!-- 4. How Your Data Is Stored -->
@@ -239,8 +244,8 @@
                 <h3>4.1 Local Storage</h3>
                 <p>Your data is stored in the following locations on your Mac:</p>
                 <ul>
-                    <li><strong>SQLite Database (GRDB.swift):</strong> Repository cache, tags, notes, status, settings, and AI summary cache are stored in a local SQLite database in the app's Application Support directory.</li>
-                    <li><strong>Keychain:</strong> GitHub OAuth token and AI provider API keys are stored securely in the macOS Keychain, encrypted with your login credentials.</li>
+                    <li><strong>SQLite Database (GRDB.swift):</strong> Repository cache, tags, notes, status, settings, RAG knowledge chunks and vectors, conversations, citations, and AI summary cache are stored in a local SQLite database in the app's Application Support directory.</li>
+                    <li><strong>Keychain:</strong> GitHub OAuth token and AI or External Search provider API keys are stored securely in the macOS Keychain, encrypted with your login credentials.</li>
                 </ul>
 
                 <h3>4.2 No Cloud Sync</h3>
@@ -258,12 +263,18 @@
                 <p>Your GitHub OAuth token is used exclusively to authenticate requests to the GitHub API for syncing your stars, fetching repository metadata, README content, and release information. These requests originate from the app on your Mac and go directly to GitHub's servers.</p>
 
                 <h3>5.2 AI Features</h3>
-                <p>When you trigger AI features (summaries, tag suggestions, chat, translation), the app sends the relevant content (e.g., README text) to the AI provider you configured. These requests go directly from your Mac to the AI provider's API using your own API key. Starcat does not proxy, log, or store these requests.</p>
+                <p>When you trigger AI features such as summaries, tag suggestions, chat, translation, or knowledge-base RAG, the app sends the content needed for that request to the AI provider you configured. Depending on the feature, this may include your question, a limited window of conversation history, repository metadata, README text, AI summaries, retrieved knowledge chunks (including private notes), attachments you selected for that turn, repository code context, and temporary GitHub or web context.</p>
+                <p>When you configure a remote Embedding or reranking provider, Starcat sends the knowledge text needed to create vectors or rerank retrieved evidence. If you use a local model such as Ollama, that model's processing remains on your Mac.</p>
+                <p>BYOK requests go from your Mac to the provider endpoint using your own API key. If a Starcat-operated AI proxy is offered and you explicitly select it, the request passes through that service; request content is not persistently stored, while limited operational metadata such as request time, quota usage, and error codes may be retained for service operation and abuse prevention. RAG conversations and answers you choose to keep are stored locally on your Mac.</p>
 
-                <h3>5.3 Starcat Service APIs</h3>
+                <h3>5.3 External Search and Live GitHub Context</h3>
+                <p>When you enable External Search for a RAG turn, Starcat sends a generated search query and request settings to the External Search provider you selected. Search results are used as temporary evidence for that turn. Web result content is not written to long-term RAG history; Starcat may keep local audit metadata such as provider name, query summary, result count, URLs, timing, and errors.</p>
+                <p>Private repository names are excluded from External Search queries unless you enable the separate private-repository search setting. Live GitHub context requests, such as Issues, Pull Requests, or Releases, go directly from your Mac to GitHub and are subject to GitHub's privacy policy.</p>
+
+                <h3>5.4 Starcat Service APIs</h3>
                 <p>Discovery feeds (trending, weekly, popular) and OpenSSF Scorecard requests go to Starcat-operated services. These requests are anonymous — they include no personal identifiers, GitHub tokens, or user data.</p>
 
-                <h3>5.4 Support Communication</h3>
+                <h3>5.5 Support Communication</h3>
                 <p>If you contact us at <code>dong4j@gmail.com</code>, we will use your email address only to respond to your inquiry. We do not use support emails for marketing or any other purpose.</p>
             </section>
 
@@ -275,9 +286,15 @@
                 <p>Starcat uses the GitHub API to sync stars and fetch repository data. Your use of GitHub through Starcat is also governed by <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement" target="_blank" rel="noopener noreferrer">GitHub's Privacy Statement</a>.</p>
 
                 <h3>6.2 AI Providers (BYOK)</h3>
-                <p>Starcat supports multiple AI providers (OpenAI, Gemini, DeepSeek, Ollama, and OpenAI-compatible APIs). When you configure a provider with your own API key, requests are sent directly from your Mac to that provider. Each provider has its own privacy policy — please review the policy of the provider you choose to use.</p>
+                <p>Starcat supports multiple AI providers (OpenAI, Anthropic-compatible services, Gemini, DeepSeek, Ollama, and OpenAI-compatible APIs). When you configure a remote provider with your own API key, requests are sent from your Mac to that provider. Each provider controls its own retention and processing practices — please review the policy and account settings of the provider you choose.</p>
 
-                <h3>6.3 Apple</h3>
+                <h3>6.3 External Search Providers</h3>
+                <p>Optional External Search may use <a href="https://www.anysearch.com/legal?type=privacy" target="_blank" rel="noopener noreferrer">AnySearch</a>, <a href="https://www.tavily.com/privacy" target="_blank" rel="noopener noreferrer">Tavily</a>, <a href="https://exa.ai/privacy-policy" target="_blank" rel="noopener noreferrer">Exa</a>, or <a href="https://search.brave.com/help/privacy-policy" target="_blank" rel="noopener noreferrer">Brave Search</a>. The selected provider receives the search query and request options needed to return results.</p>
+
+                <h3>6.4 Aptabase (Optional Analytics)</h3>
+                <p>If you explicitly enable anonymous telemetry, Aptabase receives the limited product events described in Section 2.3. Telemetry is disabled by default and is not linked to your GitHub identity or used for tracking. See <a href="https://aptabase.com/legal/privacy" target="_blank" rel="noopener noreferrer">Aptabase's Privacy Policy</a>.</p>
+
+                <h3>6.5 Apple</h3>
                 <p>Pro subscriptions are managed by Apple through In-App Purchase. Apple processes your payment information and manages your subscription. We do not receive or store your payment details. See <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener noreferrer">Apple's Privacy Policy</a>.</p>
             </section>
 

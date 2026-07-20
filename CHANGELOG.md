@@ -2,6 +2,36 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.1.0
+
+Starcat 1.1.0 turns saved repositories into a local-first, explainable RAG knowledge base, with broad performance, reliability, and macOS interface improvements.
+
+### New
+
+- Added a full knowledge-base RAG workspace with multi-repository context, streaming answers, citations, conversation groups, pinning, history, and draft recovery.
+- Added hybrid retrieval across vector and bilingual keyword search, repository metadata, Wiki, RepoContext, optional reranking, live GitHub context, and external search.
+- Added knowledge-base browsing and index management with batch Star imports, README completion, chunk editing and exclusion, targeted rebuilds, and index health checks.
+- Added explainable RAG controls for query plans, execution timelines, retrieval funnels, context budgets, historical replay, retrieval settings, and debug export.
+- Added a local AI usage dashboard for requests, tokens, latency, and failures without storing prompts or response content.
+- Added global Star-status filters and AI-summary indicators for faster repository triage.
+
+### Improvements
+
+- Improved large-library and long-conversation performance with bounded indexing, batched vector work, incremental persistence, limited prefetching, and caching.
+- Improved the RAG workspace with resizable columns, loading skeletons, richer citation panels, code and table copying, stable scrolling, and responsive typography.
+- Improved AI settings and background jobs with clearer model capabilities, safer tag suggestions, actionable diagnostics, progress reporting, and cancel or skip controls.
+- Improved Explore, Trending, and Weekly with shared snapshots, session caches, cancellation-safe switching, source filters, timelines, and stable loading states.
+- Improved native macOS consistency across settings, pickers, segmented controls, sidebar icons, semantic colors, and compact window layouts.
+- Improved browser Companion workflows with configurable local ports, recommendation pagination, Star-state synchronization, and clearer availability feedback.
+
+### Fixes
+
+- Fixed RAG scope isolation across repository or account switches, concurrent tasks, cancellations, and stale callbacks.
+- Fixed retrieval and citation correctness for explicit repository scopes, private notes, bilingual keywords, Wiki content, excluded chunks, false citation markers, and no-evidence refusal.
+- Fixed conversation stability for title generation, pin ordering, draft and history restoration, long-session compression, streaming timers, and scroll-to-bottom behavior.
+- Fixed knowledge-base refresh and indexing issues, including unnecessary reloads, stale vectors overwriting new chunks, inaccurate source updates, and background Wiki refresh failures.
+- Fixed browser-based GitHub sign-in, localized AI and RAG error feedback, and several settings, layout, and accessibility issues.
+
 ## 1.0.0
 
 Initial Starcat release for the Mac App Store.

@@ -179,7 +179,7 @@
         <h1>Starcat Privacy Policy</h1>
         <div class="hero-meta">
             <span><strong>Effective Date:</strong> June 1, 2026</span>
-            <span><strong>Last Updated:</strong> July 19, 2026</span>
+            <span><strong>Last Updated:</strong> July 20, 2026</span>
             <span><strong>Version:</strong> v1.1</span>
             <span><strong>Platform:</strong> macOS 15+ / Chrome</span>
         </div>
@@ -261,12 +261,17 @@
                     <tr><td class="col-cat">User Content<span class="sub">Notes, tags, status</span></td><td>Yes</td><td>Core functionality, cross-device sync</td><td>Yes</td></tr>
                     <tr><td class="col-cat">Identifiers<span class="sub">GitHub User ID, Apple ID</span></td><td>Yes</td><td>Authentication, sync, subscription</td><td>Yes</td></tr>
                     <tr><td class="col-cat">Purchases<span class="sub">Subscription / purchase records</span></td><td>Apple-processed only</td><td>Entitlement verification</td><td>Yes</td></tr>
-                    <tr><td class="col-cat">Usage Data<span class="sub">Page views, feature clicks</span></td><td>Local only</td><td>Not uploaded</td><td>No</td></tr>
+                    <tr><td class="col-cat">Usage Data<span class="sub">Allowlisted feature events</span></td><td>Opt-in, off by default</td><td>Anonymous analytics</td><td>No</td></tr>
                     <tr><td class="col-cat">Diagnostics<span class="sub">Crash logs, performance</span></td><td>Opt-in, off by default</td><td>Bug fixes, stability</td><td>No (de-identified)</td></tr>
                     <tr><td class="col-cat">Location</td><td><strong>Not collected</strong></td><td>—</td><td>—</td></tr>
                     <tr><td class="col-cat">Health, Financial, Contacts, Browsing History, Sensitive Info, Surroundings, Body Data</td><td><strong>Not collected</strong></td><td>—</td><td>—</td></tr>
                 </tbody>
             </table>
+
+            <div class="callout info">
+                <span class="label">RAG and remote processing</span>
+                Core library data remains in local storage. When you invoke a configured remote AI, Embedding, reranking, GitHub live-context, or External Search feature, the selected provider receives only the content needed for that request. This may include a question, limited conversation history, retrieved knowledge chunks (including private notes), selected attachments, repository code context, or a generated search query.
+            </div>
 
             <h3>3.1 Information You Provide</h3>
             <ul>
@@ -285,6 +290,7 @@
 
             <h3>3.3 Automatically Collected Information</h3>
             <ul>
+                <li><strong>Anonymous Telemetry</strong> (only after you opt in): Allowlisted event names, App version, and coarse value buckets are sent to Aptabase. Telemetry excludes your GitHub identity, repository names, search queries, README content, notes, AI prompts or responses, API keys, tokens, and local file paths.</li>
                 <li><strong>Device &amp; Environment Info</strong> (only when a crash occurs and you've opted in): Device model, macOS version, App version, call stack, memory usage. <strong>Does not</strong> include your content data.</li>
                 <li><strong>IP Address</strong>: Only when communicating with our self-hosted AI proxy, temporarily logged for security auditing and abuse prevention — <strong>retained no longer than 30 days</strong>.</li>
             </ul>
@@ -301,8 +307,9 @@
             <ol>
                 <li><strong>Provide &amp; maintain core functionality</strong>: Star sync, local full-text search, tag management, notes, and future CloudKit sync;</li>
                 <li><strong>Verify identity &amp; subscription</strong>: Via GitHub OAuth and Apple StoreKit;</li>
-                <li><strong>Provide AI capabilities</strong> (requires opt-in): Summaries, tag suggestions, semantic search, health scoring;</li>
-                <li><strong>Fix bugs &amp; improve experience</strong>: Based on voluntarily submitted diagnostics;</li>
+                <li><strong>Provide AI and knowledge-base RAG capabilities</strong> (requires configuration and user action): Summaries, tag suggestions, semantic search, Embedding, reranking, cited question answering, and optional live context;</li>
+                <li><strong>Provide External Search</strong> (optional): Send a generated search query and request options to the provider you selected, then use returned results as temporary evidence;</li>
+                <li><strong>Fix bugs &amp; improve experience</strong>: Based on optional anonymous telemetry and voluntarily submitted diagnostics;</li>
                 <li><strong>Respond to support requests</strong>;</li>
                 <li><strong>Comply with legal obligations</strong>: Cooperate with lawful authority requests as required.</li>
             </ol>
@@ -322,7 +329,9 @@
                     <tr><td>AI API Key (BYOK)</td><td><span class="badge badge-keychain">Device Keychain</span></td><td>Apple Secure Enclave</td></tr>
                     <tr><td>Star repo cache (rebuildable)</td><td><span class="badge badge-local">Local SQLite</span></td><td>FileVault full-disk encryption</td></tr>
                     <tr><td>User Content (tags, notes, status)</td><td><span class="badge badge-local">Local SQLite</span> + <span class="badge badge-cloud">iCloud (optional)</span></td><td>FileVault + iCloud E2E encryption</td></tr>
-                    <tr><td>AI requests &amp; responses</td><td><span class="badge badge-server">Selected AI provider</span></td><td>HTTPS (TLS 1.2+)</td></tr>
+                    <tr><td>RAG index, conversations, citations &amp; local audit metadata</td><td><span class="badge badge-local">Local SQLite</span></td><td>FileVault full-disk encryption</td></tr>
+                    <tr><td>Remote AI / Embedding requests &amp; responses</td><td><span class="badge badge-server">Selected AI provider</span></td><td>HTTPS (TLS 1.2+)</td></tr>
+                    <tr><td>Anonymous telemetry (opt-in)</td><td><span class="badge badge-server">Aptabase</span></td><td>HTTPS (TLS 1.2+)</td></tr>
                     <tr><td>Payment receipts</td><td><span class="badge badge-cloud">Apple StoreKit</span></td><td>Managed by Apple</td></tr>
                 </tbody>
             </table>
@@ -330,6 +339,9 @@
             <p><strong>The current version of Starcat does not provide iCloud / CloudKit sync.</strong> This feature is planned for a future release as a Starcat Pro benefit. When iCloud sync becomes available and you enable it, your user content will be stored in <strong>your own iCloud private database</strong> (not our servers). We <strong>cannot</strong> access any content in your iCloud. Sync follows Apple's published end-to-end encryption. See <a href="https://support.apple.com/en-us/HT202303" target="_blank" rel="noopener">Apple iCloud Security Overview</a>.</p>
             <h3>5.2 Self-Hosted AI Proxy (optional)</h3>
             <p>When using our "Starcat Pro" AI proxy, requests transit through our server to the underlying AI provider. Our proxy: <strong>does not</strong> persist your request content; <strong>does not</strong> use your content for training; retains only necessary <strong>request time, quota count, error codes</strong> for quota management and troubleshooting.</p>
+            <h3>5.3 RAG, Embedding &amp; External Search</h3>
+            <p>When you trigger knowledge-base RAG, Starcat may send your question, a limited window of conversation history, repository metadata, README text, AI summaries, retrieved knowledge chunks (including private notes), attachments selected for that turn, repository code context, and temporary GitHub or web context to the AI provider you configured. A remote Embedding or reranking provider receives the knowledge text needed to create vectors or rank evidence. Local models such as Ollama process data on your Mac.</p>
+            <p>When External Search is enabled for a turn, the selected provider receives a generated query and request options. Web result content is used only as temporary evidence and is not written to long-term RAG history. Starcat may retain local audit metadata such as provider name, query summary, result count, URLs, timing, and errors. Private repository names are excluded unless you enable the separate private-repository search setting.</p>
         </section>
 
         <section class="chapter" id="sec-6">
@@ -337,7 +349,7 @@
             <p>We <strong>do not</strong> actively share your personal information with third parties except:</p>
             <ul>
                 <li><strong>With your explicit consent</strong>;</li>
-                <li><strong>To provide a feature you chose</strong>: e.g., forwarding AI requests to your selected provider;</li>
+                <li><strong>To provide a feature you chose</strong>: e.g., forwarding AI, Embedding, reranking, or search requests to your selected provider;</li>
                 <li><strong>Legal obligations</strong>: In response to lawful requests from competent authorities;</li>
                 <li><strong>Protection of rights</strong>: As necessary to protect the safety, property, or rights of users, the public, or ourselves;</li>
                 <li><strong>Business transfers</strong>: In case of merger, acquisition, or asset transfer, we will notify you in advance and require the recipient to continue honoring this policy.</li>
@@ -356,6 +368,8 @@
                 <div><dt>Google Gemini</dt><dd>Optional AI provider. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy ↗</a></dd></div>
                 <div><dt>DeepSeek</dt><dd>Optional AI provider. <a href="https://www.deepseek.com/privacy" target="_blank" rel="noopener">DeepSeek Privacy Policy ↗</a></dd></div>
                 <div><dt>Ollama (local)</dt><dd>Optional local model runtime — data never leaves your device.</dd></div>
+                <div><dt>External Search providers</dt><dd>Optional web context through <a href="https://www.anysearch.com/legal?type=privacy" target="_blank" rel="noopener">AnySearch</a>, <a href="https://www.tavily.com/privacy" target="_blank" rel="noopener">Tavily</a>, <a href="https://exa.ai/privacy-policy" target="_blank" rel="noopener">Exa</a>, or <a href="https://search.brave.com/help/privacy-policy" target="_blank" rel="noopener">Brave Search</a>. The selected provider receives the query and request options needed to return results.</dd></div>
+                <div><dt>Aptabase</dt><dd>Optional anonymous telemetry, off by default. It receives only allowlisted product events after you opt in.<br><a href="https://aptabase.com/legal/privacy" target="_blank" rel="noopener">Aptabase Privacy Policy ↗</a></dd></div>
             </dl>
             <div class="callout">
                 <span class="label">Your Choice</span>

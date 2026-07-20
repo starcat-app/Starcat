@@ -169,6 +169,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 | `docs/1-立项/开发前问题清单.md` | 已解决的问题及解决方案 |
 | `docs/3-设计/详细设计/*.md` | 模块详细设计 |
 | `docs/5-规范/*.md` | UI / i18n / 开源致谢 等强制规范 |
+| `docs/5-规范/Git-提交规范.md` | Git commit message 格式与更新日志分类规则 |
 | `docs/6-发版与上架/SOP-发版流程.md` | 发版 SOP（git tag 自动驱动版本号） |
 
 > **阅读顺序建议**：先读 `CLAUDE.md` 了解概览，再根据任务需要查阅对应文档。
@@ -281,6 +282,7 @@ Section {
 
 ### 代码规范
 
+- 所有 Git commit message 必须遵循 [`docs/5-规范/Git-提交规范.md`](docs/5-规范/Git-提交规范.md)，确保提交可以被脚本稳定转换为更新日志
 - 代码必须添加必要注释，解释"为什么这样做"
 - **较复杂的代码（actor / Concurrency / WKWebView delegate / URLProtocol / FTS5 / 三阶段 SWR 这类）必须写详细的"为什么 + 关键约束 + 已踩过的坑"级注释**。参考样板：`Starcat/Features/Home/ReadmeViewModel.swift` / `Starcat/Shared/Components/ReadmeWebView.swift` / `StarcatTests/URLProtocolStub.swift`
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/7-工具与脚本/Swift-学习索引.md` 对应条目（仅给关键词 + 项目内代码位置 + 官方搜索词，不展开教学）

@@ -519,6 +519,8 @@ The app uses standard Apple platform networking APIs and HTTPS/TLS for communica
 
 建议在 App Review Notes 中写：
 
+> Starcat 1.1.x 的 RAG 数据流、App Privacy 和审核步骤必须同时参考 [`v1.1-RAG隐私与审核备注.md`](v1.1-RAG隐私与审核备注.md)，下面的通用模板不能替代 RAG 专项披露。
+
 ```text
 Starcat is a native macOS client for organizing GitHub Stars.
 
