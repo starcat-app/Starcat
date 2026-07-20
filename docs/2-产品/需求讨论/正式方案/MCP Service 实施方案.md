@@ -80,8 +80,8 @@ Starcat App 内置 MCP Service 仍是唯一业务入口。外部 Agent 不再直
 
 ## 7. 外部项目
 
-- `https://github.com/dong4j/starcat-cli`：Go CLI，开发路径 `supports/starcat-cli`。
-- `https://github.com/dong4j/starcat-skill`：Agent 工作流，开发路径 `supports/starcat-skill`。
+- `https://github.com/starcat-app/starcat-cli`：Go CLI，开发路径 `supports/starcat-cli`。
+- `https://github.com/starcat-app/starcat-skill`：Agent 工作流，开发路径 `supports/starcat-skill`。
 
 两者都是独立 Git 仓库，由父仓库 `supports/*` ignore，不纳入 Starcat 主项目构建与提交。
 

@@ -9,8 +9,8 @@
 Starcat 对外能力收口为三层：
 
 1. **Starcat App MCP Service**：唯一业务实现，负责数据访问、Pro、隐私开关、写权限、dry-run、审计和 AI Provider。
-2. **`dong4j/starcat-cli`**：Go 跨平台协议适配器。CLI 命令和 `starcat mcp` 都调用同一组 MCP Tools。
-3. **`dong4j/starcat-skill`**：只描述 Agent 工作流，统一执行 `starcat` CLI，不携带 Python HTTP client 或 Starcat 凭据。
+2. **`starcat-app/starcat-cli`**：Go 跨平台协议适配器。CLI 命令和 `starcat mcp` 都调用同一组 MCP Tools。
+3. **`starcat-app/starcat-skill`**：只描述 Agent 工作流，统一执行 `starcat` CLI，不携带 Python HTTP client 或 Starcat 凭据。
 
 两个外部项目在开发机分别位于 `supports/starcat-cli` 和 `supports/starcat-skill`，均拥有独立 Git history，不进入 Starcat 主仓库版本控制。
 
@@ -44,7 +44,7 @@ Codex / Claude Code / 其它 Agent（macOS / Linux / Windows）
 
 ## 3. Go CLI
 
-独立项目：`supports/starcat-cli`，module 为 `github.com/dong4j/starcat-cli`。
+独立项目：`supports/starcat-cli`，module 为 `github.com/starcat-app/starcat-cli`。
 
 目标平台：
 

@@ -21,7 +21,7 @@
 - [ ] `starcat-app/starcat-pro`
 - [x] `starcat-app/starcat-localization`
 - [ ] `starcat-app/homebrew-starcat`
-- [ ] `starcat-app/starcat-skill`
+- [x] `starcat-app/starcat-skill`
 - [ ] `starcat-app/starcat-chrome-plugin`
 - [ ] `starcat-app/starcat-safari-plugin`
 - [ ] `starcat-app/starcat-discovery-api`
@@ -87,7 +87,7 @@
 
 - [ ] Starcat 主仓库：确认 `dev` 相对远端领先的 commit 和未提交文件已按 dong4j 意图处理。
 - [ ] `starcat-pro`：确认未推送 commit 已处理，并清除不应提交的 `.DS_Store`。
-- [ ] `starcat-skill`：确认本地 `main` 已推到远端；当前远端分支为空 / upstream gone 的状态已消除。
+- [x] `starcat-skill`：链接更新提交 `b96aa7e` 已推送，本地 `dev` / `main` 与组织远端对应分支一致，upstream 正常。
 - [x] `starcat-cli`：确认开发改动已完成、提交并通过验证。
 - [x] `homebrew-starcat-cli`：确认首个 commit 已完成。
 - [ ] 其它待迁移仓库均为预期分支，且不存在未提交或未推送的重要内容。
@@ -247,7 +247,7 @@ git -C supports/starcat-localization push --dry-run
 - [x] 新旧 Git URL 的 `ls-remote`、本地 `fetch` 与 `push --dry-run` 正常。
 - [x] 当前文档、脚本、README 与站点入口均已改为 `https://github.com/starcat-app/starcat-localization`；旧 owner 仅保留在迁移源与重定向验收记录中。
 - [ ] 观察一段时间后没有权限、链接或自动化异常。
-- [ ] dong4j 明确确认试点通过，允许进入批量阶段。
+- [x] dong4j 明确确认试点通过，允许进入批量阶段。
 
 ---
 
@@ -258,8 +258,20 @@ git -C supports/starcat-localization push --dry-run
 ### 6.1 第一批：静态内容与低自动化仓库
 
 - [ ] `starcat-pro`
-- [ ] `starcat-skill`（必须先把本地 `main` 推到现有远端）
+- [x] `starcat-skill`
 - [ ] `starcat-safari-plugin`
+
+#### 6.1.1 `starcat-skill` 验收记录
+
+- [x] 迁移前工作树干净；`dev` / `main` 与远端均指向 `479549b`，当前没有 tag。
+- [x] Repository ID 为 `R_kgDOTdTniw`，Public，默认分支为 `main`；Issue、PR、Release、stars、watchers、forks 均为 0。
+- [x] 迁移前无 Actions workflow、Repository Secret、Variable、Environment、Pages、webhook、deploy key、ruleset 或 branch protection。
+- [x] mirror 备份保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/starcat-skill.git`，`show-ref` 与 `git fsck --full` 校验通过。
+- [x] 2026-07-20 13:49 CST 完成 `dong4j/starcat-skill` → `starcat-app/starcat-skill` Transfer；Repository ID、Public visibility、默认分支与 refs 保持不变。
+- [x] 本地 `origin` 已更新为 `https://github.com/starcat-app/starcat-skill.git`，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 `dev` / `main` refs。
+- [x] Starcat 安装 Prompt、CLI / MCP 设计文档与 Skill 内 CLI 安装链接已更新为 `starcat-app` namespace。
+- [x] Skill 链接更新提交 `b96aa7e` 已推送到组织仓库的 `dev` / `main`，两个分支最终 refs 一致。
 
 ### 6.2 第二批：带 Release / 分发入口的仓库
 

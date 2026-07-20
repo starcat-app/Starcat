@@ -11,9 +11,9 @@
 import Foundation
 
 enum MCPAgentSetupPrompt {
-    static let skillRepositoryURL = "https://github.com/dong4j/starcat-skill"
-    static let cliRepositoryURL = "https://github.com/dong4j/starcat-cli"
-    static let cliInstallCommand = "curl -fsSL https://github.com/dong4j/starcat-cli/releases/latest/download/install.sh | sh"
+    static let skillRepositoryURL = "https://github.com/starcat-app/starcat-skill"
+    static let cliRepositoryURL = "https://github.com/starcat-app/starcat-cli"
+    static let cliInstallCommand = "curl -fsSL https://github.com/starcat-app/starcat-cli/releases/latest/download/install.sh | sh"
     static let cliVerificationCommand = "starcat doctor --json"
 
     static var cliAgentInstall: String {

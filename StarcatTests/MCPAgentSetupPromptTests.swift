@@ -35,7 +35,7 @@ struct MCPAgentSetupPromptTests {
 
         #expect(prompt.contains("starcat-cli"))
         #expect(prompt.contains(MCPAgentSetupPrompt.cliRepositoryURL))
-        #expect(prompt.contains("brew tap dong4j/starcat-cli"))
+        #expect(prompt.contains("brew tap starcat-app/starcat-cli"))
     }
 
     @Test("MCP 手工说明包含 stdio 配置且不包含凭据")
