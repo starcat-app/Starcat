@@ -15,7 +15,7 @@ struct MCPAgentSetupPromptTests {
         let prompt = MCPAgentSetupPrompt.mcp
 
         #expect(prompt.contains("starcat mcp"))
-        #expect(prompt.contains("starcat pair"))
+        #expect(prompt.contains("starcat pair --stdin"))
         #expect(prompt.contains("starcat.get_capabilities"))
         #expect(!prompt.contains("127.0.0.1"))
         #expect(!prompt.contains("Bearer"))
@@ -28,6 +28,7 @@ struct MCPAgentSetupPromptTests {
 
         #expect(prompt.contains("starcat-cli"))
         #expect(prompt.contains(MCPAgentSetupPrompt.cliRepositoryURL))
+        #expect(prompt.contains("brew tap dong4j/starcat-cli"))
     }
 
     @Test("Skill prompt 只包含安装请求和公开仓库地址")
@@ -39,12 +40,13 @@ struct MCPAgentSetupPromptTests {
         #expect(prompt.split(separator: "\n").count == 1)
     }
 
-    @Test("配对 prompt 只包装一次性 URI")
-    func pairingPromptWrapsInvitation() {
+    @Test("配对 prompt 只通过 stdin 传递一次性 URI")
+    func pairingPromptUsesStandardInput() {
         let invitation = "starcat-pair://connect?v=1&secret=temporary"
         let prompt = MCPAgentSetupPrompt.pair(invitationURI: invitation)
 
-        #expect(prompt.contains("starcat pair"))
+        #expect(prompt.contains("starcat pair --stdin"))
         #expect(prompt.contains(invitation))
+        #expect(!prompt.contains("starcat pair \"\(invitation)\""))
     }
 }

@@ -47969,15 +47969,15 @@
     "settings.mcp.agentSetup.cliPrompt": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Please install and verify the signed Starcat CLI for this platform from %1$@, then run `starcat doctor --json`. If it is not paired, ask me to copy a one-time pairing command from Starcat." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请从 %1$@ 安装并验证适合当前平台的已签名 Starcat CLI，然后运行 `starcat doctor --json`。如果尚未配对，请让我从 Starcat 复制一次性配对命令。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Please install and verify the official Starcat CLI from %1$@. Prefer Homebrew on macOS or Linux (`brew tap dong4j/starcat-cli && brew install starcat`); otherwise use the official Release installer for this platform. Then run `starcat doctor --json`. If it is not paired, ask me to copy one-time pairing instructions from Starcat." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请从 %1$@ 安装并验证官方 Starcat CLI。macOS 或 Linux 优先使用 Homebrew（`brew tap dong4j/starcat-cli && brew install starcat`），其他情况使用适合当前平台的官方 Release 安装脚本。然后运行 `starcat doctor --json`；如果尚未配对，请让我从 Starcat 复制一次性配对说明。" } }
       }
     },
     "settings.mcp.agentSetup.pair.copy": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Copy one-time pairing command" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制一次性配对命令" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Copy one-time pairing instructions" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制一次性配对说明" } }
       }
     },
     "settings.mcp.agentSetup.pair.help": {
@@ -47997,8 +47997,8 @@
     "settings.mcp.agentSetup.pairPrompt": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Please run this one-time Starcat pairing command, then wait for me to approve the device in Starcat:\n\nstarcat pair \"%1$@\"\n\nDo not print or persist the pairing URI." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请执行下面的一次性 Starcat 配对命令，然后等待我在 Starcat 中确认设备：\n\nstarcat pair \"%1$@\"\n\n不要输出或持久化配对 URI。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Please start this one-time Starcat pairing session, provide the URI below through stdin, then wait for me to approve the device in Starcat:\n\nCommand:\nstarcat pair --stdin\n\nOne-time pairing URI:\n%1$@\n\nPass the URI only through stdin. Do not place it in command arguments, print it, or persist it." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请启动下面的一次性 Starcat 配对会话，通过 stdin 提供 URI，然后等待我在 Starcat 中确认设备：\n\n命令：\nstarcat pair --stdin\n\n一次性配对 URI：\n%1$@\n\n只允许通过 stdin 传入 URI，不要把它放入命令参数、输出或持久化。" } }
       }
     },
     "settings.mcp.agentSetup.mcp.copy": {
@@ -48058,13 +48058,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "# Install Starcat MCP Service\n\nConfigure the current AI agent with a user-level MCP Server:\n\n- Name: starcat\n- Command: the absolute path returned by `command -v starcat` (or the Windows equivalent)\n- Args: [\"mcp\"]\n- Transport: stdio\n- Resulting launch command: `starcat mcp`\n\nRequirements:\n1. If the CLI is missing, install it from the official `dong4j/starcat-cli` release.\n2. Run `starcat doctor --json`; if it is not paired, ask me for a one-time `starcat pair` command.\n3. Complete initialize and tools/list, then call the read-only tool starcat.get_capabilities.\n4. Do not call write tools during installation verification.\n5. Never ask me for a Local API Key or store credentials in a repository.\n6. Starcat must remain running with MCP Service enabled."
+            "value": "# Install Starcat MCP Service\n\nConfigure the current AI agent with a user-level MCP Server:\n\n- Name: starcat\n- Command: the absolute path returned by `command -v starcat` (or the Windows equivalent)\n- Args: [\"mcp\"]\n- Transport: stdio\n- Resulting launch command: `starcat mcp`\n\nRequirements:\n1. If the CLI is missing, prefer Homebrew on macOS or Linux (`brew tap dong4j/starcat-cli && brew install starcat`); otherwise use the official `dong4j/starcat-cli` Release installer.\n2. Run `starcat doctor --json`; if it is not paired, ask me for one-time pairing instructions and use `starcat pair --stdin`.\n3. Complete initialize and tools/list, then call the read-only tool starcat.get_capabilities.\n4. Do not call write tools during installation verification.\n5. Never ask me for a Local API Key or store credentials in a repository.\n6. Starcat must remain running with MCP Service enabled."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "# 安装 Starcat MCP Service\n\n请在当前 AI Agent 中添加用户级 MCP Server：\n\n- Name: starcat\n- Command: `command -v starcat` 返回的绝对路径（Windows 使用对应命令）\n- Args: [\"mcp\"]\n- Transport: stdio\n- 最终启动命令：`starcat mcp`\n\n要求：\n1. 如果尚未安装 CLI，先从官方 `dong4j/starcat-cli` Release 安装。\n2. 运行 `starcat doctor --json`；如提示未配对，请让我复制一次性 `starcat pair` 命令。\n3. 完成 initialize 和 tools/list 后调用只读工具 starcat.get_capabilities。\n4. 验证期间不要调用写入工具。\n5. 不要向我索取 Local API Key，也不要把凭据写入仓库。\n6. Starcat 必须保持运行，并已开启 MCP Service。"
+            "value": "# 安装 Starcat MCP Service\n\n请在当前 AI Agent 中添加用户级 MCP Server：\n\n- Name: starcat\n- Command: `command -v starcat` 返回的绝对路径（Windows 使用对应命令）\n- Args: [\"mcp\"]\n- Transport: stdio\n- 最终启动命令：`starcat mcp`\n\n要求：\n1. 如果尚未安装 CLI，macOS 或 Linux 优先使用 Homebrew（`brew tap dong4j/starcat-cli && brew install starcat`），其他情况使用官方 `dong4j/starcat-cli` Release 安装脚本。\n2. 运行 `starcat doctor --json`；如提示未配对，请让我复制一次性配对说明，并使用 `starcat pair --stdin`。\n3. 完成 initialize 和 tools/list 后调用只读工具 starcat.get_capabilities。\n4. 验证期间不要调用写入工具。\n5. 不要向我索取 Local API Key，也不要把凭据写入仓库。\n6. Starcat 必须保持运行，并已开启 MCP Service。"
           }
         }
       }
