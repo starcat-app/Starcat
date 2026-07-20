@@ -11,7 +11,7 @@
 #   - 6 个 Go API 服务(starcat-*-api)
 #   - starcat-pro / starcat-license-api / starcat-localization
 #   - starcat-skill / starcat-cli / homebrew-starcat-cli
-#   - homebrew-starcat / vscode-makefile-explorer
+#   - homebrew-starcat
 #   - extensions/ 下 2 个浏览器插件
 #
 # 前置条件: git 可用; starcat-license-api 是私有仓库,需要 gh CLI 或 SSH key 已配置
@@ -67,7 +67,6 @@ if $SHOW_HELP; then
   echo "  starcat-skill       Starcat AI Agent Skill"
   echo "  starcat-cli         跨平台 Starcat CLI"
   echo "  homebrew-starcat-cli  Starcat CLI Homebrew Formula tap"
-  echo "  vscode-makefile-explorer  VS Code 插件"
   echo "  starcat-chrome-plugin     Chrome 浏览器插件"
   echo "  starcat-safari-plugin     Safari 浏览器插件"
   exit 0
@@ -90,7 +89,6 @@ PROJECTS=(
   "starcat-skill|https://github.com/starcat-app/starcat-skill.git|Starcat AI Agent Skill"
   "starcat-cli|https://github.com/starcat-app/starcat-cli.git|跨平台 Starcat CLI"
   "homebrew-starcat-cli|https://github.com/starcat-app/homebrew-starcat-cli.git|Starcat CLI Homebrew Formula tap"
-  "vscode-makefile-explorer|https://github.com/dong4j/vscode-makefile-explorer.git|VS Code 插件"
   "extensions/starcat-chrome-plugin|https://github.com/starcat-app/starcat-chrome-plugin.git|Chrome 浏览器插件"
   "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"
 )

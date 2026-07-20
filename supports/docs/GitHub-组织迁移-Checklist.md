@@ -41,7 +41,6 @@
 ### 0.4 明确排除
 
 - [x] `supports/ai-file-wall` — 不迁移、不创建组织仓库、不修改现有项目。
-- [x] `dong4j/vscode-makefile-explorer` — 不迁移、不修改现有仓库。
 - [x] `ruanyf/weekly` 及其本地 clone / backup — 第三方上游仓库，不在迁移范围内。
 
 ### 0.5 OAuth App
@@ -587,7 +586,7 @@ rg -n --hidden --no-ignore \
 ```
 
 - [ ] 每一个剩余命中均已分类：必须修改、历史说明或明确排除。
-- [ ] 不误改 `vscode-makefile-explorer`、`ai-file-wall` 或第三方上游地址。
+- [ ] 不误改 `ai-file-wall` 或第三方上游地址。
 
 ---
 
@@ -622,7 +621,7 @@ rg -n --hidden --no-ignore \
 - [x] `Starcat` 位于 `starcat-app` 且保持 Private。
 - [x] `starcat-license-api` 位于 `starcat-app` 且保持 Private。
 - [x] `starcat-cli`、`homebrew-starcat-cli` 位于 `starcat-app` 且为 Public。
-- [x] `ai-file-wall`、`vscode-makefile-explorer` 未发生变化。
+- [x] `ai-file-wall` 未发生变化。
 - [x] 所有迁移仓库的 branch、tag、Release、Issue、PR 和权限符合基线。
 
 ### 14.2 本地开发

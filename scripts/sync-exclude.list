@@ -3,14 +3,13 @@
 # 关键约束：rsync 的 exclude 只对目录递归生效，对单文件完全无效。
 # 主要保护目录类条目，防止意外把独立仓库内容同步过去。
 
-# === supports/ 下所有独立 git 仓库（共 13 个） ===
+# === supports/ 下所有独立 git 仓库（共 12 个） ===
 # Go API 服务（7 个，含 starcat-license-api）
 **/*-api/
-# 其他支撑项目（6 个）
+# 其他支撑项目（5 个）
 **/starcat-pro/
 **/starcat-localization/
 **/homebrew-starcat/
-**/vscode-makefile-explorer/
 **/starcat-chrome-plugin/
 **/starcat-safari-plugin/
 
