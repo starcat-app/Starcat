@@ -85,7 +85,7 @@ PROJECTS=(
   "homebrew-starcat|https://github.com/dong4j/homebrew-starcat.git|Homebrew tap"
   "vscode-makefile-explorer|https://github.com/dong4j/vscode-makefile-explorer.git|VS Code 插件"
   "extensions/starcat-chrome-plugin|https://github.com/dong4j/starcat-chrome-plugin.git|Chrome 浏览器插件"
-  "extensions/starcat-safari-plugin|https://github.com/dong4j/starcat-safari-plugin.git|Safari 浏览器插件"
+  "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"
 )
 
 # ---- 计数器 ----

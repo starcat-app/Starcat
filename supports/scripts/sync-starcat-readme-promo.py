@@ -159,14 +159,14 @@ def promo(project: Project, lang: str) -> str:
 - 下载: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
 - 公开支持与发布说明: https://github.com/starcat-app/starcat-pro
 - Homebrew tap: https://github.com/dong4j/homebrew-starcat
-- 浏览器插件: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/dong4j/starcat-safari-plugin)
+- 浏览器插件: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
 - 本地化: https://github.com/starcat-app/starcat-localization"""
         if is_zh
         else """- Home: https://starcat.ink
 - Download: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
 - Public support and release notes: https://github.com/starcat-app/starcat-pro
 - Homebrew tap: https://github.com/dong4j/homebrew-starcat
-- Browser plugins: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/dong4j/starcat-safari-plugin)
+- Browser plugins: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
 - Localization: https://github.com/starcat-app/starcat-localization"""
     )
     language_link = (

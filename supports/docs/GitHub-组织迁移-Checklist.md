@@ -23,7 +23,7 @@
 - [ ] `starcat-app/homebrew-starcat`
 - [x] `starcat-app/starcat-skill`
 - [ ] `starcat-app/starcat-chrome-plugin`
-- [ ] `starcat-app/starcat-safari-plugin`
+- [x] `starcat-app/starcat-safari-plugin`
 - [ ] `starcat-app/starcat-discovery-api`
 - [ ] `starcat-app/starcat-recommend-api`
 - [ ] `starcat-app/starcat-sharing-api`
@@ -259,7 +259,7 @@ git -C supports/starcat-localization push --dry-run
 
 - [x] `starcat-pro`
 - [x] `starcat-skill`
-- [ ] `starcat-safari-plugin`
+- [x] `starcat-safari-plugin`
 
 #### 6.1.1 `starcat-skill` 验收记录
 
@@ -284,6 +284,18 @@ git -C supports/starcat-localization push --dry-run
 - [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 refs。
 - [x] `starcat-pro` 自身链接更新分别提交到 `dev`（`822a305`）与 `main`（`30c8b7e`），未把未发布 dev 内容带入 main。
 - [x] 统一 README 推广脚本、主仓库 supports 索引与 11 个独立项目 README 已改用 `starcat-app/starcat-pro`；独立项目均按仓库分别提交到 `dev`，未触发 Release 或部署。
+
+#### 6.1.3 `starcat-safari-plugin` 验收记录
+
+- [x] 迁移前工作树干净；本地与远端 `dev` / `main` 均指向 `3625f40`，当前没有 tag。
+- [x] Repository ID 为 `R_kgDOTKtALw`，Public，默认分支为 `main`；Issue、PR、Release、stars、watchers、forks 均为 0，Security Policy 已启用。
+- [x] 迁移前无 Actions workflow、Repository Secret、Variable、Environment、Pages、webhook、deploy key、ruleset 或 branch protection。
+- [x] mirror 备份保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/starcat-safari-plugin.git`，`show-ref` 与 `git fsck --full` 校验通过。
+- [x] 2026-07-20 14:22 CST 完成 `dong4j/starcat-safari-plugin` → `starcat-app/starcat-safari-plugin` Transfer；Repository ID、Public visibility、默认分支与迁移前 refs 保持不变。
+- [x] 本地 `origin` 已更新为 `https://github.com/starcat-app/starcat-safari-plugin.git`，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 refs。
+- [x] Safari 插件链接更新提交 `bcfd86b` 已推送到组织仓库的 `dev` / `main`，两个分支最终 refs 一致。
+- [x] App 设置 / About、Direct 页面、supports 索引、clone 脚本、统一 README 推广脚本与生态 README 已改用 `starcat-app/starcat-safari-plugin`；可能触发部署的 API 仓库只更新 `dev`。
 
 ### 6.2 第二批：带 Release / 分发入口的仓库
 

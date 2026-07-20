@@ -59,7 +59,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 10 | `homebrew-starcat/` | `dong4j/homebrew-starcat` |
 | 11 | `vscode-makefile-explorer/` | `dong4j/vscode-makefile-explorer` |
 | 12 | `extensions/starcat-chrome-plugin/` | `dong4j/starcat-chrome-plugin` |
-| 13 | `extensions/starcat-safari-plugin/` | `dong4j/starcat-safari-plugin` |
+| 13 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库
 

@@ -1036,7 +1036,7 @@ private struct AboutDependency: Identifiable {
             name: "starcat-safari-plugin",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-safari-plugin")
+            url: URL(string: "https://github.com/starcat-app/starcat-safari-plugin")
         ),
 
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
