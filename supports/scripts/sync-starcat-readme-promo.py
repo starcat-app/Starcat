@@ -223,8 +223,7 @@ brew install --cask starcat
 - [starcat-weekly-api](https://github.com/starcat-app/starcat-weekly-api)
 - [starcat-wiki-api](https://github.com/starcat-app/starcat-wiki-api)
 - [starcat-recommend-api](https://github.com/starcat-app/starcat-recommend-api)
-- [starcat-discovery-api](https://github.com/starcat-app/starcat-discovery-api)
-- [starcat-license-api](https://github.com/dong4j/starcat-license-api){api_note}
+- [starcat-discovery-api](https://github.com/starcat-app/starcat-discovery-api){api_note}
 {END}"""
 
 

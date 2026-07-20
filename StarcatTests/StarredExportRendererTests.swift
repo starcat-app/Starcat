@@ -133,6 +133,8 @@ final class StarredExportRendererTests: XCTestCase {
         XCTAssertTrue(md.contains("`swift`"), "应包含 topic 行内代码")
         XCTAssertTrue(md.contains("Other"), "无语言 repo 应归入 Other 段")
         XCTAssertTrue(md.contains("🗄 Archived"), "归档 repo 应显示 Archived")
+        XCTAssertTrue(md.contains("[Starcat](https://starcat.ink)"), "公开导出应链接到可访问的官网")
+        XCTAssertFalse(md.contains("github.com/dong4j/Starcat"), "公开导出不应暴露 Private 源码仓库")
     }
 
     func testMarkdownEmptyReposGracefulFallback() {

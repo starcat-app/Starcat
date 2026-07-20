@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立 git 仓库（13 个）
+## 独立 git 仓库（16 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -57,16 +57,19 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 8 | `starcat-license-api/` | `dong4j/starcat-license-api` 🔒 私有 |
 | 9 | `starcat-localization/` | `starcat-app/starcat-localization` |
 | 10 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
-| 11 | `vscode-makefile-explorer/` | `dong4j/vscode-makefile-explorer` |
-| 12 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
-| 13 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
+| 11 | `starcat-skill/` | `starcat-app/starcat-skill` |
+| 12 | `starcat-cli/` | `starcat-app/starcat-cli` |
+| 13 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
+| 14 | `vscode-makefile-explorer/` | `dong4j/vscode-makefile-explorer` |
+| 15 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
+| 16 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 13 个项目
+# 首次 clone 全部 16 个项目
 ./clone-all.sh
 
 # 后续更新全部
@@ -143,8 +146,9 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-07-20 | 独立仓库从 13 个扩展到 16 个 | 新增 `starcat-skill`、`starcat-cli`、`homebrew-starcat-cli` |
 | 2026-07-06 | `supports/` 运维文件转主仓库 git 管理 | 减少 sync-untracked 清单维护负担，git 管理更可靠 |
 | 2026-07-06 | 独立仓库从 6 个扩展到 13 个 | 新增 starcat-pro、starcat-license-api、starcat-localization、homebrew、vscode 插件、浏览器插件 |
 | 2026-07-06 | `starcat-license-api` 初始化为私有仓库 | 包含 Direct 分发授权逻辑，不公开 |
-| 2026-07-06 | 新增 `clone-all.sh` | 一键拉取 13 个支撑项目 |
+| 2026-07-06 | 新增 `clone-all.sh` | 一键拉取当时的 13 个支撑项目 |
 | 2026-06-08 | 初始结构 | 6 个 Go API，端口 5001-5006 |

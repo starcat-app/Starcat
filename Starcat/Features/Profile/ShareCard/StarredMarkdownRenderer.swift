@@ -90,7 +90,8 @@ enum StarredMarkdownRenderer {
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
         let exportedISO = dateFormatter.string(from: exportedAt)
-        lines.append("_Exported on `\(exportedISO)` by [Starcat](https://github.com/dong4j/Starcat) — a native macOS app to manage your GitHub stars._")
+        // 导出内容可能被公开分享，因此链接到公开官网，不暴露无法访问的 Private 源码仓库。
+        lines.append("_Exported on `\(exportedISO)` by [Starcat](https://starcat.ink) — a native macOS app to manage your GitHub stars._")
 
         lines.append("")
         lines.append("---")

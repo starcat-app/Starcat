@@ -10,6 +10,7 @@
 # 支撑项目统一放在 supports/ 目录下:
 #   - 6 个 Go API 服务(starcat-*-api)
 #   - starcat-pro / starcat-license-api / starcat-localization
+#   - starcat-skill / starcat-cli / homebrew-starcat-cli
 #   - homebrew-starcat / vscode-makefile-explorer
 #   - extensions/ 下 2 个浏览器插件
 #
@@ -59,10 +60,13 @@ if $SHOW_HELP; then
   echo ""
   echo "支撑项目列表:"
   echo "  6 个 Go API 服务  (starcat-*-api)"
-  echo "  starcat-pro        Pro 订阅服务"
+  echo "  starcat-pro        公开支持与发布说明"
   echo "  starcat-license-api  Direct 分发授权 API (🔒 私有)"
   echo "  starcat-localization  本地化资源"
-  echo "  homebrew-starcat    Homebrew tap"
+  echo "  homebrew-starcat    Starcat App Homebrew Cask tap"
+  echo "  starcat-skill       Starcat AI Agent Skill"
+  echo "  starcat-cli         跨平台 Starcat CLI"
+  echo "  homebrew-starcat-cli  Starcat CLI Homebrew Formula tap"
   echo "  vscode-makefile-explorer  VS Code 插件"
   echo "  starcat-chrome-plugin     Chrome 浏览器插件"
   echo "  starcat-safari-plugin     Safari 浏览器插件"
@@ -79,10 +83,13 @@ PROJECTS=(
   "starcat-wiki-api|https://github.com/starcat-app/starcat-wiki-api.git|Go API - Wiki 服务"
   "starcat-recommend-api|https://github.com/starcat-app/starcat-recommend-api.git|Go API - 推荐服务"
   "starcat-discovery-api|https://github.com/starcat-app/starcat-discovery-api.git|Go API - 发现服务"
-  "starcat-pro|https://github.com/starcat-app/starcat-pro.git|Pro 订阅服务"
+  "starcat-pro|https://github.com/starcat-app/starcat-pro.git|公开支持与发布说明"
   "starcat-license-api|https://github.com/dong4j/starcat-license-api.git|Direct 分发授权 API 🔒"
   "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
-  "homebrew-starcat|https://github.com/starcat-app/homebrew-starcat.git|Homebrew tap"
+  "homebrew-starcat|https://github.com/starcat-app/homebrew-starcat.git|Starcat App Homebrew Cask tap"
+  "starcat-skill|https://github.com/starcat-app/starcat-skill.git|Starcat AI Agent Skill"
+  "starcat-cli|https://github.com/starcat-app/starcat-cli.git|跨平台 Starcat CLI"
+  "homebrew-starcat-cli|https://github.com/starcat-app/homebrew-starcat-cli.git|Starcat CLI Homebrew Formula tap"
   "vscode-makefile-explorer|https://github.com/dong4j/vscode-makefile-explorer.git|VS Code 插件"
   "extensions/starcat-chrome-plugin|https://github.com/starcat-app/starcat-chrome-plugin.git|Chrome 浏览器插件"
   "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"
