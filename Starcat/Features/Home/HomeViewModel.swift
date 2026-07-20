@@ -287,12 +287,12 @@ final class HomeViewModel {
     /// 设置后 `selectedRepo` 优先返回此值。
     var externalSelectedRepo: Repo?
 
-    /// 外部导航（SearchCenter / 命令面板）写入 `selectedRepoID` 前置 `true`，
-    /// 让 `RepoListView` 只在该场景下 `scrollTo` 目标行。
+    /// 外部导航要求中栏定位到当前 repo 时递增。
     ///
-    /// 用户点击列表行时保持 `false`——否则 `scrollTo(.center)` 会把视口硬顶到
-    /// 下一行，体感像「点 A 却定位到 B」（dong4j 2026-06-17 Manage 回归）。
-    var shouldScrollSelectedRepoIntoView = false
+    /// 不能只监听 `selectedRepoID`：重复打开同一个 repo 时 ID 不变，SwiftUI 不会触发
+    /// `onChange`；目标页加载又可能重建 List，使一次性布尔值在行挂载前被消费。
+    /// 独立 revision 让每次导航都有稳定事件，同时不影响用户手动点击列表行。
+    private(set) var repoListScrollRequestRevision: UInt64 = 0
 
     /// 侧栏后台摘要等外部入口请求「展开当前详情页 AI 面板」。
     ///
@@ -982,6 +982,7 @@ final class HomeViewModel {
         enum PageIntent: Equatable {
             case initial
             case append
+            case jump(Int)
         }
 
         var safeSelectionKind: String {
@@ -1192,7 +1193,6 @@ final class HomeViewModel {
         releaseSubscriptionCount = 0
 
         selectedRepoID = nil
-        shouldScrollSelectedRepoIntoView = false
         searchQuery = ""
         searchSubmissionID &+= 1
         semanticSearchScope = .starred
@@ -2325,11 +2325,13 @@ final class HomeViewModel {
     /// 分开建模是为了避免“滚动追加”和“整栏刷新”共用同一套状态写入：
     /// - `.append` 只追加下一页，不 bump `itemsRevision`，让 List 保持滚动上下文；
     /// - `.reset` 用于筛选/排序/首次进入，允许重建快照；
-    /// - `.refreshPreservingPage` 用于同步完成后的后台刷新，保留已加载页数。
+    /// - `.refreshPreservingPage` 用于同步完成后的后台刷新，保留已加载页数；
+    /// - `.jump` 仅用于外部导航，一次加载到目标页，避免逐页请求和逐页发布 UI。
     private enum DatabasePageReloadReason: Equatable {
         case reset
         case append
         case refreshPreservingPage
+        case jump(Int)
     }
 
     /// 普通 Manage 分类的数据库分页加载。
@@ -2380,7 +2382,14 @@ final class HomeViewModel {
             queryLimit = Self.pageSize + 1
             queryOffset = items.count
         } else {
-            requestedLimit = max(Self.pageSize, reason == .refreshPreservingPage ? items.count : Self.pageSize)
+            switch reason {
+            case .refreshPreservingPage:
+                requestedLimit = max(Self.pageSize, items.count)
+            case .jump(let targetCount):
+                requestedLimit = max(Self.pageSize, targetCount)
+            case .reset, .append:
+                requestedLimit = Self.pageSize
+            }
             queryLimit = requestedLimit + 1
             queryOffset = 0
         }
@@ -3064,6 +3073,48 @@ final class HomeViewModel {
         guard shouldRecoverPaginationAfterRefresh else { return }
         shouldRecoverPaginationAfterRefresh = false
         loadMoreIfNeeded()
+    }
+
+    /// 为 Search Center / Companion 等外部入口准备目标 repo 对应的中栏行。
+    ///
+    /// 数据库分页模式下 `filteredSorted` 只镜像已加载页，旧的 `ensureRepoVisible`
+    /// 无法从中找到深页目标。这里先用轻量 selection projection 定位页码，再一次性
+    /// 拉取目标页之前的前缀，确保 `ScrollViewReader` 拿得到真实 row anchor。
+    /// 若用户在查询期间切换了分类或筛选，则放弃旧请求，避免覆盖新列表。
+    func ensureRepoLoadedForExternalNavigation(repoId: Int64) async {
+        guard !items.contains(where: { $0.id == repoId }) else { return }
+
+        guard let scope = currentRepoListScopeForDatabasePaging(),
+              isDatabasePagingActive,
+              !isSearching
+        else {
+            ensureRepoVisible(repoId: repoId)
+            return
+        }
+
+        let initialIdentity = makeReloadIdentity(forceRefresh: false)
+        let snapshots = await selectionSnapshotsForCurrentQuery()
+        guard makeReloadIdentity(forceRefresh: false) == initialIdentity else { return }
+        guard let index = snapshots.firstIndex(where: { $0.ghRepoId == repoId }) else { return }
+
+        let pageNeeded = (index / Self.pageSize) + 1
+        let targetCount = min(snapshots.count, pageNeeded * Self.pageSize)
+        let identity = makeReloadIdentity(forceRefresh: false, pageIntent: .jump(targetCount))
+        let generation = reloadCoordinator.beginQuery(identity: identity)
+        defer { reloadCoordinator.finishQuery(generation: generation, identity: identity) }
+        await reloadDatabasePagedItems(
+            scope: scope,
+            reason: .jump(targetCount),
+            generation: generation,
+            identity: identity
+        )
+    }
+
+    /// 发出一次独立于 selection 值的滚动请求。
+    /// 相同 repo 被连续打开时也必须递增，否则中栏不会再次定位。
+    func requestSelectedRepoScroll() {
+        guard selectedRepoID != nil else { return }
+        repoListScrollRequestRevision &+= 1
     }
 
     /// R-07：外部跳转（SearchCenter / 详情页"上一篇/下一篇" / unhandled 跳转）

@@ -95,6 +95,36 @@ struct HomeViewModelPaginationTests {
 
     // MARK: - R-07 基础行为
 
+    @Test("外部导航重复打开同一 repo 时仍发出新的滚动请求")
+    func repeatedExternalNavigationStillRequestsScroll() throws {
+        let (vm, _) = try makeSUT()
+        vm.selectedRepoID = 42
+
+        vm.requestSelectedRepoScroll()
+        #expect(vm.repoListScrollRequestRevision == 1)
+
+        vm.requestSelectedRepoScroll()
+        #expect(vm.repoListScrollRequestRevision == 2,
+                "滚动请求不能依赖 selectedRepoID 变化，否则重复点击同一搜索结果不会定位")
+    }
+
+    @Test("DB Paging: 外部导航一次加载到深页目标")
+    func externalNavigationLoadsTargetPage() async throws {
+        let (vm, db) = try makeSUT()
+        for i in 1...100 {
+            try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
+        }
+        await vm.reloadItems()
+        #expect(vm.items.count == HomeViewModel.pageSize)
+
+        await vm.ensureRepoLoadedForExternalNavigation(repoId: 75)
+
+        #expect(vm.items.count == HomeViewModel.pageSize * 4,
+                "repo 75 位于第 4 页，外部导航应一次准备到该页")
+        #expect(vm.items.contains(where: { $0.id == 75 }))
+        #expect(vm.currentPage == 4)
+    }
+
     @Test("相同 query identity 的并发 reload 复用同一 generation 和 DB query")
     func duplicateReloadCoalescesIntoOneGeneration() async throws {
         let gate = FirstDatabaseFetchGate()

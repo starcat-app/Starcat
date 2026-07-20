@@ -1715,12 +1715,15 @@ struct RepoListView: View {
                       phase == .openSSF || phase == .health || phase == .completed else { return }
                 await reloadVisibleBadgeCaches(forceReload: true)
             }
-            // 仅外部导航（SearchCenter / 命令面板）滚到目标行；列表行点击不写
-            // `shouldScrollSelectedRepoIntoView`，避免 scrollTo(.center) 错位到下一卡片。
-            .onChange(of: selection.wrappedValue) { _, newValue in
-                guard let id = newValue else { return }
-                guard viewModel.shouldScrollSelectedRepoIntoView else { return }
-                viewModel.shouldScrollSelectedRepoIntoView = false
+            // 仅外部导航（SearchCenter / 命令面板）递增 revision；列表行点击不发请求，
+            // 避免 scrollTo(.center) 错位到下一卡片。使用 task(id:) 而不是监听 selection：
+            // 相同 repo 重复打开时 selection 不变；目标页加载导致 List 重建时，task 也会在
+            // 新实例挂载后执行，不会提前消费滚动意图。
+            .task(id: viewModel.repoListScrollRequestRevision) {
+                guard viewModel.repoListScrollRequestRevision > 0 else { return }
+                guard let id = selection.wrappedValue else { return }
+                guard viewModel.items.contains(where: { $0.id == id }) else { return }
+                await Task.yield()
                 if reduceMotion {
                     proxy.scrollTo(id, anchor: .center)
                 } else {

@@ -926,7 +926,6 @@ struct HomeView: View {
         viewModel.submitSearch("")
         // 先钉住目标仓详情，挡住 applyManageDetailSelectionPolicy 选中第一条。
         viewModel.externalSelectedRepo = repo
-        viewModel.shouldScrollSelectedRepoIntoView = true
         viewModel.selectedRepoID = repo.id
         // 尽早挂起展开请求：目标 overlay 一挂载就能在 onAppear 消费，不必等 reload。
         if openSummaryPanel {
@@ -935,9 +934,9 @@ struct HomeView: View {
 
         Task {
             await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
-            viewModel.ensureRepoVisible(repoId: repo.id)
-            viewModel.shouldScrollSelectedRepoIntoView = true
+            await viewModel.ensureRepoLoadedForExternalNavigation(repoId: repo.id)
             viewModel.selectedRepoID = repo.id
+            viewModel.requestSelectedRepoScroll()
             // 列表已能解析该 id 时，交还给 filteredSorted 真源，避免外部选中残留。
             if viewModel.filteredSorted.contains(where: { $0.id == repo.id }) {
                 viewModel.externalSelectedRepo = nil
@@ -1004,8 +1003,8 @@ struct HomeView: View {
             viewModel.selection = savedManageSelection
         }
         guard viewModel.selectedRepoID == nil, let first = viewModel.items.first else { return }
-        viewModel.shouldScrollSelectedRepoIntoView = true
         viewModel.selectedRepoID = first.id
+        viewModel.requestSelectedRepoScroll()
     }
 
     /// 开始使用清单里的“添加标签”复用左侧 Tags 的管理入口，并直接弹出新建标签 sheet。
