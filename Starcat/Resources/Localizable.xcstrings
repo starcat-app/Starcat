@@ -47945,21 +47945,318 @@
         }
       }
     },
-    "settings.mcp.copyConfig": {
+    "settings.mcp.agentSetup.cli.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy CLI install prompt" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 CLI 安装说明" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ask the current agent to install the cross-platform Starcat CLI from its public repository." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "让当前 Agent 从公开仓库安装跨平台 Starcat CLI。" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Install Starcat CLI" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "安装 Starcat CLI" } }
+      }
+    },
+    "settings.mcp.agentSetup.cliPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Please install and verify the signed Starcat CLI for this platform from %1$@, then run `starcat doctor --json`. If it is not paired, ask me to copy a one-time pairing command from Starcat." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请从 %1$@ 安装并验证适合当前平台的已签名 Starcat CLI，然后运行 `starcat doctor --json`。如果尚未配对，请让我从 Starcat 复制一次性配对命令。" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy one-time pairing command" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制一次性配对命令" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Generate a five-minute invitation. Starcat will ask you to confirm the device before issuing its credential." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生成五分钟有效的邀请；签发设备凭据前，Starcat 会再次请求确认。" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pair a device" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "配对设备" } }
+      }
+    },
+    "settings.mcp.agentSetup.pairPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Please run this one-time Starcat pairing command, then wait for me to approve the device in Starcat:\n\nstarcat pair \"%1$@\"\n\nDo not print or persist the pairing URI." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请执行下面的一次性 Starcat 配对命令，然后等待我在 Starcat 中确认设备：\n\nstarcat pair \"%1$@\"\n\n不要输出或持久化配对 URI。" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.copy": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Copy client config"
+            "value": "Copy MCP setup prompt"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "复制客户端配置"
+            "value": "复制 MCP 安装说明"
           }
         }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy a Markdown prompt for Codex, Claude Code, or another MCP client to install this service."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制一段 Markdown 说明，交给 Codex、Claude Code 或其他 MCP 客户端自动安装此服务。"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install MCP Service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 MCP Service"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.mcpPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "# Install Starcat MCP Service\n\nConfigure the current AI agent with a user-level MCP Server:\n\n- Name: starcat\n- Command: the absolute path returned by `command -v starcat` (or the Windows equivalent)\n- Args: [\"mcp\"]\n- Transport: stdio\n- Resulting launch command: `starcat mcp`\n\nRequirements:\n1. If the CLI is missing, install it from the official `dong4j/starcat-cli` release.\n2. Run `starcat doctor --json`; if it is not paired, ask me for a one-time `starcat pair` command.\n3. Complete initialize and tools/list, then call the read-only tool starcat.get_capabilities.\n4. Do not call write tools during installation verification.\n5. Never ask me for a Local API Key or store credentials in a repository.\n6. Starcat must remain running with MCP Service enabled."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "# 安装 Starcat MCP Service\n\n请在当前 AI Agent 中添加用户级 MCP Server：\n\n- Name: starcat\n- Command: `command -v starcat` 返回的绝对路径（Windows 使用对应命令）\n- Args: [\"mcp\"]\n- Transport: stdio\n- 最终启动命令：`starcat mcp`\n\n要求：\n1. 如果尚未安装 CLI，先从官方 `dong4j/starcat-cli` Release 安装。\n2. 运行 `starcat doctor --json`；如提示未配对，请让我复制一次性 `starcat pair` 命令。\n3. 完成 initialize 和 tools/list 后调用只读工具 starcat.get_capabilities。\n4. 验证期间不要调用写入工具。\n5. 不要向我索取 Local API Key，也不要把凭据写入仓库。\n6. Starcat 必须保持运行，并已开启 MCP Service。"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.security.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation prompts contain no long-term credential. Pair only trusted devices and review the confirmation shown by Starcat."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装说明不包含长期凭据。请只配对可信设备，并核对 Starcat 显示的确认信息。"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.skill.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Skill install request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制 Skill 安装请求"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.skill.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy a short request that asks the current agent to install the public Starcat skill."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制一条简短请求，让当前 Agent 从公开仓库安装 Starcat Skill。"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.skill.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install starcat-skill"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 starcat-skill"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.skillPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please install and verify starcat-skill: %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请帮我安装并验证 starcat-skill：%1$@"
+          }
+        }
+      }
+    },
+    "settings.mcp.pairing.error.expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The pairing invitation has expired. Generate a new one in Starcat." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "配对邀请已过期，请在 Starcat 中重新生成。" } }
+      }
+    },
+    "settings.mcp.pairing.error.invalidInvitation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The pairing invitation is invalid or has already been used." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "配对邀请无效或已经使用。" } }
+      }
+    },
+    "settings.mcp.pairing.error.pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Another device is already waiting for pairing approval." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已有另一台设备正在等待配对确认。" } }
+      }
+    },
+    "settings.mcp.pairing.error.rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The pairing request was rejected or timed out." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "配对请求已拒绝或等待超时。" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.approve": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approve device" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "允许此设备" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.cliVersion": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "CLI version" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "CLI 版本" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.device": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Device" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "设备" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This device is requesting access to the Starcat MCP Service." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这台设备正在请求访问 Starcat MCP Service。" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.platform": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Platform" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "平台" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.security": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approve only if you initiated pairing. The device receives an independent credential that can be revoked later." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅在你主动发起配对时允许。该设备将获得可单独撤销的独立凭据。" } }
+      }
+    },
+    "settings.mcp.pairing.sheet.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pair Starcat CLI" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "配对 Starcat CLI" } }
+      }
+    },
+    "settings.mcp.devices.revoke": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Revoke" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "撤销" } }
+      }
+    },
+    "settings.mcp.remote.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Accept paired CLI connections from trusted LAN or VPN devices over pinned TLS. Keep this off on untrusted networks." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "通过证书 pinning 的 TLS 接受可信局域网或 VPN 设备连接；在不可信网络中请保持关闭。" } }
+      }
+    },
+    "settings.mcp.remote.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Allow trusted network devices" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "允许可信网络设备连接" } }
+      }
+    },
+    "settings.mcp.section.devices": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paired Devices" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已配对设备" } }
       }
     },
     "settings.mcp.destructiveWrites.help": {
@@ -48349,6 +48646,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接"
+          }
+        }
+      }
+    },
+    "settings.mcp.section.agentSetup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External AI Agents"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外部 AI Agent"
           }
         }
       }

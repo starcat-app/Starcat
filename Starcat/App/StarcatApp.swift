@@ -260,6 +260,7 @@ struct StarcatApp: App {
                 .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
         }
+        .starcatMCPPairingApprovalPresenter(store: dependencies.mcpDeviceStore)
     }
 
     /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。

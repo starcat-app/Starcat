@@ -892,15 +892,10 @@ struct HomeView: View {
                 openSearchRepositoryURL(candidate)
                 return
             }
-            selectedSidebarPage = .manage
-            viewModel.selection = .allStars
-            viewModel.submitSearch("")
             searchCenterViewModel.dismiss()
-            Task {
-                await viewModel.reloadItems(forceRefresh: true)
-                viewModel.shouldScrollSelectedRepoIntoView = true
-                viewModel.selectedRepoID = repo.id
-            }
+            // Search Center 与 Companion 必须共用同一条外部仓库导航链路：先钉住详情，
+            // 再刷新和翻页，避免自动首选或当前筛选让目标仓库在点击后消失。
+            openCompanionRepository(repo)
         case .reference(let reference):
             NSWorkspace.shared.open(reference.originalURL)
         }
@@ -911,8 +906,9 @@ struct HomeView: View {
         NSWorkspace.shared.open(url)
     }
 
+    /// Search Center、Browser Plugin 和侧栏后台任务共用的本地仓库跳转入口。
     /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
-    /// 这里复用 Search Center 本地结果跳转语义：切到 Manage / All Stars，清空搜索，
+    /// 这里统一切到 Manage / All Stars，清空搜索，
     /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
     ///
     /// 侧栏后台摘要任务也会走这里。关键点：

@@ -33,7 +33,11 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 12)
+        #expect(tools.count == 16)
+        #expect(tools.contains { $0["name"] as? String == "starcat.get_capabilities" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.get_repo_context" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.get_repo_summary" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.generate_repo_summary" })
         #expect(tools.contains { $0["name"] as? String == "starcat.search_repos" })
         let searchTool = try #require(tools.first { $0["name"] as? String == "starcat.search_repos" })
         let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
@@ -46,6 +50,13 @@ struct StarcatMCPRuntimeTests {
         #expect(scopeSchema["enum"] as? [String] == ["starred", "knowledge", "all"])
         #expect(limitSchema["type"] as? String == "integer")
         #expect(limitSchema["default"] as? Int == 20)
+
+        let generateTool = try #require(tools.first { $0["name"] as? String == "starcat.generate_repo_summary" })
+        let generateSchema = try #require(generateTool["inputSchema"] as? [String: Any])
+        let generateProperties = try #require(generateSchema["properties"] as? [String: Any])
+        let externalContextSchema = try #require(generateProperties["allow_external_context"] as? [String: Any])
+        #expect(externalContextSchema["type"] as? String == "boolean")
+        #expect(externalContextSchema["default"] as? Bool == false)
 
         let call = await runtime.handle(Self.request(
             id: 3,
@@ -77,6 +88,33 @@ struct StarcatMCPRuntimeTests {
         #expect(knowledgeStructured["total"] as? Int == 1)
         #expect(repos.first?["full_name"] as? String == "openai/codex")
 
+        let capabilitiesCall = await runtime.handle(Self.request(
+            id: 20,
+            method: "tools/call",
+            params: ["name": "starcat.get_capabilities", "arguments": [:]]
+        ))
+        let capabilitiesJSON = try Self.jsonObject(from: capabilitiesCall)
+        let capabilitiesResult = try #require(capabilitiesJSON["result"] as? [String: Any])
+        let capabilities = try #require(capabilitiesResult["structuredContent"] as? [String: Any])
+        #expect(capabilities["private_notes_read"] as? Bool == true)
+        #expect(capabilities["local_writes"] as? Bool == true)
+        #expect(capabilities["loopback_only"] as? Bool == true)
+
+        let contextCall = await runtime.handle(Self.request(
+            id: 21,
+            method: "tools/call",
+            params: [
+                "name": "starcat.get_repo_context",
+                "arguments": ["owner": "apple", "name": "swift"]
+            ]
+        ))
+        let contextJSON = try Self.jsonObject(from: contextCall)
+        let contextResult = try #require(contextJSON["result"] as? [String: Any])
+        let context = try #require(contextResult["structuredContent"] as? [String: Any])
+        let contextRepo = try #require(context["repo"] as? [String: Any])
+        #expect(contextRepo["full_name"] as? String == "apple/swift")
+        #expect(context["private_notes_exposed"] as? Bool == true)
+
         let resourcesList = await runtime.handle(Self.request(id: 5, method: "resources/list"))
         let resourcesJSON = try Self.jsonObject(from: resourcesList)
         let resources = try #require((resourcesJSON["result"] as? [String: Any])?["resources"] as? [[String: Any]])
@@ -103,7 +141,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 3, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 12)
+        #expect(tools.count == 16)
     }
 
     private static func makeRuntime() async throws -> StarcatMCPRuntime {
@@ -128,14 +166,23 @@ struct StarcatMCPRuntimeTests {
         let noteRepository = GRDBRepoNoteRepository(database: db)
         try await noteRepository.updateLibraryState(repoId: 2, state: .inLibrary)
         let readmeRepository = ReadmeRepository(database: db)
+        let summaryRepository = GRDBAISummaryRepository(database: db)
+        let testKeychain = InMemoryKeychain()
         let semanticSearch = SemanticSearchService(
             embeddingRepository: GRDBRepoEmbeddingRepository(database: db),
             settings: settings,
             readmeRepository: readmeRepository,
             noteRepository: noteRepository,
-            summaryRepository: GRDBAISummaryRepository(database: db),
+            summaryRepository: summaryRepository,
             entitlementGate: gate,
-            keychain: InMemoryKeychain()
+            keychain: testKeychain
+        )
+        let insightService = RepoAIInsightService(
+            summaryRepository: summaryRepository,
+            readmeRepository: readmeRepository,
+            settings: settings,
+            keychain: testKeychain,
+            entitlementGate: gate
         )
         let facade = StarcatMCPFacade(
             repoRepository: repoRepository,
@@ -144,6 +191,8 @@ struct StarcatMCPRuntimeTests {
             repoTagRepository: repoTagRepository,
             repoNoteRepository: noteRepository,
             semanticSearchService: semanticSearch,
+            repoAIInsightService: insightService,
+            entitlementGate: gate,
             settings: settings
         )
         let writeFacade = StarcatMCPWriteFacade(

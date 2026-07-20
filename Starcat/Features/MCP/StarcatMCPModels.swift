@@ -159,3 +159,52 @@ struct MCPRepoNoteDTO: Codable, Sendable {
     }
 }
 
+/// MCP 对外暴露的缓存 AI 摘要。
+///
+/// 不直接编码完整 `RepoAIInsight`，避免外部 Agent 依赖内部 UI、External Search 或
+/// RepoContext 诊断字段。这里仅保留稳定的正文、模型与生成时间契约。
+struct MCPRepoSummaryDTO: Codable, Sendable {
+    let repo_id: Int64
+    let one_liner: String
+    let summary_markdown: String
+    let model: String
+    let generated_at: String
+
+    init(repoID: Int64, insight: RepoAIInsight) {
+        self.repo_id = repoID
+        self.one_liner = insight.oneLiner
+        self.summary_markdown = insight.summaryMarkdown ?? insight.summary
+        self.model = insight.model
+        self.generated_at = insight.generatedAt
+    }
+}
+
+/// Agent 一次读取单仓上下文的聚合结果。
+///
+/// 私有笔记关闭时返回 `private_notes_exposed = false` 和 `note = nil`，而不是让整个
+/// context 请求失败；这样 Agent 仍能读取 repo、标签和摘要，同时明确知道缺失原因。
+struct MCPRepoContextDTO: Codable, Sendable {
+    let repo: MCPRepoDTO
+    let tags: [MCPTagDTO]
+    let private_notes_exposed: Bool
+    let note: MCPRepoNoteDTO?
+    let summary: MCPRepoSummaryDTO?
+}
+
+/// MCP 当前能力快照。只暴露权限状态，不包含 Local API Key 或其它凭据。
+struct MCPCapabilitiesDTO: Codable, Sendable {
+    let server_version: String
+    let loopback_only: Bool
+    let private_notes_read: Bool
+    let local_writes: Bool
+    let batch_writes: Bool
+    let destructive_writes: Bool
+    let ai_summary_generation: Bool
+}
+
+/// 摘要生成工具的稳定返回值。
+struct MCPRepoSummaryGenerationResult: Codable, Sendable {
+    let repo: MCPRepoDTO
+    let summary: MCPRepoSummaryDTO
+    let persisted: Bool
+}

@@ -68,6 +68,8 @@ final class AppDependencies {
     let companionActionDispatcher: CompanionActionDispatcher
     /// 本机 MCP Service。Pro 用户可开启，让本机 Agent 通过 MCP 读取 Starcat 上下文。
     let mcpService: StarcatMCPService
+    /// 外部 CLI 的一次性邀请、设备确认与逐设备凭据。
+    let mcpDeviceStore: StarcatMCPDeviceStore
     /// Week 4 引入：README 缓存 Repository。
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
@@ -963,6 +965,8 @@ final class AppDependencies {
             repoTagRepository: repoTagRepo,
             repoNoteRepository: self.repoNoteRepository,
             semanticSearchService: semantic,
+            repoAIInsightService: aiInsight,
+            entitlementGate: self.entitlementGate,
             settings: self.settings
         )
         let mcpWriteFacade = StarcatMCPWriteFacade(
@@ -978,9 +982,12 @@ final class AppDependencies {
                 }
             }
         )
+        let mcpDeviceStore = StarcatMCPDeviceStore()
+        self.mcpDeviceStore = mcpDeviceStore
         self.mcpService = StarcatMCPService(
             settings: self.settings,
             entitlementGate: self.entitlementGate,
+            deviceStore: mcpDeviceStore,
             facade: mcpFacade,
             writeFacade: mcpWriteFacade,
             notificationService: notificationService

@@ -1087,12 +1087,17 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpServiceEnabled, value: mcpServiceEnabled) }
     }
 
-    /// MCP HTTP 监听端口。默认 `defaultMCPServicePort`（5555），监听地址固定为 127.0.0.1。
-    ///
-    /// 端口保留为设置项，是为了让用户避开本机已有服务；host 不开放配置，避免误把
-    /// Starcat 私人数据暴露到局域网。
+    /// MCP HTTP 监听端口。默认 `defaultMCPServicePort`（5555）。
     var mcpServicePort: Int {
         didSet { defaults.set(mcpServicePort, forKey: Keys.mcpServicePort) }
+    }
+
+    /// 是否允许已配对设备从可信网络连接。
+    ///
+    /// 默认关闭并仅监听 loopback；开启后必须切换为 TLS listener，禁止把现有明文
+    /// Bearer endpoint 直接绑定到局域网地址。
+    var mcpAllowRemoteConnections: Bool {
+        didSet { persistBool(key: Keys.mcpAllowRemoteConnections, value: mcpAllowRemoteConnections) }
     }
 
     /// 是否允许 MCP 读取用户私有笔记。
@@ -1643,6 +1648,7 @@ final class AppSettings {
         self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
         let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? Self.defaultMCPServicePort
         self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : Self.defaultMCPServicePort
+        self.mcpAllowRemoteConnections = defaults.object(forKey: Keys.mcpAllowRemoteConnections) as? Bool ?? false
         self.mcpExposePrivateNotes = defaults.object(forKey: Keys.mcpExposePrivateNotes) as? Bool ?? false
         self.mcpAllowLocalWrites = defaults.object(forKey: Keys.mcpAllowLocalWrites) as? Bool ?? false
         self.mcpAllowBatchWrites = defaults.object(forKey: Keys.mcpAllowBatchWrites) as? Bool ?? false
@@ -1802,6 +1808,7 @@ final class AppSettings {
         telemetryEnabled = false
         mcpServiceEnabled = false
         mcpServicePort = Self.defaultMCPServicePort
+        mcpAllowRemoteConnections = false
         mcpExposePrivateNotes = false
         mcpAllowLocalWrites = false
         mcpAllowBatchWrites = false
@@ -2154,6 +2161,7 @@ final class AppSettings {
         static let telemetryEnabled = "settings.telemetry.enabled.v1"
         static let mcpServiceEnabled = "settings.mcp.enabled.v1"
         static let mcpServicePort = "settings.mcp.port.v1"
+        static let mcpAllowRemoteConnections = "settings.mcp.allowRemoteConnections.v1"
         static let mcpExposePrivateNotes = "settings.mcp.exposePrivateNotes.v1"
         static let mcpAllowLocalWrites = "settings.mcp.allowLocalWrites.v1"
         static let mcpAllowBatchWrites = "settings.mcp.allowBatchWrites.v1"
@@ -2240,6 +2248,7 @@ final class AppSettings {
             telemetryEnabled,
             mcpServiceEnabled,
             mcpServicePort,
+            mcpAllowRemoteConnections,
             mcpExposePrivateNotes,
             mcpAllowLocalWrites,
             mcpAllowBatchWrites,

@@ -25,11 +25,14 @@ final class StarcatMCPService {
     private let settings: AppSettings
     private let entitlementGate: EntitlementGate
     private let localAPIKeyStore: StarcatLocalAPIKeyStore
+    let deviceStore: StarcatMCPDeviceStore
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let notificationService: ReleaseNotificationService?
     private var runtime: StarcatMCPRuntime?
     private var httpServer: StarcatMCPLoopbackHTTPServer?
+    private var activeTLSIdentity: StarcatMCPTLSIdentity?
+    private var activeRemoteConnections = false
     private var startupTask: Task<Void, Never>?
     private var lifecycleGeneration = 0
 
@@ -40,6 +43,7 @@ final class StarcatMCPService {
         settings: AppSettings,
         entitlementGate: EntitlementGate,
         localAPIKeyStore: StarcatLocalAPIKeyStore = .shared,
+        deviceStore: StarcatMCPDeviceStore,
         facade: StarcatMCPFacade,
         writeFacade: StarcatMCPWriteFacade,
         notificationService: ReleaseNotificationService? = nil
@@ -47,29 +51,41 @@ final class StarcatMCPService {
         self.settings = settings
         self.entitlementGate = entitlementGate
         self.localAPIKeyStore = localAPIKeyStore
+        self.deviceStore = deviceStore
         self.facade = facade
         self.writeFacade = writeFacade
         self.notificationService = notificationService
     }
 
     var endpointURL: String {
-        "http://127.0.0.1:\(settings.mcpServicePort)/mcp"
+        if settings.mcpAllowRemoteConnections {
+            return "https://\(ProcessInfo.processInfo.hostName):\(settings.mcpServicePort)/mcp"
+        }
+        return "http://127.0.0.1:\(settings.mcpServicePort)/mcp"
     }
 
-    var clientConfigSnippet: String {
-        """
-        {
-          "mcpServers": {
-            "starcat": {
-              "type": "http",
-              "url": "\(endpointURL)",
-              "headers": {
-                "Authorization": "Bearer \(bearerToken)"
-              }
-            }
-          }
+    var agentSetupPrompt: String {
+        MCPAgentSetupPrompt.mcp
+    }
+
+    var cliInstallPrompt: String {
+        MCPAgentSetupPrompt.cliInstall
+    }
+
+    var skillInstallPrompt: String {
+        MCPAgentSetupPrompt.skillInstall
+    }
+
+    /// 每次点击都创建新的五分钟 invitation；它只用于兑换逐设备 token，不能直接调用 MCP。
+    func createPairingInstruction() throws -> String {
+        guard case .running = state else {
+            throw StarcatMCPError.disabled
         }
-        """
+        let invitation = try deviceStore.createInvitation(
+            endpoint: endpointURL,
+            certificateFingerprint: activeTLSIdentity?.certificateFingerprint
+        )
+        return MCPAgentSetupPrompt.pair(invitationURI: invitation)
     }
 
     func refreshForCurrentSettings() {
@@ -104,7 +120,9 @@ final class StarcatMCPService {
             state = .failed(StarcatMCPError.requiresPro.localizedDescription)
             return
         }
-        if case .running(let currentPort) = state, currentPort == settings.mcpServicePort {
+        if case .running(let currentPort) = state,
+           currentPort == settings.mcpServicePort,
+           activeRemoteConnections == settings.mcpAllowRemoteConnections {
             return
         }
         stop()
@@ -131,11 +149,22 @@ final class StarcatMCPService {
                 try Task.checkCancellation()
 
                 try await runtime.start()
+                // 只有用户显式开启可信网络后才读取/生成系统 TLS identity。默认 loopback
+                // 路径完全不触碰系统 Keychain，避免启动期授权弹窗和测试 host hang。
+                let tlsIdentity = settings.mcpAllowRemoteConnections
+                    ? try await Task.detached(priority: .userInitiated) {
+                        try StarcatMCPTLSIdentityStore().loadOrCreate()
+                    }.value
+                    : nil
                 let httpServer = StarcatMCPLoopbackHTTPServer(
                     port: port,
                     runtime: runtime,
+                    tlsIdentity: tlsIdentity?.identity,
                     requestValidator: { [weak self] request in
                         self?.validate(request)
+                    },
+                    routeHandler: { [weak self] request in
+                        await self?.handlePairingRoute(request)
                     }
                 )
                 try httpServer.start()
@@ -148,8 +177,10 @@ final class StarcatMCPService {
 
                 self.runtime = runtime
                 self.httpServer = httpServer
+                self.activeTLSIdentity = tlsIdentity
+                self.activeRemoteConnections = self.settings.mcpAllowRemoteConnections
                 self.state = .running(port: port)
-                AppLog.network.info("MCP Service started on 127.0.0.1:\(port, privacy: .public)")
+                AppLog.network.info("MCP Service started (remote=\(self.activeRemoteConnections, privacy: .public), port=\(port, privacy: .public))")
             } catch is CancellationError {
                 await runtime.shutdown()
             } catch {
@@ -178,10 +209,13 @@ final class StarcatMCPService {
 
     func stop() {
         lifecycleGeneration += 1
+        deviceStore.invalidatePendingPairing()
         startupTask?.cancel()
         startupTask = nil
         httpServer?.stop()
         httpServer = nil
+        activeTLSIdentity = nil
+        activeRemoteConnections = false
         let runtime = runtime
         self.runtime = nil
         if runtime != nil {
@@ -218,7 +252,34 @@ final class StarcatMCPService {
         guard request.path == "/mcp" else { return .notFound }
         guard settings.mcpServiceEnabled else { return .forbidden(StarcatMCPError.disabled.localizedDescription) }
         guard entitlementGate.isProUser else { return .forbidden(StarcatMCPError.requiresPro.localizedDescription) }
-        guard request.header("Authorization") == "Bearer \(bearerToken)" else { return .unauthorized }
+        guard let authorization = request.header("Authorization"), authorization.hasPrefix("Bearer ") else {
+            return .unauthorized
+        }
+        let token = String(authorization.dropFirst("Bearer ".count))
+        guard token == bearerToken || deviceStore.isAuthorized(token: token) else { return .unauthorized }
         return nil
+    }
+
+    /// 一次性配对是 MCP listener 上唯一的非 MCP route。它不接受业务参数，也不读取用户数据；
+    /// 成功响应只有当前设备自己的 token，且必须先经过 `deviceStore` 的 App 内确认。
+    private func handlePairingRoute(_ request: StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? {
+        guard request.path == "/pairing/exchange" else { return nil }
+        guard request.method.uppercased() == "POST" else {
+            return Self.pairingResponse(statusCode: 400, message: "POST required")
+        }
+        do {
+            let exchange = try JSONDecoder().decode(StarcatMCPPairingExchangeRequest.self, from: request.body)
+            let result = try await deviceStore.exchange(exchange)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return StarcatHTTPServerRouteResponse(statusCode: 200, body: try encoder.encode(result))
+        } catch {
+            return Self.pairingResponse(statusCode: 403, message: error.localizedDescription)
+        }
+    }
+
+    private static func pairingResponse(statusCode: Int, message: String) -> StarcatHTTPServerRouteResponse {
+        let body = (try? JSONSerialization.data(withJSONObject: ["error": message], options: [.sortedKeys])) ?? Data()
+        return StarcatHTTPServerRouteResponse(statusCode: statusCode, body: body)
     }
 }

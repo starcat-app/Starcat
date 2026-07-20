@@ -67,6 +67,13 @@ final class StarcatMCPToolRegistry {
     private var tools: [Tool] {
         [
             Tool(
+                name: "starcat.get_capabilities",
+                title: "Get Starcat MCP capabilities",
+                description: "Read the current Starcat MCP privacy and write-permission capabilities before planning a workflow.",
+                inputSchema: Self.objectSchema([:]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
                 name: "starcat.search_repos",
                 title: "Search Starcat repositories",
                 description: "Search repositories cached in Starcat using local keyword/FTS data.",
@@ -94,6 +101,34 @@ final class StarcatMCPToolRegistry {
                 description: "Read metadata for one repository by repo_id or owner/name.",
                 inputSchema: Self.repoSelectorSchema(),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_repo_context",
+                title: "Get aggregated repository context",
+                description: "Read repository metadata, assigned tags, optional private note/status, and cached AI summary in one call.",
+                inputSchema: Self.repoSelectorSchema(),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_repo_summary",
+                title: "Get cached repository summary",
+                description: "Read the latest cached Starcat AI summary without generating content or making network requests.",
+                inputSchema: Self.repoSelectorSchema(),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.generate_repo_summary",
+                title: "Generate repository summary",
+                description: "Generate a Starcat AI summary using the user's configured provider. This consumes AI quota and may use external context when explicitly allowed.",
+                inputSchema: Self.objectSchema(
+                    Self.repoSelectorProperties().merging([
+                        "allow_external_context": Self.booleanSchema(
+                            "Allow Starcat's configured External Search provider to supplement the summary.",
+                            defaultValue: false
+                        )
+                    ]) { _, new in new }
+                ),
+                annotations: .init(readOnlyHint: false, openWorldHint: true)
             ),
             Tool(
                 name: "starcat.get_readme",
@@ -200,6 +235,9 @@ final class StarcatMCPToolRegistry {
     private func callTool(_ params: CallTool.Parameters) async -> CallTool.Result {
         do {
             switch params.name {
+            case "starcat.get_capabilities":
+                return try Self.result(facade.getCapabilities())
+
             case "starcat.search_repos":
                 let query = params.arguments?["query"]?.stringValue
                 let limit = params.arguments?["limit"]?.intValue ?? 20
@@ -219,6 +257,26 @@ final class StarcatMCPToolRegistry {
             case "starcat.get_repo":
                 let selector = Self.repoSelector(from: params.arguments)
                 let value = try await facade.getRepo(repoID: selector.repoID, owner: selector.owner, name: selector.name)
+                return try Self.result(value)
+
+            case "starcat.get_repo_context":
+                let selector = Self.repoSelector(from: params.arguments)
+                let value = try await facade.getRepoContext(repoID: selector.repoID, owner: selector.owner, name: selector.name)
+                return try Self.result(value)
+
+            case "starcat.get_repo_summary":
+                let selector = Self.repoSelector(from: params.arguments)
+                let value = try await facade.getRepoSummary(repoID: selector.repoID, owner: selector.owner, name: selector.name)
+                return try Self.result(value)
+
+            case "starcat.generate_repo_summary":
+                let selector = Self.repoSelector(from: params.arguments)
+                let value = try await facade.generateRepoSummary(
+                    repoID: selector.repoID,
+                    owner: selector.owner,
+                    name: selector.name,
+                    allowExternalContext: Self.bool(params.arguments, "allow_external_context", defaultValue: false)
+                )
                 return try Self.result(value)
 
             case "starcat.get_readme":
