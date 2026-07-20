@@ -195,7 +195,7 @@ struct AIUsageDashboardView: View {
                 value: compact(summary.inputTokens),
                 detail: String.l10n("ai.usage.metric.inputHint"),
                 icon: "arrow.down.left",
-                tint: .blue
+                tint: .cyan
             )
             metricCard(
                 title: "ai.usage.metric.outputTokens",
@@ -248,7 +248,7 @@ struct AIUsageDashboardView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardSurface()
+        .dashboardSurface(tint: tint)
     }
 
     private var trendCard: some View {
@@ -305,11 +305,19 @@ struct AIUsageDashboardView: View {
 
     private var detailCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("ai.usage.detail.title", selection: $detailTab) {
-                ForEach(DetailTab.allCases) { tab in Text(tab.titleKey).tag(tab) }
+            HStack(spacing: 12) {
+                // 将标题与 Picker 拆开，避免固定宽度 frame 把原生 Picker 内容居中后
+                // 在左侧留下无法控制的空白；两者现在从卡片内容边界明确左对齐。
+                Text("ai.usage.detail.title")
+                    .font(.headline)
+
+                Picker("ai.usage.detail.title", selection: $detailTab) {
+                    ForEach(DetailTab.allCases) { tab in Text(tab.titleKey).tag(tab) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 300)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 360)
 
             Divider()
 
@@ -426,7 +434,8 @@ struct AIUsageDashboardView: View {
                 .width(min: 64, ideal: 78, max: 90)
             }
             .font(.caption)
-            .tableStyle(.inset(alternatesRowBackgrounds: true))
+            // `.inset` 会额外缩进首列；bordered 保留原生表格与斑马纹，但贴齐卡片内容边界。
+            .tableStyle(.bordered(alternatesRowBackgrounds: true))
             .scrollContentBackground(.hidden)
             .frame(height: 420)
 
@@ -598,20 +607,35 @@ private extension AIUsageDashboardView.DetailTab {
 }
 
 private struct AIUsageDashboardSurfaceModifier: ViewModifier {
+    let tint: Color?
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         // 浅色主题降低灰底存在感；深色主题保留更高明度差，避免卡片边界消失。
         let backgroundOpacity = colorScheme == .light ? 0.025 : 0.07
+        let tintOpacity = colorScheme == .light ? 0.06 : 0.10
+        let borderOpacity = tint == nil ? 0.07 : (colorScheme == .light ? 0.16 : 0.22)
         content
-            .background(Color.primary.opacity(backgroundOpacity), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.07)))
+            .background {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.primary.opacity(backgroundOpacity))
+                    .overlay {
+                        if let tint {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(tint.opacity(tintOpacity))
+                        }
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke((tint ?? Color.primary).opacity(borderOpacity))
+            }
     }
 }
 
 private extension View {
-    func dashboardSurface() -> some View {
-        modifier(AIUsageDashboardSurfaceModifier())
+    func dashboardSurface(tint: Color? = nil) -> some View {
+        modifier(AIUsageDashboardSurfaceModifier(tint: tint))
     }
 
     func dashboardCard() -> some View {

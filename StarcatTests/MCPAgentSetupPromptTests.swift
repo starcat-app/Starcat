@@ -17,11 +17,12 @@ struct MCPAgentSetupPromptTests {
 
         #expect(prompt.contains("starcat mcp"))
         #expect(prompt.contains("starcat doctor"))
-        #expect(prompt.contains("pairing command"))
+        #expect(prompt.contains("starcat pair"))
+        #expect(prompt.contains(MCPAgentSetupPrompt.cliInstallCommand))
+        #expect(prompt.contains("$HOME/.local/bin/starcat"))
         #expect(!prompt.contains("--stdin"))
         #expect(prompt.contains("starcat.get_capabilities"))
         #expect(!prompt.contains("127.0.0.1"))
-        #expect(!prompt.contains("Bearer"))
         #expect(!prompt.contains("Authorization:"))
     }
 
@@ -29,6 +30,8 @@ struct MCPAgentSetupPromptTests {
     func cliManualCommandsStayExecutable() {
         #expect(MCPAgentSetupPrompt.cliInstallCommand.contains("releases/latest/download/install.sh"))
         #expect(MCPAgentSetupPrompt.cliInstallCommand.hasSuffix("| sh"))
+        #expect(MCPAgentSetupPrompt.windowsCLIInstallCommand.contains("releases/latest/download/install.ps1"))
+        #expect(MCPAgentSetupPrompt.windowsCLIInstallCommand.hasSuffix("| iex"))
         #expect(MCPAgentSetupPrompt.cliVerificationCommand == "starcat doctor")
     }
 
@@ -38,7 +41,10 @@ struct MCPAgentSetupPromptTests {
 
         #expect(prompt.contains("starcat-cli"))
         #expect(prompt.contains(MCPAgentSetupPrompt.cliRepositoryURL))
-        #expect(prompt.contains("brew tap starcat-app/starcat-cli"))
+        #expect(prompt.contains(MCPAgentSetupPrompt.cliInstallCommand))
+        #expect(prompt.contains(MCPAgentSetupPrompt.windowsCLIInstallCommand))
+        #expect(prompt.contains("\"$HOME/.local/bin/starcat\" doctor"))
+        #expect(!prompt.contains("api.github.com"))
     }
 
     @Test("Claude MCP 配置是显式 stdio JSON 且不包含凭据")
@@ -81,15 +87,42 @@ struct MCPAgentSetupPromptTests {
         #expect(prompt.contains(MCPAgentSetupPrompt.skillRepositoryURL))
         #expect(prompt.contains(".codex/skills/starcat-skill"))
         #expect(prompt.contains(".claude/skills/starcat-skill"))
+        #expect(prompt.contains("$starcat-skill"))
     }
 
-    @Test("Skill Agent prompt 只包含安装请求和公开仓库地址")
-    func skillAgentPromptStaysConcise() {
+    @Test("四类 Agent prompt 使用结构化 Markdown 且角色描述明确")
+    func agentPromptsUseStructuredMarkdownWithExplicitRoles() {
+        let invitation = "starcat-pair://connect?v=1&secret=temporary"
+        let prompts = [
+            MCPAgentSetupPrompt.cliAgentInstall,
+            MCPAgentSetupPrompt.pairAgent(invitationURI: invitation),
+            MCPAgentSetupPrompt.mcpAgentSetup,
+            MCPAgentSetupPrompt.skillAgentInstall,
+        ]
+
+        for prompt in prompts {
+            #expect(prompt.hasPrefix("# "))
+            #expect(prompt.components(separatedBy: "\n## ").count >= 4)
+            #expect(prompt.contains("```"))
+            #expect(prompt.contains("AI Agent"))
+            #expect(!prompt.contains("本消息就是"))
+            #expect(!prompt.contains("The user has reviewed"))
+            #expect(!prompt.contains("请让我"))
+            #expect(!prompt.contains("ask me"))
+        }
+    }
+
+    @Test("Skill Agent prompt 覆盖安装、重载和只读验证")
+    func skillAgentPromptCoversInstallationAndVerification() {
         let prompt = MCPAgentSetupPrompt.skillAgentInstall
 
         #expect(prompt.contains("starcat-skill"))
         #expect(prompt.contains(MCPAgentSetupPrompt.skillRepositoryURL))
-        #expect(prompt.split(separator: "\n").count == 1)
+        #expect(prompt.contains(".codex/skills/starcat-skill"))
+        #expect(prompt.contains(".claude/skills/starcat-skill"))
+        #expect(prompt.contains("pull --ff-only"))
+        #expect(prompt.contains("starcat --help"))
+        #expect(prompt.contains("$starcat-skill"))
     }
 
     @Test("配对命令包含单次 URI 且可直接粘贴执行")

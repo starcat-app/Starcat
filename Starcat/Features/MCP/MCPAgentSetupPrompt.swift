@@ -14,10 +14,16 @@ enum MCPAgentSetupPrompt {
     static let skillRepositoryURL = "https://github.com/starcat-app/starcat-skill"
     static let cliRepositoryURL = "https://github.com/starcat-app/starcat-cli"
     static let cliInstallCommand = "curl -fsSL https://github.com/starcat-app/starcat-cli/releases/latest/download/install.sh | sh"
+    static let windowsCLIInstallCommand = "irm https://github.com/starcat-app/starcat-cli/releases/latest/download/install.ps1 | iex"
     static let cliVerificationCommand = "starcat doctor"
 
     static var cliAgentInstall: String {
-        String(format: String.l10n("settings.mcp.agentSetup.cliPrompt"), cliRepositoryURL)
+        String(
+            format: String.l10n("settings.mcp.agentSetup.cliPrompt"),
+            cliRepositoryURL,
+            cliInstallCommand,
+            windowsCLIInstallCommand
+        )
     }
 
     static var claudeMCPConfiguration: String {
@@ -29,7 +35,11 @@ enum MCPAgentSetupPrompt {
     }
 
     static var mcpAgentSetup: String {
-        String.l10n("settings.mcp.agentSetup.mcpPrompt")
+        String(
+            format: String.l10n("settings.mcp.agentSetup.mcpPrompt"),
+            cliInstallCommand,
+            windowsCLIInstallCommand
+        )
     }
 
     static var skillManualInstall: String {

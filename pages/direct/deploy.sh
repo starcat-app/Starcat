@@ -73,12 +73,17 @@ echo "✓ 生产 Nginx 配置已部署并重载完成"
 # rsync 同步 pages/direct/ 目录下由官网部署维护的静态文件。
 # downloads/ 与 appcast.xml 由 release-direct.sh 单独维护，必须排除，避免官网部署
 # 的 --delete 删除已发布 DMG，或用仓库里的旧 feed 覆盖线上 Sparkle 更新信息。
+# 部署脚本、生成器与 Python cache 只服务于本地发布流程，不能进入公开 Web 目录。
 echo "正在同步文件..."
 rsync -avz --delete --progress \
     -e "$RSYNC_SSH" \
     --exclude '.DS_Store' \
     --exclude '*.log' \
     --exclude 'node_modules' \
+    --exclude 'deploy.sh' \
+    --exclude '*.py' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
     --exclude 'starcat.ink.conf' \
     --exclude 'downloads/' \
     --exclude 'appcast.xml' \

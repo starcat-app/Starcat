@@ -70,14 +70,19 @@ echo "✓ 测试 Nginx 配置已部署并重载完成"
 # 确保远程目录存在
 "${SSH_CMD[@]}" "$REMOTE_HOST" "mkdir -p $REMOTE_WEB_DIR"
 
-# rsync 同步 pages/direct-test/ 目录下的静态文件
-# --delete: 删除远程多余文件，保持完全一致
+# rsync 同步 pages/direct-test/ 目录下的静态文件。
+# --delete: 删除远程多余文件，保持完全一致。
+# 部署脚本、生成器与 Python cache 只服务于本地发布流程，不能进入公开 Web 目录。
 echo "正在同步文件..."
 rsync -avz --delete --progress \
     -e "$RSYNC_SSH" \
     --exclude '.DS_Store' \
     --exclude '*.log' \
     --exclude 'node_modules' \
+    --exclude 'deploy.sh' \
+    --exclude '*.py' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
     --exclude 'starcat-test.ink.conf' \
     "$SCRIPT_DIR/" \
     "$REMOTE_HOST:$REMOTE_WEB_DIR/"
