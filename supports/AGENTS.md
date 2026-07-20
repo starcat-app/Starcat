@@ -78,7 +78,7 @@ starcat-xxx-api/
 
 ```bash
 # 克隆 Starcat 仓库(包含 supports/ 子目录)
-git clone https://github.com/dong4j/Starcat.git
+git clone https://github.com/starcat-app/Starcat.git
 cd Starcat/supports/starcat-xxx-api
 
 # 设置环境变量(以 weekly 为例)

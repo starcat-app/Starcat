@@ -200,7 +200,7 @@ ok "PR #$PR_NUM merged"
 #   - 仓库 Settings → General → "Automatically delete head branches" 勾选
 #   - 用户点过 PR 页面 "Delete branch" 按钮
 #   - GitHub 异步删除存在 race condition, ls-remote 紧跟查可能还看得到 dev
-#   - 设置仓库自动删除 PR 分支: gh repo edit dong4j/Starcat --delete-branch-on-merge
+#   - 设置仓库自动删除 PR 分支: gh repo edit starcat-app/Starcat --delete-branch-on-merge
 # 采用"先试再容错"模式: 直接 push --delete, 失败就 warn 但不退出
 # (失败原因主要是 dev 已不存在, 本地 ref 不感知, 后续 step 9 会重置本地 dev)
 info "deleting remote dev..."

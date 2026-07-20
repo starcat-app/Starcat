@@ -41,9 +41,9 @@ git worktree prune
 **重要**：Multica 的 `multica repo checkout` 命令本身就是基于 Git Worktree 实现的：
 
 ```bash
-multica repo checkout https://github.com/dong4j/Starcat
+multica repo checkout https://github.com/starcat-app/Starcat
 # 输出示例：
-# Checked out https://github.com/dong4j/Starcat → /path/to/workdir/Starcat (branch: agent/claude/2a1cccfe)
+# Checked out https://github.com/starcat-app/Starcat → /path/to/workdir/Starcat (branch: agent/claude/2a1cccfe)
 ```
 
 当你执行 `multica repo checkout` 时：
@@ -71,7 +71,7 @@ multica repo checkout https://github.com/dong4j/Starcat
 
 ```bash
 # 1. 拉取仓库（Multica 自动创建 worktree + 专属分支）
-multica repo checkout https://github.com/dong4j/Starcat
+multica repo checkout https://github.com/starcat-app/Starcat
 
 # 2. 在对应目录中进行开发
 cd Starcat
@@ -363,7 +363,7 @@ bare repo (bare)
 └─────────────────────────────────────────────────────────────────────┘
 
 # Multica 自动创建 worktree + 分支
-multica repo checkout https://github.com/dong4j/Starcat
+multica repo checkout https://github.com/starcat-app/Starcat
 # → 自动创建 worktree: ./Starcat
 # → 自动创建分支: agent/claude/2a1cccfe
 

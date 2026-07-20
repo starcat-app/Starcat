@@ -54,7 +54,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 5 | `starcat-recommend-api/` | `starcat-app/starcat-recommend-api` |
 | 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
 | 7 | `starcat-pro/` | `starcat-app/starcat-pro` |
-| 8 | `starcat-license-api/` | `dong4j/starcat-license-api` 🔒 私有 |
+| 8 | `starcat-license-api/` | `starcat-app/starcat-license-api` 🔒 私有 |
 | 9 | `starcat-localization/` | `starcat-app/starcat-localization` |
 | 10 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
 | 11 | `starcat-skill/` | `starcat-app/starcat-skill` |
@@ -126,7 +126,7 @@ supports/starcat-wiki-api/.env
 
 ```bash
 # 1. clone 主仓库
-git clone https://github.com/dong4j/Starcat.git
+git clone https://github.com/starcat-app/Starcat.git
 cd Starcat
 
 # 2. 拉取所有支撑项目

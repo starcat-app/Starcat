@@ -12,9 +12,9 @@
 
 ### 0.1 必须保持私有
 
-- [ ] `starcat-app/Starcat` — 从 `dong4j/Starcat` 转移，迁移前后均为 **Private**。
-- [ ] `starcat-app/starcat-license-api` — 从 `dong4j/starcat-license-api` 转移，迁移前后均为 **Private**。
-- [ ] 确认整个迁移过程中没有执行任何把上述两个仓库改为 Public 的操作。
+- [x] `starcat-app/Starcat` — 从 `dong4j/Starcat` 转移，迁移前后均为 **Private**。
+- [x] `starcat-app/starcat-license-api` — 从 `dong4j/starcat-license-api` 转移，迁移前后均为 **Private**。
+- [x] 确认整个迁移过程中没有执行任何把上述两个仓库改为 Public 的操作。
 
 ### 0.2 转移后保持公开
 
@@ -85,12 +85,12 @@
 
 ### 2.2 本地未收口状态
 
-- [ ] Starcat 主仓库：确认 `dev` 相对远端领先的 commit 和未提交文件已按 dong4j 意图处理。
+- [x] Starcat 主仓库：`dev` / `main` 与远端同步、工作树干净；本地实验分支单独写入 bundle，不擅自推送。
 - [x] `starcat-pro`：工作树干净，`dev` / `main` 均已推送；仓库中无待处理 `.DS_Store`。
 - [x] `starcat-skill`：链接更新提交 `b96aa7e` 已推送，本地 `dev` / `main` 与组织远端对应分支一致，upstream 正常。
 - [x] `starcat-cli`：确认开发改动已完成、提交并通过验证。
 - [x] `homebrew-starcat-cli`：确认首个 commit 已完成。
-- [ ] 其它待迁移仓库均为预期分支，且不存在未提交或未推送的重要内容。
+- [x] 其它待迁移仓库均为预期分支，且不存在未提交或未推送的重要内容。
 
 ### 2.3 GitHub 集成
 
@@ -368,32 +368,51 @@ git -C supports/starcat-localization push --dry-run
 
 ### 7.1 `Starcat`
 
-- [ ] 主仓库所有需要保留的本地 commit、branch、tag 已推送。
-- [ ] 记录 Private visibility、协作者和权限基线。
-- [ ] `starcat-app` Base permission 已改为 `None`。
-- [ ] `starcat-app` 下不存在 `Starcat` 同名仓库。
-- [ ] dong4j 明确确认执行 Transfer。
-- [ ] 转移完成后仍为 **Private**。
-- [ ] `origin` 更新为 `git@github.com:starcat-app/Starcat.git`。
-- [ ] 私有 clone、fetch、push dry-run 正常。
-- [ ] 未授权组织成员无法读取仓库。
-- [ ] 原有协作者权限符合预期。
+- [x] 主仓库所有需要保留的远端 commit、branch、tag 已推送；本地实验 refs 已单独备份。
+- [x] 记录 Private visibility、协作者和权限基线。
+- [x] `starcat-app` Base permission 已改为 `None`。
+- [x] `starcat-app` 下不存在 `Starcat` 同名仓库。
+- [x] dong4j 明确确认执行 Transfer。
+- [x] 转移完成后仍为 **Private**。
+- [x] `origin` 更新为 `git@github.com:starcat-app/Starcat.git`。
+- [x] 私有 clone、fetch、push dry-run 正常。
+- [x] 未授权组织成员无法读取仓库。
+- [x] 原有协作者权限符合预期。
+
+验收记录：
+
+- [x] 迁移前工作树干净；`dev` 为 `c59a8d7`、`main` 为 `ded898a4`，远端分支与 `v1.0.0` tag 已记录。
+- [x] Repository ID 为 `R_kgDOSrV8GA`，Private，默认分支为 `main`；唯一协作者为 `dong4j`（Admin），无 Actions workflow、Secret、Variable、Environment、Pages、webhook 或 deploy key。
+- [x] 远端 mirror 保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/Starcat.git`，`fsck --full` 通过；所有本地 refs 另存为同目录 `Starcat-local-refs.bundle`，`git bundle verify` 通过。
+- [x] 2026-07-20 完成 `dong4j/Starcat` → `starcat-app/Starcat` Transfer；Repository ID、Private visibility、默认分支、branches 与 tag 保持不变。
+- [x] 本地 `origin` 已更新为 `git@github.com:starcat-app/Starcat.git`；新旧 Git URL 返回相同 refs，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 当前文档、脚本、Multica 项目资源与测试防泄漏断言已收口到组织 namespace；Multica 自动托管的 `GEMINI.md` 等待平台下次刷新，不手工修改托管区。
 
 ### 7.2 `starcat-license-api`
 
-- [ ] 记录 Private visibility、协作者、Secrets、部署配置和权限基线。
-- [ ] dong4j 明确确认执行 Transfer。
-- [ ] 转移完成后仍为 **Private**。
-- [ ] `origin` 更新为 `git@github.com:starcat-app/starcat-license-api.git`。
-- [ ] Fly.io app、volume、Secrets、域名和生产配置不因 GitHub owner 改变而修改。
-- [ ] 未执行任何 visibility change。
-- [ ] 未授权组织成员无法读取仓库。
-- [ ] 私有 clone、fetch、push dry-run 正常。
+- [x] 记录 Private visibility、协作者、Secrets、部署配置和权限基线。
+- [x] dong4j 明确确认执行 Transfer。
+- [x] 转移完成后仍为 **Private**。
+- [x] `origin` 更新为 `git@github.com:starcat-app/starcat-license-api.git`。
+- [x] Fly.io app、volume、Secrets、域名和生产配置不因 GitHub owner 改变而修改。
+- [x] 未执行任何 visibility change。
+- [x] 未授权组织成员无法读取仓库。
+- [x] 私有 clone、fetch、push dry-run 正常。
+
+验收记录：
+
+- [x] 迁移前工作树干净；`dev` 为 `eafde36`、`main` 为 `a7b3517`，当前没有 tag。
+- [x] Repository ID 为 `R_kgDOTPIEIg`，Private，默认分支为 `main`；唯一协作者为 `dong4j`（Admin），无 Actions workflow、Secret、Variable、Environment、Pages、webhook 或 deploy key。
+- [x] mirror 保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/starcat-license-api.git`，`show-ref` 与 `fsck --full` 通过。
+- [x] 2026-07-20 完成 `dong4j/starcat-license-api` → `starcat-app/starcat-license-api` Transfer；Repository ID、Private visibility、默认分支和 refs 保持不变。
+- [x] 本地 `origin` 已更新为 `git@github.com:starcat-app/starcat-license-api.git`；新旧 Git URL 返回相同 refs，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] Go module / import 已更新为 `github.com/starcat-app/starcat-license-api`，提交 `6702378` 仅推送 `dev`；`main` 保持不变，`go test`、race、vet、build 均通过。
+- [x] 未修改 Fly app、volume、Secrets、域名或生产配置；迁移后 `https://starcat-license-api.fly.dev/healthz` 返回 `ok`。
 
 最终强制检查：
 
-- [ ] `gh repo view starcat-app/Starcat --json visibility` 返回 `PRIVATE`。
-- [ ] `gh repo view starcat-app/starcat-license-api --json visibility` 返回 `PRIVATE`。
+- [x] `gh repo view starcat-app/Starcat --json visibility` 返回 `PRIVATE`。
+- [x] `gh repo view starcat-app/starcat-license-api --json visibility` 返回 `PRIVATE`。
 
 ---
 
@@ -528,22 +547,22 @@ https://github.com/settings/applications/3633797
 
 ### 11.1 主仓库与 supports 运维文件
 
-- [ ] `supports/README.md`
-- [ ] `supports/SYNC.md`
-- [ ] `supports/clone-all.sh`
-- [ ] `supports/AGENTS.md`
-- [ ] `supports/CLAUDE.md`
-- [ ] `supports/scripts/sync-starcat-readme-promo.py`
-- [ ] 其它脚本、配置、测试、文档中的 `github.com/dong4j/*`。
+- [x] `supports/README.md`
+- [x] `supports/SYNC.md`
+- [x] `supports/clone-all.sh`
+- [x] `supports/AGENTS.md`
+- [x] `supports/CLAUDE.md`（核对后无旧 owner 引用）
+- [x] `supports/scripts/sync-starcat-readme-promo.py`（核对后无旧 Private owner 引用）
+- [x] 其它脚本、配置、测试、文档中的旧 owner 引用已替换或分类；迁移来源记录、旧地址防泄漏断言与自动托管快照除外。
 - [x] `raw.githubusercontent.com/dong4j/starcat-pro/*` 改为组织 namespace。
 
 ### 11.2 Go module 与 import path
 
-- [ ] 每个 Go 项目的 `go.mod` module 改为 `github.com/starcat-app/REPOSITORY`。
-- [ ] 项目内 absolute import 同步改为新 module path。
-- [ ] 执行 `go mod tidy`。
-- [ ] 执行 `go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./...`。
-- [ ] 不修改 Fly app 名、数据库路径或运行时配置。
+- [x] 每个 Go 项目的 `go.mod` module 改为 `github.com/starcat-app/REPOSITORY`。
+- [x] 项目内 absolute import 同步改为新 module path。
+- [x] 执行 `go mod tidy`。
+- [x] 执行 `go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./...`。
+- [x] 不修改 Fly app 名、数据库路径或运行时配置。
 
 ### 11.3 安装与发布链接
 
@@ -585,13 +604,13 @@ rg -n --hidden --no-ignore \
 
 ## 13. 文档同步收尾
 
-- [ ] 更新 `supports/README.md` 的仓库数量、owner、公开 / 私有标记和 clone 示例。
-- [ ] 更新 `supports/SYNC.md` 的独立仓库清单与新机器 clone 流程。
-- [ ] 更新 `supports/clone-all.sh` 的所有 GitHub URL 和项目数量。
-- [ ] 更新 `supports/AGENTS.md` / `supports/CLAUDE.md` 中的 module path 和 clone 示例。
-- [ ] 更新 `docs/1-立项/开发前问题清单.md` 中“OAuth App 未注册”的过期结论，记录 OAuth App 已转移到组织。
-- [ ] 检查其它设计、发版、插件与 CLI 文档中的旧 owner。
-- [ ] 不修改 `docs/功能实现总览.md`；如需登记迁移完成状态，另行提交草稿并等待 dong4j 明确授权。
+- [x] 更新 `supports/README.md` 的仓库数量、owner、公开 / 私有标记和 clone 示例。
+- [x] 更新 `supports/SYNC.md` 的独立仓库清单与新机器 clone 流程。
+- [x] 更新 `supports/clone-all.sh` 的所有 GitHub URL 和项目数量。
+- [x] 更新 `supports/AGENTS.md` / `supports/CLAUDE.md` 中的 module path 和 clone 示例。
+- [x] 更新 `docs/1-立项/开发前问题清单.md` 中“OAuth App 未注册”的过期结论，记录 OAuth App 已转移到组织。
+- [x] 检查其它设计、发版、插件与 CLI 文档中的旧 owner；Multica 自动托管内容改为更新项目资源源数据。
+- [x] 未修改 `docs/功能实现总览.md`；如需登记迁移完成状态，另行提交草稿并等待 dong4j 明确授权。
 
 ---
 
@@ -599,20 +618,20 @@ rg -n --hidden --no-ignore \
 
 ### 14.1 仓库
 
-- [ ] 12 个现有公开仓库全部位于 `starcat-app` 且保持 Public。
-- [ ] `Starcat` 位于 `starcat-app` 且保持 Private。
-- [ ] `starcat-license-api` 位于 `starcat-app` 且保持 Private。
+- [x] 12 个现有公开仓库全部位于 `starcat-app` 且保持 Public。
+- [x] `Starcat` 位于 `starcat-app` 且保持 Private。
+- [x] `starcat-license-api` 位于 `starcat-app` 且保持 Private。
 - [x] `starcat-cli`、`homebrew-starcat-cli` 位于 `starcat-app` 且为 Public。
-- [ ] `ai-file-wall`、`vscode-makefile-explorer` 未发生变化。
-- [ ] 所有迁移仓库的 branch、tag、Release、Issue、PR 和权限符合基线。
+- [x] `ai-file-wall`、`vscode-makefile-explorer` 未发生变化。
+- [x] 所有迁移仓库的 branch、tag、Release、Issue、PR 和权限符合基线。
 
 ### 14.2 本地开发
 
-- [ ] 所有本地 remote 指向正确的新 owner。
+- [x] 所有迁移范围内的本地 remote 指向正确的新 owner。
 - [ ] `supports/clone-all.sh` 能在新目录完成 clone dry-run / 实机抽查。
-- [ ] Go module、import、脚本、文档不再依赖旧 namespace。
-- [ ] Starcat 主项目的针对性构建 / 测试通过。
-- [ ] 各独立项目的针对性测试通过。
+- [x] Go module、import、脚本、文档不再依赖旧 namespace；迁移记录与自动托管快照已分类。
+- [x] Starcat 主项目的针对性构建 / 测试通过。
+- [x] 各独立项目的针对性测试通过。
 
 ### 14.3 登录与用户影响
 
@@ -631,9 +650,9 @@ rg -n --hidden --no-ignore \
 
 ### 14.5 重定向与公开入口
 
-- [ ] 旧 GitHub 仓库 URL 仍能重定向。
-- [ ] 没有在 `dong4j` 下创建同名仓库破坏重定向。
-- [ ] 官网、README、OAuth Homepage、安装命令都指向正式入口。
+- [x] 旧 GitHub 仓库 URL 仍能重定向。
+- [x] 没有在 `dong4j` 下创建同名仓库破坏重定向。
+- [x] 官网、README、OAuth Homepage、安装命令都指向正式入口。
 - [x] `starcat-app` 组织首页可以清晰找到 Starcat 产品和核心公开项目。
 
 ---
