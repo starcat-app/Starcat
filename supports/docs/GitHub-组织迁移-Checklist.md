@@ -18,7 +18,7 @@
 
 ### 0.2 转移后保持公开
 
-- [ ] `starcat-app/starcat-pro`
+- [x] `starcat-app/starcat-pro`
 - [x] `starcat-app/starcat-localization`
 - [ ] `starcat-app/homebrew-starcat`
 - [x] `starcat-app/starcat-skill`
@@ -86,7 +86,7 @@
 ### 2.2 本地未收口状态
 
 - [ ] Starcat 主仓库：确认 `dev` 相对远端领先的 commit 和未提交文件已按 dong4j 意图处理。
-- [ ] `starcat-pro`：确认未推送 commit 已处理，并清除不应提交的 `.DS_Store`。
+- [x] `starcat-pro`：工作树干净，`dev` / `main` 均已推送；仓库中无待处理 `.DS_Store`。
 - [x] `starcat-skill`：链接更新提交 `b96aa7e` 已推送，本地 `dev` / `main` 与组织远端对应分支一致，upstream 正常。
 - [x] `starcat-cli`：确认开发改动已完成、提交并通过验证。
 - [x] `homebrew-starcat-cli`：确认首个 commit 已完成。
@@ -257,7 +257,7 @@ git -C supports/starcat-localization push --dry-run
 
 ### 6.1 第一批：静态内容与低自动化仓库
 
-- [ ] `starcat-pro`
+- [x] `starcat-pro`
 - [x] `starcat-skill`
 - [ ] `starcat-safari-plugin`
 
@@ -272,6 +272,18 @@ git -C supports/starcat-localization push --dry-run
 - [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 `dev` / `main` refs。
 - [x] Starcat 安装 Prompt、CLI / MCP 设计文档与 Skill 内 CLI 安装链接已更新为 `starcat-app` namespace。
 - [x] Skill 链接更新提交 `b96aa7e` 已推送到组织仓库的 `dev` / `main`，两个分支最终 refs 一致。
+
+#### 6.1.2 `starcat-pro` 验收记录
+
+- [x] 迁移前工作树干净；`dev` 指向 `fee503f`，`main` 指向 `6b1d8f2`，两个分支均已推送，当前没有 tag。
+- [x] Repository ID 为 `R_kgDOTPEWHg`，Public，默认分支为 `main`；Issue、PR、Release、watchers、forks 均为 0，stars 为 1。
+- [x] 迁移前无 Actions workflow、Repository Secret、Variable、Environment、Pages、webhook、deploy key、ruleset 或 branch protection。
+- [x] mirror 备份保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/starcat-pro.git`，`show-ref` 与 `git fsck --full` 校验通过。
+- [x] 2026-07-20 14:08 CST 完成 `dong4j/starcat-pro` → `starcat-app/starcat-pro` Transfer；Repository ID、Public visibility、默认分支、stars 与迁移前 refs 保持不变。
+- [x] 本地 `origin` 已更新为 `https://github.com/starcat-app/starcat-pro.git`，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 refs。
+- [x] `starcat-pro` 自身链接更新分别提交到 `dev`（`822a305`）与 `main`（`30c8b7e`），未把未发布 dev 内容带入 main。
+- [x] 统一 README 推广脚本、主仓库 supports 索引与 11 个独立项目 README 已改用 `starcat-app/starcat-pro`；独立项目均按仓库分别提交到 `dev`，未触发 Release 或部署。
 
 ### 6.2 第二批：带 Release / 分发入口的仓库
 
@@ -470,7 +482,7 @@ https://github.com/settings/applications/3633797
 - [ ] `supports/CLAUDE.md`
 - [ ] `supports/scripts/sync-starcat-readme-promo.py`
 - [ ] 其它脚本、配置、测试、文档中的 `github.com/dong4j/*`。
-- [ ] `raw.githubusercontent.com/dong4j/starcat-pro/*` 改为组织 namespace。
+- [x] `raw.githubusercontent.com/dong4j/starcat-pro/*` 改为组织 namespace。
 
 ### 11.2 Go module 与 import path
 

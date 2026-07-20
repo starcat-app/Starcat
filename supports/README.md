@@ -25,7 +25,7 @@
 
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
-| [`starcat-pro/`](./starcat-pro/) | [`dong4j/starcat-pro`](https://github.com/dong4j/starcat-pro) | Pro 订阅服务端 |
+| [`starcat-pro/`](./starcat-pro/) | [`starcat-app/starcat-pro`](https://github.com/starcat-app/starcat-pro) | Pro 订阅服务端 |
 | [`starcat-localization/`](./starcat-localization/) | [`starcat-app/starcat-localization`](https://github.com/starcat-app/starcat-localization) | 本地化资源管理 |
 | [`homebrew-starcat/`](./homebrew-starcat/) | [`dong4j/homebrew-starcat`](https://github.com/dong4j/homebrew-starcat) | Homebrew tap（`brew install starcat`） |
 | [`vscode-makefile-explorer/`](./vscode-makefile-explorer/) | [`dong4j/vscode-makefile-explorer`](https://github.com/dong4j/vscode-makefile-explorer) | VS Code 插件 |

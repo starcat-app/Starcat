@@ -79,7 +79,7 @@ PROJECTS=(
   "starcat-wiki-api|https://github.com/dong4j/starcat-wiki-api.git|Go API - Wiki 服务"
   "starcat-recommend-api|https://github.com/dong4j/starcat-recommend-api.git|Go API - 推荐服务"
   "starcat-discovery-api|https://github.com/dong4j/starcat-discovery-api.git|Go API - 发现服务"
-  "starcat-pro|https://github.com/dong4j/starcat-pro.git|Pro 订阅服务"
+  "starcat-pro|https://github.com/starcat-app/starcat-pro.git|Pro 订阅服务"
   "starcat-license-api|https://github.com/dong4j/starcat-license-api.git|Direct 分发授权 API 🔒"
   "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
   "homebrew-starcat|https://github.com/dong4j/homebrew-starcat.git|Homebrew tap"

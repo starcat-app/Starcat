@@ -86,8 +86,8 @@ marker：
 
 公开图片统一引用：
 
-- `https://raw.githubusercontent.com/dong4j/starcat-pro/main/banner.webp`
-- `https://raw.githubusercontent.com/dong4j/starcat-pro/main/main.webp`
+- `https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp`
+- `https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp`
 
 ## 验证
 

@@ -12,8 +12,8 @@ Starcat 介绍后逐渐漂移。运行后会：
     supports/scripts/sync-starcat-readme-promo.py
 
 公开图片统一引用 `starcat-pro`，不要复制到各仓库：
-  - https://raw.githubusercontent.com/dong4j/starcat-pro/main/banner.webp
-  - https://raw.githubusercontent.com/dong4j/starcat-pro/main/main.webp
+  - https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp
+  - https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from pathlib import Path
 
 START = "<!-- starcat-promo:start -->"
 END = "<!-- starcat-promo:end -->"
-BANNER = "https://raw.githubusercontent.com/dong4j/starcat-pro/main/banner.webp"
-MAIN = "https://raw.githubusercontent.com/dong4j/starcat-pro/main/main.webp"
+BANNER = "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp"
+MAIN = "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp"
 
 
 @dataclass(frozen=True)
@@ -157,14 +157,14 @@ def promo(project: Project, lang: str) -> str:
     link_rows = (
         """- 官网: https://starcat.ink
 - 下载: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
-- 公开支持与发布说明: https://github.com/dong4j/starcat-pro
+- 公开支持与发布说明: https://github.com/starcat-app/starcat-pro
 - Homebrew tap: https://github.com/dong4j/homebrew-starcat
 - 浏览器插件: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/dong4j/starcat-safari-plugin)
 - 本地化: https://github.com/starcat-app/starcat-localization"""
         if is_zh
         else """- Home: https://starcat.ink
 - Download: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
-- Public support and release notes: https://github.com/dong4j/starcat-pro
+- Public support and release notes: https://github.com/starcat-app/starcat-pro
 - Homebrew tap: https://github.com/dong4j/homebrew-starcat
 - Browser plugins: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/dong4j/starcat-safari-plugin)
 - Localization: https://github.com/starcat-app/starcat-localization"""
@@ -195,7 +195,7 @@ def promo(project: Project, lang: str) -> str:
 
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
-<a href="https://github.com/dong4j/starcat-pro"><img src="https://img.shields.io/badge/support-starcat--pro-lightgrey.svg?style=flat&color=blue" alt="support"/></a>
+<a href="https://github.com/starcat-app/starcat-pro"><img src="https://img.shields.io/badge/support-starcat--pro-lightgrey.svg?style=flat&color=blue" alt="support"/></a>
 <a href="https://github.com/dong4j/homebrew-starcat"><img src="https://img.shields.io/badge/install-homebrew-lightgrey.svg?style=flat&color=blue" alt="homebrew"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 </div>
