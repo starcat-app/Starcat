@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import MCP
 import Observation
 
 @MainActor
@@ -96,14 +97,13 @@ final class StarcatMCPService {
         MCPAgentSetupPrompt.skillAgentInstall
     }
 
-    /// 给用户手工配对时只复制 opaque URI；命令固定展示为 `starcat pair --stdin`，
-    /// 避免把短期 secret 拼进 shell history。
-    func createPairingURI() throws -> String {
-        try createPairingInvitationURI()
+    /// 手工入口复制可直接执行的完整命令。invitation secret 只有五分钟、单次有效，
+    /// 且兑换仍需 App 内确认；以这三层约束换取“粘贴后按 Enter”的配对体验。
+    func createPairingCommand() throws -> String {
+        MCPAgentSetupPrompt.pairingCommand(invitationURI: try createPairingInvitationURI())
     }
 
-    /// 给外部 Agent 的说明可以包含 URI，但仍强制通过 stdin 传入，不能放进参数。
-    /// 每次点击都创建新的五分钟 invitation，避免复用已经发给另一端的 secret。
+    /// 每次点击都创建新的五分钟 invitation，避免手工配对与 Agent 配对复用 secret。
     func createPairingAgentInstruction() throws -> String {
         MCPAgentSetupPrompt.pairAgent(invitationURI: try createPairingInvitationURI())
     }
@@ -168,7 +168,15 @@ final class StarcatMCPService {
 
         lifecycleGeneration += 1
         let generation = lifecycleGeneration
-        let runtime = StarcatMCPRuntime(facade: facade, writeFacade: writeFacade)
+        let allowsRemoteConnections = settings.mcpAllowRemoteConnections
+        let runtime = StarcatMCPRuntime(
+            facade: facade,
+            writeFacade: writeFacade,
+            originValidator: makeOriginValidator(
+                port: port,
+                allowsRemoteConnections: allowsRemoteConnections
+            )
+        )
 
         startupTask = Task { @MainActor in
             do {
@@ -277,6 +285,31 @@ final class StarcatMCPService {
             }
             return  // 端口可用
         }
+    }
+
+    /// MCP SDK 自带 DNS rebinding 防护，默认只认识 localhost；可信网络 endpoint
+    /// 使用当前 Mac 的 Bonjour hostname，必须把同一个 hostname 精确加入 Host/Origin
+    /// allowlist。这里不使用通配 hostname，也不关闭校验，避免任意 Host 借 listener
+    /// 访问本机 MCP 服务。
+    private func makeOriginValidator(
+        port: Int,
+        allowsRemoteConnections: Bool
+    ) -> OriginValidator {
+        let loopbackHosts = [
+            "127.0.0.1:\(port)",
+            "localhost:\(port)",
+            "[::1]:\(port)"
+        ]
+        let scheme = allowsRemoteConnections ? "https" : "http"
+        var allowedHosts = loopbackHosts
+        var allowedOrigins = loopbackHosts.map { "\(scheme)://\($0)" }
+
+        if allowsRemoteConnections {
+            let remoteHost = "\(ProcessInfo.processInfo.hostName):\(port)"
+            allowedHosts.append(remoteHost)
+            allowedOrigins.append("https://\(remoteHost)")
+        }
+        return OriginValidator(allowedHosts: allowedHosts, allowedOrigins: allowedOrigins)
     }
 
     private func validate(_ request: StarcatHTTPServerRequest) -> StarcatHTTPServerError? {

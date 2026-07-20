@@ -144,7 +144,42 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.count == 16)
     }
 
-    private static func makeRuntime() async throws -> StarcatMCPRuntime {
+    @Test("可信网络 hostname 可访问，未授权 Host 仍返回 421")
+    func validatesConfiguredRemoteHost() async throws {
+        let port = 5_555
+        let runtime = try await Self.makeRuntime(originValidator: OriginValidator(
+            allowedHosts: [
+                "127.0.0.1:\(port)",
+                "localhost:\(port)",
+                "[::1]:\(port)",
+                "studio.local:\(port)"
+            ],
+            allowedOrigins: ["https://studio.local:\(port)"]
+        ))
+        defer { Task { @MainActor in await runtime.shutdown() } }
+
+        let allowed = await runtime.handle(Self.request(
+            id: 1,
+            method: "initialize",
+            params: Self.initializeParams(),
+            host: "studio.local:\(port)"
+        ))
+        #expect(allowed.statusCode == 200)
+
+        let rejected = await runtime.handle(Self.request(
+            id: 2,
+            method: "initialize",
+            params: Self.initializeParams(),
+            host: "attacker.example:\(port)"
+        ))
+        #expect(rejected.statusCode == 421)
+        let body = try #require(rejected.bodyData.flatMap { String(data: $0, encoding: .utf8) })
+        #expect(body.contains("Host header not allowed"))
+    }
+
+    private static func makeRuntime(
+        originValidator: OriginValidator = .localhost()
+    ) async throws -> StarcatMCPRuntime {
         let db = try InMemoryDatabaseManager()
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
         try await db.insertRepoFixture(id: 2, owner: "openai", name: "codex")
@@ -205,7 +240,11 @@ struct StarcatMCPRuntimeTests {
             auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl")),
             refreshSemanticIndex: { _ in }
         )
-        let runtime = StarcatMCPRuntime(facade: facade, writeFacade: writeFacade)
+        let runtime = StarcatMCPRuntime(
+            facade: facade,
+            writeFacade: writeFacade,
+            originValidator: originValidator
+        )
         try await runtime.start()
         return runtime
     }
@@ -221,7 +260,12 @@ struct StarcatMCPRuntimeTests {
         ]
     }
 
-    private static func request(id: Int, method: String, params: [String: Any]? = nil) -> HTTPRequest {
+    private static func request(
+        id: Int,
+        method: String,
+        params: [String: Any]? = nil,
+        host: String? = nil
+    ) -> HTTPRequest {
         var object: [String: Any] = [
             "jsonrpc": "2.0",
             "id": id,
@@ -230,7 +274,7 @@ struct StarcatMCPRuntimeTests {
         if let params {
             object["params"] = params
         }
-        return httpRequest(object)
+        return httpRequest(object, host: host)
     }
 
     private static func notification(method: String, params: [String: Any]? = nil) -> HTTPRequest {
@@ -244,15 +288,19 @@ struct StarcatMCPRuntimeTests {
         return httpRequest(object)
     }
 
-    private static func httpRequest(_ object: [String: Any]) -> HTTPRequest {
+    private static func httpRequest(_ object: [String: Any], host: String? = nil) -> HTTPRequest {
         let body = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        var headers = [
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": "2025-03-26"
+        ]
+        if let host {
+            headers["Host"] = host
+        }
         return HTTPRequest(
             method: "POST",
-            headers: [
-                "Accept": "application/json, text/event-stream",
-                "Content-Type": "application/json",
-                "MCP-Protocol-Version": "2025-03-26"
-            ],
+            headers: headers,
             body: body,
             path: "/mcp"
         )

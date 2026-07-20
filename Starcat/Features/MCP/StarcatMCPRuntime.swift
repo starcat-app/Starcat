@@ -18,11 +18,17 @@ import MCP
 final class StarcatMCPRuntime {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
+    private let originValidator: OriginValidator
     private var session: Session?
 
-    init(facade: StarcatMCPFacade, writeFacade: StarcatMCPWriteFacade) {
+    init(
+        facade: StarcatMCPFacade,
+        writeFacade: StarcatMCPWriteFacade,
+        originValidator: OriginValidator = .localhost()
+    ) {
         self.facade = facade
         self.writeFacade = writeFacade
+        self.originValidator = originValidator
     }
 
     func start() async throws {
@@ -53,7 +59,16 @@ final class StarcatMCPRuntime {
     }
 
     private func makeSession() async throws -> Session {
-        let transport = StatelessHTTPServerTransport()
+        // SDK 默认只允许 localhost Host。可信网络模式会使用 Mac 的 Bonjour hostname，
+        // 因此由 Service 注入精确 allowlist；仍保留其它标准 HTTP 校验，不能用
+        // `OriginValidator.disabled` 绕过 DNS rebinding 防护。
+        let validationPipeline = StandardValidationPipeline(validators: [
+            originValidator,
+            AcceptHeaderValidator(mode: .jsonOnly),
+            ContentTypeValidator(),
+            ProtocolVersionValidator()
+        ])
+        let transport = StatelessHTTPServerTransport(validationPipeline: validationPipeline)
         let server = Server(
             name: "starcat",
             version: "0.2.0",

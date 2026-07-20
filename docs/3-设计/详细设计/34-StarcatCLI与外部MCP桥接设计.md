@@ -56,8 +56,8 @@ Codex / Claude Code / 其它 Agent（macOS / Linux / Windows）
 
 ```bash
 starcat pair "starcat-pair://..."
-starcat doctor --json
-starcat capabilities --json
+starcat doctor
+starcat capabilities
 starcat repo search "local RAG" --semantic
 starcat repo context owner/repo
 starcat repo summary owner/repo --generate
@@ -68,7 +68,9 @@ starcat mcp
 
 约束：
 
-- stdout 只输出 JSON 或 MCP JSON-RPC；错误只写 stderr。
+- `help`、`version`、`pair`、`unpair`、`doctor`、`update` 默认输出终端文本；数据命令输出 JSON；`starcat mcp` 的 stdout 只承载 JSON-RPC。
+- `doctor --json` 只用于脚本或 Agent 明确需要机器可读诊断的场景；本来就输出 JSON 的数据命令不提供冗余 `--json`。
+- 所有错误只写 stderr，未知 flag 必须报错，不能静默忽略。
 - 写命令默认 `dry_run=true`，显式 `--apply` 才持久化。
 - 笔记正文只从 stdin 读取，不进入进程参数。
 - 长期设备 token 使用 macOS Keychain、Windows Credential Manager 或 Linux Secret Service。
@@ -84,8 +86,8 @@ starcat-pair://connect?v=1&endpoint=...&fingerprint=...&secret=...
 
 流程：
 
-1. 用户在 Starcat 点击「复制一次性配对命令」。
-2. 外部 Agent 执行 `starcat pair <URI>`。
+1. 用户在 Starcat 点击「复制配对命令」。
+2. 在目标设备终端粘贴 `starcat pair "<URI>"` 并按回车；也可运行 `starcat pair` 后粘贴 URI 并按回车。
 3. CLI 校验 endpoint：明文 HTTP 只允许 loopback；远程必须是 HTTPS。
 4. HTTPS 连接严格 pin URI 中的证书 SHA-256 指纹。
 5. CLI 向 `/pairing/exchange` 提交一次性 secret 与设备名、平台、架构、CLI 版本。
@@ -120,7 +122,7 @@ starcat-skill/
     └── workflows.md
 ```
 
-Skill 不包含 Python 脚本、`.env` 或 endpoint/key 配置。每个工作流先运行 `starcat capabilities --json`，写入先 dry-run，正式写入后重新读取 context 验证。
+Skill 不包含 Python 脚本、`.env` 或 endpoint/key 配置。每个工作流先运行 `starcat capabilities`，写入先 dry-run，正式写入后重新读取 context 验证。
 
 ## 8. MCP 工具边界
 
@@ -134,7 +136,7 @@ CLI 和 Skill 不增加业务语义，只映射上述工具。
 
 - Go：`go test ./...`、`go vet ./...`、`go build ./cmd/starcat`。
 - Swift：pairing invitation、X.509 DER 解析、MCP runtime 与安装 prompt 定向测试。
-- 设置页复制文本不包含 endpoint、Local API Key 或 Bearer token。
+- 设置页普通安装文本不包含 endpoint、Local API Key 或 Bearer token；配对按钮只复制五分钟、单次有效且仍需人工确认的完整配对命令。
 - loopback、远程 TLS、一次性 secret、设备撤销和默认 dry-run 边界均有自动化或人工验证记录。
 - `supports/starcat-cli`、`supports/starcat-skill` 保持独立仓库，不进入父仓库提交。
 

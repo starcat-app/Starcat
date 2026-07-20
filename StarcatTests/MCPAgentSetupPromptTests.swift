@@ -16,7 +16,9 @@ struct MCPAgentSetupPromptTests {
         let prompt = MCPAgentSetupPrompt.mcpAgentSetup
 
         #expect(prompt.contains("starcat mcp"))
-        #expect(prompt.contains("starcat pair --stdin"))
+        #expect(prompt.contains("starcat doctor"))
+        #expect(prompt.contains("pairing command"))
+        #expect(!prompt.contains("--stdin"))
         #expect(prompt.contains("starcat.get_capabilities"))
         #expect(!prompt.contains("127.0.0.1"))
         #expect(!prompt.contains("Bearer"))
@@ -27,7 +29,7 @@ struct MCPAgentSetupPromptTests {
     func cliManualCommandsStayExecutable() {
         #expect(MCPAgentSetupPrompt.cliInstallCommand.contains("releases/latest/download/install.sh"))
         #expect(MCPAgentSetupPrompt.cliInstallCommand.hasSuffix("| sh"))
-        #expect(MCPAgentSetupPrompt.cliVerificationCommand == "starcat doctor --json")
+        #expect(MCPAgentSetupPrompt.cliVerificationCommand == "starcat doctor")
     }
 
     @Test("CLI Agent prompt 指向公开 Go CLI 仓库")
@@ -90,13 +92,19 @@ struct MCPAgentSetupPromptTests {
         #expect(prompt.split(separator: "\n").count == 1)
     }
 
-    @Test("配对 prompt 只通过 stdin 传递一次性 URI")
-    func pairingPromptUsesStandardInput() {
+    @Test("配对命令包含单次 URI 且可直接粘贴执行")
+    func pairingPromptContainsExecutableCommand() {
         let invitation = "starcat-pair://connect?v=1&secret=temporary"
         let prompt = MCPAgentSetupPrompt.pairAgent(invitationURI: invitation)
 
-        #expect(prompt.contains("starcat pair --stdin"))
+        #expect(prompt.contains("starcat pair \"\(invitation)\""))
         #expect(prompt.contains(invitation))
-        #expect(!prompt.contains("starcat pair \"\(invitation)\""))
+        #expect(!prompt.contains("--stdin"))
+    }
+
+    @Test("配对 URI query 被双引号保护")
+    func pairingCommandQuotesQuery() {
+        let invitation = "starcat-pair://connect?v=1&endpoint=https%3A%2F%2Fstudio.local%3A5555%2Fmcp&secret=temporary"
+        #expect(MCPAgentSetupPrompt.pairingCommand(invitationURI: invitation) == "starcat pair \"\(invitation)\"")
     }
 }

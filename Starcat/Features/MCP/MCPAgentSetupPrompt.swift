@@ -4,8 +4,8 @@
 //
 //  外部 AI Agent 安装指引生成器。
 //
-//  关键约束：复制文本只描述公开安装入口和 CLI 命令，不包含 endpoint、Local API Key
-//  或长期设备 token。连接资料通过一次性 pairing URI 单独交换。
+//  关键约束：安装文本只描述公开入口，不包含 endpoint、Local API Key 或长期设备 token。
+//  配对命令可以携带五分钟、单次有效的 invitation，但最终签发仍需 App 内人工确认。
 //
 
 import Foundation
@@ -14,7 +14,7 @@ enum MCPAgentSetupPrompt {
     static let skillRepositoryURL = "https://github.com/starcat-app/starcat-skill"
     static let cliRepositoryURL = "https://github.com/starcat-app/starcat-cli"
     static let cliInstallCommand = "curl -fsSL https://github.com/starcat-app/starcat-cli/releases/latest/download/install.sh | sh"
-    static let cliVerificationCommand = "starcat doctor --json"
+    static let cliVerificationCommand = "starcat doctor"
 
     static var cliAgentInstall: String {
         String(format: String.l10n("settings.mcp.agentSetup.cliPrompt"), cliRepositoryURL)
@@ -47,7 +47,17 @@ enum MCPAgentSetupPrompt {
     }
 
     static func pairAgent(invitationURI: String) -> String {
-        String(format: String.l10n("settings.mcp.agentSetup.pairPrompt"), invitationURI)
+        String(
+            format: String.l10n("settings.mcp.agentSetup.pairPrompt"),
+            pairingCommand(invitationURI: invitationURI)
+        )
+    }
+
+    /// 生成可直接粘贴到 macOS/Linux/Windows 常见 shell 的配对命令。
+    /// invitation 由 URLComponents 生成，只包含 URL 安全字符；双引号用于保护 `&`，
+    /// 避免 shell 把 query 拆成后台命令。
+    static func pairingCommand(invitationURI: String) -> String {
+        "starcat pair \"\(invitationURI)\""
     }
 
     /// Claude Code 的手工配置使用 JSON；`type` 显式声明为 stdio，避免用户把它误解为 HTTP endpoint。

@@ -169,7 +169,7 @@ struct MCPSettingsTab: View {
                     help: "settings.mcp.agentSetup.pair.manual.help"
                 ) {
                     pairingCopyButton(
-                        providesContent: { try mcpService.createPairingURI() },
+                        providesContent: { try mcpService.createPairingCommand() },
                         tooltip: "settings.mcp.agentSetup.pair.manual.copy",
                         isEnabled: isRunning(mcpService.state)
                     )
@@ -385,7 +385,7 @@ struct MCPSettingsTab: View {
         .controlSize(.regular)
     }
 
-    /// 配对 URI 每次点击即时生成，不能先缓存到 View state。这样用户手工配对与
+    /// 配对命令每次点击即时生成，不能先缓存到 View state。这样用户手工配对与
     /// Agent 配对永远拿到相互独立、五分钟有效的一次性 secret。
     private func pairingCopyButton(
         providesContent: @escaping () throws -> String,
