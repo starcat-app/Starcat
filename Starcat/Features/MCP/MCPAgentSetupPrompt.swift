@@ -96,7 +96,10 @@ enum MCPAgentSetupPrompt {
 
     /// JSON 字符串字面量同样是合法的 TOML basic string；统一编码可正确处理路径里的引号和反斜杠。
     private static func quotedConfigurationString(_ value: String) -> String {
-        let data = try? JSONEncoder().encode(value)
+        let encoder = JSONEncoder()
+        // TOML 不支持 JSON 的 `\/` 转义，因此显式保留路径中的普通斜杠。
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let data = try? encoder.encode(value)
         return data.map { String(decoding: $0, as: UTF8.self) } ?? "\"starcat\""
     }
 }
