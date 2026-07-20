@@ -20,16 +20,16 @@
 
 - [x] `starcat-app/starcat-pro`
 - [x] `starcat-app/starcat-localization`
-- [ ] `starcat-app/homebrew-starcat`
+- [x] `starcat-app/homebrew-starcat`
 - [x] `starcat-app/starcat-skill`
-- [ ] `starcat-app/starcat-chrome-plugin`
+- [x] `starcat-app/starcat-chrome-plugin`
 - [x] `starcat-app/starcat-safari-plugin`
-- [ ] `starcat-app/starcat-discovery-api`
-- [ ] `starcat-app/starcat-recommend-api`
-- [ ] `starcat-app/starcat-sharing-api`
-- [ ] `starcat-app/starcat-trending-api`
-- [ ] `starcat-app/starcat-weekly-api`
-- [ ] `starcat-app/starcat-wiki-api`
+- [x] `starcat-app/starcat-discovery-api`
+- [x] `starcat-app/starcat-recommend-api`
+- [x] `starcat-app/starcat-sharing-api`
+- [x] `starcat-app/starcat-trending-api`
+- [x] `starcat-app/starcat-weekly-api`
+- [x] `starcat-app/starcat-wiki-api`
 
 ### 0.3 直接在组织中新建并保持公开
 
@@ -299,17 +299,58 @@ git -C supports/starcat-localization push --dry-run
 
 ### 6.2 第二批：带 Release / 分发入口的仓库
 
-- [ ] `starcat-chrome-plugin`
-- [ ] `homebrew-starcat`
+- [x] `starcat-chrome-plugin`
+- [x] `homebrew-starcat`
+
+#### 6.2.1 `starcat-chrome-plugin` 验收记录
+
+- [x] 迁移前工作树干净；本地与远端 `dev` / `main` 均指向 `4397866`，当前没有 tag。
+- [x] Repository ID 为 `R_kgDOTKs9CA`，Public，默认分支为 `main`；stars 为 1，Issue、PR、Release、watchers、forks 均为 0，Security Policy 已启用。
+- [x] 迁移前仅有一个 active Release workflow（ID `308137548`）；无 Repository Secret、Variable、Environment、Pages、webhook、deploy key、ruleset 或 branch protection。
+- [x] mirror 备份保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/starcat-chrome-plugin.git`，`show-ref` 与 `git fsck --full` 校验通过。
+- [x] 2026-07-20 14:36 CST 前完成 `dong4j/starcat-chrome-plugin` → `starcat-app/starcat-chrome-plugin` Transfer；Repository ID、Public visibility、默认分支、stars、workflow ID 与迁移前 refs 保持不变。
+- [x] 本地 `origin` 已更新为 `https://github.com/starcat-app/starcat-chrome-plugin.git`，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 refs。
+- [x] Chrome 插件链接更新提交 `2556ef5` 已推送到组织仓库的 `dev` / `main`；Release workflow 仅由 tag 触发，本次未创建 tag，Actions 无新运行。
+
+#### 6.2.2 `homebrew-starcat` 验收记录
+
+- [x] 迁移前工作树干净；本地与远端 `dev` / `main` 均指向 `02c535d`，当前没有 tag。
+- [x] Repository ID 为 `R_kgDOTPHbBA`，Public，默认分支为 `main`；Issue、PR、Release、stars、watchers、forks 均为 0。
+- [x] 迁移前无 Actions workflow、Repository Secret、Variable、Environment、Pages、webhook、deploy key、ruleset 或 branch protection。
+- [x] mirror 备份保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/homebrew-starcat.git`，`show-ref` 与 `git fsck --full` 校验通过。
+- [x] 2026-07-20 14:36 CST 前完成 `dong4j/homebrew-starcat` → `starcat-app/homebrew-starcat` Transfer；Repository ID、Public visibility、默认分支与迁移前 refs 保持不变。
+- [x] 本地 `origin` 已更新为 `https://github.com/starcat-app/homebrew-starcat.git`，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 旧 GitHub URL 返回 301 到新地址，新旧 Git URL 的 `ls-remote` 均返回相同 refs。
+- [x] Homebrew 链接更新提交 `7414a4a` 已推送到组织仓库的 `dev` / `main`；`brew tap-info --json=v1 starcat-app/starcat` 已能正确解析 tap 名称与仓库路径。
 
 ### 6.3 第三批：API 服务
 
-- [ ] `starcat-discovery-api`
-- [ ] `starcat-recommend-api`
-- [ ] `starcat-wiki-api`
-- [ ] `starcat-sharing-api`
-- [ ] `starcat-trending-api`
-- [ ] `starcat-weekly-api`
+- [x] `starcat-discovery-api`
+- [x] `starcat-recommend-api`
+- [x] `starcat-wiki-api`
+- [x] `starcat-sharing-api`
+- [x] `starcat-trending-api`
+- [x] `starcat-weekly-api`
+
+#### 6.3.1 API 仓库验收记录
+
+| 仓库 | Repository ID | 迁移前 `dev` / `main` | tags | Actions / Secret / Environment | namespace 提交 |
+|---|---|---|---|---|---|
+| `starcat-discovery-api` | `R_kgDOTLIgBw` | `1203291` / `1203291` | 无 | 无 workflow / 无 Secret / 无 Environment | `c5a6e5d`（`dev` / `main`） |
+| `starcat-recommend-api` | `R_kgDOTLIjMQ` | `93f3cc0` / `eca3b0a` | 无 | 5 workflows / 无 Secret / 无 Environment | `0c1b78c`（仅 `dev`） |
+| `starcat-wiki-api` | `R_kgDOS3Fdeg` | `116df22` / `08f1c11` | `v1.0.0`、`v1.1.0` | 5 workflows / `FLY_API_TOKEN` / 无 Environment | `abc1f36`（仅 `dev`） |
+| `starcat-sharing-api` | `R_kgDOSzqE8Q` | `04de1b9` / `2b8d1a6` | `v1.0.0`、`v1.1.0`、`v1.1.1` | 5 workflows / `FLY_API_TOKEN` / 无 Environment | `dae8d5f`（仅 `dev`） |
+| `starcat-trending-api` | `R_kgDOSzqDvw` | `04032c6` / `fa28510` | `v1.0.0`、`v1.1.0`、`v1.1.1` | 5 workflows / `FLY_API_TOKEN` / `production` | `39bb192`（仅 `dev`） |
+| `starcat-weekly-api` | `R_kgDOSzwX_w` | `f50254e` / `d82afd7` | `v1.0.0`、`v1.1.0`、`v1.1.1` | 5 workflows / `FLY_API_TOKEN` / 无 Environment | `5468938`（仅 `dev`） |
+
+- [x] 6 个仓库迁移前工作树干净，本地分支与远端 refs 一致；上表的 Repository ID、Public visibility、默认分支、stars、Issue / PR、workflow IDs、Secret 名称与 Environment 在 Transfer 后保持不变。
+- [x] mirror 备份分别保存到 `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-GitHub-Migration-Backups/2026-07-20/REPOSITORY.git`，6 个备份的 `show-ref` 与 `git fsck --full` 校验通过。
+- [x] 2026-07-20 14:48 CST 前串行完成 6 个 `dong4j/REPOSITORY` → `starcat-app/REPOSITORY` Transfer；每个旧 GitHub URL 均返回 301，新地址的 branches / tags 与备份基线一致。
+- [x] 6 个本地 `origin` 均已更新为 `https://github.com/starcat-app/REPOSITORY.git`，`fetch --prune` 与 `push --dry-run origin dev main` 通过。
+- [x] 6 个 Go module、absolute import、仓库内文档与全生态入口已改用 `github.com/starcat-app/*`；`go mod tidy` 通过，全部 Go 测试通过（Discovery 25、Recommend 10、Wiki 22、Sharing 9、Trending 119、Weekly 91）。
+- [x] 仅无 Actions 的 `starcat-discovery-api` 同步 `dev` / `main`；其余 5 个服务的 namespace 提交仅推送 `dev`，生产 `main` refs 保持不变。
+- [x] Transfer 后 GitHub 自动重建 Dependabot 任务，Sharing / Trending / Weekly 因现有 `workflow_run` 配置启动 Docker；Fly Deploy 与 Release 均 skipped，3 个 Docker run（`29722607823`、`29722582607`、`29722607044`）已在构建阶段取消，日志无 manifest push 记录，未执行生产部署。
 
 每个仓库必须满足：
 
@@ -508,7 +549,7 @@ https://github.com/settings/applications/3633797
 
 - [ ] Starcat 官网、下载链接、Release URL、Issue URL。
 - [ ] Chrome / Safari 插件 README、Store 文案与 Review Kit。
-- [ ] Homebrew Cask：`brew tap starcat-app/starcat`。
+- [x] Homebrew Cask：`brew tap starcat-app/starcat`。
 - [ ] Starcat CLI：`brew tap starcat-app/starcat-cli`。
 - [ ] CLI install scripts、updater、checksum 和 Release URL。
 - [ ] CLI Release workflow 中 `homebrew-starcat-cli` clone 地址。

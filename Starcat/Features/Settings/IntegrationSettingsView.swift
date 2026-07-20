@@ -376,7 +376,7 @@ struct IntegrationSettingsTab: View {
 
     private enum BrowserPluginRepositoryLinks {
         // 两个插件源码独立开源，设置页跳公开仓库；不指向本机 supports 目录。
-        static let chrome = URL(string: "https://github.com/dong4j/starcat-chrome-plugin")!
+        static let chrome = URL(string: "https://github.com/starcat-app/starcat-chrome-plugin")!
         static let safari = URL(string: "https://github.com/starcat-app/starcat-safari-plugin")!
     }
 

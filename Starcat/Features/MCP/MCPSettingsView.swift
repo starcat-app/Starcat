@@ -200,12 +200,22 @@ struct MCPSettingsTab: View {
 
             Section {
                 setupActionRow(
-                    title: "settings.mcp.agentSetup.mcp.manual.title",
-                    help: "settings.mcp.agentSetup.mcp.manual.help"
+                    title: "settings.mcp.agentSetup.mcp.claude.title",
+                    help: "settings.mcp.agentSetup.mcp.claude.help"
                 ) {
                     setupCopyButton(
-                        content: { mcpService.mcpManualSetup },
-                        tooltip: "settings.mcp.agentSetup.mcp.manual.copy"
+                        content: { mcpService.claudeMCPConfiguration },
+                        tooltip: "settings.mcp.agentSetup.mcp.claude.copy"
+                    )
+                }
+
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.mcp.codex.title",
+                    help: "settings.mcp.agentSetup.mcp.codex.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.codexMCPConfiguration },
+                        tooltip: "settings.mcp.agentSetup.mcp.codex.copy"
                     )
                 }
 
@@ -224,6 +234,11 @@ struct MCPSettingsTab: View {
                     systemImage: "server.rack",
                     style: .prominent
                 )
+            } footer: {
+                Text("settings.mcp.agentSetup.mcp.configuration.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {

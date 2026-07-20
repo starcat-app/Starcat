@@ -76,8 +76,12 @@ final class StarcatMCPService {
         MCPAgentSetupPrompt.cliVerificationCommand
     }
 
-    var mcpManualSetup: String {
-        MCPAgentSetupPrompt.mcpManualSetup
+    var claudeMCPConfiguration: String {
+        MCPAgentSetupPrompt.claudeMCPConfiguration
+    }
+
+    var codexMCPConfiguration: String {
+        MCPAgentSetupPrompt.codexMCPConfiguration
     }
 
     var mcpAgentSetupPrompt: String {

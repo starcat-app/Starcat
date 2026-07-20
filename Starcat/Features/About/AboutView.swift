@@ -994,43 +994,43 @@ private struct AboutDependency: Identifiable {
             name: "starcat-sharing-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-sharing-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-sharing-api")
         ),
         AboutDependency(
             name: "starcat-trending-api",
             license: "MIT",
             copyright: "Copyright (c) 2023 Edgar Xie",
-            url: URL(string: "https://github.com/dong4j/starcat-trending-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-trending-api")
         ),
         AboutDependency(
             name: "starcat-weekly-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-weekly-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-weekly-api")
         ),
         AboutDependency(
             name: "starcat-wiki-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-wiki-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-wiki-api")
         ),
         AboutDependency(
             name: "starcat-recommend-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-recommend-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-recommend-api")
         ),
         AboutDependency(
             name: "starcat-discovery-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-discovery-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-discovery-api")
         ),
         AboutDependency(
             name: "starcat-chrome-plugin",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-chrome-plugin")
+            url: URL(string: "https://github.com/starcat-app/starcat-chrome-plugin")
         ),
         AboutDependency(
             name: "starcat-safari-plugin",

@@ -38,18 +38,18 @@
 各 API 项目的 `module` 指令必须使用完整路径(2026-06-08 已统一):
 
 ```
-github.com/dong4j/starcat-sharing-api
-github.com/dong4j/starcat-trending-api
-github.com/dong4j/starcat-weekly-api
-github.com/dong4j/starcat-wiki-api
-github.com/dong4j/starcat-recommend-api
-github.com/dong4j/starcat-discovery-api
+github.com/starcat-app/starcat-sharing-api
+github.com/starcat-app/starcat-trending-api
+github.com/starcat-app/starcat-weekly-api
+github.com/starcat-app/starcat-wiki-api
+github.com/starcat-app/starcat-recommend-api
+github.com/starcat-app/starcat-discovery-api
 ```
 
 **项目内 import 必须用绝对路径**(用 module path 前缀),不允许相对路径:
 ```go
 // ✅ 正确
-import "github.com/dong4j/starcat-weekly-api/internal/handler"
+import "github.com/starcat-app/starcat-weekly-api/internal/handler"
 
 // ❌ 错误:Go 1.16+ 不支持
 import "./internal/handler"

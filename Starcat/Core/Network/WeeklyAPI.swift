@@ -5,7 +5,7 @@
 //  Weekly 多来源聚合后端 API 客户端。
 //
 //  数据源：starcat-weekly-api（独立 Go 服务）
-//  契约：见 https://github.com/dong4j/starcat-weekly-api 的 README，与
+//  契约：见 https://github.com/starcat-app/starcat-weekly-api 的 README，与
 //  本文件配套设计。
 //
 //  设计约束：

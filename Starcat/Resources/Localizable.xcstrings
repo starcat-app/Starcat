@@ -48078,6 +48078,55 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "请启动下面的一次性 Starcat 配对会话，通过 stdin 提供 URI，然后等待我在 Starcat 中确认设备：\n\n命令：\nstarcat pair --stdin\n\n一次性配对 URI：\n%1$@\n\n只允许通过 stdin 传入 URI，不要把它放入命令参数、输出或持久化。" } }
       }
     },
+    "settings.mcp.agentSetup.mcp.claude.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Claude JSON" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 Claude JSON" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.claude.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy a user-level stdio MCP Server JSON configuration for Claude Code." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制供 Claude Code 使用的用户级 stdio MCP Server JSON 配置。" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.claude.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Claude Code" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Claude Code" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.codex.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Codex TOML" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 Codex TOML" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.codex.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy a user-level stdio MCP Server TOML configuration for Codex." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制供 Codex 使用的用户级 stdio MCP Server TOML 配置。" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.codex.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Codex" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Codex" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.configuration.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The copied configuration uses the local Starcat CLI path. Keep Starcat running with MCP Service enabled, reload the client, then call starcat.get_capabilities. Do not add an endpoint or Local API Key." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制内容使用本机 Starcat CLI 路径。请保持 Starcat 运行并开启 MCP Service，重新加载客户端后调用 starcat.get_capabilities；不要添加 endpoint 或 Local API Key。" } }
+      }
+    },
     "settings.mcp.agentSetup.mcp.manual.copy": {
       "extractionState": "manual",
       "localizations": {
@@ -48090,7 +48139,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "复制手动配置"
+            "value": "复制手动安装说明"
           }
         }
       }

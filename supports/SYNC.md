@@ -47,18 +47,18 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 | # | 目录 | GitHub |
 |---|------|--------|
-| 1 | `starcat-sharing-api/` | `dong4j/starcat-sharing-api` |
-| 2 | `starcat-trending-api/` | `dong4j/starcat-trending-api` |
-| 3 | `starcat-weekly-api/` | `dong4j/starcat-weekly-api` |
-| 4 | `starcat-wiki-api/` | `dong4j/starcat-wiki-api` |
-| 5 | `starcat-recommend-api/` | `dong4j/starcat-recommend-api` |
-| 6 | `starcat-discovery-api/` | `dong4j/starcat-discovery-api` |
+| 1 | `starcat-sharing-api/` | `starcat-app/starcat-sharing-api` |
+| 2 | `starcat-trending-api/` | `starcat-app/starcat-trending-api` |
+| 3 | `starcat-weekly-api/` | `starcat-app/starcat-weekly-api` |
+| 4 | `starcat-wiki-api/` | `starcat-app/starcat-wiki-api` |
+| 5 | `starcat-recommend-api/` | `starcat-app/starcat-recommend-api` |
+| 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
 | 7 | `starcat-pro/` | `starcat-app/starcat-pro` |
 | 8 | `starcat-license-api/` | `dong4j/starcat-license-api` 🔒 私有 |
 | 9 | `starcat-localization/` | `starcat-app/starcat-localization` |
-| 10 | `homebrew-starcat/` | `dong4j/homebrew-starcat` |
+| 10 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
 | 11 | `vscode-makefile-explorer/` | `dong4j/vscode-makefile-explorer` |
-| 12 | `extensions/starcat-chrome-plugin/` | `dong4j/starcat-chrome-plugin` |
+| 12 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
 | 13 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库

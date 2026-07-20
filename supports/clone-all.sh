@@ -73,18 +73,18 @@ fi
 # 格式: "目录名|GitHub URL|描述"
 # extensions/ 下的项目目录名带 "extensions/" 前缀
 PROJECTS=(
-  "starcat-sharing-api|https://github.com/dong4j/starcat-sharing-api.git|Go API - 分享服务"
-  "starcat-trending-api|https://github.com/dong4j/starcat-trending-api.git|Go API - 趋势服务"
-  "starcat-weekly-api|https://github.com/dong4j/starcat-weekly-api.git|Go API - 周刊服务"
-  "starcat-wiki-api|https://github.com/dong4j/starcat-wiki-api.git|Go API - Wiki 服务"
-  "starcat-recommend-api|https://github.com/dong4j/starcat-recommend-api.git|Go API - 推荐服务"
-  "starcat-discovery-api|https://github.com/dong4j/starcat-discovery-api.git|Go API - 发现服务"
+  "starcat-sharing-api|https://github.com/starcat-app/starcat-sharing-api.git|Go API - 分享服务"
+  "starcat-trending-api|https://github.com/starcat-app/starcat-trending-api.git|Go API - 趋势服务"
+  "starcat-weekly-api|https://github.com/starcat-app/starcat-weekly-api.git|Go API - 周刊服务"
+  "starcat-wiki-api|https://github.com/starcat-app/starcat-wiki-api.git|Go API - Wiki 服务"
+  "starcat-recommend-api|https://github.com/starcat-app/starcat-recommend-api.git|Go API - 推荐服务"
+  "starcat-discovery-api|https://github.com/starcat-app/starcat-discovery-api.git|Go API - 发现服务"
   "starcat-pro|https://github.com/starcat-app/starcat-pro.git|Pro 订阅服务"
   "starcat-license-api|https://github.com/dong4j/starcat-license-api.git|Direct 分发授权 API 🔒"
   "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
-  "homebrew-starcat|https://github.com/dong4j/homebrew-starcat.git|Homebrew tap"
+  "homebrew-starcat|https://github.com/starcat-app/homebrew-starcat.git|Homebrew tap"
   "vscode-makefile-explorer|https://github.com/dong4j/vscode-makefile-explorer.git|VS Code 插件"
-  "extensions/starcat-chrome-plugin|https://github.com/dong4j/starcat-chrome-plugin.git|Chrome 浏览器插件"
+  "extensions/starcat-chrome-plugin|https://github.com/starcat-app/starcat-chrome-plugin.git|Chrome 浏览器插件"
   "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"
 )
 

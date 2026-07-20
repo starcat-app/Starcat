@@ -142,7 +142,7 @@ flowchart LR
 ### 3.1 总体定位
 
 - 监听端口：`5004`（沿用 supports 占位规则 5001-5003 已用，新项目用 5004）
-- 模块路径：`github.com/dong4j/starcat-wiki-api`
+- 模块路径：`github.com/starcat-app/starcat-wiki-api`
 - Go 版本：1.25.0（与 trending / sharing / weekly 完全一致）
 - 框架：纯 `net/http` + `database/sql`（沿用 supports 三个项目零框架约定）
 - 依赖：`godotenv` + `modernc.org/sqlite` + `robfig/cron/v3`（与 trending 同）
@@ -1483,7 +1483,7 @@ Starcat 客户端 GRDB `trending_repos` 表（`Starcat/Core/Database/Models/Tren
 ### 10.1 后端 wiki-api
 
 - [ ] `cd supports/starcat-wiki-api && go build ./... && go vet ./...` 通过
-- [ ] `go mod tidy` 后 `go.mod` 完整路径 = `github.com/dong4j/starcat-wiki-api`，go 1.25.0
+- [ ] `go mod tidy` 后 `go.mod` 完整路径 = `github.com/starcat-app/starcat-wiki-api`，go 1.25.0
 - [ ] `cp .env.example .env`，填 `API_KEYS=sk-starcat-...`（用 `bash supports/scripts/gen-api-key.sh 1` 生成）
 - [ ] 启动后 `curl localhost:5004/healthz` 返 `ok`
 - [ ] `curl -H "Authorization: Bearer ..." 'localhost:5004/api/v1/wikis?owner=facebook&repo=react'` 不返 401

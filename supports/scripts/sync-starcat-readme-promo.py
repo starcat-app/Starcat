@@ -158,15 +158,15 @@ def promo(project: Project, lang: str) -> str:
         """- 官网: https://starcat.ink
 - 下载: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
 - 公开支持与发布说明: https://github.com/starcat-app/starcat-pro
-- Homebrew tap: https://github.com/dong4j/homebrew-starcat
-- 浏览器插件: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
+- Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- 浏览器插件: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
 - 本地化: https://github.com/starcat-app/starcat-localization"""
         if is_zh
         else """- Home: https://starcat.ink
 - Download: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
 - Public support and release notes: https://github.com/starcat-app/starcat-pro
-- Homebrew tap: https://github.com/dong4j/homebrew-starcat
-- Browser plugins: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
+- Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- Browser plugins: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
 - Localization: https://github.com/starcat-app/starcat-localization"""
     )
     language_link = (
@@ -188,7 +188,7 @@ def promo(project: Project, lang: str) -> str:
 <p><strong>{summary}</strong></p>
 <p>{app_desc}</p>
 
-<a href="https://github.com/dong4j/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
 <br/>
 {language_link}
 </div>
@@ -196,7 +196,7 @@ def promo(project: Project, lang: str) -> str:
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
 <a href="https://github.com/starcat-app/starcat-pro"><img src="https://img.shields.io/badge/support-starcat--pro-lightgrey.svg?style=flat&color=blue" alt="support"/></a>
-<a href="https://github.com/dong4j/homebrew-starcat"><img src="https://img.shields.io/badge/install-homebrew-lightgrey.svg?style=flat&color=blue" alt="homebrew"/></a>
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/install-homebrew-lightgrey.svg?style=flat&color=blue" alt="homebrew"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 </div>
 
@@ -207,8 +207,8 @@ def promo(project: Project, lang: str) -> str:
 **{install}{colon}**
 
 ```bash
-brew tap dong4j/starcat
-brew trust dong4j/starcat
+brew tap starcat-app/starcat
+brew trust starcat-app/starcat
 brew install --cask starcat
 ```
 
@@ -218,12 +218,12 @@ brew install --cask starcat
 
 **{ecosystem_title}{colon}**
 
-- [starcat-sharing-api](https://github.com/dong4j/starcat-sharing-api)
-- [starcat-trending-api](https://github.com/dong4j/starcat-trending-api)
-- [starcat-weekly-api](https://github.com/dong4j/starcat-weekly-api)
-- [starcat-wiki-api](https://github.com/dong4j/starcat-wiki-api)
-- [starcat-recommend-api](https://github.com/dong4j/starcat-recommend-api)
-- [starcat-discovery-api](https://github.com/dong4j/starcat-discovery-api)
+- [starcat-sharing-api](https://github.com/starcat-app/starcat-sharing-api)
+- [starcat-trending-api](https://github.com/starcat-app/starcat-trending-api)
+- [starcat-weekly-api](https://github.com/starcat-app/starcat-weekly-api)
+- [starcat-wiki-api](https://github.com/starcat-app/starcat-wiki-api)
+- [starcat-recommend-api](https://github.com/starcat-app/starcat-recommend-api)
+- [starcat-discovery-api](https://github.com/starcat-app/starcat-discovery-api)
 - [starcat-license-api](https://github.com/dong4j/starcat-license-api){api_note}
 {END}"""
 

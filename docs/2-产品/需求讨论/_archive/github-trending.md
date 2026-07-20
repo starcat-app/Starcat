@@ -1,6 +1,6 @@
 下面是一份 Starcat - GitHub Trending REST API 实现方案，按你已经确认的方向来设计：
 
-使用 https://github.com/dong4j/starcat-trending-api 作为独立服务仓库，实现 GitHub Trending 的 REST API；该仓库后续由你自己维护，并作为 Starcat 的 Trending 数据源。
+使用 https://github.com/starcat-app/starcat-trending-api 作为独立服务仓库，实现 GitHub Trending 的 REST API；该仓库后续由你自己维护，并作为 Starcat 的 Trending 数据源。
 
 ⸻
 
@@ -29,7 +29,7 @@ https://github.com/trending?since=monthly
 
 GitHub Trending 页面
         ↓
-dong4j/starcat-trending-api 服务端抓取
+starcat-app/starcat-trending-api 服务端抓取
         ↓
 解析为结构化数据
         ↓
@@ -43,7 +43,7 @@ Starcat App 调用
 
 仓库
 
-https://github.com/dong4j/starcat-trending-api
+https://github.com/starcat-app/starcat-trending-api
 
 项目职责
 
@@ -69,7 +69,7 @@ https://github.com/dong4j/starcat-trending-api
                                │ REST API
                                ↓
 ┌────────────────────────────────────────────────────────────┐
-│              dong4j/starcat-trending-api                    │
+│              starcat-app/starcat-trending-api                    │
 │                                                            │
 │  - 抓取 GitHub Trending 页面                                │
 │  - 解析 HTML                                                │
@@ -467,7 +467,7 @@ Starcat App
     ↓
 GET https://api.starcat.xxx/api/v1/trending/repositories?since=daily&language=Swift
     ↓
-dong4j/starcat-trending-api
+starcat-app/starcat-trending-api
     ↓
 GitHub Trending Cache
 
@@ -517,7 +517,7 @@ AI 标签
 也就是分成两层：
 
 层级	项目	职责
-数据层	dong4j/starcat-trending-api	抓取 GitHub Trending，提供结构化 API
+数据层	starcat-app/starcat-trending-api	抓取 GitHub Trending，提供结构化 API
 智能层	Starcat	AI 分析、推荐、收藏、知识库
 
 ⸻
@@ -639,7 +639,7 @@ POST /api/v1/admin/trending/refresh
 
 19. 推荐项目 README 描述
 
-可以把 dong4j/starcat-trending-api 定位成：
+可以把 starcat-app/starcat-trending-api 定位成：
 
 GitHub Trending REST API service.
 This project scrapes GitHub Trending pages, normalizes repository and developer data, caches results, and exposes a stable REST API for applications such as Starcat.
@@ -655,7 +655,7 @@ GitHub Trending REST API 服务。
 
 Starcat 的 GitHub Trending 功能建议按下面方式落地：
 
-1. 使用 https://github.com/dong4j/starcat-trending-api 作为独立服务仓库
+1. 使用 https://github.com/starcat-app/starcat-trending-api 作为独立服务仓库
 2. 服务端抓取 GitHub Trending 页面，而不是客户端直接抓
 3. 对外提供稳定 REST API
 4. 支持 daily / weekly / monthly
@@ -666,4 +666,4 @@ Starcat 的 GitHub Trending 功能建议按下面方式落地：
 
 一句话概括：
 
-dong4j/starcat-trending-api 负责把 GitHub Trending 页面变成稳定 API；Starcat 负责基于这个 API 做展示、收藏、AI 摘要和个性化发现。
+starcat-app/starcat-trending-api 负责把 GitHub Trending 页面变成稳定 API；Starcat 负责基于这个 API 做展示、收藏、AI 摘要和个性化发现。
