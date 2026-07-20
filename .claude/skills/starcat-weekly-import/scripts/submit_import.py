@@ -2,7 +2,8 @@
 """校验并提交 Starcat Weekly 人工情报批次。
 
 默认只打印规范化 payload；必须显式传入 --confirm 才会访问管理接口。
-密钥始终从环境变量读取，避免出现在参数列表、shell history 或仓库文件中。
+生产提交固定使用 Weekly 生产服务，并从 weekly-api 的本地 .env 读取管理员 Key；
+只有显式 --test 才允许调用方注入测试地址和测试 Key。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -24,17 +26,70 @@ from typing import Any
 OWNER_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 TERMINAL_STATUSES = {"success", "partial_success", "failed"}
+PRODUCTION_BASE_URL = "https://starcat-weekly-api.fly.dev"
+# 从脚本自身定位 Starcat 根目录，避免依赖调用命令时的当前工作目录。
+STARCAT_ROOT = Path(__file__).resolve().parents[4]
+PRODUCTION_ENV_FILE = STARCAT_ROOT / "supports" / "starcat-weekly-api" / ".env"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="校验或提交 Starcat Weekly 人工情报批次")
-    parser.add_argument("--base-url", default=os.getenv("STARCAT_WEEKLY_BASE_URL", ""))
+    parser.add_argument("--test", action="store_true", help="显式启用测试模式，允许注入非生产服务配置")
+    parser.add_argument("--base-url", default="", help="测试服务地址；仅可与 --test 一起使用")
     parser.add_argument("--input", required=True, help="JSON 文件路径")
     parser.add_argument("--confirm", action="store_true", help="确认访问 API 并提交")
     parser.add_argument("--poll", action="store_true", help="提交后轮询到终态")
     parser.add_argument("--poll-interval", type=float, default=5.0)
     parser.add_argument("--poll-timeout", type=float, default=600.0)
     return parser.parse_args()
+
+
+def load_production_admin_key(path: Path = PRODUCTION_ENV_FILE) -> str:
+    """从 weekly-api 的 .env 读取第一个 ADMIN_API_KEYS 值。
+
+    这里不通过 shell source 加载文件，避免把 .env 内容当成命令执行；只解析本任务需要的
+    ADMIN_API_KEYS，并兼容常见的单引号或双引号包裹形式。
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError as error:
+        raise ValueError(f"生产配置文件不存在: {path}") from error
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, raw_value = line.split("=", 1)
+        if name.removeprefix("export ").strip() != "ADMIN_API_KEYS":
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        key = next((item.strip() for item in value.split(",") if item.strip()), "")
+        if key:
+            return key
+        break
+    raise ValueError(f"生产配置文件缺少非空 ADMIN_API_KEYS: {path}")
+
+
+def resolve_runtime_config(
+    args: argparse.Namespace,
+    environ: Mapping[str, str] = os.environ,
+    production_env_file: Path = PRODUCTION_ENV_FILE,
+) -> tuple[str, str]:
+    """按显式模式解析服务地址和管理员 Key，防止生产任务误投到测试环境。"""
+    if not args.test:
+        if args.base_url.strip():
+            raise ValueError("--base-url 仅允许和 --test 一起使用；默认提交固定使用生产服务")
+        return PRODUCTION_BASE_URL, load_production_admin_key(production_env_file)
+
+    base_url = args.base_url.strip() or environ.get("STARCAT_WEEKLY_BASE_URL", "").strip()
+    if not base_url:
+        raise ValueError("测试模式缺少 --base-url 或 STARCAT_WEEKLY_BASE_URL")
+    key = environ.get("STARCAT_WEEKLY_ADMIN_KEY", "").strip()
+    if not key:
+        raise ValueError("测试模式缺少环境变量 STARCAT_WEEKLY_ADMIN_KEY")
+    return base_url, key
 
 
 def load_and_validate(path: str) -> dict[str, Any]:
@@ -146,19 +201,15 @@ def main() -> int:
         if not args.confirm:
             print("仅完成本地校验；传入 --confirm 后才会访问 API。", file=sys.stderr)
             return 0
-        if not args.base_url:
-            raise ValueError("缺少 --base-url 或 STARCAT_WEEKLY_BASE_URL")
-        key = os.getenv("STARCAT_WEEKLY_ADMIN_KEY", "").strip()
-        if not key:
-            raise ValueError("缺少环境变量 STARCAT_WEEKLY_ADMIN_KEY")
-        assert_source_allowed(args.base_url, key, payload["source_code"])
-        response = api_request(args.base_url, key, "POST", "/internal/imports", payload)
+        base_url, key = resolve_runtime_config(args)
+        assert_source_allowed(base_url, key, payload["source_code"])
+        response = api_request(base_url, key, "POST", "/internal/imports", payload)
         print(json.dumps(response, ensure_ascii=False, indent=2))
         if args.poll:
             batch_id = response.get("data", {}).get("batch_id")
             if not batch_id:
                 raise RuntimeError("POST 响应缺少 data.batch_id")
-            terminal = poll_batch(args.base_url, key, batch_id, args.poll_interval, args.poll_timeout)
+            terminal = poll_batch(base_url, key, batch_id, args.poll_interval, args.poll_timeout)
             print(json.dumps(terminal, ensure_ascii=False, indent=2))
         return 0
     except (OSError, ValueError, RuntimeError, TimeoutError, json.JSONDecodeError) as error:

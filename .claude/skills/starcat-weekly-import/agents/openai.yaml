@@ -1,4 +1,4 @@
 interface:
   display_name: "Starcat Weekly 情报采集"
-  short_description: "从文本识别真实 GitHub 仓库，确认后批量写入 Weekly AI 情报来源"
-  default_prompt: "使用 $starcat-weekly-import 从给定文本中找出真实 GitHub 仓库，核验后让我确认，再批量提交到 Starcat Weekly 的 AI 情报来源。"
+  short_description: "核验 GitHub 仓库，确认后写入 Weekly 生产 AI 情报来源"
+  default_prompt: "使用 $starcat-weekly-import 从给定文本中找出真实 GitHub 仓库，核验后让我确认；确认后默认从 weekly-api 的 .env 读取管理员 Key，并提交到 Starcat Weekly 生产 AI 情报来源。"
