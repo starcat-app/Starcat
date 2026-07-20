@@ -132,6 +132,7 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                 summary: summary,
                 daily: daily,
                 byFeature: try dimensions(column: "feature"),
+                byProvider: try dimensions(column: "provider_id"),
                 byModel: try dimensions(column: "model"),
                 recentEvents: recent,
                 filterOptions: AIUsageFilterOptions(providerIDs: providers, models: models)

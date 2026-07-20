@@ -74,6 +74,39 @@ final class StarcatMCPToolRegistry {
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
             ),
             Tool(
+                name: "starcat.get_overview_statistics",
+                title: "Get Starcat overview statistics",
+                description: "Read common local counts in one call: starred repositories, knowledge-base projects, all-time AI token usage, and RAG index health.",
+                inputSchema: Self.objectSchema([:]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_ai_usage_statistics",
+                title: "Get Starcat AI usage statistics",
+                description: "Read local aggregate AI token and call statistics. This never returns prompts, responses, API keys, or raw error text.",
+                inputSchema: Self.objectSchema([
+                    "time_range": Self.stringSchema(
+                        "Aggregation window.",
+                        enumValues: AIUsageTimeRange.allCases.map(\.rawValue),
+                        defaultValue: AIUsageTimeRange.all.rawValue
+                    ),
+                    "feature": Self.stringSchema(
+                        "Optional Starcat feature filter.",
+                        enumValues: AIUsageFeature.allCases.map(\.rawValue)
+                    ),
+                    "provider_id": Self.stringSchema("Optional AI provider profile identifier."),
+                    "model": Self.stringSchema("Optional model name.")
+                ]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_knowledge_base_statistics",
+                title: "Get Starcat knowledge-base statistics",
+                description: "Read local knowledge-base organization, source coverage, RAG chunk counts, and index health. Private-note counts follow the private_notes_read capability.",
+                inputSchema: Self.objectSchema([:]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
                 name: "starcat.search_repos",
                 title: "Search Starcat repositories",
                 description: "Search repositories cached in Starcat using local keyword/FTS data.",
@@ -237,6 +270,16 @@ final class StarcatMCPToolRegistry {
             switch params.name {
             case "starcat.get_capabilities":
                 return try Self.result(facade.getCapabilities())
+
+            case "starcat.get_overview_statistics":
+                return try Self.result(try await facade.getOverviewStatistics())
+
+            case "starcat.get_ai_usage_statistics":
+                let filter = try Self.aiUsageFilter(from: params.arguments)
+                return try Self.result(try await facade.getAIUsageStatistics(filter: filter))
+
+            case "starcat.get_knowledge_base_statistics":
+                return try Self.result(try await facade.getKnowledgeBaseStatistics())
 
             case "starcat.search_repos":
                 let query = params.arguments?["query"]?.stringValue
@@ -424,6 +467,34 @@ final class StarcatMCPToolRegistry {
         )
     }
 
+    private static func aiUsageFilter(from arguments: [String: Value]?) throws -> AIUsageFilter {
+        let rawRange = arguments?["time_range"]?.stringValue ?? AIUsageTimeRange.all.rawValue
+        guard let timeRange = AIUsageTimeRange(rawValue: rawRange) else {
+            throw StarcatMCPError.invalidArguments(
+                "time_range must be one of: \(AIUsageTimeRange.allCases.map(\.rawValue).joined(separator: ", "))"
+            )
+        }
+
+        let feature: AIUsageFeature?
+        if let rawFeature = Self.trimmedString(arguments?["feature"]?.stringValue) {
+            guard let parsed = AIUsageFeature(rawValue: rawFeature) else {
+                throw StarcatMCPError.invalidArguments(
+                    "feature must be one of: \(AIUsageFeature.allCases.map(\.rawValue).joined(separator: ", "))"
+                )
+            }
+            feature = parsed
+        } else {
+            feature = nil
+        }
+
+        return AIUsageFilter(
+            timeRange: timeRange,
+            feature: feature,
+            providerID: Self.trimmedString(arguments?["provider_id"]?.stringValue),
+            model: Self.trimmedString(arguments?["model"]?.stringValue)
+        )
+    }
+
     private static func objectSchema(_ properties: [String: Value], required: [String] = []) -> Value {
         .object([
             "type": .string("object"),
@@ -432,7 +503,11 @@ final class StarcatMCPToolRegistry {
         ])
     }
 
-    private static func stringSchema(_ description: String, enumValues: [String]? = nil) -> Value {
+    private static func stringSchema(
+        _ description: String,
+        enumValues: [String]? = nil,
+        defaultValue: String? = nil
+    ) -> Value {
         var schema: [String: Value] = [
             "type": .string("string"),
             "description": .string(description)
@@ -440,7 +515,16 @@ final class StarcatMCPToolRegistry {
         if let enumValues {
             schema["enum"] = .array(enumValues.map(Value.string))
         }
+        if let defaultValue {
+            schema["default"] = .string(defaultValue)
+        }
         return .object(schema)
+    }
+
+    private static func trimmedString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func integerSchema(

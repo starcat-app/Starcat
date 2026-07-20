@@ -96,6 +96,7 @@ struct AIUsageStatisticsSnapshot: Equatable, Sendable {
     var summary: AIUsageSummary
     var daily: [AIUsageDailyPoint]
     var byFeature: [AIUsageDimensionPoint]
+    var byProvider: [AIUsageDimensionPoint]
     var byModel: [AIUsageDimensionPoint]
     var recentEvents: [AIUsageEvent]
     var filterOptions: AIUsageFilterOptions
@@ -104,6 +105,7 @@ struct AIUsageStatisticsSnapshot: Equatable, Sendable {
         summary: .empty,
         daily: [],
         byFeature: [],
+        byProvider: [],
         byModel: [],
         recentEvents: [],
         filterOptions: .empty

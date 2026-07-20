@@ -33,8 +33,11 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 16)
+        #expect(tools.count == 19)
         #expect(tools.contains { $0["name"] as? String == "starcat.get_capabilities" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.get_overview_statistics" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.get_ai_usage_statistics" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.get_knowledge_base_statistics" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_repo_context" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_repo_summary" })
         #expect(tools.contains { $0["name"] as? String == "starcat.generate_repo_summary" })
@@ -58,6 +61,13 @@ struct StarcatMCPRuntimeTests {
         #expect(externalContextSchema["type"] as? String == "boolean")
         #expect(externalContextSchema["default"] as? Bool == false)
 
+        let usageTool = try #require(tools.first { $0["name"] as? String == "starcat.get_ai_usage_statistics" })
+        let usageSchema = try #require(usageTool["inputSchema"] as? [String: Any])
+        let usageProperties = try #require(usageSchema["properties"] as? [String: Any])
+        let timeRangeSchema = try #require(usageProperties["time_range"] as? [String: Any])
+        #expect(timeRangeSchema["enum"] as? [String] == ["today", "seven_days", "thirty_days", "all"])
+        #expect(timeRangeSchema["default"] as? String == "all")
+
         let call = await runtime.handle(Self.request(
             id: 3,
             method: "tools/call",
@@ -72,7 +82,7 @@ struct StarcatMCPRuntimeTests {
         let structured = try #require(result["structuredContent"] as? [String: Any])
         #expect(structured["total"] as? Int == 1)
 
-        let knowledgeCall = await runtime.handle(Self.request(
+        let knowledgeSearchCall = await runtime.handle(Self.request(
             id: 4,
             method: "tools/call",
             params: [
@@ -80,7 +90,7 @@ struct StarcatMCPRuntimeTests {
                 "arguments": ["query": "codex", "scope": "knowledge", "limit": 5]
             ]
         ))
-        let knowledgeJSON = try Self.jsonObject(from: knowledgeCall)
+        let knowledgeJSON = try Self.jsonObject(from: knowledgeSearchCall)
         let knowledgeResult = try #require(knowledgeJSON["result"] as? [String: Any])
         #expect(knowledgeResult["isError"] as? Bool != true)
         let knowledgeStructured = try #require(knowledgeResult["structuredContent"] as? [String: Any])
@@ -97,6 +107,7 @@ struct StarcatMCPRuntimeTests {
         let capabilitiesResult = try #require(capabilitiesJSON["result"] as? [String: Any])
         let capabilities = try #require(capabilitiesResult["structuredContent"] as? [String: Any])
         #expect(capabilities["private_notes_read"] as? Bool == true)
+        #expect(capabilities["statistics_read"] as? Bool == true)
         #expect(capabilities["local_writes"] as? Bool == true)
         #expect(capabilities["loopback_only"] as? Bool == true)
 
@@ -114,6 +125,62 @@ struct StarcatMCPRuntimeTests {
         let contextRepo = try #require(context["repo"] as? [String: Any])
         #expect(contextRepo["full_name"] as? String == "apple/swift")
         #expect(context["private_notes_exposed"] as? Bool == true)
+
+        let overviewCall = await runtime.handle(Self.request(
+            id: 22,
+            method: "tools/call",
+            params: ["name": "starcat.get_overview_statistics", "arguments": [:]]
+        ))
+        let overviewJSON = try Self.jsonObject(from: overviewCall)
+        let overviewResult = try #require(overviewJSON["result"] as? [String: Any])
+        let overview = try #require(overviewResult["structuredContent"] as? [String: Any])
+        #expect(overview["starred_repository_count"] as? Int == 1)
+        #expect(overview["knowledge_base_project_count"] as? Int == 1)
+        let overviewUsage = try #require(overview["ai_usage"] as? [String: Any])
+        #expect(overviewUsage["total_tokens"] as? Int == 42)
+        let overviewIndex = try #require(overview["rag_index"] as? [String: Any])
+        #expect(overviewIndex["total_chunks"] as? Int == 1)
+        #expect(overviewIndex["pending_chunks"] as? Int == 1)
+
+        let usageCall = await runtime.handle(Self.request(
+            id: 23,
+            method: "tools/call",
+            params: [
+                "name": "starcat.get_ai_usage_statistics",
+                "arguments": ["time_range": "all", "provider_id": "test-provider"]
+            ]
+        ))
+        let usageJSON = try Self.jsonObject(from: usageCall)
+        let usageResult = try #require(usageJSON["result"] as? [String: Any])
+        let usage = try #require(usageResult["structuredContent"] as? [String: Any])
+        let usageSummary = try #require(usage["summary"] as? [String: Any])
+        #expect(usageSummary["total_tokens"] as? Int == 42)
+        let providers = try #require(usage["by_provider"] as? [[String: Any]])
+        #expect(providers.first?["key"] as? String == "test-provider")
+
+        let invalidUsageCall = await runtime.handle(Self.request(
+            id: 25,
+            method: "tools/call",
+            params: [
+                "name": "starcat.get_ai_usage_statistics",
+                "arguments": ["time_range": "yesterday"]
+            ]
+        ))
+        let invalidUsageJSON = try Self.jsonObject(from: invalidUsageCall)
+        let invalidUsageResult = try #require(invalidUsageJSON["result"] as? [String: Any])
+        #expect(invalidUsageResult["isError"] as? Bool == true)
+
+        let knowledgeStatisticsCall = await runtime.handle(Self.request(
+            id: 24,
+            method: "tools/call",
+            params: ["name": "starcat.get_knowledge_base_statistics", "arguments": [:]]
+        ))
+        let knowledgeStatsJSON = try Self.jsonObject(from: knowledgeStatisticsCall)
+        let knowledgeStatsResult = try #require(knowledgeStatsJSON["result"] as? [String: Any])
+        let knowledgeStats = try #require(knowledgeStatsResult["structuredContent"] as? [String: Any])
+        #expect(knowledgeStats["project_count"] as? Int == 1)
+        #expect(knowledgeStats["retained_after_unstar_count"] as? Int == 1)
+        #expect(knowledgeStats["private_notes_exposed"] as? Bool == true)
 
         let resourcesList = await runtime.handle(Self.request(id: 5, method: "resources/list"))
         let resourcesJSON = try Self.jsonObject(from: resourcesList)
@@ -141,7 +208,28 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 3, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 16)
+        #expect(tools.count == 19)
+    }
+
+    @Test("关闭私有笔记读取后知识库统计不返回笔记数量")
+    func knowledgeStatisticsRespectPrivateNotesCapability() async throws {
+        let runtime = try await Self.makeRuntime(exposePrivateNotes: false)
+        defer { Task { @MainActor in await runtime.shutdown() } }
+
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+        let call = await runtime.handle(Self.request(
+            id: 2,
+            method: "tools/call",
+            params: ["name": "starcat.get_knowledge_base_statistics", "arguments": [:]]
+        ))
+        let json = try Self.jsonObject(from: call)
+        let result = try #require(json["result"] as? [String: Any])
+        let statistics = try #require(result["structuredContent"] as? [String: Any])
+
+        #expect(statistics["private_notes_exposed"] as? Bool == false)
+        #expect(statistics["private_note_project_count"] == nil)
+        #expect(statistics["ai_generated_note_project_count"] == nil)
+        #expect(statistics["private_notes_edited_in_last_30_days_project_count"] == nil)
     }
 
     @Test("可信网络 hostname 可访问，未授权 Host 仍返回 421")
@@ -178,7 +266,8 @@ struct StarcatMCPRuntimeTests {
     }
 
     private static func makeRuntime(
-        originValidator: OriginValidator = .localhost()
+        originValidator: OriginValidator = .localhost(),
+        exposePrivateNotes: Bool = true
     ) async throws -> StarcatMCPRuntime {
         let db = try InMemoryDatabaseManager()
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
@@ -188,7 +277,7 @@ struct StarcatMCPRuntimeTests {
         }
 
         let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.runtime.\(UUID().uuidString)")!)
-        settings.mcpExposePrivateNotes = true
+        settings.mcpExposePrivateNotes = exposePrivateNotes
         settings.mcpAllowLocalWrites = true
 
         let gate = EntitlementGate(
@@ -200,6 +289,41 @@ struct StarcatMCPRuntimeTests {
         let repoTagRepository = GRDBRepoTagRepository(database: db)
         let noteRepository = GRDBRepoNoteRepository(database: db)
         try await noteRepository.updateLibraryState(repoId: 2, state: .inLibrary)
+        try await db.writer.write { database in
+            try database.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES (
+                    2, 'readme', '', 'readme', 'readme', 'README', 'readme:0',
+                    0, '', 'README', 'pending content', 'mcp-pending', 2, 0,
+                    NULL, 'pending', datetime('now'), datetime('now')
+                )
+                """)
+        }
+        try await GRDBAIUsageRepository(database: db).insert(AIUsageEvent(
+            id: "mcp-test-usage",
+            startedAt: 1,
+            completedAt: 2,
+            durationMs: 1_000,
+            providerId: "test-provider",
+            providerKind: "openAICompatible",
+            model: "test-model",
+            feature: AIUsageFeature.mcp.rawValue,
+            phase: "statistics_test",
+            operation: AIUsageOperation.chat.rawValue,
+            inputTokens: 30,
+            outputTokens: 12,
+            totalTokens: 42,
+            cachedInputTokens: nil,
+            reasoningOutputTokens: nil,
+            itemCount: 1,
+            usageSource: AIUsageSource.provider.rawValue,
+            status: AIUsageStatus.succeeded.rawValue,
+            errorCategory: nil,
+            correlationId: nil
+        ))
         let readmeRepository = ReadmeRepository(database: db)
         let summaryRepository = GRDBAISummaryRepository(database: db)
         let testKeychain = InMemoryKeychain()
@@ -227,6 +351,9 @@ struct StarcatMCPRuntimeTests {
             repoNoteRepository: noteRepository,
             semanticSearchService: semanticSearch,
             repoAIInsightService: insightService,
+            database: db,
+            aiUsageRepository: GRDBAIUsageRepository(database: db),
+            knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache(),
             entitlementGate: gate,
             settings: settings
         )

@@ -21,6 +21,9 @@ final class StarcatMCPFacade {
     private let repoNoteRepository: any RepoNoteRepositoryProtocol
     private let semanticSearchService: SemanticSearchService
     private let repoAIInsightService: RepoAIInsightService
+    private let database: any DatabaseManaging
+    private let aiUsageRepository: any AIUsageRepositoryProtocol
+    private let knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache
     private let entitlementGate: EntitlementGate
     private let settings: AppSettings
 
@@ -32,6 +35,9 @@ final class StarcatMCPFacade {
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         semanticSearchService: SemanticSearchService,
         repoAIInsightService: RepoAIInsightService,
+        database: any DatabaseManaging,
+        aiUsageRepository: any AIUsageRepositoryProtocol,
+        knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache,
         entitlementGate: EntitlementGate,
         settings: AppSettings
     ) {
@@ -42,6 +48,9 @@ final class StarcatMCPFacade {
         self.repoNoteRepository = repoNoteRepository
         self.semanticSearchService = semanticSearchService
         self.repoAIInsightService = repoAIInsightService
+        self.database = database
+        self.aiUsageRepository = aiUsageRepository
+        self.knowledgeBaseMetadataSnapshotCache = knowledgeBaseMetadataSnapshotCache
         self.entitlementGate = entitlementGate
         self.settings = settings
     }
@@ -52,13 +61,57 @@ final class StarcatMCPFacade {
     /// Skill 依赖“能连接就一定能生成摘要”这一隐式假设。
     func getCapabilities() -> MCPCapabilitiesDTO {
         MCPCapabilitiesDTO(
-            server_version: "0.2.0",
+            server_version: "0.3.0",
             loopback_only: !settings.mcpAllowRemoteConnections,
             private_notes_read: settings.mcpExposePrivateNotes,
+            statistics_read: true,
             local_writes: settings.mcpAllowLocalWrites,
             batch_writes: settings.mcpAllowLocalWrites && settings.mcpAllowBatchWrites,
             destructive_writes: settings.mcpAllowLocalWrites && settings.mcpAllowDestructiveWrites,
             ai_summary_generation: entitlementGate.isProUser
+        )
+    }
+
+    /// 返回 Agent 最常询问的跨域数字。所有值都来自本地只读仓储，调用不会触发同步、索引或 AI 请求。
+    func getOverviewStatistics() async throws -> MCPOverviewStatisticsDTO {
+        let allTimeFilter = AIUsageFilter(timeRange: .all)
+        async let starredCount = repoRepository.starredCount()
+        async let usage = aiUsageRepository.summary(
+            filter: allTimeFilter,
+            now: Date(),
+            calendar: .current
+        )
+        async let knowledge = knowledgeBaseMetadataSnapshot()
+        let (resolvedStarredCount, resolvedUsage, resolvedKnowledge) = try await (starredCount, usage, knowledge)
+        return MCPOverviewStatisticsDTO(
+            generated_at: ISO8601DateFormatter.shared.string(from: Date()),
+            starred_repository_count: resolvedStarredCount,
+            knowledge_base_project_count: resolvedKnowledge.projectCount,
+            retained_after_unstar_count: resolvedKnowledge.retainedAfterUnstarCount,
+            tag_count: resolvedKnowledge.tagCount,
+            ai_usage_time_range: allTimeFilter.timeRange.rawValue,
+            ai_usage: MCPAIUsageSummaryDTO(summary: resolvedUsage),
+            rag_index: MCPRAGIndexHealthDTO(health: resolvedKnowledge.indexHealth),
+            excluded_chunk_count: resolvedKnowledge.excludedChunkCount
+        )
+    }
+
+    /// 返回可筛选的聚合用量；故意不把 recentEvents 映射进 MCP，避免统计接口泄露调用级诊断信息。
+    func getAIUsageStatistics(filter: AIUsageFilter) async throws -> MCPAIUsageStatisticsDTO {
+        let now = Date()
+        let snapshot = try await aiUsageRepository.statistics(
+            filter: filter,
+            now: now,
+            calendar: .current,
+            recentLimit: 1
+        )
+        return MCPAIUsageStatisticsDTO(filter: filter, snapshot: snapshot, generatedAt: now)
+    }
+
+    func getKnowledgeBaseStatistics() async throws -> MCPKnowledgeBaseStatisticsDTO {
+        MCPKnowledgeBaseStatisticsDTO(
+            snapshot: try await knowledgeBaseMetadataSnapshot(),
+            privateNotesExposed: settings.mcpExposePrivateNotes
         )
     }
 
@@ -283,6 +336,19 @@ final class StarcatMCPFacade {
         try await repoAIInsightService.cachedInsightFast(for: repo).map {
             MCPRepoSummaryDTO(repoID: repo.id, insight: $0)
         }
+    }
+
+    private func knowledgeBaseMetadataSnapshot() async throws -> KnowledgeBaseMetadataSnapshot {
+        // 未完成 Provider 验证时仍使用用户已选择的模型名计算索引健康度；如果模型名为空，
+        // 用明确哨兵让历史 ready 向量进入 stale，而不是谎报为当前模型可用。
+        let selectedModel = settings.configuredEmbeddingModelName
+            ?? settings.aiEmbeddingTask.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let embeddingModel = selectedModel.isEmpty ? "unconfigured" : selectedModel
+        return try await KnowledgeBaseMetadataSnapshotProvider(
+            database: database,
+            embeddingModel: embeddingModel,
+            cache: knowledgeBaseMetadataSnapshotCache
+        ).fetch()
     }
 
     private static func sanitizeLimit(_ value: Int, defaultValue: Int, maxValue: Int) -> Int {

@@ -966,6 +966,9 @@ final class AppDependencies {
             repoNoteRepository: self.repoNoteRepository,
             semanticSearchService: semantic,
             repoAIInsightService: aiInsight,
+            database: db,
+            aiUsageRepository: self.aiUsageRepository,
+            knowledgeBaseMetadataSnapshotCache: knowledgeBaseMetadataSnapshotCache,
             entitlementGate: self.entitlementGate,
             settings: self.settings
         )
