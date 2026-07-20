@@ -126,63 +126,130 @@ struct MCPSettingsTab: View {
             }
 
             Section {
-                agentSetupRow(
-                    title: "settings.mcp.agentSetup.cli.title",
-                    help: "settings.mcp.agentSetup.cli.help"
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.cli.manual.title",
+                    help: "settings.mcp.agentSetup.cli.manual.help"
                 ) {
-                    agentCopyButton(
-                        content: { mcpService.cliInstallPrompt },
-                        tooltip: "settings.mcp.agentSetup.cli.copy"
+                    setupCopyButton(
+                        content: { mcpService.cliInstallCommand },
+                        tooltip: "settings.mcp.agentSetup.cli.manual.copy"
                     )
                 }
 
-                agentSetupRow(
-                    title: "settings.mcp.agentSetup.pair.title",
-                    help: "settings.mcp.agentSetup.pair.help"
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.cli.agent.title",
+                    help: "settings.mcp.agentSetup.cli.agent.help"
                 ) {
-                    CopyFeedbackButton(
-                        performCopy: {
-                            guard let content = try? mcpService.createPairingInstruction() else { return false }
-                            NSPasteboard.general.clearContents()
-                            return NSPasteboard.general.setString(content, forType: .string)
-                        },
-                        tooltip: "settings.mcp.agentSetup.pair.copy",
-                        style: .bordered
-                    ) { didCopy in
-                        agentCopyLabel(didCopy: didCopy, key: "settings.mcp.agentSetup.pair.copy")
-                    }
-                    .controlSize(.regular)
-                    .disabled(!isRunning(mcpService.state))
-                }
-
-                agentSetupRow(
-                    title: "settings.mcp.agentSetup.mcp.title",
-                    help: "settings.mcp.agentSetup.mcp.help"
-                ) {
-                    agentCopyButton(
-                        content: { mcpService.agentSetupPrompt },
-                        tooltip: "settings.mcp.agentSetup.mcp.copy"
+                    setupCopyButton(
+                        content: { mcpService.cliAgentInstallPrompt },
+                        tooltip: "settings.mcp.agentSetup.cli.agent.copy"
                     )
                 }
 
-                agentSetupRow(
-                    title: "settings.mcp.agentSetup.skill.title",
-                    help: "settings.mcp.agentSetup.skill.help"
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.cli.verify.title",
+                    help: "settings.mcp.agentSetup.cli.verify.help"
                 ) {
-                    agentCopyButton(
-                        content: { mcpService.skillInstallPrompt },
-                        tooltip: "settings.mcp.agentSetup.skill.copy"
+                    setupCopyButton(
+                        content: { mcpService.cliVerificationCommand },
+                        tooltip: "settings.mcp.agentSetup.cli.verify.copy"
+                    )
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.mcp.agentSetup.cli.title",
+                    systemImage: "terminal",
+                    style: .prominent
+                )
+            }
+
+            Section {
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.pair.manual.title",
+                    help: "settings.mcp.agentSetup.pair.manual.help"
+                ) {
+                    pairingCopyButton(
+                        providesContent: { try mcpService.createPairingURI() },
+                        tooltip: "settings.mcp.agentSetup.pair.manual.copy",
+                        isEnabled: isRunning(mcpService.state)
                     )
                 }
 
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.pair.agent.title",
+                    help: "settings.mcp.agentSetup.pair.agent.help"
+                ) {
+                    pairingCopyButton(
+                        providesContent: { try mcpService.createPairingAgentInstruction() },
+                        tooltip: "settings.mcp.agentSetup.pair.agent.copy",
+                        isEnabled: isRunning(mcpService.state)
+                    )
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.mcp.agentSetup.pair.title",
+                    systemImage: "link.badge.plus",
+                    style: .prominent
+                )
+            } footer: {
                 Text("settings.mcp.agentSetup.security.help")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.mcp.manual.title",
+                    help: "settings.mcp.agentSetup.mcp.manual.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.mcpManualSetup },
+                        tooltip: "settings.mcp.agentSetup.mcp.manual.copy"
+                    )
+                }
+
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.mcp.agent.title",
+                    help: "settings.mcp.agentSetup.mcp.agent.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.mcpAgentSetupPrompt },
+                        tooltip: "settings.mcp.agentSetup.mcp.agent.copy"
+                    )
+                }
             } header: {
                 SettingsSectionHeader(
-                    "settings.mcp.section.agentSetup",
-                    systemImage: "cpu",
+                    "settings.mcp.agentSetup.mcp.title",
+                    systemImage: "server.rack",
+                    style: .prominent
+                )
+            }
+
+            Section {
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.skill.manual.title",
+                    help: "settings.mcp.agentSetup.skill.manual.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.skillManualInstall },
+                        tooltip: "settings.mcp.agentSetup.skill.manual.copy"
+                    )
+                }
+
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.skill.agent.title",
+                    help: "settings.mcp.agentSetup.skill.agent.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.skillAgentInstallPrompt },
+                        tooltip: "settings.mcp.agentSetup.skill.agent.copy"
+                    )
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.mcp.agentSetup.skill.title",
+                    systemImage: "wand.and.stars",
                     style: .prominent
                 )
             }
@@ -275,7 +342,7 @@ struct MCPSettingsTab: View {
 
     /// 设置页动作保持“说明在左、独立按钮在右”的统一密度；复制状态与剪贴板写入由
     /// `CopyFeedbackButton` 负责，避免每一行各自维护反馈计时器。
-    private func agentSetupRow<Action: View>(
+    private func setupActionRow<Action: View>(
         title: LocalizedStringKey,
         help: LocalizedStringKey,
         @ViewBuilder action: () -> Action
@@ -293,18 +360,40 @@ struct MCPSettingsTab: View {
         }
     }
 
-    private func agentCopyButton(
+    private func setupCopyButton(
         content: @escaping () -> String,
         tooltip: LocalizedStringKey
     ) -> some View {
         CopyFeedbackButton(providesContent: content, tooltip: tooltip, style: .bordered) { didCopy in
-            agentCopyLabel(didCopy: didCopy, key: tooltip)
+            setupCopyLabel(didCopy: didCopy, key: tooltip)
         }
         .controlSize(.regular)
     }
 
+    /// 配对 URI 每次点击即时生成，不能先缓存到 View state。这样用户手工配对与
+    /// Agent 配对永远拿到相互独立、五分钟有效的一次性 secret。
+    private func pairingCopyButton(
+        providesContent: @escaping () throws -> String,
+        tooltip: LocalizedStringKey,
+        isEnabled: Bool
+    ) -> some View {
+        CopyFeedbackButton(
+            performCopy: {
+                guard let content = try? providesContent() else { return false }
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.setString(content, forType: .string)
+            },
+            tooltip: tooltip,
+            style: .bordered
+        ) { didCopy in
+            setupCopyLabel(didCopy: didCopy, key: tooltip)
+        }
+        .controlSize(.regular)
+        .disabled(!isEnabled)
+    }
+
     @ViewBuilder
-    private func agentCopyLabel(didCopy: Bool, key: LocalizedStringKey) -> some View {
+    private func setupCopyLabel(didCopy: Bool, key: LocalizedStringKey) -> some View {
         if didCopy {
             Label("common.copy.copied", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(Color.green)

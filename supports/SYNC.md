@@ -55,7 +55,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 6 | `starcat-discovery-api/` | `dong4j/starcat-discovery-api` |
 | 7 | `starcat-pro/` | `dong4j/starcat-pro` |
 | 8 | `starcat-license-api/` | `dong4j/starcat-license-api` 🔒 私有 |
-| 9 | `starcat-localization/` | `dong4j/starcat-localization` |
+| 9 | `starcat-localization/` | `starcat-app/starcat-localization` |
 | 10 | `homebrew-starcat/` | `dong4j/homebrew-starcat` |
 | 11 | `vscode-makefile-explorer/` | `dong4j/vscode-makefile-explorer` |
 | 12 | `extensions/starcat-chrome-plugin/` | `dong4j/starcat-chrome-plugin` |

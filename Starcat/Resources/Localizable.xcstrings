@@ -47945,18 +47945,67 @@
         }
       }
     },
-    "settings.mcp.agentSetup.cli.copy": {
+    "settings.mcp.agentSetup.cli.manual.copy": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Copy CLI install prompt" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 CLI 安装说明" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Install Command" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制安装命令" } }
       }
     },
-    "settings.mcp.agentSetup.cli.help": {
+    "settings.mcp.agentSetup.cli.manual.help": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Ask the current agent to install the cross-platform Starcat CLI from its public repository." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "让当前 Agent 从公开仓库安装跨平台 Starcat CLI。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Copy the official install.sh command and run it in Terminal. The default destination is ~/.local/bin." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制官方 install.sh 命令并在终端运行，默认安装到 ~/.local/bin。" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.manual.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Install it yourself" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自行安装" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.agent.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Agent Prompt" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 Agent Prompt" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.agent.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paste this request into Codex, Claude Code, or another AI agent and let it install and verify the CLI." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "将安装请求粘贴给 Codex、Claude Code 或其他 AI Agent，由它安装并验证 CLI。" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.agent.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Install with an AI Agent" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "使用 AI Agent 安装" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.verify.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Check Command" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制检测命令" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.verify.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Run starcat doctor --json in Terminal to verify the CLI, pairing, connection, and available capabilities." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在终端运行 starcat doctor --json，验证 CLI、配对、连接和可用能力。" } }
+      }
+    },
+    "settings.mcp.agentSetup.cli.verify.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Verify the installation" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "验证安装" } }
       }
     },
     "settings.mcp.agentSetup.cli.title": {
@@ -47973,18 +48022,46 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "请从 %1$@ 安装并验证官方 Starcat CLI。macOS 或 Linux 优先使用 Homebrew（`brew tap dong4j/starcat-cli && brew install starcat`），其他情况使用适合当前平台的官方 Release 安装脚本。然后运行 `starcat doctor --json`；如果尚未配对，请让我从 Starcat 复制一次性配对说明。" } }
       }
     },
-    "settings.mcp.agentSetup.pair.copy": {
+    "settings.mcp.agentSetup.pair.manual.copy": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Copy one-time pairing instructions" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制一次性配对说明" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Pairing URI" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制配对 URI" } }
       }
     },
-    "settings.mcp.agentSetup.pair.help": {
+    "settings.mcp.agentSetup.pair.manual.help": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Generate a five-minute invitation. Starcat will ask you to confirm the device before issuing its credential." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生成五分钟有效的邀请；签发设备凭据前，Starcat 会再次请求确认。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Run starcat pair --stdin, paste the copied five-minute URI, then press Control-D. Approve the device in Starcat." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "运行 starcat pair --stdin，粘贴复制的五分钟 URI，再按 Control-D，最后在 Starcat 中确认设备。" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.manual.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pair manually" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "手动配对" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.agent.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Agent Prompt" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 Agent Prompt" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.agent.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Give an AI agent a five-minute URI and instructions to pass it only through stdin." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向 AI Agent 提供五分钟 URI，并要求它只通过 stdin 完成配对。" } }
+      }
+    },
+    "settings.mcp.agentSetup.pair.agent.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pair with an AI Agent" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "使用 AI Agent 配对" } }
       }
     },
     "settings.mcp.agentSetup.pair.title": {
@@ -48001,38 +48078,66 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "请启动下面的一次性 Starcat 配对会话，通过 stdin 提供 URI，然后等待我在 Starcat 中确认设备：\n\n命令：\nstarcat pair --stdin\n\n一次性配对 URI：\n%1$@\n\n只允许通过 stdin 传入 URI，不要把它放入命令参数、输出或持久化。" } }
       }
     },
-    "settings.mcp.agentSetup.mcp.copy": {
+    "settings.mcp.agentSetup.mcp.manual.copy": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Copy MCP setup prompt"
+            "value": "Copy Manual Setup"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "复制 MCP 安装说明"
+            "value": "复制手动配置"
           }
         }
       }
     },
-    "settings.mcp.agentSetup.mcp.help": {
+    "settings.mcp.agentSetup.mcp.manual.help": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Copy a Markdown prompt for Codex, Claude Code, or another MCP client to install this service."
+            "value": "Copy the user-level stdio server settings and configure starcat mcp in your MCP client."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "复制一段 Markdown 说明，交给 Codex、Claude Code 或其他 MCP 客户端自动安装此服务。"
+            "value": "复制用户级 stdio Server 配置，并在 MCP 客户端中手动配置 starcat mcp。"
           }
         }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.manual.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Configure manually" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "手动配置" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.agent.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Agent Prompt" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 Agent Prompt" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.agent.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ask Codex, Claude Code, or another AI agent to configure and verify the MCP service." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "让 Codex、Claude Code 或其他 AI Agent 配置并验证 MCP Service。" } }
+      }
+    },
+    "settings.mcp.agentSetup.mcp.agent.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Configure with an AI Agent" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "使用 AI Agent 配置" } }
       }
     },
     "settings.mcp.agentSetup.mcp.title": {
@@ -48048,6 +48153,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "安装 MCP Service"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.mcpManualPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "# Configure Starcat MCP Service Manually\n\n1. Run `command -v starcat` and copy the absolute path.\n2. Add a user-level stdio MCP Server to your client:\n   - Name: starcat\n   - Command: the absolute path from step 1\n   - Args: [\"mcp\"]\n   - Transport: stdio\n3. Keep Starcat running with MCP Service enabled.\n4. Restart or reload the MCP client, then complete initialize and tools/list, and call the read-only tool starcat.get_capabilities.\n\nDo not configure an endpoint or Local API Key in the MCP client."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "# 手动配置 Starcat MCP Service\n\n1. 运行 `command -v starcat` 并复制绝对路径。\n2. 在 MCP 客户端中添加用户级 stdio MCP Server：\n   - Name: starcat\n   - Command: 第 1 步得到的绝对路径\n   - Args: [\"mcp\"]\n   - Transport: stdio\n3. 保持 Starcat 运行并开启 MCP Service。\n4. 重启或重新加载 MCP 客户端，然后完成 initialize 和 tools/list，并调用只读工具 starcat.get_capabilities。\n\n不要在 MCP 客户端中配置 endpoint 或 Local API Key。"
           }
         }
       }
@@ -48086,38 +48208,66 @@
         }
       }
     },
-    "settings.mcp.agentSetup.skill.copy": {
+    "settings.mcp.agentSetup.skill.manual.copy": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Copy Skill install request"
+            "value": "Copy Manual Setup"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "复制 Skill 安装请求"
+            "value": "复制手动安装说明"
           }
         }
       }
     },
-    "settings.mcp.agentSetup.skill.help": {
+    "settings.mcp.agentSetup.skill.manual.help": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Copy a short request that asks the current agent to install the public Starcat skill."
+            "value": "Copy commands for installing the public repository into the Codex or Claude Code user-level skill directory."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "复制一条简短请求，让当前 Agent 从公开仓库安装 Starcat Skill。"
+            "value": "复制命令，将公开仓库安装到 Codex 或 Claude Code 的用户级 Skill 目录。"
           }
         }
+      }
+    },
+    "settings.mcp.agentSetup.skill.manual.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Install it yourself" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自行安装" } }
+      }
+    },
+    "settings.mcp.agentSetup.skill.agent.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Agent Prompt" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制 Agent Prompt" } }
+      }
+    },
+    "settings.mcp.agentSetup.skill.agent.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paste a concise request into an AI agent and let it install and verify starcat-skill." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "将简短请求粘贴给 AI Agent，由它安装并验证 starcat-skill。" } }
+      }
+    },
+    "settings.mcp.agentSetup.skill.agent.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Install with an AI Agent" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "使用 AI Agent 安装" } }
       }
     },
     "settings.mcp.agentSetup.skill.title": {
@@ -48133,6 +48283,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "安装 starcat-skill"
+          }
+        }
+      }
+    },
+    "settings.mcp.agentSetup.skillManualPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "# Install starcat-skill Manually\n\nChoose one user-level destination.\n\nCodex:\n```bash\nmkdir -p \"$HOME/.codex/skills\"\ngit clone %1$@ \"$HOME/.codex/skills/starcat-skill\"\n```\n\nClaude Code:\n```bash\nmkdir -p \"$HOME/.claude/skills\"\ngit clone %1$@ \"$HOME/.claude/skills/starcat-skill\"\n```\n\nIf the destination already exists, update it with `git -C <skill-path> pull --ff-only`."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "# 手动安装 starcat-skill\n\n选择一个用户级安装目录。\n\nCodex：\n```bash\nmkdir -p \"$HOME/.codex/skills\"\ngit clone %1$@ \"$HOME/.codex/skills/starcat-skill\"\n```\n\nClaude Code：\n```bash\nmkdir -p \"$HOME/.claude/skills\"\ngit clone %1$@ \"$HOME/.claude/skills/starcat-skill\"\n```\n\n如果目标目录已存在，请使用 `git -C <skill-path> pull --ff-only` 更新。"
           }
         }
       }
@@ -48646,23 +48813,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接"
-          }
-        }
-      }
-    },
-    "settings.mcp.section.agentSetup": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "External AI Agents"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "外部 AI Agent"
           }
         }
       }

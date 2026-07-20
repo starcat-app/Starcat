@@ -64,28 +64,55 @@ final class StarcatMCPService {
         return "http://127.0.0.1:\(settings.mcpServicePort)/mcp"
     }
 
-    var agentSetupPrompt: String {
-        MCPAgentSetupPrompt.mcp
+    var cliInstallCommand: String {
+        MCPAgentSetupPrompt.cliInstallCommand
     }
 
-    var cliInstallPrompt: String {
-        MCPAgentSetupPrompt.cliInstall
+    var cliAgentInstallPrompt: String {
+        MCPAgentSetupPrompt.cliAgentInstall
     }
 
-    var skillInstallPrompt: String {
-        MCPAgentSetupPrompt.skillInstall
+    var cliVerificationCommand: String {
+        MCPAgentSetupPrompt.cliVerificationCommand
     }
 
-    /// 每次点击都创建新的五分钟 invitation；它只用于兑换逐设备 token，不能直接调用 MCP。
-    func createPairingInstruction() throws -> String {
+    var mcpManualSetup: String {
+        MCPAgentSetupPrompt.mcpManualSetup
+    }
+
+    var mcpAgentSetupPrompt: String {
+        MCPAgentSetupPrompt.mcpAgentSetup
+    }
+
+    var skillManualInstall: String {
+        MCPAgentSetupPrompt.skillManualInstall
+    }
+
+    var skillAgentInstallPrompt: String {
+        MCPAgentSetupPrompt.skillAgentInstall
+    }
+
+    /// 给用户手工配对时只复制 opaque URI；命令固定展示为 `starcat pair --stdin`，
+    /// 避免把短期 secret 拼进 shell history。
+    func createPairingURI() throws -> String {
+        try createPairingInvitationURI()
+    }
+
+    /// 给外部 Agent 的说明可以包含 URI，但仍强制通过 stdin 传入，不能放进参数。
+    /// 每次点击都创建新的五分钟 invitation，避免复用已经发给另一端的 secret。
+    func createPairingAgentInstruction() throws -> String {
+        MCPAgentSetupPrompt.pairAgent(invitationURI: try createPairingInvitationURI())
+    }
+
+    /// invitation 只用于兑换逐设备 token，不能直接调用 MCP。
+    private func createPairingInvitationURI() throws -> String {
         guard case .running = state else {
             throw StarcatMCPError.disabled
         }
-        let invitation = try deviceStore.createInvitation(
+        return try deviceStore.createInvitation(
             endpoint: endpointURL,
             certificateFingerprint: activeTLSIdentity?.certificateFingerprint
         )
-        return MCPAgentSetupPrompt.pair(invitationURI: invitation)
     }
 
     func refreshForCurrentSettings() {

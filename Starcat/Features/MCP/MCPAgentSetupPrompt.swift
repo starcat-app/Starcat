@@ -13,23 +13,36 @@ import Foundation
 enum MCPAgentSetupPrompt {
     static let skillRepositoryURL = "https://github.com/dong4j/starcat-skill"
     static let cliRepositoryURL = "https://github.com/dong4j/starcat-cli"
+    static let cliInstallCommand = "curl -fsSL https://github.com/dong4j/starcat-cli/releases/latest/download/install.sh | sh"
+    static let cliVerificationCommand = "starcat doctor --json"
 
-    static var cliInstall: String {
+    static var cliAgentInstall: String {
         String(format: String.l10n("settings.mcp.agentSetup.cliPrompt"), cliRepositoryURL)
     }
 
-    static var mcp: String {
+    static var mcpManualSetup: String {
+        String.l10n("settings.mcp.agentSetup.mcpManualPrompt")
+    }
+
+    static var mcpAgentSetup: String {
         String.l10n("settings.mcp.agentSetup.mcpPrompt")
     }
 
-    static var skillInstall: String {
+    static var skillManualInstall: String {
+        String(
+            format: String.l10n("settings.mcp.agentSetup.skillManualPrompt"),
+            skillRepositoryURL
+        )
+    }
+
+    static var skillAgentInstall: String {
         String(
             format: String.l10n("settings.mcp.agentSetup.skillPrompt"),
             skillRepositoryURL
         )
     }
 
-    static func pair(invitationURI: String) -> String {
+    static func pairAgent(invitationURI: String) -> String {
         String(format: String.l10n("settings.mcp.agentSetup.pairPrompt"), invitationURI)
     }
 }

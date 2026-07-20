@@ -19,7 +19,7 @@
 ### 0.2 转移后保持公开
 
 - [ ] `starcat-app/starcat-pro`
-- [ ] `starcat-app/starcat-localization`
+- [x] `starcat-app/starcat-localization`
 - [ ] `starcat-app/homebrew-starcat`
 - [ ] `starcat-app/starcat-skill`
 - [ ] `starcat-app/starcat-chrome-plugin`
@@ -35,8 +35,8 @@
 
 以下项目当前没有可直接转移的完整远端仓库。先收口本地提交，再直接在组织下创建：
 
-- [ ] `starcat-app/starcat-cli`
-- [ ] `starcat-app/homebrew-starcat-cli`
+- [x] `starcat-app/starcat-cli`
+- [x] `starcat-app/homebrew-starcat-cli`
 
 ### 0.4 明确排除
 
@@ -46,13 +46,13 @@
 
 ### 0.5 OAuth App
 
-- [ ] 转移现有 OAuth App `Starcat`，禁止在组织下重新创建替代应用。
-- [ ] OAuth App 转移后由 `starcat-app` 持有。
-- [ ] Client ID 保持 `Ov23li4suXj1nNsWtHHG` 不变。
-- [ ] Authorization callback URL 保持 `starcat://callback` 不变。
-- [ ] Device Flow 保持启用。
-- [ ] 不生成或轮换 Client Secret。
-- [ ] 不点击“撤销所有用户令牌”。
+- [x] 转移现有 OAuth App `Starcat`，禁止在组织下重新创建替代应用。
+- [x] OAuth App 转移后由 `starcat-app` 持有。
+- [x] Client ID 保持 `Ov23li4suXj1nNsWtHHG` 不变。
+- [x] Authorization callback URL 保持 `starcat://callback` 不变。
+- [x] Device Flow 保持启用。
+- [x] 不生成或轮换 Client Secret。
+- [x] 不点击“撤销所有用户令牌”。
 
 ---
 
@@ -76,20 +76,20 @@
 
 ### 2.1 GitHub 组织
 
-- [ ] `starcat-app` 组织存在，当前套餐为 GitHub Free。
-- [ ] 当前组织仓库数为 0。
-- [ ] 当前组织成员只有 `dong4j`，且角色为 Owner。
-- [ ] 当前 Base permission 为 `Read`。
-- [ ] 当前未强制组织成员启用 2FA。
-- [ ] 当前允许普通成员创建仓库和修改 repository visibility。
+- [x] `starcat-app` 组织存在，当前套餐为 GitHub Free。
+- [x] 当前组织有 4 个 Public 仓库：`.github`、`starcat-cli`、`homebrew-starcat-cli`、`starcat-localization`。
+- [x] 当前组织成员只有 `dong4j`，且角色为 Owner。
+- [x] 当前 Base permission 为 `None`。
+- [x] 当前已强制组织成员启用 2FA。
+- [x] 当前禁止普通成员创建仓库和修改 repository visibility。
 
 ### 2.2 本地未收口状态
 
 - [ ] Starcat 主仓库：确认 `dev` 相对远端领先的 commit 和未提交文件已按 dong4j 意图处理。
 - [ ] `starcat-pro`：确认未推送 commit 已处理，并清除不应提交的 `.DS_Store`。
 - [ ] `starcat-skill`：确认本地 `main` 已推到远端；当前远端分支为空 / upstream gone 的状态已消除。
-- [ ] `starcat-cli`：确认开发改动已完成、提交并通过验证。
-- [ ] `homebrew-starcat-cli`：确认首个 commit 已完成。
+- [x] `starcat-cli`：确认开发改动已完成、提交并通过验证。
+- [x] `homebrew-starcat-cli`：确认首个 commit 已完成。
 - [ ] 其它待迁移仓库均为预期分支，且不存在未提交或未推送的重要内容。
 
 ### 2.3 GitHub 集成
@@ -104,11 +104,11 @@
 
 ### 2.4 OAuth App
 
-- [ ] 当前 owner 为 `dong4j`。
-- [ ] 当前 App 名为 `Starcat`。
-- [ ] 当前已授权用户数为 6；执行迁移前重新记录实际数量。
-- [ ] 当前 Client ID、callback URL、Device Flow 开关与 §0.5 一致。
-- [ ] 当前 Homepage 为 `https://github.com/dong4j/starcat`，迁移后计划改为 `https://starcat.ink`。
+- [x] 当前 owner 为 `dong4j`。
+- [x] 当前 App 名为 `Starcat`。
+- [x] 当前已授权用户数为 6；执行迁移前重新记录实际数量。
+- [x] 当前 Client ID、callback URL、Device Flow 开关与 §0.5 一致。
+- [x] 当前 Homepage 为 `https://github.com/dong4j/starcat`，迁移后计划改为 `https://starcat.ink`。
 
 ---
 
@@ -116,20 +116,20 @@
 
 > 先控制组织权限，再接收私有仓库，避免未来新增成员后自动获得不必要的访问权。
 
-- [ ] 在 `starcat-app → Settings → Member privileges` 把 Base permissions 从 `Read` 改为 `None`。
-- [ ] 禁止普通成员修改 repository visibility，仅允许 Organization Owner 修改。
-- [ ] 根据实际协作方式限制普通成员创建 Public / Private repository 的权限。
-- [ ] 在邀请其他成员前启用组织 2FA 要求。
-- [ ] 确认 `dong4j` 仍为 Organization Owner。
-- [ ] 确认组织允许 Owner 创建 Public 和 Private repository。
-- [ ] 检查 `Settings → Actions`：Actions 可用，允许的 actions 与当前 workflow 依赖相容。
+- [x] 在 `starcat-app → Settings → Member privileges` 把 Base permissions 从 `Read` 改为 `None`。
+- [x] 禁止普通成员修改 repository visibility，仅允许 Organization Owner 修改。
+- [x] 根据实际协作方式限制普通成员创建 Public / Private repository 的权限。
+- [x] 在邀请其他成员前启用组织 2FA 要求。
+- [x] 确认 `dong4j` 仍为 Organization Owner。
+- [x] 确认组织允许 Owner 创建 Public 和 Private repository。
+- [x] 检查 `Settings → Actions`：Actions 可用，允许的 actions 与当前 workflow 依赖相容。
 - [ ] 检查第三方 GitHub App / OAuth App 的组织访问策略；记录需要重新授权的集成。
 - [ ] 如需团队权限，先创建 `maintainers` / `release` 等团队，再按最小权限分配仓库。
 
 验收：
 
-- [ ] 新增普通成员不会因为 Base permission 自动读取 `Starcat` 或 `starcat-license-api`。
-- [ ] 只有 Owner 或明确授权的管理员可以更改仓库可见性。
+- [x] 新增普通成员不会因为 Base permission 自动读取 `Starcat` 或 `starcat-license-api`。
+- [x] 只有 Owner 或明确授权的管理员可以更改仓库可见性。
 
 ---
 
@@ -196,10 +196,10 @@ git -C /absolute/backup/path/REPOSITORY.git show-ref
 
 ### 5.1 转移前
 
-- [ ] `dong4j/starcat-localization` 工作树、branch、tag、远端均已收口。
-- [ ] `starcat-app` 下不存在同名仓库或同一 fork network。
-- [ ] GitHub 元数据快照与 mirror 备份完成。
-- [ ] dong4j 明确确认开始试点 Transfer。
+- [x] `dong4j/starcat-localization` 工作树干净；本地 `dev` / `main` 与远端对应分支均指向 `183d2d1`，当前没有 tag。
+- [x] `starcat-app` 下不存在 `starcat-localization` 同名仓库。
+- [x] dong4j 明确决定本试点跳过 GitHub 元数据快照与 mirror 备份，以现有本地仓库作为代码副本。
+- [x] dong4j 明确确认开始试点 Transfer。
 
 ### 5.2 发起转移
 
@@ -221,30 +221,31 @@ gh api --method POST \
   -f new_owner=starcat-app
 ```
 
-- [ ] Transfer 请求返回成功 / `202 Accepted`。
-- [ ] 等待 `starcat-app/starcat-localization` 可访问，不并发发起下一仓库 Transfer。
+- [x] Transfer 请求返回成功，Repository ID 保持为 `R_kgDOTPF2CQ`。
+- [x] 已等待 `starcat-app/starcat-localization` 可访问，未并发发起下一仓库 Transfer。
 
 ### 5.3 更新本地 remote
 
 ```bash
 git -C supports/starcat-localization remote set-url \
-  origin git@github.com:starcat-app/starcat-localization.git
+  origin https://github.com/starcat-app/starcat-localization.git
 
 git -C supports/starcat-localization fetch origin
 git -C supports/starcat-localization push --dry-run
 ```
 
-- [ ] `origin` 指向 `starcat-app/starcat-localization`。
-- [ ] `fetch` 成功。
-- [ ] `push --dry-run` 成功。
+- [x] `origin` 指向 `https://github.com/starcat-app/starcat-localization.git`。
+- [x] `fetch` 成功。
+- [x] `push --dry-run` 成功。
 
 ### 5.4 试点验收
 
-- [ ] 新 owner、Public visibility、default branch 正确。
-- [ ] branch、tag、commit、Issue、PR、Release、stars、watchers 与迁移前一致。
-- [ ] `https://github.com/dong4j/starcat-localization` 能重定向到新地址。
-- [ ] 旧地址下没有创建占位仓库。
-- [ ] clone、fetch、push dry-run 正常。
+- [x] 新 owner、Public visibility、default branch 正确。
+- [x] branch、tag、commit、Issue、PR、Release、stars、watchers 与迁移前一致。
+- [x] `https://github.com/dong4j/starcat-localization` 能重定向到新地址。
+- [x] 旧地址下没有创建占位仓库。
+- [x] 新旧 Git URL 的 `ls-remote`、本地 `fetch` 与 `push --dry-run` 正常。
+- [x] 当前文档、脚本、README 与站点入口均已改为 `https://github.com/starcat-app/starcat-localization`；旧 owner 仅保留在迁移源与重定向验收记录中。
 - [ ] 观察一段时间后没有权限、链接或自动化异常。
 - [ ] dong4j 明确确认试点通过，允许进入批量阶段。
 
@@ -323,11 +324,11 @@ git -C supports/starcat-localization push --dry-run
 
 ### 8.1 `starcat-cli`
 
-- [ ] 本地开发改动已按功能边界提交。
-- [ ] 单测、race、vet、build 与脚本语法检查通过。
-- [ ] README、LICENSE、SECURITY、CONTRIBUTING、Release workflow 已收口。
-- [ ] 所有旧 `dong4j/starcat-cli` / `dong4j/homebrew-starcat-cli` 引用已按创建顺序处理。
-- [ ] 在 `starcat-app` 下创建 Public 仓库并首次 push。
+- [x] 本地开发改动已按功能边界提交。
+- [x] 单测、race、vet、build 与脚本语法检查通过。
+- [x] README、LICENSE、SECURITY、CONTRIBUTING、Release workflow 已收口。
+- [x] 所有旧 `dong4j/starcat-cli` / `dong4j/homebrew-starcat-cli` 引用已按创建顺序处理。
+- [x] 在 `starcat-app` 下创建 Public 仓库并首次 push。
 
 ```bash
 gh repo create starcat-app/starcat-cli \
@@ -339,9 +340,9 @@ gh repo create starcat-app/starcat-cli \
 
 ### 8.2 `homebrew-starcat-cli`
 
-- [ ] 首个 commit 已完成。
-- [ ] Formula 生成与 audit workflow 已准备好。
-- [ ] 在 `starcat-app` 下创建 Public 仓库并首次 push。
+- [x] 首个 commit 已完成。
+- [x] Formula 生成与 audit workflow 已准备好。
+- [x] 在 `starcat-app` 下创建 Public 仓库并首次 push。
 
 ```bash
 gh repo create starcat-app/homebrew-starcat-cli \
@@ -352,7 +353,8 @@ gh repo create starcat-app/homebrew-starcat-cli \
 ```
 
 - [ ] `brew tap starcat-app/starcat-cli` 能正确解析到 `starcat-app/homebrew-starcat-cli`。
-- [ ] CLI Release workflow 的 `HOMEBREW_TAP_TOKEN` 只授予目标 tap 所需权限。
+- [x] CLI Release workflow 的 `HOMEBREW_TAP_TOKEN` 只授予目标 tap 所需权限；Fine-grained PAT 仅绑定 `starcat-app/homebrew-starcat-cli`，到期日为 2027-07-21。
+- [ ] 在 2027-07-21 前轮换 `HOMEBREW_TAP_TOKEN`，轮换后只做 Secret 存在性与权限验证，不输出 Token 明文。
 
 ---
 
@@ -362,7 +364,7 @@ gh repo create starcat-app/homebrew-starcat-cli \
 
 - [ ] 仓库级 Secret 名称在迁移后仍存在，不读取 Secret 值。
 - [ ] Environment 与 protection 配置仍存在。
-- [ ] 组织 Actions policy 允许当前使用的第三方 actions。
+- [x] 组织 Actions policy 允许当前使用的第三方 actions；`starcat-cli` CI 与 `homebrew-starcat-cli` Audit Formula 已成功运行。
 - [ ] `GITHUB_TOKEN` 的 workflow permissions 符合最小权限原则。
 - [ ] 只运行测试 / 构建类 workflow 做验证。
 - [ ] 不手动触发 `fly-deploy.yml`、Release workflow 或 Package 发布 workflow。
@@ -403,14 +405,14 @@ ghcr.io/starcat-app/REPOSITORY
 
 ### 10.1 转移前快照
 
-- [ ] App owner：`dong4j`。
-- [ ] App name：`Starcat`。
-- [ ] Client ID：`Ov23li4suXj1nNsWtHHG`。
-- [ ] Callback：`starcat://callback`。
-- [ ] Device Flow：Enabled。
-- [ ] 记录现有 Client Secret 的末尾标识，不记录完整 Secret。
-- [ ] 记录当前已授权用户数量。
-- [ ] 使用一个现有登录用户验证当前正式版可正常访问 GitHub API。
+- [x] App owner：`dong4j`。
+- [x] App name：`Starcat`。
+- [x] Client ID：`Ov23li4suXj1nNsWtHHG`。
+- [x] Callback：`starcat://callback`。
+- [x] Device Flow：Enabled。
+- [x] 记录现有 Client Secret 的末尾标识，不记录完整 Secret。
+- [x] 记录当前已授权用户数量。
+- [x] 使用一个现有登录用户验证当前正式版可正常访问 GitHub API。
 
 ### 10.2 转移
 
@@ -420,25 +422,25 @@ https://github.com/settings/applications/3633797
 → New owner: starcat-app
 ```
 
-- [ ] dong4j 明确确认执行 OAuth App Transfer。
-- [ ] 发起 Transfer 后，以 Organization Owner 身份进入组织 OAuth Apps 页面。
-- [ ] 在 `Pending transfer requests` 中完成接收。
-- [ ] 未创建第二个 OAuth App。
-- [ ] 未生成、删除或轮换 Client Secret。
-- [ ] 未撤销用户授权或 token。
+- [x] dong4j 明确确认执行 OAuth App Transfer。
+- [x] 发起 Transfer 后，以 Organization Owner 身份进入组织 OAuth Apps 页面。
+- [x] 在 `Pending transfer requests` 中完成接收。
+- [x] 未创建第二个 OAuth App。
+- [x] 未生成、删除或轮换 Client Secret。
+- [x] 未撤销用户授权或 token。
 
 ### 10.3 转移后验证
 
-- [ ] Owner 已变为 `starcat-app`。
-- [ ] Client ID 未变化。
-- [ ] Client Secret 末尾标识未变化。
-- [ ] Callback 仍为 `starcat://callback`。
-- [ ] Device Flow 仍为 Enabled。
-- [ ] 已授权用户数量没有因为转移异常归零。
-- [ ] Homepage 更新为 `https://starcat.ink`。
-- [ ] 现有已登录正式版无需重新登录，GitHub 同步正常。
-- [ ] 测试账号完成一次新的 Device Flow 登录。
-- [ ] 测试账号完成一次新的 Web Flow + `starcat://callback` 登录。
+- [x] Owner 已变为 `starcat-app`。
+- [x] Client ID 未变化。
+- [x] Client Secret 末尾标识未变化。
+- [x] Callback 仍为 `starcat://callback`。
+- [x] Device Flow 仍为 Enabled。
+- [x] 已授权用户数量没有因为转移异常归零。
+- [x] Homepage 更新为 `https://starcat.ink`。
+- [x] 现有已登录正式版无需重新登录，GitHub 同步正常。
+- [x] 测试账号完成一次新的 Device Flow 登录。
+- [x] 测试账号完成一次新的 Web Flow + `starcat://callback` 登录。
 - [ ] OAuth App 转移后观察期内没有集中登录失败。
 
 ---
@@ -495,12 +497,12 @@ rg -n --hidden --no-ignore \
 
 ## 12. 组织首页与统一治理
 
-- [ ] 创建 Public 仓库 `starcat-app/.github`。
-- [ ] 新增 `profile/README.md`，说明 Starcat 产品、下载入口、支持渠道和开源项目。
+- [x] 创建 Public 仓库 `starcat-app/.github`。
+- [x] 新增 `profile/README.md`，说明 Starcat 产品、下载入口、支持渠道和开源项目。
 - [ ] 固定最多 6 个核心公开仓库。
 - [ ] 为 Public 仓库统一配置 Issues、Discussions、security policy 与贡献入口。
 - [ ] 为 Private 仓库按团队授予最小权限。
-- [ ] 确认组织名称、头像、官网 `https://starcat.ink` 和公开联系方式正确。
+- [x] 确认组织名称、头像、官网 `https://starcat.ink` 和公开联系方式正确。
 
 ---
 
@@ -523,7 +525,7 @@ rg -n --hidden --no-ignore \
 - [ ] 12 个现有公开仓库全部位于 `starcat-app` 且保持 Public。
 - [ ] `Starcat` 位于 `starcat-app` 且保持 Private。
 - [ ] `starcat-license-api` 位于 `starcat-app` 且保持 Private。
-- [ ] `starcat-cli`、`homebrew-starcat-cli` 位于 `starcat-app` 且为 Public。
+- [x] `starcat-cli`、`homebrew-starcat-cli` 位于 `starcat-app` 且为 Public。
 - [ ] `ai-file-wall`、`vscode-makefile-explorer` 未发生变化。
 - [ ] 所有迁移仓库的 branch、tag、Release、Issue、PR 和权限符合基线。
 
@@ -537,10 +539,10 @@ rg -n --hidden --no-ignore \
 
 ### 14.3 登录与用户影响
 
-- [ ] 已登录用户无需重新登录。
-- [ ] Device Flow 可创建新授权。
-- [ ] Web Flow + PKCE + `starcat://callback` 可创建新授权。
-- [ ] OAuth App Client ID、Secret、callback 和 Device Flow 配置未被迁移破坏。
+- [x] 已登录用户无需重新登录。
+- [x] Device Flow 可创建新授权。
+- [x] Web Flow + PKCE + `starcat://callback` 可创建新授权。
+- [x] OAuth App Client ID、Secret、callback 和 Device Flow 配置未被迁移破坏。
 
 ### 14.4 CI/CD 与运行环境
 
@@ -555,7 +557,7 @@ rg -n --hidden --no-ignore \
 - [ ] 旧 GitHub 仓库 URL 仍能重定向。
 - [ ] 没有在 `dong4j` 下创建同名仓库破坏重定向。
 - [ ] 官网、README、OAuth Homepage、安装命令都指向正式入口。
-- [ ] `starcat-app` 组织首页可以清晰找到 Starcat 产品和核心公开项目。
+- [x] `starcat-app` 组织首页可以清晰找到 Starcat 产品和核心公开项目。
 
 ---
 

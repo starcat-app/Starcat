@@ -26,7 +26,7 @@
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
 | [`starcat-pro/`](./starcat-pro/) | [`dong4j/starcat-pro`](https://github.com/dong4j/starcat-pro) | Pro 订阅服务端 |
-| [`starcat-localization/`](./starcat-localization/) | [`dong4j/starcat-localization`](https://github.com/dong4j/starcat-localization) | 本地化资源管理 |
+| [`starcat-localization/`](./starcat-localization/) | [`starcat-app/starcat-localization`](https://github.com/starcat-app/starcat-localization) | 本地化资源管理 |
 | [`homebrew-starcat/`](./homebrew-starcat/) | [`dong4j/homebrew-starcat`](https://github.com/dong4j/homebrew-starcat) | Homebrew tap（`brew install starcat`） |
 | [`vscode-makefile-explorer/`](./vscode-makefile-explorer/) | [`dong4j/vscode-makefile-explorer`](https://github.com/dong4j/vscode-makefile-explorer) | VS Code 插件 |
 | [`ai-file-wall/`](./ai-file-wall/) | —（本地独立项目） | 多 AI 并行开发时的 Git 变更与文件冲突预警面板 |

@@ -81,7 +81,7 @@ PROJECTS=(
   "starcat-discovery-api|https://github.com/dong4j/starcat-discovery-api.git|Go API - 发现服务"
   "starcat-pro|https://github.com/dong4j/starcat-pro.git|Pro 订阅服务"
   "starcat-license-api|https://github.com/dong4j/starcat-license-api.git|Direct 分发授权 API 🔒"
-  "starcat-localization|https://github.com/dong4j/starcat-localization.git|本地化资源"
+  "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
   "homebrew-starcat|https://github.com/dong4j/homebrew-starcat.git|Homebrew tap"
   "vscode-makefile-explorer|https://github.com/dong4j/vscode-makefile-explorer.git|VS Code 插件"
   "extensions/starcat-chrome-plugin|https://github.com/dong4j/starcat-chrome-plugin.git|Chrome 浏览器插件"
