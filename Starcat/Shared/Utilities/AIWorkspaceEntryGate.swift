@@ -5,7 +5,6 @@
 //  Agent 与知识库 RAG 工作台的统一入口门禁。
 //
 
-import AppKit
 import Foundation
 
 /// 工作台入口的判定结果。
@@ -55,16 +54,11 @@ enum AIWorkspaceEntryGate {
             NotificationCenter.default.post(name: .starcatWorkspaceRequiresProPaywall, object: feature)
             return false
         case .requiresChatModel:
-            openAISettings()
+            // 门禁只报告“为什么不能打开”，由主窗口用 SwiftUI Alert 承接交互。
+            // 不能在这里发送旧的 AppKit `showSettingsWindow:` action：App Store 构建会明确
+            // 要求 Settings scene 使用 SettingsLink / OpenSettingsAction，并产生运行时错误日志。
+            NotificationCenter.default.post(name: .starcatWorkspaceRequiresChatModel, object: nil)
             return false
-        }
-    }
-
-    /// 打开设置窗口后再异步切换到 AI 页，确保首次创建的 SettingsView 已安装通知监听。
-    private static func openAISettings() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai")
         }
     }
 }
@@ -72,4 +66,6 @@ enum AIWorkspaceEntryGate {
 extension Notification.Name {
     /// AppKit 工作台入口请求主窗口展示对应功能的 Pro 付费墙。
     static let starcatWorkspaceRequiresProPaywall = Notification.Name("starcat.workspace.requiresProPaywall")
+    /// 工作台入口缺少有效对话模型，请求主窗口展示配置引导。
+    static let starcatWorkspaceRequiresChatModel = Notification.Name("starcat.workspace.requiresChatModel")
 }

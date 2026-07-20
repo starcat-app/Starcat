@@ -96,6 +96,8 @@ struct HomeView: View {
     @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
     /// 当前需要展示的 Pro 付费墙上下文。由批量 AI 等主窗口入口触发。
     @State private var paywallContext: ProPaywallContext?
+    /// 工作台入口缺少有效对话模型时，由主窗口展示可操作提示，而不是静默失败。
+    @State private var showsChatModelRequiredAlert = false
     /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
     @State private var gettingStartedStore = GettingStartedProgressStore()
     /// 详情页教学锚点可能受 README 滚动折叠影响；显示胶囊前先回顶恢复稳定布局。
@@ -721,6 +723,11 @@ struct HomeView: View {
             guard let feature = note.object as? ProFeature else { return }
             paywallContext = ProPaywallContext(feature: feature)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatWorkspaceRequiresChatModel)) { _ in
+            // AppKit 工作台控制器不持有 SwiftUI presentation state；所有入口统一回到
+            // 主窗口展示提示，确保 toolbar、智能集合和 Getting Started 行为一致。
+            showsChatModelRequiredAlert = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRepoHomepage)) { _ in
             gettingStartedStore.markCompleted(.openRepoHomepage)
         }
@@ -760,6 +767,14 @@ struct HomeView: View {
 
     private var navigationWithResetPresentation: AnyView {
         AnyView(navigationWithPreferenceLifecycle
+        .alert("workspace.chatModelRequired.title", isPresented: $showsChatModelRequiredAlert) {
+            Button("workspace.chatModelRequired.openSettings") {
+                openChatModelSettings()
+            }
+            Button("general.cancel", role: .cancel) {}
+        } message: {
+            Text("workspace.chatModelRequired.message")
+        }
         .alert("settings.listPreferences.reset.title", isPresented: $showsResetListPreferencesConfirmation) {
             Button("general.cancel", role: .cancel) {}
             Button("settings.listPreferences.reset.confirm", role: .destructive) {
@@ -774,6 +789,15 @@ struct HomeView: View {
             bottomPadding: 24
         )
         )
+    }
+
+    /// 使用 Settings scene 的环境动作打开设置，再精确定位到「模型配置 → 对话」。
+    /// 延后一轮发送导航事件，确保 SettingsView 首次创建时已安装通知监听。
+    private func openChatModelSettings() {
+        openSettings()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai.chat")
+        }
     }
 
     /// 开始使用清单既要响应用户动作，也要吸收当前 App 状态。

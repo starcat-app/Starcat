@@ -215,6 +215,14 @@ struct AISettingsTab: View {
                 proxy.scrollTo(Self.taskModelsSettingsAnchor, anchor: .top)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIChatModelSection)) { _ in
+            // 从工作台缺少模型提示进入时，直接展开并选中“对话”，避免用户二次寻找。
+            isTaskModelsExpanded = true
+            taskModelTask = .chat
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.taskModelsSettingsAnchor, anchor: .top)
+            }
+        }
         // HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
         // SwiftUI macOS Settings scene 关闭窗口后不一定销毁 view 树,
         // `@State` 的 `draftProfile` 会残留——用户点 "+" 号生成空草稿、

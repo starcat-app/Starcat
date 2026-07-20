@@ -36,7 +36,7 @@ import SwiftUI
 //   3. 名字加 `starcat.` 前缀防止与系统 / 三方框架冲突。
 extension Notification.Name {
     /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
-    /// `"pro"` / `"ai"` / `"ai.embedding"` / `"ai.repoContext"` / `"services"` / `"integrations"` /
+    /// `"pro"` / `"ai"` / `"ai.chat"` / `"ai.embedding"` / `"ai.repoContext"` / `"services"` / `"integrations"` /
     /// `"integrations.localAPIKey"` / `"integrations.externalSearch"` / `"diagnostics"`。
     static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
     /// SettingsView 切到 AI Tab 并完成一轮布局后，再通知 AISettingsView 展开并定位。
@@ -46,6 +46,10 @@ extension Notification.Name {
     /// 知识库索引入口需要直达「模型配置 → 向量化」，不能只把用户丢在 AI Tab 顶部。
     static let starcatJumpToAIEmbeddingSection: Notification.Name = .init(
         "starcat.settings.jumpToAIEmbeddingSection"
+    )
+    /// 工作台入口缺少有效模型时，直达「模型配置 → 对话」。
+    static let starcatJumpToAIChatModelSection: Notification.Name = .init(
+        "starcat.settings.jumpToAIChatModelSection"
     )
 }
 
@@ -149,6 +153,12 @@ struct SettingsView: View {
             case "pro":          selectedTab = .pro
             case "ai":
                 selectedTab = .ai
+            case "ai.chat":
+                selectedTab = .ai
+                // 第一次打开 Settings 时 AISettingsView 尚未进入视图树，延后一轮再定位。
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .starcatJumpToAIChatModelSection, object: nil)
+                }
             case "ai.embedding":
                 selectedTab = .ai
                 // 与 RepoContext 跳转相同，延后一轮等待 AISettingsView 安装监听。

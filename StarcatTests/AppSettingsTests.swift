@@ -781,7 +781,7 @@ struct AppSettingsTests {
         case .requiresChatModel:
             break
         default:
-            Issue.record("Pro 用户未配置对话模型时应跳转 AI 设置")
+            Issue.record("Pro 用户未配置对话模型时应展示配置引导")
         }
     }
 
