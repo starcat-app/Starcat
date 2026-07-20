@@ -1,4 +1,4 @@
-module github.com/dong4j/starcat-supports/sqlite-backup-helper
+module github.com/starcat-app/Starcat/supports/scripts/sqlite-backup-helper
 
 go 1.25.0
 

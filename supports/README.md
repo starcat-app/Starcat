@@ -15,11 +15,11 @@
 |--------|--------|:----:|------|
 | [`starcat-sharing-api/`](./starcat-sharing-api/) | [`starcat-app/starcat-sharing-api`](https://github.com/starcat-app/starcat-sharing-api) | 5001 | AI 分享链接生成 + 公开分享页托管 |
 | [`starcat-trending-api/`](./starcat-trending-api/) | [`starcat-app/starcat-trending-api`](https://github.com/starcat-app/starcat-trending-api) | 5002 | GitHub Trending 爬虫 → REST API |
-| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`starcat-app/starcat-weekly-api`](https://github.com/starcat-app/starcat-weekly-api) | 5003 | 周刊项目同步 + zread 趋势候选 |
+| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`starcat-app/starcat-weekly-api`](https://github.com/starcat-app/starcat-weekly-api) | 5003 | 周刊、Show HN、HelloGitHub 等多来源项目发现流水线 |
 | [`starcat-wiki-api/`](./starcat-wiki-api/) | [`starcat-app/starcat-wiki-api`](https://github.com/starcat-app/starcat-wiki-api) | 5004 | DeepWiki / Zread / CodeWiki 收录探测 |
 | [`starcat-recommend-api/`](./starcat-recommend-api/) | [`starcat-app/starcat-recommend-api`](https://github.com/starcat-app/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
-| [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | — | Direct 分发授权 API |
+| [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
 
 ### 其他支撑项目（9 个）
 
@@ -82,7 +82,7 @@
 | POST | `/api/share` | 接收 repo 数据 + AI 摘要，返回短链 |
 | GET | `/s/{id}` | 公开分享页（服务端渲染） |
 
-**`starcat-weekly-api`（5003）** — 同步 GitHub Weekly 周刊、Trending 榜单生成周报数据。
+**`starcat-weekly-api`（5003）** — 聚合阮一峰周刊、zread、Show HN、HelloGitHub 与人工情报，生成统一的项目发现数据。
 
 **`starcat-wiki-api`（5004）** — 探测仓库是否有 DeepWiki / Zread / CodeWiki 等第三方文档。
 

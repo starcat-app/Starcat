@@ -125,7 +125,7 @@ cd ../starcat-discovery-api && go mod tidy && go build ./... && go vet ./...
 
 1. 创建目录 `starcat-xxx-api/`
 2. **必带文件**(参考 sharing / weekly):
-   - `go.mod`(`module github.com/dong4j/starcat-xxx-api`、`go 1.25.0`)
+   - `go.mod`(`module github.com/starcat-app/starcat-xxx-api`、`go 1.25.0`)
    - `Dockerfile`(多阶段构建,参考 sharing 或 weekly)
    - `fly.toml`
    - `.gitignore`(参考 sharing 的 76 行版本)

@@ -232,7 +232,7 @@ UI 仍显示「Version 0.1.0 (Build 201.f09a499)」，build 号和 hash 仍正�
 发布前**最好**做完以下：
 
 - [ ] **`docs/功能实现总览.md`** —— 顶部「最近更新」+「变更日志」追加发版条目（参考已有格式）
-- [ ] **CHANGELOG**（可选）—— 当前还没建，等 1.0 之前可考虑
+- [ ] **CHANGELOG** —— 更新 `supports/starcat-pro/CHANGELOG.md` 与 `CHANGELOG-ZH.md`，并核对版本 Release 链接
 - [ ] **测试** —— `xcodebuild test` 全绿，至少跑一次冒烟测
 - [ ] **手动验证** —— Xcode IDE Cmd+R 启动一次，关于页显示正确
 - [ ] **打 tag** —— `git tag vX.Y.Z` + `git push --tags`

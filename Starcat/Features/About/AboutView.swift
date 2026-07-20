@@ -313,7 +313,8 @@ private struct SupportPage: View {
                     title: "about.support.issues.title",
                     detail: "about.support.issues.detail",
                     systemImage: "exclamationmark.bubble",
-                    url: URL(string: "https://github.com/dong4j/starcat/issues")
+                    // 源码仓库保持私有，用户反馈统一进入公开的支持仓库。
+                    url: URL(string: "https://github.com/starcat-app/starcat-pro/issues")
                 )
                 SupportRow(
                     title: "about.support.website.title",

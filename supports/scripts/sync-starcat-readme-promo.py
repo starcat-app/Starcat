@@ -79,10 +79,10 @@ PROJECTS = [
     Project(
         Path("supports/starcat-license-api"),
         "starcat-license-api",
-        "api",
+        "private-api",
         "starcat-license-api",
-        "这是 Starcat Direct 分发授权链路的可自部署支撑服务。",
-        "Self-hostable support API for Starcat Direct licensing flows.",
+        "这是 Starcat Direct 分发授权链路的私有后端服务。",
+        "Private backend service for Starcat Direct licensing flows.",
     ),
     Project(
         Path("supports/starcat-recommend-api"),
@@ -179,6 +179,10 @@ def promo(project: Project, lang: str) -> str:
         if project.kind == "api" and is_zh
         else "\n\n> Starcat provides hosted defaults for normal users. This API is open source so advanced users can inspect it, run it locally, or deploy their own instance."
         if project.kind == "api"
+        else "\n\n> 此仓库包含 Starcat Direct 授权与支付集成的私有服务端实现，不作为可自部署公共 API 分发。"
+        if project.kind == "private-api" and is_zh
+        else "\n\n> This repository contains Starcat's private Direct licensing and payment backend. It is not distributed as a self-hostable public API."
+        if project.kind == "private-api"
         else ""
     )
     return f"""{START}

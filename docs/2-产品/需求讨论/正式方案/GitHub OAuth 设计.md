@@ -120,7 +120,7 @@ Web Application Flow 安全变体
 └── ② 后端代理 + client_secret（有后端）
     ├── 客户端：仅生成 state
     ├── 跳 /authorize，URL 不带 code_challenge
-    ├── GitHub 回调到后端 https://api.starcat.app/auth/callback
+    ├── GitHub 回调到后端 https://<backend-host>/auth/callback（仅为后端代理变体示例）
     ├── 后端用 code + client_secret 换 token
     └── token 透传给客户端（走 HTTPS）
 ```
@@ -146,13 +146,14 @@ Web Application Flow 安全变体
 - **后端代理**：已有后端 / 不想在客户端存任何凭据 / 需要服务端审计授权事件
 - **不适用场景**：没有 GitHub OAuth App（Client ID 是占位）、不想配置 callback URL
 
-### 3.5 Starcat 计划
+### 3.5 Starcat 当前实现
 
 | 阶段 | 工作 |
 |---|---|
-| **W6 之前** | 文档沉淀（本节），不写代码 |
-| **W6 触发条件** | ① GitHub OAuth App 注册完成 + ② 选定 PKCE 或后端代理（取决于后端就绪状态） |
-| **实现要点** | ① 新增 `GithubWebFlowService: GithubOAuthServiceProtocol` 第二个 grant type；② `AuthSession.state` 新增 `.awaitingWebCallback(code)` 中间态；③ `GithubAuthView` 拆分 `awaitingWebCallbackView`；④ `Info.plist` 注册 `starcat://` URL scheme；⑤ 单测覆盖 4 条路径：state 校验失败 / code 过期 / token 交换失败 / 成功 |
+| **状态** | ✅ OAuth App 已注册并转移至 `starcat-app`，Web Flow + PKCE 已投入使用 |
+| **协议选择** | 客户端直接使用 PKCE，不部署持有 `client_secret` 的 OAuth 后端代理 |
+| **实现入口** | `GithubWebFlowService` 生成 verifier / challenge 并交换 token；`AuthSession` 通过系统认证会话接收回调 |
+| **关键约束** | 固定使用 `starcat://callback`；客户端不保存 `client_secret`；PAT 仅作为用户主动选择的其他登录方式 |
 
 ---
 
@@ -206,7 +207,7 @@ Web Application Flow 安全变体
 ### 4.3 适用场景
 
 - **首选**：macOS 客户端应用、无后端代理、不想暴露 client_secret
-- **首选**：开发期 Client ID 未注册时的过渡方案（device flow 端点用同样的 Client ID）
+- **首选**：需要跨设备授权、避免在客户端输入凭据的登录方式（与 Web Flow 共用已注册 Client ID）
 - **不适用场景**：要求「一键浏览器授权」体验的产品、已经有 Web 后端的服务
 
 ### 4.4 Starcat 当前实现
@@ -324,7 +325,7 @@ enum AuthState: Equatable {
 ### 5.3 适用场景
 
 - **首选**：开发者本人 / 高级用户，知道怎么生成 PAT
-- **首选**：Client ID 未注册时的兜底（Device Flow 失效时的备用入口）
+- **首选**：开发者 / 高级用户明确希望使用自有 PAT 的手动入口
 - **首选**：CI / 自动化场景（用户可能已经有 PAT）
 - **不适用场景**：普通用户首次登录（应引导走 Device Flow）
 
@@ -449,7 +450,7 @@ enum GithubPATError: LocalizedError {
 用户在 Starcat 登录页
 ├── 普通用户 → Device Flow（默认 CTA）
 ├── 开发者 / 有 PAT → 点「其他登录方式」→ PAT 直接输入
-├── OAuth App 未注册 → 点「其他登录方式」→ PAT 兜底
+├── OAuth 流程暂时不可用 → 用户可主动选择 PAT 作为临时替代
 └── 用户主动选择 Web Application Flow → 系统认证窗口完成标准 OAuth
 ```
 

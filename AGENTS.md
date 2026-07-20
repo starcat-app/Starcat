@@ -153,7 +153,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 
 - **核心价值**: 整理、理解、找回、评估
 - **目标用户**: 独立开发者、技术博主、技术媒体
-- **项目状态**: 预开发规划阶段，尚无代码
+- **项目状态**: 已发布正式版，持续开发与维护中
 
 ---
 

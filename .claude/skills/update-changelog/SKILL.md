@@ -223,7 +223,7 @@ and before the first existing `## <version>` section.
 At the bottom of each file, insert BEFORE the previous version's link:
 
 ```markdown
-[<version>]: https://github.com/dong4j/starcat/releases/tag/<version>
+[<version>]: https://github.com/starcat-app/starcat-pro/releases/tag/<version>
 ```
 
 Maintain reverse chronological order (newest first).

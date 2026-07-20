@@ -5,7 +5,7 @@
 //  Mock OAuth Service：开发期跳过真实 GitHub 授权，直接返回固定 token。
 //
 //  使用场景：
-//  - 真实 Client ID 未注册（Constants.swift 占位）
+//  - DEBUG 环境绕过真实 GitHub 授权，快速验证登录后的 UI 与数据流
 //  - 单元测试中验证登录流程
 //  - 离线开发
 //
