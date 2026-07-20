@@ -868,9 +868,7 @@ private enum ReleaseNotesLoader {
 /// 使用非产品化文案，避免 DEBUG-only 能力看起来像正式用户功能。
 	struct DebugMenuCommands: Commands {
         @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
-        @AppStorage(DebugFlags.gettingStartedGuideKey) private var gettingStartedGuide = false
         @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
-        @AppStorage(DebugFlags.knowledgeRAGToolbarEntryKey) private var knowledgeRAGToolbarEntry = false
 
 		var body: some Commands {
 				CommandMenu("Who's Your Daddy") {
@@ -878,19 +876,6 @@ private enum ReleaseNotesLoader {
 						FirstRunOnboardingPreferences.requestManualReplay()
 					}
                     .disabled(!FirstRunOnboardingPreferences.canReplayManually)
-
-                    Toggle(
-                        "Enable Getting Started Guide",
-                        isOn: Binding(
-                            get: { gettingStartedGuide },
-                            set: { newValue in
-                                gettingStartedGuide = newValue
-                                DebugFlags.setGettingStartedGuide(newValue)
-                            }
-                        )
-                    )
-
-	                Divider()
 
                     Toggle(
                         "Activate Pro",
@@ -916,16 +901,6 @@ private enum ReleaseNotesLoader {
                         )
                     )
 
-                    Toggle(
-                        "Show RAG Toolbar Entry",
-                        isOn: Binding(
-                            get: { knowledgeRAGToolbarEntry },
-                            set: { newValue in
-                                knowledgeRAGToolbarEntry = newValue
-                                DebugFlags.setKnowledgeRAGToolbarEntry(newValue)
-                            }
-                        )
-                    )
                 }
             }
         }

@@ -191,8 +191,6 @@ struct RepoListView: View {
     let undoStarAutoSelectRequestID: Int
     /// Agent 功能当前不随正式产品入口上线；Debug 菜单打开后才显示 toolbar 入口。
     let showsAgentToolbarEntry: Bool
-    /// RAG 工作台仍是开发期 AI surface，Debug 菜单打开后才显示 toolbar 入口。
-    let showsKnowledgeRAGToolbarEntry: Bool
 
     /// HOM-52：Untagged 视图顶部 banner 的"启动整理 / 查看进度"回调。
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
@@ -489,17 +487,15 @@ struct RepoListView: View {
                         .gettingStartedAnchor(.agentWorkspace)
                     }
                 }
-                if showsKnowledgeRAGToolbarEntry {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            onOpenKnowledgeRAGWorkspace?()
-                        } label: {
-                            workspaceToolbarIcon("r.circle", tint: Color(nsColor: .systemTeal))
-                                .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
-                        }
-                        .help("toolbar.knowledgeRAGWorkspace.help")
-                        .gettingStartedAnchor(.ragWorkspace)
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        onOpenKnowledgeRAGWorkspace?()
+                    } label: {
+                        workspaceToolbarIcon("r.circle", tint: Color(nsColor: .systemTeal))
+                            .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
                     }
+                    .help("toolbar.knowledgeRAGWorkspace.help")
+                    .gettingStartedAnchor(.ragWorkspace)
                 }
                 let spec = currentToolbarSpec
                 if let leading = spec.leadingPrimary {
@@ -524,7 +520,7 @@ struct RepoListView: View {
         ToolbarIcon(systemName)
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(tint)
-            // 这两个入口是 Debug 期 AI workspace 入口，需要比常规灰色 toolbar 图标更容易被发现；
+            // AI workspace 需要比常规灰色 toolbar 图标更容易被发现；
             // 使用系统动态色而不是固定 RGB，确保明暗主题下都有足够辨识度。
             .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
     }

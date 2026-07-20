@@ -45,6 +45,43 @@ private enum KnowledgeRAGWorkspaceWindowMetrics {
     static let autosaveName = "KnowledgeRAGWorkspaceWindow"
 }
 
+/// 知识库浏览器窗口尺寸策略。
+private enum KnowledgeRAGBrowserWindowMetrics {
+    static let defaultContentSize = NSSize(width: 1280, height: 800)
+    static let minimumContentSize = NSSize(width: 980, height: 660)
+    static let autosaveName = "KnowledgeRAGBrowserWindow.v2"
+}
+
+/// 为两个 RAG 独立窗口统一换算并执行内容区下限。
+@MainActor
+private enum KnowledgeRAGWindowSizePolicy {
+    static func enforce(minimumContentSize: NSSize, on window: NSWindow) {
+        // `contentMinSize` 描述 SwiftUI 内容区，`minSize` 描述包含标题栏的外框；
+        // 两者不能直接复用同一个数值，否则恢复窗口或系统重算约束时会出现语义偏差。
+        let minimumFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: minimumContentSize)
+        ).size
+        window.contentMinSize = minimumContentSize
+        window.minSize = minimumFrameSize
+
+        let currentFrame = window.frame
+        guard currentFrame.width < minimumFrameSize.width
+                || currentFrame.height < minimumFrameSize.height else { return }
+
+        // AppKit autosave、Accessibility 和 SwiftUI 布局重算都可能直接写入一个过小 frame；
+        // resize 回调再次执行这里，确保最小尺寸是运行时约束，而不只是初始化提示。
+        let correctedSize = NSSize(
+            width: max(currentFrame.width, minimumFrameSize.width),
+            height: max(currentFrame.height, minimumFrameSize.height)
+        )
+        window.setFrame(
+            NSRect(origin: currentFrame.origin, size: correctedSize),
+            display: true,
+            animate: false
+        )
+    }
+}
+
 /// 复用单个 RAG 工作台窗口;重复点击 toolbar 入口时把已有窗口带到前台。
 final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
@@ -86,8 +123,15 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         }
 
         controller.showWindow(nil)
-        if shouldCenter {
-            controller.window?.center()
+        if let window = controller.window {
+            // `showWindow` 可能恢复历史 frame；前置前再校正一次，避免旧的小窗口闪现。
+            KnowledgeRAGWindowSizePolicy.enforce(
+                minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+                on: window
+            )
+            if shouldCenter {
+                window.center()
+            }
         }
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -132,13 +176,15 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         window.title = String.l10n("rag.workspace.window.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize)
-        window.contentMinSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
-        window.minSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.setFrameAutosaveName(KnowledgeRAGWorkspaceWindowMetrics.autosaveName)
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+            on: window
+        )
 
         let controls = NSTitlebarAccessoryViewController()
         controls.layoutAttribute = .right
@@ -164,6 +210,14 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("KnowledgeRAGWorkspaceWindowController does not support storyboard initialization")
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let resizedWindow = notification.object as? NSWindow else { return }
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+            on: resizedWindow
+        )
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -195,8 +249,14 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
         )
         shared = controller
         controller.showWindow(nil)
-        if isNewWindow, let window = controller.window {
-            controller.center(window, over: presentingWindow)
+        if let window = controller.window {
+            KnowledgeRAGWindowSizePolicy.enforce(
+                minimumContentSize: KnowledgeRAGBrowserWindowMetrics.minimumContentSize,
+                on: window
+            )
+            if isNewWindow {
+                controller.center(window, over: presentingWindow)
+            }
         }
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -240,18 +300,28 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         // 400pt 左栏约占窗口三分之一，与知识库宽屏布局截图的栏宽比例一致；
         // 右栏保留约 880pt，分片标题、状态和行内操作不再互相挤压。
-        window.setContentSize(NSSize(width: 1_280, height: 800))
-        window.contentMinSize = NSSize(width: 760, height: 500)
-        window.minSize = window.contentMinSize
+        window.setContentSize(KnowledgeRAGBrowserWindowMetrics.defaultContentSize)
         window.isReleasedWhenClosed = false
         // v2 让旧版 980×660 的已保存 frame 不覆盖新默认值；用户之后的手动尺寸仍会正常记忆。
-        window.setFrameAutosaveName("KnowledgeRAGBrowserWindow.v2")
+        window.setFrameAutosaveName(KnowledgeRAGBrowserWindowMetrics.autosaveName)
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGBrowserWindowMetrics.minimumContentSize,
+            on: window
+        )
         super.init(window: window)
         window.delegate = self
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("KnowledgeRAGBrowserWindowController does not support storyboard initialization") }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let resizedWindow = notification.object as? NSWindow else { return }
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGBrowserWindowMetrics.minimumContentSize,
+            on: resizedWindow
+        )
+    }
 
     func windowWillClose(_ notification: Notification) {
         viewModel.cancelRepoContextGeneration()

@@ -66275,7 +66275,7 @@
     "ai.usage.window.title": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AI Usage"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"AI 用量"}}}},
     "ai.usage.title": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AI Usage"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"AI 用量"}}}},
     "ai.usage.subtitle": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Tokens and API calls made by Starcat on this Mac"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Starcat 在这台 Mac 上产生的 token 与 API 调用"}}}},
-    "ai.usage.open": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AI Usage…"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"AI 用量…"}}}},
+    "ai.usage.open": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AI Usage"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"AI 用量"}}}},
     "ai.usage.refresh": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Refresh usage"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"刷新用量"}}}},
     "ai.usage.filter.range": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Time range"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"时间范围"}}}},
     "ai.usage.filter.feature": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Feature"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"功能"}}}},

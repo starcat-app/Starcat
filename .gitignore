@@ -245,3 +245,6 @@ Starcat/Resources/Codebase/codebase
 !.claude/skills/macos-app-skills/build
 
 sparkle-private-key
+
+# AI
+.playwright-cli

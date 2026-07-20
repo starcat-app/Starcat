@@ -206,12 +206,12 @@ struct RAGWorkspaceInspector: View {
             isRepoContextXMLPopoverPresented = false
             isRepoContextXMLPopoverOpening = false
         }
+        #if DEBUG
         .onChange(of: viewModel.selectedConversationID) { _, _ in
             // 展示快照复制了 Debug payload；切会话时必须连同 generation 一起释放，
             // 否则旧任务回调和旧正文会在窗口级 State 中持续占用内存。
             resetDebugExpansionState()
         }
-        #if DEBUG
         .alert("rag.workspace.debug.clear.confirm.title", isPresented: $isClearDebugTracesConfirmationPresented) {
             Button("common.cancel", role: .cancel) {}
             Button("rag.workspace.debug.clear", role: .destructive) {

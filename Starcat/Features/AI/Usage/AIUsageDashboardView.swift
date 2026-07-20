@@ -147,12 +147,8 @@ struct AIUsageDashboardView: View {
         Menu {
             content()
         } label: {
-            HStack(spacing: 5) {
-                Text(selection)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption2)
-            }
+            Text(selection)
+                .lineLimit(1)
         }
         // 按钮保持紧凑，完整模型名或历史 Provider ID 仍可通过悬停查看。
         .help(tooltip ?? selection)

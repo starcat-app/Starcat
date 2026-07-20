@@ -102,15 +102,11 @@ struct HomeView: View {
     @State private var isPreparingDetailCoachMark = false
     @State private var preparedDetailCoachMarkStepID: GettingStartedProgressStore.StepID?
     @State private var preparedDetailCoachMarkRepoID: Repo.ID?
-    /// 主窗口操作指引默认关闭，通过 Debug 菜单临时开启，避免未完成教学流影响日常使用。
-    @State private var showsGettingStartedGuide: Bool = DebugFlags.gettingStartedGuide
     /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
     ///
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
     /// SwiftUI 刷新；Debug 菜单广播后更新该状态，RepoListView 的 toolbar 立即重建。
     @State private var showsAgentToolbarEntry: Bool = DebugFlags.agentToolbarEntry
-    /// RAG 工作台同样是开发期入口，沿用 Agent 的 Debug 菜单显隐模型。
-    @State private var showsKnowledgeRAGToolbarEntry: Bool = DebugFlags.knowledgeRAGToolbarEntry
     /// 系统入口发来的重置动作必须先二次确认，避免用户误清语言 / 排序 / 筛选偏好。
     @State private var showsResetListPreferencesConfirmation: Bool = false
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
@@ -321,12 +317,6 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
             showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
         }
-        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.knowledgeRAGToolbarEntryDidChangeNotification)) { _ in
-            showsKnowledgeRAGToolbarEntry = DebugFlags.knowledgeRAGToolbarEntry
-        }
-        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.gettingStartedGuideDidChangeNotification)) { _ in
-            showsGettingStartedGuide = DebugFlags.gettingStartedGuide
-        }
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { presentSearchCenterForGettingStarted() }
@@ -343,14 +333,12 @@ struct HomeView: View {
         GeometryReader { proxy in
             GettingStartedChecklistView(
                 store: gettingStartedStore,
-                isEnabled: showsGettingStartedGuide,
                 isSignedIn: authSession.state.isAuthenticated,
                 hasSyncedStars: gettingStartedStore.isCompleted(.syncStars),
                 hasSelectedRepo: viewModel.selectedRepoID != nil,
                 canSelectRepo: selectedSidebarPage == .manage && !viewModel.items.isEmpty,
                 canUnstarRepo: canUnstarSelectedRepoForGettingStarted,
-                canOpenRAGWorkspace: showsKnowledgeRAGToolbarEntry,
-                canOpenAgentWorkspace: showsAgentToolbarEntry,
+                canOpenRAGWorkspace: true,
                 targetFrame: gettingStartedActiveAnchor(in: anchors, proxy: proxy),
                 onSignIn: {
                     authSession.requestLoginSheet()
@@ -377,9 +365,6 @@ struct HomeView: View {
                 },
                 onOpenRAGWorkspace: {
                     openKnowledgeRAGWorkspaceForGettingStarted()
-                },
-                onOpenAgentWorkspace: {
-                    openAgentWorkspaceForGettingStarted()
                 },
                 onOpenRepoHomepage: {
                     openRepoHomepageForGettingStarted()
@@ -423,21 +408,9 @@ struct HomeView: View {
     }
 
     private var gettingStartedActiveStepID: GettingStartedProgressStore.StepID? {
-        let orderedSteps: [GettingStartedProgressStore.StepID] = [
-            .signIn,
-            .syncStars,
-            .selectRepo,
-            .openRepoHomepage,
-            .addRepoToLibrary,
-            .organizeRepo,
-            .useSearch,
-            .useAI,
-            .useRAGWorkspace,
-            .useAgentWorkspace,
-            .shareProfile,
-            .unstarRepo
-        ]
-        return orderedSteps.first { !gettingStartedStore.isCompleted($0) }
+        GettingStartedProgressStore.StepID.guideCases.first {
+            !gettingStartedStore.isCompleted($0)
+        }
     }
 
     private func gettingStartedAnchorID(for stepID: GettingStartedProgressStore.StepID) -> GettingStartedAnchorID? {
@@ -1177,7 +1150,6 @@ struct HomeView: View {
             selectedActivityItem: $selectedActivityItem,
             undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
             showsAgentToolbarEntry: showsAgentToolbarEntry,
-            showsKnowledgeRAGToolbarEntry: showsKnowledgeRAGToolbarEntry,
             onStartBatchAI: {
                 // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
                 // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
