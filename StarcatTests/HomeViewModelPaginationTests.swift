@@ -111,18 +111,23 @@ struct HomeViewModelPaginationTests {
     @Test("DB Paging: 外部导航一次加载到深页目标")
     func externalNavigationLoadsTargetPage() async throws {
         let (vm, db) = try makeSUT()
-        for i in 1...100 {
+        // pageSize 已提到 40；要覆盖「第 4 页」至少需要 4 * pageSize 条，
+        // 目标取第 4 页中间一行（0-based index = 3*pageSize + pageSize/2）。
+        let targetPage = 4
+        let total = HomeViewModel.pageSize * targetPage
+        let targetId = Int64((targetPage - 1) * HomeViewModel.pageSize + HomeViewModel.pageSize / 2)
+        for i in 1...total {
             try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
         }
         await vm.reloadItems()
         #expect(vm.items.count == HomeViewModel.pageSize)
 
-        await vm.ensureRepoLoadedForExternalNavigation(repoId: 75)
+        await vm.ensureRepoLoadedForExternalNavigation(repoId: targetId)
 
-        #expect(vm.items.count == HomeViewModel.pageSize * 4,
-                "repo 75 位于第 4 页，外部导航应一次准备到该页")
-        #expect(vm.items.contains(where: { $0.id == 75 }))
-        #expect(vm.currentPage == 4)
+        #expect(vm.items.count == HomeViewModel.pageSize * targetPage,
+                "repo \(targetId) 位于第 \(targetPage) 页，外部导航应一次准备到该页")
+        #expect(vm.items.contains(where: { $0.id == targetId }))
+        #expect(vm.currentPage == targetPage)
     }
 
     @Test("相同 query identity 的并发 reload 复用同一 generation 和 DB query")

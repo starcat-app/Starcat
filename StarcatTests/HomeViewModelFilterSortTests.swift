@@ -121,7 +121,7 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.itemsRevision == revisionAfterReload + 1, "排序切换应发布新的列表快照版本，避免 SwiftUI 对旧 List 做大规模 move diff")
     }
 
-    @Test("DB Paging: 普通 reload 直接读取当前页,不再依赖全量列表缓存")
+    @Test("DB Paging: 未过期 snapshot 命中时普通 reload 跳过 DB，forceRefresh 才重查")
     func cacheHitSkipsDatabaseUntilForced() async throws {
         let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/old", stars: 1, starredAt: "2026-05-01T00:00:00Z")
@@ -130,11 +130,11 @@ struct HomeViewModelFilterSortTests {
 
         try await insertRepo(db, id: 2, fullName: "o/new", stars: 1, starredAt: "2026-05-02T00:00:00Z")
 
-        // 数据库分页模式下普通 reload 只读取当前页，不再依赖旧的全量列表缓存。
+        // 数据库分页首屏 snapshot 是普通 reload / 切回分类的事实源；
+        // 同步完成、标签变更等真实写库路径必须传 forceRefresh: true。
         await vm.reloadItems()
-        #expect(vm.items.map(\.id) == [2, 1])
+        #expect(vm.items.map(\.id) == [1], "未 forceRefresh 时不应绕过未过期 snapshot 重查 DB")
 
-        // forceRefresh 仍应保持同样结果，且不退回旧缓存。
         await vm.reloadItems(forceRefresh: true)
         #expect(vm.items.map(\.id) == [2, 1])
     }
@@ -751,8 +751,12 @@ struct HomeViewModelFilterSortTests {
             lists: [
                 makeStarList(id: "list-filled", name: "Filled", position: 0),
                 makeStarList(id: "list-empty", name: "Empty", position: 1),
+                makeStarList(id: "list-cold", name: "Cold", position: 2),
             ],
-            memberships: [GitHubStarListRemoteMembership(listId: "list-filled", repoFullName: "o/one")],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-filled", repoFullName: "o/one"),
+                GitHubStarListRemoteMembership(listId: "list-cold", repoFullName: "o/two"),
+            ],
             syncedAt: Date(timeIntervalSince1970: 0)
         )
 
@@ -778,14 +782,24 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.isGitHubStarListSwitchLoading == false)
         #expect(vm.itemsRevision == revisionAfterFilledList + 1)
 
+        // 切回已访问过的有数据分组：eager DB snapshot 同步恢复列表，
+        // 不再清空再走 switch-loading 占位（那条路径只留给「无 snapshot」首次进入）。
         vm.selectSidebar(.githubStarList("list-filled"))
+        #expect(vm.isGitHubStarListSwitchLoading == false)
+        #expect(vm.items.map(\.id) == [1])
+
+        // 再经空分组切到从未访问过的有数据分组：无 snapshot → switch-loading + 保持空列表。
+        vm.selectSidebar(.githubStarList("list-empty"))
+        #expect(vm.items.isEmpty)
+
+        vm.selectSidebar(.githubStarList("list-cold"))
         #expect(vm.isGitHubStarListSwitchLoading == true)
         #expect(vm.items.isEmpty)
 
         await vm.reloadItems()
 
         #expect(vm.isGitHubStarListSwitchLoading == false)
-        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.items.map(\.id) == [2])
     }
 
     /// 周期性检查条件，最多等待 `timeout` 秒；条件成立立即返回。
