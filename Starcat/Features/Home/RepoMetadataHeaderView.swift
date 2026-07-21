@@ -498,12 +498,15 @@ struct RepoShareMenu: View {
     let isShared: Bool
     let canCreateAIShare: Bool
     let createAIShare: () -> Void
+    /// 系统菜单点击后会立即关闭，复制成功提示必须交给稳定的页面根节点显示。
+    let onLinkCopied: () -> Void
 
     var body: some View {
         Menu {
             CopyFeedbackButton(
                 providesContent: { publicURL.absoluteString },
-                tooltip: "repo.share.link.copy.help"
+                tooltip: "repo.share.link.copy.help",
+                onCopied: onLinkCopied
             ) { didCopy in
                 Label(
                     didCopy ? "common.copy.copied" : "repo.share.link.copy",

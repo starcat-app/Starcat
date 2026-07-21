@@ -1125,6 +1125,9 @@ struct RepoListView: View {
                 canCreateAIShare: canCreateAIShare,
                 createAIShare: {
                     presentOrStartShare(targetRepo)
+                },
+                onLinkCopied: {
+                    toastMessage = "repo.share.link.copied"
                 }
             )
         }

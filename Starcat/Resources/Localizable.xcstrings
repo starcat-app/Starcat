@@ -39480,6 +39480,23 @@
         }
       }
     },
+    "repo.share.link.copied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository link copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库链接已复制"
+          }
+        }
+      }
+    },
     "repo.share.link.copy.help" : {
       "extractionState" : "manual",
       "localizations" : {
