@@ -82,6 +82,11 @@ function readArg(name) {
 
 async function serveStaticFile(res, rawPathname) {
   const pathname = normalizeAdminPath(rawPathname);
+  // Local Admin 复用公开站点的官方 Logo，避免在多个目录复制出容易漂移的品牌资源。
+  if (pathname === "/starcat-logo.png") {
+    await writeStaticFile(res, path.join(repoRoot, "pages", "direct", "starcat-logo.png"));
+    return;
+  }
   const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
   const filePath = path.resolve(__dirname, relativePath);
   if (!filePath.startsWith(`${__dirname}${path.sep}`) && filePath !== path.join(__dirname, "index.html")) {
@@ -92,6 +97,10 @@ async function serveStaticFile(res, rawPathname) {
     writeJSON(res, 404, { error: "not found" });
     return;
   }
+  await writeStaticFile(res, filePath);
+}
+
+async function writeStaticFile(res, filePath) {
   const ext = path.extname(filePath);
   const body = await readFile(filePath);
   res.writeHead(200, {
