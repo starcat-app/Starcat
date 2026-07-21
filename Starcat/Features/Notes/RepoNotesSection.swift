@@ -83,6 +83,9 @@ struct RepoNotesSection: View {
     /// 内联编辑器模式只在扩展态显示；收起时强制回到编辑，避免 3 行区域渲染不可读的预览。
     @State private var inlineEditorMode: InlineEditorMode = .edit
 
+    /// 用户确认 AI 草稿后仅保留折叠标题，避免已完成的过程面板继续占据详情空间。
+    @State private var isCompletedDraftExpanded: Bool = false
+
     /// 旧大窗口编辑 sheet 显隐控制（2026-06-13）。
     ///
     /// 2026-07-22 起入口暂时隐藏，右下角按钮改为原位扩展；保留状态和 `.sheet` 装配，
@@ -245,7 +248,14 @@ struct RepoNotesSection: View {
                         .foregroundStyle(.secondary)
                 }
                 if let aiViewModel = aiGenerationViewModel,
-                   aiViewModel.phase != .idle {
+                   aiViewModel.phase == .completed,
+                   !aiViewModel.draftMarkdown.isEmpty {
+                    RepoNoteAIDraftDisclosure(
+                        markdown: aiViewModel.draftMarkdown,
+                        isExpanded: $isCompletedDraftExpanded
+                    )
+                } else if let aiViewModel = aiGenerationViewModel,
+                          aiViewModel.phase != .idle {
                     RepoNoteAIGenerationPanel(
                         viewModel: aiViewModel,
                         onRetry: startAIGeneration,
@@ -275,7 +285,7 @@ struct RepoNotesSection: View {
                         Spacer()
                         SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
                     }
-                    .padding(.trailing, 250)
+                    .padding(.trailing, 120)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
@@ -287,8 +297,7 @@ struct RepoNotesSection: View {
                     RepoNoteAIGenerationHeaderControl(
                         viewModel: aiViewModel,
                         hasExistingNote: hasNoteContent,
-                        onGenerate: startAIGeneration,
-                        onCancel: { aiViewModel.cancel() }
+                        onGenerate: startAIGeneration
                     )
                 }
             }
@@ -451,6 +460,7 @@ struct RepoNotesSection: View {
         saveState = .idle
         isEditorExpanded = false
         inlineEditorMode = .edit
+        isCompletedDraftExpanded = false
         isNotesExpanded = false
     }
 
