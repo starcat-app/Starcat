@@ -194,6 +194,22 @@ sign_distribution_code() {
   fi
 }
 
+sign_dmg_container() {
+  # DMG 是用户实际下载并由 Gatekeeper 首先检查的外层容器。它必须在提交
+  # notarization 之前签名；公证或 staple 之后再签会改变容器并使票据失效。
+  if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$DMG_PATH" >/dev/null
+  else
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH" >/dev/null
+  fi
+}
+
+write_dmg_sha256() {
+  local sha256
+  sha256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+  printf '%s  %s\n' "$sha256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
+}
+
 verify_developer_id_code() {
   local component_name="$1"
   local target_path="$2"
@@ -276,8 +292,10 @@ else
     "$DMG_PATH" >/dev/null
 fi
 
-SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
-printf '%s  %s\n' "$SHA256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
+log "签名 DMG 容器"
+sign_dmg_container
+codesign --verify --verbose=2 "$DMG_PATH"
+write_dmg_sha256
 
 if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   log "提交 notarization"
@@ -328,7 +346,9 @@ if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   log "staple DMG"
   xcrun stapler staple "$DMG_PATH"
   xcrun stapler validate "$DMG_PATH"
-  spctl --assess --type open --verbose "$DMG_PATH"
+  spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
+  # stapler 会写入 DMG，因此最终发布 SHA 必须在装订票据后重新计算。
+  write_dmg_sha256
 else
   log "跳过 notarization；正式公开分发前请设置 STARCAT_NOTARIZE=1"
 fi

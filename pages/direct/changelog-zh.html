@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Starcat 更新日志 — 版本更新记录">
     <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://starcat.ink/changelog-zh.html">
-    <link rel="alternate" hreflang="en" href="https://starcat.ink/changelog.html">
-    <link rel="alternate" hreflang="zh-Hans" href="https://starcat.ink/changelog-zh.html">
-    <link rel="alternate" hreflang="x-default" href="https://starcat.ink/changelog.html">
     <title>更新记录 · Starcat</title>
     <link rel="icon" type="image/png" href="starcat-logo.png">
 
@@ -129,6 +125,35 @@
     <div class="changelog-content">
 <h1>Starcat 更新日志</h1>
 <p>这里记录 Starcat 的重要变化，内容用于发布说明。</p>
+<h2>1.1.0</h2>
+<p>Starcat 1.1.0 将收藏的仓库升级为本地优先、过程可解释的 RAG 知识库，并集中优化了性能、稳定性和 macOS 使用体验。</p>
+<h3>新增</h3>
+<ul>
+<li>新增完整的知识库 RAG 工作台，支持多仓库上下文、流式回答、引用证据、会话分组与置顶、历史管理和草稿恢复。</li>
+<li>新增混合检索，综合向量、双语关键词、仓库元数据、Wiki 和 RepoContext，并可选用重排、GitHub 实时上下文及外部搜索。</li>
+<li>新增知识库浏览与索引管理，支持从 Stars 批量导入、README 补全、知识片段编辑与排除、定向重建和索引健康检查。</li>
+<li>新增可解释的 RAG 执行视图，包括查询计划、执行时间线、检索漏斗、上下文预算、历史回放、检索设置和调试导出。</li>
+<li>新增本地 AI 用量面板，可查看请求数、Token、延迟和失败统计，且不保存 Prompt 或回答正文。</li>
+<li>新增全局 Star 状态过滤和 AI 摘要状态标识，帮助快速定位待阅读、已归档和已生成摘要的仓库。</li>
+</ul>
+<h3>优化</h3>
+<ul>
+<li>优化大规模知识库和长会话性能，通过有界索引、批量向量处理、增量持久化、预取限制和缓存降低等待时间。</li>
+<li>优化 RAG 工作台交互，包括可调整分栏、加载骨架、引用与证据面板、代码和表格复制、滚动稳定性及响应式字号。</li>
+<li>优化 AI 设置和后台任务，提供更清晰的模型能力配置、标签建议保护、诊断信息、任务进度以及取消和跳过操作。</li>
+<li>优化 Explore、Trending 和 Weekly 的加载、缓存、来源过滤、时间线及快速切换体验。</li>
+<li>优化设置页、Picker、分段控件、侧边栏图标、语义颜色和紧凑窗口下的 macOS 原生体验。</li>
+<li>优化浏览器 Companion 集成，支持自定义本地端口、推荐结果分页、Star 状态同步和更清晰的可用性反馈。</li>
+<li>优化 Direct Pro Pass 的许可证激活、设备管理、席位上限提示、订阅取消和渠道更新控制。</li>
+</ul>
+<h3>修复</h3>
+<ul>
+<li>修复仓库或账户切换、并发任务、取消操作和过期回调可能导致 RAG 上下文串线的问题。</li>
+<li>修复显式仓库范围、私有笔记、双语关键词、Wiki、排除片段、错误引用标记及无证据拒答的正确性问题。</li>
+<li>修复标题生成、置顶排序、草稿与历史恢复、长会话压缩、流式计时和滚动到底部的稳定性问题。</li>
+<li>修复知识库列表重复刷新、旧向量覆盖新片段、来源更新不准确和后台 Wiki 刷新异常。</li>
+<li>修复 GitHub 浏览器登录、AI/RAG 错误本地化以及多处设置、布局和无障碍问题。</li>
+</ul>
 <h2>1.0.0</h2>
 <p>Starcat 正式初始版本。</p>
 <h3>亮点</h3>

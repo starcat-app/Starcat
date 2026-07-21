@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Starcat Changelog — release notes and product updates">
     <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://starcat.ink/changelog.html">
-    <link rel="alternate" hreflang="en" href="https://starcat.ink/changelog.html">
-    <link rel="alternate" hreflang="zh-Hans" href="https://starcat.ink/changelog-zh.html">
-    <link rel="alternate" hreflang="x-default" href="https://starcat.ink/changelog.html">
     <title>Changelog · Starcat</title>
     <link rel="icon" type="image/png" href="starcat-logo.png">
 
@@ -129,6 +125,35 @@
     <div class="changelog-content">
 <h1>Starcat Changelog</h1>
 <p>All notable changes to Starcat are summarized here for release notes.</p>
+<h2>1.1.0</h2>
+<p>Starcat 1.1.0 turns saved repositories into a local-first, explainable RAG knowledge base, with broad performance, reliability, and macOS interface improvements.</p>
+<h3>New</h3>
+<ul>
+<li>Added a full knowledge-base RAG workspace with multi-repository context, streaming answers, citations, conversation groups, pinning, history, and draft recovery.</li>
+<li>Added hybrid retrieval across vector and bilingual keyword search, repository metadata, Wiki, RepoContext, optional reranking, live GitHub context, and external search.</li>
+<li>Added knowledge-base browsing and index management with batch Star imports, README completion, chunk editing and exclusion, targeted rebuilds, and index health checks.</li>
+<li>Added explainable RAG controls for query plans, execution timelines, retrieval funnels, context budgets, historical replay, retrieval settings, and debug export.</li>
+<li>Added a local AI usage dashboard for requests, tokens, latency, and failures without storing prompts or response content.</li>
+<li>Added global Star-status filters and AI-summary indicators for faster repository triage.</li>
+</ul>
+<h3>Improvements</h3>
+<ul>
+<li>Improved large-library and long-conversation performance with bounded indexing, batched vector work, incremental persistence, limited prefetching, and caching.</li>
+<li>Improved the RAG workspace with resizable columns, loading skeletons, richer citation panels, code and table copying, stable scrolling, and responsive typography.</li>
+<li>Improved AI settings and background jobs with clearer model capabilities, safer tag suggestions, actionable diagnostics, progress reporting, and cancel or skip controls.</li>
+<li>Improved Explore, Trending, and Weekly with shared snapshots, session caches, cancellation-safe switching, source filters, timelines, and stable loading states.</li>
+<li>Improved native macOS consistency across settings, pickers, segmented controls, sidebar icons, semantic colors, and compact window layouts.</li>
+<li>Improved browser Companion workflows with configurable local ports, recommendation pagination, Star-state synchronization, and clearer availability feedback.</li>
+<li>Improved Direct Pro Pass activation, device management, seat-limit feedback, subscription cancellation, and channel-specific update controls.</li>
+</ul>
+<h3>Fixes</h3>
+<ul>
+<li>Fixed RAG scope isolation across repository or account switches, concurrent tasks, cancellations, and stale callbacks.</li>
+<li>Fixed retrieval and citation correctness for explicit repository scopes, private notes, bilingual keywords, Wiki content, excluded chunks, false citation markers, and no-evidence refusal.</li>
+<li>Fixed conversation stability for title generation, pin ordering, draft and history restoration, long-session compression, streaming timers, and scroll-to-bottom behavior.</li>
+<li>Fixed knowledge-base refresh and indexing issues, including unnecessary reloads, stale vectors overwriting new chunks, inaccurate source updates, and background Wiki refresh failures.</li>
+<li>Fixed browser-based GitHub sign-in, localized AI and RAG error feedback, and several settings, layout, and accessibility issues.</li>
+</ul>
 <h2>1.0.0</h2>
 <p>Initial Starcat public release.</p>
 <h3>Highlights</h3>

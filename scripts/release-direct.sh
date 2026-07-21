@@ -349,7 +349,12 @@ resume_notarized_package() {
 
   xcrun stapler staple "$DMG_PATH"
   xcrun stapler validate "$DMG_PATH"
-  spctl --assess --type open --verbose "$DMG_PATH"
+  spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
+
+  # 断点续跑会在这里首次写入公证票据；重新计算 SHA，避免上传 staple 前的旧摘要。
+  local sha256
+  sha256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+  printf '%s  %s\n' "$sha256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
 
   generate_current_appcast_from_existing_dmg
 }

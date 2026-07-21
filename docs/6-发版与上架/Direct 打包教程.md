@@ -133,9 +133,11 @@ STARCAT_NOTARIZE=1 ./scripts/package-direct.sh 1.0.0
 
 脚本会执行：
 
-1. `xcrun notarytool submit --wait`
-2. `xcrun stapler staple`
-3. `spctl --assess --type open`
+1. 用 `Developer ID Application` 签名 DMG 外层容器
+2. `xcrun notarytool submit --wait`
+3. `xcrun stapler staple` 与 `xcrun stapler validate`
+4. `spctl --assess --type open --context context:primary-signature`
+5. 在 staple 后重新计算最终 DMG SHA256
 
 仅需临时走通后续发布流程时，可以显式允许未公证 DMG：
 
