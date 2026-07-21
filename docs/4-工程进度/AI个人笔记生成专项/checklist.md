@@ -60,8 +60,8 @@
 ## 6. 国际化、测试与验收
 
 - [x] 新增 en / zh-Hans 国际化 key，保持 `Localizable.xcstrings` 目录编辑与最小 diff。
-- [ ] 新增人工验收步骤，覆盖本地 README、下载 README、既有笔记、取消、冲突、失败重试和主题切换。
-- [ ] 新增 Swift 关键概念学习索引引用，指向本专项的 `@Observable`、`Task`、`AsyncThrowingStream` 与 SwiftUI 组合位置。
+- [x] 新增人工验收步骤，覆盖本地 README、下载 README、既有笔记、取消、冲突、失败重试和主题切换。
+- [x] 新增 Swift 关键概念学习索引引用，指向本专项的 `@Observable`、`Task`、`AsyncThrowingStream` 与 SwiftUI 组合位置。
 - [ ] 运行专项单测并通过。
 - [ ] 运行全量单测并通过。
 - [ ] 运行 `xcodegen generate`、构建验证、i18n 静态检查、`git diff --check` 并通过。
