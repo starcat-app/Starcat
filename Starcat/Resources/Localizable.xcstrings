@@ -38995,13 +38995,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Generate an editable personal note from the README while preserving your current note"
+            "value" : "Send the README and current personal note to your configured AI provider to generate an editable draft"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "根据 README 生成可编辑的个人笔记，并保留当前笔记内容"
+            "value" : "将 README 和当前个人笔记发送到你配置的 AI Provider，以生成可编辑草稿"
+          }
+        }
+      }
+    },
+    "repo.notes.ai.privacyNotice" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The README and current personal note are sent to your configured AI provider only after you start generation."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在你开始生成后，README 和当前个人笔记才会发送到你配置的 AI Provider。"
           }
         }
       }

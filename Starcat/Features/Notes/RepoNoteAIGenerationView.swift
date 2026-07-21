@@ -23,34 +23,31 @@ struct RepoNoteAIGenerationHeaderControl: View {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityHidden(true)
+                stepMarkers
                 compactProgress
                 cancelButton
             case .awaitingConfirmation:
-                Image(systemName: "checkmark.circle")
-                    .foregroundStyle(.primary)
+                stepMarkers
                 compactProgress
             case .applying:
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityHidden(true)
+                stepMarkers
                 compactProgress
             case .completed:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.primary)
+                stepMarkers
                 Text("\(viewModel.resolvedStepCount)/\(RepoNoteAIGenerationStep.allCases.count)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             case .failed:
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.primary)
+                stepMarkers
                 compactProgress
             case .cancelled:
-                Image(systemName: "stop.circle")
-                    .foregroundStyle(.secondary)
+                stepMarkers
                 compactProgress
             }
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var generateButton: some View {
@@ -63,6 +60,7 @@ struct RepoNoteAIGenerationHeaderControl: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(Text("repo.notes.ai.generateHelp"))
+        .accessibilityHint(Text("repo.notes.ai.generateHelp"))
     }
 
     private var cancelButton: some View {
@@ -91,7 +89,59 @@ struct RepoNoteAIGenerationHeaderControl: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
         .allowsHitTesting(false)
-        .frame(maxWidth: 190, alignment: .trailing)
+        .frame(maxWidth: 120, alignment: .trailing)
+    }
+
+    /// 七个固定状态点让折叠状态也能区分 README 下载是完成、跳过还是失败。
+    /// 图标使用固定 frame，避免从空心圆切换到 checkmark 时挤动标题内容。
+    private var stepMarkers: some View {
+        HStack(spacing: 2) {
+            ForEach(RepoNoteAIGenerationStep.allCases) { step in
+                marker(for: viewModel.stepStates[step] ?? .pending)
+                    .font(.system(size: 8, weight: .semibold))
+                    .frame(width: 9, height: 11)
+                    .accessibilityLabel(
+                        Text(LocalizedStringKey(step.titleKey))
+                            + Text(", ")
+                            + Text(LocalizedStringKey(stateTitleKey(viewModel.stepStates[step] ?? .pending)))
+                    )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func marker(for state: RepoNoteAIGenerationStepState) -> some View {
+        switch state {
+        case .pending:
+            Image(systemName: "circle")
+                .foregroundStyle(.secondary)
+        case .running:
+            Image(systemName: "circle.fill")
+                .foregroundStyle(.primary)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.primary)
+        case .skipped:
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.primary)
+        case .cancelled:
+            Image(systemName: "stop.circle")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func stateTitleKey(_ state: RepoNoteAIGenerationStepState) -> String {
+        switch state {
+        case .pending: "repo.notes.ai.state.pending"
+        case .running: "repo.notes.ai.state.running"
+        case .completed: "repo.notes.ai.state.completed"
+        case .skipped: "repo.notes.ai.state.skipped"
+        case .failed: "repo.notes.ai.state.failed"
+        case .cancelled: "repo.notes.ai.state.cancelled"
+        }
     }
 }
 
@@ -114,6 +164,10 @@ struct RepoNoteAIGenerationPanel: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+
+            Label("repo.notes.ai.privacyNotice", systemImage: "lock.shield")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(RepoNoteAIGenerationStep.allCases) { step in
@@ -246,6 +300,8 @@ struct RepoNoteAIGenerationPanel: View {
                     .buttonStyle(.bordered)
             case .awaitingConfirmation:
                 Button("repo.notes.ai.discard", action: onDiscard)
+                    .buttonStyle(.bordered)
+                Button("repo.notes.ai.regenerate", action: onRetry)
                     .buttonStyle(.bordered)
                 Button("repo.notes.ai.apply", action: onApply)
                     .buttonStyle(.borderedProminent)

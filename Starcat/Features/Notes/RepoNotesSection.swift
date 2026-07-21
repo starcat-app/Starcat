@@ -119,6 +119,13 @@ struct RepoNotesSection: View {
                 aiGenerationViewModel?.cancel()
             }
         }
+        .onDisappear {
+            // View 已离开详情层级后不再有合法的 UI 接收方，主动终止流式响应与索引防抖。
+            // generationID 仍会拦截不响应取消的第三方 Provider 尾包，形成双重保护。
+            aiGenerationViewModel?.cancel()
+            refreshIndexTask?.cancel()
+            refreshIndexTask = nil
+        }
         // 监听 README 加载完成事件 → 把 unread 升级为 read（仅匹配当前 repo.id）。
         //
         // task(id: repo.id) 让切换 repo 时自动取消旧监听，新 task 立即接管。
@@ -225,6 +232,11 @@ struct RepoNotesSection: View {
         DisclosureGroup(isExpanded: $isNotesExpanded) {
             VStack(alignment: .leading, spacing: 10) {
                 notesEditor
+                if aiGenerationViewModel?.phase == .idle {
+                    Label("repo.notes.ai.privacyNotice", systemImage: "lock.shield")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 if let aiViewModel = aiGenerationViewModel,
                    aiViewModel.phase != .idle {
                     RepoNoteAIGenerationPanel(
@@ -256,7 +268,7 @@ struct RepoNotesSection: View {
                         Spacer()
                         SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
                     }
-                    .padding(.trailing, 220)
+                    .padding(.trailing, 250)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
