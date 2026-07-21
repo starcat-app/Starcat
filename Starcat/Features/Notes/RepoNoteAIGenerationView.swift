@@ -224,11 +224,12 @@ struct RepoNoteAIGenerationPanel: View {
 struct RepoNoteAIDraftDisclosure: View {
     let markdown: String
     @Binding var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.16)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     isExpanded.toggle()
                 }
             } label: {
