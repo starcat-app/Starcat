@@ -209,7 +209,8 @@ struct RepoListView: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
+    // 中栏自身操作的轻量反馈；仓库链接与 Clone URL 属于当前详情对象，改由右栏
+    // RepoDetailScaffold 的共用 Toast 显示，避免提示落在错误列。
     @State private var toastMessage: String?
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
@@ -1112,7 +1113,7 @@ struct RepoListView: View {
         )
         .id(actionIdentity)
         CloneMenu(selection: selection) { toastKey in
-            toastMessage = toastKey
+            RepoDetailToastRequest.post(repoID: shareRepo.id, messageKey: toastKey)
         }
         if !shareRepo.isPrivate,
            let deepLink = RepositoryDeepLink(fullName: shareRepo.fullName, repositoryID: shareRepo.id) {
@@ -1127,7 +1128,10 @@ struct RepoListView: View {
                     presentOrStartShare(targetRepo)
                 },
                 onLinkCopied: {
-                    toastMessage = "repo.share.link.copied"
+                    RepoDetailToastRequest.post(
+                        repoID: shareRepo.id,
+                        messageKey: "repo.share.link.copied"
+                    )
                 }
             )
         }

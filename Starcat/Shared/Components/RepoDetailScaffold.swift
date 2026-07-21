@@ -107,6 +107,26 @@
 import SwiftUI
 import AppKit
 
+extension Notification.Name {
+    /// 中栏 toolbar 把属于当前仓库的瞬时反馈交给右侧详情页统一呈现。
+    static let repoDetailToastRequested = Notification.Name("StarcatRepoDetailToastRequested")
+}
+
+/// 跨 NavigationSplitView 相邻列传递的详情 Toast 请求。
+///
+/// 请求必须携带 repoID；用户在点击后快速切换仓库时，新的详情页不会误显示旧仓库反馈。
+struct RepoDetailToastRequest {
+    let repoID: Int64
+    let messageKey: String
+
+    static func post(repoID: Int64, messageKey: String) {
+        NotificationCenter.default.post(
+            name: .repoDetailToastRequested,
+            object: RepoDetailToastRequest(repoID: repoID, messageKey: messageKey)
+        )
+    }
+}
+
 /// R-01 详情页通用骨架。
 ///
 /// body slot 接受一个 `(RepoDetailScrollReport) -> Void` 闭包参数 —— body 里的
@@ -182,7 +202,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 乐观 UI。Scaffold 会被详情浮窗复用，不能只依赖 HomeViewModel 当前列表页缓存。
     @State private var libraryState: LibraryState = .outsideLibrary
     @State private var isLibraryOperationInFlight = false
-    @State private var libraryToast: String?
+    /// 详情页共用 Toast。知识库操作与中栏 toolbar 的复制反馈共享同一承载层，
+    /// 避免相邻列各自弹提示导致反馈位置与操作对象不一致。
+    @State private var detailToastMessage: String?
 
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
     @State private var proPaywallContext: ProPaywallContext?
@@ -204,17 +226,31 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
     }
 
-    private var libraryToastIcon: String {
-        libraryToast == "library.action.failed" ? "exclamationmark.triangle.fill" : "heart.fill"
+    private var detailToastIcon: String {
+        switch detailToastMessage {
+        case "library.action.failed":
+            return "exclamationmark.triangle.fill"
+        case "clone.copiedHttps", "clone.copiedGit", "repo.share.link.copied":
+            return "checkmark.circle.fill"
+        default:
+            return "heart.fill"
+        }
     }
 
-    private var libraryToastIconColor: Color? {
-        libraryToast == "library.action.added" ? .red : nil
+    private var detailToastIconColor: Color? {
+        switch detailToastMessage {
+        case "library.action.added":
+            return .red
+        case "clone.copiedHttps", "clone.copiedGit", "repo.share.link.copied":
+            return .green
+        default:
+            return nil
+        }
     }
 
-    /// README 底部 cache footer 占据状态栏位置，知识库成功提示需要上浮一段距离，
+    /// README 底部 cache footer 占据状态栏位置，详情提示需要上浮一段距离，
     /// 避免胶囊压在状态栏视觉层级上。
-    private var libraryToastBottomPadding: CGFloat {
+    private var detailToastBottomPadding: CGFloat {
         30
     }
 
@@ -305,14 +341,19 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                   let rawState = notification.userInfo?["libraryState"] as? String else { return }
             libraryState = LibraryState.parse(rawState)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoDetailToastRequested)) { notification in
+            guard let request = notification.object as? RepoDetailToastRequest,
+                  request.repoID == repo.id else { return }
+            detailToastMessage = request.messageKey
+        }
         .sheet(item: $proPaywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .toast(
-            message: $libraryToast,
-            icon: libraryToastIcon,
-            iconColor: libraryToastIconColor,
-            bottomPadding: libraryToastBottomPadding
+            message: $detailToastMessage,
+            icon: detailToastIcon,
+            iconColor: detailToastIconColor,
+            bottomPadding: detailToastBottomPadding
         )
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
@@ -320,7 +361,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 readmeScrollOverflow = nil
             }
             showsRecommendations = false
-            libraryToast = nil
+            detailToastMessage = nil
         }
         .onChange(of: metadataPanelHeight) { _, newHeight in
             guard metadataPanelCollapseProgress > 0 else { return }
@@ -613,7 +654,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         }
         guard !isLibraryOperationInFlight else { return }
         guard repo.id > 0 else {
-            libraryToast = "library.action.failed"
+            detailToastMessage = "library.action.failed"
             return
         }
 
@@ -636,7 +677,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             return
         }
         guard repo.id > 0 else {
-            libraryToast = "library.action.failed"
+            detailToastMessage = "library.action.failed"
             return
         }
 
@@ -652,13 +693,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             homeViewModel.applyLibraryStateChange(repoId: repo.id, state: targetState)
             await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
-            libraryToast = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
+            detailToastMessage = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
             if targetState == .inLibrary {
                 NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
             }
         } catch {
             AppLog.database.error("Toggle library state failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            libraryToast = "library.action.failed"
+            detailToastMessage = "library.action.failed"
         }
     }
 
